@@ -1,0 +1,670 @@
+# Dovetail implementation plan
+
+**Context.** The design phase is finished and the repo holds only a placeholder binary. This plan sets the order of work for v1: spikes first, then a TUI usable on a mock core, then the shortest route to building Dovetail inside Dovetail.
+
+**Status:** awaiting your OK. Sources: `AGENTS.md`, `docs/design-digest.md`, `docs/design.md`, `docs/ui-session-brief.md`, `docs/screens/`, `README.md`. Checked against this machine on 2026-11-01: Claude Code 2.1.316, cgroup v2 with the `memory` controller delegated to the user session, 30 GB RAM, `claude.ai` login on a Pro plan.
+
+## At a glance
+
+| Stage | Milestones | Result |
+| --- | --- | --- |
+| Spike gate | S0–S4 | Allowed to proceed, driver chosen, real fixtures captured, three protocol unknowns answered |
+| Usable on mock | M1–M4 | The full daily UI runs against `MockCore` with no Claude Code |
+| Real, persistent | M5 | A working task tracker on SQLite, with `dovetail add` |
+| Live sessions | M6–M9 | Coordinator chat, inbox approvals, slices in worktrees, `ask_user`, `report_status` |
+| **Self-hosting point** | **M10** | Restart survival, a stable install and a rehearsal. The rest of the build runs inside Dovetail |
+| Remaining v1 | M11–M16 | Subagents, to-dos, board, worktree view, caps, context fill, take-over, maps, hardening |
+
+**Changes from the suggested order in `AGENTS.md`, with reasons**
+
+1. **Board and worktree view move after self-hosting.** They aren't in the self-hosting minimum, and they split cleanly into parallel slices.
+2. **Restart survival gets its own milestone (M10).** It's in the minimum and has the riskiest failure modes when Dovetail is running on itself.
+3. **The driver, messaging and MCP spikes run before M1.** Real fixtures shape the API, so they should exist before the API is written.
+4. **The merman spike moves to just before maps.** Only maps depend on it.
+
+---
+
+## 1. Spike plan
+
+Run in this order. Each writes `docs/spikes/<name>.md`. Code lives in `spikes/<name>/`, outside the workspace. Real sessions run only in scratch repos under `/tmp`, with tiny prompts.
+
+| ID | Spike | Who runs it | Gates | When |
+| --- | --- | --- | --- | --- |
+| S0 | Terms of use | **You** (only you can decide) | Everything | First |
+| S1 | Driver crate + fixtures | Agent, after S0 | M1 event shapes, M6 onward | Before M1 |
+| S2 | Inbound messaging | Agent, after S0 | **Self-hosting** (M8), message timeline | Before M1 |
+| S3 | MCP behaviour | Agent, after S0 | M9 `ask_user`, subagent tools | Before M1 |
+| S4 | cgroup enforcement | **You** (script supplied) | M13 | Before M13; safe to run any time |
+| S5 | merman | Agent measures; **you judge the look in kitty** | M15 | Before M15 |
+| S6 | `ask_user` role prompt | Agent runs; **you review the result** | Role wording | During M9 |
+
+### S0. Terms of use (you)
+
+**Gates:** everything. If this fails, stop and rethink.
+
+**Procedure**
+1. Read the current Claude Code legal and compliance documentation, and the terms for your plan.
+2. Check specifically: automated headless use (`claude -p`) through a personal app on a `claude.ai` subscription login, many concurrent sessions, and any difference between subscription and API-key auth.
+3. Record the outcome in `docs/spikes/terms-of-use.md`: date, pages read, auth method, your decision.
+
+**Pass:** you are satisfied it's allowed under your auth setup. **Fail:** either move to API-key billing (a cost decision) or rethink the design. I can gather the pages, but I can't decide this for you.
+
+**Related limit:** you're on Pro. Design-phase runs cost $1.30–$1.60 each in API-equivalent terms, so a coordinator plus several slices may hit plan limits quickly. See risk R1.
+
+### S1. Driver crate and fixtures (agent)
+
+**Gates:** `SessionDriver`, and every fixture-based test. **Candidates:** `claude-agent-sdk-rs` 0.6.4 and `rusty_claw` 0.1.0. Both are on crates.io.
+
+**Procedure.** `spikes/driver/` holds one two-session program per crate, run in a scratch repo:
+
+| Check | Test | Pass |
+| --- | --- | --- |
+| A Multi-session | Two sessions, different prompts, concurrently | No event crosses sessions; each finishes |
+| B Interrupt | Interrupt during `sleep 60` | Turn stops within 5 s; the same session takes another prompt |
+| C Concurrent permissions | Manual mode, two pending requests; hold one 60 s, answer the other at once | The second proceeds while the first is held; both finish |
+| D Mode switch | auto → acceptEdits → manual over the control protocol | Behaviour changes, with no restart |
+| E Flag passthrough | `--settings`, `--mcp-config`, `--append-system-prompt-file`, `--worktree`, `--session-id`, `--name`, `--include-partial-messages`, `--permission-prompt-tool stdio`, env vars | All reach the process |
+| F Streaming | Text deltas during a reply | Deltas arrive before the final message |
+| G Resume | Exit, resume by id, including inside a worktree | Context kept; returns to the worktree |
+| H Tolerance | `system/task_*`, `tool_result_meta`, unknown event types | No crash; raw JSON reachable |
+| I Cost | `cargo tree` count, added binary size, app RSS | Recorded |
+
+Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
+- `permissionMode: auto` in init on your Pro plan. Spike 3 notes auto needs a supported model.
+- Double `result` with a background subagent.
+- `--session-id` sets the id, so Dovetail can choose ids instead of parsing them.
+- Whether `result.modelUsage` reports the context window (needed for M13).
+
+`--permission-prompt-tool` no longer appears in `--help`, but the flag is still accepted. Confirm it behaves as Spike 3 recorded, and note the new `--permission-prompts` flag (default `host`).
+
+**Decision rule:** take the first crate passing A–H; on a tie, take fewer dependencies. **Fallback:** a hand-written NDJSON layer, preferred over the SDK sidecar because a Node or Python process costs memory on every session.
+
+**Output:** sanitised fixtures in `crates/dovetail-driver/tests/fixtures/`: `plain_turn`, `partial_stream`, `subagent_background`, `double_result`, `concurrent_permissions`, `todo_tools`, `resume`.
+
+### S2. Inbound messaging (agent)
+
+**Why it matters more than the digest says.** The digest gates only the timeline. But if an idle slice doesn't wake on `SendMessage`, the coordinator can't direct slices, so this also gates self-hosting.
+
+**Procedure.** Scratch repo, sessions A and B, both with `crossSessionInbound: "accept"` and `--name`. A stays idle with stdin open.
+1. B calls `ListAgents`, then `SendMessage` to A. Capture both raw streams.
+2. Repeat while A is mid-turn.
+3. Repeat with `--replay-user-messages`.
+
+| Question | Pass | Fallback |
+| --- | --- | --- |
+| a. Does A's stream show the inbound message? | Yes, with sender identifiable | Timeline from the sender side only |
+| b. Does an idle A take a turn with no stdin input? | Yes | **Dovetail relays:** on a `SendMessage` tool call in the sender's stream, the core writes the text to the target's stdin |
+| c. Is it delivered mid-turn? | Delivered, order recorded | Record the behaviour; no action needed |
+| d. Does `--name` set the name shown by `ListAgents`? | Yes | Tell the coordinator session names in its prompt |
+
+### S3. MCP behaviour (agent)
+
+**Gates:** `ask_user` semantics. Long tool holds are not in the digest's spike list, but `blocking: true` depends on them. **Procedure:** `spikes/mcp/` has a toy stdio server with `ping(hold_seconds)`.
+
+| Test | Pass | Fallback |
+| --- | --- | --- |
+| Hold a call 15 min in a main session | Returns normally, or a documented setting allows it | Bounded hold: return "pending", deliver the answer as a user message |
+| Call from a foreground subagent | Works | Route through the parent |
+| Call from a background subagent | Works | Route through the parent; remove the tools from any subagent guidance |
+| Can the server tell which agent called? | Via `_meta` or by stream correlation | Attribute to the parent session |
+
+### S4. cgroup enforcement (you)
+
+`scripts/bootstrap.sh` already passed the launch check, but that only proves a scope starts. It doesn't prove a cap is enforced. I'll supply `spikes/cgroup/run.sh`; run it and paste the output.
+
+| Check | Pass |
+| --- | --- |
+| A memory eater under `MemoryMax=200M`, `MemorySwapMax=0` | Killed; `memory.events` shows `oom_kill` ≥ 1 |
+| A forked child over the cap | Counted against the cap; record whether the parent dies too |
+| Piped stdin and stdout through `systemd-run --user --scope` | NDJSON passes unchanged |
+| PID and exit status | The child's status is visible to the caller |
+| Launch overhead | Under 200 ms |
+| Scope cleanup | No scope left after exit |
+
+**Fallback:** `MemoryHigh` throttling or `prlimit`; failing that, ship memory display only and warn.
+
+### S5. merman (agent, plus your eye)
+
+**Procedure.** `spikes/merman/` renders a 30-node flowchart with two nesting levels and one style per node kind to PNG, using merman 0.9.3.
+
+| Measure | Pass |
+| --- | --- |
+| Full render | ≤ 1 s |
+| Re-render with a selection change | ≤ 300 ms, or an overlay image solves it |
+| Peak added RSS | ≤ 150 MB |
+| Node positions | All 30 recovered from the API or SVG, within 5 px |
+| Look in kitty | **Your judgement**, with the nine styles visibly distinct |
+
+**Fallback:** elkjs in QuickJS behind `MapRenderer`. Swimlanes aren't affected, since Dovetail lays those out itself.
+
+### S6. `ask_user` role prompt (agent runs, you review)
+
+**Procedure.** During M9, run three trials each of two slices in a scratch repo: one with tool descriptions only, one with the role prompt. Give a task that can't finish without a missing value. **Pass:** the role-prompt slice calls `ask_user` in 3 of 3 runs instead of ending its turn with a question. **Fallback:** stronger wording, or a skill.
+
+---
+
+## 2. Crate layout and dependencies
+
+```
+crates/
+├── dovetail-api/      # plain data: Snapshot, Event, Command, apply(); serde only
+├── dovetail-driver/   # SessionDriver, ClaudeDriver, FakeDriver, fixtures
+├── dovetail-core/     # sessions, storage, worktrees, socket server, MCP tool handlers
+├── dovetail-mock/     # MockCore: same API, seeded, time-free in tests
+├── dovetail-tui/      # buffers, regions, keymap, theme, render; depends only on dovetail-api
+├── dovetail-maps/     # map model, validation, MapRenderer (added at M15)
+└── dovetail/          # binary: TUI (default), add, mcp, hook
+```
+
+Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary.
+
+Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, since nested packages otherwise fail, and add `spikes/*/target` to `.gitignore`.
+
+| Dependency | Used in | Features | Reason |
+| --- | --- | --- | --- |
+| `serde`, `serde_json` | api, driver, core | `derive` | Plain-data API, NDJSON, MCP |
+| `ratatui` 0.30 | tui | default | Required |
+| `crossterm` 0.29 | tui | default | Required; no kitty keyboard protocol |
+| `nucleo` 0.5 | tui | default | Fuzzy picker (required) |
+| `pulldown-cmark` 0.13 | tui | no default features | Markdown (required) |
+| `tokio` | driver, core | `rt-multi-thread`, `process`, `io-util`, `net`, `sync`, `time`, `macros` | Process and socket IO, core only |
+| `rusqlite` 0.41 | core | `bundled` (FTS5 included) | Required |
+| `rusqlite_migration` | core | none | Small migration layer; check it supports this `rusqlite` version |
+| `toml` | core | default | Recipe and `config.toml` |
+| `thiserror`, `anyhow` | libraries, binary | none | Required by conventions |
+| `tracing`, `tracing-subscriber`, `tracing-appender` | core, tui, binary | `fmt`, `env-filter` | File logging only |
+| `jiff` | core, tui | default | Local-time display with no unsafe of ours |
+| `uuid` | core | `v4` | Choose session ids |
+| `notify` (latest stable, not the 9 rc) | core | default | Watch native task files (M11) |
+| `claude-agent-sdk-rs` or `rusty_claw` | driver | decided by S1 | Decision 4a |
+| `merman` | maps | PNG/SVG only | Decision 23c, pending S5 |
+| `ratatui-image` (latest stable) | tui, M15 only | `crossterm` | kitty graphics |
+| `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
+
+**Deliberately not added**
+- `clap`: four subcommands are parsed by hand.
+- `rmcp`: `dovetail mcp` is a small synchronous JSON-RPC loop using only the standard library and `serde_json`. One bridge runs per session, so its memory matters, and three tools don't justify a framework.
+- `dirs`: XDG paths are ten lines.
+- `rand`: `MockCore` uses a small seeded generator.
+- `async-trait`: the driver's methods are synchronous enqueues.
+
+---
+
+## 3. Core API sketch
+
+The UI thread has no tokio. It blocks on one `std::sync::mpsc` channel fed by a terminal input thread and a core forwarder, using `recv_timeout` only when a real deadline is pending (a key-sequence timeout, or the 33 ms coalescing window). No idle ticks.
+
+```rust
+// crates/dovetail-api/src/lib.rs (fields abbreviated; every public type gets a doc comment)
+pub const PROTOCOL_VERSION: u32 = 1;
+
+pub struct Snapshot {
+    pub seq: u64,
+    pub now_ms: i64,
+    pub project: Option<ProjectSummary>,
+    pub projects: Vec<ProjectSummary>,
+    pub tasks: Vec<Task>,
+    pub agents: Vec<Agent>,
+    pub todos: Vec<TodoItem>,
+    pub inbox: Vec<InboxItem>,
+    pub activity: Vec<ActivityItem>, // bounded tail
+    pub messages: Vec<AgentMessage>, // bounded tail
+    pub conversations: HashMap<AgentId, ConversationTail>, // tails only
+    pub totals: Totals,              // memory, needs-you count
+    pub warnings: Vec<Warning>,      // status-bar warnings
+}
+
+pub struct Task {
+    pub id: TaskId, pub title: String, pub status: TaskStatus,
+    pub priority: Option<PLevel>, pub bucket: Option<Bucket>, pub order: i64,
+    pub deps: Vec<TaskId>, pub notes: String, pub pr: Option<u32>,
+    pub follow_up_of: Option<TaskId>, pub coordinator_created: bool,
+}
+
+pub struct Agent {
+    pub id: AgentId, pub name: String,
+    pub kind: AgentKind,             // Session | Subagent { background: bool }
+    pub role: Role,                  // Coordinator | Slice | Subagent
+    pub parent: Option<AgentId>, pub task: Option<TaskId>,
+    pub worktree: Option<WorktreeRef>,
+    pub status: AgentStatus,         // SettingUp | Working | Idle | NeedsYou | Done | Error
+    pub status_line: String,
+    pub memory_mb: Option<u32>, pub cost_usd: f64,
+    pub permission_mode: PermissionMode,
+    pub context_pct: Option<u8>,
+    pub progress: Option<SubagentProgress>, // background subagents only
+    pub last_activity_ms: i64,
+    pub lock: SessionLock,           // Headless | TakenOver
+}
+
+pub enum InboxKind {
+    Permission { tool: String, input: serde_json::Value, reason: Option<String>,
+                 suggestions: Vec<RuleSuggestion> },
+    Question { text: String, blocking: bool },
+    FinishedTurn { preview: String },
+    Error { text: String },
+}
+
+pub enum Event {
+    TaskUpserted(Task), TaskRemoved(TaskId),
+    AgentUpserted(Agent), AgentRemoved(AgentId),
+    TodosReplaced { list: TodoListId, items: Vec<TodoItem> },
+    InboxAdded(InboxItem), InboxResolved { id: InboxId },
+    ActivityAdded(ActivityItem), MessageAdded(AgentMessage),
+    ConversationAppended { agent: AgentId, entry: ConversationEntry },
+    AssistantDelta { agent: AgentId, entry: EntryId, text: String },
+    ConversationPage { agent: AgentId, entries: Vec<ConversationEntry>, has_more: bool },
+    TotalsChanged(Totals), WarningSet(Warning), WarningCleared(WarningId),
+    CommandFailed { message: String },
+}
+
+pub enum Command {
+    SendMessage { agent: AgentId, text: String },
+    Interrupt { agent: AgentId },
+    AnswerPermission { item: InboxId, answer: PermissionAnswer },
+    AnswerQuestion { item: InboxId, text: String },
+    DismissInbox { item: InboxId },
+    CyclePermissionMode { agent: AgentId },
+    NewSlice { task: Option<TaskId>, name: String, brief: String },
+    CloseSlice { agent: AgentId },
+    TakeOver { agent: AgentId },
+    CreateTask(NewTask), UpdateTask { id: TaskId, patch: TaskPatch },
+    ArchiveTask { id: TaskId }, ReorderTask { id: TaskId, delta: i32 },
+    RemoveWorktree { agent: AgentId, confirmed: bool },
+    OpenProject { id: ProjectId }, RegisterProject { path: PathBuf },
+    LoadConversation { agent: AgentId, before: Option<EntryId> },
+    Resync, Quit { end_sessions: bool },
+}
+
+pub enum ServerMsg { Hello { protocol: u32 }, Snapshot(Snapshot), Event { seq: u64, event: Event } }
+
+/// Pure: the only way client state changes. Shared by the UI, MockCore and tests.
+pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult; // Applied | Gap
+```
+
+**How it survives the daemon split**
+- All types are plain serde data with no channels, handles or `Arc`.
+- v1 sends `ServerMsg` over in-process channels. A daemon sends the same values as NDJSON over a unix socket, with only the transport changing.
+- Every event carries `seq`. On `Gap`, the client sends `Resync` and receives a new `Snapshot`, so a reconnect needs no new logic.
+- Snapshots carry conversation tails only. Older history comes through `LoadConversation`, so a remote client stays cheap.
+- `Action` (keys) is UI-local. Actions become `Command`s or local view changes, and no key logic crosses the boundary.
+
+`MockCore` implements the same `CoreLink` as the real core and is selected with `dovetail --mock`, kept permanently for demos and snapshot tests. With a fixed seed and an injected clock, its output is deterministic.
+
+---
+
+## 4. `SessionDriver`, fake driver and event mapping
+
+```rust
+// crates/dovetail-driver/src/lib.rs
+pub trait SessionDriver: Send + Sync + 'static {
+    fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError>;
+}
+
+/// Methods only enqueue, so a held permission can never block anything else.
+pub trait Session: Send {
+    fn send(&self, input: UserInput) -> Result<(), DriverError>;
+    fn interrupt(&self) -> Result<(), DriverError>;
+    fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), DriverError>;
+    fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError>;
+    fn take_events(&mut self) -> tokio::sync::mpsc::UnboundedReceiver<DriverEvent>;
+    fn shutdown(&self, grace: Duration);
+}
+
+pub struct SessionSpec {
+    pub session_id: Uuid, pub resume: bool, pub name: String, pub cwd: PathBuf,
+    pub worktree: Option<String>, pub settings_path: PathBuf, pub mcp_config_path: PathBuf,
+    pub role_prompt_path: PathBuf, pub permission_mode: PermissionMode,
+    pub task_list_id: String, pub memory_max_mb: Option<u32>, pub model: Option<String>,
+}
+```
+
+**Launch flags (`SessionSpec` → argv)**
+
+`claude -p --input-format stream-json --output-format stream-json --verbose --include-partial-messages --permission-prompt-tool stdio --permission-mode auto --session-id <uuid> --name <name> --settings <file> --mcp-config <file> --append-system-prompt-file <role> [--worktree <slice>]`
+
+Environment: `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, `CLAUDE_CODE_TASK_LIST_ID=<list id>`. M13 prefixes the command with `systemd-run --user --scope`.
+
+Generated `--settings` and `--mcp-config` files go in `~/.local/state/dovetail/run/<agent-id>/`, never in a repo.
+
+**`FakeDriver`** replays a fixture with optional scripted delays, checks the commands it receives, and can pause at a marker so tests can interleave answers. It covers subagent routing, double `result` and concurrent permissions with no network.
+
+| Stream input | `DriverEvent` | Core → API |
+| --- | --- | --- |
+| `system/init` | `Init { mode, model, session_id }` | Agent update; `Warning` if not `auto`, then run as manual |
+| `stream_event` text delta | `TextDelta` | `AssistantDelta` (coalesced ≤ 30 fps) |
+| `assistant` text | `AssistantText` | `ConversationAppended`, stored |
+| `assistant` tool use | `ToolUse` | Folded tool entry; `SendMessage` also gives `MessageAdded` |
+| Any event with `parent_tool_use_id` | Same event, tagged `parent` | Routed to that subagent's node |
+| `system/task_*`, `background_tasks_changed` | `SubagentTask` | Agent upsert: progress, usage, summary, output file |
+| `control_request` `can_use_tool` | `PermissionRequest` | `InboxAdded(Permission)`, `agent_id` attributes it |
+| `system/permission_check_status` | Ignored | Nothing |
+| `result` | `TurnResult` | Usage and cost; a `FinishedTurn` only if no background tasks remain |
+| Process exit | `Exited { status }` | `Done`, or `Error` inbox item; OOM detected at M13 |
+| Unknown type | `Unknown(raw)` | Logged, never fatal |
+
+Session state is an explicit machine in `dovetail-core/src/session/state.rs`. It's done only when the process exits or all background tasks have reported, never on the first `result`.
+
+---
+
+## 5. Storage schema
+
+`registry.db` plus a `state.db` per project. Each is served by the single DB thread through typed requests. WAL on. Migrations are forward-only and start from empty.
+
+```sql
+-- registry.db
+CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT NOT NULL,
+  git_common_dir TEXT NOT NULL UNIQUE, last_opened_ms INTEGER);
+
+-- state.db
+CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
+  priority INTEGER, bucket TEXT, sort_order INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
+  pr INTEGER, follow_up_of INTEGER REFERENCES tasks(id),
+  coordinator_created INTEGER NOT NULL DEFAULT 0, created_ms INTEGER, updated_ms INTEGER);
+CREATE TABLE task_deps (task_id INTEGER, depends_on INTEGER, PRIMARY KEY(task_id, depends_on));
+
+CREATE TABLE agents (id TEXT PRIMARY KEY, kind TEXT, role TEXT, name TEXT, parent_id TEXT,
+  task_id INTEGER REFERENCES tasks(id), session_id TEXT, transcript_path TEXT, task_list_id TEXT,
+  worktree_path TEXT, branch TEXT, setup_state TEXT, status TEXT, status_line TEXT,
+  permission_mode TEXT, cost_usd REAL DEFAULT 0, tool_use_id TEXT, output_file TEXT,
+  created_ms INTEGER, last_activity_ms INTEGER, closed_ms INTEGER);
+
+CREATE TABLE todo_items (list_id TEXT, item_id TEXT, agent_id TEXT, PRIMARY KEY(list_id, item_id));
+
+CREATE TABLE inbox_items (id INTEGER PRIMARY KEY, agent_id TEXT, kind TEXT, payload TEXT,
+  blocking INTEGER DEFAULT 0, created_ms INTEGER, resolved_ms INTEGER, answer TEXT);
+
+CREATE TABLE activity (id INTEGER PRIMARY KEY, at_ms INTEGER, kind TEXT, agent_id TEXT, text TEXT);
+
+CREATE TABLE messages (id INTEGER PRIMARY KEY, at_ms INTEGER, from_agent TEXT, to_agent TEXT,
+  text TEXT, direction TEXT);
+
+-- Conversation text only, never tool output (Decision 20); tool activity stored as summaries
+CREATE TABLE conversation_entries (id INTEGER PRIMARY KEY, agent_id TEXT, turn INTEGER,
+  at_ms INTEGER, kind TEXT, text TEXT);
+CREATE INDEX conversation_by_agent ON conversation_entries(agent_id, id);
+
+-- Added at M15
+CREATE TABLE maps (id TEXT PRIMARY KEY, task_id INTEGER, title TEXT, type TEXT, current_version INTEGER);
+CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms INTEGER,
+  PRIMARY KEY(map_id, version));
+```
+
+**Migrations**
+- M5 `0001_init`: `tasks`, `task_deps`
+- M6 `0002_agents_conversation`
+- M7 `0003_inbox_activity`
+- M11 `0004_todos`
+- M15 `0005_maps`
+
+Tables arrive with the milestone that uses them, so no unused tables sit around.
+
+**Left for v1.1**
+- `claims (pr, agent_id, ...)`
+- `decisions`, or moving `tasks.notes` into `tasks/<id>.md` (Decision 19c)
+- An FTS5 `search_index`, backfilled from `conversation_entries`, `inbox_items`, `messages` and notes
+- `journal_days`
+- Map comments
+
+**Why `conversation_entries` is in v1.** Restoring a conversation needs its text. Decision 20 already allows storing conversation text, and this avoids depending on the undocumented transcript format. `transcript_path` is still recorded for take-over and deep search.
+
+---
+
+## 6. Milestones
+
+Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` passing, plus a "how to try it" summary. Then I stop and wait for you.
+
+### M1. Workspace, API, mock core
+- **Spikes needed:** S1–S3 (event shapes)
+- **Scope:** create all crates except maps. `dovetail-api` types and `apply()`. `MockCore` generating status changes, streaming markdown replies, inbox items and subagents. `dovetail --mock --dump` prints events, with no UI yet.
+- **Files:** root `Cargo.toml`, `.gitignore`, `crates/dovetail-api/`, `crates/dovetail-mock/`, `crates/dovetail/src/main.rs`, README status and layout sections
+- **Done when:**
+  - [ ] Workspace builds with all crates
+  - [ ] `dovetail --mock --dump` shows a believable, seeded event stream
+  - [ ] `dovetail-tui` has no dependency on tokio or core
+- **Tests:** `apply()` for every event, gap detection, serde round-trip, mock determinism
+
+### M2. TUI shell: layout, keymap, tree, inbox
+- **Scope:** terminal setup and panic hook; event loop with dirty flag; Layout B; `Region` and `Buffer` abstractions; Normal mode; keymap table with sequences and timeouts; `Action` enum; theme struct; status bar. Task tree with grouping (Unsorted, Now, Next, Later, Done), P-levels, mismatch marker and tree keys. Inbox with preview and keys `y A d D r x Enter`.
+- **Files:** `crates/dovetail-tui/src/{app,event_loop,keymap,action,theme,region}.rs`, `buffers/{tree,inbox}.rs`, `crates/dovetail/src/main.rs`
+- **Done when:**
+  - [ ] `dovetail --mock` opens Layout B with live updates and quits cleanly with `:q`
+  - [ ] Terminal is restored on exit and on panic
+  - [ ] CPU is idle when nothing changes
+  - [ ] Inbox actions change state through `Command`s
+- **Tests:** mode machine, keymap (`gg`, `dd`, `]]`, `<leader>ss`, timeouts, ambiguity), tree grouping and sorting, snapshot of Layout B
+
+### M3. Conversation and reading
+- **Scope:** conversation buffer with the readability rules built in from the start: 120-column centred column, spacing, styled and coloured markdown, off-white body, folded tool lines, hidden thinking, truncation with "show more", `j k gg G ]] [[ zc zo`, solid-background toggle. Insert mode with multiline input. Agent switching, `<leader>c`, `<leader><Tab>`.
+- **Files:** `buffers/conversation.rs`, `render/{markdown,reading_column}.rs`, `input.rs`
+- **Done when:**
+  - [ ] You can read a streamed mock reply comfortably in kitty and approve the theme
+  - [ ] Streaming redraws stay at or below 30 fps
+  - [ ] `Enter`, `Ctrl-j`, `Alt-Enter`, `Ctrl-w`, `Ctrl-u` work
+- **Tests:** markdown spans, spacing, wrapping, snapshots at 80, 120 and 200 columns
+
+### M4. Command mode, picker, switcher, quick capture
+- **Scope:** Command mode (`:q`, `:spawn`, `:interrupt`, plus aliases for actions). One picker component using `nucleo`, used for `<leader>ss` and `<leader><leader>`. Quick capture with its token parser, link display and `Ctrl-l`. Task detail buffer. Permission-mode cycle and badge. Context-fill display from mock values. In-buffer `/ n N`. Activity and message timeline buffers.
+- **Files:** `command.rs`, `picker.rs`, `capture.rs`, `buffers/{task_detail,activity,messages}.rs`
+- **Done when:**
+  - [ ] **The TUI is usable on the mock with no Claude Code**: every self-hosting flow can be walked by keyboard
+  - [ ] `<leader>ss` opens instantly with preview, and needs-you agents sort first
+- **Tests:** capture parser, picker ordering, permission cycle, snapshots of overlays
+
+### M5. Storage, projects and a real task tracker
+- **Scope:** DB thread, typed requests, migrations. `dovetail-core` with `CoreLink`. Project identity from `git rev-parse --path-format=absolute --git-common-dir`. Project registration. Recipe reader for `~/.config/dovetail/projects/<id>.toml`. `config.toml`. Unix socket at `$XDG_RUNTIME_DIR/dovetail/<project-id>.sock`. `dovetail add`.
+- **Files:** `crates/dovetail-core/src/{lib,db/,projects,recipe,config,paths,socket}.rs`, `crates/dovetail/src/{main,add}.rs`, `config/projects/dovetail.toml`, `scripts/bootstrap.sh`
+- **Done when:**
+  - [ ] `dovetail` in a registered repo shows persistent tasks with no sessions
+  - [ ] Tasks survive restart
+  - [ ] `dovetail add "x !p1 @now"` appears live if the app is running, or on next open if not
+  - [ ] Recipe format is final and bootstrap matches it
+- **Tests:** migrations from empty, typed requests, project identity from a worktree, recipe parsing, `add` both ways
+
+### M6. Driver and one coordinator session
+- **Spikes needed:** S0, S1
+- **Scope:** `ClaudeDriver`, `FakeDriver`, the session state machine, launch settings, coordinator in the main checkout, streaming chat, interrupt, finished-turn inbox items, stored conversation entries, `<leader>sx`, messaging-blocker warnings.
+- **Files:** `crates/dovetail-driver/src/{lib,claude,fake,events}.rs`, `crates/dovetail-core/src/session/{mod,state,launch}.rs`
+- **Done when:**
+  - [ ] Real streaming chat with a coordinator in a scratch repo
+  - [ ] Interrupt works
+  - [ ] Non-`auto` init shows a warning
+  - [ ] Child processes are always reaped
+- **Tests:** fixtures for plain turn, double `result`, partial stream; live test behind `DOVETAIL_LIVE_TESTS=1`
+
+### M7. Live permissions
+- **Scope:** `can_use_tool` to inbox and back, concurrent answers, `y A d D`, rule suggestions for always-allow, `<leader>sm` over the control protocol, `permission_denials` surfaced, activity feed from real events.
+- **Files:** `crates/dovetail-core/src/{inbox,permissions}.rs`
+- **Done when:**
+  - [ ] In manual mode, a real request is answered from the inbox
+  - [ ] One held request never blocks another
+  - [ ] Mode changes with no restart, and the badge follows
+- **Tests:** `concurrent_permissions` fixture, always-allow payloads, mode mapping (`manual`)
+
+### M8. Slices, worktree hooks, cleanup
+- **Spikes needed:** S2 (messaging, or relay)
+- **Scope:** `dovetail hook worktree-create` (idempotent; symlinks only; recipe setup; prints the path). `SettingUp` state in the tree. `<leader>sn` and `:spawn`. Slice brief from task plus your text. First prompt sent after init. Worktree removal: check for uncommitted or unpushed work, ask, remove our files, `git worktree remove`, delete the `dovetail/*` branch. Message timeline, or relay, per S2. Archive flow with `dd`.
+- **Files:** `crates/dovetail-core/src/{worktree,slice,messaging}.rs`, `crates/dovetail/src/hook.rs`
+- **Done when:**
+  - [ ] A real slice starts in a hook-created worktree outside the repo
+  - [ ] Failed setup means no first prompt, and an inbox error
+  - [ ] Coordinator and slice exchange messages in a scratch repo
+  - [ ] Archiving removes everything, after asking when work is unpushed
+  - [ ] Only branches appear in the repo
+- **Tests:** hook idempotence, cleanup against real temp git repos, dirty and unpushed detection
+
+### M9. MCP bridge, `ask_user`, `report_status`, role prompts
+- **Spikes needed:** S3; S6 runs here
+- **Scope:** `dovetail mcp` as a synchronous stdio server, forwarding to the app socket with its agent id. Tool handlers in core. Question inbox items with blocked flag, sorted first. `r` reply. Role prompts passed at launch.
+- **Role prompt fix:** `config/roles/coordinator.md` tells the coordinator to call `draw_map`, which won't exist until M15. Remove that line now and restore it at M15. Then run `scripts/bootstrap.sh --force`, because your installed copy from the earlier run has the old text.
+- **Files:** `crates/dovetail/src/mcp.rs`, `crates/dovetail-core/src/tools/{mod,ask_user,report_status}.rs`, `config/roles/*.md`
+- **Done when:**
+  - [ ] A blocking `ask_user` reaches the inbox and your reply unblocks the tool
+  - [ ] Status lines appear in the tree
+  - [ ] App exit gives the agent a clear error, not a hang
+  - [ ] S6 recorded
+- **Tests:** MCP protocol, tool schemas, socket forwarding, blocking and non-blocking
+
+### M10. Resume, stable install, rehearsal — **SELF-HOSTING POINT**
+- **Scope:** restore on open (coordinator immediately, slices on first touch). Pending inbox items reconciled after restart. A stale-state sweep for agents and worktrees. Stable install (`cargo install --path crates/dovetail --root ~/.local`), with hook and MCP paths using the installed path, not `target/`. `docs/self-hosting.md` covering the daily flow, upgrades and recovery.
+- **Done when:**
+  - [ ] **Rehearsal in a scratch repo:** from the installed binary, chat with the coordinator, start two slices, answer one permission and one `ask_user`, have a slice commit, quit, reopen, carry on in the same conversations
+  - [ ] Killing the app mid-turn loses no state, and the next open recovers
+  - [ ] Rebuilding `target/` can't break running sessions
+  - [ ] Then repeated once on this repo, with your OK
+- **Tests:** restore logic with `FakeDriver`, inbox reconciliation, kill and reopen
+
+**From this point:** work runs inside Dovetail, using the installed release. Slices keep their own worktrees, and you still approve each milestone before the next starts. Dev builds in a slice must set separate `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `XDG_RUNTIME_DIR`, never touching your live state. If Dovetail breaks, plain `claude` in the repo still works, since everything is ordinary git.
+
+### M11. Subagents and to-do lists
+- **Scope:** subagents as tree nodes from `parent_tool_use_id` and `task_*`, progress, cost, unchanged subagent worktree removal, native list reading with reread on parse error, item-to-agent mapping, lists deleted on archive.
+- **Slices:** (a) subagent routing and nodes; (b) task-file watcher and attribution.
+- **Done when:**
+  - [ ] Background subagent shows progress, summary and cost
+  - [ ] To-do items sit under the agent that created them
+  - [ ] Totals come from task events
+- **Tests:** `subagent_background`, `todo_tools`, mid-write JSON parse error
+
+### M12. Board and worktree view
+- **Scope:** `<leader>b` board with `j k H L < > a s Enter`. `<leader>g` worktree view with sync state, changes, PR, setup, `Enter e c X`. nvim hand-off with TUI suspend.
+- **Slices:** (a) board; (b) worktree data in core; (c) worktree buffer, after (b).
+- **Done when:**
+  - [ ] Both are reachable as buffers in the main region
+  - [ ] `X` asks first if work is unpushed
+  - [ ] `e` opens nvim and returns cleanly
+- **Tests:** snapshots, git status parsing in temp repos
+
+### M13. Memory caps and context fill
+- **Spikes needed:** S4
+- **Scope:** `systemd-run` launch, caps from config, memory per session and total, OOM detection into a Needs-you error, automatic restart from the session id with in-flight subagent work listed. Real context fill with amber and red.
+- **Slices:** (a) caps and memory display; (b) OOM recovery, after (a); (c) context fill.
+- **Done when:**
+  - [ ] A forced OOM kills one session only and recovers
+  - [ ] Status bar shows total memory and coordinator `ctx`
+  - [ ] Missing cgroup support gives a warning, not a failure
+- **Tests:** `memory.events` parsing with fixtures, context calculation
+
+### M14. Take-over
+- **Scope:** `<leader>st` stops the headless process, suspends the TUI, runs native `claude --resume <id>` in the same terminal with the same settings and MCP config, then resumes headless on exit. Session lock. Note in the conversation that native turns happened.
+- **Slices:** one slice; touches session lifecycle.
+- **Done when:**
+  - [ ] Round trip works from a real slice in its worktree
+  - [ ] Headless can't start while locked, including after a crash
+  - [ ] Exiting native never removes a worktree
+- **Tests:** lock state machine, crash recovery of the lock
+
+### M15. Maps stage 1
+- **Spikes needed:** S5
+- **Scope:** `dovetail-maps`: model, nine kinds, `draw_map` validation with specific errors, `MapRenderer`, Mermaid conversion, swimlane grid layout. kitty canvas with node selection, flows, pan and zoom. Outline beside it and as the fallback. Map shelf. MAP mode with mouse only there. Restore the `draw_map` line in the coordinator prompt.
+- **Slices:** (a) model and validation; (b) tool and storage, after (a); (c) merman renderer, after (a); (d) swimlane layout, after (a); (e) outline, after (b); (f) canvas and MAP mode, after (c) and (e).
+- **Done when:**
+  - [ ] A real agent draws both map types
+  - [ ] Works in kitty; outline works elsewhere
+  - [ ] Mouse capture is on only in MAP mode
+- **Tests:** `draw_map` validation, Mermaid output snapshots, grid layout, hit-testing
+
+### M16. Hardening and daily-driver polish
+- **Scope:** a real week's use, fixing what hurts. Long-session performance and memory. Startup warnings. README and docs brought up to date.
+- **Slices:** one per defect or theme, decided from real use.
+- **Done when:**
+  - [ ] You use it for a full working week on a real project in place of tmux
+  - [ ] Every item in the digest's v1 roadmap is shipped, or listed by you as cut
+  - [ ] App RSS under 100 MB after a day's use (proposed target)
+
+---
+
+## 7. Where the docs disagree or say nothing
+
+`AGENTS.md` says to stop and ask on these, so nothing here is assumed settled. I'll apply each default unless you change it. **Your call** marks UX or scope choices, where your answer matters most.
+
+### A. Docs disagree
+
+| # | Issue | Proposed default |
+| --- | --- | --- |
+| A1 **Your call** | **Focus mode:** v1 in README and the UI brief; v1.1 in the roadmaps and `screens/README.md` | v1.1, following `design.md`. Only the solid-background toggle ships in v1 |
+| A2 **Your call** | **`create_task`:** in v1 roadmaps under quick capture; v1.1 in Decision 25 and both tool tables | v1.1, following Decision 25 |
+| A3 | **Board and worktree view:** v1 in README and screens; missing from both v1 roadmap lists | v1 (M12) |
+| A4 **Your call** | **Task detail view:** v1.1 on the navigation screen, but quick capture's `Tab` (v1) and tree `Enter` need it | v1 with fields, notes and agents; decision log in v1.1 |
+| A5 | **Notes storage:** a `state.db` field in `design.md`, not in the digest's list, and `tasks/<id>.md` in Decision 19c (v1.1) | `tasks.notes` column in v1, migrated to files in v1.1 |
+| A6 | **Picker scope:** "sessions, inbox and messages" (design, README); "tasks, agents, inbox items" (brief) | Tasks, agents, inbox, plus maps from M15; messages stay in the timeline |
+| A7 | **Which-key:** Decision 10a locks it; roadmap says v1.1; the brief says only if it falls out naturally | v1.1. M2's pending-sequence state leaves room for it |
+| A8 | **Subagent source:** hooks and transcripts in the design's table and roadmap; `task_*` events in Decision 11 and the digest | Stream only (Spike 1 is newer); no `SubagentStart`/`SubagentStop` hooks |
+| A9 | **`WorktreeRemove`:** "handles removal" in places; Spike 4 says it doesn't fire in `-p` | Dovetail cleans up. Register a no-op hook so a native exit in take-over can't remove a worktree |
+| A10 | **Conversation storage:** "referenced, not copied" (5b); revised by Decision 20, whose search is v1.1 | Store conversation text from v1, add FTS in v1.1 |
+| A11 | **`i` target:** "from an open slice, that slice" (design); "coordinator, unless an agent is selected in the tree" (brief) | Brief's rule, plus: if the main region is showing an agent and has focus, target that agent |
+| A12 | **Task list id:** `<task id>` in the digest, but lists are global in `~/.claude/tasks/` and the coordinator has a project list | `dovetail-<project>-task-<id>`, and `dovetail-<project>-coordinator` |
+| A13 | **Spike 3's flag:** `--permission-prompt-tool stdio` is in `design.md` but not in the digest's launch list, and is now absent from `--help` | Use it; S1 confirms. `--verbose` and `--include-partial-messages` are in neither but required |
+| A14 | **Mock vs docs:** always-allow shown as `a`; canvas shows `hjkl` as pan; `c comment · e export` on the v1 canvas | Docs win: `A`; `hjkl` selects and `Ctrl-hjkl` pans; comments v1.1, export v2 |
+| A15 | **Stale text:** Decision 18 says "bottom-right" but the inbox is bottom-left; Visual Maps "Views" still mentions a text navigator; Decision 13 and 15–17 numbering repeats | Treat as stale: helper uses the inbox region; the version table wins; cite numbers as the digest does |
+| A16 | **Run rule:** "never run real sessions against real projects" vs self-hosting on this repo | Applies to development and tests. Self-hosting uses the installed release, and live tests stay in scratch repos |
+| A17 | **Memory reading:** "from `/proc`" in docs, but a process-level read misses a session's tools | Read cgroup `memory.current`, fall back to `/proc` PSS when uncapped |
+| A18 | **Machine size:** docs say 16 GB; this machine reports 30 GB | Keep 16 GB as the budget |
+| A19 | **Theme naming:** screens README says Twilight colours and Dusk as default; the navigation mock offers Iceberg, Catppuccin, Rosé Pine | Dusk as default theme struct values |
+
+### B. Docs say nothing
+
+| # | Gap | Proposed default |
+| --- | --- | --- |
+| B1 **Your call** | **Who starts slices?** No agent tool exists, yet the coordinator's prompt says to brief slices. This shapes the whole workflow | You start them (`<leader>sn` on a task; prompts for name and brief). The coordinator suggests, then messages the slice. Adding a tool would change Decision 25, so that's yours to choose |
+| B2 **Your call** | **`hjkl` vs lists** (the brief asks me to decide): how to move between tree and inbox when `j/k` move inside lists | `h/l` move between left and right. `j/k` move inside. `Ctrl-j/k` move between regions in the column. `<leader>n` jumps to the inbox. `Ctrl-hjkl` pan only in MAP mode |
+| B3 **Your call** | **Every finished turn in Needs you** may flood the inbox, especially from the coordinator you're watching | Keep Decision 7b, but one item per agent (newest replaces), auto-cleared when you open that agent. None while background tasks remain |
+| B4 **Your call** | **`needs_you` as task status:** set by hand or derived? | Derived from agents and inbox, never stored. `s` cycles todo → in progress → done; `<` `>` skip that column. Starting a slice moves a todo task to in progress |
+| B5 **Your call** | **Slice setup vs "hook must be fast":** the hook runs setup, but setup can take minutes and the mock shows a live timer | Hook runs setup once with a long hook timeout, recording state under `~/.local/state/dovetail/`; repeat starts return at once |
+| B6 **Your call** | **Map shelf and map key:** the mock puts a shelf in the left column; no doc gives it a region; map mode `s` (Decision 24) has no meaning anywhere | Shelf as a section under the task tree when maps exist; open via the picker or `:maps`. Leave `s` unbound in v1 and tell me if you recall what it was for |
+| B7 **Your call** | **Merging:** no flow exists for slice branches reaching `main` (`:merge` appears once, undefined) | No merge command in v1. Slices push a branch and open a PR; you merge. Then archive the task |
+| B8 **Your call** | **Memory cap values** | Coordinator 4 GB, slice 3 GB, in `config.toml`. Caps include tools, so `cargo build` counts; tune after M13 |
+| B9 | **Project id format** | Slug of the repo folder, numbered on collision. Matches the mock's path and bootstrap's `dovetail.toml` |
+| B10 | **Global config** | `~/.config/dovetail/config.toml`: reading width, caps, `claude` path, default model |
+| B11 | **Hook entry point:** `AGENTS.md` lists `mcp` and `add` only | Internal subcommand `dovetail hook worktree-create` |
+| B12 | **Subagent worktrees and setup** | Symlinks yes, setup no, to keep them fast. Branch `dovetail/agent-<id>` |
+| B13 | **Slice branch base** | Current `HEAD` of the main checkout; branch `dovetail/<slice>` |
+| B14 | **Done and archived tasks** | Collapsed `Done (n)` at the tree bottom, per the mock; archived hidden |
+| B15 | **Agent status for setup:** the mock shows `◌ setting up`; the data model has no such status | Add `SettingUp` |
+| B16 | **`ask_user` schema** | `{ question: string, blocking?: bool }`; blocking holds the call, non-blocking returns at once and the answer arrives as a user message |
+| B17 | **`report_status` schema** | `{ status: string }`, one line, truncated to 120 characters |
+| B18 | **Bridge identity** | Per-session MCP config passes `DOVETAIL_AGENT_ID` and the socket path by env |
+| B19 | **App closed with `dovetail add`** | Uses the socket if the app is running; otherwise writes directly to SQLite with its own migration check |
+| B20 | **`<leader>sm` on a subagent** | Applies to the parent session, with a status note |
+| B21 | **`A` with no suggestions** | Disabled, with a status note |
+| B22 | **`r` on a finished turn** | Sends a normal message to that agent |
+| B23 | **Quit with live sessions** | Sessions end with the app (no daemon in v1). `:q` asks if a turn is running; everything resumes on open |
+| B24 | **Project switch** | Stops the current project's sessions after asking |
+| B25 | **Starting outside a registered repo** | Offers to register; outside any git repo, opens the last project |
+| B26 | **Take-over terminal** | Same terminal, TUI suspended, as the mock shows |
+| B27 | **Key-sequence timeout** | 1000 ms |
+| B28 | **`--strict-mcp-config`** | Not used, so your own MCP servers still load |
+| B29 | **Context window source** | `result.modelUsage` if S1 finds it, else a model table in core |
+| B30 | **Socket path** | `$XDG_RUNTIME_DIR/dovetail/<project-id>.sock`, mode 0600 |
+
+---
+
+## 8. Risks
+
+| # | Risk | Plan |
+| --- | --- | --- |
+| R1 | **Pro plan limits** may stop several concurrent sessions, which could undercut self-hosting | Measure in M10's rehearsal. Prefer fewer slices; decide on plan or API billing with real data |
+| R2 | **The undocumented protocol** can change between Claude Code releases | Driver isolated, unknown events tolerated, fixtures re-captured on upgrade, supported version noted |
+| R3 | **A young driver crate** may lag behind | The trait isolates it; the hand-written fallback is small |
+| R4 | **Self-hosting can break its own tool** | Stable install, upgrades only when idle, separate dev state, forward-only migrations, plain `claude` as the way back |
+| R5 | **A replaced binary:** a rebuild under a running app breaks hook and MCP paths | Fixed install path; upgrades via restart (M10 test) |
+| R6 | **Shell writes aren't blocked** from slices into the main checkout (Spike 4) | Role prompt only in v1, as designed. Accepted risk, and it matters more while self-hosting |
+| R7 | **Untested auto-mode behaviour:** classifier denials and escalations | Handled generically via the inbox; fixtures added when first seen |
+| R8 | **Upgrades interrupt running turns**, since there's no daemon | Upgrade when idle; M10's restart recovery covers the rest |
+| R9 | **merman is pre-1.0** and may add real weight | S5 measures it; `dovetail-maps` isolates it |
+
+---
+
+## 9. Verification of this plan
+
+When saved, it's correct if:
+- [ ] `docs/implementation-plan.md` has all seven sections `AGENTS.md` requires
+- [ ] Every open spike in the digest has a procedure, pass and fail criteria, fallback and owner
+- [ ] The TUI is usable on the mock (M4) before any Claude Code integration (M6)
+- [ ] The self-hosting point (M10) covers everything in the `AGENTS.md` minimum
+- [ ] Every milestone leaves something you can run
+- [ ] Every later milestone names its slices
+
+**Next steps for you**
+1. Do S0, since nothing else can start until it's decided.
+2. Answer the items marked **Your call**, or accept the defaults.
+3. Give the OK for S1–S3.
