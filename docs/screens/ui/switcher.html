@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail session switcher</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:var(--body)}
+.box{position:relative;border:1px solid var(--line);padding:14px 12px 8px;box-sizing:border-box;min-height:0;display:flex;flex-direction:column}
+.box.f{border-color:var(--focus)}
+.bt{position:absolute;top:-11px;left:10px;padding:0 6px;background:var(--titlebg);color:var(--dim);white-space:pre}
+.box.f .bt{color:var(--focus)}
+.in{overflow:hidden;flex:1;min-height:0}
+.row{white-space:pre}
+.wrap{white-space:pre-wrap}
+.dim{color:var(--dim)}
+.wk{color:var(--wk)}.ny{color:var(--ny)}.ok{color:var(--ok)}.er{color:var(--er)}
+.sel{background:var(--sel)}
+.b{font-weight:700}
+.ghost{color:var(--dim);opacity:.45}
+a{color:var(--wk)}a:hover{color:var(--body)}
+</style>
+</head><body>
+<div class="t" style="width: 1200px; height: 760px; background: #15132a; display: flex; flex-direction: column; box-sizing: border-box; --bg: #15132a; --ink: #15132a; --float: #15132a; --titlebg: #15132a; --bar: #1e1b3a; --line: #4a4380; --focus: #ec8a7e; --body: #e6e3f0; --dim: #8f8aa8; --label: #ec8a7e; --bold: #fbf7ff; --italic: #c7a8ff; --code: #a9c4ff; --wk: #7aa7ff; --ny: #ffb86b; --ok: #8fd694; --er: #ff6b81; --sel: #2a2550; --mode: #f2c94c; --solid: #0c0b1a; position: relative">
+
+<div class="ghost" style="flex: 1; display: flex; gap: 12px; padding: 22px 14px 10px; min-height: 0">
+<div style="width: 460px; flex-shrink: 0; display: flex; flex-direction: column; gap: 24px">
+<div style="flex: 1.35; border: 1px solid var(--line); padding: 14px 12px">
+<div class="row">◐ ◆ coordinator            working 1.2G $3.10</div>
+<div class="row">▾ ◐ #1231 business surface         PR #1231</div>
+<div class="row">  ◐ ◆ slice-4              working  412M $1.84</div>
+<div class="row">      ⎇ dovetail/slice-4  ↑4 ●4</div>
+<div class="row">▾ ⚠ get_decision 500</div>
+<div class="row">  ⚠ ◆ slice-7            needs you 388M $0.92</div>
+</div>
+<div style="flex: 1; border: 1px solid var(--line); padding: 14px 12px">
+<div class="row">▸ ⚠ slice-7  Bash               10:15</div>
+<div class="row">  ? slice-4  Question           10:12</div>
+</div>
+</div>
+<div style="flex: 1; border: 1px solid var(--line); padding: 14px 12px">
+<div class="row">coordinator · 10:14</div>
+<div class="wrap">It needs FS_EVAL_VIRTUAL_KEY to reach the eval path.</div>
+</div>
+</div>
+
+<div style="position: absolute; left: 70px; top: 90px; width: 1060px; height: 540px; display: flex; gap: 12px; background: var(--float); padding: 14px; box-sizing: border-box; box-shadow: 0 0 0 1px var(--line)">
+
+<div style="width: 470px; flex-shrink: 0; display: flex; flex-direction: column; gap: 22px">
+<section class="box f" style="flex: 0 0 auto">
+<div class="bt"> switch </div>
+<div class="row"><span class="wk">›</span> <span class="wk">▌</span><span class="dim">                                    6/6</span></div>
+</section>
+<section class="box" style="flex: 1">
+<div class="bt"> agents · needs you first, then recent </div>
+<div class="in">
+<div class="row">  <span class="ny">⚠ ◆</span> slice-7        <span class="dim">dovetail/slice-7     2m</span></div>
+<div class="row">  <span class="wk">◐ ◆</span> coordinator    <span class="dim">main checkout       now</span></div>
+<div class="row sel"><span class="wk">▌ ◐ ◆</span> slice-4        <span class="dim">dovetail/slice-4    now</span></div>
+<div class="row">    <span class="wk">◐ ◇</span> └ explore callers  <span class="wk">▓▓▓░</span>  <span class="dim">1m</span></div>
+<div class="row">    <span class="ok">✓ ◇</span> └ rebase onto main       <span class="dim">6m</span></div>
+<div class="row">  <span class="wk">◌ ◆</span> slice-8        <span class="dim">dovetail/slice-8    setting up</span></div>
+</div>
+<div class="row dim" style="border-top: 1px solid var(--line); padding-top: 6px">type to filter · Ctrl-j/k move · ⏎ open · Esc close</div>
+</section>
+</div>
+
+<section class="box" style="flex: 1; min-width: 0">
+<div class="bt"> preview </div>
+<div class="in">
+<div class="row"><span class="wk">◐ ◆</span> <span class="b">slice-4</span> · #1231 business surface</div>
+<div class="row dim">  dovetail/slice-4 · 412 MB · $1.84 · to-dos 1/3</div>
+<div class="row"> </div>
+<div class="row dim">coordinator → slice-4 · 10:08</div>
+<div class="wrap">Stay out of decision.rs until slice-7 hands it back.</div>
+<div class="row"> </div>
+<div class="row dim">slice-4 · 10:09</div>
+<div class="wrap">Understood. Route tests pass; wiring the handler to the registry next.</div>
+<div class="row dim">  ▸ Edit src/handlers/business.rs  <span class="ok">+31</span> <span class="er">−4</span></div>
+<div class="row dim">  ▸ Write src/registry/business.rs  <span class="ok">+64</span></div>
+<div class="row"> </div>
+<div class="row dim">slice-4 · 10:12</div>
+<div class="wrap">Question: keep the /v1 route alias, or drop it now that the new routes exist?</div>
+</div>
+</section>
+
+</div>
+
+<div class="row" style="height: 24px; display: flex; align-items: center; background: var(--bar); flex-shrink: 0">
+<span class="b" style="background: var(--mode); color: var(--ink); padding: 0 8px; line-height: 24px">SWITCH</span>
+<span style="padding: 0 10px">business · 4 tasks · 3 agents · <span class="ny">2 ⚠</span> · 2.1G</span>
+<span style="flex: 1"></span>
+<span class="dim" style="padding: 0 10px">␣⇥ previous agent · ␣c coordinator</span>
+</div>
+</div>
+</body></html>

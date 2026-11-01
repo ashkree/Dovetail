@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail board view</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:var(--body)}
+.box{position:relative;border:1px solid var(--line);padding:14px 12px 8px;box-sizing:border-box;min-height:0;display:flex;flex-direction:column}
+.box.f{border-color:var(--focus)}
+.bt{position:absolute;top:-11px;left:10px;padding:0 6px;background:var(--titlebg);color:var(--dim);white-space:pre}
+.box.f .bt{color:var(--focus)}
+.in{overflow:hidden;flex:1;min-height:0}
+.row{white-space:pre}
+.wrap{white-space:pre-wrap}
+.dim{color:var(--dim)}
+.wk{color:var(--wk)}.ny{color:var(--ny)}.ok{color:var(--ok)}.er{color:var(--er)}
+.sel{background:var(--sel)}
+.b{font-weight:700}
+.col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.ch{white-space:pre;border-bottom:1px solid var(--line);padding-bottom:4px}
+.card{border:1px solid var(--line);padding:6px 8px}
+.card.s{border-color:var(--wk);background:var(--sel)}
+a{color:var(--wk)}a:hover{color:var(--body)}
+</style>
+</head><body>
+<div class="t" style="width: 1200px; height: 760px; background: #15132a; display: flex; flex-direction: column; box-sizing: border-box; --bg: #15132a; --ink: #15132a; --float: #15132a; --titlebg: #15132a; --bar: #1e1b3a; --line: #4a4380; --focus: #ec8a7e; --body: #e6e3f0; --dim: #8f8aa8; --label: #ec8a7e; --bold: #fbf7ff; --italic: #c7a8ff; --code: #a9c4ff; --wk: #7aa7ff; --ny: #ffb86b; --ok: #8fd694; --er: #ff6b81; --sel: #2a2550; --mode: #f2c94c; --solid: #0c0b1a">
+<div style="flex: 1; display: flex; gap: 12px; padding: 22px 14px 10px; min-height: 0">
+
+<div style="width: 460px; flex-shrink: 0; display: flex; flex-direction: column; gap: 24px">
+
+<section class="box" style="flex: 1.35">
+<div class="bt"> tasks · business </div>
+<div class="in">
+<div class="row"><span class="wk">◐ ◆</span> coordinator            <span class="dim">working 1.2G $3.10</span></div>
+<div class="row sel"><span class="dim">▾</span> <span class="wk">◐</span> <span class="b">#1231 business surface</span><span class="dim">         PR #1231</span></div>
+<div class="row">  <span class="wk">◐ ◆</span> slice-4              <span class="dim">working  412M $1.84</span></div>
+<div class="row">      <span class="ok">✓</span> write route tests</div>
+<div class="row">      <span class="wk">◐</span> wire handler to registry</div>
+<div class="row">      <span class="dim">○ update OpenAPI spec      ⊘ blocked</span></div>
+<div class="row">    <span class="ok">✓ ◇</span> rebase onto main <span class="dim">           done $0.21</span></div>
+<div class="row">    <span class="wk">◐ ◇</span> explore callers  <span class="wk">▓▓▓▓▓░░░</span> <span class="dim">62%</span></div>
+<div class="row"><span class="dim">▾</span> <span class="ny">⚠</span> <span class="b">get_decision 500</span></div>
+<div class="row">  <span class="ny">⚠ ◆</span> slice-7            <span class="ny">needs you</span> <span class="dim">388M $0.92</span></div>
+<div class="row">      <span class="wk">◐</span> reproduce 500 locally</div>
+<div class="row"><span class="dim">▸</span> <span class="dim">○</span> idea: eval key flow</div>
+<div class="row"><span class="dim">▸</span> <span class="dim">○</span> follow-up: retry budget</div>
+<div class="row dim">▸ done (1)</div>
+</div>
+</section>
+
+<section class="box" style="flex: 1">
+<div class="bt"> inbox · needs you (3) </div>
+<div class="in">
+<div class="row sel"><span class="ny">▸ ⚠ slice-7</span>  Bash               <span class="dim">10:15</span></div>
+<div class="row">  <span class="ny">? slice-4</span>  Question           <span class="dim">10:12</span></div>
+<div class="row">  <span class="ok">✓ slice-4</span>  Finished turn      <span class="dim">10:09</span></div>
+</div>
+<div class="row dim" style="padding-top: 4px">y allow · a always · d deny · D reason · ⏎ open</div>
+</section>
+
+</div>
+
+<section class="box f" style="flex: 1; min-width: 0">
+<div class="bt"> board · business · 4 open </div>
+<div class="in" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 120px; gap: 14px">
+
+<div class="col">
+<div class="ch"><span class="dim">○</span> <span class="b">Todo</span> <span class="dim">2</span></div>
+<div class="card">
+<div class="wrap">idea: eval key flow</div>
+<div class="row dim">no agents</div>
+</div>
+<div class="card">
+<div class="wrap">follow-up: retry budget</div>
+<div class="row dim">no agents · after #1231</div>
+</div>
+</div>
+
+<div class="col">
+<div class="ch"><span class="wk">◐</span> <span class="b">In progress</span> <span class="dim">1</span></div>
+<div class="card s">
+<div class="wrap b">#1231 business surface</div>
+<div class="row dim">PR #1231 · to-dos 1/3</div>
+<div class="row"><span class="wk">◐ ◆</span> slice-4</div>
+<div class="row"><span class="ok">✓ ◇</span> rebase</div>
+<div class="row"><span class="wk">◐ ◇</span> explore <span class="wk">▓▓▓░</span></div>
+<div class="row dim">$2.05 · 412M</div>
+</div>
+</div>
+
+<div class="col">
+<div class="ch"><span class="ny">⚠</span> <span class="b">Needs you</span> <span class="dim">1</span></div>
+<div class="card" style="border-color: var(--ny)">
+<div class="wrap b">get_decision 500</div>
+<div class="row dim">to-dos 0/1</div>
+<div class="row"><span class="ny">⚠ ◆</span> slice-7</div>
+<div class="wrap ny">Bash approval waiting</div>
+<div class="row dim">$0.92 · 388M</div>
+</div>
+</div>
+
+<div class="col">
+<div class="ch"><span class="ok">✓</span> <span class="b">Done</span> <span class="dim">1</span></div>
+<div class="card">
+<div class="wrap dim">fix flaky auth test</div>
+</div>
+</div>
+
+</div>
+<div class="row dim" style="border-top: 1px solid var(--line); padding-top: 6px">j/k card · H/L column · &lt; &gt; move card · ⏎ open · a add · s status</div>
+</section>
+
+</div>
+<div class="row" style="height: 24px; display: flex; align-items: center; background: var(--bar); flex-shrink: 0">
+<span class="b" style="background: var(--mode); color: var(--ink); padding: 0 8px; line-height: 24px">NORMAL</span>
+<span style="padding: 0 10px">business · 4 tasks · 3 agents · <span class="ny">2 ⚠</span> · 2.1G</span>
+<span style="flex: 1"></span>
+<span class="dim" style="padding: 0 10px">␣b board · ␣c coordinator · ␣z focus</span>
+</div>
+</div>
+</body></html>

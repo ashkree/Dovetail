@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail map outline view</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#e3946b}a:hover{color:#f2e7d8}
+</style>
+</head><body>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: #121318; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #cfcbc2; display: flex; flex-direction: column">
+<div style="flex: 1; min-height: 0; display: flex">
+<div style="width: 300px; box-sizing: border-box; border-right: 1px solid #2c2d35; padding: 14px 0; display: flex; flex-direction: column; gap: 4px">
+<div style="padding: 0 16px 8px; color: #8f8e97">tasks</div>
+<div style="padding: 2px 16px; white-space: pre; color: #e3946b; font-weight: 700">▾ Now</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #8f8e97">  P0 </span><span style="color: #7cc4d6">◐</span> #1231 business surface</div>
+<div style="padding: 2px 16px; white-space: pre; color: #8f8e97">       ◐ slice-4 · ctx 38%</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #8f8e97">  P1 </span><span style="color: #e2c26e">⚠</span> get_decision 500</div>
+<div style="padding: 2px 16px; white-space: pre; color: #8f8e97">▸ Next (3)</div>
+<div style="padding: 2px 16px; white-space: pre; color: #8f8e97">▸ Later (9)</div>
+<div style="padding: 18px 16px 8px; color: #8f8e97">maps</div>
+<div style="padding: 2px 16px; white-space: pre; background: #24252d"><span style="color: #e3946b">▣</span> How a gift purchase works</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #e3946b">▣</span> Eval harness overview</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #93cf86">✓</span> What #1231 changed</div>
+</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<div style="flex: 1; min-height: 0; display: flex; flex-direction: column">
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid #2c2d35">
+<span><span style="color: #8f8e97">map · </span><span style="color: #e3946b; font-weight: 700">How a gift purchase works</span></span>
+<span style="color: #8f8e97">outline · <span style="color: #cfcbc2">v</span> drawing</span>
+</div>
+<div style="flex: 1; min-height: 0; display: flex">
+<div style="width: 400px; box-sizing: border-box; padding: 18px 0; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #2c2d35">
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">▾ </span><span style="color: #7cc4d6; font-weight: 700">→</span> POST /api/gift</div>
+<div style="padding: 3px 24px; white-space: pre; background: #2a2b33; box-shadow: inset 3px 0 0 #e3946b"><span style="color: #8f8e97">▾ </span><span style="color: #e3946b; font-weight: 700">▣</span> <span style="color: #f2e7d8; font-weight: 700">Business rules</span><span style="color: #e2c26e">   ● step 2</span></div>
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">    </span><span style="font-weight: 700">≡</span> routes/business.ts</div>
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">    </span><span style="font-weight: 700">≡</span> services/gift.ts</div>
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">    </span><span style="font-weight: 700">≡</span> services/email.ts</div>
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">  </span><span style="color: #8f8e97; font-weight: 700">◇</span> Stripe</div>
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">  </span><span style="color: #e2c26e; font-weight: 700">◎</span> gifts table</div>
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">  </span><span style="color: #8f8e97; font-weight: 700">◇</span> SendGrid</div>
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">  </span><span style="color: #93cf86; font-weight: 700">✓</span> code delivered</div>
+<div style="padding: 3px 24px; white-space: pre"><span style="color: #8f8e97">  </span><span style="color: #b8a2e6">※</span> <span style="color: #b8a2e6; font-style: italic">retry strategy</span></div>
+</div>
+<div style="flex: 1; min-width: 0; box-sizing: border-box; padding: 20px 32px; display: flex; flex-direction: column; gap: 18px; overflow: hidden">
+<div style="color: #e3946b; font-weight: 700; font-size: 15px">▣ Business rules</div>
+<p style="margin: 0; line-height: 1.75; max-width: 620px">Applies the gift rules. It <span style="color: #e3946b; font-weight: 700">validates the amount</span>, charges the card through Stripe, stores the gift in <span style="color: #9ab8e8">gifts</span>, and sends the code. Failed charges are <span style="color: #b8a2e6; font-style: italic">retried twice</span> before the user sees an error.</p>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="color: #8f8e97">Connects to</div>
+<div style="white-space: pre"><span style="color: #8f8e97">  ─▶ </span><span style="color: #8f8e97; font-weight: 700">◇</span> Stripe        <span style="color: #8f8e97">charges</span></div>
+<div style="white-space: pre"><span style="color: #8f8e97">  ─▶ </span><span style="color: #e2c26e; font-weight: 700">◎</span> gifts table   <span style="color: #8f8e97">writes</span></div>
+<div style="white-space: pre"><span style="color: #8f8e97">  ─▶ </span><span style="color: #8f8e97; font-weight: 700">◇</span> SendGrid      <span style="color: #8f8e97">fires</span></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="color: #8f8e97">Files</div>
+<div style="color: #9ab8e8">routes/business.ts · services/gift.ts · services/email.ts</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: #1b1c22; border: 1px solid #2c2d35">
+<div><span style="color: #e2c26e; font-weight: 700">Flow</span> <span style="color: #8f8e97">· gift purchase · </span>step 2 of 4</div>
+<div style="color: #e2c26e; letter-spacing: 4px">● ● ○ ○</div>
+<div style="line-height: 1.7">The form posts here. Rules validate the amount, then hand the charge to Stripe.</div>
+</div>
+<div style="color: #8f8e97; white-space: pre">n next   p previous   Enter jump   &lt;leader&gt;? ask helper</div>
+</div>
+</div>
+</div>
+<div style="height: 120px; box-sizing: border-box; border-top: 1px solid #2c2d35; padding: 12px 24px; display: flex; flex-direction: column; gap: 8px">
+<div style="color: #8f8e97">inbox (1)</div>
+<div style="white-space: pre"><span style="color: #e2c26e">⚠</span> slice-4: needs <span style="color: #9ab8e8">FS_EVAL_VIRTUAL_KEY</span></div>
+</div>
+</div>
+</div>
+<div style="height: 32px; display: flex; align-items: center; gap: 16px; padding: 0 16px; background: #1b1c22; border-top: 1px solid #2c2d35">
+<span style="background: #e3946b; color: #121318; font-weight: 700; padding: 2px 10px">NORMAL</span>
+<span style="color: #8f8e97">business · 3 tasks · 2 agents · <span style="color: #e2c26e">1 ⚠</span> · ctx 41% · 2.1G</span>
+</div>
+</div>
+</body></html>

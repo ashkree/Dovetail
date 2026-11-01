@@ -6,7 +6,8 @@ Instructions for any coding agent working in this repository. Read in this order
 2. `docs/design-digest.md` — the implementation-relevant design: locked decisions, spike results, protocol facts, roadmap, open spikes;
 3. `docs/design.md` — the full design doc (when present; it wins over the digest);
 4. `docs/ui-session-brief.md` — detailed UI spec: data model, keys, readability, switcher, quick capture;
-5. `README.md` — product overview.
+5. `docs/screens/` — mock screens from the design phase (`README.md` there says which are v1 targets, which are superseded); look at `ui/b.png` and `ui/navigation.png` first. Screens are reference, the docs are spec;
+6. `README.md` — product overview.
 
 If an implementation plan exists (`docs/implementation-plan.md`), it is the current source of truth for *order of work*. Keep it updated as milestones finish.
 
@@ -23,6 +24,17 @@ The target is **v1** as listed in the digest's roadmap, built so v1.1 features s
 Known conflicts, already resolved:
 - **Layout:** Decision 15 (Layout B — task tree over inbox on the left, conversation full height on the right) supersedes the sketch in `ui-session-brief.md`.
 - **Edition:** the workspace uses edition 2024 (already in `Cargo.toml`).
+
+## Dogfooding: Dovetail builds Dovetail
+
+The user wants to switch from building Dovetail with plain agents to building it **inside Dovetail** as early as possible.
+
+- **Self-hosting point.** The plan must name the earliest milestone after which the rest of the build can run inside Dovetail, and order the work to reach it fast. Minimum: real headless coordinator session with streaming chat, permission requests answered from the inbox, slice sessions in hook-created worktrees, `report_status`/`ask_user`, and state that survives a restart. Polish (board, maps, memory caps, take-over, context-fill display) comes after it.
+- **From that point on**, the repo's own role prompts and recipe are used for real, so they must stay accurate. Sources of truth:
+  - `config/roles/coordinator.md`, `config/roles/slice.md` — role prompts (keep each under ~20 lines, Decision 8c). Dovetail reads the installed copies in `~/.config/dovetail/roles/`.
+  - `config/projects/dovetail.toml` — the worktree recipe for this repo (format is a proposal; the plan finalises it and the core must read it).
+  - `scripts/bootstrap.sh` — creates Dovetail's dirs, installs the prompts and recipe without overwriting user edits, and checks prerequisites (Claude Code ≥ 2.1.224, systemd-run caps, messaging blockers). Keep it in step with any path or format change.
+- Self-hosting must never weaken the rules: slices working on Dovetail still get their own worktree, and nothing is written into the repo at runtime beyond branches.
 
 ## How to work
 
@@ -84,7 +96,7 @@ When asked to plan, write this file with:
 3. **`SessionDriver`** trait sketch, the fake driver, and how events map onto the API.
 4. **Storage schema** (tables, FTS, migrations) for v1, with columns v1.1 will need noted.
 5. **Spike plan**: for each open spike — what it gates, a concrete procedure, pass/fail criteria, fallback, and who runs it.
-6. **Milestones**, in order, each with scope, crates/files touched, a "done when" checklist, tests added, and dependencies on spikes. Suggested shape (reorder with reasons): workspace + API + mock → TUI shell on mock (layout B, modes, keymap, tree, conversation, inbox, picker, quick capture) → storage + project registry → driver + single coordinator session → permissions/inbox live → slices + worktree hooks + cleanup → subagents + to-do lists → MCP bridge (`ask_user`, `report_status`) + role prompts → memory caps + context fill → take-over → maps stage 1 → hardening and daily-driver polish.
+6. **Milestones**, in order, each with scope, crates/files touched, a "done when" checklist, tests added, and dependencies on spikes. Mark the **self-hosting point** explicitly, and for each later milestone say which slices it splits into when run inside Dovetail. Suggested shape (reorder with reasons): workspace + API + mock → TUI shell on mock (layout B, modes, keymap, tree, conversation, inbox, picker, quick capture) → storage + project registry → driver + single coordinator session → permissions/inbox live → slices + worktree hooks + cleanup → MCP bridge (`ask_user`, `report_status`) + role prompts → **self-hosting point** → subagents + to-do lists → memory caps + context fill → take-over → maps stage 1 → hardening and daily-driver polish.
 7. **Risks and open questions** for the user, including anything contradictory across the docs.
 
 Keep it concrete — real type, module and file names. Then stop and wait.

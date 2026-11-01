@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail map drawing view</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#e3946b}a:hover{color:#f2e7d8}
+</style>
+</head><body>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: #121318; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #cfcbc2; display: flex; flex-direction: column">
+<div style="flex: 1; min-height: 0; display: flex">
+<div style="width: 260px; box-sizing: border-box; border-right: 1px solid #2c2d35; padding: 14px 0; display: flex; flex-direction: column; gap: 4px">
+<div style="padding: 0 16px 8px; color: #8f8e97">tasks</div>
+<div style="padding: 2px 16px; white-space: pre; color: #e3946b; font-weight: 700">▾ Now</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #8f8e97">  P0 </span><span style="color: #7cc4d6">◐</span> #1231 business</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #8f8e97">  P1 </span><span style="color: #e2c26e">⚠</span> get_decision 500</div>
+<div style="padding: 2px 16px; white-space: pre; color: #8f8e97">▸ Next (3)</div>
+<div style="padding: 2px 16px; white-space: pre; color: #8f8e97">▸ Later (9)</div>
+<div style="padding: 18px 16px 8px; color: #8f8e97">maps</div>
+<div style="padding: 2px 16px; white-space: pre; background: #24252d"><span style="color: #e3946b">▣</span> Gift purchase</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #e3946b">▣</span> Eval harness</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #93cf86">✓</span> What #1231 changed</div>
+</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid #2c2d35">
+<span><span style="color: #8f8e97">map · </span><span style="color: #e3946b; font-weight: 700">How a gift purchase works</span></span>
+<span><span style="color: #e2c26e; font-weight: 700">Flow</span> <span style="color: #8f8e97">· gift purchase ·</span> step 2 of 4 <span style="color: #e2c26e; letter-spacing: 3px">●●○○</span></span>
+</div>
+<div style="flex: 1; min-height: 0; display: flex">
+<div style="flex: 1; min-width: 0; box-sizing: border-box; padding: 24px 24px; font-size: 13px; line-height: 1.45">
+<div style="white-space: pre; height: 1.45em"><span style="color: #7cc4d6; opacity: 0.38">╭──────────────────────╮</span>    <span style="color: #e3946b; font-weight: 700">╔══════════════════════╗</span>    <span style="color: #8f8e97; opacity: 0.38">┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #7cc4d6; opacity: 0.38">│</span><span style="color: #cfcbc2; opacity: 0.38"> </span><span style="color: #7cc4d6; font-weight: 700; opacity: 0.38">→</span><span style="color: #cfcbc2; opacity: 0.38"> POST /api/gift     </span><span style="color: #7cc4d6; opacity: 0.38">│</span>    <span style="color: #e3946b; font-weight: 700">║</span><span style="color: #f2e7d8; font-weight: 700"> </span><span style="color: #e3946b; font-weight: 700">▣</span><span style="color: #f2e7d8; font-weight: 700"> Business rules     </span><span style="color: #e3946b; font-weight: 700">║</span>    <span style="color: #8f8e97; opacity: 0.38">┆</span><span style="color: #cfcbc2; opacity: 0.38"> </span><span style="color: #8f8e97; font-weight: 700; opacity: 0.38">◇</span><span style="color: #cfcbc2; opacity: 0.38"> Stripe             </span><span style="color: #8f8e97; opacity: 0.38">┆</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #7cc4d6; opacity: 0.38">│</span><span style="color: #8f8e97; opacity: 0.38"> checkout form        </span><span style="color: #7cc4d6; opacity: 0.38">│</span><span style="color: #f2e7d8; font-weight: 700">───▶</span><span style="color: #e3946b; font-weight: 700">║</span><span style="color: #8f8e97"> 3 files, 2 routes    </span><span style="color: #e3946b; font-weight: 700">║</span><span style="color: #6f6e76; opacity: 0.38">───▶</span><span style="color: #8f8e97; opacity: 0.38">┆</span><span style="color: #8f8e97; opacity: 0.38"> charges the card     </span><span style="color: #8f8e97; opacity: 0.38">┆</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #7cc4d6; opacity: 0.38">╰──────────────────────╯</span>    <span style="color: #e3946b; font-weight: 700">╚══════════════════════╝</span>    <span style="color: #8f8e97; opacity: 0.38">└┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘</span></div>
+<div style="white-space: pre; height: 1.45em">                                  <span style="color: #6f6e76; opacity: 0.38">│</span>           <span style="color: #6f6e76; opacity: 0.38">│</span></div>
+<div style="white-space: pre; height: 1.45em">                                  <span style="color: #6f6e76; opacity: 0.38">│</span>           <span style="color: #6f6e76; opacity: 0.38">│</span></div>
+<div style="white-space: pre; height: 1.45em">                                  <span style="color: #6f6e76; opacity: 0.38">│</span> <span style="color: #8f8e97; opacity: 0.38">writes</span>    <span style="color: #6f6e76; opacity: 0.38">│</span></div>
+<div style="white-space: pre; height: 1.45em">                                  <span style="color: #6f6e76; opacity: 0.38">│</span>           <span style="color: #6f6e76; opacity: 0.38">│</span></div>
+<div style="white-space: pre; height: 1.45em">                                  <span style="color: #6f6e76; opacity: 0.38">▼</span>           <span style="color: #6f6e76; opacity: 0.38">│</span></div>
+<div style="white-space: pre; height: 1.45em">              <span style="color: #e2c26e; opacity: 0.38">╒══════════════════════╕</span>        <span style="color: #6f6e76; opacity: 0.38">│</span>         <span style="color: #8f8e97; opacity: 0.38">┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐</span></div>
+<div style="white-space: pre; height: 1.45em">              <span style="color: #e2c26e; opacity: 0.38">│</span><span style="color: #cfcbc2; opacity: 0.38"> </span><span style="color: #e2c26e; font-weight: 700; opacity: 0.38">◎</span><span style="color: #cfcbc2; opacity: 0.38"> gifts table        </span><span style="color: #e2c26e; opacity: 0.38">│</span>        <span style="color: #6f6e76; opacity: 0.38">│</span> <span style="color: #8f8e97; opacity: 0.38">fires</span>   <span style="color: #8f8e97; opacity: 0.38">┆</span><span style="color: #cfcbc2; opacity: 0.38"> </span><span style="color: #8f8e97; font-weight: 700; opacity: 0.38">◇</span><span style="color: #cfcbc2; opacity: 0.38"> SendGrid           </span><span style="color: #8f8e97; opacity: 0.38">┆</span></div>
+<div style="white-space: pre; height: 1.45em">              <span style="color: #e2c26e; opacity: 0.38">│</span><span style="color: #8f8e97; opacity: 0.38"> Postgres             </span><span style="color: #e2c26e; opacity: 0.38">│</span>        <span style="color: #6f6e76; opacity: 0.38">└────────▶</span><span style="color: #8f8e97; opacity: 0.38">┆</span><span style="color: #8f8e97; opacity: 0.38"> emails the code      </span><span style="color: #8f8e97; opacity: 0.38">┆</span></div>
+<div style="white-space: pre; height: 1.45em">              <span style="color: #e2c26e; opacity: 0.38">╘══════════════════════╛</span>                  <span style="color: #8f8e97; opacity: 0.38">└┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘</span></div>
+<div style="white-space: pre; height: 1.45em">                                                                    <span style="color: #6f6e76; opacity: 0.38">│</span></div>
+<div style="white-space: pre; height: 1.45em">                                                                    <span style="color: #6f6e76; opacity: 0.38">│</span> <span style="color: #8f8e97; opacity: 0.38">produces</span></div>
+<div style="white-space: pre; height: 1.45em">                                                                    <span style="color: #6f6e76; opacity: 0.38">▼</span></div>
+<div style="white-space: pre; height: 1.45em">                                                        <span style="color: #93cf86; opacity: 0.38">┏━━━━━━━━━━━━━━━━━━━━━━┓</span></div>
+<div style="white-space: pre; height: 1.45em">                                                        <span style="color: #93cf86; opacity: 0.38">┃</span><span style="color: #cfcbc2; opacity: 0.38"> </span><span style="color: #93cf86; font-weight: 700; opacity: 0.38">✓</span><span style="color: #cfcbc2; opacity: 0.38"> code delivered     </span><span style="color: #93cf86; opacity: 0.38">┃</span></div>
+<div style="white-space: pre; height: 1.45em">                                                        <span style="color: #93cf86; opacity: 0.38">┃</span><span style="color: #8f8e97; opacity: 0.38"> outcome · pass       </span><span style="color: #93cf86; opacity: 0.38">┃</span></div>
+<div style="white-space: pre; height: 1.45em">                                                        <span style="color: #93cf86; opacity: 0.38">┗━━━━━━━━━━━━━━━━━━━━━━┛</span></div>
+</div>
+<div style="width: 300px; box-sizing: border-box; border-left: 1px solid #2c2d35; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px">
+<div style="color: #e3946b; font-weight: 700">▣ Business rules</div>
+<p style="margin: 0; line-height: 1.75">The form posts here. Rules <span style="color: #e3946b; font-weight: 700">validate the amount</span>, then hand the charge to Stripe.</p>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="color: #8f8e97">Comments</div>
+<div style="line-height: 1.6; padding: 10px 12px; background: #1b1c22; border: 1px solid #2c2d35"><span style="color: #b8a2e6">you ·</span> does the retry cover a declined card or only timeouts?</div>
+<div style="color: #8f8e97">c comment · s send to coordinator</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px; color: #8f8e97">
+<div style="white-space: pre">hjkl   move between boxes</div>
+<div style="white-space: pre">Enter  drill into the group</div>
+<div style="white-space: pre">n / p  next / previous step</div>
+<div style="white-space: pre">&lt;leader&gt;?  ask the helper</div>
+</div>
+</div>
+</div>
+<div style="height: 100px; box-sizing: border-box; border-top: 1px solid #2c2d35; padding: 12px 24px; display: flex; flex-direction: column; gap: 8px">
+<div style="color: #8f8e97">inbox (1)</div>
+<div style="white-space: pre"><span style="color: #e2c26e">⚠</span> slice-4: needs <span style="color: #9ab8e8">FS_EVAL_VIRTUAL_KEY</span></div>
+</div>
+</div>
+</div>
+<div style="height: 32px; display: flex; align-items: center; gap: 16px; padding: 0 16px; background: #1b1c22; border-top: 1px solid #2c2d35">
+<span style="background: #e3946b; color: #121318; font-weight: 700; padding: 2px 10px">NORMAL</span>
+<span style="color: #8f8e97">business · 3 tasks · 2 agents · <span style="color: #e2c26e">1 ⚠</span> · ctx 41% · 2.1G</span>
+</div>
+</div>
+</body></html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail map node kinds</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#e3946b}a:hover{color:#f2e7d8}
+</style>
+</head><body>
+<div style="width: 1280px; height: 640px; box-sizing: border-box; background: #121318; font-family: 'JetBrains Mono', monospace; color: #cfcbc2; display: flex; flex-direction: column">
+<div style="flex: 1; display: flex; flex-direction: column; gap: 28px; padding: 40px 56px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #e3946b">Map node kinds</h1>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #8f8e97">Each kind differs in border style, glyph and color, so it reads at a glance.</p>
+</div>
+<div style="font-size: 17px; line-height: 1.45">
+<div style="white-space: pre; height: 1.45em"><span style="color: #e3946b">╔════════════════════════╗</span>  <span style="color: #cfcbc2">┌────────────────────────┐</span>  <span style="color: #7cc4d6">╭────────────────────────╮</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #e3946b">║</span><span style="color: #cfcbc2"> </span><span style="color: #e3946b; font-weight: 700">▣</span><span style="color: #cfcbc2"> Business rules       </span><span style="color: #e3946b">║</span>  <span style="color: #cfcbc2">│</span><span style="color: #cfcbc2"> </span><span style="color: #cfcbc2; font-weight: 700">≡</span><span style="color: #cfcbc2"> routes/business.ts   </span><span style="color: #cfcbc2">│</span>  <span style="color: #7cc4d6">│</span><span style="color: #cfcbc2"> </span><span style="color: #7cc4d6; font-weight: 700">→</span><span style="color: #cfcbc2"> POST /api/gift       </span><span style="color: #7cc4d6">│</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #e3946b">║</span><span style="color: #8f8e97"> 3 files, 2 routes      </span><span style="color: #e3946b">║</span>  <span style="color: #cfcbc2">│</span><span style="color: #8f8e97"> exports 4 handlers     </span><span style="color: #cfcbc2">│</span>  <span style="color: #7cc4d6">│</span><span style="color: #8f8e97"> entry point            </span><span style="color: #7cc4d6">│</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #e3946b">╚════════════════════════╝</span>  <span style="color: #cfcbc2">└────────────────────────┘</span>  <span style="color: #7cc4d6">╰────────────────────────╯</span></div>
+<div style="white-space: pre; height: 1.45em"> <span style="color: #e3946b">Part</span><span style="color: #8f8e97"> · drills in</span>            <span style="color: #cfcbc2">File</span><span style="color: #8f8e97"> · opens the file</span>       <span style="color: #7cc4d6">Endpoint</span><span style="color: #8f8e97"> · entry point</span></div>
+<div style="white-space: pre; height: 1.45em"> </div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #e2c26e">╒════════════════════════╕</span>  <span style="color: #8f8e97">┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐</span>  <span style="color: #93cf86">┏━━━━━━━━━━━━━━━━━━━━━━━━┓</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #e2c26e">│</span><span style="color: #cfcbc2"> </span><span style="color: #e2c26e; font-weight: 700">◎</span><span style="color: #cfcbc2"> gifts table          </span><span style="color: #e2c26e">│</span>  <span style="color: #8f8e97">┆</span><span style="color: #cfcbc2"> </span><span style="color: #8f8e97; font-weight: 700">◇</span><span style="color: #cfcbc2"> Stripe               </span><span style="color: #8f8e97">┆</span>  <span style="color: #93cf86">┃</span><span style="color: #cfcbc2"> </span><span style="color: #93cf86; font-weight: 700">✓</span><span style="color: #cfcbc2"> eval 24/24 grounded  </span><span style="color: #93cf86">┃</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #e2c26e">│</span><span style="color: #8f8e97"> Postgres               </span><span style="color: #e2c26e">│</span>  <span style="color: #8f8e97">┆</span><span style="color: #8f8e97"> outside the system     </span><span style="color: #8f8e97">┆</span>  <span style="color: #93cf86">┃</span><span style="color: #8f8e97"> outcome · pass         </span><span style="color: #93cf86">┃</span></div>
+<div style="white-space: pre; height: 1.45em"><span style="color: #e2c26e">╘════════════════════════╛</span>  <span style="color: #8f8e97">└┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘</span>  <span style="color: #93cf86">┗━━━━━━━━━━━━━━━━━━━━━━━━┛</span></div>
+<div style="white-space: pre; height: 1.45em"> <span style="color: #e2c26e">Data</span><span style="color: #8f8e97"> · a store</span>              <span style="color: #8f8e97">External</span><span style="color: #8f8e97"> · outside system</span>   <span style="color: #93cf86">Outcome</span><span style="color: #8f8e97"> · pass, fail, value</span></div>
+<div style="white-space: pre; height: 1.45em"> </div>
+<div style="white-space: pre; height: 1.45em"> <span style="color: #b8a2e6">※</span> <span style="color: #b8a2e6; font-style: italic">retry strategy</span></div>
+<div style="white-space: pre; height: 1.45em">   <span style="color: #b8a2e6">Concept</span><span style="color: #8f8e97"> · a free-form idea, no box</span></div>
+</div>
+</div>
+<div style="height: 32px; display: flex; align-items: center; gap: 16px; padding: 0 16px; background: #1b1c22; border-top: 1px solid #2c2d35; font-size: 14px">
+<span style="background: #e3946b; color: #121318; font-weight: 700; padding: 2px 10px">NORMAL</span>
+<span style="color: #8f8e97">business · map legend</span>
+</div>
+</div>
+</body></html>

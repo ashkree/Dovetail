@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail focus mode</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:var(--body)}
+.row{white-space:pre}
+.wrap{white-space:pre-wrap}
+.dim{color:var(--dim)}
+.wk{color:var(--wk)}.ny{color:var(--ny)}.ok{color:var(--ok)}.er{color:var(--er)}
+.b{font-weight:700}
+.lb{color:var(--label);font-weight:700}
+.em{color:var(--bold);font-weight:700}
+.it{color:var(--italic);font-style:italic}
+.cd{color:var(--code)}
+.old{opacity:.55}
+.themebtn{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;height:44px;padding:0 16px;border-radius:6px;cursor:pointer}
+a{color:var(--code)}a:hover{color:var(--body)}
+</style>
+</head><body>
+<div class="t" style="width: 1200px; height: 760px; display: flex; flex-direction: column; box-sizing: border-box; background: #15132a; --bg: #15132a; --ink: #15132a; --float: #15132a; --titlebg: #15132a; --bar: #1e1b3a; --line: #4a4380; --focus: #ec8a7e; --body: #e6e3f0; --dim: #8f8aa8; --label: #ec8a7e; --bold: #fbf7ff; --italic: #c7a8ff; --code: #a9c4ff; --wk: #7aa7ff; --ny: #ffb86b; --ok: #8fd694; --er: #ff6b81; --sel: #2a2550; --mode: #f2c94c; --solid: #0c0b1a">
+<div style="flex: 1; display: flex; justify-content: center; padding: 0 14px; min-height: 0">
+<div style="width: 960px; background: var(--solid); padding: 24px 12px 12px; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0">
+<div style="flex: 1; overflow: hidden; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end">
+<div class="old">
+<div class="row lb">you · 10:08</div>
+<div class="wrap">Make sure slice-4 doesn't touch the 500 path.</div>
+<div class="row"> </div>
+<div class="row lb">coordinator · 10:08</div>
+<div class="wrap">Told slice-4 to stay out of <span class="cd">src/decision.rs</span> until slice-7 hands it back.</div>
+<div class="row"> </div>
+</div>
+<div class="row lb">you · 10:14</div>
+<div class="wrap">What's blocking slice-7, and what's the merge plan?</div>
+<div class="row"> </div>
+<div class="row lb">coordinator · 10:14 <span class="wk">◐</span></div>
+<div class="wrap"><span class="em">slice-7 is waiting on a key.</span> It can only reach the eval path with <span class="cd">FS_EVAL_VIRTUAL_KEY</span> set, and asked for it <span class="it">as a Bash approval</span> in the inbox.</div>
+<div class="row"> </div>
+<div class="row dim">▾ read 2 files · checked slice-7's stream · 4 s</div>
+<div class="row dim">    Read src/decision.rs</div>
+<div class="row dim">    Read apps/helix-backend/.env.example</div>
+<div class="row dim">    Checked slice-7 · last turn 10:15</div>
+<div class="row"> </div>
+<div class="row lb">Merge plan</div>
+<div class="row"> </div>
+<div class="wrap">1. <span class="em">#1231 first.</span> Route tests pass and CI is green.</div>
+<div class="row"> </div>
+<div class="wrap">2. <span class="em">Then the 500 fix</span>, rebased onto <span class="cd">main</span> after #1231 lands.</div>
+<div class="row"> </div>
+<div class="row dim">▸ edited docs/plan.md · 1 s</div>
+<div class="row"> </div>
+<div class="wrap">Approve the key and I'll start the rebase as soon as #1231 merges<span class="wk">▌</span></div>
+</div>
+<div style="border-top: 1px solid var(--line); margin-top: 14px; padding-top: 8px">
+<div class="row dim">› i to chat · ]] [[ turns · zo zc fold · gg G</div>
+</div>
+</div>
+</div>
+<div class="row" style="height: 24px; display: flex; align-items: center; background: var(--bar); flex-shrink: 0">
+<span class="b" style="background: var(--mode); color: var(--ink); padding: 0 8px; line-height: 24px">FOCUS</span>
+<span style="padding: 0 10px">coordinator <span class="wk">◐</span> working · solid background on</span>
+<span style="flex: 1"></span>
+<span class="ny" style="padding: 0 10px">2 ⚠ waiting · ␣n inbox</span>
+<span class="dim" style="padding: 0 10px">␣z exit</span>
+</div>
+</div>
+</body></html>
