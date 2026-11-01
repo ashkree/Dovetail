@@ -11,7 +11,7 @@
 | Spike gate | S0–S4 | Allowed to proceed, driver chosen, real fixtures captured, three protocol unknowns answered |
 | Usable on mock | M1–M4 | The full daily UI runs against `MockCore` with no Claude Code |
 | Real, persistent | M5 | A working task tracker on SQLite, with `dovetail add` |
-| Live sessions | M6–M9 | Coordinator chat, inbox approvals, slices in worktrees, `ask_user`, `report_status` |
+| Live sessions | M6–M9 | Coordinator chat, inbox approvals, slices in worktrees, `ask_user`, `report_status`, `create_task` |
 | **Self-hosting point** | **M10** | Restart survival, a stable install and a rehearsal. The rest of the build runs inside Dovetail |
 | Remaining v1 | M11–M16 | Subagents, to-dos, board, worktree view, caps, context fill, take-over, maps, hardening |
 
@@ -26,7 +26,7 @@
 
 ## 1. Spike plan
 
-Run in this order. Each writes `docs/spikes/<name>.md`. Code lives in `spikes/<name>/`, outside the workspace. Real sessions run only in scratch repos under `/tmp`, with tiny prompts.
+Run in this order. Each writes `docs/spikes/<name>.md`. Code lives in `spikes/<name>/`, outside the workspace. Real sessions run only in scratch repos under `/tmp`, with tiny prompts. S0 and S1 may use the `research` skill.
 
 | ID | Spike | Who runs it | Gates | When |
 | --- | --- | --- | --- | --- |
@@ -414,6 +414,10 @@ Tables arrive with the milestone that uses them, so no unused tables sit around.
 
 Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` passing, plus a "how to try it" summary. Then I stop and wait for you.
 
+**Review step.** Each milestone ends with `/code-review` from the latest review tag, followed by `/retro`. Tags are `pre-m1`, set before M1 starts, then `review-1`, `review-2` and so on, each set when that review closes.
+
+**TDD.** M1 and M6–M8 use the `tdd` skill at agreed seams.
+
 ### M1. Workspace, API, mock core
 - **Spikes needed:** S1–S3 (event shapes)
 - **Scope:** create all crates except maps. `dovetail-api` types and `apply()`. `MockCore` generating status changes, streaming markdown replies, inbox items and subagents. `dovetail --mock --dump` prints events, with no UI yet.
@@ -444,7 +448,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Tests:** markdown spans, spacing, wrapping, snapshots at 80, 120 and 200 columns
 
 ### M4. Command mode, picker, switcher, quick capture
-- **Scope:** Command mode (`:q`, `:spawn`, `:interrupt`, plus aliases for actions). One picker component using `nucleo`, used for `<leader>ss` and `<leader><leader>`. Quick capture with its token parser, link display and `Ctrl-l`. Task detail buffer. Permission-mode cycle and badge. Context-fill display from mock values. In-buffer `/ n N`. Activity and message timeline buffers.
+- **Scope:** Command mode (`:q`, `:spawn`, `:interrupt`, plus aliases for actions). One picker component using `nucleo`, used for `<leader>ss` and `<leader><leader>`. Quick capture with its token parser, link display and `Ctrl-l`. Task detail buffer with fields, notes and agents; the `e` notes handoff to `$EDITOR` lands in M5 with real storage (A4). Permission-mode cycle and badge. Context-fill display from mock values. In-buffer `/ n N`. Activity and message timeline buffers.
 - **Files:** `command.rs`, `picker.rs`, `capture.rs`, `buffers/{task_detail,activity,messages}.rs`
 - **Done when:**
   - [ ] **The TUI is usable on the mock with no Claude Code**: every self-hosting flow can be walked by keyboard
@@ -488,19 +492,22 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Done when:**
   - [ ] A real slice starts in a hook-created worktree outside the repo
   - [ ] Failed setup means no first prompt, and an inbox error
+  - [ ] A setup longer than Claude Code's default hook timeout finishes under the 15-minute timeout (B5)
+  - [ ] In a scratch repo, `gh pr merge` in auto mode raises a Permission request through the launch-settings ask rule, or the B7 fallback is recorded
   - [ ] Coordinator and slice exchange messages in a scratch repo
   - [ ] Archiving removes everything, after asking when work is unpushed
   - [ ] Only branches appear in the repo
 - **Tests:** hook idempotence, cleanup against real temp git repos, dirty and unpushed detection
 
-### M9. MCP bridge, `ask_user`, `report_status`, role prompts
+### M9. MCP bridge, `ask_user`, `report_status`, `create_task`, role prompts
 - **Spikes needed:** S3; S6 runs here
-- **Scope:** `dovetail mcp` as a synchronous stdio server, forwarding to the app socket with its agent id. Tool handlers in core. Question inbox items with blocked flag, sorted first. `r` reply. Role prompts passed at launch.
-- **Role prompt fix:** `config/roles/coordinator.md` tells the coordinator to call `draw_map`, which won't exist until M15. Remove that line now and restore it at M15. Then run `scripts/bootstrap.sh --force`, because your installed copy from the earlier run has the old text.
-- **Files:** `crates/dovetail/src/mcp.rs`, `crates/dovetail-core/src/tools/{mod,ask_user,report_status}.rs`, `config/roles/*.md`
+- **Scope:** `dovetail mcp` as a synchronous stdio server, forwarding to the app socket with its agent id. Tool handlers in core. Question inbox items with blocked flag, sorted first. `r` reply. `create_task` for the coordinator only (ADR 0002). Role prompts passed at launch.
+- **Role prompt fix:** `config/roles/coordinator.md` tells the coordinator to call `draw_map`, which won't exist until M15. Remove that line now and restore it at M15. Also tell the coordinator that the user starts slices and it recommends them (B1), and that it merges only on the user's yes and then pulls `main` (B7). Tell slices to push and open a PR once checks pass (B7). Then run `scripts/bootstrap.sh --force`, because your installed copy from the earlier run has the old text.
+- **Files:** `crates/dovetail/src/mcp.rs`, `crates/dovetail-core/src/tools/{mod,ask_user,report_status,create_task}.rs`, `config/roles/*.md`
 - **Done when:**
   - [ ] A blocking `ask_user` reaches the inbox and your reply unblocks the tool
   - [ ] Status lines appear in the tree
+  - [ ] A coordinator `create_task` lands in Unsorted, marked until seen; a slice can't call it
   - [ ] App exit gives the agent a clear error, not a hang
   - [ ] S6 recorded
 - **Tests:** MCP protocol, tool schemas, socket forwarding, blocking and non-blocking
@@ -541,6 +548,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Done when:**
   - [ ] A forced OOM kills one session only and recovers
   - [ ] Status bar shows total memory and coordinator `ctx`
+  - [ ] Peak memory of this repo's build and test runs is recorded against the B8 caps
   - [ ] Missing cgroup support gives a warning, not a failure
 - **Tests:** `memory.events` parsing with fixtures, context calculation
 
@@ -564,7 +572,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Tests:** `draw_map` validation, Mermaid output snapshots, grid layout, hit-testing
 
 ### M16. Hardening and daily-driver polish
-- **Scope:** a real week's use, fixing what hurts. Long-session performance and memory. Startup warnings. README and docs brought up to date.
+- **Scope:** a real week's use, fixing what hurts. Long-session performance and memory. Startup warnings. Focus mode (A1). README and docs brought up to date.
 - **Slices:** one per defect or theme, decided from real use.
 - **Done when:**
   - [ ] You use it for a full working week on a real project in place of tmux
@@ -581,10 +589,10 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 
 | # | Issue | Proposed default |
 | --- | --- | --- |
-| A1 **Your call** | **Focus mode:** v1 in README and the UI brief; v1.1 in the roadmaps and `screens/README.md` | v1.1, following `design.md`. Only the solid-background toggle ships in v1 |
-| A2 **Your call** | **`create_task`:** in v1 roadmaps under quick capture; v1.1 in Decision 25 and both tool tables | v1.1, following Decision 25 |
+| A1 **Your call** | **Focus mode:** v1 in README and the UI brief; v1.1 in the roadmaps and `screens/README.md` | **Decided: v1, as a small M16 item** (`<leader>z`): coordinator conversation and input only, solid background on, Needs you count kept. The solid-background toggle itself ships earlier |
+| A2 **Your call** | **`create_task`:** in v1 roadmaps under quick capture; v1.1 in Decision 25 and both tool tables | **Decided, refines Decision 25 ([ADR 0002](adr/0002-create-task-in-v1.md)):** v1, at M9. Coordinator only; tasks land in Unsorted, marked coordinator-created until seen |
 | A3 | **Board and worktree view:** v1 in README and screens; missing from both v1 roadmap lists | v1 (M12) |
-| A4 **Your call** | **Task detail view:** v1.1 on the navigation screen, but quick capture's `Tab` (v1) and tree `Enter` need it | v1 with fields, notes and agents; decision log in v1.1 |
+| A4 **Your call** | **Task detail view:** v1.1 on the navigation screen, but quick capture's `Tab` (v1) and tree `Enter` need it | **Decided:** v1 with fields, notes and agents; decision log in v1.1. `e` opens notes in `$EDITOR` through a temporary file, with the TUI suspended, and saves them back on exit |
 | A5 | **Notes storage:** a `state.db` field in `design.md`, not in the digest's list, and `tasks/<id>.md` in Decision 19c (v1.1) | `tasks.notes` column in v1, migrated to files in v1.1 |
 | A6 | **Picker scope:** "sessions, inbox and messages" (design, README); "tasks, agents, inbox items" (brief) | Tasks, agents, inbox, plus maps from M15; messages stay in the timeline |
 | A7 | **Which-key:** Decision 10a locks it; roadmap says v1.1; the brief says only if it falls out naturally | v1.1. M2's pending-sequence state leaves room for it |
@@ -605,14 +613,14 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 
 | # | Gap | Proposed default |
 | --- | --- | --- |
-| B1 **Your call** | **Who starts slices?** No agent tool exists, yet the coordinator's prompt says to brief slices. This shapes the whole workflow | You start them (`<leader>sn` on a task; prompts for name and brief). The coordinator suggests, then messages the slice. Adding a tool would change Decision 25, so that's yours to choose |
-| B2 **Your call** | **`hjkl` vs lists** (the brief asks me to decide): how to move between tree and inbox when `j/k` move inside lists | `h/l` move between left and right. `j/k` move inside. `Ctrl-j/k` move between regions in the column. `<leader>n` jumps to the inbox. `Ctrl-hjkl` pan only in MAP mode |
-| B3 **Your call** | **Every finished turn in Needs you** may flood the inbox, especially from the coordinator you're watching | Keep Decision 7b, but one item per agent (newest replaces), auto-cleared when you open that agent. None while background tasks remain |
-| B4 **Your call** | **`needs_you` as task status:** set by hand or derived? | Derived from agents and inbox, never stored. `s` cycles todo → in progress → done; `<` `>` skip that column. Starting a slice moves a todo task to in progress |
-| B5 **Your call** | **Slice setup vs "hook must be fast":** the hook runs setup, but setup can take minutes and the mock shows a live timer | Hook runs setup once with a long hook timeout, recording state under `~/.local/state/dovetail/`; repeat starts return at once |
-| B6 **Your call** | **Map shelf and map key:** the mock puts a shelf in the left column; no doc gives it a region; map mode `s` (Decision 24) has no meaning anywhere | Shelf as a section under the task tree when maps exist; open via the picker or `:maps`. Leave `s` unbound in v1 and tell me if you recall what it was for |
-| B7 **Your call** | **Merging:** no flow exists for slice branches reaching `main` (`:merge` appears once, undefined) | No merge command in v1. Slices push a branch and open a PR; you merge. Then archive the task |
-| B8 **Your call** | **Memory cap values** | Coordinator 4 GB, slice 3 GB, in `config.toml`. Caps include tools, so `cargo build` counts; tune after M13 |
+| B1 **Your call** | **Who starts slices?** No agent tool exists, yet the coordinator's prompt says to brief slices. This shapes the whole workflow | **Decided: you start them** (`<leader>sn` on a task; prompts for name and brief). The coordinator recommends slices in chat, then messages the slice. Decision 25 is unchanged, so no ADR. Planned upgrade once S2 passes: a `start_slice` tool that raises a Permission request for your `y`/`d`, enforced by Dovetail's handler in every permission mode. It returns at once, needs a ready signal and a start queue, targets existing tasks only, and needs an ADR naming Decision 25 |
+| B2 **Your call** | **`hjkl` vs lists** (the brief asks me to decide): how to move between tree and inbox when `j/k` move inside lists | **Decided:** `h/l` move between left and right; `h` returns to the left region you came from. `j/k` move inside and never leave a list. `Ctrl-j/k` move between regions in the column. `<leader>n` jumps to the inbox. `Ctrl-hjkl` pan only in MAP mode. `o` folds tree nodes, per the brief |
+| B3 **Your call** | **Every finished turn in Needs you** may flood the inbox, especially from the coordinator you're watching | **Decided, refines Decision 7b ([ADR 0001](adr/0001-collapse-finished-turns.md)):** one item per agent (newest replaces), auto-cleared when you open that agent. None while background subagents remain. Other inbox kinds are never collapsed |
+| B4 **Your call** | **`needs_you` as task status:** set by hand or derived? | **Decided: derived** from agents and inbox, never stored. `s` cycles todo → in progress → done; `<` `>` skip that column. Starting a slice moves a todo task to in progress. Done wins: a done task stays done if an agent raises an item, which still shows in the inbox. Coordinator items mark no task |
+| B5 **Your call** | **Slice setup vs "hook must be fast":** the hook runs setup, but setup can take minutes and the mock shows a live timer | **Decided:** hook runs setup once with a 15-minute hook timeout, recording state under `~/.local/state/dovetail/`; repeat starts return at once. Interrupted setup re-runs, so recipe setup commands must be safe to re-run. If M8 finds the timeout isn't honoured, the core runs setup after the hook instead, with an ADR naming 12b |
+| B6 **Your call** | **Map shelf and map key:** the mock puts a shelf in the left column; no doc gives it a region; map mode `s` (Decision 24) has no meaning anywhere | **Decided:** shelf is a collapsed `▸ Maps (n)` row at the bottom of the task tree, hidden until a map exists. `<leader>M` unfolds it and moves the cursor there; `o` folds it; the picker also opens maps. A dedicated maps buffer can follow if the list outgrows the tree. `s` stays unbound in v1 |
+| B7 **Your call** | **Merging:** no flow exists for slice branches reaching `main` (`:merge` appears once, undefined) | **Decided:** no merge command or tool. Slices push a branch and open a PR. On your yes, the coordinator runs `gh pr merge`, then `git pull --ff-only` so new slices branch from current `main` (B13). Launch settings add an ask rule for `Bash(gh pr merge:*)`, so each merge raises a Permission request. If M8 shows the rule doesn't hold in auto mode, fall back to the role prompt alone. You still mark the task done and archive it |
+| B8 **Your call** | **Memory cap values** | **Decided:** coordinator 4 GB, slice 3 GB, in `config.toml`. Caps include tools, so `cargo build` counts; M13 records this repo's real peaks before any tuning. Later idea, not v1: size caps from the machine's memory and the target slice count |
 | B9 | **Project id format** | Slug of the repo folder, numbered on collision. Matches the mock's path and bootstrap's `dovetail.toml` |
 | B10 | **Global config** | `~/.config/dovetail/config.toml`: reading width, caps, `claude` path, default model |
 | B11 | **Hook entry point:** `AGENTS.md` lists `mcp` and `add` only | Internal subcommand `dovetail hook worktree-create` |
@@ -666,5 +674,4 @@ When saved, it's correct if:
 
 **Next steps for you**
 1. Do S0, since nothing else can start until it's decided.
-2. Answer the items marked **Your call**, or accept the defaults.
-3. Give the OK for S1–S3.
+2. Give the OK for S1–S3.

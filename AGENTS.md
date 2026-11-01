@@ -5,9 +5,10 @@ Instructions for any coding agent working in this repository. Read in this order
 1. this file;
 2. `docs/design-digest.md` — the implementation-relevant design: locked decisions, spike results, protocol facts, roadmap, open spikes;
 3. `docs/design.md` — the full design doc (when present; it wins over the digest);
-4. `docs/ui-session-brief.md` — detailed UI spec: data model, keys, readability, switcher, quick capture;
-5. `docs/screens/` — mock screens from the design phase (`README.md` there says which are v1 targets, which are superseded); look at `ui/b.png` and `ui/navigation.png` first. Screens are reference, the docs are spec;
-6. `README.md` — product overview.
+4. `docs/adr/` — decisions made after the v1 baseline (when present; an ADR wins over the design doc and digest on the decision it names);
+5. `docs/ui-session-brief.md` — detailed UI spec: data model, keys, readability, switcher, quick capture;
+6. `docs/screens/` — mock screens from the design phase (`README.md` there says which are v1 targets, which are superseded); look at `ui/b.png` and `ui/navigation.png` first. Screens are reference, the docs are spec;
+7. `README.md` — product overview.
 
 If an implementation plan exists (`docs/implementation-plan.md`), it is the current source of truth for *order of work*. Keep it updated as milestones finish.
 
@@ -45,6 +46,25 @@ The user wants to switch from building Dovetail with plain agents to building it
 5. User-facing decisions (UX, keys, visible naming) → ask. Implementation details with sensible defaults → decide, note in the summary.
 6. Never add a dependency without stating why. Prefer the standard library and small crates.
 7. **Never run real Claude Code sessions against the user's real projects** during development. Use a scratch git repo under the target dir or `/tmp`. Real sessions cost money: keep integration tests behind an opt-in flag (`DOVETAIL_LIVE_TESTS=1`) with tiny prompts.
+
+## Conventions for skills
+
+- **Standards:** `AGENTS.md`. **Spec:** `docs/implementation-plan.md` plus `docs/design-digest.md`.
+- **Decisions:** the decision log in `docs/design.md` is the frozen v1 baseline, never edited. New decisions that meet the `domain-modeling` ADR bar go in `docs/adr/NNNN-slug.md`, linking the spike or discussion behind them. An ADR may refine or supersede a locked decision only with the user's approval in the session, and must name the decision it changes.
+- **Terms:** `GLOSSARY.md` at the repo root.
+- **Spikes:** code in `spikes/<name>/`, results in `docs/spikes/`, never `prototype/` branches.
+- **Commits:** only with the user's OK at a milestone boundary.
+
+Which skill when:
+
+- **Reviews:** `code-review`, then `retro`.
+- **M1 and M6–M8:** `tdd`; confirm seams with the user first.
+- **Failures:** `diagnosing-bugs`.
+- **S0 and S1:** `research`.
+- **Context running low:** `handoff`.
+- **Slice PRs:** `pr`.
+
+`retro` and `handoff` are user-invoked: ask the user to run them.
 
 ## Hard constraints
 
