@@ -14,8 +14,8 @@ I run several Claude Code agents in parallel and lose track of them. Dovetail's 
 ## Hard constraints
 
 - **Rust**, `ratatui` + `crossterm`. Fuzzy picker with `nucleo`.
-- **Low memory.** The target machine has 16 GB RAM and **no working GPU**. Keep the app lean: no heavy dependencies, and redraw only when something changed.
-- **Any terminal, including basic CPU-rendered ones.** Don't rely on the kitty keyboard protocol. Shift+Enter is a nice extra only, never required.
+- **Low memory.** The target machine has 16 GB RAM. Keep the app lean: no heavy dependencies, and redraw only when something changed.
+- **Terminal:** kitty is my default, but Dovetail must work in any terminal. Don't rely on the kitty keyboard protocol; Shift+Enter is a nice extra only, never required. (kitty's graphics protocol will be used later for map images, not now.)
 - **Nothing written into user repos.** Irrelevant this session, but don't add anything that assumes it.
 - **Linux** is the primary target.
 
@@ -30,10 +30,15 @@ I run several Claude Code agents in parallel and lose track of them. Dovetail's 
 
 - **Project**: name, tasks.
 - **Task**: id, title, status (`todo`, `in_progress`, `needs_you`, `done`, `archived`), dependencies, notes, linked PR (e.g. `#1231`), and the agents attached to it. A task can have no agents yet (an idea or follow-up).
+  - **Priority, two fields:** a P-level (`P0`–`P3`, importance) and a bucket (`Now`, `Next`, `Later`, timing), with an order within `Now`.
+  - **Tree grouping:** group tasks by bucket (`Now` at the top and expanded, `Later` collapsed with a count), sorted by P-level within each bucket. Show the P-level next to each task. Flag a mismatch (a `P0` in `Later`, a `P3` in `Now`) with a subtle marker.
+  - **Unsorted group:** tasks with no bucket yet sit in an `Unsorted` group shown above `Now` (with a count, hidden when empty). They may have no P-level. A task can carry a "follow-up of <task>" marker and a "coordinator-created" marker.
 - **Agent**:
   - id, kind (`Session` or `Subagent { background: bool }`), role (`Coordinator`, `Slice`, `Subagent`), parent agent, task.
   - **Worktree:** each slice session has exactly one worktree (path and branch), and no worktree has two sessions. The coordinator works in the main checkout. Subagents share their parent's worktree. Show the branch next to slice sessions in the tree.
   - status (`working`, `idle`, `needs_you`, `done`, `error`), a one-line status text, memory in MB (sessions only), cost so far.
+  - permission mode (`auto`, `acceptEdits`, `manual`); `auto` is the default.
+  - `context_pct` for sessions (how full the context is); let `MockCore` raise it over time.
   - **Background subagents** have a description, progress and a final summary, but **no to-do items**.
   - **Sessions and foreground subagents** can have to-do items.
 - **TodoItem**: id, subject, status (`pending`, `in_progress`, `completed`), blocked-by ids, created-by agent.
@@ -64,10 +69,32 @@ I run several Claude Code agents in parallel and lose track of them. Dovetail's 
 - **Left, top:** the task tree. Project, then tasks, then each task's agents (with the branch under each slice), then each agent's to-do items. A background subagent shows as one node with a progress indicator.
 - **Left, bottom:** the inbox ("Needs you").
 - **Right:** a conversation buffer, full height. It shows the **coordinator** by default and switches when I open another agent.
-- **Status bar:** mode, project, task count, live agent count, "needs you" count, total memory.
+- **Status bar:** mode, project, task count, live agent count, "needs you" count, total memory, and the coordinator's context fill (e.g. `ctx 62%`).
+- **Context fill colors** (status bar for the coordinator, next to each slice session in the tree; not for subagents): normal up to 60%, amber 60–80%, red above 80%.
+- **Task tree grouping:** the tree groups tasks into `Unsorted` (when not empty), `Now`, `Next`, `Later` as described in the data model; the coordinator row stays at the top.
 - Glyphs (adjust if something reads better): `○` todo, `◐` working, `⚠` needs you, `✓` done, `✗` error. `◆` session, `◇` subagent.
 
 The mocks for every screen are on the layout canvas: https://claude.ai/artifact/D6yQ2Vejy8VEbQeEJWYtQL
+
+## Readability (important: I have poor eyesight)
+
+Dovetail draws all conversation text itself, so tune it for reading:
+
+- **Width:** cap the reading column at **120 columns** (configurable), centered in wider panes. Code blocks and tables may use the full pane.
+- **Spacing:** a blank row between paragraphs, between list items, and around code blocks and headings. Never render a dense block of text.
+- **Emphasis by style AND color:** render markdown properly and keep the styling (bold stays bold, italic stays italic, code stays code), but also give each its own color:
+  - body text: soft off-white, **never pure white**;
+  - bold: a warm accent color;
+  - italic: a second, distinct color;
+  - inline code and file paths: a third color;
+  - headings and speaker labels: the accent color;
+  - tool summaries and older turns: dimmed.
+  Put all colors in one theme struct so they become configurable later. Use `pulldown-cmark` for parsing; no syntax highlighting in code blocks yet.
+- **Background:** my terminal is transparent and I want to keep that, so don't paint backgrounds by default. Add a toggle that gives the reading column a solid dark background, and turn it on automatically in focus mode.
+- **Fold the noise:** tool activity in a turn collapses into one summary line (e.g. `Edited 3 files · ran tests ✓ · 42 s`), expandable. Hide thinking. Truncate long output with a "show more".
+- **Reading keys** (buffer-local in a conversation, Normal mode): `j`/`k` scroll, `gg`/`G` top and bottom, `]]`/`[[` next and previous turn, `zc`/`zo` fold and unfold a turn.
+
+Give the mock replies realistic markdown (bold leads, lists, code, file paths) so the theme can be judged.
 
 ## Modes and keys
 
@@ -100,6 +127,8 @@ Visual mode comes later; leave room for it.
 | `<leader>z` | Focus mode: coordinator only |
 | `<leader>ss` / `sn` / `st` / `sx` | Pick agent / new slice / take over (stub) / interrupt |
 | `<leader>pp` / `pr` | Switch project / register project (stubs) |
+| `<leader>sm` | Cycle the focused agent's permission mode: `auto` → `acceptEdits` → `manual`. Show a small badge in the tree for any agent not in `auto` |
+| `<leader>t` | Quick capture: a one-line overlay. Anything that isn't a token is the title; `!p0`–`!p3` sets P-level, `@now`/`@next`/`@later` the bucket, `#1231` a PR. No bucket → `Unsorted`. When a task (or an agent on one) is focused, show "linked to: <task>" under the line, on by default, `Ctrl-l` to unlink. `Enter` saves and returns to where I was; `Tab` opens the full task detail view |
 
 **Session switcher (`<leader>ss`), Telescope-style.** I mostly chat with the coordinator and visit other agents briefly, so this needs to be fast.
 
@@ -130,8 +159,8 @@ Visual mode comes later; leave room for it.
 - **Focus mode (`<leader>z`):** only the coordinator conversation and the input; the status bar keeps the "needs you" count.
 
 **Buffer-local:**
-- **Inbox:** `y` allow once, `a` always allow, `d` deny, `D` deny with a reason (opens input), `r` reply to a question, `x` dismiss a finished turn or error, `Enter` open the agent. `n`/`N` stay global search. The selected item shows a context preview: the tool, its full input, and the agent's last message.
-- **Task tree:** `Enter` open the agent's conversation, `o` expand or collapse, `a` add task, `e` edit title, `s` cycle status, `dd` archive.
+- **Inbox:** `y` allow once, `A` (Shift-a) always allow, `d` deny, `D` deny with a reason (opens input), `r` reply to a question, `x` dismiss a finished turn or error, `Enter` open the agent. `n`/`N` stay global search. The selected item shows a context preview: the tool, its full input, and the agent's last message.
+- **Task tree:** `Enter` on an agent opens its conversation; `Enter` on a task opens a task detail view (title, P-level, bucket, notes, decisions, linked PR, agents; mock the notes and a couple of decision entries). `o` expand or collapse, `a` add task, `e` edit title, `s` cycle status, `b` cycle bucket, `p` cycle P-level, `J`/`K` reorder within `Now`, `dd` archive.
 
 **Chat input (Insert mode):** plain multiline input. `Enter` sends. `Ctrl-j` and `Alt-Enter` insert a newline. `Ctrl-w` deletes a word, `Ctrl-u` the line. No vim editing inside the input.
 
@@ -148,6 +177,9 @@ A which-key popup (press Space, wait, see the bindings) is planned for later. Bu
 5. Conversation buffer, with Insert mode sending to the mock and a streamed mock reply.
 6. Command mode, the session switcher and the picker.
 7. Board, worktree view and focus mode.
+8. Quick capture, the Unsorted / Now / Next / Later tree grouping, the permission-mode switch and badge, and context fill in the status bar and tree.
+
+Apply the readability rules from the start (milestone 5 onward), not as a final pass.
 
 **Out of scope:** real Claude Code, SQLite, MCP, settings files, splits, Visual mode, TOML keymaps.
 
