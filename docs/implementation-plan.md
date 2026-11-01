@@ -673,5 +673,4 @@ When saved, it's correct if:
 - [ ] Every later milestone names its slices
 
 **Next steps for you**
-1. Do S0, since nothing else can start until it's decided.
-2. Give the OK for S1–S3.
+1. Give the OK for S1–S3. S0 passed on 2026-11-01; see `docs/spikes/terms-of-use.md`.
