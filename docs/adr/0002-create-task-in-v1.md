@@ -1,0 +1,3 @@
+# Ship `create_task` in v1
+
+Refines Decision 25, which places the coordinator's `create_task` tool in v1.1, although both v1 roadmaps list it under quick capture. Without it the user retypes every title the coordinator has already chosen when a feature is split, and follow-ups the coordinator spots go unfiled. So the tool ships at M9, on the MCP bridge built there, keeping Decision 21's rules: coordinator only, tasks land in Unsorted unless given a bucket, never straight into Now, and they stay marked coordinator-created until the user has seen them. Approved by the user in the session that worked through [implementation plan section 7, item A2](../implementation-plan.md#7-where-the-docs-disagree-or-say-nothing).
