@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail layout C</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#c9d1d9}
+.box{position:relative;border:1px solid #30363d;padding:14px 12px 8px;box-sizing:border-box;min-height:0;display:flex;flex-direction:column}
+.box.f{border-color:#7ee787}
+.bt{position:absolute;top:-11px;left:10px;padding:0 6px;background:#0d1117;color:#8b949e;white-space:pre}
+.box.f .bt{color:#7ee787}
+.in{overflow:hidden;flex:1;min-height:0}
+.row{white-space:pre}
+.wrap{white-space:pre-wrap}
+.dim{color:#8b949e}
+.wk{color:#6cb6ff}.ny{color:#f0a35e}.ok{color:#7ee787}.er{color:#ff7b72}
+.sel{background:#1c2b40}
+.b{font-weight:700}
+a{color:#6cb6ff}a:hover{color:#9ccfff}
+</style>
+</head><body>
+<div class="t" style="width: 1200px; height: 760px; background: #0d1117; display: flex; flex-direction: column; box-sizing: border-box">
+<div style="flex: 1; display: flex; gap: 12px; padding: 22px 14px 10px; min-height: 0">
+
+<section class="box" style="width: 360px; flex-shrink: 0">
+<div class="bt"> tasks · business </div>
+<div class="in">
+<div class="row"><span class="wk">◐ ◆</span> coordinator      <span class="dim">1.2G $3.10</span></div>
+<div class="row"><span class="dim">▾</span> <span class="wk">◐</span> <span class="b">#1231 business surface</span></div>
+<div class="row">  <span class="wk">◐ ◆</span> slice-4        <span class="dim">412M $1.84</span></div>
+<div class="row">      <span class="ok">✓</span> write route tests</div>
+<div class="row">      <span class="wk">◐</span> wire handler</div>
+<div class="row">      <span class="dim">○ OpenAPI spec  ⊘</span></div>
+<div class="row">    <span class="ok">✓ ◇</span> rebase onto main</div>
+<div class="row">    <span class="wk">◐ ◇</span> explore  <span class="wk">▓▓▓▓▓░░░</span></div>
+<div class="row"><span class="dim">▾</span> <span class="ny">⚠</span> <span class="b">get_decision 500</span></div>
+<div class="row">  <span class="ny">⚠ ◆</span> slice-7        <span class="dim">388M $0.92</span></div>
+<div class="row">      <span class="wk">◐</span> reproduce 500</div>
+<div class="row"><span class="dim">▸</span> <span class="dim">○</span> idea: eval key flow</div>
+<div class="row"><span class="dim">▸</span> <span class="dim">○</span> follow-up: retry budget</div>
+<div class="row dim">▸ done (1)</div>
+</div>
+</section>
+
+<section class="box f" style="flex: 1; min-width: 0">
+<div class="bt"> coordinator · ◐ working · 1.2G </div>
+<div class="in">
+<div class="row dim">coordinator · 10:02</div>
+<div class="wrap">Done. slice-4 owns #1231 with three to-dos; slice-7 is reproducing the get_decision 500.</div>
+<div class="row dim">  ▸ Read src/routes.rs</div>
+<div class="row dim">  ▸ SendMessage → slice-7</div>
+<div class="row dim">  ▸ Edit docs/plan.md  <span class="ok">+12</span> <span class="er">−3</span></div>
+<div class="row"> </div>
+<div class="row dim">you · 10:14</div>
+<div class="wrap">What's blocking slice-7?</div>
+<div class="row"> </div>
+<div class="row dim">coordinator · 10:14</div>
+<div class="wrap">It needs FS_EVAL_VIRTUAL_KEY to reach the eval path. It asked for it in the inbox; approve the Bash call there and it can carry on.</div>
+</div>
+<div style="border: 1px solid #7ee787; padding: 6px 8px; margin-top: 6px">
+<div class="wrap">› Ask slice-4 whether it still needs the /v1</div>
+<div class="wrap">  alias before I answer<span class="ok">▌</span></div>
+</div>
+<div class="row dim" style="padding-top: 4px">Enter send · Ctrl-j newline · Esc normal</div>
+</section>
+
+<section class="box" style="width: 330px; flex-shrink: 0">
+<div class="bt"> inbox · needs you (3) </div>
+<div class="in">
+<div class="row sel"><span class="ny">▸ ⚠ slice-7</span> Bash      <span class="dim">10:15</span></div>
+<div class="row">  <span class="ny">? slice-4</span> Question  <span class="dim">10:12</span></div>
+<div class="row">  <span class="ok">✓ slice-4</span> Finished  <span class="dim">10:09</span></div>
+<div style="border-top: 1px dashed #30363d; margin-top: 8px; padding-top: 8px">
+<div class="row b">Bash · slice-7</div>
+<div class="wrap">FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get_decision</div>
+<div class="row"> </div>
+<div class="row dim">last message</div>
+<div class="wrap dim">"Reproduced the 500 once the key is set. I need it to run the eval path."</div>
+</div>
+</div>
+<div class="wrap dim" style="padding-top: 4px">y allow · a always · d deny
+D reason · ⏎ open</div>
+</section>
+
+</div>
+<div class="row" style="height: 24px; display: flex; align-items: center; background: #161b22; flex-shrink: 0">
+<span class="b" style="background: #7ee787; color: #0d1117; padding: 0 8px; line-height: 24px">INSERT → coordinator</span>
+<span style="padding: 0 10px">business · 4 tasks · 3 agents · <span class="ny">2 ⚠</span> · 2.1G</span>
+<span style="flex: 1"></span>
+<span class="dim" style="padding: 0 10px">Esc normal</span>
+</div>
+</div>
+</body></html>

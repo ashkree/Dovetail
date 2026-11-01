@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail worktree view</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:var(--body)}
+.box{position:relative;border:1px solid var(--line);padding:14px 12px 8px;box-sizing:border-box;min-height:0;display:flex;flex-direction:column}
+.box.f{border-color:var(--focus)}
+.bt{position:absolute;top:-11px;left:10px;padding:0 6px;background:var(--titlebg);color:var(--dim);white-space:pre}
+.box.f .bt{color:var(--focus)}
+.in{overflow:hidden;flex:1;min-height:0}
+.row{white-space:pre}
+.wrap{white-space:pre-wrap}
+.dim{color:var(--dim)}
+.wk{color:var(--wk)}.ny{color:var(--ny)}.ok{color:var(--ok)}.er{color:var(--er)}
+.sel{background:var(--sel)}
+.b{font-weight:700}
+a{color:var(--wk)}a:hover{color:var(--body)}
+</style>
+</head><body>
+<div class="t" style="width: 1200px; height: 760px; background: #15132a; display: flex; flex-direction: column; box-sizing: border-box; --bg: #15132a; --ink: #15132a; --float: #15132a; --titlebg: #15132a; --bar: #1e1b3a; --line: #4a4380; --focus: #ec8a7e; --body: #e6e3f0; --dim: #8f8aa8; --label: #ec8a7e; --bold: #fbf7ff; --italic: #c7a8ff; --code: #a9c4ff; --wk: #7aa7ff; --ny: #ffb86b; --ok: #8fd694; --er: #ff6b81; --sel: #2a2550; --mode: #f2c94c; --solid: #0c0b1a">
+<div style="flex: 1; display: flex; gap: 12px; padding: 22px 14px 10px; min-height: 0">
+
+<div style="width: 460px; flex-shrink: 0; display: flex; flex-direction: column; gap: 24px">
+
+<section class="box" style="flex: 1.35">
+<div class="bt"> tasks · business </div>
+<div class="in">
+<div class="row"><span class="wk">◐ ◆</span> coordinator            <span class="dim">working 1.2G $3.10</span></div>
+<div class="row"><span class="dim">▾</span> <span class="wk">◐</span> <span class="b">#1231 business surface</span><span class="dim">         PR #1231</span></div>
+<div class="row sel">  <span class="wk">◐ ◆</span> slice-4              <span class="dim">working  412M $1.84</span></div>
+<div class="row dim">      ⎇ dovetail/slice-4  ↑4 ●4</div>
+<div class="row">      <span class="ok">✓</span> write route tests</div>
+<div class="row">      <span class="wk">◐</span> wire handler to registry</div>
+<div class="row">      <span class="dim">○ update OpenAPI spec      ⊘ blocked</span></div>
+<div class="row">    <span class="ok">✓ ◇</span> rebase onto main <span class="dim">           done $0.21</span></div>
+<div class="row">    <span class="wk">◐ ◇</span> explore callers  <span class="wk">▓▓▓▓▓░░░</span> <span class="dim">62%</span></div>
+<div class="row"><span class="dim">▾</span> <span class="ny">⚠</span> <span class="b">get_decision 500</span></div>
+<div class="row">  <span class="ny">⚠ ◆</span> slice-7            <span class="ny">needs you</span> <span class="dim">388M $0.92</span></div>
+<div class="row dim">      ⎇ dovetail/slice-7  ↑1 <span class="ny">↓2</span> ●1</div>
+<div class="row">      <span class="wk">◐</span> reproduce 500 locally</div>
+<div class="row"><span class="dim">▾</span> <span class="wk">◐</span> <span class="b">follow-up: retry budget</span></div>
+<div class="row">  <span class="wk">◌ ◆</span> slice-8            <span class="wk">setting up</span></div>
+</div>
+</section>
+
+<section class="box" style="flex: 1">
+<div class="bt"> inbox · needs you (3) </div>
+<div class="in">
+<div class="row sel"><span class="ny">▸ ⚠ slice-7</span>  Bash               <span class="dim">10:15</span></div>
+<div class="row">  <span class="ny">? slice-4</span>  Question           <span class="dim">10:12</span></div>
+<div class="row">  <span class="ok">✓ slice-4</span>  Finished turn      <span class="dim">10:09</span></div>
+</div>
+<div class="row dim" style="padding-top: 4px">y allow · a always · d deny · D reason · ⏎ open</div>
+</section>
+
+</div>
+
+<section class="box f" style="flex: 1; min-width: 0">
+<div class="bt"> worktrees · business · 4 </div>
+<div class="in">
+<div class="row dim">   session        branch                     sync     changes   PR</div>
+<div class="row">  <span class="wk">◐ ◆</span> coordinator  <span class="dim">main checkout · no branch, doesn't edit</span></div>
+<div class="row sel"><span class="wk">▸ ◐ ◆</span> slice-4      dovetail/slice-4           ↑4 ↓0    ●4        #1231 <span class="ok">✓ CI</span></div>
+<div class="row dim">      └ ◇ try-alt-registry  ⎇ dovetail/agent-a3f9 · own worktree · removed when done if clean</div>
+<div class="row">  <span class="ny">⚠ ◆</span> slice-7      dovetail/slice-7           ↑1 <span class="ny">↓2</span>    ●1        <span class="dim">—</span></div>
+<div class="row">  <span class="wk">◌ ◆</span> slice-8      dovetail/slice-8           <span class="wk">setting up · setup command 0:18</span></div>
+<div class="row dim">  ○ · archived   dovetail/old-spike         <span class="ny">↑2 unpushed</span> · removal waits for you</div>
+
+<div style="border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 10px">
+<div class="row"><span class="b">slice-4</span>  <span class="dim">⎇</span> dovetail/slice-4</div>
+<div class="row"><span class="dim">path   </span>~/.local/share/dovetail/projects/business/worktrees/slice-4</div>
+<div class="row"><span class="dim">setup  </span><span class="ok">✓</span> linked apps/helix-backend/.env <span class="dim">(read-only)</span> · <span class="ok">✓</span> setup command <span class="dim">(42s)</span></div>
+<div class="row"><span class="dim">base   </span>main @ 3f2a91c · rebased 10:05 by <span class="ok">✓ ◇</span> rebase</div>
+<div class="row"><span class="dim">head   </span>a91c0de wire business routes <span class="dim">· 10:11</span></div>
+<div class="row"><span class="dim">shared </span>◇ rebase, ◇ explore callers <span class="dim">run here; ◇ try-alt-registry in agent-a3f9</span></div>
+<div class="row"> </div>
+<div class="row dim">uncommitted (4)</div>
+<div class="row">  <span class="ny">M</span> src/routes.rs                     <span class="ok">+48</span> <span class="er">−12</span></div>
+<div class="row">  <span class="ny">M</span> src/handlers/business.rs          <span class="ok">+31</span> <span class="er">−4</span></div>
+<div class="row">  <span class="ny">M</span> tests/routes_test.rs              <span class="ok">+22</span></div>
+<div class="row">  <span class="ok">A</span> src/registry/business.rs          <span class="ok">+64</span></div>
+<div class="row"> </div>
+<div class="row dim">commits ahead of main (4)</div>
+<div class="row">  a91c0de wire business routes</div>
+<div class="row">  77be210 add route tests</div>
+<div class="row dim">  + 2 more</div>
+</div>
+</div>
+<div class="row dim" style="border-top: 1px solid var(--line); padding-top: 6px">⏎ open session · e open in nvim · c copy path · X remove (asks if work is unpushed)</div>
+</section>
+
+</div>
+<div class="row" style="height: 24px; display: flex; align-items: center; background: var(--bar); flex-shrink: 0">
+<span class="b" style="background: var(--mode); color: var(--ink); padding: 0 8px; line-height: 24px">NORMAL</span>
+<span style="padding: 0 10px">business · 4 tasks · 3 agents · <span class="ny">2 ⚠</span> · 2.1G</span>
+<span style="flex: 1"></span>
+<span class="dim" style="padding: 0 10px">␣g worktrees · ␣b board · ␣z focus</span>
+</div>
+<p style="margin: 0; position: absolute; left: 697px; top: 100px">built</p></div>
+</body></html>

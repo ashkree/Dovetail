@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dovetail map image canvas</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#e3946b}a:hover{color:#f2e7d8}
+</style>
+</head><body>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: #121318; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #cfcbc2; display: flex; flex-direction: column">
+<div style="flex: 1; min-height: 0; display: flex">
+<div style="width: 260px; box-sizing: border-box; border-right: 1px solid #2c2d35; padding: 14px 0; display: flex; flex-direction: column; gap: 4px">
+<div style="padding: 0 16px 8px; color: #8f8e97">tasks</div>
+<div style="padding: 2px 16px; white-space: pre; color: #e3946b; font-weight: 700">▾ Now</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #8f8e97">  P0 </span><span style="color: #7cc4d6">◐</span> #1231 business</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #8f8e97">  P1 </span><span style="color: #e2c26e">⚠</span> get_decision 500</div>
+<div style="padding: 2px 16px; white-space: pre; color: #8f8e97">▸ Next (3)</div>
+<div style="padding: 2px 16px; white-space: pre; color: #8f8e97">▸ Later (9)</div>
+<div style="padding: 18px 16px 8px; color: #8f8e97">maps</div>
+<div style="padding: 2px 16px; white-space: pre; background: #24252d"><span style="color: #e3946b">▣</span> Gift purchase</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #e3946b">▣</span> Eval harness</div>
+<div style="padding: 2px 16px; white-space: pre"><span style="color: #93cf86">✓</span> What #1231 changed</div>
+</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid #2c2d35">
+<span><span style="color: #8f8e97">map · </span><span style="color: #e3946b; font-weight: 700">How a gift purchase works</span><span style="color: #8f8e97"> · image view</span></span>
+<span style="color: #8f8e97">zoom 100% · hjkl pan · + − zoom · v outline</span>
+</div>
+<div style="flex: 1; min-height: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px">
+<div style="position: relative; width: 970px; height: 520px; background: #17181e; border: 1px solid #2c2d35; font-family: 'Inter', sans-serif">
+<svg width="970" height="520" viewBox="0 0 970 520" style="position: absolute; left: 0; top: 0" aria-hidden="true">
+<defs>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8f8e97"></path></marker>
+<marker id="ahl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#f2e7d8"></path></marker>
+</defs>
+<path d="M228 82 L296 82" stroke="#f2e7d8" stroke-width="2.5" fill="none" marker-end="url(#ahl)"></path>
+<path d="M548 82 L696 82" stroke="#8f8e97" stroke-width="1.75" fill="none" marker-end="url(#ah)"></path>
+<path d="M390 132 C390 200 340 210 340 256" stroke="#8f8e97" stroke-width="1.75" fill="none" marker-end="url(#ah)"></path>
+<path d="M500 132 C500 230 600 292 696 292" stroke="#8f8e97" stroke-width="1.75" fill="none" marker-end="url(#ah)"></path>
+<path d="M810 332 L810 416" stroke="#8f8e97" stroke-width="1.75" fill="none" marker-end="url(#ah)"></path>
+</svg>
+<div style="position: absolute; left: 600px; top: 58px; font-size: 13px; color: #8f8e97">charges</div>
+<div style="position: absolute; left: 376px; top: 196px; font-size: 13px; color: #8f8e97">writes</div>
+<div style="position: absolute; left: 560px; top: 236px; font-size: 13px; color: #8f8e97">fires</div>
+<div style="position: absolute; left: 824px; top: 366px; font-size: 13px; color: #8f8e97">produces</div>
+<div style="position: absolute; left: 24px; top: 44px; width: 204px; height: 76px; box-sizing: border-box; padding: 12px 16px; border: 2px solid #7cc4d6; border-radius: 18px; background: #17181e; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 16px; font-weight: 600; color: #cfcbc2"><span style="color: #7cc4d6">→</span> POST /api/gift</div>
+<div style="font-size: 13px; color: #8f8e97">checkout form</div>
+</div>
+<div style="position: absolute; left: 300px; top: 30px; width: 248px; height: 102px; box-sizing: border-box; padding: 12px 16px; border: 5px double #e3946b; border-radius: 8px; background: #2a211d; display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 17px; font-weight: 600; color: #f2e7d8"><span style="color: #e3946b">▣</span> Business rules</div>
+<div style="font-size: 13px; color: #8f8e97">3 files, 2 routes</div>
+<div style="font-size: 12px; color: #e2c26e">● changed today by slice-4</div>
+</div>
+<div style="position: absolute; left: 700px; top: 44px; width: 220px; height: 76px; box-sizing: border-box; padding: 12px 16px; border: 2px dashed #8f8e97; border-radius: 8px; background: #17181e; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 16px; font-weight: 600; color: #cfcbc2"><span style="color: #8f8e97">◇</span> Stripe</div>
+<div style="font-size: 13px; color: #8f8e97">charges the card</div>
+</div>
+<div style="position: absolute; left: 240px; top: 260px; width: 204px; height: 76px; box-sizing: border-box; padding: 12px 16px; border-top: 5px double #e2c26e; border-bottom: 5px double #e2c26e; border-left: 2px solid #e2c26e; border-right: 2px solid #e2c26e; border-radius: 4px; background: #17181e; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 16px; font-weight: 600; color: #cfcbc2"><span style="color: #e2c26e">◎</span> gifts table</div>
+<div style="font-size: 13px; color: #8f8e97">Postgres</div>
+</div>
+<div style="position: absolute; left: 700px; top: 254px; width: 220px; height: 76px; box-sizing: border-box; padding: 12px 16px; border: 2px dashed #8f8e97; border-radius: 8px; background: #17181e; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 16px; font-weight: 600; color: #cfcbc2"><span style="color: #8f8e97">◇</span> SendGrid</div>
+<div style="font-size: 13px; color: #8f8e97">emails the code</div>
+</div>
+<div style="position: absolute; left: 700px; top: 420px; width: 220px; height: 76px; box-sizing: border-box; padding: 12px 16px; border: 3px solid #93cf86; border-radius: 8px; background: #17181e; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 16px; font-weight: 600; color: #cfcbc2"><span style="color: #93cf86">✓</span> code delivered</div>
+<div style="font-size: 13px; color: #8f8e97">outcome · pass</div>
+</div>
+<div style="position: absolute; left: 24px; top: 420px; width: 300px; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 15px; color: #b8a2e6; font-style: italic">※ retry strategy</div>
+<div style="font-size: 13px; color: #8f8e97">failed charges retried twice</div>
+</div>
+</div>
+<div style="white-space: pre"><span style="color: #e3946b; font-weight: 700">▣ Business rules</span>  <span style="color: #8f8e97">validates the amount, charges via Stripe ·</span> Enter details · c comment · e export</div>
+</div>
+</div>
+</div>
+<div style="height: 32px; display: flex; align-items: center; gap: 16px; padding: 0 16px; background: #1b1c22; border-top: 1px solid #2c2d35">
+<span style="background: #e3946b; color: #121318; font-weight: 700; padding: 2px 10px">NORMAL</span>
+<span style="color: #8f8e97">business · 3 tasks · 2 agents · <span style="color: #e2c26e">1 ⚠</span> · ctx 41% · 2.1G</span>
+</div>
+</div>
+</body></html>
