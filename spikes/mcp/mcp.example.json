@@ -1,0 +1,1 @@
+{"mcpServers":{"spike":{"command":"python3","args":["spikes/mcp/server.py"],"env":{"SPIKE_LOG":"/tmp/dovetail-spikes/mcp/server.log"}}}}

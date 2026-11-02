@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""Fake `claude` for S1 RSS measurement: answers control requests and replays
+the recorded `out` lines of $FAKE_FIXTURE for each user message. No network."""
+import json, os, sys
+if "--version" in sys.argv:
+    print("2.1.316 (Claude Code)"); sys.exit(0)
+fx = os.environ.get("FAKE_FIXTURE")
+lines = [json.loads(l) for l in open(fx)]
+replay = [e["msg"] for e in lines if e["dir"] == "out" and e["msg"].get("type") not in ("control_response", "control_request")]
+def emit(m): sys.stdout.write(json.dumps(m) + "\n"); sys.stdout.flush()
+for raw in sys.stdin:
+    try: m = json.loads(raw)
+    except Exception: continue
+    if m.get("type") == "control_request":
+        emit({"type": "control_response", "response": {"subtype": "success", "request_id": m["request_id"], "response": {}}})
+    elif m.get("type") == "user":
+        for r in replay: emit(r)

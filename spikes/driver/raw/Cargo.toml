@@ -1,0 +1,15 @@
+[package]
+name = "spike-raw"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Not a workspace member of Dovetail: a throwaway spike.
+[workspace]
+
+[dependencies]
+tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "sync", "time"] }
+serde_json = "1"
+
+[profile.release]
+strip = true
