@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "WorktreeCreate": [
+      { "hooks": [ { "type": "command", "command": "SPIKE_DIR/cfg/worktree-hook.sh" } ] }
+    ]
+  }
+}

@@ -79,6 +79,8 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 
 **Decision rule:** take the first crate passing A–H; on a tie, take fewer dependencies. **Fallback:** a hand-written NDJSON layer, preferred over the SDK sidecar because a Node or Python process costs memory on every session.
 
+**Result (2026-11-02, see `docs/spikes/driver.md`):** neither crate works; **hand-written NDJSON layer chosen** (passed A–H). `--permission-prompt-tool stdio` is still required. Re-checks on 2.1.316: `auto` works on Pro; double `result` confirmed (there can be a third, empty one; each carries `result_index`); `--session-id` sets the id; `modelUsage.contextWindow` present. Deny and "always allow" answers untested: cover in M7. Extra fixtures beyond the seven are also recorded.
+
 **Output:** sanitised fixtures in `crates/dovetail-driver/tests/fixtures/`: `plain_turn`, `partial_stream`, `subagent_background`, `double_result`, `concurrent_permissions`, `todo_tools`, `resume`.
 
 ### S2. Inbound messaging (agent)
@@ -97,6 +99,8 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 | c. Is it delivered mid-turn? | Delivered, order recorded | Record the behaviour; no action needed |
 | d. Does `--name` set the name shown by `ListAgents`? | Yes | Tell the coordinator session names in its prompt |
 
+**Result (2026-11-02, see `docs/spikes/messaging.md`):** a, b and d pass, c is queued with order preserved; **M8 does not need the relay.** An idle slice wakes by itself on an inbound `SendMessage`, and the receiver's `origin` object (sender name, socket, verified PID, `msg_id`, body) is joined to the sender's tool result on `msg_id`. With `--replay-user-messages` the receipt shows as a replayed `user` event at the start of the turn. A message sent mid-turn waits for that turn to end. Notes for M8: `SendMessage` is a deferred tool, so list it in `--allowedTools` and mention it in role prompts; the id in `ListAgents` is not a prefix of the stream `session_id`, so match on the names Dovetail assigns; headless sessions show as interactive and `ListAgents` also lists unrelated sessions, so filter by those names; receivers do not reply unless asked, so the slice prompt says to act on coordinator messages.
+
 ### S3. MCP behaviour (agent)
 
 **Gates:** `ask_user` semantics. Long tool holds are not in the digest's spike list, but `blocking: true` depends on them. **Procedure:** `spikes/mcp/` has a toy stdio server with `ping(hold_seconds)`.
@@ -107,6 +111,8 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 | Call from a foreground subagent | Works | Route through the parent |
 | Call from a background subagent | Works | Route through the parent; remove the tools from any subagent guidance |
 | Can the server tell which agent called? | Via `_meta` or by stream correlation | Attribute to the parent session |
+
+**Result (2026-11-02, see `docs/spikes/mcp.md`):** all four pass, no fallback. A 15-minute hold returns normally, so `blocking: true` works. Attribution is by stream correlation: `params._meta` carries `claudecode/toolUseId`, matched to the stream's `parent_tool_use_id`; the two can arrive in either order, so the core parks a call briefly. `dovetail mcp` must answer the `server/discover` probe (sent before `initialize`) and unknown methods without hanging. Subagents reach MCP tools via `ToolSearch` (one extra step). Not tested: holds over 15 min, `MCP_TOOL_TIMEOUT`, whether a held call blocks queued user messages (check in M9).
 
 ### S4. cgroup enforcement (you)
 
@@ -122,6 +128,8 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 | Scope cleanup | No scope left after exit |
 
 **Fallback:** `MemoryHigh` throttling or `prlimit`; failing that, ship memory display only and warn.
+
+**Result (2026-11-02, see `docs/spikes/cgroup.md`):** all six checks pass on systemd 262; no fallback. M13 must note: systemd's default `OOMPolicy=stop` SIGTERMs the whole scope after an OOM kill, so the session dies with its tool; `-p OOMPolicy=continue` keeps it. Pass `--collect`, or an OOM-killed scope lingers. `systemd-run` turns `$$` into `$` in arguments.
 
 ### S5. merman (agent, plus your eye)
 
@@ -176,7 +184,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `jiff` | core, tui | default | Local-time display with no unsafe of ours |
 | `uuid` | core | `v4` | Choose session ids |
 | `notify` (latest stable, not the 9 rc) | core | default | Watch native task files (M11) |
-| `claude-agent-sdk-rs` or `rusty_claw` | driver | decided by S1 | Decision 4a |
+| *none:* hand-written NDJSON layer on `tokio` + `serde_json` | driver | n/a | Decision 4a fallback. S1 (2026-11-02): `claude-agent-sdk-rs` and `rusty_claw` both fail C (concurrent permissions) and H (tolerance); the hand-written layer passed A–H (18 crates, +1.39 MB, 4.3 MB RSS) |
 | `merman` | maps | PNG/SVG only | Decision 23c, pending S5 |
 | `ratatui-image` (latest stable) | tui, M15 only | `crossterm` | kitty graphics |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
@@ -321,7 +329,7 @@ pub struct SessionSpec {
 
 **Launch flags (`SessionSpec` → argv)**
 
-`claude -p --input-format stream-json --output-format stream-json --verbose --include-partial-messages --permission-prompt-tool stdio --permission-mode auto --session-id <uuid> --name <name> --settings <file> --mcp-config <file> --append-system-prompt-file <role> [--worktree <slice>]`
+`claude -p --input-format stream-json --output-format stream-json --verbose --include-partial-messages --replay-user-messages --permission-prompt-tool stdio --permission-mode auto --session-id <uuid> --name <name> --settings <file> --mcp-config <file> --append-system-prompt-file <role> [--worktree <slice>]`
 
 Environment: `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, `CLAUDE_CODE_TASK_LIST_ID=<list id>`. M13 prefixes the command with `systemd-run --user --scope`.
 
@@ -486,8 +494,8 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Tests:** `concurrent_permissions` fixture, always-allow payloads, mode mapping (`manual`)
 
 ### M8. Slices, worktree hooks, cleanup
-- **Spikes needed:** S2 (messaging, or relay)
-- **Scope:** `dovetail hook worktree-create` (idempotent; symlinks only; recipe setup; prints the path). `SettingUp` state in the tree. `<leader>sn` and `:spawn`. Slice brief from task plus your text. First prompt sent after init. Worktree removal: check for uncommitted or unpushed work, ask, remove our files, `git worktree remove`, delete the `dovetail/*` branch. Message timeline, or relay, per S2. Archive flow with `dd`.
+- **Spikes needed:** S2 (done: no relay needed)
+- **Scope:** `dovetail hook worktree-create` (idempotent; symlinks only; recipe setup; prints the path). `SettingUp` state in the tree. `<leader>sn` and `:spawn`. Slice brief from task plus your text. First prompt sent after init. Worktree removal: check for uncommitted or unpushed work, ask, remove our files, `git worktree remove`, delete the `dovetail/*` branch. Message timeline from `SendMessage` calls and `origin` objects joined on `msg_id` (no relay, per S2); sessions launch with `--replay-user-messages` and `SendMessage` in `--allowedTools`. Archive flow with `dd`.
 - **Files:** `crates/dovetail-core/src/{worktree,slice,messaging}.rs`, `crates/dovetail/src/hook.rs`
 - **Done when:**
   - [ ] A real slice starts in a hook-created worktree outside the repo
@@ -601,7 +609,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 | A10 | **Conversation storage:** "referenced, not copied" (5b); revised by Decision 20, whose search is v1.1 | Store conversation text from v1, add FTS in v1.1 |
 | A11 | **`i` target:** "from an open slice, that slice" (design); "coordinator, unless an agent is selected in the tree" (brief) | Brief's rule, plus: if the main region is showing an agent and has focus, target that agent |
 | A12 | **Task list id:** `<task id>` in the digest, but lists are global in `~/.claude/tasks/` and the coordinator has a project list | `dovetail-<project>-task-<id>`, and `dovetail-<project>-coordinator` |
-| A13 | **Spike 3's flag:** `--permission-prompt-tool stdio` is in `design.md` but not in the digest's launch list, and is now absent from `--help` | Use it; S1 confirms. `--verbose` and `--include-partial-messages` are in neither but required |
+| A13 | **Spike 3's flag:** `--permission-prompt-tool stdio` is in `design.md` but not in the digest's launch list, and is now absent from `--help` | **Resolved by S1:** required. Without it a manual-mode request is auto-denied (`system/permission_denied`) and never reaches Dovetail, despite `--permission-prompts host`. It is in the launch flags above. `--verbose` and `--include-partial-messages` are in neither doc but required |
 | A14 | **Mock vs docs:** always-allow shown as `a`; canvas shows `hjkl` as pan; `c comment · e export` on the v1 canvas | Docs win: `A`; `hjkl` selects and `Ctrl-hjkl` pans; comments v1.1, export v2 |
 | A15 | **Stale text:** Decision 18 says "bottom-right" but the inbox is bottom-left; Visual Maps "Views" still mentions a text navigator; Decision 13 and 15–17 numbering repeats | Treat as stale: helper uses the inbox region; the version table wins; cite numbers as the digest does |
 | A16 | **Run rule:** "never run real sessions against real projects" vs self-hosting on this repo | Applies to development and tests. Self-hosting uses the installed release, and live tests stay in scratch repos |
@@ -641,7 +649,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 | B26 | **Take-over terminal** | Same terminal, TUI suspended, as the mock shows |
 | B27 | **Key-sequence timeout** | 1000 ms |
 | B28 | **`--strict-mcp-config`** | Not used, so your own MCP servers still load |
-| B29 | **Context window source** | `result.modelUsage` if S1 finds it, else a model table in core |
+| B29 | **Context window source** | **Resolved by S1:** `result.modelUsage.<model>.contextWindow` is present (and `maxOutputTokens`); no model table |
 | B30 | **Socket path** | `$XDG_RUNTIME_DIR/dovetail/<project-id>.sock`, mode 0600 |
 
 ---
@@ -673,4 +681,4 @@ When saved, it's correct if:
 - [ ] Every later milestone names its slices
 
 **Next steps for you**
-1. Give the OK for S1–S3. S0 passed on 2026-11-01; see `docs/spikes/terms-of-use.md`.
+1. Review the spike results: S0 passed on 2026-11-01 (`docs/spikes/terms-of-use.md`); S1, S3, S4 ran on 2026-11-02 (`docs/spikes/driver.md`, `mcp.md`, `cgroup.md`); S2 is in `messaging.md`. Then give the OK for M1.
