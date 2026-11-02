@@ -99,6 +99,8 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 | c. Is it delivered mid-turn? | Delivered, order recorded | Record the behaviour; no action needed |
 | d. Does `--name` set the name shown by `ListAgents`? | Yes | Tell the coordinator session names in its prompt |
 
+**Result (2026-11-02, see `docs/spikes/messaging.md`):** a, b and d pass, c is queued with order preserved; **M8 does not need the relay.** An idle slice wakes by itself on an inbound `SendMessage`, and the receiver's `origin` object (sender name, socket, verified PID, `msg_id`, body) is joined to the sender's tool result on `msg_id`. With `--replay-user-messages` the receipt shows as a replayed `user` event at the start of the turn. A message sent mid-turn waits for that turn to end. Notes for M8: `SendMessage` is a deferred tool, so list it in `--allowedTools` and mention it in role prompts; the id in `ListAgents` is not a prefix of the stream `session_id`, so match on the names Dovetail assigns; headless sessions show as interactive and `ListAgents` also lists unrelated sessions, so filter by those names; receivers do not reply unless asked, so the slice prompt says to act on coordinator messages.
+
 ### S3. MCP behaviour (agent)
 
 **Gates:** `ask_user` semantics. Long tool holds are not in the digest's spike list, but `blocking: true` depends on them. **Procedure:** `spikes/mcp/` has a toy stdio server with `ping(hold_seconds)`.
@@ -327,7 +329,7 @@ pub struct SessionSpec {
 
 **Launch flags (`SessionSpec` → argv)**
 
-`claude -p --input-format stream-json --output-format stream-json --verbose --include-partial-messages --permission-prompt-tool stdio --permission-mode auto --session-id <uuid> --name <name> --settings <file> --mcp-config <file> --append-system-prompt-file <role> [--worktree <slice>]`
+`claude -p --input-format stream-json --output-format stream-json --verbose --include-partial-messages --replay-user-messages --permission-prompt-tool stdio --permission-mode auto --session-id <uuid> --name <name> --settings <file> --mcp-config <file> --append-system-prompt-file <role> [--worktree <slice>]`
 
 Environment: `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, `CLAUDE_CODE_TASK_LIST_ID=<list id>`. M13 prefixes the command with `systemd-run --user --scope`.
 
@@ -492,8 +494,8 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Tests:** `concurrent_permissions` fixture, always-allow payloads, mode mapping (`manual`)
 
 ### M8. Slices, worktree hooks, cleanup
-- **Spikes needed:** S2 (messaging, or relay)
-- **Scope:** `dovetail hook worktree-create` (idempotent; symlinks only; recipe setup; prints the path). `SettingUp` state in the tree. `<leader>sn` and `:spawn`. Slice brief from task plus your text. First prompt sent after init. Worktree removal: check for uncommitted or unpushed work, ask, remove our files, `git worktree remove`, delete the `dovetail/*` branch. Message timeline, or relay, per S2. Archive flow with `dd`.
+- **Spikes needed:** S2 (done: no relay needed)
+- **Scope:** `dovetail hook worktree-create` (idempotent; symlinks only; recipe setup; prints the path). `SettingUp` state in the tree. `<leader>sn` and `:spawn`. Slice brief from task plus your text. First prompt sent after init. Worktree removal: check for uncommitted or unpushed work, ask, remove our files, `git worktree remove`, delete the `dovetail/*` branch. Message timeline from `SendMessage` calls and `origin` objects joined on `msg_id` (no relay, per S2); sessions launch with `--replay-user-messages` and `SendMessage` in `--allowedTools`. Archive flow with `dd`.
 - **Files:** `crates/dovetail-core/src/{worktree,slice,messaging}.rs`, `crates/dovetail/src/hook.rs`
 - **Done when:**
   - [ ] A real slice starts in a hook-created worktree outside the repo

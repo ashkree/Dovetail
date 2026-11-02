@@ -1,6 +1,6 @@
 # S4: cgroup enforcement
 
-**Status:** script written, not run. Owner: you (needs your machine and user systemd).
+**Status:** run 2026-11-02, all six checks pass (see Result). Owner: you (needs your machine and user systemd).
 
 `spikes/cgroup/run.sh` checks that `systemd-run --user --scope` enforces a memory cap, not only that a scope starts. It is throwaway. Every cap is 200M and every scope is named `dovetail-s4-*` with `--collect`, so it is safe to run any time.
 
