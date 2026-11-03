@@ -288,6 +288,8 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
             text: "hello".into()
         }]
     );
+    // Typing moved focus to the main pane; `h` goes back to the tree.
+    app.on_key(key('h'), 300);
     select(&mut app, "slice-7");
     press(&mut app, "i");
     type_keys(&mut app, "key is dev");
@@ -450,4 +452,69 @@ fn reaching_the_top_with_older_history_asks_for_it_once() {
     render(&mut app, 120, 20);
     type_keys(&mut app, "gg");
     assert!(app.take_commands().is_empty(), "asked only once");
+}
+
+#[test]
+fn older_history_arriving_above_keeps_the_lines_being_read_in_place() {
+    let mut snap = world();
+    let mut tail = rich_conversation(NOW_MS);
+    tail.has_more = true;
+    snap.conversations.insert(agent_id("coordinator"), tail);
+    snap.agents[0].status = AgentStatus::Idle;
+    let mut app = app_with(snap);
+    app.on_key(key('l'), 0);
+    render(&mut app, 120, 14);
+    type_keys(&mut app, "gg");
+    app.take_commands();
+    // Scroll down a little and remember what the top row says.
+    for _ in 0..4 {
+        app.on_key(key('j'), 0);
+    }
+    let before = render(&mut app, 120, 14);
+    // The first row of the pane that has text on it.
+    let row = |screen: &str| {
+        screen
+            .lines()
+            .skip(1)
+            .map(|line| {
+                line.chars()
+                    .skip(44)
+                    .collect::<String>()
+                    .trim_end_matches(|c| c == ' ' || c == '│')
+                    .trim()
+                    .to_string()
+            })
+            .find(|text| !text.is_empty())
+            .unwrap_or_default()
+    };
+    let reading = row(&before);
+    assert!(!reading.is_empty());
+    // Ten older entries arrive.
+    let older: Vec<_> = (0..10)
+        .map(|i| {
+            entry(
+                100 + i,
+                NOW_MS - 60 * 60_000,
+                EntryKind::Assistant,
+                &format!("ancient {i}"),
+            )
+        })
+        .collect();
+    let seq = app.snapshot().seq + 1;
+    app.on_server(ServerMsg::Event {
+        seq,
+        event: Event::ConversationPage {
+            agent: agent_id("coordinator"),
+            entries: older,
+            has_more: false,
+        },
+    });
+    assert_eq!(row(&render(&mut app, 120, 14)), reading);
+}
+
+#[test]
+fn i_from_the_tree_moves_focus_to_the_pane_that_holds_the_input() {
+    let mut app = app_with(world());
+    press(&mut app, "i");
+    assert_eq!(app.focus(), RegionId::Main);
 }

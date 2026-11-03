@@ -481,6 +481,8 @@ impl App {
         self.show_agent(agent.clone());
         self.buffers.conversation.begin_chat(agent);
         self.input = None;
+        // The input lives in the main pane, so focus goes with it.
+        self.regions.set_focus(RegionId::Main);
         self.mode = Mode::Insert;
     }
 

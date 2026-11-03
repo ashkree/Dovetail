@@ -34,6 +34,9 @@ struct AgentView {
     draft: String,
     /// The oldest entry when older history was last asked for, to ask once.
     loading: Option<EntryId>,
+    /// Oldest entry and line count at the last draw, to keep the view in place when older
+    /// history arrives above it.
+    drawn: Option<(EntryId, usize)>,
 }
 
 impl Default for AgentView {
@@ -47,6 +50,7 @@ impl Default for AgentView {
             cache: transcript::Cache::default(),
             draft: String::new(),
             loading: None,
+            drawn: None,
         }
     }
 }
@@ -328,6 +332,19 @@ impl Buffer for ConversationBuffer {
                 turn.start_line += 2;
             }
         }
+
+        // Older history landed above the view: move down by what it added so the lines being
+        // read stay put.
+        let oldest = entries.first().map(|e| e.id);
+        if let (Some((was, lines)), Some(now)) = (view.drawn, oldest)
+            && was != now
+            && entries.iter().any(|e| e.id == was)
+            && !view.follow
+        {
+            let grown = built.lines.len() as isize - lines as isize;
+            view.top = view.top.saturating_add_signed(grown);
+        }
+        view.drawn = oldest.map(|id| (id, built.lines.len()));
 
         let height = usize::from(body.height);
         let max_top = built.lines.len().saturating_sub(height);
