@@ -168,7 +168,7 @@ impl MockCore {
     /// Carries out a command. Its effects are delivered before anything already scheduled.
     pub fn handle(&mut self, command: Command) {
         match command {
-            Command::SendMessage { agent, text } => {
+            Command::Prompt { agent, text } => {
                 if self.agent(&agent).is_none() {
                     return self.fail(format!("no agent {}", agent.0));
                 }
@@ -231,7 +231,7 @@ impl MockCore {
                 }
                 let mut slice = world::session(
                     &name,
-                    Role::Slice,
+                    AgentKind::Slice,
                     AgentStatus::SettingUp,
                     self.state.now_ms,
                 );
@@ -239,6 +239,13 @@ impl MockCore {
                 slice.worktree = Some(world::worktree(&name));
                 slice.status_line = "setup: cargo fetch".into();
                 self.emit(Event::AgentUpserted(slice));
+                // Starting work on a task marks it started; nothing moves it back (plan B4).
+                if let Some(mut started) = task.and_then(|t| self.task(t))
+                    && started.status == TaskStatus::Todo
+                {
+                    started.status = TaskStatus::InProgress;
+                    self.emit(Event::TaskUpserted(started));
+                }
                 self.append(&agent_id(&name), EntryKind::User, brief);
                 self.refresh_totals();
                 let id = agent_id(&name);
@@ -464,7 +471,7 @@ impl MockCore {
             kind,
         };
         self.next_inbox += 1;
-        self.emit(Event::InboxAdded(item));
+        self.emit(Event::InboxUpserted(item));
         if self.has_inbox(agent) {
             self.update_agent(agent, |a| a.status = AgentStatus::NeedsYou);
         } else {
@@ -572,7 +579,7 @@ impl MockCore {
         let think = self.rng.range(400, 1_500);
         // Slices sometimes hand part of the turn to a background subagent.
         let delegate =
-            self.agent(&agent).map(|a| a.role) == Some(Role::Slice) && self.rng.chance(40);
+            self.agent(&agent).map(|a| a.kind) == Some(AgentKind::Slice) && self.rng.chance(40);
         let id = agent.clone();
         self.reply_step(&agent, think, move |core| {
             core.update_agent(&id, |a| {
@@ -645,7 +652,7 @@ impl MockCore {
         self.replying.remove(agent);
         self.update_agent(agent, |a| a.cost_usd = round_cents(a.cost_usd + cost));
         if !self.running_background_children(agent)
-            && self.agent(agent).map(|a| a.role) != Some(Role::Subagent)
+            && self.agent(agent).is_some_and(|a| a.kind.is_session())
         {
             let old: Vec<InboxId> = self
                 .state
@@ -666,11 +673,11 @@ impl MockCore {
 
     // Spontaneous activity
 
-    fn sessions_with(&self, role: Role, statuses: &[AgentStatus]) -> Vec<AgentId> {
+    fn sessions_with(&self, kind: AgentKind, statuses: &[AgentStatus]) -> Vec<AgentId> {
         self.state
             .agents
             .iter()
-            .filter(|a| a.role == role && statuses.contains(&a.status))
+            .filter(|a| a.kind == kind && statuses.contains(&a.status))
             .map(|a| a.id.clone())
             .collect()
     }
@@ -708,7 +715,7 @@ impl MockCore {
         match choice {
             0 => {
                 let free: Vec<AgentId> = self
-                    .sessions_with(Role::Slice, &[AgentStatus::Working, AgentStatus::Idle])
+                    .sessions_with(AgentKind::Slice, &[AgentStatus::Working, AgentStatus::Idle])
                     .into_iter()
                     .filter(|a| !self.replying.contains(a))
                     .collect();
@@ -720,7 +727,7 @@ impl MockCore {
             1 if !full_inbox => {
                 if let Some(agent) = self
                     .rng
-                    .pick(&self.sessions_with(Role::Slice, &busy))
+                    .pick(&self.sessions_with(AgentKind::Slice, &busy))
                     .cloned()
                 {
                     let (tool, input) = world::permission_input(self.rng.next_u64());
@@ -741,7 +748,7 @@ impl MockCore {
             2 if !full_inbox => {
                 if let Some(agent) = self
                     .rng
-                    .pick(&self.sessions_with(Role::Slice, &busy))
+                    .pick(&self.sessions_with(AgentKind::Slice, &busy))
                     .cloned()
                 {
                     let text = self.rng.pick(world::QUESTIONS).copied().unwrap_or_default();
@@ -761,7 +768,7 @@ impl MockCore {
             3 => {
                 if let Some(agent) = self
                     .rng
-                    .pick(&self.sessions_with(Role::Slice, &alive))
+                    .pick(&self.sessions_with(AgentKind::Slice, &alive))
                     .cloned()
                 {
                     let line = self
@@ -788,7 +795,7 @@ impl MockCore {
                 if running < 3
                     && let Some(parent) = self
                         .rng
-                        .pick(&self.sessions_with(Role::Slice, &[AgentStatus::Working]))
+                        .pick(&self.sessions_with(AgentKind::Slice, &[AgentStatus::Working]))
                         .cloned()
                 {
                     self.after(pause, move |core| core.spawn_subagent(&parent));
@@ -800,7 +807,7 @@ impl MockCore {
                     .state
                     .agents
                     .iter()
-                    .filter(|a| a.role == Role::Slice && a.status != AgentStatus::SettingUp)
+                    .filter(|a| a.kind == AgentKind::Slice && a.status != AgentStatus::SettingUp)
                     .map(|a| {
                         (
                             a.id.clone(),
@@ -820,7 +827,7 @@ impl MockCore {
                 }
             }
             6 => {
-                let slices = self.sessions_with(Role::Slice, &alive);
+                let slices = self.sessions_with(AgentKind::Slice, &alive);
                 if let Some(slice) = self.rng.pick(&slices).cloned() {
                     let text = self.rng.pick(world::MESSAGES).copied().unwrap_or_default();
                     let (from, to) = if self.rng.chance(50) {
@@ -837,7 +844,7 @@ impl MockCore {
                     .state
                     .agents
                     .iter()
-                    .filter(|a| a.kind == AgentKind::Session && a.status != AgentStatus::SettingUp)
+                    .filter(|a| a.kind.is_session() && a.status != AgentStatus::SettingUp)
                     .map(|a| a.id.clone())
                     .collect();
                 if let Some(agent) = self.rng.pick(&sessions).cloned() {
@@ -870,7 +877,7 @@ impl MockCore {
             9 if !full_inbox => {
                 if let Some(agent) = self
                     .rng
-                    .pick(&self.sessions_with(Role::Slice, &busy))
+                    .pick(&self.sessions_with(AgentKind::Slice, &busy))
                     .cloned()
                 {
                     self.after(pause, move |core| {

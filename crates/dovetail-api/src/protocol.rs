@@ -54,7 +54,7 @@ pub enum Event {
         items: Vec<TodoItem>,
     },
     /// An item arrived in Needs you, or an existing one changed.
-    InboxAdded(InboxItem),
+    InboxUpserted(InboxItem),
     /// An item left Needs you.
     InboxResolved {
         /// The item.
@@ -106,11 +106,11 @@ pub enum Event {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
-    /// Send the user's message to an agent.
-    SendMessage {
+    /// Send the user's prompt to an agent.
+    Prompt {
         /// Recipient.
         agent: AgentId,
-        /// Message text.
+        /// Prompt text.
         text: String,
     },
     /// Stop an agent's current turn.

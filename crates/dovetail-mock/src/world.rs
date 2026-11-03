@@ -37,12 +37,11 @@ fn task(
     }
 }
 
-pub(crate) fn session(id: &str, role: Role, status: AgentStatus, now_ms: i64) -> Agent {
+pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i64) -> Agent {
     Agent {
         id: agent_id(id),
         name: id.into(),
-        kind: AgentKind::Session,
-        role,
+        kind,
         parent: None,
         task: None,
         worktree: None,
@@ -70,7 +69,6 @@ pub(crate) fn subagent(id: &str, parent: &Agent, background: bool, now_ms: i64) 
         id: agent_id(id),
         name: id.into(),
         kind: AgentKind::Subagent { background },
-        role: Role::Subagent,
         parent: Some(parent.id.clone()),
         task: parent.task,
         worktree: None,
@@ -120,7 +118,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         task(
             2,
             "Inbox keys and preview",
-            TaskStatus::NeedsYou,
+            TaskStatus::InProgress,
             Some(PLevel::P0),
             Some(Bucket::Now),
             1,
@@ -196,13 +194,18 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
     tasks[7].follow_up_of = Some(TaskId(4));
     tasks[7].notes = "Raised while planning the reading column.".into();
 
-    let mut coordinator = session(COORDINATOR, Role::Coordinator, AgentStatus::Idle, now_ms);
+    let mut coordinator = session(
+        COORDINATOR,
+        AgentKind::Coordinator,
+        AgentStatus::Idle,
+        now_ms,
+    );
     coordinator.status_line = "planning M2".into();
     coordinator.memory_mb = Some(245);
     coordinator.context_pct = Some(18);
     coordinator.cost_usd = 0.84;
 
-    let mut tree = session("tree-view", Role::Slice, AgentStatus::Working, now_ms);
+    let mut tree = session("tree-view", AgentKind::Slice, AgentStatus::Working, now_ms);
     tree.task = Some(TaskId(1));
     tree.worktree = Some(worktree("tree-view"));
     tree.status_line = "grouping tasks by bucket".into();
@@ -210,7 +213,12 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
     tree.context_pct = Some(34);
     tree.cost_usd = 0.41;
 
-    let mut inbox_keys = session("inbox-keys", Role::Slice, AgentStatus::NeedsYou, now_ms);
+    let mut inbox_keys = session(
+        "inbox-keys",
+        AgentKind::Slice,
+        AgentStatus::NeedsYou,
+        now_ms,
+    );
     inbox_keys.task = Some(TaskId(2));
     inbox_keys.worktree = Some(worktree("inbox-keys"));
     inbox_keys.status_line = "wiring y/A/d/D".into();
@@ -219,7 +227,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
     inbox_keys.cost_usd = 0.66;
     inbox_keys.permission_mode = PermissionMode::AcceptEdits;
 
-    let mut picker = session("picker", Role::Slice, AgentStatus::SettingUp, now_ms);
+    let mut picker = session("picker", AgentKind::Slice, AgentStatus::SettingUp, now_ms);
     picker.task = Some(TaskId(3));
     picker.worktree = Some(worktree("picker"));
     picker.status_line = "setup: cargo fetch".into();

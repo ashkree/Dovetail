@@ -48,7 +48,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
             state.todos.retain(|t| t.list != list);
             state.todos.extend(items);
         }
-        Event::InboxAdded(item) => upsert(&mut state.inbox, item, |i| i.id),
+        Event::InboxUpserted(item) => upsert(&mut state.inbox, item, |i| i.id),
         Event::InboxResolved { id } => state.inbox.retain(|i| i.id != id),
         Event::ActivityAdded(item) => push_bounded(&mut state.activity, item, ACTIVITY_TAIL),
         Event::MessageAdded(message) => push_bounded(&mut state.messages, message, MESSAGE_TAIL),

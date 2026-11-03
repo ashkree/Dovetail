@@ -224,15 +224,14 @@ pub struct Snapshot {
 
 pub struct Task {
     pub id: TaskId, pub title: String, pub status: TaskStatus,
-    pub priority: Option<PLevel>, pub bucket: Option<Bucket>, pub order: i64,
+    pub p_level: Option<PLevel>, pub bucket: Option<Bucket>, pub order: i64,
     pub deps: Vec<TaskId>, pub notes: String, pub pr: Option<u32>,
     pub follow_up_of: Option<TaskId>, pub coordinator_created: bool,
 }
 
 pub struct Agent {
     pub id: AgentId, pub name: String,
-    pub kind: AgentKind,             // Session | Subagent { background: bool }
-    pub role: Role,                  // Coordinator | Slice | Subagent
+    pub kind: AgentKind,             // Coordinator | Slice | Subagent { background: bool }
     pub parent: Option<AgentId>, pub task: Option<TaskId>,
     pub worktree: Option<WorktreeRef>,
     pub status: AgentStatus,         // SettingUp | Working | Idle | NeedsYou | Done | Error
@@ -257,7 +256,7 @@ pub enum Event {
     TaskUpserted(Task), TaskRemoved(TaskId),
     AgentUpserted(Agent), AgentRemoved(AgentId),
     TodosReplaced { list: TodoListId, items: Vec<TodoItem> },
-    InboxAdded(InboxItem), InboxResolved { id: InboxId },
+    InboxUpserted(InboxItem), InboxResolved { id: InboxId },
     ActivityAdded(ActivityItem), MessageAdded(AgentMessage),
     ConversationAppended { agent: AgentId, entry: ConversationEntry },
     AssistantDelta { agent: AgentId, entry: EntryId, text: String },
@@ -267,7 +266,7 @@ pub enum Event {
 }
 
 pub enum Command {
-    SendMessage { agent: AgentId, text: String },
+    Prompt { agent: AgentId, text: String },
     Interrupt { agent: AgentId },
     AnswerPermission { item: InboxId, answer: PermissionAnswer },
     AnswerQuestion { item: InboxId, text: String },
@@ -345,7 +344,7 @@ Generated `--settings` and `--mcp-config` files go in `~/.local/state/dovetail/r
 | `assistant` tool use | `ToolUse` | Folded tool entry; `SendMessage` also gives `MessageAdded` |
 | Any event with `parent_tool_use_id` | Same event, tagged `parent` | Routed to that subagent's node |
 | `system/task_*`, `background_tasks_changed` | `SubagentTask` | Agent upsert: progress, usage, summary, output file |
-| `control_request` `can_use_tool` | `PermissionRequest` | `InboxAdded(Permission)`, `agent_id` attributes it |
+| `control_request` `can_use_tool` | `PermissionRequest` | `InboxUpserted(Permission)`, `agent_id` attributes it |
 | `system/permission_check_status` | Ignored | Nothing |
 | `result` | `TurnResult` | Usage and cost; a `FinishedTurn` only if no background tasks remain |
 | Process exit | `Exited { status }` | `Done`, or `Error` inbox item; OOM detected at M13 |
@@ -366,12 +365,12 @@ CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT N
 
 -- state.db
 CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
-  priority INTEGER, bucket TEXT, sort_order INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
+  p_level INTEGER, bucket TEXT, sort_order INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
   pr INTEGER, follow_up_of INTEGER REFERENCES tasks(id),
   coordinator_created INTEGER NOT NULL DEFAULT 0, created_ms INTEGER, updated_ms INTEGER);
 CREATE TABLE task_deps (task_id INTEGER, depends_on INTEGER, PRIMARY KEY(task_id, depends_on));
 
-CREATE TABLE agents (id TEXT PRIMARY KEY, kind TEXT, role TEXT, name TEXT, parent_id TEXT,
+CREATE TABLE agents (id TEXT PRIMARY KEY, kind TEXT, name TEXT, parent_id TEXT,
   task_id INTEGER REFERENCES tasks(id), session_id TEXT, transcript_path TEXT, task_list_id TEXT,
   worktree_path TEXT, branch TEXT, setup_state TEXT, status TEXT, status_line TEXT,
   permission_mode TEXT, cost_usd REAL DEFAULT 0, tool_use_id TEXT, output_file TEXT,

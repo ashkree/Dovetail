@@ -22,8 +22,7 @@ fn agent(id: &str, status: AgentStatus) -> Agent {
     Agent {
         id: AgentId(id.into()),
         name: id.into(),
-        kind: AgentKind::Session,
-        role: Role::Slice,
+        kind: AgentKind::Slice,
         parent: None,
         task: None,
         worktree: None,
@@ -237,7 +236,7 @@ fn todos_replaced_rewrites_only_that_list() {
 // Inbox
 
 #[test]
-fn inbox_added_inserts_then_replaces_by_id() {
+fn inbox_upserted_inserts_then_replaces_by_id() {
     let mut changed = question(1, "s1");
     changed.kind = InboxKind::Error {
         text: "crashed".into(),
@@ -246,9 +245,9 @@ fn inbox_added_inserts_then_replaces_by_id() {
     run(
         &mut state,
         vec![
-            Event::InboxAdded(question(1, "s1")),
-            Event::InboxAdded(question(2, "s2")),
-            Event::InboxAdded(changed.clone()),
+            Event::InboxUpserted(question(1, "s1")),
+            Event::InboxUpserted(question(2, "s2")),
+            Event::InboxUpserted(changed.clone()),
         ],
     );
     assert_eq!(state.inbox, vec![changed, question(2, "s2")]);
@@ -260,8 +259,8 @@ fn inbox_resolved_removes_the_item() {
     run(
         &mut state,
         vec![
-            Event::InboxAdded(question(1, "s1")),
-            Event::InboxAdded(question(2, "s1")),
+            Event::InboxUpserted(question(1, "s1")),
+            Event::InboxUpserted(question(2, "s1")),
             Event::InboxResolved { id: InboxId(1) },
         ],
     );

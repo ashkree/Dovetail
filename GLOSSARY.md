@@ -48,6 +48,16 @@ _Avoid_: priority, severity
 When the user will do a task: Now, Next or Later. A task with no bucket sits in Unsorted.
 _Avoid_: priority, status, column
 
+### Conversation
+
+**Prompt**:
+What the user sends an agent, starting a turn of its conversation.
+_Avoid_: message, input
+
+**Message**:
+Text one agent sends another through Claude Code's native messaging. Messages appear in Activity and carry no authority.
+_Avoid_: prompt, chat
+
 ### Attention
 
 **Needs you**:

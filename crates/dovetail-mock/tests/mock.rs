@@ -59,7 +59,7 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
     let slice = state
         .agents
         .iter()
-        .find(|a| a.role == Role::Slice)
+        .find(|a| a.kind == AgentKind::Slice)
         .map(|a| a.id.clone());
     let task = state.tasks.first().map(|t| t.id);
     match round % 7 {
@@ -74,7 +74,7 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
             },
             _ => Command::DismissInbox { item: item.id },
         }),
-        1 => Some(Command::SendMessage {
+        1 => Some(Command::Prompt {
             agent: AgentId("coordinator".into()),
             text: "How are the slices doing?".into(),
         }),
@@ -239,4 +239,33 @@ fn spawned_core_opens_with_hello_and_stops_on_quit() {
     // After quit the thread ends and the channel closes, once anything in flight drains.
     let closed = (0..10_000).any(|_| link.messages.recv_timeout(Duration::from_secs(5)).is_err());
     assert!(closed, "core kept running after quit");
+}
+
+#[test]
+fn starting_a_slice_on_a_todo_task_marks_it_in_progress() {
+    let mut core = MockCore::new(config(1));
+    let todo = core
+        .state()
+        .tasks
+        .iter()
+        .find(|t| t.status == TaskStatus::Todo)
+        .map(|t| t.id)
+        .expect("the starting world has a to-do task");
+    core.handle(Command::NewSlice {
+        task: Some(todo),
+        name: "reading-column".into(),
+        brief: "Build the reading column.".into(),
+    });
+    let status = |core: &MockCore| {
+        core.state()
+            .tasks
+            .iter()
+            .find(|t| t.id == todo)
+            .map(|t| t.status)
+    };
+    assert_eq!(status(&core), Some(TaskStatus::InProgress));
+    core.handle(Command::CloseSlice {
+        agent: AgentId("reading-column".into()),
+    });
+    assert_eq!(status(&core), Some(TaskStatus::InProgress));
 }

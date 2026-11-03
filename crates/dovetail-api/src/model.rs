@@ -116,16 +116,15 @@ pub struct Task {
     pub coordinator_created: bool,
 }
 
-/// Where a task stands.
+/// Where a task stands. Whether it needs you is not a status: it follows from the inbox
+/// items of its agents (plan B4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     /// Not started.
     Todo,
-    /// Being worked on.
+    /// Started; set when its first slice starts, and kept after slices close.
     InProgress,
-    /// One of its agents has an item in Needs you.
-    NeedsYou,
     /// Marked done by the user.
     Done,
     /// Hidden from the tree.
@@ -164,10 +163,8 @@ pub struct Agent {
     pub id: AgentId,
     /// Display name.
     pub name: String,
-    /// Session or subagent.
+    /// Coordinator, slice or subagent.
     pub kind: AgentKind,
-    /// What the agent is for.
-    pub role: Role,
     /// The session that spawned it (subagents only).
     pub parent: Option<AgentId>,
     /// The task it works on.
@@ -194,29 +191,27 @@ pub struct Agent {
     pub lock: SessionLock,
 }
 
-/// Whether an agent is its own Claude Code session or a subagent inside one.
+/// What an agent is. Coordinators and slices are their own Claude Code sessions; subagents
+/// run inside one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentKind {
-    /// A headless Claude Code session.
-    Session,
-    /// A subagent spawned by a session.
+    /// The session the user works with directly, in the main checkout.
+    Coordinator,
+    /// A long-lived session with its own worktree.
+    Slice,
+    /// Spawned by a session for self-contained work.
     Subagent {
         /// Runs in the background with no to-do items.
         background: bool,
     },
 }
 
-/// What an agent is for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Role {
-    /// The session the user works with directly.
-    Coordinator,
-    /// A long-lived session with its own worktree.
-    Slice,
-    /// Spawned by a session for self-contained work.
-    Subagent,
+impl AgentKind {
+    /// Whether the agent is its own Claude Code session rather than a subagent.
+    pub fn is_session(self) -> bool {
+        !matches!(self, AgentKind::Subagent { .. })
+    }
 }
 
 /// A slice's worktree.

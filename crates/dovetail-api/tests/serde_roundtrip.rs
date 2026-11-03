@@ -20,7 +20,7 @@ fn task() -> Task {
     Task {
         id: TaskId(3),
         title: "Tree view".into(),
-        status: TaskStatus::NeedsYou,
+        status: TaskStatus::InProgress,
         p_level: Some(PLevel::P0),
         bucket: Some(Bucket::Later),
         order: 2,
@@ -37,7 +37,6 @@ fn subagent() -> Agent {
         id: id("sub-1"),
         name: "explore".into(),
         kind: AgentKind::Subagent { background: true },
-        role: Role::Subagent,
         parent: Some(id("slice-a")),
         task: Some(TaskId(3)),
         worktree: Some(WorktreeRef {
@@ -220,7 +219,7 @@ fn every_event_roundtrips() {
         },
     ]
     .into_iter()
-    .chain(inbox_items().into_iter().map(Event::InboxAdded));
+    .chain(inbox_items().into_iter().map(Event::InboxUpserted));
     for (n, event) in events.enumerate() {
         roundtrip(&ServerMsg::Event {
             seq: n as u64,
@@ -232,7 +231,7 @@ fn every_event_roundtrips() {
 #[test]
 fn every_command_roundtrips() {
     let commands = vec![
-        Command::SendMessage {
+        Command::Prompt {
             agent: id("coordinator"),
             text: "plan M2".into(),
         },
