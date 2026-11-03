@@ -1,0 +1,318 @@
+//! Buffers: every view is one. A region shows a buffer; the buffer owns its state, draws itself
+//! and handles its buffer-local actions.
+
+mod conversation;
+mod inbox;
+mod tree;
+
+use dovetail_api::{AgentId, AgentStatus, Command, InboxId, Snapshot, TaskId};
+use jiff::tz::TimeZone;
+use ratatui::Frame;
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Paragraph};
+use unicode_width::UnicodeWidthStr;
+
+pub use conversation::ConversationBuffer;
+pub use inbox::{InboxBuffer, ordered as inbox_order};
+pub use tree::TreeBuffer;
+
+use crate::action::Action;
+use crate::region::BufferKind;
+use crate::theme::Theme;
+
+/// What a buffer reads while drawing or handling an action.
+pub struct ViewCx<'a> {
+    /// The UI's copy of the core's state.
+    pub snap: &'a Snapshot,
+    /// Colours.
+    pub theme: &'a Theme,
+    /// The UI's clock, in Unix milliseconds.
+    pub now_ms: i64,
+    /// Time zone for displayed times.
+    pub tz: &'a TimeZone,
+}
+
+/// What typing in the prompt row is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputTarget {
+    /// A `:` command.
+    Command,
+    /// A prompt to an agent.
+    Prompt(AgentId),
+    /// The reason for denying a permission request.
+    Reason(InboxId),
+    /// The answer to a question.
+    Reply(InboxId),
+    /// A new title for a task.
+    Title(TaskId),
+    /// The title of a new task.
+    NewTask,
+}
+
+/// Something a buffer asks the app to do.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Effect {
+    /// Send a command to the core.
+    Command(Command),
+    /// Show an agent's conversation in the main region.
+    OpenAgent(AgentId),
+    /// Show a task's detail.
+    OpenTask(TaskId),
+    /// Open the prompt row.
+    StartInput {
+        /// What the text is for.
+        target: InputTarget,
+        /// Text to start with.
+        initial: String,
+    },
+    /// A one-line note for the status bar.
+    Note(String),
+}
+
+/// A view with its own state and buffer-local keys.
+pub trait Buffer {
+    /// Which kind this is, for the keymap scope.
+    fn kind(&self) -> BufferKind;
+
+    /// Draws the buffer, border included, into `area`.
+    fn render(&mut self, cx: &ViewCx, frame: &mut Frame, area: Rect, focused: bool);
+
+    /// Handles a movement or buffer-local action. Returns whether it was handled.
+    fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool;
+}
+
+/// All buffer instances, one per kind.
+pub struct Buffers {
+    /// The task tree.
+    pub tree: TreeBuffer,
+    /// Needs you.
+    pub inbox: InboxBuffer,
+    /// A conversation.
+    pub conversation: ConversationBuffer,
+}
+
+impl Buffers {
+    /// Fresh buffers.
+    pub fn new() -> Self {
+        Self {
+            tree: TreeBuffer::default(),
+            inbox: InboxBuffer::default(),
+            conversation: ConversationBuffer::default(),
+        }
+    }
+
+    /// The buffer of a kind.
+    pub fn get_mut(&mut self, kind: BufferKind) -> &mut dyn Buffer {
+        match kind {
+            BufferKind::Tree => &mut self.tree,
+            BufferKind::Inbox => &mut self.inbox,
+            BufferKind::Conversation => &mut self.conversation,
+        }
+    }
+}
+
+impl Default for Buffers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Draws a bordered pane with `title` and returns its inner area.
+pub(crate) fn pane(
+    frame: &mut Frame,
+    area: Rect,
+    title: Line<'static>,
+    focused: bool,
+    theme: &Theme,
+) -> Rect {
+    let border = if focused { theme.focus } else { theme.line };
+    let block = Block::bordered()
+        .border_style(theme.fg(border))
+        .title(title);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    // One column of padding inside the border, as in the screens.
+    Rect {
+        x: inner.x.saturating_add(1),
+        width: inner.width.saturating_sub(2),
+        ..inner
+    }
+}
+
+/// A pane title: ` text `, in the focus colour when focused.
+pub(crate) fn title(text: &str, focused: bool, theme: &Theme) -> Line<'static> {
+    let color = if focused { theme.focus } else { theme.dim };
+    Line::from(Span::styled(format!(" {text} "), theme.fg(color)))
+}
+
+/// Draws a hint line on the last row of `inner`: the longest of `options` that fits, or the
+/// shortest cut to size.
+pub(crate) fn footer(frame: &mut Frame, inner: Rect, options: &[&str], theme: &Theme) {
+    if inner.height < 5 || inner.width == 0 || options.is_empty() {
+        return;
+    }
+    let row = Rect {
+        y: inner.y + inner.height - 1,
+        height: 1,
+        ..inner
+    };
+    let width = usize::from(row.width);
+    let text = options
+        .iter()
+        .find(|o| o.width() <= width)
+        .or(options.last())
+        .copied()
+        .unwrap_or("");
+    let clipped = crate::fmt::truncate(text, width);
+    frame.render_widget(Paragraph::new(Span::styled(clipped, theme.dim())), row);
+}
+
+/// Total cell width of some spans.
+pub(crate) fn spans_width(spans: &[Span]) -> usize {
+    spans.iter().map(|s| s.content.width()).sum()
+}
+
+/// Cuts spans to `max` cells, ending in `…` when anything was cut.
+pub(crate) fn clip_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Span<'static>> {
+    if spans_width(&spans) <= max {
+        return spans;
+    }
+    let mut out = Vec::new();
+    let mut used = 0;
+    for span in spans {
+        let w = span.content.width();
+        if used + w < max {
+            used += w;
+            out.push(span);
+        } else {
+            let keep = max.saturating_sub(used);
+            let cut = crate::fmt::truncate(&span.content, keep);
+            out.push(Span::styled(cut, span.style));
+            return out;
+        }
+    }
+    out
+}
+
+/// One row: `left` at the start, `right` flush against the end, `left` clipped to make room.
+pub(crate) fn spread(
+    left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
+    width: usize,
+) -> Line<'static> {
+    spread_fit(left, &[right], width)
+}
+
+/// Like [`spread`], with several versions of the right side, fullest first. The first one that
+/// leaves `left` unclipped is used; if none does, the last (shortest) is.
+pub(crate) fn spread_fit(
+    left: Vec<Span<'static>>,
+    rights: &[Vec<Span<'static>>],
+    width: usize,
+) -> Line<'static> {
+    let left_w = spans_width(&left);
+    let right = rights
+        .iter()
+        .find(|r| {
+            let w = spans_width(r);
+            left_w + w + usize::from(w > 0) <= width
+        })
+        .or(rights.last())
+        .cloned()
+        .unwrap_or_default();
+    let right_w = spans_width(&right);
+    let room = width.saturating_sub(right_w + usize::from(right_w > 0));
+    let mut left = clip_spans(left, room);
+    let left_w = spans_width(&left);
+    if right_w > 0 && left_w + right_w < width {
+        left.push(Span::raw(" ".repeat(width - left_w - right_w)));
+        left.extend(right);
+    }
+    Line::from(left)
+}
+
+/// Glyph and colour for an agent's status.
+pub(crate) fn status_glyph(status: AgentStatus, theme: &Theme) -> (&'static str, Color) {
+    match status {
+        AgentStatus::SettingUp => ("◌", theme.dim),
+        AgentStatus::Working => ("◐", theme.working),
+        AgentStatus::Idle => ("○", theme.dim),
+        AgentStatus::NeedsYou => ("⚠", theme.needs_you),
+        AgentStatus::Done => ("✓", theme.ok),
+        AgentStatus::Error => ("✗", theme.error),
+    }
+}
+
+/// Word for an agent's status.
+pub(crate) fn status_word(status: AgentStatus) -> &'static str {
+    match status {
+        AgentStatus::SettingUp => "setting up",
+        AgentStatus::Working => "working",
+        AgentStatus::Idle => "idle",
+        AgentStatus::NeedsYou => "needs you",
+        AgentStatus::Done => "done",
+        AgentStatus::Error => "error",
+    }
+}
+
+/// Moves a selection through `len` rows, clamping at both ends.
+pub(crate) fn step(index: usize, len: usize, delta: isize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    index.saturating_add_signed(delta).min(len - 1)
+}
+
+/// Scrolls `offset` so that rows `first..=last` are visible in a window of `height` rows,
+/// showing as much of the range as fits.
+pub(crate) fn scroll_to(offset: usize, first: usize, last: usize, height: usize) -> usize {
+    if height == 0 {
+        return 0;
+    }
+    if first < offset {
+        return first;
+    }
+    if last >= offset + height {
+        return (last + 1).saturating_sub(height).min(first);
+    }
+    offset
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(line: &Line) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn spread_pads_between_left_and_right() {
+        let line = spread(vec![Span::raw("ab")], vec![Span::raw("cd")], 8);
+        assert_eq!(text(&line), "ab    cd");
+    }
+
+    #[test]
+    fn spread_clips_the_left_side_first() {
+        let line = spread(vec![Span::raw("abcdefgh")], vec![Span::raw("xy")], 8);
+        assert_eq!(spans_width(&line.spans), 8);
+        assert!(text(&line).ends_with("xy"));
+    }
+
+    #[test]
+    fn step_clamps() {
+        assert_eq!(step(0, 3, -1), 0);
+        assert_eq!(step(2, 3, 1), 2);
+        assert_eq!(step(0, 0, 1), 0);
+        assert_eq!(step(1, 3, 1), 2);
+    }
+
+    #[test]
+    fn scroll_keeps_the_selection_in_view() {
+        assert_eq!(scroll_to(0, 12, 12, 10), 3);
+        assert_eq!(scroll_to(5, 2, 2, 10), 2);
+        assert_eq!(scroll_to(0, 3, 3, 10), 0);
+    }
+}

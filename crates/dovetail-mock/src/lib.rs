@@ -577,9 +577,16 @@ impl MockCore {
         let entry = self.entry_id();
 
         let think = self.rng.range(400, 1_500);
-        // Slices sometimes hand part of the turn to a background subagent.
-        let delegate =
-            self.agent(&agent).map(|a| a.kind) == Some(AgentKind::Slice) && self.rng.chance(40);
+        // Slices sometimes hand part of the turn to a background subagent; any session may run
+        // a foreground one inside its turn.
+        let is_slice = self.agent(&agent).map(|a| a.kind) == Some(AgentKind::Slice);
+        let delegate = if is_slice && self.rng.chance(40) {
+            Some(true)
+        } else if self.rng.chance(25) {
+            Some(false)
+        } else {
+            None
+        };
         let id = agent.clone();
         self.reply_step(&agent, think, move |core| {
             core.update_agent(&id, |a| {
@@ -587,8 +594,8 @@ impl MockCore {
                     a.status = AgentStatus::Working;
                 }
             });
-            if delegate {
-                core.spawn_subagent(&id);
+            if let Some(background) = delegate {
+                core.spawn_subagent(&id, background);
             }
             core.emit(Event::ConversationAppended {
                 agent: id,
@@ -686,7 +693,7 @@ impl MockCore {
     fn plan_something(&mut self) {
         let pause = self.rng.range(300, 2_000);
         for _ in 0..8 {
-            let choice = self.rng.weighted(&[30, 12, 6, 15, 8, 8, 6, 10, 5, 1]);
+            let choice = self.rng.weighted(&[30, 12, 6, 15, 8, 8, 6, 10, 5, 1, 8, 3]);
             if self.try_plan(choice, pause) {
                 return;
             }
@@ -798,7 +805,7 @@ impl MockCore {
                         .pick(&self.sessions_with(AgentKind::Slice, &[AgentStatus::Working]))
                         .cloned()
                 {
-                    self.after(pause, move |core| core.spawn_subagent(&parent));
+                    self.after(pause, move |core| core.spawn_subagent(&parent, true));
                     return true;
                 }
             }
@@ -891,9 +898,81 @@ impl MockCore {
                     return true;
                 }
             }
+            // The coordinator files a follow-up it spotted; it lands in Unsorted, marked.
+            10 => {
+                let unseen = self
+                    .state
+                    .tasks
+                    .iter()
+                    .filter(|t| t.coordinator_created)
+                    .count();
+                let parent = self
+                    .rng
+                    .pick(&self.state.tasks.iter().map(|t| t.id).collect::<Vec<_>>())
+                    .copied();
+                let title = self
+                    .rng
+                    .pick(world::FOLLOW_UPS)
+                    .copied()
+                    .unwrap_or_default();
+                if unseen < 3 {
+                    self.after(pause, move |core| core.file_follow_up(title, parent));
+                    return true;
+                }
+            }
+            // Claude Code cancels a held permission request (its turn was interrupted).
+            11 => {
+                let held = self
+                    .state
+                    .inbox
+                    .iter()
+                    .filter(|i| matches!(i.kind, InboxKind::Permission { .. }))
+                    .map(|i| i.id)
+                    .collect::<Vec<_>>();
+                if let Some(item) = self.rng.pick(&held).copied() {
+                    self.after(pause * 3, move |core| core.withdraw(item));
+                    return true;
+                }
+            }
             _ => {}
         }
         false
+    }
+
+    fn file_follow_up(&mut self, title: &str, follow_up_of: Option<TaskId>) {
+        let task = Task {
+            id: TaskId(self.next_task),
+            title: title.into(),
+            status: TaskStatus::Todo,
+            p_level: None,
+            bucket: None,
+            order: self.next_order(None),
+            deps: vec![],
+            notes: String::new(),
+            pr: None,
+            follow_up_of,
+            coordinator_created: true,
+        };
+        self.next_task += 1;
+        self.emit(Event::TaskUpserted(task));
+        self.activity(
+            Some(agent_id(COORDINATOR)),
+            ActivityKind::Lifecycle,
+            format!("filed “{title}”"),
+        );
+    }
+
+    /// A permission request disappears because Claude Code withdrew it.
+    fn withdraw(&mut self, item: InboxId) {
+        let Some(found) = self.inbox_item(item) else {
+            return;
+        };
+        self.resolve(item);
+        self.append(
+            &found.agent,
+            EntryKind::Notice,
+            "Permission request withdrawn".into(),
+        );
     }
 
     fn message(&mut self, from: AgentId, to: AgentId, text: String) {
@@ -943,25 +1022,33 @@ impl MockCore {
 
     // Subagents
 
-    fn spawn_subagent(&mut self, parent: &AgentId) {
+    /// Starts a subagent under `parent`: a background one with progress and a summary, or a
+    /// foreground one that works inside the parent's turn.
+    fn spawn_subagent(&mut self, parent: &AgentId, background: bool) {
         let Some(parent_agent) = self.agent(parent) else {
             return;
         };
-        let id = format!("bg-{}", self.next_subagent);
+        let id = format!(
+            "{}-{}",
+            if background { "bg" } else { "fg" },
+            self.next_subagent
+        );
         self.next_subagent += 1;
         let description = self
             .rng
             .pick(world::SUBAGENT_TASKS)
             .copied()
             .unwrap_or_default();
-        let mut sub = world::subagent(&id, &parent_agent, true, self.state.now_ms);
+        let mut sub = world::subagent(&id, &parent_agent, background, self.state.now_ms);
         sub.status_line = description.into();
-        sub.progress = Some(SubagentProgress {
-            description: description.into(),
-            last_tool: None,
-            tool_uses: 0,
-            summary: None,
-        });
+        if background {
+            sub.progress = Some(SubagentProgress {
+                description: description.into(),
+                last_tool: None,
+                tool_uses: 0,
+                summary: None,
+            });
+        }
         self.emit(Event::AgentUpserted(sub));
         self.prune_finished_subagents(parent);
 
@@ -1000,7 +1087,10 @@ impl MockCore {
             );
             core.refresh_totals();
             // The parent's turn only really ends once its background work has reported.
-            if !core.replying.contains(&parent) && !core.running_background_children(&parent) {
+            if background
+                && !core.replying.contains(&parent)
+                && !core.running_background_children(&parent)
+            {
                 core.end_turn(
                     &parent,
                     "Background work finished; results are in.".into(),
@@ -1010,7 +1100,7 @@ impl MockCore {
         });
     }
 
-    /// Keeps at most two finished subagents per parent.
+    /// Keeps at most one finished subagent per parent.
     fn prune_finished_subagents(&mut self, parent: &AgentId) {
         let finished: Vec<AgentId> = self
             .state
@@ -1019,8 +1109,8 @@ impl MockCore {
             .filter(|a| a.parent.as_ref() == Some(parent) && a.status == AgentStatus::Done)
             .map(|a| a.id.clone())
             .collect();
-        if finished.len() > 2 {
-            for old in &finished[..finished.len() - 2] {
+        if finished.len() > 1 {
+            for old in &finished[..finished.len() - 1] {
                 self.remove_agent(old);
             }
         }

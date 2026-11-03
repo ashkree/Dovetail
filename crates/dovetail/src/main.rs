@@ -1,17 +1,22 @@
 //! Dovetail: wires the core (or the mock) to the UI.
 //!
-//! The TUI arrives in M2; for now `dovetail --mock --dump` prints the mock core's stream.
+//! `dovetail --mock` opens the TUI on the mock core; `--dump` prints the core's stream instead.
+
+mod logging;
+mod tui;
 
 use std::io::{self, BufWriter, Write};
 
 use anyhow::{Context, Result, bail};
 use dovetail_mock::{MockConfig, MockCore};
 
-const USAGE: &str = "usage: dovetail --mock --dump [--seed N] [--count N]
+const USAGE: &str = "usage: dovetail --mock [--seed N] [--speed X]
+       dovetail --mock --dump [--seed N] [--count N]
 
   --mock       use the built-in mock core instead of real sessions
   --dump       print the core's messages as JSON lines instead of opening the UI
-  --seed N     mock seed (default 1); the same seed prints the same stream
+  --seed N     mock seed (default 1); the same seed gives the same stream
+  --speed X    mock pace: 1 is real time, 2 twice as fast (default 1)
   --count N    events to print after the snapshot (default 200)";
 
 #[derive(Debug, Default)]
@@ -20,6 +25,7 @@ struct Args {
     dump: bool,
     seed: Option<u64>,
     count: Option<usize>,
+    speed: Option<f64>,
 }
 
 fn parse_args(raw: impl IntoIterator<Item = String>) -> Result<Args> {
@@ -44,6 +50,16 @@ fn parse_args(raw: impl IntoIterator<Item = String>) -> Result<Args> {
                         .parse()
                         .with_context(|| format!("bad --count {value}"))?,
                 );
+            }
+            "--speed" => {
+                let value = raw.next().context("--speed needs a number")?;
+                let speed: f64 = value
+                    .parse()
+                    .with_context(|| format!("bad --speed {value}"))?;
+                if !(speed.is_finite() && speed > 0.0) {
+                    bail!("--speed must be above 0");
+                }
+                args.speed = Some(speed);
             }
             "-h" | "--help" => {
                 println!("{USAGE}");
@@ -87,7 +103,11 @@ fn main() -> Result<()> {
             other => other,
         },
         (_, true) => bail!("--dump needs --mock until the real core lands"),
-        _ => bail!("the TUI arrives in M2; try `dovetail --mock --dump`\n\n{USAGE}"),
+        (true, false) => {
+            logging::init();
+            tui::run_mock(args.seed.unwrap_or(1), args.speed.unwrap_or(1.0))
+        }
+        (false, false) => bail!("only `--mock` works until the real core lands (M5)\n\n{USAGE}"),
     }
 }
 

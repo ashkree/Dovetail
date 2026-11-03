@@ -1,0 +1,115 @@
+//! Small formatting helpers shared by the buffers.
+
+use jiff::{Timestamp, tz::TimeZone};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+/// `HH:MM` in `tz`.
+pub fn hhmm(ms: i64, tz: &TimeZone) -> String {
+    match Timestamp::from_millisecond(ms) {
+        Ok(ts) => ts.to_zoned(tz.clone()).strftime("%H:%M").to_string(),
+        Err(_) => "--:--".into(),
+    }
+}
+
+/// Memory as `412M` or `2.1G`.
+pub fn memory(mb: u32) -> String {
+    if mb >= 1024 {
+        format!("{:.1}G", f64::from(mb) / 1024.0)
+    } else {
+        format!("{mb}M")
+    }
+}
+
+/// Cost as `$1.84`.
+pub fn cost(usd: f64) -> String {
+    format!("${usd:.2}")
+}
+
+/// Cuts `text` to at most `width` terminal cells, ending in `…` when it was cut.
+pub fn truncate(text: &str, width: usize) -> String {
+    if text.width() <= width {
+        return text.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for c in text.chars() {
+        let w = c.width().unwrap_or(0);
+        if used + w + 1 > width {
+            break;
+        }
+        out.push(c);
+        used += w;
+    }
+    out.push('…');
+    out
+}
+
+/// First line of `text`, for one-line previews.
+pub fn first_line(text: &str) -> &str {
+    text.lines().next().unwrap_or("")
+}
+
+/// Greedy word wrap to `width` cells; words longer than a line are split. Keeps blank lines.
+pub fn wrap(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut line = String::new();
+        let mut used = 0;
+        for word in paragraph.split_whitespace() {
+            let w = word.width();
+            if used > 0 && used + 1 + w > width {
+                lines.push(std::mem::take(&mut line));
+                used = 0;
+            }
+            if used > 0 {
+                line.push(' ');
+                used += 1;
+            }
+            if w > width {
+                for c in word.chars() {
+                    let cw = c.width().unwrap_or(0);
+                    if used + cw > width {
+                        lines.push(std::mem::take(&mut line));
+                        used = 0;
+                    }
+                    line.push(c);
+                    used += cw;
+                }
+            } else {
+                line.push_str(word);
+                used += w;
+            }
+        }
+        lines.push(line);
+    }
+    lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memory_switches_to_gigabytes() {
+        assert_eq!(memory(412), "412M");
+        assert_eq!(memory(2150), "2.1G");
+    }
+
+    #[test]
+    fn truncate_marks_the_cut() {
+        assert_eq!(truncate("abcdef", 4), "abc…");
+        assert_eq!(truncate("abc", 4), "abc");
+        assert_eq!(truncate("abc", 0), "");
+    }
+
+    #[test]
+    fn wrap_breaks_on_words_and_splits_long_ones() {
+        assert_eq!(wrap("aa bb cc", 5), vec!["aa bb", "cc"]);
+        assert_eq!(wrap("abcdefgh", 3), vec!["abc", "def", "gh"]);
+        assert_eq!(wrap("a\n\nb", 5), vec!["a", "", "b"]);
+    }
+}

@@ -269,3 +269,78 @@ fn starting_a_slice_on_a_todo_task_marks_it_in_progress() {
     });
     assert_eq!(status(&core), Some(TaskStatus::InProgress));
 }
+
+/// The kind of an event as it appears on the wire: the tag of its externally tagged JSON.
+fn kind_of(event: &Event) -> String {
+    match serde_json::to_value(event).expect("serialises") {
+        serde_json::Value::Object(map) => map.keys().next().cloned().unwrap_or_default(),
+        serde_json::Value::String(s) => s,
+        other => panic!("unexpected event shape {other}"),
+    }
+}
+
+#[test]
+fn every_event_kind_the_mock_can_make_unprompted_shows_up_within_a_few_hundred_events() {
+    // M1 retro: two dump bugs (stalled activity, no background subagents) slipped past the
+    // consistency tests. A mock that never produces a kind starves the UI of it.
+    // Kinds only a command can cause (`conversation_page`, `command_failed`) are excluded.
+    let expected = [
+        "task_upserted",
+        "agent_upserted",
+        "agent_removed",
+        "todos_replaced",
+        "inbox_upserted",
+        "inbox_resolved",
+        "activity_added",
+        "message_added",
+        "conversation_appended",
+        "assistant_delta",
+        "totals_changed",
+    ];
+    const WITHIN: usize = 600;
+    let mut core = MockCore::new(config(1));
+    let mut seen = std::collections::BTreeMap::<String, usize>::new();
+    for n in 1..=WITHIN {
+        if let ServerMsg::Event { event, .. } = core.next_message().expect("runs").msg {
+            seen.entry(kind_of(&event)).or_insert(n);
+        }
+    }
+    let missing: Vec<_> = expected
+        .iter()
+        .filter(|k| !seen.contains_key(**k))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "no {missing:?} within {WITHIN} messages; first seen at {seen:?}"
+    );
+}
+
+#[test]
+fn background_subagents_and_both_inbox_tiers_appear_in_a_longer_run() {
+    let mut core = MockCore::new(config(1));
+    let mut background = false;
+    let mut foreground = false;
+    let mut kinds = std::collections::HashSet::new();
+    for _ in 0..1_500 {
+        if let ServerMsg::Event { event, .. } = core.next_message().expect("runs").msg {
+            match &event {
+                Event::AgentUpserted(a) => match a.kind {
+                    AgentKind::Subagent { background: true } => background = true,
+                    AgentKind::Subagent { background: false } => foreground = true,
+                    _ => {}
+                },
+                Event::InboxUpserted(i) => {
+                    kinds.insert(std::mem::discriminant(&i.kind));
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(background, "no background subagent in 1,500 messages");
+    assert!(foreground, "no foreground subagent in 1,500 messages");
+    assert!(
+        kinds.len() >= 3,
+        "only {} inbox kinds appeared",
+        kinds.len()
+    );
+}

@@ -473,6 +473,14 @@ pub(crate) const SUBAGENT_TASKS: &[&str] = &[
     "list keys the brief leaves unbound",
 ];
 
+/// Follow-up task titles the coordinator files.
+pub(crate) const FOLLOW_UPS: &[&str] = &[
+    "rename the sequence-timeout constant",
+    "check kitty with a 200-column pane",
+    "decide whether blocked questions beep",
+    "trim the preview in the switcher",
+];
+
 /// Tools a subagent reports using.
 pub(crate) const TOOLS: &[&str] = &["Read", "Grep", "Glob", "Bash", "WebFetch"];
 

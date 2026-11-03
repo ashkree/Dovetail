@@ -170,7 +170,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 
 | Dependency | Used in | Features | Reason |
 | --- | --- | --- | --- |
-| `serde`, `serde_json` | api, driver, core, mock, binary | `derive` | Plain-data API, NDJSON, MCP; the mock builds tool inputs and `--dump` prints JSON lines |
+| `serde`, `serde_json` | api, driver, core, mock, tui, binary | `derive` | Plain-data API, NDJSON, MCP; the mock builds tool inputs and `--dump` prints JSON lines; the TUI reads a permission request's tool input (`command`, `file_path`) for the inbox preview |
 | `ratatui` 0.30 | tui | default | Required |
 | `crossterm` 0.29 | tui | default | Required; no kitty keyboard protocol |
 | `nucleo` 0.5 | tui | default | Fuzzy picker (required) |
@@ -180,8 +180,9 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `rusqlite_migration` | core | none | Small migration layer; check it supports this `rusqlite` version |
 | `toml` | core | default | Recipe and `config.toml` |
 | `thiserror`, `anyhow` | libraries, binary | none | Required by conventions |
-| `tracing`, `tracing-subscriber`, `tracing-appender` | core, tui, binary | `fmt`, `env-filter` | File logging only |
-| `jiff` | core, tui | default | Local-time display with no unsafe of ours |
+| `tracing`, `tracing-subscriber`, `tracing-appender` | core, tui, binary | `fmt`, `env-filter` | File logging only. The TUI uses only the `tracing` macros; the binary sets up the file writer (M2) |
+| `jiff` | core, tui, binary | default | Local-time display with no unsafe of ours; the binary passes the system time zone to the UI |
+| `unicode-width` | tui | default | Pad, clip and wrap rows by terminal cell width (already a `ratatui` dependency) |
 | `uuid` | core | `v4` | Choose session ids |
 | `notify` (latest stable, not the 9 rc) | core | default | Watch native task files (M11) |
 | *none:* hand-written NDJSON layer on `tokio` + `serde_json` | driver | n/a | Decision 4a fallback. S1 (2026-11-02): `claude-agent-sdk-rs` and `rusty_claw` both fail C (concurrent permissions) and H (tolerance); the hand-written layer passed A–H (18 crates, +1.39 MB, 4.3 MB RSS) |
@@ -439,10 +440,10 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Scope:** terminal setup and panic hook; event loop with dirty flag; Layout B; `Region` and `Buffer` abstractions; Normal mode; keymap table with sequences and timeouts; `Action` enum; theme struct; status bar. Task tree with grouping (Unsorted, Now, Next, Later, Done), P-levels, mismatch marker and tree keys. Inbox with preview and keys `y A d D r x Enter`.
 - **Files:** `crates/dovetail-tui/src/{app,event_loop,keymap,action,theme,region}.rs`, `buffers/{tree,inbox}.rs`, `crates/dovetail/src/main.rs`
 - **Done when:**
-  - [ ] `dovetail --mock` opens Layout B with live updates and quits cleanly with `:q`
-  - [ ] Terminal is restored on exit and on panic
-  - [ ] CPU is idle when nothing changes
-  - [ ] Inbox actions change state through `Command`s
+  - [x] `dovetail --mock` opens Layout B with live updates and quits cleanly with `:q` (pty run: alternate screen entered and left, exit 0)
+  - [x] Terminal is restored on exit and on panic (pty run: `:panic`, a debug-build command, leaves the alternate screen and shows the cursor)
+  - [x] CPU is idle when nothing changes (pty run: 0.00 % CPU and 0 bytes drawn over 8 s while the mock was quiet; `next_wake` returns `None` when clean)
+  - [x] Inbox actions change state through `Command`s
 - **Tests:** mode machine, keymap (`gg`, `dd`, `]]`, `<leader>ss`, timeouts, ambiguity), tree grouping and sorting, snapshot of Layout B
 
 ### M3. Conversation and reading
