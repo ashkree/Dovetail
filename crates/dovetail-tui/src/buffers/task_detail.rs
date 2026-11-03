@@ -1,9 +1,11 @@
-//! One task in full: title, fields, notes and the agents working on it. The decision log is
-//! v1.1 (plan A4); notes are edited in `$EDITOR` from M5.
+//! One task in full: title, fields, related tasks, notes, the agents working on it and its
+//! decision log (in v1 since 2026-11-03, ADR 0003). Notes are edited in `$EDITOR` from M5.
 
-use dovetail_api::{Agent, Command, Snapshot, Task, TaskChange, TaskId};
+use dovetail_api::{Agent, Command, Decision, DecisionAuthor, Snapshot, Task, TaskChange, TaskId};
+use jiff::tz::TimeZone;
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
@@ -17,7 +19,13 @@ use crate::region::BufferKind;
 use crate::theme::Theme;
 
 /// The detail view of one task, as plain lines (shared with the picker's preview).
-pub fn lines(snap: &Snapshot, task: &Task, width: usize, theme: &Theme) -> Vec<Line<'static>> {
+pub fn lines(
+    snap: &Snapshot,
+    task: &Task,
+    width: usize,
+    theme: &Theme,
+    tz: &TimeZone,
+) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     let label = |text: &str| Line::from(Span::styled(text.to_string(), theme.accent()));
     let blank = Line::default;
@@ -71,6 +79,23 @@ pub fn lines(snap: &Snapshot, task: &Task, width: usize, theme: &Theme) -> Vec<L
         )));
     }
 
+    if !task.related.is_empty() {
+        out.push(blank());
+        out.push(label("Related"));
+        out.push(blank());
+        for id in &task.related {
+            let title = snap
+                .tasks
+                .iter()
+                .find(|t| t.id == *id)
+                .map_or("(gone)", |t| t.title.as_str());
+            out.push(Line::from(vec![
+                Span::styled("↔ ", theme.dim()),
+                Span::styled(title.to_string(), theme.body()),
+            ]));
+        }
+    }
+
     out.push(blank());
     out.push(label("Notes"));
     out.push(blank());
@@ -113,7 +138,89 @@ pub fn lines(snap: &Snapshot, task: &Task, width: usize, theme: &Theme) -> Vec<L
         }
         out.push(Line::from(spans));
     }
+
+    out.push(blank());
+    out.push(label("Decisions"));
+    out.push(blank());
+    let mut decisions: Vec<&Decision> = snap
+        .decisions
+        .iter()
+        .filter(|d| d.task == task.id)
+        .collect();
+    decisions.sort_by_key(|d| std::cmp::Reverse((d.at_ms, d.id)));
+    if decisions.is_empty() {
+        out.push(Line::from(Span::styled(
+            "(none yet · a to add one)",
+            theme.dim(),
+        )));
+    }
+    for d in decisions {
+        decision_lines(snap, d, width, theme, tz, &mut out);
+    }
     out
+}
+
+/// One decision: who and when, the decision, why, and the options it beat. A superseded entry
+/// is dimmed and struck through, and says what replaced it.
+fn decision_lines(
+    snap: &Snapshot,
+    d: &Decision,
+    width: usize,
+    theme: &Theme,
+    tz: &TimeZone,
+    out: &mut Vec<Line<'static>>,
+) {
+    let replaced_by = snap
+        .decisions
+        .iter()
+        .find(|later| later.supersedes == Some(d.id))
+        .map(|later| later.id);
+    let who = match &d.by {
+        DecisionAuthor::User => "you".to_string(),
+        DecisionAuthor::Agent(id) => snap
+            .agents
+            .iter()
+            .find(|a| &a.id == id)
+            .map_or_else(|| id.0.clone(), |a| a.name.clone()),
+    };
+    out.push(Line::from(Span::styled(
+        format!("{} · {who} · #{}", fmt::when(d.at_ms, tz), d.id.0),
+        theme.dim(),
+    )));
+    let style = if replaced_by.is_some() {
+        theme.dim().add_modifier(Modifier::CROSSED_OUT)
+    } else {
+        theme.body().add_modifier(Modifier::BOLD)
+    };
+    for text in fmt::wrap(&d.text, width) {
+        out.push(Line::from(Span::styled(text, style)));
+    }
+    if let Some(next) = replaced_by {
+        out.push(Line::from(Span::styled(
+            format!("superseded by #{}", next.0),
+            theme.dim(),
+        )));
+    }
+    if let Some(why) = &d.why {
+        let why_style = if replaced_by.is_some() {
+            theme.dim()
+        } else {
+            theme.body()
+        };
+        for text in fmt::wrap(why, width.saturating_sub(2)) {
+            out.push(Line::from(Span::styled(format!("  {text}"), why_style)));
+        }
+    }
+    for alt in &d.alternatives {
+        let text = match &alt.why_not {
+            Some(why_not) => format!("considered: {} — {why_not}", alt.option),
+            None => format!("considered: {}", alt.option),
+        };
+        for line in fmt::wrap(&text, width.saturating_sub(2)) {
+            out.push(Line::from(Span::styled(format!("  {line}"), theme.dim())));
+        }
+    }
+    out.push(Line::default());
 }
 
 /// The task detail buffer.
@@ -162,7 +269,7 @@ impl Buffer for TaskDetailBuffer {
             return;
         };
         let width = usize::from(inner.width).min(100);
-        let all = lines(cx.snap, task, width, theme);
+        let all = lines(cx.snap, task, width, theme, cx.tz);
         let height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
         self.last_lines = all.len();
         self.top = self.top.min(all.len().saturating_sub(height));
@@ -178,8 +285,9 @@ impl Buffer for TaskDetailBuffer {
             frame,
             inner,
             &[
-                "s status · b bucket · p P-level · e notes · esc back",
-                "s b p cycle · esc back",
+                "s status · b bucket · p P-level · R relate · a decision · e notes · esc back",
+                "s b p cycle · R relate · a decision · esc back",
+                "R relate · a decision · esc back",
             ],
             theme,
         );
@@ -211,6 +319,11 @@ impl Buffer for TaskDetailBuffer {
             (Action::TaskCyclePLevel, Some(t)) => {
                 effects.push(change(TaskChange::PLevel(next_p_level(t.p_level)), t));
             }
+            (Action::TaskRelate, Some(t)) => effects.push(Effect::PickRelated(t.id)),
+            (Action::TaskAddDecision, Some(t)) => effects.push(Effect::StartInput {
+                target: super::InputTarget::Decision(t.id),
+                initial: String::new(),
+            }),
             (Action::TaskEditNotes, _) => {
                 effects.push(Effect::Note(
                     "editing notes in $EDITOR arrives with storage (M5)".into(),
@@ -225,7 +338,7 @@ impl Buffer for TaskDetailBuffer {
         self.task
             .and_then(|id| cx.snap.tasks.iter().find(|t| t.id == id))
             .map(|t| {
-                lines(cx.snap, t, 100, cx.theme)
+                lines(cx.snap, t, 100, cx.theme, cx.tz)
                     .iter()
                     .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
                     .collect()

@@ -15,6 +15,7 @@ fn task(id: i64, title: &str) -> Task {
         pr: None,
         follow_up_of: None,
         coordinator_created: false,
+        related: vec![],
     }
 }
 
@@ -362,9 +363,10 @@ fn conversation_appended_with_a_known_id_replaces_the_entry() {
 }
 
 #[test]
-fn conversation_keeps_the_newest_200_and_marks_more() {
+fn conversation_keeps_the_newest_2000_and_marks_more() {
     let mut state = Snapshot::default();
-    let events = (1..=201)
+    let n = CONVERSATION_KEEP as u64 + 1;
+    let events = (1..=n)
         .map(|n| Event::ConversationAppended {
             agent: id("s1"),
             entry: entry(n, EntryKind::User, "x"),
@@ -372,9 +374,85 @@ fn conversation_keeps_the_newest_200_and_marks_more() {
         .collect();
     run(&mut state, events);
     let tail = &state.conversations[&id("s1")];
-    assert_eq!(tail.entries.len(), 200);
+    assert_eq!(tail.entries.len(), CONVERSATION_KEEP);
     assert_eq!(tail.entries.first().map(|e| e.id), Some(EntryId(2)));
     assert!(tail.has_more);
+}
+
+#[test]
+fn paged_history_survives_the_next_message() {
+    // Plan section 7, decided 2026-11-03: the 200-entry tail is for snapshots; what a client
+    // pages in stays (up to CONVERSATION_KEEP) when new entries arrive.
+    let mut state = Snapshot::default();
+    let tail: Vec<Event> = (300..500)
+        .map(|n| Event::ConversationAppended {
+            agent: id("s1"),
+            entry: entry(n, EntryKind::User, "x"),
+        })
+        .collect();
+    run(&mut state, tail);
+    let older = (100..300)
+        .map(|n| entry(n, EntryKind::User, "old"))
+        .collect();
+    run(
+        &mut state,
+        vec![
+            Event::ConversationPage {
+                agent: id("s1"),
+                entries: older,
+                has_more: false,
+            },
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(500, EntryKind::User, "new"),
+            },
+        ],
+    );
+    let tail = &state.conversations[&id("s1")];
+    assert_eq!(tail.entries.len(), 401);
+    assert_eq!(tail.entries.first().map(|e| e.id), Some(EntryId(100)));
+}
+
+#[test]
+fn a_trimmed_snapshot_carries_only_the_tail() {
+    let mut state = Snapshot::default();
+    let events = (1..=250)
+        .map(|n| Event::ConversationAppended {
+            agent: id("s1"),
+            entry: entry(n, EntryKind::User, "x"),
+        })
+        .collect();
+    run(&mut state, events);
+    let sent = state.trimmed();
+    let tail = &sent.conversations[&id("s1")];
+    assert_eq!(tail.entries.len(), CONVERSATION_TAIL);
+    assert_eq!(tail.entries.first().map(|e| e.id), Some(EntryId(51)));
+    assert!(tail.has_more);
+    assert_eq!(
+        state.conversations[&id("s1")].entries.len(),
+        250,
+        "the original is untouched"
+    );
+}
+
+#[test]
+fn a_decision_is_added_once() {
+    let mut state = Snapshot::default();
+    let d = Decision {
+        id: DecisionId(1),
+        task: TaskId(1),
+        at_ms: 0,
+        by: DecisionAuthor::User,
+        text: "x".into(),
+        why: None,
+        alternatives: vec![],
+        supersedes: None,
+    };
+    run(
+        &mut state,
+        vec![Event::DecisionAdded(d.clone()), Event::DecisionAdded(d)],
+    );
+    assert_eq!(state.decisions.len(), 1);
 }
 
 #[test]

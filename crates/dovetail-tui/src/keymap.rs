@@ -195,6 +195,8 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, DETAIL, "b", Action::TaskCycleBucket),
     bind(N, DETAIL, "p", Action::TaskCyclePLevel),
     bind(N, DETAIL, "e", Action::TaskEditNotes),
+    bind(N, DETAIL, "R", Action::TaskRelate),
+    bind(N, DETAIL, "a", Action::TaskAddDecision),
     // Conversation: reading keys (the brief's "Reading keys").
     bind(N, CONVERSATION, "]]", Action::NextTurn),
     bind(N, CONVERSATION, "[[", Action::PrevTurn),

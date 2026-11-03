@@ -29,6 +29,7 @@ fn task() -> Task {
         pr: Some(1231),
         follow_up_of: Some(TaskId(2)),
         coordinator_created: true,
+        related: vec![],
     }
 }
 
@@ -149,6 +150,22 @@ fn warning() -> Warning {
     }
 }
 
+fn decision() -> Decision {
+    Decision {
+        id: DecisionId(4),
+        task: TaskId(1),
+        at_ms: 1_700_000_000_000,
+        by: DecisionAuthor::Agent(id("coordinator")),
+        text: "Keep tasks one level".into(),
+        why: Some("Nesting changes the glossary".into()),
+        alternatives: vec![Alternative {
+            option: "Nest related tasks".into(),
+            why_not: None,
+        }],
+        supersedes: Some(DecisionId(2)),
+    }
+}
+
 #[test]
 fn hello_and_a_full_snapshot_roundtrip() {
     let project = ProjectSummary {
@@ -167,6 +184,13 @@ fn hello_and_a_full_snapshot_roundtrip() {
         inbox: inbox_items(),
         activity: vec![activity()],
         messages: vec![message()],
+        decisions: vec![
+            decision(),
+            Decision {
+                by: DecisionAuthor::User,
+                ..decision()
+            },
+        ],
         conversations: BTreeMap::from([(
             id("slice-a"),
             ConversationTail {
@@ -211,6 +235,7 @@ fn every_event_roundtrips() {
             entries: vec![entry()],
             has_more: false,
         },
+        Event::DecisionAdded(decision()),
         Event::TotalsChanged(totals()),
         Event::WarningSet(warning()),
         Event::WarningCleared(WarningId("mode".into())),
@@ -278,6 +303,14 @@ fn every_command_roundtrips() {
             notes: String::new(),
             follow_up_of: Some(TaskId(1)),
             pr: Some(1231),
+            related: vec![TaskId(2)],
+        }),
+        Command::LogDecision(NewDecision {
+            task: TaskId(1),
+            text: "Use the mock".into(),
+            why: None,
+            alternatives: vec![],
+            supersedes: None,
         }),
         Command::UpdateTask {
             id: TaskId(3),
@@ -293,6 +326,8 @@ fn every_command_roundtrips() {
                 TaskChange::Pr(None),
                 TaskChange::Pr(Some(7)),
                 TaskChange::Seen,
+                TaskChange::Relate(TaskId(2)),
+                TaskChange::Unrelate(TaskId(2)),
             ],
         },
         Command::ArchiveTask { id: TaskId(3) },

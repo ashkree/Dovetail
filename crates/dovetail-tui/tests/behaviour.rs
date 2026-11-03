@@ -233,6 +233,7 @@ fn a_adds_a_task_by_title() {
             notes: String::new(),
             follow_up_of: None,
             pr: None,
+            related: vec![],
         })]
     );
     assert_eq!(app.mode(), Mode::Normal);

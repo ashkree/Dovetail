@@ -133,17 +133,30 @@ fn interrupt_works_by_key_by_command_and_by_name() {
 }
 
 #[test]
-fn interrupting_a_subagent_stops_its_session() {
+fn interrupting_a_subagent_asks_before_stopping_its_session() {
     let mut app = app_with(world());
     select(&mut app, "rebase");
     leader(&mut app, "sx");
+    assert!(
+        app.take_commands().is_empty(),
+        "nothing is sent before you answer"
+    );
+    let screen = render(&mut app, 120, 40);
+    // rebase is done; explore callers is the one other running subagent.
+    assert!(
+        screen.contains("Interrupting rebase stops slice-4's turn and its 1 other running subagent. Go ahead? (y/n)"),
+        "{screen}"
+    );
+    app.on_key(key('n'), 10);
+    assert!(app.take_commands().is_empty());
+    leader(&mut app, "sx");
+    app.on_key(key('y'), 20);
     assert_eq!(
         app.take_commands(),
         vec![Command::Interrupt {
             agent: agent_id("slice-4")
         }]
     );
-    assert_eq!(app.note(), Some("subagents stop with their session"));
 }
 
 #[test]
@@ -277,6 +290,7 @@ fn leader_t_opens_capture_and_enter_saves_with_its_tokens() {
             notes: String::new(),
             follow_up_of: None,
             pr: Some(1231),
+            related: vec![],
         })]
     );
     assert_eq!(app.mode(), Mode::Normal);
@@ -307,13 +321,19 @@ fn the_link_to_the_focused_task_shows_and_ctrl_l_unlinks() {
     app.on_key(ctrl('l'), 51);
     app.on_key(enter(), 52);
     match app.take_commands().as_slice() {
-        [Command::CreateTask(task)] => assert_eq!(task.follow_up_of, Some(TaskId(2))),
+        [Command::CreateTask(task)] => {
+            assert_eq!(task.related, vec![TaskId(2)]);
+            assert_eq!(
+                task.follow_up_of, None,
+                "the link relates, it does not make a follow-up"
+            );
+        }
         other => panic!("{other:?}"),
     }
 }
 
 #[test]
-fn unlinked_capture_makes_a_task_with_no_follow_up() {
+fn unlinked_capture_makes_a_task_with_no_relation() {
     let mut app = app_with(world());
     select(&mut app, "slice-7");
     leader(&mut app, "t");
@@ -321,7 +341,7 @@ fn unlinked_capture_makes_a_task_with_no_follow_up() {
     app.on_key(ctrl('l'), 50);
     app.on_key(enter(), 52);
     match app.take_commands().as_slice() {
-        [Command::CreateTask(task)] => assert_eq!(task.follow_up_of, None),
+        [Command::CreateTask(task)] => assert!(task.related.is_empty()),
         other => panic!("{other:?}"),
     }
 }
@@ -381,6 +401,7 @@ fn tab_saves_and_opens_the_detail_once_the_core_announces_the_task() {
             pr: None,
             follow_up_of: None,
             coordinator_created: false,
+            related: vec![],
         }),
     });
     let screen = render(&mut app, 120, 40);
@@ -884,6 +905,7 @@ fn a_failed_save_does_not_leave_tab_waiting_for_a_task_of_that_title() {
             pr: None,
             follow_up_of: None,
             coordinator_created: false,
+            related: vec![],
         }),
     });
     assert!(!render(&mut app, 120, 30).contains("task · #41"));
@@ -905,6 +927,177 @@ fn sm_and_sx_from_the_inbox_act_on_the_selected_items_agent() {
         app.take_commands(),
         vec![Command::CyclePermissionMode {
             agent: agent_id("slice-7")
+        }]
+    );
+}
+
+// --- related tasks and the decision log (decided 2026-11-03, ADR 0003) ---
+
+fn with_decisions() -> Snapshot {
+    let mut snap = world();
+    snap.tasks[0].related = vec![TaskId(2)];
+    snap.tasks[1].related = vec![TaskId(1)];
+    snap.decisions = vec![
+        Decision {
+            id: DecisionId(1),
+            task: TaskId(1),
+            at_ms: NOW_MS - 3_600_000,
+            by: DecisionAuthor::Agent(agent_id("coordinator")),
+            text: "Sort every bucket by P-level".into(),
+            why: None,
+            alternatives: vec![],
+            supersedes: None,
+        },
+        Decision {
+            id: DecisionId(2),
+            task: TaskId(1),
+            at_ms: NOW_MS - 60_000,
+            by: DecisionAuthor::User,
+            text: "Now keeps your own order".into(),
+            why: Some("J and K reorder Now.".into()),
+            alternatives: vec![Alternative {
+                option: "P-level everywhere".into(),
+                why_not: Some("J and K would do nothing".into()),
+            }],
+            supersedes: Some(DecisionId(1)),
+        },
+    ];
+    snap
+}
+
+#[test]
+fn a_related_task_shows_a_count_chip_in_the_tree_and_its_title_in_the_detail() {
+    let mut app = app_with(with_decisions());
+    let screen = render(&mut app, 120, 40);
+    let row = screen
+        .lines()
+        .find(|l| l.contains("business surface"))
+        .expect("row");
+    assert!(row.contains("↔ 1"), "{row}");
+    select(&mut app, "business surface");
+    app.on_key(enter(), 0);
+    let detail = render(&mut app, 120, 60);
+    assert!(detail.contains("Related"));
+    assert!(detail.contains("↔ get_decision 500"), "{detail}");
+}
+
+#[test]
+fn the_detail_lists_decisions_newest_first_with_why_alternatives_and_supersession() {
+    let mut app = app_with(with_decisions());
+    select(&mut app, "business surface");
+    app.on_key(enter(), 0);
+    let screen = render(&mut app, 120, 70);
+    let newer = screen.find("Now keeps your own order").expect("newer");
+    let older = screen.find("Sort every bucket by P-level").expect("older");
+    assert!(newer < older, "newest first");
+    assert!(screen.contains("you · #2"));
+    assert!(screen.contains("coordinator · #1"));
+    assert!(screen.contains("J and K reorder Now."));
+    assert!(screen.contains("considered: P-level everywhere — J and K would do nothing"));
+    assert!(screen.contains("superseded by #2"));
+}
+
+#[test]
+fn a_superseded_decision_is_struck_through() {
+    let mut app = app_with(with_decisions());
+    select(&mut app, "business surface");
+    app.on_key(enter(), 0);
+    let mut terminal = Terminal::new(TestBackend::new(120, 70)).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    let mut found = false;
+    for y in 0..buffer.area.height {
+        let row: String = (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect();
+        if let Some(at) = row.find("Sort every bucket") {
+            let x = row[..at].chars().count() as u16;
+            assert!(
+                buffer[(x, y)]
+                    .modifier
+                    .contains(ratatui::style::Modifier::CROSSED_OUT)
+            );
+            found = true;
+        }
+    }
+    assert!(found);
+}
+
+#[test]
+fn a_in_the_detail_logs_a_decision_on_that_task() {
+    let mut app = app_with(world());
+    select(&mut app, "idea: eval key flow");
+    app.on_key(enter(), 0);
+    press(&mut app, "a");
+    assert!(render(&mut app, 120, 40).contains("decision ›"));
+    type_keys(&mut app, "Ship it behind a flag");
+    app.on_key(enter(), 99);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::LogDecision(NewDecision {
+            task: TaskId(3),
+            text: "Ship it behind a flag".into(),
+            why: None,
+            alternatives: vec![],
+            supersedes: None,
+        })]
+    );
+}
+
+#[test]
+fn colon_decide_logs_on_the_task_in_focus_or_says_there_is_none() {
+    let mut app = app_with(world());
+    select(&mut app, "slice-7");
+    type_keys(&mut app, ":decide Key comes from the vault");
+    app.on_key(enter(), 99);
+    match app.take_commands().as_slice() {
+        [Command::LogDecision(d)] => {
+            assert_eq!(d.task, TaskId(2));
+            assert_eq!(d.text, "Key comes from the vault");
+        }
+        other => panic!("{other:?}"),
+    }
+    // The coordinator row has no task.
+    app.on_key(key('g'), 200);
+    app.on_key(key('g'), 201);
+    type_keys(&mut app, ":decide nothing");
+    app.on_key(enter(), 299);
+    assert!(app.take_commands().is_empty());
+    assert_eq!(app.note(), Some("no task in focus to decide on"));
+}
+
+#[test]
+fn capital_r_in_the_detail_relates_through_the_picker_and_unrelates_a_linked_one() {
+    let mut app = app_with(with_decisions());
+    select(&mut app, "business surface");
+    app.on_key(enter(), 0);
+    press(&mut app, "R");
+    let screen = render(&mut app, 120, 40);
+    assert!(screen.contains("Relate to"));
+    assert!(screen.contains("related · ⏎ to unlink"));
+    assert!(
+        !screen
+            .lines()
+            .any(|l| l.contains("▌") && l.contains("business surface")),
+        "itself is not offered"
+    );
+    type_keys(&mut app, "idea");
+    app.on_key(enter(), 50);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::UpdateTask {
+            id: TaskId(1),
+            patch: vec![TaskChange::Relate(TaskId(3))]
+        }]
+    );
+    press(&mut app, "R");
+    type_keys(&mut app, "get_decision");
+    app.on_key(enter(), 90);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::UpdateTask {
+            id: TaskId(1),
+            patch: vec![TaskChange::Unrelate(TaskId(2))]
         }]
     );
 }

@@ -22,9 +22,9 @@ expression: "render(&mut app, 120, 38)"
 │ │ ✓   └ rebase                dovetail/slice-4  now││ ✓ ◇ rebase  done                                             │ │
 │ │ ◐   └ explore callers       dovetail/slice-4  now││ ◐ ◇ explore callers  working                                 │ │
 │ │ ⚠ slice-7                   dovetail/slice-7  now││                                                              │ │
-│ │ ◐ coordinator                                 now││                                                              │ │
+│ │ ◐ coordinator                                 now││ Decisions                                                    │ │
 └─│Inbox                                             ││                                                              │ │
-┌ │ ⚠ slice-7 Bash                                now││                                                              │ │
+┌ │ ⚠ slice-7 Bash                                now││ (none yet · a to add one)                                    │ │
 │ │ ? slice-4 Question                             3m││                                                              │ │
 │ │ ✓ slice-4 Finished turn                        6m││                                                              │ │
 │ │                                                  ││                                                              │ │

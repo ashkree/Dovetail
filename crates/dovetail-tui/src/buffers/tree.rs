@@ -225,6 +225,12 @@ impl TreeBuffer {
         if let Some(parent) = task.follow_up_of {
             left.push(Span::styled(format!(" ↳#{}", parent.0), theme.dim()));
         }
+        if !task.related.is_empty() {
+            left.push(Span::styled(
+                format!(" ↔ {}", task.related.len()),
+                theme.dim(),
+            ));
+        }
         let right = task
             .pr
             .map(|pr| vec![vec![Span::styled(format!("PR #{pr}"), theme.dim())]])

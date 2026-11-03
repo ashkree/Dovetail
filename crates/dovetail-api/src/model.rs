@@ -35,6 +35,11 @@ pub struct EntryId(pub u64);
 #[serde(transparent)]
 pub struct TodoListId(pub String);
 
+/// Identifies an entry in a task's decision log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DecisionId(pub u64);
+
 /// Identifies a status-bar warning, so it can be replaced or cleared.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -69,14 +74,37 @@ pub struct Snapshot {
     pub totals: Totals,
     /// Status-bar warnings.
     pub warnings: Vec<Warning>,
+    /// Every task's decision log, oldest first.
+    #[serde(default)]
+    pub decisions: Vec<Decision>,
+}
+
+impl Snapshot {
+    /// The snapshot as a core sends it: each conversation cut to its newest
+    /// [`CONVERSATION_TAIL`] entries, older ones left for `LoadConversation`. A client keeps
+    /// what it pages in beyond that, up to [`CONVERSATION_KEEP`].
+    pub fn trimmed(&self) -> Snapshot {
+        let mut out = self.clone();
+        for tail in out.conversations.values_mut() {
+            if tail.entries.len() > CONVERSATION_TAIL {
+                let excess = tail.entries.len() - CONVERSATION_TAIL;
+                tail.entries.drain(..excess);
+                tail.has_more = true;
+            }
+        }
+        out
+    }
 }
 
 /// Most activity items a client keeps.
 pub const ACTIVITY_TAIL: usize = 500;
 /// Most agent messages a client keeps.
 pub const MESSAGE_TAIL: usize = 500;
-/// Most conversation entries a client keeps per agent before older ones are dropped.
+/// Most conversation entries a snapshot carries per agent; older ones are paged in on request.
 pub const CONVERSATION_TAIL: usize = 200;
+/// Most conversation entries a client keeps per agent, paged-in history included, before the
+/// oldest are dropped again.
+pub const CONVERSATION_KEEP: usize = 2_000;
 
 /// A registered project.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -114,6 +142,9 @@ pub struct Task {
     pub follow_up_of: Option<TaskId>,
     /// Created by the coordinator and not yet seen by the user.
     pub coordinator_created: bool,
+    /// Tasks related to this one, both ways; no effect on order or status.
+    #[serde(default)]
+    pub related: Vec<TaskId>,
 }
 
 /// Where a task stands. Whether it needs you is not a status: it follows from the inbox
@@ -450,6 +481,46 @@ pub struct Totals {
     pub needs_you: u32,
     /// Cost across all agents, in API-equivalent US dollars.
     pub cost_usd: f64,
+}
+
+/// One entry in a task's decision log. Entries are never edited: a later one can supersede it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Decision {
+    /// Entry id, increasing.
+    pub id: DecisionId,
+    /// The task it belongs to.
+    pub task: TaskId,
+    /// When it was logged, in Unix milliseconds.
+    pub at_ms: i64,
+    /// Who logged it.
+    pub by: DecisionAuthor,
+    /// The decision, in one line.
+    pub text: String,
+    /// Why, if given.
+    pub why: Option<String>,
+    /// Options that were considered and not taken.
+    pub alternatives: Vec<Alternative>,
+    /// The earlier entry this one replaces.
+    pub supersedes: Option<DecisionId>,
+}
+
+/// An option considered for a decision and not taken.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Alternative {
+    /// The option, in one line.
+    pub option: String,
+    /// Why it lost, if given.
+    pub why_not: Option<String>,
+}
+
+/// Who logged a decision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionAuthor {
+    /// The user, by hand.
+    User,
+    /// An agent, through `log_decision`.
+    Agent(AgentId),
 }
 
 /// A status-bar warning.

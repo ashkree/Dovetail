@@ -32,6 +32,18 @@ _Avoid_: background task
 A piece of the user's own work tracked in Dovetail, with or without agents attached. It is done when marked done in Dovetail, whatever its to-do items say.
 _Avoid_: subtask, ticket, to-do
 
+**Related task**:
+A task linked to another both ways, with no effect on either one's order or status. Quick capture relates the new task to the task in focus unless told not to.
+_Avoid_: subtask, child task, linked task
+
+**Follow-up**:
+A task raised because of another, which it names as the task it follows up.
+_Avoid_: subtask, related task
+
+**Decision**:
+An entry in a task's decision log: what was decided, optionally why, and the alternatives that lost. Entries are never edited; a later one supersedes an earlier one.
+_Avoid_: note, ADR (the repo's own decision records)
+
 **To-do item**:
 An entry on Claude's native list, shown under the session or foreground subagent that created it. Claude's tools call these tasks (`TaskCreate`, `TaskUpdate`), but they are never Dovetail tasks.
 _Avoid_: task, subtask, checklist item

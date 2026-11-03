@@ -1,7 +1,7 @@
 //! The reducer: the only way client state changes.
 
 use crate::model::{
-    ACTIVITY_TAIL, CONVERSATION_TAIL, ConversationEntry, ConversationTail, EntryKind, MESSAGE_TAIL,
+    ACTIVITY_TAIL, CONVERSATION_KEEP, ConversationEntry, ConversationTail, EntryKind, MESSAGE_TAIL,
     Snapshot,
 };
 use crate::protocol::Event;
@@ -91,6 +91,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
             tail.entries = older;
             tail.has_more = has_more;
         }
+        Event::DecisionAdded(decision) => upsert(&mut state.decisions, decision, |d| d.id),
         Event::TotalsChanged(totals) => state.totals = totals,
         Event::WarningSet(warning) => upsert(&mut state.warnings, warning, |w| w.id.clone()),
         Event::WarningCleared(id) => state.warnings.retain(|w| w.id != id),
@@ -118,10 +119,12 @@ fn push_bounded<T>(items: &mut Vec<T>, item: T, cap: usize) {
     }
 }
 
-/// Appends to a conversation tail, dropping its oldest entries beyond [`CONVERSATION_TAIL`].
+/// Appends to a conversation, dropping its oldest entries beyond [`CONVERSATION_KEEP`]. History
+/// paged in with `ConversationPage` stays until then; snapshots carry only the tail
+/// ([`Snapshot::trimmed`](crate::Snapshot::trimmed)).
 fn append_entry(tail: &mut ConversationTail, entry: ConversationEntry) {
     let before = tail.entries.len();
-    push_bounded(&mut tail.entries, entry, CONVERSATION_TAIL);
+    push_bounded(&mut tail.entries, entry, CONVERSATION_KEEP);
     if tail.entries.len() == before {
         tail.has_more = true;
     }

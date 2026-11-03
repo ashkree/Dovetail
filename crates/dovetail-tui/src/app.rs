@@ -47,10 +47,18 @@ struct Input {
     line: TextInput,
 }
 
+/// What `y` does in a confirmation.
+enum Then {
+    /// Run an action.
+    Action(Action),
+    /// Send commands to the core.
+    Commands(Vec<Command>),
+}
+
 /// A yes/no question waiting for `y` or `n`.
 struct Confirm {
     prompt: String,
-    action: Action,
+    then: Then,
 }
 
 /// The whole UI state.
@@ -293,7 +301,10 @@ impl App {
         self.note = None;
         if let Some(confirm) = self.confirm.take() {
             if matches!(event.code, crossterm::event::KeyCode::Char('y' | 'Y')) {
-                self.run(confirm.action);
+                match confirm.then {
+                    Then::Action(action) => self.run(action),
+                    Then::Commands(commands) => self.outbox.extend(commands),
+                }
             }
             return;
         }
@@ -398,8 +409,20 @@ impl App {
             }
             InputTarget::SliceBrief(name) => self.new_slice(name, text),
             InputTarget::Search => self.start_search(text),
+            InputTarget::Decision(task) if !text.is_empty() => self.log_decision(task, text),
             _ => {}
         }
+    }
+
+    fn log_decision(&mut self, task: dovetail_api::TaskId, text: String) {
+        self.outbox
+            .push(Command::LogDecision(dovetail_api::NewDecision {
+                task,
+                text,
+                why: None,
+                alternatives: Vec::new(),
+                supersedes: None,
+            }));
     }
 
     fn new_slice(&mut self, name: String, brief: String) {
@@ -459,7 +482,7 @@ impl App {
                 if running {
                     self.confirm = Some(Confirm {
                         prompt: "A turn is running. Quit anyway?".into(),
-                        action: Action::ForceQuit,
+                        then: Then::Action(Action::ForceQuit),
                     });
                 } else {
                     self.quit = true;
@@ -495,6 +518,7 @@ impl App {
             Effect::OpenAgent(id) => self.open_agent_in_main(id),
             Effect::OpenTask(id) => self.open_task(id),
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
+            Effect::PickRelated(task) => self.open_relate_picker(task),
             Effect::Note(text) => self.note = Some(text),
         }
     }

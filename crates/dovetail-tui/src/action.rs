@@ -85,6 +85,10 @@ pub enum Action {
     RegisterProject,
     /// Edit the task's notes in `$EDITOR` (arrives with storage in M5).
     TaskEditNotes,
+    /// Relate the task to another, or remove the relation, through the picker.
+    TaskRelate,
+    /// Add an entry to the task's decision log.
+    TaskAddDecision,
     // --- tree ---
     /// Open the selected agent's conversation, or the selected task's detail.
     TreeOpen,

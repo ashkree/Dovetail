@@ -45,7 +45,8 @@ pub fn parse(text: &str) -> Captured {
     out
 }
 
-/// The task the capture can link to: the one in focus when `<leader>t` was pressed.
+/// The task the capture can relate the new one to: the one in focus when `<leader>t` was
+/// pressed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkTarget {
     /// The task.
@@ -129,8 +130,10 @@ impl Capture {
             p_level: parsed.p_level,
             bucket: parsed.bucket,
             notes: String::new(),
-            follow_up_of: self.active_link().map(|l| l.id),
+            follow_up_of: None,
             pr: parsed.pr,
+            // The link relates the two tasks both ways (decided 2026-11-03).
+            related: self.active_link().map(|l| l.id).into_iter().collect(),
         })
     }
 }
@@ -217,9 +220,9 @@ mod tests {
     fn the_link_is_on_by_default_and_ctrl_l_switches_it() {
         let mut c = Capture::new(Some(link()));
         c.key(key('x'));
-        assert_eq!(c.build().and_then(|t| t.follow_up_of), Some(TaskId(7)));
+        assert_eq!(c.build().map(|t| t.related), Some(vec![TaskId(7)]));
         c.key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL));
-        assert_eq!(c.build().and_then(|t| t.follow_up_of), None);
+        assert_eq!(c.build().map(|t| t.related), Some(vec![]));
         assert!(
             c.offered_link().is_some(),
             "the offer stays so Ctrl-l can bring it back"

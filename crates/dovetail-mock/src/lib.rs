@@ -105,7 +105,7 @@ impl MockCore {
             ServerMsg::Hello {
                 protocol: PROTOCOL_VERSION,
             },
-            ServerMsg::Snapshot(self.state.clone()),
+            ServerMsg::Snapshot(self.state.trimmed()),
         ]
     }
 
@@ -270,14 +270,26 @@ impl MockCore {
                     pr: new.pr,
                     follow_up_of: new.follow_up_of,
                     coordinator_created: false,
+                    related: vec![],
                 };
                 self.next_task += 1;
+                let id = task.id;
                 self.emit(Event::TaskUpserted(task));
+                for other in new.related {
+                    self.relate(id, other, true);
+                }
+            }
+            Command::LogDecision(new) => {
+                if self.task(new.task).is_none() {
+                    return self.fail(format!("no task {}", new.task.0));
+                }
+                self.log_decision(DecisionAuthor::User, new);
             }
             Command::UpdateTask { id, patch } => {
                 let Some(mut task) = self.task(id) else {
                     return self.fail(format!("no task {}", id.0));
                 };
+                let mut relations = Vec::new();
                 for change in patch {
                     match change {
                         TaskChange::Title(title) => task.title = title,
@@ -293,9 +305,15 @@ impl MockCore {
                         TaskChange::Deps(deps) => task.deps = deps,
                         TaskChange::Pr(pr) => task.pr = pr,
                         TaskChange::Seen => task.coordinator_created = false,
+                        TaskChange::Relate(other) | TaskChange::Unrelate(other) => {
+                            relations.push((other, matches!(change, TaskChange::Relate(_))));
+                        }
                     }
                 }
                 self.emit(Event::TaskUpserted(task));
+                for (other, on) in relations {
+                    self.relate(id, other, on);
+                }
             }
             Command::ArchiveTask { id } => {
                 let Some(mut task) = self.task(id) else {
@@ -315,7 +333,7 @@ impl MockCore {
             }
             Command::Resync => self
                 .ready
-                .push_back(ServerMsg::Snapshot(self.state.clone())),
+                .push_back(ServerMsg::Snapshot(self.state.trimmed())),
             Command::Quit { .. } => self.quit = true,
             Command::TakeOver { .. }
             | Command::RemoveWorktree { .. }
@@ -695,7 +713,7 @@ impl MockCore {
         for _ in 0..8 {
             let choice = self
                 .rng
-                .weighted(&[30, 12, 6, 15, 8, 8, 6, 10, 9, 1, 8, 3, 6]);
+                .weighted(&[30, 12, 6, 15, 8, 8, 6, 10, 9, 1, 8, 3, 6, 3]);
             if self.try_plan(choice, pause) {
                 return;
             }
@@ -936,6 +954,37 @@ impl MockCore {
                     return true;
                 }
             }
+            // The coordinator logs a decision on a live task.
+            13 => {
+                let tasks: Vec<TaskId> = self
+                    .state
+                    .tasks
+                    .iter()
+                    .filter(|t| t.status == TaskStatus::InProgress)
+                    .map(|t| t.id)
+                    .collect();
+                let pick = self.rng.pick(world::DECISIONS).copied();
+                if let (Some(task), Some((text, why, alternative))) =
+                    (self.rng.pick(&tasks).copied(), pick)
+                {
+                    self.after(pause, move |core| {
+                        core.log_decision(
+                            DecisionAuthor::Agent(agent_id(COORDINATOR)),
+                            NewDecision {
+                                task,
+                                text: text.into(),
+                                why: Some(why.into()),
+                                alternatives: vec![Alternative {
+                                    option: alternative.into(),
+                                    why_not: None,
+                                }],
+                                supersedes: None,
+                            },
+                        )
+                    });
+                    return true;
+                }
+            }
             // A startup-style warning comes and goes (messaging blockers, plan section 7).
             12 => {
                 let id = WarningId("messaging".into());
@@ -956,6 +1005,48 @@ impl MockCore {
         false
     }
 
+    /// Relates two tasks both ways, or removes the relation.
+    fn relate(&mut self, a: TaskId, b: TaskId, on: bool) {
+        if a == b || self.task(b).is_none() {
+            return;
+        }
+        for (this, that) in [(a, b), (b, a)] {
+            if let Some(mut task) = self.task(this) {
+                let had = task.related.contains(&that);
+                if on && !had {
+                    task.related.push(that);
+                } else if !on && had {
+                    task.related.retain(|t| *t != that);
+                } else {
+                    continue;
+                }
+                self.emit(Event::TaskUpserted(task));
+            }
+        }
+    }
+
+    fn log_decision(&mut self, by: DecisionAuthor, new: NewDecision) {
+        let id = DecisionId(
+            self.state
+                .decisions
+                .iter()
+                .map(|d| d.id.0)
+                .max()
+                .unwrap_or(0)
+                + 1,
+        );
+        self.emit(Event::DecisionAdded(Decision {
+            id,
+            task: new.task,
+            at_ms: self.state.now_ms,
+            by,
+            text: new.text,
+            why: new.why,
+            alternatives: new.alternatives,
+            supersedes: new.supersedes,
+        }));
+    }
+
     fn file_follow_up(&mut self, title: &str, follow_up_of: Option<TaskId>) {
         let task = Task {
             id: TaskId(self.next_task),
@@ -969,6 +1060,7 @@ impl MockCore {
             pr: None,
             follow_up_of,
             coordinator_created: true,
+            related: vec![],
         };
         self.next_task += 1;
         self.emit(Event::TaskUpserted(task));

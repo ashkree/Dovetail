@@ -18,9 +18,9 @@ expression: "render(&mut app, 120, 32)"
 │         ⎇ dovetail/slice-7                ││ ✓ ◇ rebase  done                                                        │
 │ ▾ Next (1)                                ││ ◐ ◇ explore callers  working                                            │
 │   ○ idea: eval key flow P2                ││                                                                         │
-│ ▸ Later (1)                               ││                                                                         │
+│ ▸ Later (1)                               ││ Decisions                                                               │
 │ ⏎ open · o fold · dd archive              ││                                                                         │
-└───────────────────────────────────────────┘│                                                                         │
+└───────────────────────────────────────────┘│ (none yet · a to add one)                                               │
 ┌ inbox · needs you (3) ────────────────────┐│                                                                         │
 │ ▸ ⚠ slice-7  Bash                   10:15 ││                                                                         │
 │   │ FS_EVAL_VIRTUAL_KEY=dev cargo test    ││                                                                         │
@@ -31,6 +31,6 @@ expression: "render(&mut app, 120, 32)"
 │                                           ││                                                                         │
 │                                           ││                                                                         │
 │                                           ││                                                                         │
-│ y allow · d deny · r reply · x dismiss    ││ s status · b bucket · p P-level · e notes · esc back                    │
+│ y allow · d deny · r reply · x dismiss    ││ s b p cycle · R relate · a decision · esc back                          │
 └───────────────────────────────────────────┘└─────────────────────────────────────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

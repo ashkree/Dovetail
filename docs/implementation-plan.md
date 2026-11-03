@@ -392,6 +392,14 @@ CREATE TABLE conversation_entries (id INTEGER PRIMARY KEY, agent_id TEXT, turn I
   at_ms INTEGER, kind TEXT, text TEXT);
 CREATE INDEX conversation_by_agent ON conversation_entries(agent_id, id);
 
+-- Added at M5 with the tasks (decided 2026-11-03, ADR 0003)
+CREATE TABLE task_related (a INTEGER REFERENCES tasks(id), b INTEGER REFERENCES tasks(id),
+  PRIMARY KEY(a, b), CHECK (a < b));                    -- one row per pair; both ways in the API
+CREATE TABLE decisions (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id),
+  at_ms INTEGER NOT NULL, author TEXT NOT NULL,          -- 'user' or an agent id
+  text TEXT NOT NULL, why TEXT, alternatives TEXT NOT NULL DEFAULT '[]', -- JSON [{option, why_not}]
+  supersedes INTEGER REFERENCES decisions(id));
+
 -- Added at M15
 CREATE TABLE maps (id TEXT PRIMARY KEY, task_id INTEGER, title TEXT, type TEXT, current_version INTEGER);
 CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms INTEGER,
@@ -399,7 +407,7 @@ CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms 
 ```
 
 **Migrations**
-- M5 `0001_init`: `tasks`, `task_deps`
+- M5 `0001_init`: `tasks`, `task_deps`, `task_related`, `decisions`
 - M6 `0002_agents_conversation`
 - M7 `0003_inbox_activity`
 - M11 `0004_todos`
@@ -409,7 +417,7 @@ Tables arrive with the milestone that uses them, so no unused tables sit around.
 
 **Left for v1.1**
 - `claims (pr, agent_id, ...)`
-- `decisions`, or moving `tasks.notes` into `tasks/<id>.md` (Decision 19c)
+- Moving `tasks.notes` into `tasks/<id>.md` (Decision 19c); the decision log itself is in v1 (ADR 0003)
 - An FTS5 `search_index`, backfilled from `conversation_entries`, `inbox_items`, `messages` and notes
 - `journal_days`
 - Map comments
@@ -509,7 +517,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 
 ### M9. MCP bridge, `ask_user`, `report_status`, `create_task`, role prompts
 - **Spikes needed:** S3; S6 runs here
-- **Scope:** `dovetail mcp` as a synchronous stdio server, forwarding to the app socket with its agent id. Tool handlers in core. Question inbox items with blocked flag, sorted first. `r` reply. `create_task` for the coordinator only (ADR 0002). Role prompts passed at launch.
+- **Scope:** `dovetail mcp` as a synchronous stdio server, forwarding to the app socket with its agent id. Tool handlers in core. Question inbox items with blocked flag, sorted first. `r` reply. `create_task` for the coordinator only (ADR 0002). `log_decision` for the coordinator and slices (ADR 0003): schema `{task?, decision, why?, alternatives?: [{option, why_not?}], supersedes?}`; slices default to their task, the coordinator must name one. Role prompts passed at launch.
 - **Role prompt fix:** `config/roles/coordinator.md` tells the coordinator to call `draw_map`, which won't exist until M15. Remove that line now and restore it at M15. Also tell the coordinator that the user starts slices and it recommends them (B1), and that it merges only on the user's yes and then pulls `main` (B7). Tell slices to push and open a PR once checks pass (B7). Then run `scripts/bootstrap.sh --force`, because your installed copy from the earlier run has the old text.
 - **Files:** `crates/dovetail/src/mcp.rs`, `crates/dovetail-core/src/tools/{mod,ask_user,report_status,create_task}.rs`, `config/roles/*.md`
 - **Done when:**
@@ -601,7 +609,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 | A1 **Your call** | **Focus mode:** v1 in README and the UI brief; v1.1 in the roadmaps and `screens/README.md` | **Decided: v1, as a small M16 item** (`<leader>z`): coordinator conversation and input only, solid background on, Needs you count kept. The solid-background toggle itself ships earlier |
 | A2 **Your call** | **`create_task`:** in v1 roadmaps under quick capture; v1.1 in Decision 25 and both tool tables | **Decided, refines Decision 25 ([ADR 0002](adr/0002-create-task-in-v1.md)):** v1, at M9. Coordinator only; tasks land in Unsorted, marked coordinator-created until seen |
 | A3 | **Board and worktree view:** v1 in README and screens; missing from both v1 roadmap lists | v1 (M12) |
-| A4 **Your call** | **Task detail view:** v1.1 on the navigation screen, but quick capture's `Tab` (v1) and tree `Enter` need it | **Decided:** v1 with fields, notes and agents; decision log in v1.1. `e` opens notes in `$EDITOR` through a temporary file, with the TUI suspended, and saves them back on exit |
+| A4 **Your call** | **Task detail view:** v1.1 on the navigation screen, but quick capture's `Tab` (v1) and tree `Enter` need it | **Decided:** v1 with fields, notes and agents. **Refined 2026-11-03 ([ADR 0003](adr/0003-decision-log-in-v1.md)): the decision log is in v1 too** (view and mock at M4, storage at M5, `log_decision` at M9). `e` opens notes in `$EDITOR` through a temporary file, with the TUI suspended, and saves them back on exit |
 | A5 | **Notes storage:** a `state.db` field in `design.md`, not in the digest's list, and `tasks/<id>.md` in Decision 19c (v1.1) | `tasks.notes` column in v1, migrated to files in v1.1 |
 | A6 | **Picker scope:** "sessions, inbox and messages" (design, README); "tasks, agents, inbox items" (brief) | Tasks, agents, inbox, plus maps from M15; messages stay in the timeline |
 | A7 | **Which-key:** Decision 10a locks it; roadmap says v1.1; the brief says only if it falls out naturally | v1.1. M2's pending-sequence state leaves room for it |

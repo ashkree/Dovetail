@@ -49,6 +49,7 @@ fn unsorted_tasks_show_above_now_with_their_markers() {
         pr: None,
         follow_up_of: Some(dovetail_api::TaskId(1)),
         coordinator_created: true,
+        related: vec![],
     });
     let mut app = app_with(snap);
     let screen = render(&mut app, 120, 40);

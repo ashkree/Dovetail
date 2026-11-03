@@ -50,7 +50,7 @@ impl App {
     fn draw_overlay(&self, frame: &mut Frame) {
         let screen = frame.area();
         match &self.overlay {
-            Some(Overlay::Picker(picker)) => {
+            Some(Overlay::Picker(picker, _)) => {
                 // The preview pane is the right 55 % of a box at most 130 wide, less its border.
                 let width = (usize::from(screen.width.saturating_sub(4).min(130)) * 55 / 100)
                     .saturating_sub(4);
@@ -265,6 +265,7 @@ impl App {
             InputTarget::SliceName => "slice name › ".into(),
             InputTarget::SliceBrief(name) => format!("brief for {name} › "),
             InputTarget::Search => "/".into(),
+            InputTarget::Decision(_) => "decision › ".into(),
         };
         let used = unicode_width::UnicodeWidthStr::width(label.as_str()) as u16;
         let line = Line::from(vec![

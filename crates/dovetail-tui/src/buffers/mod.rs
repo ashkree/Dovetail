@@ -60,6 +60,8 @@ pub enum InputTarget {
     SliceBrief(String),
     /// An in-buffer search term.
     Search,
+    /// A decision for this task's log.
+    Decision(TaskId),
 }
 
 /// Something a buffer asks the app to do.
@@ -78,6 +80,8 @@ pub enum Effect {
         /// Text to start with.
         initial: String,
     },
+    /// Open the picker to relate this task to another.
+    PickRelated(TaskId),
     /// A one-line note for the status bar.
     Note(String),
 }

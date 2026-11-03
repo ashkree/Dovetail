@@ -6,9 +6,9 @@ use std::sync::mpsc::{Receiver, Sender};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    ActivityItem, Agent, AgentId, AgentMessage, Bucket, ConversationEntry, EntryId, InboxId,
-    InboxItem, PLevel, ProjectId, Snapshot, Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals,
-    Warning, WarningId,
+    ActivityItem, Agent, AgentId, AgentMessage, Alternative, Bucket, ConversationEntry, Decision,
+    DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, Snapshot, Task, TaskId, TaskStatus,
+    TodoItem, TodoListId, Totals, Warning, WarningId,
 };
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
@@ -95,6 +95,8 @@ pub enum Event {
     WarningSet(Warning),
     /// A warning no longer applies.
     WarningCleared(WarningId),
+    /// An entry was added to a task's decision log.
+    DecisionAdded(Decision),
     /// A command could not be carried out; the UI shows the message.
     CommandFailed {
         /// What went wrong.
@@ -170,6 +172,8 @@ pub enum Command {
         /// Changes, applied in order.
         patch: Vec<TaskChange>,
     },
+    /// Add an entry to a task's decision log, as the user.
+    LogDecision(NewDecision),
     /// Archive a task.
     ArchiveTask {
         /// The task.
@@ -245,6 +249,24 @@ pub struct NewTask {
     pub follow_up_of: Option<TaskId>,
     /// Linked pull request number.
     pub pr: Option<u32>,
+    /// Tasks it is related to (both ways).
+    #[serde(default)]
+    pub related: Vec<TaskId>,
+}
+
+/// Fields for a new decision-log entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewDecision {
+    /// The task it belongs to.
+    pub task: TaskId,
+    /// The decision, in one line.
+    pub text: String,
+    /// Why, if given.
+    pub why: Option<String>,
+    /// Options considered and not taken.
+    pub alternatives: Vec<Alternative>,
+    /// The earlier entry it replaces.
+    pub supersedes: Option<DecisionId>,
 }
 
 /// One field change in [`Command::UpdateTask`].
@@ -267,6 +289,10 @@ pub enum TaskChange {
     Pr(Option<u32>),
     /// The user has seen a coordinator-created task.
     Seen,
+    /// Relate this task to another, both ways.
+    Relate(TaskId),
+    /// Remove a relation, both ways.
+    Unrelate(TaskId),
 }
 
 /// The UI's end of a connection to a core.

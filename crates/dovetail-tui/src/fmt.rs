@@ -11,6 +11,14 @@ pub fn hhmm(ms: i64, tz: &TimeZone) -> String {
     }
 }
 
+/// Date and time, as `Nov 3 10:14`, in `tz`.
+pub fn when(ms: i64, tz: &TimeZone) -> String {
+    match Timestamp::from_millisecond(ms) {
+        Ok(ts) => ts.to_zoned(tz.clone()).strftime("%b %-d %H:%M").to_string(),
+        Err(_) => "--".into(),
+    }
+}
+
 /// Memory as `412M` or `2.1G`.
 pub fn memory(mb: u32) -> String {
     if mb >= 1024 {

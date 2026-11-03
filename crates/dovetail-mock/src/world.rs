@@ -34,6 +34,7 @@ fn task(
         pr: None,
         follow_up_of: None,
         coordinator_created: false,
+        related: vec![],
     }
 }
 
@@ -193,6 +194,9 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
     tasks[7].coordinator_created = true;
     tasks[7].follow_up_of = Some(TaskId(4));
     tasks[7].notes = "Raised while planning the reading column.".into();
+    // Related both ways: the tree and the inbox keys are built side by side.
+    tasks[0].related = vec![TaskId(2)];
+    tasks[1].related = vec![TaskId(1)];
 
     let mut coordinator = session(
         COORDINATOR,
@@ -395,6 +399,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         conversations,
         totals: Totals::default(),
         warnings: vec![],
+        decisions: decisions(now_ms),
     };
     snapshot.totals = totals_of(&snapshot);
     snapshot
@@ -465,6 +470,59 @@ pub(crate) const QUESTIONS: &[&str] = &[
     "Should Done tasks fold into one row, or show the last three?",
     "Which colour should the mismatch marker use: amber or the dim accent?",
     "The picker preview needs 40 columns. Is that OK on narrow terminals?",
+];
+
+/// The starting decision log: one entry superseded by a later one, both on the tree task.
+fn decisions(now_ms: i64) -> Vec<Decision> {
+    let first = Decision {
+        id: DecisionId(1),
+        task: TaskId(1),
+        at_ms: now_ms - 3_600_000,
+        by: DecisionAuthor::Agent(agent_id(COORDINATOR)),
+        text: "Sort every bucket by P-level".into(),
+        why: Some("The brief says so.".into()),
+        alternatives: vec![],
+        supersedes: None,
+    };
+    let second = Decision {
+        id: DecisionId(2),
+        task: TaskId(1),
+        at_ms: now_ms - 1_800_000,
+        by: DecisionAuthor::User,
+        text: "Now keeps your own order; the other buckets sort by P-level".into(),
+        why: Some("J and K reorder Now, which a P-level sort would undo.".into()),
+        alternatives: vec![
+            Alternative {
+                option: "P-level everywhere".into(),
+                why_not: Some("J and K would do nothing in Now".into()),
+            },
+            Alternative {
+                option: "Own order everywhere".into(),
+                why_not: None,
+            },
+        ],
+        supersedes: Some(DecisionId(1)),
+    };
+    vec![first, second]
+}
+
+/// Decisions the coordinator logs as the mock runs.
+pub(crate) const DECISIONS: &[(&str, &str, &str)] = &[
+    (
+        "Keep the keymap a constant table",
+        "It becomes TOML in v1.1 without a rewrite.",
+        "Build bindings in code",
+    ),
+    (
+        "One picker component for both pickers",
+        "The brief asks for one.",
+        "A separate switcher widget",
+    ),
+    (
+        "Overlays read INSERT",
+        "They take typed text.",
+        "A fourth mode",
+    ),
 ];
 
 /// Background subagent descriptions.

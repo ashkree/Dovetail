@@ -100,8 +100,8 @@ pub fn agent_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerIte
         .collect()
 }
 
-/// Rows for the everything picker: tasks, then agents, then inbox items.
-pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem> {
+/// Task rows, in the order the tree shows them (Done last).
+pub fn task_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
     let mut tasks: Vec<_> = snap
         .tasks
         .iter()
@@ -116,7 +116,7 @@ pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem>
             t.id,
         )
     });
-    let mut items: Vec<PickerItem> = tasks
+    tasks
         .into_iter()
         .map(|t| {
             let (glyph, color) = match t.status {
@@ -136,7 +136,35 @@ pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem>
                 section: "Tasks",
             }
         })
-        .collect();
+        .collect()
+}
+
+/// Rows for relating `task` to another: every other task, with the ones already related marked.
+pub fn relate_items(snap: &Snapshot, theme: &Theme, task: dovetail_api::TaskId) -> Vec<PickerItem> {
+    let related = snap
+        .tasks
+        .iter()
+        .find(|t| t.id == task)
+        .map(|t| t.related.clone())
+        .unwrap_or_default();
+    task_items(snap, theme)
+        .into_iter()
+        .filter(|item| item.key != PickerKey::Task(task))
+        .map(|mut item| {
+            if let PickerKey::Task(id) = item.key
+                && related.contains(&id)
+            {
+                item.glyph = "↔";
+                item.detail = "related · ⏎ to unlink".into();
+            }
+            item
+        })
+        .collect()
+}
+
+/// Rows for the everything picker: tasks, then agents, then inbox items.
+pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem> {
+    let mut items = task_items(snap, theme);
     items.extend(agent_items(snap, now_ms, theme));
     let mut inbox: Vec<&InboxItem> = snap.inbox.iter().collect();
     inbox.sort_by_key(|i| Reverse((i.at_ms, i.id)));
@@ -190,7 +218,7 @@ pub fn preview(
             snap.tasks
                 .iter()
                 .find(|t| t.id == *id)
-                .map(|t| task_detail::lines(snap, t, width, theme))
+                .map(|t| task_detail::lines(snap, t, width, theme, tz))
                 .unwrap_or_default(),
         ),
         PickerKey::Inbox(id) => (

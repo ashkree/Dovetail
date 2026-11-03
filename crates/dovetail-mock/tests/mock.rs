@@ -86,6 +86,7 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
             notes: String::new(),
             follow_up_of: task,
             pr: None,
+            related: vec![],
         })),
         4 => task.map(|id| Command::ReorderTask { id, delta: 1 }),
         5 => slice.map(|agent| Command::CyclePermissionMode { agent }),
@@ -300,6 +301,7 @@ fn every_event_kind_the_mock_can_make_unprompted_shows_up_within_fifteen_virtual
         "totals_changed",
         "warning_set",
         "warning_cleared",
+        "decision_added",
     ];
     const WITHIN: usize = 800;
     let mut core = MockCore::new(config(1));
@@ -346,5 +348,52 @@ fn background_and_foreground_subagents_and_several_inbox_kinds_appear_in_a_longe
         kinds.len() >= 3,
         "only {} inbox kinds appeared",
         kinds.len()
+    );
+}
+
+#[test]
+fn relating_tasks_is_two_way_and_unrelating_undoes_it() {
+    let mut core = MockCore::new(config(1));
+    core.handle(Command::UpdateTask {
+        id: TaskId(3),
+        patch: vec![TaskChange::Relate(TaskId(4))],
+    });
+    let related = |core: &MockCore, id: i64| {
+        core.state()
+            .tasks
+            .iter()
+            .find(|t| t.id == TaskId(id))
+            .map(|t| t.related.clone())
+            .unwrap_or_default()
+    };
+    assert!(related(&core, 3).contains(&TaskId(4)));
+    assert!(related(&core, 4).contains(&TaskId(3)));
+    core.handle(Command::UpdateTask {
+        id: TaskId(4),
+        patch: vec![TaskChange::Unrelate(TaskId(3))],
+    });
+    assert!(!related(&core, 3).contains(&TaskId(4)));
+    assert!(!related(&core, 4).contains(&TaskId(3)));
+}
+
+#[test]
+fn a_logged_decision_lands_on_its_task_and_a_snapshot_is_trimmed() {
+    let mut core = MockCore::new(config(1));
+    core.handle(Command::LogDecision(NewDecision {
+        task: TaskId(2),
+        text: "Use one picker".into(),
+        why: None,
+        alternatives: vec![],
+        supersedes: None,
+    }));
+    let d = core.state().decisions.last().cloned().expect("a decision");
+    assert_eq!((d.task, d.by), (TaskId(2), DecisionAuthor::User));
+    let ServerMsg::Snapshot(sent) = core.connect().remove(1) else {
+        panic!("snapshot");
+    };
+    assert!(
+        sent.conversations
+            .values()
+            .all(|t| t.entries.len() <= CONVERSATION_TAIL)
     );
 }

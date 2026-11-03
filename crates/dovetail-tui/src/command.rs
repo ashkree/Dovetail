@@ -23,6 +23,7 @@ pub fn parse(line: &str) -> Result<Parsed, String> {
         "q!" | "quit!" => Action::ForceQuit,
         "spawn" => Action::NewSlice,
         "interrupt" => Action::Interrupt,
+        "decide" => Action::TaskAddDecision,
         // Aliases: every action a key reaches can be named here too.
         "solid" => Action::ToggleSolidBackground,
         "inbox" => Action::FocusInbox,

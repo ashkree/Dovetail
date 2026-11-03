@@ -2,7 +2,7 @@
 
 use dovetail_api::{AgentId, AgentKind, Command, PermissionMode, TaskId};
 
-use super::App;
+use super::{App, Confirm, Then};
 use crate::action::Action;
 use crate::buffers::InputTarget;
 use crate::mode::Mode;
@@ -135,18 +135,64 @@ impl App {
                         .find(|a| a.name == arg)
                         .map(|a| a.id.clone())
                 };
-                match target.and_then(|id| self.session_of(&id)) {
-                    Some((agent, redirected)) => {
-                        if redirected {
-                            self.note = Some("subagents stop with their session".into());
-                        }
-                        self.outbox.push(Command::Interrupt { agent });
+                let Some(target) = target else {
+                    self.note = Some(format!("no agent named {arg}"));
+                    return;
+                };
+                match self.session_of(&target) {
+                    // A subagent cannot be stopped alone: ask before stopping its whole session
+                    // (decided 2026-11-03).
+                    Some((agent, true)) => {
+                        let prompt = self.interrupt_prompt(&target, &agent);
+                        self.confirm = Some(Confirm {
+                            prompt,
+                            then: Then::Commands(vec![Command::Interrupt { agent }]),
+                        });
                     }
+                    Some((agent, false)) => self.outbox.push(Command::Interrupt { agent }),
                     None => self.note = Some(format!("no agent named {arg}")),
                 }
             }
+            Action::TaskAddDecision => match self.focused_task() {
+                Some(task) if arg.is_empty() => {
+                    self.start_input(InputTarget::Decision(task), "");
+                }
+                Some(task) => self.log_decision(task, arg.to_string()),
+                None => self.note = Some("no task in focus to decide on".into()),
+            },
             other => self.run(other),
         }
+    }
+
+    /// "Interrupting rebase stops slice-4's turn and its 2 other subagents."
+    fn interrupt_prompt(&self, sub: &AgentId, session: &AgentId) -> String {
+        let name = |id: &AgentId| {
+            self.snap
+                .agents
+                .iter()
+                .find(|a| &a.id == id)
+                .map_or_else(|| id.0.clone(), |a| a.name.clone())
+        };
+        let others = self
+            .snap
+            .agents
+            .iter()
+            .filter(|a| {
+                a.parent.as_ref() == Some(session)
+                    && &a.id != sub
+                    && a.status == dovetail_api::AgentStatus::Working
+            })
+            .count();
+        let rest = match others {
+            0 => String::new(),
+            1 => " and its 1 other running subagent".into(),
+            n => format!(" and its {n} other running subagents"),
+        };
+        format!(
+            "Interrupting {} stops {}'s turn{rest}. Go ahead?",
+            name(sub),
+            name(session)
+        )
     }
 
     pub(super) fn cycle_permission_mode(&mut self) {
