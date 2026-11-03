@@ -207,7 +207,7 @@ pub(crate) fn spread(
 
 /// Like [`spread`], with several versions of the right side, fullest first. The first one that
 /// leaves `left` unclipped is used; if none does, the last (shortest) is.
-pub(crate) fn spread_fit(
+pub fn spread_fit(
     left: Vec<Span<'static>>,
     rights: &[Vec<Span<'static>>],
     width: usize,

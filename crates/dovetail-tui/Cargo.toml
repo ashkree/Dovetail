@@ -11,6 +11,7 @@ publish.workspace = true
 dovetail-api.workspace = true
 crossterm.workspace = true
 jiff.workspace = true
+pulldown-cmark.workspace = true
 serde_json.workspace = true
 ratatui.workspace = true
 tracing.workspace = true

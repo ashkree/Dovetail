@@ -60,7 +60,7 @@ fn task(
     }
 }
 
-fn entry(id: u64, at: i64, kind: EntryKind, text: &str) -> ConversationEntry {
+pub fn entry(id: u64, at: i64, kind: EntryKind, text: &str) -> ConversationEntry {
     ConversationEntry {
         id: EntryId(id),
         at_ms: at,
@@ -307,4 +307,75 @@ pub fn render(app: &mut App, width: u16, height: u16) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Presses `keys` in order and returns the commands that produced.
+pub fn press(app: &mut App, keys: &str) -> Vec<Command> {
+    type_keys(app, keys);
+    app.take_commands()
+}
+
+/// Moves the tree cursor onto the row whose text contains `needle`.
+pub fn select(app: &mut App, needle: &str) {
+    app.on_key(key('g'), 0);
+    app.on_key(key('g'), 1);
+    for _ in 0..40 {
+        if row_text(app).contains(needle) {
+            return;
+        }
+        app.on_key(key('j'), 2);
+    }
+    panic!("no tree row containing {needle:?}");
+}
+
+/// The text of the tree row that has the highlight (found by drawing and reading the row the
+/// selection background sits on).
+pub fn row_text(app: &mut App) -> String {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    for y in 0..buffer.area.height {
+        if buffer[(3, y)].bg != ratatui::style::Color::Reset {
+            return (0..45).map(|x| buffer[(x, y)].symbol()).collect();
+        }
+    }
+    String::new()
+}
+
+/// A conversation with real markdown in it: a bold lead, lists, a path, code, a table, a quote.
+pub fn rich_conversation(at: i64) -> ConversationTail {
+    let reply = "**It needs a key.** slice-7 can only reach the eval path with `FS_EVAL_VIRTUAL_KEY` set, and the file `src/decision.rs` reads it once at start-up.\n\n## What I checked\n\n- the handler in `crates/api/src/routes.rs`\n- the *eval* path, which fails before it logs\n- the CI config\n\n```rust\nlet key = std::env::var(\"FS_EVAL_VIRTUAL_KEY\")?;\n```\n\n| Slice | State |\n| --- | --- |\n| slice-4 | editing |\n| slice-7 | blocked |\n\n> Merge order: #1231 first, then the 500 fix.";
+    ConversationTail {
+        entries: vec![
+            entry(
+                1,
+                at - 9 * MIN,
+                EntryKind::User,
+                "Make sure slice-4 doesn't touch the 500 path.",
+            ),
+            entry(
+                2,
+                at - 9 * MIN,
+                EntryKind::Assistant,
+                "Told slice-4 to stay out of `src/decision.rs` until slice-7 hands it back.",
+            ),
+            entry(
+                3,
+                at - 8 * MIN,
+                EntryKind::ToolSummary,
+                "sent 1 message · 2 s",
+            ),
+            entry(4, at - MIN, EntryKind::User, "What's blocking slice-7?"),
+            entry(
+                5,
+                at - MIN,
+                EntryKind::ToolSummary,
+                "read 2 files · checked slice-7's stream · 4 s",
+            ),
+            entry(6, at - MIN, EntryKind::Assistant, reply),
+        ],
+        has_more: false,
+    }
 }

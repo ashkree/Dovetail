@@ -19,6 +19,7 @@ anyhow = "1"
 crossterm = "0.29"
 insta = "1"
 jiff = "0.2"
+pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = "0.30"
 tracing = "0.1"
 tracing-appender = "0.2"

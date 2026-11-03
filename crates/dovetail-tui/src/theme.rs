@@ -32,6 +32,8 @@ pub struct Theme {
     pub selection: Color,
     /// Text on a coloured badge.
     pub ink: Color,
+    /// Solid background of the reading column, when switched on.
+    pub reading_bg: Color,
     /// Status-bar mode badge in Normal mode.
     pub mode_normal: Color,
     /// Status-bar mode badge in Insert mode.
@@ -57,6 +59,7 @@ impl Theme {
             line: Color::Rgb(0x4a, 0x52, 0x5e),
             selection: Color::Rgb(0x2a, 0x32, 0x40),
             ink: Color::Rgb(0x15, 0x17, 0x1c),
+            reading_bg: Color::Rgb(0x1b, 0x20, 0x28),
             mode_normal: Color::Rgb(0xe5, 0xb5, 0x67),
             mode_insert: Color::Rgb(0x7e, 0xe7, 0x87),
             mode_command: Color::Rgb(0xc0, 0xa5, 0xe0),

@@ -21,6 +21,7 @@ pub fn parse(line: &str) -> Result<Parsed, String> {
         "" => return Err("empty command".into()),
         "q" | "quit" => Action::Quit,
         "q!" | "quit!" => Action::ForceQuit,
+        "solid" => Action::ToggleSolidBackground,
         #[cfg(debug_assertions)]
         "panic" => Action::DebugPanic,
         other => return Err(format!("unknown command :{other}")),

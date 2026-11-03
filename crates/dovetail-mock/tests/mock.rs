@@ -280,7 +280,7 @@ fn kind_of(event: &Event) -> String {
 }
 
 #[test]
-fn every_event_kind_the_mock_can_make_unprompted_shows_up_within_a_few_hundred_events() {
+fn every_event_kind_the_mock_can_make_unprompted_shows_up_within_fifteen_virtual_minutes() {
     // M1 retro: two dump bugs (stalled activity, no background subagents) slipped past the
     // consistency tests. A mock that never produces a kind starves the UI of it.
     // Excluded: kinds only a command can cause (`conversation_page`, `command_failed`) and

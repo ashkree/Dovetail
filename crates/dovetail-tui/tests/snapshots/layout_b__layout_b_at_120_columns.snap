@@ -13,9 +13,9 @@ expression: "render(&mut app, 120, 32)"
 │         ○ update OpenAPI spec ⊘ blocked   ││ you · 10:14                                                             │
 │       ✓ ◇ rebase               done $0.21 ││ What's blocking slice-7?                                                │
 │       ◐ ◇ explore callers 12 tools · Grep ││                                                                         │
-│ ▾ ⚠ get_decision 500 P0                   ││ coordinator · 10:14                                                     │
+│ ▾ ⚠ get_decision 500 P0                   ││ coordinator · 10:14 ◐                                                   │
 │   ▾ ⚠ ◆ slice-7  manual    needs you 388M ││ It needs a key. slice-7 can only reach the eval path with               │
-│         ⎇ dovetail/slice-7                ││ FS_EVAL_VIRTUAL_KEY set.                                                │
+│         ⎇ dovetail/slice-7                ││ FS_EVAL_VIRTUAL_KEY set.▌                                               │
 │ ▾ Next (1)                                ││                                                                         │
 │   ○ idea: eval key flow P2                ││                                                                         │
 │ ▸ Later (1)                               ││                                                                         │
@@ -30,7 +30,7 @@ expression: "render(&mut app, 120, 32)"
 │   ✓ slice-4  Finished turn          10:09 ││                                                                         │
 │                                           ││                                                                         │
 │                                           ││                                                                         │
-│                                           ││                                                                         │
-│ y allow · d deny · r reply · x dismiss    ││ › i to chat                                                             │
+│                                           ││ ─────────────────────────────────────────────────────────────────────── │
+│ y allow · d deny · r reply · x dismiss    ││ › i to chat · ]] [[ turns · zc zo fold · gg G                           │
 └───────────────────────────────────────────┘└─────────────────────────────────────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G                                                ␣n inbox · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G       i chat · ␣c coordinator · ␣⇥ alternate · ␣n inbox · : command

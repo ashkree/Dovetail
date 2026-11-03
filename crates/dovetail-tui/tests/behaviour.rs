@@ -10,41 +10,6 @@ use dovetail_tui::keymap::SEQUENCE_TIMEOUT_MS;
 use dovetail_tui::region::RegionId;
 use support::*;
 
-/// Presses `keys` in order and returns the commands that produced.
-fn press(app: &mut dovetail_tui::App, keys: &str) -> Vec<Command> {
-    type_keys(app, keys);
-    app.take_commands()
-}
-
-/// Moves the tree cursor onto the row whose text contains `needle`.
-fn select(app: &mut dovetail_tui::App, needle: &str) {
-    app.on_key(key('g'), 0);
-    app.on_key(key('g'), 1);
-    for _ in 0..40 {
-        if row_text(app).contains(needle) {
-            return;
-        }
-        app.on_key(key('j'), 2);
-    }
-    panic!("no tree row containing {needle:?}");
-}
-
-/// The text of the tree row that has the highlight (found by drawing and reading the row the
-/// selection background sits on).
-fn row_text(app: &mut dovetail_tui::App) -> String {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-    let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
-    terminal.draw(|f| app.draw(f)).expect("draw");
-    let buffer = terminal.backend().buffer();
-    for y in 0..buffer.area.height {
-        if buffer[(3, y)].bg != ratatui::style::Color::Reset {
-            return (0..45).map(|x| buffer[(x, y)].symbol()).collect();
-        }
-    }
-    String::new()
-}
-
 // --- mode machine ---
 
 #[test]
@@ -413,10 +378,14 @@ fn r_on_a_finished_turn_sends_the_agent_a_normal_prompt() {
     app.on_key(enter(), 50);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
-            agent: agent_id("slice-4"),
-            text: "go on".into()
-        }]
+        // Opening slice-4 to type to it also clears its finished turn (ADR 0001).
+        vec![
+            Command::DismissInbox { item: InboxId(3) },
+            Command::Prompt {
+                agent: agent_id("slice-4"),
+                text: "go on".into()
+            }
+        ]
     );
 }
 

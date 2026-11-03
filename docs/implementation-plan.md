@@ -451,8 +451,8 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Files:** `buffers/conversation.rs`, `render/{markdown,reading_column}.rs`, `input.rs`
 - **Done when:**
   - [ ] You can read a streamed mock reply comfortably in kitty and approve the theme
-  - [ ] Streaming redraws stay at or below 30 fps
-  - [ ] `Enter`, `Ctrl-j`, `Alt-Enter`, `Ctrl-w`, `Ctrl-u` work
+  - [x] Streaming redraws stay at or below 30 fps (pty run with the mock at 200x: 28.8 frames a second, logged by the loop at trace level)
+  - [x] `Enter`, `Ctrl-j`, `Alt-Enter`, `Ctrl-w`, `Ctrl-u` work (behaviour tests drive them through `App`)
 - **Tests:** markdown spans, spacing, wrapping, snapshots at 80, 120 and 200 columns
 
 ### M4. Command mode, picker, switcher, quick capture

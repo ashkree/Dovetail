@@ -33,6 +33,24 @@ pub enum Action {
     /// Panic on purpose, to check that the terminal is restored. Debug builds only.
     #[cfg(debug_assertions)]
     DebugPanic,
+    /// Enter Insert mode to chat with an agent.
+    EnterInsert,
+    // --- agents ---
+    /// Show the coordinator.
+    FocusCoordinator,
+    /// Switch to the previous agent (vim's alternate buffer).
+    AlternateAgent,
+    // --- conversation ---
+    /// Jump to the next turn.
+    NextTurn,
+    /// Jump to the previous turn.
+    PrevTurn,
+    /// Fold the turn at the top of the view to one line.
+    FoldTurn,
+    /// Unfold the turn at the top of the view and show its long replies in full.
+    UnfoldTurn,
+    /// Give the reading column a solid background, or take it away.
+    ToggleSolidBackground,
     // --- tree ---
     /// Open the selected agent's conversation, or the selected task's detail.
     TreeOpen,

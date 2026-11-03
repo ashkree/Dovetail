@@ -147,6 +147,7 @@ const N: Mode = Mode::Normal;
 const G: Scope = Scope::Global;
 const TREE: Scope = Scope::Buffer(BufferKind::Tree);
 const INBOX: Scope = Scope::Buffer(BufferKind::Inbox);
+const CONVERSATION: Scope = Scope::Buffer(BufferKind::Conversation);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
 pub const BINDINGS: &[Binding] = &[
@@ -163,6 +164,15 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<C-k>", Action::FocusUp),
     bind(N, G, "<leader>n", Action::FocusInbox),
     bind(N, G, ":", Action::EnterCommand),
+    bind(N, G, "i", Action::EnterInsert),
+    bind(N, G, "<leader>c", Action::FocusCoordinator),
+    bind(N, G, "<leader><Tab>", Action::AlternateAgent),
+    bind(N, G, "<leader>B", Action::ToggleSolidBackground),
+    // Conversation: reading keys (the brief's "Reading keys").
+    bind(N, CONVERSATION, "]]", Action::NextTurn),
+    bind(N, CONVERSATION, "[[", Action::PrevTurn),
+    bind(N, CONVERSATION, "zc", Action::FoldTurn),
+    bind(N, CONVERSATION, "zo", Action::UnfoldTurn),
     // Task tree (Decision 24).
     bind(N, TREE, "<CR>", Action::TreeOpen),
     bind(N, TREE, "o", Action::TreeToggleFold),

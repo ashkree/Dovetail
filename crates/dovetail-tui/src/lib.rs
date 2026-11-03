@@ -14,6 +14,7 @@ pub mod input;
 pub mod keymap;
 pub mod mode;
 pub mod region;
+pub mod render;
 pub mod theme;
 
 pub use app::App;

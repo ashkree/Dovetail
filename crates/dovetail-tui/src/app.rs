@@ -14,22 +14,23 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::action::Action;
-use crate::buffers::{Buffers, Effect, InputTarget, ViewCx, spread};
+use crate::buffers::{Buffers, Effect, InputTarget, ViewCx, spread_fit};
 use crate::command;
 use crate::fmt;
-use crate::input::{InputOutcome, LineInput};
+use crate::input::{InputOutcome, TextInput};
 use crate::keymap::{Key, Keymap, Resolved, Resolver, Scope};
 use crate::mode::Mode;
 use crate::region::{BufferKind, RegionId, Regions, layout};
 use crate::theme::Theme;
 
 /// Hints on the right of the status bar.
-const HINTS: &str = "␣n inbox · : command";
+const HINTS: &str = "i chat · ␣c coordinator · ␣⇥ alternate · ␣n inbox · : command";
+const HINTS_SHORT: &str = "i chat · : command";
 
 /// An open prompt row.
 struct Input {
     target: InputTarget,
-    line: LineInput,
+    line: TextInput,
 }
 
 /// A yes/no question waiting for `y` or `n`.
@@ -277,8 +278,20 @@ impl App {
     }
 
     fn input_key(&mut self, event: KeyEvent) {
+        if self.input.is_none() {
+            if !self.buffers.conversation.is_chatting() {
+                self.mode = Mode::Normal;
+                return;
+            }
+            if let Some((agent, text)) = self.buffers.conversation.chat_key(event) {
+                self.outbox.push(Command::Prompt { agent, text });
+            }
+            if !self.buffers.conversation.is_chatting() {
+                self.mode = Mode::Normal;
+            }
+            return;
+        }
         let Some(input) = self.input.as_mut() else {
-            self.mode = Mode::Normal;
             return;
         };
         match input.line.handle(event) {
@@ -297,15 +310,20 @@ impl App {
     }
 
     fn start_input(&mut self, target: InputTarget, initial: &str) {
+        self.resolver.reset();
+        // Chat is typed inside the conversation pane, not on the prompt row.
+        if let InputTarget::Prompt(agent) = target {
+            self.start_chat(agent);
+            return;
+        }
         self.mode = if target == InputTarget::Command {
             Mode::Command
         } else {
             Mode::Insert
         };
-        self.resolver.reset();
         self.input = Some(Input {
             target,
-            line: LineInput::with_text(initial),
+            line: TextInput::line(initial),
         });
     }
 
@@ -315,9 +333,8 @@ impl App {
                 Ok(parsed) => self.run(parsed.action),
                 Err(message) => self.note = Some(message),
             },
-            InputTarget::Prompt(agent) if !text.is_empty() => {
-                self.outbox.push(Command::Prompt { agent, text });
-            }
+            // Chat never comes through the prompt row.
+            InputTarget::Prompt(_) => {}
             InputTarget::Reason(item) => {
                 let message = (!text.is_empty()).then_some(text);
                 self.outbox.push(Command::AnswerPermission {
@@ -355,6 +372,21 @@ impl App {
             Action::FocusUp => self.regions.focus_up(),
             Action::FocusInbox => self.regions.set_focus(RegionId::LeftBottom),
             Action::EnterCommand => self.start_input(InputTarget::Command, ""),
+            Action::EnterInsert => {
+                if let Some(agent) = self.chat_target() {
+                    self.start_chat(agent);
+                }
+            }
+            Action::FocusCoordinator => {
+                if let Some(id) = self.coordinator() {
+                    self.open_agent_in_main(id);
+                }
+            }
+            Action::AlternateAgent => match self.buffers.conversation.previous().cloned() {
+                Some(id) => self.open_agent_in_main(id),
+                None => self.note = Some("no previous agent".into()),
+            },
+            Action::ToggleSolidBackground => self.buffers.conversation.toggle_solid(),
             Action::Quit => {
                 let running = self
                     .snap
@@ -404,11 +436,52 @@ impl App {
         }
     }
 
-    fn open_agent_in_main(&mut self, id: AgentId) {
+    /// Shows an agent's conversation in the main region without moving focus. Opening an agent
+    /// clears its finished turn (ADR 0001).
+    fn show_agent(&mut self, id: AgentId) {
         self.clear_finished_turn(&id);
         self.buffers.conversation.show(id);
         self.regions.show(RegionId::Main, BufferKind::Conversation);
+    }
+
+    fn open_agent_in_main(&mut self, id: AgentId) {
+        self.show_agent(id);
         self.regions.set_focus(RegionId::Main);
+    }
+
+    fn coordinator(&self) -> Option<AgentId> {
+        self.snap
+            .agents
+            .iter()
+            .find(|a| a.kind == AgentKind::Coordinator)
+            .map(|a| a.id.clone())
+    }
+
+    /// Who `i` talks to (plan A11): the agent in the main region when it has focus, the agent
+    /// selected in the tree when the tree has focus, otherwise the coordinator.
+    fn chat_target(&mut self) -> Option<AgentId> {
+        let from_tree = if self.regions.focused_buffer() == BufferKind::Tree {
+            let cx = ViewCx {
+                snap: &self.snap,
+                theme: &self.theme,
+                now_ms: self.now_ms,
+                tz: &self.tz,
+            };
+            self.buffers.tree.selected_agent(&cx)
+        } else {
+            None
+        };
+        let from_main = (self.regions.focus() == RegionId::Main)
+            .then(|| self.buffers.conversation.agent().cloned())
+            .flatten();
+        from_main.or(from_tree).or_else(|| self.coordinator())
+    }
+
+    fn start_chat(&mut self, agent: AgentId) {
+        self.show_agent(agent.clone());
+        self.buffers.conversation.begin_chat(agent);
+        self.input = None;
+        self.mode = Mode::Insert;
     }
 
     // --- drawing ---
@@ -465,7 +538,7 @@ impl App {
         let needs_you = snap.inbox.len();
         let mut left = vec![
             Span::styled(
-                format!(" {} ", self.mode.label()),
+                format!(" {} ", self.mode_label()),
                 theme
                     .badge(badge_color)
                     .add_modifier(ratatui::style::Modifier::BOLD),
@@ -504,14 +577,27 @@ impl App {
                 theme.fg(theme.needs_you),
             ));
         }
-        let right = match &self.note {
-            Some(note) => Span::styled(note.clone(), theme.fg(theme.needs_you)),
-            None => Span::styled(HINTS, theme.dim()),
+        let rights = match &self.note {
+            Some(note) => vec![vec![Span::styled(note.clone(), theme.fg(theme.needs_you))]],
+            None => vec![
+                vec![Span::styled(HINTS, theme.dim())],
+                vec![Span::styled(HINTS_SHORT, theme.dim())],
+            ],
         };
         frame.render_widget(
-            Paragraph::new(spread(left, vec![right], usize::from(area.width))),
+            Paragraph::new(spread_fit(left, &rights, usize::from(area.width))),
             area,
         );
+    }
+
+    /// Mode label for the status bar; while chatting it names the agent (as in the mocks).
+    fn mode_label(&self) -> String {
+        match (self.mode, self.buffers.conversation.agent()) {
+            (Mode::Insert, Some(agent)) if self.buffers.conversation.is_chatting() => {
+                format!("INSERT · {}", self.agent_name(agent))
+            }
+            (mode, _) => mode.label().to_string(),
+        }
     }
 
     fn draw_prompt(&self, frame: &mut Frame, area: Rect) {

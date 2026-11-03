@@ -87,6 +87,7 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
         let since = last_draw.map_or(MIN_FRAME, |t| now.duration_since(t));
         if app.is_dirty() && since >= MIN_FRAME {
             terminal.draw(|frame| app.draw(frame))?;
+            tracing::trace!("frame");
             app.take_dirty();
             last_draw = Some(now);
         }

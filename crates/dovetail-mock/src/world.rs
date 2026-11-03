@@ -424,6 +424,7 @@ pub(crate) const REPLIES: &[&str] = &[
     "I hit a snag: the keymap needs a *pending sequence* state for `gg` and `dd`.\n\n1. Store the keys typed so far\n2. Resolve on each key, or on the **1000 ms** timeout\n3. Fall back to the single-key action\n\nThis also leaves room for which-key later.",
     "Done. The inbox preview shows the full tool input, and `Enter` opens the agent's conversation.",
     "Rebased on `main`. One conflict in `theme.rs`, resolved by keeping both colour names.",
+    "**Two things differ** from the brief, both in `crates/dovetail-tui/src/keymap.rs`.\n\n| Key | Brief | Built |\n| --- | --- | --- |\n| `h` | focus left | returns to the last left region |\n| `Ctrl-j` | unbound | next region in the column |\n\n> `j` and `k` never leave a list; that is the rule behind both rows.\n\n- keys stay in *one* table\n  - movement is global\n  - actions are buffer-local\n- the picker comes next",
 ];
 
 /// Status lines the mock reports for slices.

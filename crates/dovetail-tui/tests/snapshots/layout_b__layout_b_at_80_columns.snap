@@ -15,10 +15,10 @@ expression: "render(&mut app, 80, 28)"
 │       ◐ ◇ explore c… 12 tools · Grep ││ you · 10:14                          │
 │ ▾ ⚠ get_decision 500 P0              ││ What's blocking slice-7?             │
 │   ▾ ⚠ ◆ slice-7  manual    needs you ││                                      │
-│         ⎇ dovetail/slice-7           ││ coordinator · 10:14                  │
+│         ⎇ dovetail/slice-7           ││ coordinator · 10:14 ◐                │
 │ ⏎ open · o fold · dd archive         ││ It needs a key. slice-7 can only     │
 └──────────────────────────────────────┘│ reach the eval path with             │
-┌ inbox · needs you (3) ───────────────┐│ FS_EVAL_VIRTUAL_KEY set.             │
+┌ inbox · needs you (3) ───────────────┐│ FS_EVAL_VIRTUAL_KEY set.▌            │
 │ ▸ ⚠ slice-7  Bash              10:15 ││                                      │
 │   │ FS_EVAL_VIRTUAL_KEY=dev cargo    ││                                      │
 │   │ test -p api get_decision         ││                                      │
@@ -26,7 +26,7 @@ expression: "render(&mut app, 80, 28)"
 │   │ test:*)                          ││                                      │
 │   ? slice-4  Question          10:12 ││                                      │
 │   ✓ slice-4  Finished turn     10:09 ││                                      │
-│                                      ││                                      │
-│ y allow · d deny · r reply · x dism… ││ › i to chat                          │
+│                                      ││ ──────────────────────────────────── │
+│ y allow · d deny · r reply · x dism… ││ › i to chat · ]] [[ turns · zc zo f… │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G        ␣n inbox · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G          i chat · : command
