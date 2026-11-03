@@ -1,0 +1,472 @@
+//! The mock's starting state and the text it draws from.
+
+use std::collections::BTreeMap;
+
+use dovetail_api::*;
+use serde_json::json;
+
+pub(crate) const COORDINATOR: &str = "coordinator";
+pub(crate) const PROJECT_DIR: &str = "/home/you/src/dovetail";
+pub(crate) const WORKTREES_DIR: &str =
+    "/home/you/.local/share/dovetail/projects/dovetail/worktrees";
+
+pub(crate) fn agent_id(id: &str) -> AgentId {
+    AgentId(id.into())
+}
+
+fn task(
+    id: i64,
+    title: &str,
+    status: TaskStatus,
+    priority: Option<PLevel>,
+    bucket: Option<Bucket>,
+    order: i64,
+) -> Task {
+    Task {
+        id: TaskId(id),
+        title: title.into(),
+        status,
+        priority,
+        bucket,
+        order,
+        deps: vec![],
+        notes: String::new(),
+        pr: None,
+        follow_up_of: None,
+        coordinator_created: false,
+    }
+}
+
+pub(crate) fn session(id: &str, role: Role, status: AgentStatus, now_ms: i64) -> Agent {
+    Agent {
+        id: agent_id(id),
+        name: id.into(),
+        kind: AgentKind::Session,
+        role,
+        parent: None,
+        task: None,
+        worktree: None,
+        status,
+        status_line: String::new(),
+        memory_mb: Some(210),
+        cost_usd: 0.0,
+        permission_mode: PermissionMode::Auto,
+        context_pct: Some(0),
+        progress: None,
+        last_activity_ms: now_ms,
+        lock: SessionLock::Headless,
+    }
+}
+
+pub(crate) fn worktree(name: &str) -> WorktreeRef {
+    WorktreeRef {
+        path: format!("{WORKTREES_DIR}/{name}").into(),
+        branch: format!("dovetail/{name}"),
+    }
+}
+
+pub(crate) fn subagent(id: &str, parent: &Agent, background: bool, now_ms: i64) -> Agent {
+    Agent {
+        id: agent_id(id),
+        name: id.into(),
+        kind: AgentKind::Subagent { background },
+        role: Role::Subagent,
+        parent: Some(parent.id.clone()),
+        task: parent.task,
+        worktree: None,
+        status: AgentStatus::Working,
+        status_line: String::new(),
+        memory_mb: None,
+        cost_usd: 0.0,
+        permission_mode: parent.permission_mode,
+        context_pct: None,
+        progress: None,
+        last_activity_ms: now_ms,
+        lock: SessionLock::Headless,
+    }
+}
+
+fn entry(id: u64, at_ms: i64, kind: EntryKind, text: &str) -> ConversationEntry {
+    ConversationEntry {
+        id: EntryId(id),
+        at_ms,
+        kind,
+        text: text.into(),
+    }
+}
+
+/// The world at time zero. Entry ids below 100 are used here; [`crate::MockCore`] counts on.
+pub(crate) fn initial(now_ms: i64) -> Snapshot {
+    let project = ProjectSummary {
+        id: ProjectId("dovetail".into()),
+        name: "Dovetail".into(),
+        repo_path: PROJECT_DIR.into(),
+    };
+    let other = ProjectSummary {
+        id: ProjectId("notes-site".into()),
+        name: "notes-site".into(),
+        repo_path: "/home/you/src/notes-site".into(),
+    };
+
+    let mut tasks = vec![
+        task(
+            1,
+            "Task tree with bucket grouping",
+            TaskStatus::InProgress,
+            Some(PLevel::P1),
+            Some(Bucket::Now),
+            0,
+        ),
+        task(
+            2,
+            "Inbox keys and preview",
+            TaskStatus::NeedsYou,
+            Some(PLevel::P0),
+            Some(Bucket::Now),
+            1,
+        ),
+        task(
+            3,
+            "Fuzzy picker",
+            TaskStatus::InProgress,
+            Some(PLevel::P3),
+            Some(Bucket::Now),
+            2,
+        ),
+        task(
+            4,
+            "Conversation reading column",
+            TaskStatus::Todo,
+            Some(PLevel::P2),
+            Some(Bucket::Next),
+            0,
+        ),
+        task(
+            5,
+            "Quick capture parser",
+            TaskStatus::Todo,
+            Some(PLevel::P1),
+            Some(Bucket::Next),
+            1,
+        ),
+        task(
+            6,
+            "Memory caps per session",
+            TaskStatus::Todo,
+            Some(PLevel::P0),
+            Some(Bucket::Later),
+            0,
+        ),
+        task(
+            7,
+            "Map shelf",
+            TaskStatus::Todo,
+            Some(PLevel::P2),
+            Some(Bucket::Later),
+            1,
+        ),
+        task(
+            8,
+            "Check the kitty graphics fallback",
+            TaskStatus::Todo,
+            None,
+            None,
+            0,
+        ),
+        task(
+            9,
+            "Workspace skeleton",
+            TaskStatus::Done,
+            Some(PLevel::P1),
+            Some(Bucket::Now),
+            3,
+        ),
+        task(
+            10,
+            "Old spike notes",
+            TaskStatus::Archived,
+            Some(PLevel::P3),
+            Some(Bucket::Later),
+            2,
+        ),
+    ];
+    tasks[0].pr = Some(1231);
+    tasks[1].deps = vec![TaskId(9)];
+    tasks[7].coordinator_created = true;
+    tasks[7].follow_up_of = Some(TaskId(4));
+    tasks[7].notes = "Raised while planning the reading column.".into();
+
+    let mut coordinator = session(COORDINATOR, Role::Coordinator, AgentStatus::Idle, now_ms);
+    coordinator.status_line = "planning M2".into();
+    coordinator.memory_mb = Some(245);
+    coordinator.context_pct = Some(18);
+    coordinator.cost_usd = 0.84;
+
+    let mut tree = session("tree-view", Role::Slice, AgentStatus::Working, now_ms);
+    tree.task = Some(TaskId(1));
+    tree.worktree = Some(worktree("tree-view"));
+    tree.status_line = "grouping tasks by bucket".into();
+    tree.memory_mb = Some(232);
+    tree.context_pct = Some(34);
+    tree.cost_usd = 0.41;
+
+    let mut inbox_keys = session("inbox-keys", Role::Slice, AgentStatus::NeedsYou, now_ms);
+    inbox_keys.task = Some(TaskId(2));
+    inbox_keys.worktree = Some(worktree("inbox-keys"));
+    inbox_keys.status_line = "wiring y/A/d/D".into();
+    inbox_keys.memory_mb = Some(218);
+    inbox_keys.context_pct = Some(52);
+    inbox_keys.cost_usd = 0.66;
+    inbox_keys.permission_mode = PermissionMode::AcceptEdits;
+
+    let mut picker = session("picker", Role::Slice, AgentStatus::SettingUp, now_ms);
+    picker.task = Some(TaskId(3));
+    picker.worktree = Some(worktree("picker"));
+    picker.status_line = "setup: cargo fetch".into();
+    picker.memory_mb = Some(190);
+
+    let mut explore = subagent("explore-keymap", &tree, false, now_ms);
+    explore.status_line = "reading keymap.rs".into();
+    explore.cost_usd = 0.05;
+
+    let inbox = vec![
+        InboxItem {
+            id: InboxId(1),
+            agent: agent_id("inbox-keys"),
+            at_ms: now_ms - 40_000,
+            kind: InboxKind::Permission {
+                tool: "Bash".into(),
+                input: json!({"command": "cargo test -p dovetail-tui", "description": "Run the TUI tests"}),
+                reason: Some("acceptEdits mode asks before shell commands".into()),
+                suggestions: vec![RuleSuggestion {
+                    label: "Bash(cargo test:*)".into(),
+                    raw: json!({"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "cargo test:*"}], "behavior": "allow", "destination": "session"}),
+                }],
+            },
+        },
+        InboxItem {
+            id: InboxId(2),
+            agent: agent_id(COORDINATOR),
+            at_ms: now_ms - 90_000,
+            kind: InboxKind::FinishedTurn {
+                preview: "M2 splits into three slices: tree view, inbox keys and the picker."
+                    .into(),
+            },
+        },
+    ];
+
+    let conversations = BTreeMap::from([
+        (
+            agent_id(COORDINATOR),
+            ConversationTail {
+                entries: vec![
+                    entry(
+                        1,
+                        now_ms - 120_000,
+                        EntryKind::User,
+                        "Plan M2 from docs/implementation-plan.md as the slices it lists.",
+                    ),
+                    entry(
+                        2,
+                        now_ms - 110_000,
+                        EntryKind::ToolSummary,
+                        "Read docs/implementation-plan.md · Read AGENTS.md · Grep \"Layout B\"",
+                    ),
+                    entry(3, now_ms - 90_000, EntryKind::Assistant, COORDINATOR_PLAN),
+                ],
+                has_more: true,
+            },
+        ),
+        (
+            agent_id("tree-view"),
+            ConversationTail {
+                entries: vec![
+                    entry(
+                        4,
+                        now_ms - 80_000,
+                        EntryKind::User,
+                        "Build the task tree: Unsorted, Now, Next, Later, Done, with P-levels and the mismatch marker.",
+                    ),
+                    entry(
+                        5,
+                        now_ms - 70_000,
+                        EntryKind::Assistant,
+                        "Starting with the grouping, then the keys. I'll keep the coordinator row pinned at the top.",
+                    ),
+                    entry(
+                        6,
+                        now_ms - 60_000,
+                        EntryKind::ToolSummary,
+                        "Read buffers/tree.rs · Edit buffers/tree.rs · Bash cargo test",
+                    ),
+                ],
+                has_more: false,
+            },
+        ),
+        (
+            agent_id("inbox-keys"),
+            ConversationTail {
+                entries: vec![
+                    entry(
+                        7,
+                        now_ms - 50_000,
+                        EntryKind::User,
+                        "Wire the inbox keys y A d D r x and Enter.",
+                    ),
+                    entry(
+                        8,
+                        now_ms - 45_000,
+                        EntryKind::Assistant,
+                        "The keys are in. I'd like to run the TUI tests next.",
+                    ),
+                ],
+                has_more: false,
+            },
+        ),
+    ]);
+
+    let list = TodoListId("tree-view".into());
+    let todo = |id: &str, subject: &str, status| TodoItem {
+        list: list.clone(),
+        id: id.into(),
+        subject: subject.into(),
+        status,
+        blocked_by: vec![],
+        created_by: Some(agent_id("tree-view")),
+    };
+    let todos = vec![
+        todo("1", "Group tasks by bucket", TodoStatus::Completed),
+        todo(
+            "2",
+            "Sort by P-level within a bucket",
+            TodoStatus::InProgress,
+        ),
+        todo(
+            "3",
+            "Mark P-level and bucket mismatches",
+            TodoStatus::Pending,
+        ),
+        todo("4", "Fold Done into one row", TodoStatus::Pending),
+    ];
+
+    let activity = vec![
+        ActivityItem {
+            id: 1,
+            at_ms: now_ms - 100_000,
+            agent: Some(agent_id("tree-view")),
+            kind: ActivityKind::Pr,
+            text: "opened #1231 Task tree with bucket grouping".into(),
+        },
+        ActivityItem {
+            id: 2,
+            at_ms: now_ms - 30_000,
+            agent: Some(agent_id("tree-view")),
+            kind: ActivityKind::Ci,
+            text: "#1231 CI passed".into(),
+        },
+    ];
+    let messages = vec![AgentMessage {
+        id: 1,
+        at_ms: now_ms - 85_000,
+        from: agent_id(COORDINATOR),
+        to: agent_id("tree-view"),
+        text: "Keep the keymap table data-like; inbox-keys builds on it.".into(),
+    }];
+
+    let mut snapshot = Snapshot {
+        seq: 0,
+        now_ms,
+        project: Some(project.clone()),
+        projects: vec![project, other],
+        tasks,
+        agents: vec![coordinator, tree, inbox_keys, picker, explore],
+        todos,
+        inbox,
+        activity,
+        messages,
+        conversations,
+        totals: Totals::default(),
+        warnings: vec![],
+    };
+    snapshot.totals = totals_of(&snapshot);
+    snapshot
+}
+
+/// Totals as the core would compute them.
+pub(crate) fn totals_of(state: &Snapshot) -> Totals {
+    Totals {
+        memory_mb: state.agents.iter().filter_map(|a| a.memory_mb).sum(),
+        needs_you: state.inbox.len() as u32,
+        cost_usd: (state.agents.iter().map(|a| a.cost_usd).sum::<f64>() * 100.0).round() / 100.0,
+    }
+}
+
+const COORDINATOR_PLAN: &str = "## M2 plan\n\nM2 splits into **three slices**:\n\n1. `tree-view` — grouping, P-levels and the *mismatch marker*\n2. `inbox-keys` — `y A d D r x` and the preview\n3. `picker` — the shared picker component\n\nThe keymap table lands first, so the other two build on it.";
+
+/// Replies the mock streams, in markdown.
+pub(crate) const REPLIES: &[&str] = &[
+    "Grouping works. Each bucket sorts by **P-level**, then by `order`.\n\n- `Now` starts expanded\n- `Later` shows a count\n- `Done` folds into one row\n\nNext I'll add the *mismatch marker*.",
+    "## Findings\n\nThe redraw only happens when the **dirty flag** is set. Streaming is coalesced to about 30 fps.\n\n```rust\nif app.dirty {\n    terminal.draw(|f| ui::render(f, &app))?;\n    app.dirty = false;\n}\n```\n\nIdle CPU stays near zero.",
+    "Tests pass: `cargo test -p dovetail-tui` reports **41 passed**. I'll push the branch and open the PR.",
+    "I hit a snag: the keymap needs a *pending sequence* state for `gg` and `dd`.\n\n1. Store the keys typed so far\n2. Resolve on each key, or on the **1000 ms** timeout\n3. Fall back to the single-key action\n\nThis also leaves room for which-key later.",
+    "Done. The inbox preview shows the full tool input, and `Enter` opens the agent's conversation.",
+    "Rebased on `main`. One conflict in `theme.rs`, resolved by keeping both colour names.",
+];
+
+/// Status lines the mock reports for slices.
+pub(crate) const STATUS_LINES: &[&str] = &[
+    "running cargo test",
+    "reading the UI brief",
+    "editing buffers/tree.rs",
+    "fixing a clippy warning",
+    "writing snapshot tests",
+    "waiting for CI",
+    "rebasing on main",
+];
+
+/// Tool uses the mock asks permission for: tool name and input.
+pub(crate) fn permission_input(n: u64) -> (&'static str, serde_json::Value) {
+    match n % 4 {
+        0 => (
+            "Bash",
+            json!({"command": "cargo clippy --workspace --all-targets", "description": "Lint"}),
+        ),
+        1 => (
+            "Edit",
+            json!({"file_path": "crates/dovetail-tui/src/keymap.rs", "old_string": "Esc", "new_string": "Escape"}),
+        ),
+        2 => (
+            "WebFetch",
+            json!({"url": "https://docs.rs/ratatui/latest/ratatui/", "prompt": "List the layout constraints"}),
+        ),
+        _ => (
+            "Bash",
+            json!({"command": "gh pr create --fill", "description": "Open the PR"}),
+        ),
+    }
+}
+
+/// Questions the mock asks with `ask_user`.
+pub(crate) const QUESTIONS: &[&str] = &[
+    "Should Done tasks fold into one row, or show the last three?",
+    "Which colour should the mismatch marker use: amber or the dim accent?",
+    "The picker preview needs 40 columns. Is that OK on narrow terminals?",
+];
+
+/// Background subagent descriptions.
+pub(crate) const SUBAGENT_TASKS: &[&str] = &[
+    "find every use of Region::Left",
+    "check the crossterm 0.29 changelog",
+    "list keys the brief leaves unbound",
+];
+
+/// Tools a subagent reports using.
+pub(crate) const TOOLS: &[&str] = &["Read", "Grep", "Glob", "Bash", "WebFetch"];
+
+/// Messages between agents.
+pub(crate) const MESSAGES: &[&str] = &[
+    "The keymap table is merged; rebase when you can.",
+    "I need the Action enum to have an InboxAllowAlways variant.",
+    "Hold off on theme.rs, I'm renaming the colours.",
+    "PR is up for review.",
+];

@@ -431,9 +431,9 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Scope:** create all crates except maps. `dovetail-api` types and `apply()`. `MockCore` generating status changes, streaming markdown replies, inbox items and subagents. `dovetail --mock --dump` prints events, with no UI yet.
 - **Files:** root `Cargo.toml`, `.gitignore`, `crates/dovetail-api/`, `crates/dovetail-mock/`, `crates/dovetail/src/main.rs`, README status and layout sections
 - **Done when:**
-  - [ ] Workspace builds with all crates
-  - [ ] `dovetail --mock --dump` shows a believable, seeded event stream
-  - [ ] `dovetail-tui` has no dependency on tokio or core
+  - [x] Workspace builds with all crates
+  - [x] `dovetail --mock --dump` shows a believable, seeded event stream
+  - [x] `dovetail-tui` has no dependency on tokio or core
 - **Tests:** `apply()` for every event, gap detection, serde round-trip, mock determinism
 
 ### M2. TUI shell: layout, keymap, tree, inbox

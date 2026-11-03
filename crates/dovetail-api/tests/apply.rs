@@ -1,0 +1,546 @@
+//! `apply()`: the reducer every client state change goes through.
+
+use dovetail_api::*;
+
+fn task(id: i64, title: &str) -> Task {
+    Task {
+        id: TaskId(id),
+        title: title.into(),
+        status: TaskStatus::Todo,
+        priority: Some(PLevel::P1),
+        bucket: Some(Bucket::Now),
+        order: 0,
+        deps: vec![],
+        notes: String::new(),
+        pr: None,
+        follow_up_of: None,
+        coordinator_created: false,
+    }
+}
+
+fn agent(id: &str, status: AgentStatus) -> Agent {
+    Agent {
+        id: AgentId(id.into()),
+        name: id.into(),
+        kind: AgentKind::Session,
+        role: Role::Slice,
+        parent: None,
+        task: None,
+        worktree: None,
+        status,
+        status_line: String::new(),
+        memory_mb: Some(210),
+        cost_usd: 0.0,
+        permission_mode: PermissionMode::Auto,
+        context_pct: Some(5),
+        progress: None,
+        last_activity_ms: 0,
+        lock: SessionLock::Headless,
+    }
+}
+
+fn entry(id: u64, kind: EntryKind, text: &str) -> ConversationEntry {
+    ConversationEntry {
+        id: EntryId(id),
+        at_ms: 1_000,
+        kind,
+        text: text.into(),
+    }
+}
+
+fn question(id: u64, agent: &str) -> InboxItem {
+    InboxItem {
+        id: InboxId(id),
+        agent: AgentId(agent.into()),
+        at_ms: 1_000,
+        kind: InboxKind::Question {
+            text: "Which port?".into(),
+            blocking: true,
+        },
+    }
+}
+
+/// Applies events with consecutive seqs, asserting each one applies.
+fn run(state: &mut Snapshot, events: Vec<Event>) {
+    for event in events {
+        let seq = state.seq + 1;
+        assert_eq!(apply(state, seq, event), ApplyResult::Applied);
+    }
+}
+
+fn id(s: &str) -> AgentId {
+    AgentId(s.into())
+}
+
+// Sequencing
+
+#[test]
+fn next_seq_applies_and_advances_seq() {
+    let mut state = Snapshot {
+        seq: 7,
+        ..Snapshot::default()
+    };
+    assert_eq!(
+        apply(&mut state, 8, Event::TaskUpserted(task(1, "a"))),
+        ApplyResult::Applied
+    );
+    assert_eq!(state.seq, 8);
+    assert_eq!(state.tasks.len(), 1);
+}
+
+#[test]
+fn skipped_seq_is_a_gap_and_changes_nothing() {
+    let mut state = Snapshot {
+        seq: 7,
+        ..Snapshot::default()
+    };
+    let before = state.clone();
+    assert_eq!(
+        apply(&mut state, 9, Event::TaskUpserted(task(1, "a"))),
+        ApplyResult::Gap {
+            expected: 8,
+            got: 9
+        }
+    );
+    assert_eq!(state, before);
+}
+
+#[test]
+fn old_or_repeated_seq_is_stale_and_changes_nothing() {
+    let mut state = Snapshot {
+        seq: 7,
+        ..Snapshot::default()
+    };
+    let before = state.clone();
+    assert_eq!(
+        apply(&mut state, 7, Event::TaskUpserted(task(1, "a"))),
+        ApplyResult::Stale
+    );
+    assert_eq!(
+        apply(&mut state, 3, Event::TaskUpserted(task(1, "a"))),
+        ApplyResult::Stale
+    );
+    assert_eq!(state, before);
+}
+
+// Tasks
+
+#[test]
+fn task_upsert_inserts_then_replaces_by_id() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::TaskUpserted(task(1, "first")),
+            Event::TaskUpserted(task(2, "second")),
+            Event::TaskUpserted(task(1, "renamed")),
+        ],
+    );
+    let titles: Vec<_> = state.tasks.iter().map(|t| t.title.as_str()).collect();
+    assert_eq!(titles, ["renamed", "second"]);
+}
+
+#[test]
+fn task_removed_drops_only_that_task() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::TaskUpserted(task(1, "a")),
+            Event::TaskUpserted(task(2, "b")),
+            Event::TaskRemoved(TaskId(1)),
+        ],
+    );
+    assert_eq!(state.tasks, vec![task(2, "b")]);
+}
+
+// Agents
+
+#[test]
+fn agent_upsert_inserts_then_replaces_by_id() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::AgentUpserted(agent("s1", AgentStatus::Working)),
+            Event::AgentUpserted(agent("s2", AgentStatus::Idle)),
+            Event::AgentUpserted(agent("s1", AgentStatus::NeedsYou)),
+        ],
+    );
+    assert_eq!(
+        state.agents,
+        vec![
+            agent("s1", AgentStatus::NeedsYou),
+            agent("s2", AgentStatus::Idle)
+        ]
+    );
+}
+
+#[test]
+fn agent_removed_drops_the_agent_and_its_conversation() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::AgentUpserted(agent("s1", AgentStatus::Idle)),
+            Event::AgentUpserted(agent("s2", AgentStatus::Idle)),
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(1, EntryKind::User, "hi"),
+            },
+            Event::ConversationAppended {
+                agent: id("s2"),
+                entry: entry(1, EntryKind::User, "hello"),
+            },
+            Event::AgentRemoved(id("s1")),
+        ],
+    );
+    assert_eq!(state.agents, vec![agent("s2", AgentStatus::Idle)]);
+    assert!(!state.conversations.contains_key(&id("s1")));
+    assert!(state.conversations.contains_key(&id("s2")));
+}
+
+// To-do items
+
+#[test]
+fn todos_replaced_rewrites_only_that_list() {
+    let item = |list: &str, id: &str| TodoItem {
+        list: TodoListId(list.into()),
+        id: id.into(),
+        subject: format!("{list}/{id}"),
+        status: TodoStatus::Pending,
+        blocked_by: vec![],
+        created_by: None,
+    };
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::TodosReplaced {
+                list: TodoListId("a".into()),
+                items: vec![item("a", "1"), item("a", "2")],
+            },
+            Event::TodosReplaced {
+                list: TodoListId("b".into()),
+                items: vec![item("b", "1")],
+            },
+            Event::TodosReplaced {
+                list: TodoListId("a".into()),
+                items: vec![item("a", "3")],
+            },
+        ],
+    );
+    let subjects: Vec<_> = state.todos.iter().map(|t| t.subject.as_str()).collect();
+    assert_eq!(subjects, ["b/1", "a/3"]);
+}
+
+// Inbox
+
+#[test]
+fn inbox_added_inserts_then_replaces_by_id() {
+    let mut changed = question(1, "s1");
+    changed.kind = InboxKind::Error {
+        text: "crashed".into(),
+    };
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::InboxAdded(question(1, "s1")),
+            Event::InboxAdded(question(2, "s2")),
+            Event::InboxAdded(changed.clone()),
+        ],
+    );
+    assert_eq!(state.inbox, vec![changed, question(2, "s2")]);
+}
+
+#[test]
+fn inbox_resolved_removes_the_item() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::InboxAdded(question(1, "s1")),
+            Event::InboxAdded(question(2, "s1")),
+            Event::InboxResolved { id: InboxId(1) },
+        ],
+    );
+    assert_eq!(state.inbox, vec![question(2, "s1")]);
+}
+
+// Activity and messages
+
+#[test]
+fn activity_keeps_the_newest_500() {
+    let mut state = Snapshot::default();
+    let events = (1..=501)
+        .map(|n| {
+            Event::ActivityAdded(ActivityItem {
+                id: n,
+                at_ms: 0,
+                agent: None,
+                kind: ActivityKind::Ci,
+                text: format!("ci {n}"),
+            })
+        })
+        .collect();
+    run(&mut state, events);
+    assert_eq!(state.activity.len(), 500);
+    assert_eq!(state.activity.first().map(|a| a.id), Some(2));
+    assert_eq!(state.activity.last().map(|a| a.id), Some(501));
+}
+
+#[test]
+fn messages_keep_the_newest_500() {
+    let mut state = Snapshot::default();
+    let events = (1..=501)
+        .map(|n| {
+            Event::MessageAdded(AgentMessage {
+                id: n,
+                at_ms: 0,
+                from: id("coordinator"),
+                to: id("s1"),
+                text: format!("msg {n}"),
+            })
+        })
+        .collect();
+    run(&mut state, events);
+    assert_eq!(state.messages.len(), 500);
+    assert_eq!(state.messages.first().map(|m| m.id), Some(2));
+    assert_eq!(state.messages.last().map(|m| m.id), Some(501));
+}
+
+// Conversations
+
+#[test]
+fn conversation_appended_creates_the_tail_then_appends() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(1, EntryKind::User, "hi"),
+            },
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(2, EntryKind::Assistant, "hello"),
+            },
+        ],
+    );
+    assert_eq!(
+        state.conversations[&id("s1")],
+        ConversationTail {
+            entries: vec![
+                entry(1, EntryKind::User, "hi"),
+                entry(2, EntryKind::Assistant, "hello")
+            ],
+            has_more: false,
+        }
+    );
+}
+
+#[test]
+fn conversation_appended_with_a_known_id_replaces_the_entry() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(1, EntryKind::Assistant, "draft"),
+            },
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(1, EntryKind::Assistant, "final text"),
+            },
+        ],
+    );
+    assert_eq!(
+        state.conversations[&id("s1")].entries,
+        vec![entry(1, EntryKind::Assistant, "final text")]
+    );
+}
+
+#[test]
+fn conversation_keeps_the_newest_200_and_marks_more() {
+    let mut state = Snapshot::default();
+    let events = (1..=201)
+        .map(|n| Event::ConversationAppended {
+            agent: id("s1"),
+            entry: entry(n, EntryKind::User, "x"),
+        })
+        .collect();
+    run(&mut state, events);
+    let tail = &state.conversations[&id("s1")];
+    assert_eq!(tail.entries.len(), 200);
+    assert_eq!(tail.entries.first().map(|e| e.id), Some(EntryId(2)));
+    assert!(tail.has_more);
+}
+
+#[test]
+fn assistant_delta_extends_its_entry() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(1, EntryKind::Assistant, ""),
+            },
+            Event::AssistantDelta {
+                agent: id("s1"),
+                entry: EntryId(1),
+                text: "Hel".into(),
+            },
+            Event::AssistantDelta {
+                agent: id("s1"),
+                entry: EntryId(1),
+                text: "lo **there**".into(),
+            },
+        ],
+    );
+    assert_eq!(
+        state.conversations[&id("s1")].entries,
+        vec![entry(1, EntryKind::Assistant, "Hello **there**")]
+    );
+}
+
+#[test]
+fn assistant_delta_for_an_unknown_entry_starts_one_at_snapshot_time() {
+    let mut state = Snapshot {
+        now_ms: 5_000,
+        ..Snapshot::default()
+    };
+    run(
+        &mut state,
+        vec![Event::AssistantDelta {
+            agent: id("s1"),
+            entry: EntryId(4),
+            text: "Hi".into(),
+        }],
+    );
+    assert_eq!(
+        state.conversations[&id("s1")].entries,
+        vec![ConversationEntry {
+            id: EntryId(4),
+            at_ms: 5_000,
+            kind: EntryKind::Assistant,
+            text: "Hi".into(),
+        }]
+    );
+}
+
+#[test]
+fn conversation_page_puts_older_entries_before_the_tail() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(3, EntryKind::User, "new"),
+            },
+            Event::ConversationPage {
+                agent: id("s1"),
+                entries: vec![
+                    entry(1, EntryKind::User, "old"),
+                    entry(2, EntryKind::Assistant, "older reply"),
+                ],
+                has_more: false,
+            },
+        ],
+    );
+    let ids: Vec<_> = state.conversations[&id("s1")]
+        .entries
+        .iter()
+        .map(|e| e.id.0)
+        .collect();
+    assert_eq!(ids, [1, 2, 3]);
+    assert!(!state.conversations[&id("s1")].has_more);
+}
+
+#[test]
+fn conversation_page_skips_entries_it_already_has() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::ConversationAppended {
+                agent: id("s1"),
+                entry: entry(2, EntryKind::User, "kept"),
+            },
+            Event::ConversationPage {
+                agent: id("s1"),
+                entries: vec![
+                    entry(1, EntryKind::User, "old"),
+                    entry(2, EntryKind::User, "duplicate"),
+                ],
+                has_more: true,
+            },
+        ],
+    );
+    assert_eq!(
+        state.conversations[&id("s1")],
+        ConversationTail {
+            entries: vec![
+                entry(1, EntryKind::User, "old"),
+                entry(2, EntryKind::User, "kept")
+            ],
+            has_more: true,
+        }
+    );
+}
+
+// Totals, warnings, failures
+
+#[test]
+fn totals_changed_replaces_totals() {
+    let totals = Totals {
+        memory_mb: 640,
+        needs_you: 3,
+        cost_usd: 1.5,
+    };
+    let mut state = Snapshot::default();
+    run(&mut state, vec![Event::TotalsChanged(totals.clone())]);
+    assert_eq!(state.totals, totals);
+}
+
+#[test]
+fn warnings_are_set_by_id_and_cleared() {
+    let warning = |id: &str, text: &str| Warning {
+        id: WarningId(id.into()),
+        text: text.into(),
+    };
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::WarningSet(warning("mode", "coordinator is not in auto mode")),
+            Event::WarningSet(warning("cgroup", "memory caps unavailable")),
+            Event::WarningSet(warning("mode", "slice-a is not in auto mode")),
+            Event::WarningCleared(WarningId("cgroup".into())),
+        ],
+    );
+    assert_eq!(
+        state.warnings,
+        vec![warning("mode", "slice-a is not in auto mode")]
+    );
+}
+
+#[test]
+fn command_failed_only_advances_seq() {
+    let mut state = Snapshot {
+        seq: 4,
+        ..Snapshot::default()
+    };
+    let mut expected = state.clone();
+    expected.seq = 5;
+    run(
+        &mut state,
+        vec![Event::CommandFailed {
+            message: "no such agent".into(),
+        }],
+    );
+    assert_eq!(state, expected);
+}
