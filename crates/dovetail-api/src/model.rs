@@ -99,7 +99,7 @@ pub struct Task {
     /// Where the task stands.
     pub status: TaskStatus,
     /// How important it is; `None` for some unsorted tasks.
-    pub priority: Option<PLevel>,
+    pub p_level: Option<PLevel>,
     /// When the user will do it; `None` means Unsorted.
     pub bucket: Option<Bucket>,
     /// Position within its bucket, lowest first.

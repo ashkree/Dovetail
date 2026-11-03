@@ -30,6 +30,7 @@ name = "dovetail-core"
 version = "0.0.0"
 dependencies = [
  "dovetail-api",
+ "dovetail-driver",
 ]
 
 [[package]]

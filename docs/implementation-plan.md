@@ -170,7 +170,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 
 | Dependency | Used in | Features | Reason |
 | --- | --- | --- | --- |
-| `serde`, `serde_json` | api, driver, core | `derive` | Plain-data API, NDJSON, MCP |
+| `serde`, `serde_json` | api, driver, core, mock, binary | `derive` | Plain-data API, NDJSON, MCP; the mock builds tool inputs and `--dump` prints JSON lines |
 | `ratatui` 0.30 | tui | default | Required |
 | `crossterm` 0.29 | tui | default | Required; no kitty keyboard protocol |
 | `nucleo` 0.5 | tui | default | Fuzzy picker (required) |

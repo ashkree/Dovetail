@@ -21,7 +21,7 @@ fn task() -> Task {
         id: TaskId(3),
         title: "Tree view".into(),
         status: TaskStatus::NeedsYou,
-        priority: Some(PLevel::P0),
+        p_level: Some(PLevel::P0),
         bucket: Some(Bucket::Later),
         order: 2,
         deps: vec![TaskId(1)],
@@ -274,7 +274,7 @@ fn every_command_roundtrips() {
         },
         Command::CreateTask(NewTask {
             title: "x".into(),
-            priority: Some(PLevel::P2),
+            p_level: Some(PLevel::P2),
             bucket: None,
             notes: String::new(),
             follow_up_of: Some(TaskId(1)),
@@ -284,8 +284,8 @@ fn every_command_roundtrips() {
             patch: vec![
                 TaskChange::Title("y".into()),
                 TaskChange::Status(TaskStatus::Done),
-                TaskChange::Priority(None),
-                TaskChange::Priority(Some(PLevel::P3)),
+                TaskChange::PLevel(None),
+                TaskChange::PLevel(Some(PLevel::P3)),
                 TaskChange::Bucket(None),
                 TaskChange::Bucket(Some(Bucket::Next)),
                 TaskChange::Notes("n".into()),

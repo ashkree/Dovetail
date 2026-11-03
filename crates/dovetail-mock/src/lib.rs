@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use dovetail_api::*;
 use rng::Rng;
-use world::{COORDINATOR, agent_id};
+use world::{COORDINATOR, agent_id, round_cents};
 
 /// How a [`MockCore`] starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,16 +172,7 @@ impl MockCore {
                 if self.agent(&agent).is_none() {
                     return self.fail(format!("no agent {}", agent.0));
                 }
-                let entry = self.entry_id();
-                self.emit(Event::ConversationAppended {
-                    agent: agent.clone(),
-                    entry: ConversationEntry {
-                        id: entry,
-                        at_ms: self.state.now_ms,
-                        kind: EntryKind::User,
-                        text,
-                    },
-                });
+                self.append(&agent, EntryKind::User, text);
                 self.update_agent(&agent, |a| a.status = AgentStatus::Working);
                 self.schedule_reply(agent, true);
             }
@@ -190,16 +181,7 @@ impl MockCore {
                     return self.fail(format!("{} is not mid-turn", agent.0));
                 }
                 self.pending.retain(|p| p.reply_of.as_ref() != Some(&agent));
-                let entry = self.entry_id();
-                self.emit(Event::ConversationAppended {
-                    agent: agent.clone(),
-                    entry: ConversationEntry {
-                        id: entry,
-                        at_ms: self.state.now_ms,
-                        kind: EntryKind::Notice,
-                        text: "Interrupted".into(),
-                    },
-                });
+                self.append(&agent, EntryKind::Notice, "Interrupted".into());
                 self.settle(&agent);
             }
             Command::AnswerPermission { item, answer } => {
@@ -211,19 +193,11 @@ impl MockCore {
                 }
                 self.resolve(item);
                 if let PermissionAnswer::Deny { message } = answer {
-                    let entry = self.entry_id();
-                    self.emit(Event::ConversationAppended {
-                        agent: found.agent.clone(),
-                        entry: ConversationEntry {
-                            id: entry,
-                            at_ms: self.state.now_ms,
-                            kind: EntryKind::Notice,
-                            text: match message {
-                                Some(m) => format!("Denied: {m}"),
-                                None => "Denied".into(),
-                            },
-                        },
-                    });
+                    let text = match message {
+                        Some(m) => format!("Denied: {m}"),
+                        None => "Denied".into(),
+                    };
+                    self.append(&found.agent, EntryKind::Notice, text);
                 }
             }
             Command::AnswerQuestion { item, text } => {
@@ -231,16 +205,7 @@ impl MockCore {
                     return self.fail(format!("no inbox item {}", item.0));
                 };
                 self.resolve(item);
-                let entry = self.entry_id();
-                self.emit(Event::ConversationAppended {
-                    agent: found.agent,
-                    entry: ConversationEntry {
-                        id: entry,
-                        at_ms: self.state.now_ms,
-                        kind: EntryKind::User,
-                        text,
-                    },
-                });
+                self.append(&found.agent, EntryKind::User, text);
             }
             Command::DismissInbox { item } => {
                 if self.inbox_item(item).is_none() {
@@ -274,16 +239,7 @@ impl MockCore {
                 slice.worktree = Some(world::worktree(&name));
                 slice.status_line = "setup: cargo fetch".into();
                 self.emit(Event::AgentUpserted(slice));
-                let entry = self.entry_id();
-                self.emit(Event::ConversationAppended {
-                    agent: agent_id(&name),
-                    entry: ConversationEntry {
-                        id: entry,
-                        at_ms: self.state.now_ms,
-                        kind: EntryKind::User,
-                        text: brief,
-                    },
-                });
+                self.append(&agent_id(&name), EntryKind::User, brief);
                 self.refresh_totals();
                 let id = agent_id(&name);
                 self.after(2_500, move |core| core.finish_setup(&id));
@@ -299,7 +255,7 @@ impl MockCore {
                     id: TaskId(self.next_task),
                     title: new.title,
                     status: TaskStatus::Todo,
-                    priority: new.priority,
+                    p_level: new.p_level,
                     bucket: new.bucket,
                     order: self.next_order(new.bucket),
                     deps: vec![],
@@ -319,7 +275,7 @@ impl MockCore {
                     match change {
                         TaskChange::Title(title) => task.title = title,
                         TaskChange::Status(status) => task.status = status,
-                        TaskChange::Priority(priority) => task.priority = priority,
+                        TaskChange::PLevel(p_level) => task.p_level = p_level,
                         TaskChange::Bucket(bucket) => {
                             if bucket != task.bucket {
                                 task.order = self.next_order(bucket);
@@ -398,6 +354,20 @@ impl MockCore {
     fn entry_id(&mut self) -> EntryId {
         self.next_entry += 1;
         EntryId(self.next_entry)
+    }
+
+    /// Adds a finished entry to an agent's conversation.
+    fn append(&mut self, agent: &AgentId, kind: EntryKind, text: String) {
+        let id = self.entry_id();
+        self.emit(Event::ConversationAppended {
+            agent: agent.clone(),
+            entry: ConversationEntry {
+                id,
+                at_ms: self.state.now_ms,
+                kind,
+                text,
+            },
+        });
     }
 
     fn agent(&self, id: &AgentId) -> Option<Agent> {
@@ -652,16 +622,7 @@ impl MockCore {
             let id = agent.clone();
             let delay = self.rng.range(200, 600);
             self.reply_step(&agent, delay, move |core| {
-                let tool_entry = core.entry_id();
-                core.emit(Event::ConversationAppended {
-                    agent: id,
-                    entry: ConversationEntry {
-                        id: tool_entry,
-                        at_ms: core.state.now_ms,
-                        kind: EntryKind::ToolSummary,
-                        text: tools.into(),
-                    },
-                });
+                core.append(&id, EntryKind::ToolSummary, tools.into())
             });
         }
 
@@ -682,9 +643,7 @@ impl MockCore {
     /// background subagents still running gets none, since its turn has not really ended.
     fn end_turn(&mut self, agent: &AgentId, preview: String, cost: f64) {
         self.replying.remove(agent);
-        self.update_agent(agent, |a| {
-            a.cost_usd = ((a.cost_usd + cost) * 100.0).round() / 100.0
-        });
+        self.update_agent(agent, |a| a.cost_usd = round_cents(a.cost_usd + cost));
         if !self.running_background_children(agent)
             && self.agent(agent).map(|a| a.role) != Some(Role::Subagent)
         {
@@ -1012,7 +971,7 @@ impl MockCore {
                         p.tool_uses += 1;
                         p.last_tool = Some(tool.into());
                     }
-                    a.cost_usd = ((a.cost_usd + 0.01) * 100.0).round() / 100.0;
+                    a.cost_usd = round_cents(a.cost_usd + 0.01);
                 })
             });
         }

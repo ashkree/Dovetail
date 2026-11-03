@@ -18,7 +18,7 @@ fn task(
     id: i64,
     title: &str,
     status: TaskStatus,
-    priority: Option<PLevel>,
+    p_level: Option<PLevel>,
     bucket: Option<Bucket>,
     order: i64,
 ) -> Task {
@@ -26,7 +26,7 @@ fn task(
         id: TaskId(id),
         title: title.into(),
         status,
-        priority,
+        p_level,
         bucket,
         order,
         deps: vec![],
@@ -392,12 +392,17 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
     snapshot
 }
 
+/// Rounds a dollar amount to whole cents.
+pub(crate) fn round_cents(usd: f64) -> f64 {
+    (usd * 100.0).round() / 100.0
+}
+
 /// Totals as the core would compute them.
 pub(crate) fn totals_of(state: &Snapshot) -> Totals {
     Totals {
         memory_mb: state.agents.iter().filter_map(|a| a.memory_mb).sum(),
         needs_you: state.inbox.len() as u32,
-        cost_usd: (state.agents.iter().map(|a| a.cost_usd).sum::<f64>() * 100.0).round() / 100.0,
+        cost_usd: round_cents(state.agents.iter().map(|a| a.cost_usd).sum()),
     }
 }
 

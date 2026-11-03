@@ -81,7 +81,7 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
         2 => slice.map(|agent| Command::Interrupt { agent }),
         3 => Some(Command::CreateTask(NewTask {
             title: format!("follow-up {round}"),
-            priority: Some(PLevel::P2),
+            p_level: Some(PLevel::P2),
             bucket: Some(Bucket::Next),
             notes: String::new(),
             follow_up_of: task,

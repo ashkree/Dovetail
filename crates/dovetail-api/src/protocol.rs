@@ -236,7 +236,7 @@ pub struct NewTask {
     /// One-line title.
     pub title: String,
     /// P-level, if given.
-    pub priority: Option<PLevel>,
+    pub p_level: Option<PLevel>,
     /// Bucket; `None` puts it in Unsorted.
     pub bucket: Option<Bucket>,
     /// Notes.
@@ -254,7 +254,7 @@ pub enum TaskChange {
     /// New status.
     Status(TaskStatus),
     /// New P-level, or none.
-    Priority(Option<PLevel>),
+    PLevel(Option<PLevel>),
     /// New bucket, or Unsorted.
     Bucket(Option<Bucket>),
     /// New notes.

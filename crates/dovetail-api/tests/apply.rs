@@ -7,7 +7,7 @@ fn task(id: i64, title: &str) -> Task {
         id: TaskId(id),
         title: title.into(),
         status: TaskStatus::Todo,
-        priority: Some(PLevel::P1),
+        p_level: Some(PLevel::P1),
         bucket: Some(Bucket::Now),
         order: 0,
         deps: vec![],
