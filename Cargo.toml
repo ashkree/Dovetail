@@ -1,12 +1,22 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# Spikes are throwaway packages with their own manifests.
+exclude = ["spikes"]
 
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
 license = "UNLICENSED"
 publish = false
+
+[workspace.dependencies]
+dovetail-api = { path = "crates/dovetail-api" }
+dovetail-driver = { path = "crates/dovetail-driver" }
+dovetail-mock = { path = "crates/dovetail-mock" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

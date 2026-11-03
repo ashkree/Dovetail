@@ -4,3 +4,4 @@
 *.snap.new
 .DS_Store
 .env
+spikes/*/target

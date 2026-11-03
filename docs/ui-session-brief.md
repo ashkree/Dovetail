@@ -29,12 +29,12 @@ I run several Claude Code agents in parallel and lose track of them. Dovetail's 
 ## Data model (mock it, keep it close to this)
 
 - **Project**: name, tasks.
-- **Task**: id, title, status (`todo`, `in_progress`, `needs_you`, `done`, `archived`), dependencies, notes, linked PR (e.g. `#1231`), and the agents attached to it. A task can have no agents yet (an idea or follow-up).
+- **Task**: id, title, status (`todo`, `in_progress`, `done`, `archived`; "needs you" is derived from its agents' inbox items, never stored, per plan B4), dependencies, notes, linked PR (e.g. `#1231`), and the agents attached to it. A task can have no agents yet (an idea or follow-up).
   - **Priority, two fields:** a P-level (`P0`–`P3`, importance) and a bucket (`Now`, `Next`, `Later`, timing), with an order within `Now`.
   - **Tree grouping:** group tasks by bucket (`Now` at the top and expanded, `Later` collapsed with a count), sorted by P-level within each bucket. Show the P-level next to each task. Flag a mismatch (a `P0` in `Later`, a `P3` in `Now`) with a subtle marker.
   - **Unsorted group:** tasks with no bucket yet sit in an `Unsorted` group shown above `Now` (with a count, hidden when empty). They may have no P-level. A task can carry a "follow-up of <task>" marker and a "coordinator-created" marker.
 - **Agent**:
-  - id, kind (`Session` or `Subagent { background: bool }`), role (`Coordinator`, `Slice`, `Subagent`), parent agent, task.
+  - id, kind (`Coordinator`, `Slice` or `Subagent { background: bool }`; coordinators and slices are sessions), parent agent, task.
   - **Worktree:** each slice session has exactly one worktree (path and branch), and no worktree has two sessions. The coordinator works in the main checkout. Subagents share their parent's worktree. Show the branch next to slice sessions in the tree.
   - status (`working`, `idle`, `needs_you`, `done`, `error`), a one-line status text, memory in MB (sessions only), cost so far.
   - permission mode (`auto`, `acceptEdits`, `manual`); `auto` is the default.

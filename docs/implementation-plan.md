@@ -170,7 +170,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 
 | Dependency | Used in | Features | Reason |
 | --- | --- | --- | --- |
-| `serde`, `serde_json` | api, driver, core | `derive` | Plain-data API, NDJSON, MCP |
+| `serde`, `serde_json` | api, driver, core, mock, binary | `derive` | Plain-data API, NDJSON, MCP; the mock builds tool inputs and `--dump` prints JSON lines |
 | `ratatui` 0.30 | tui | default | Required |
 | `crossterm` 0.29 | tui | default | Required; no kitty keyboard protocol |
 | `nucleo` 0.5 | tui | default | Fuzzy picker (required) |
@@ -224,15 +224,14 @@ pub struct Snapshot {
 
 pub struct Task {
     pub id: TaskId, pub title: String, pub status: TaskStatus,
-    pub priority: Option<PLevel>, pub bucket: Option<Bucket>, pub order: i64,
+    pub p_level: Option<PLevel>, pub bucket: Option<Bucket>, pub order: i64,
     pub deps: Vec<TaskId>, pub notes: String, pub pr: Option<u32>,
     pub follow_up_of: Option<TaskId>, pub coordinator_created: bool,
 }
 
 pub struct Agent {
     pub id: AgentId, pub name: String,
-    pub kind: AgentKind,             // Session | Subagent { background: bool }
-    pub role: Role,                  // Coordinator | Slice | Subagent
+    pub kind: AgentKind,             // Coordinator | Slice | Subagent { background: bool }
     pub parent: Option<AgentId>, pub task: Option<TaskId>,
     pub worktree: Option<WorktreeRef>,
     pub status: AgentStatus,         // SettingUp | Working | Idle | NeedsYou | Done | Error
@@ -257,7 +256,7 @@ pub enum Event {
     TaskUpserted(Task), TaskRemoved(TaskId),
     AgentUpserted(Agent), AgentRemoved(AgentId),
     TodosReplaced { list: TodoListId, items: Vec<TodoItem> },
-    InboxAdded(InboxItem), InboxResolved { id: InboxId },
+    InboxUpserted(InboxItem), InboxResolved { id: InboxId },
     ActivityAdded(ActivityItem), MessageAdded(AgentMessage),
     ConversationAppended { agent: AgentId, entry: ConversationEntry },
     AssistantDelta { agent: AgentId, entry: EntryId, text: String },
@@ -267,7 +266,7 @@ pub enum Event {
 }
 
 pub enum Command {
-    SendMessage { agent: AgentId, text: String },
+    Prompt { agent: AgentId, text: String },
     Interrupt { agent: AgentId },
     AnswerPermission { item: InboxId, answer: PermissionAnswer },
     AnswerQuestion { item: InboxId, text: String },
@@ -345,7 +344,7 @@ Generated `--settings` and `--mcp-config` files go in `~/.local/state/dovetail/r
 | `assistant` tool use | `ToolUse` | Folded tool entry; `SendMessage` also gives `MessageAdded` |
 | Any event with `parent_tool_use_id` | Same event, tagged `parent` | Routed to that subagent's node |
 | `system/task_*`, `background_tasks_changed` | `SubagentTask` | Agent upsert: progress, usage, summary, output file |
-| `control_request` `can_use_tool` | `PermissionRequest` | `InboxAdded(Permission)`, `agent_id` attributes it |
+| `control_request` `can_use_tool` | `PermissionRequest` | `InboxUpserted(Permission)`, `agent_id` attributes it |
 | `system/permission_check_status` | Ignored | Nothing |
 | `result` | `TurnResult` | Usage and cost; a `FinishedTurn` only if no background tasks remain |
 | Process exit | `Exited { status }` | `Done`, or `Error` inbox item; OOM detected at M13 |
@@ -366,12 +365,12 @@ CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT N
 
 -- state.db
 CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
-  priority INTEGER, bucket TEXT, sort_order INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
+  p_level INTEGER, bucket TEXT, sort_order INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
   pr INTEGER, follow_up_of INTEGER REFERENCES tasks(id),
   coordinator_created INTEGER NOT NULL DEFAULT 0, created_ms INTEGER, updated_ms INTEGER);
 CREATE TABLE task_deps (task_id INTEGER, depends_on INTEGER, PRIMARY KEY(task_id, depends_on));
 
-CREATE TABLE agents (id TEXT PRIMARY KEY, kind TEXT, role TEXT, name TEXT, parent_id TEXT,
+CREATE TABLE agents (id TEXT PRIMARY KEY, kind TEXT, name TEXT, parent_id TEXT,
   task_id INTEGER REFERENCES tasks(id), session_id TEXT, transcript_path TEXT, task_list_id TEXT,
   worktree_path TEXT, branch TEXT, setup_state TEXT, status TEXT, status_line TEXT,
   permission_mode TEXT, cost_usd REAL DEFAULT 0, tool_use_id TEXT, output_file TEXT,
@@ -431,9 +430,9 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Scope:** create all crates except maps. `dovetail-api` types and `apply()`. `MockCore` generating status changes, streaming markdown replies, inbox items and subagents. `dovetail --mock --dump` prints events, with no UI yet.
 - **Files:** root `Cargo.toml`, `.gitignore`, `crates/dovetail-api/`, `crates/dovetail-mock/`, `crates/dovetail/src/main.rs`, README status and layout sections
 - **Done when:**
-  - [ ] Workspace builds with all crates
-  - [ ] `dovetail --mock --dump` shows a believable, seeded event stream
-  - [ ] `dovetail-tui` has no dependency on tokio or core
+  - [x] Workspace builds with all crates
+  - [x] `dovetail --mock --dump` shows a believable, seeded event stream
+  - [x] `dovetail-tui` has no dependency on tokio or core
 - **Tests:** `apply()` for every event, gap detection, serde round-trip, mock determinism
 
 ### M2. TUI shell: layout, keymap, tree, inbox
@@ -543,6 +542,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 ### M12. Board and worktree view
 - **Scope:** `<leader>b` board with `j k H L < > a s Enter`. `<leader>g` worktree view with sync state, changes, PR, setup, `Enter e c X`. nvim hand-off with TUI suspend.
 - **Slices:** (a) board; (b) worktree data in core; (c) worktree buffer, after (b).
+- **Board columns:** todo, in progress, done. A task that needs you gets a marker on its card, with no column of its own (B4).
 - **Done when:**
   - [ ] Both are reachable as buffers in the main region
   - [ ] `X` asks first if work is unpushed
@@ -624,7 +624,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 | B1 **Your call** | **Who starts slices?** No agent tool exists, yet the coordinator's prompt says to brief slices. This shapes the whole workflow | **Decided: you start them** (`<leader>sn` on a task; prompts for name and brief). The coordinator recommends slices in chat, then messages the slice. Decision 25 is unchanged, so no ADR. Planned upgrade once S2 passes: a `start_slice` tool that raises a Permission request for your `y`/`d`, enforced by Dovetail's handler in every permission mode. It returns at once, needs a ready signal and a start queue, targets existing tasks only, and needs an ADR naming Decision 25 |
 | B2 **Your call** | **`hjkl` vs lists** (the brief asks me to decide): how to move between tree and inbox when `j/k` move inside lists | **Decided:** `h/l` move between left and right; `h` returns to the left region you came from. `j/k` move inside and never leave a list. `Ctrl-j/k` move between regions in the column. `<leader>n` jumps to the inbox. `Ctrl-hjkl` pan only in MAP mode. `o` folds tree nodes, per the brief |
 | B3 **Your call** | **Every finished turn in Needs you** may flood the inbox, especially from the coordinator you're watching | **Decided, refines Decision 7b ([ADR 0001](adr/0001-collapse-finished-turns.md)):** one item per agent (newest replaces), auto-cleared when you open that agent. None while background subagents remain. Other inbox kinds are never collapsed |
-| B4 **Your call** | **`needs_you` as task status:** set by hand or derived? | **Decided: derived** from agents and inbox, never stored. `s` cycles todo → in progress → done; `<` `>` skip that column. Starting a slice moves a todo task to in progress. Done wins: a done task stays done if an agent raises an item, which still shows in the inbox. Coordinator items mark no task |
+| B4 **Your call** | **`needs_you` as task status:** set by hand or derived? | **Decided: derived** from agents and inbox, never stored. `s` cycles todo → in progress → done. The board has no needs-you column: a needs-you task shows a marker on its card, in its status column (decided 2026-11-03). Starting a slice moves a todo task to in progress. Done wins: a done task stays done if an agent raises an item, which still shows in the inbox. Coordinator items mark no task |
 | B5 **Your call** | **Slice setup vs "hook must be fast":** the hook runs setup, but setup can take minutes and the mock shows a live timer | **Decided:** hook runs setup once with a 15-minute hook timeout, recording state under `~/.local/state/dovetail/`; repeat starts return at once. Interrupted setup re-runs, so recipe setup commands must be safe to re-run. If M8 finds the timeout isn't honoured, the core runs setup after the hook instead, with an ADR naming 12b |
 | B6 **Your call** | **Map shelf and map key:** the mock puts a shelf in the left column; no doc gives it a region; map mode `s` (Decision 24) has no meaning anywhere | **Decided:** shelf is a collapsed `▸ Maps (n)` row at the bottom of the task tree, hidden until a map exists. `<leader>M` unfolds it and moves the cursor there; `o` folds it; the picker also opens maps. A dedicated maps buffer can follow if the list outgrows the tree. `s` stays unbound in v1 |
 | B7 **Your call** | **Merging:** no flow exists for slice branches reaching `main` (`:merge` appears once, undefined) | **Decided:** no merge command or tool. Slices push a branch and open a PR. On your yes, the coordinator runs `gh pr merge`, then `git pull --ff-only` so new slices branch from current `main` (B13). Launch settings add an ask rule for `Bash(gh pr merge:*)`, so each merge raises a Permission request. If M8 shows the rule doesn't hold in auto mode, fall back to the role prompt alone. You still mark the task done and archive it |

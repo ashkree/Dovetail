@@ -104,16 +104,22 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 
 ## Status and open items
 
-All design decisions are made; the full design and decision log live in the design doc. Before the first real code:
+All design decisions are made; the full design and decision log live in the design doc. The order of work is in `docs/implementation-plan.md`.
 
-- Spikes: merman map rendering (speed, memory, node positions, look in kitty), picking which community SDK crate to use, cgroup launch on the target machine, MCP tools in background subagents, how inbound messages appear in the event stream, terms of use
-- Done: auto mode works headless and cleared all ten ordinary coding actions in testing
-- Done: agent and task spikes. Subagents run inside their parent's process (56% less memory than separate sessions) and are fully visible in the headless stream; native task lists are readable and shared, but background subagents can't write to them
-- Done: worktrees created by a `WorktreeCreate` hook outside the repo get Claude Code's isolation checks and headless resume, with nothing written into the repo; Dovetail handles their cleanup itself
-- Test: whether a short role prompt makes slices use `ask_user` reliably
+- Done: spikes S0–S4 (terms of use, driver, messaging, MCP, cgroups); results in `docs/spikes/`
+- Done: M1. The workspace, the core/UI protocol and a seeded mock core. Try `cargo run -p dovetail -- --mock --dump`; the same `--seed` prints the same stream
+- Next: M2, the TUI shell running on the mock
+- Later spikes: merman map rendering (S5, before maps); whether a short role prompt makes slices use `ask_user` reliably (S6, during M9)
 
 ## Repository layout
 
-- `crates/dovetail/` — the `dovetail` binary (placeholder until the UI shell lands)
-- `docs/ui-session-brief.md` — brief for the UI-shell-against-mock-data session
+- `crates/dovetail-api/` — plain-data protocol between core and UI: `Snapshot`, `Event`, `Command` and the `apply()` reducer
+- `crates/dovetail-mock/` — `MockCore`, a seeded stand-in for the core that speaks the same protocol
+- `crates/dovetail-core/` — sessions, storage, worktrees and MCP tool handlers (from M5)
+- `crates/dovetail-driver/` — runs headless Claude Code sessions (from M6); recorded stream fixtures in `tests/fixtures/`
+- `crates/dovetail-tui/` — the terminal UI (from M2); depends only on `dovetail-api`
+- `crates/dovetail/` — the `dovetail` binary
+- `spikes/` — throwaway spike programs, outside the workspace
+- `docs/implementation-plan.md` — milestones and the order of work
+- `docs/ui-session-brief.md` — detailed UI spec
 - `docs/design.md` — snapshot of the design doc (decision log, architecture, spike results); the live version is the Dovetail design doc
