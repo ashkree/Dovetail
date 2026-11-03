@@ -480,7 +480,7 @@ fn older_history_arriving_above_keeps_the_lines_being_read_in_place() {
                 line.chars()
                     .skip(44)
                     .collect::<String>()
-                    .trim_end_matches(|c| c == ' ' || c == '│')
+                    .trim_end_matches([' ', '│'])
                     .trim()
                     .to_string()
             })
