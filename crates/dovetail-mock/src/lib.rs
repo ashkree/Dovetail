@@ -693,7 +693,9 @@ impl MockCore {
     fn plan_something(&mut self) {
         let pause = self.rng.range(300, 2_000);
         for _ in 0..8 {
-            let choice = self.rng.weighted(&[30, 12, 6, 15, 8, 8, 6, 10, 5, 1, 8, 3]);
+            let choice = self
+                .rng
+                .weighted(&[30, 12, 6, 15, 8, 8, 6, 10, 9, 1, 8, 3, 6]);
             if self.try_plan(choice, pause) {
                 return;
             }
@@ -933,6 +935,21 @@ impl MockCore {
                     self.after(pause * 3, move |core| core.withdraw(item));
                     return true;
                 }
+            }
+            // A startup-style warning comes and goes (messaging blockers, plan section 7).
+            12 => {
+                let id = WarningId("messaging".into());
+                if self.state.warnings.iter().any(|w| w.id == id) {
+                    self.after(pause * 4, move |core| core.emit(Event::WarningCleared(id)));
+                } else {
+                    self.after(pause, move |core| {
+                        core.emit(Event::WarningSet(Warning {
+                            id,
+                            text: "DISABLE_TELEMETRY is set: messaging may not work".into(),
+                        }))
+                    });
+                }
+                return true;
             }
             _ => {}
         }

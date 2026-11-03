@@ -390,6 +390,8 @@ impl App {
                 }
             }
         }
+        // Focusing the conversation of an agent counts as opening it (ADR 0001).
+        self.settle();
     }
 
     fn apply_effect(&mut self, effect: Effect) {

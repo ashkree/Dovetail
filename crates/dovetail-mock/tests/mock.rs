@@ -283,7 +283,8 @@ fn kind_of(event: &Event) -> String {
 fn every_event_kind_the_mock_can_make_unprompted_shows_up_within_a_few_hundred_events() {
     // M1 retro: two dump bugs (stalled activity, no background subagents) slipped past the
     // consistency tests. A mock that never produces a kind starves the UI of it.
-    // Kinds only a command can cause (`conversation_page`, `command_failed`) are excluded.
+    // Excluded: kinds only a command can cause (`conversation_page`, `command_failed`) and
+    // `task_removed`, which nothing in v1 produces (tasks are archived, never deleted).
     let expected = [
         "task_upserted",
         "agent_upserted",
@@ -296,8 +297,10 @@ fn every_event_kind_the_mock_can_make_unprompted_shows_up_within_a_few_hundred_e
         "conversation_appended",
         "assistant_delta",
         "totals_changed",
+        "warning_set",
+        "warning_cleared",
     ];
-    const WITHIN: usize = 600;
+    const WITHIN: usize = 800;
     let mut core = MockCore::new(config(1));
     let mut seen = std::collections::BTreeMap::<String, usize>::new();
     for n in 1..=WITHIN {
@@ -316,7 +319,7 @@ fn every_event_kind_the_mock_can_make_unprompted_shows_up_within_a_few_hundred_e
 }
 
 #[test]
-fn background_subagents_and_both_inbox_tiers_appear_in_a_longer_run() {
+fn background_and_foreground_subagents_and_several_inbox_kinds_appear_in_a_longer_run() {
     let mut core = MockCore::new(config(1));
     let mut background = false;
     let mut foreground = false;
