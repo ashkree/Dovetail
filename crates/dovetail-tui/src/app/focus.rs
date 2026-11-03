@@ -49,6 +49,17 @@ impl App {
         from_main.or(from_tree).or_else(|| self.coordinator())
     }
 
+    /// The agent `<leader>sm` and `<leader>sx` act on: like [`chat_target`](Self::chat_target),
+    /// except that with the inbox focused it is the selected item's agent.
+    pub(super) fn focused_agent(&self) -> Option<AgentId> {
+        if self.regions.focused_buffer() == BufferKind::Inbox
+            && let Some(item) = self.buffers.inbox.selected(&self.snap)
+        {
+            return Some(item.agent.clone());
+        }
+        self.chat_target()
+    }
+
     pub(super) fn start_chat(&mut self, agent: AgentId) {
         self.show_agent(agent.clone());
         self.buffers.conversation.begin_chat(agent);
@@ -116,7 +127,7 @@ impl App {
             }
             Action::Interrupt => {
                 let target = if arg.is_empty() {
-                    self.chat_target()
+                    self.focused_agent()
                 } else {
                     self.snap
                         .agents
@@ -139,7 +150,7 @@ impl App {
     }
 
     pub(super) fn cycle_permission_mode(&mut self) {
-        let Some((session, redirected)) = self.chat_target().and_then(|id| self.session_of(&id))
+        let Some((session, redirected)) = self.focused_agent().and_then(|id| self.session_of(&id))
         else {
             self.note = Some("no agent to change".into());
             return;

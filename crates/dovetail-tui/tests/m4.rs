@@ -854,3 +854,57 @@ fn the_switcher_opens_and_draws_at_once_even_with_a_hundred_agents() {
     // Generous for a debug build on a busy machine; the real figure is a few milliseconds.
     assert!(took < std::time::Duration::from_millis(500), "{took:?}");
 }
+
+#[test]
+fn a_failed_save_does_not_leave_tab_waiting_for_a_task_of_that_title() {
+    let mut app = app_with(world());
+    leader(&mut app, "t");
+    type_keys(&mut app, "doomed");
+    app.on_key(tab(), 50);
+    app.take_commands();
+    let mut seq = app.snapshot().seq + 1;
+    app.on_server(ServerMsg::Event {
+        seq,
+        event: Event::CommandFailed {
+            message: "disk full".into(),
+        },
+    });
+    seq += 1;
+    app.on_server(ServerMsg::Event {
+        seq,
+        event: Event::TaskUpserted(Task {
+            id: TaskId(41),
+            title: "doomed".into(),
+            status: TaskStatus::Todo,
+            p_level: None,
+            bucket: None,
+            order: 41,
+            deps: vec![],
+            notes: String::new(),
+            pr: None,
+            follow_up_of: None,
+            coordinator_created: false,
+        }),
+    });
+    assert!(!render(&mut app, 120, 30).contains("task · #41"));
+}
+
+#[test]
+fn sm_and_sx_from_the_inbox_act_on_the_selected_items_agent() {
+    let mut app = app_with(world());
+    type_keys(&mut app, " n");
+    leader(&mut app, "sx");
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::Interrupt {
+            agent: agent_id("slice-7")
+        }]
+    );
+    leader(&mut app, "sm");
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::CyclePermissionMode {
+            agent: agent_id("slice-7")
+        }]
+    );
+}

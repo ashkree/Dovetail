@@ -221,6 +221,9 @@ impl App {
                         if let Some(message) = failure {
                             tracing::info!(%message, "command failed");
                             self.note = Some(message);
+                            // A failed save must not leave a later task of the same title to
+                            // steal the screen.
+                            self.open_after_create = None;
                         }
                         if let Some(id) = created {
                             self.open_after_create = None;
