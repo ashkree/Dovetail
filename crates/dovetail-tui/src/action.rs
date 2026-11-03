@@ -51,27 +51,59 @@ pub enum Action {
     UnfoldTurn,
     /// Give the reading column a solid background, or take it away.
     ToggleSolidBackground,
+    /// Open quick capture.
+    QuickCapture,
+    /// Start an in-buffer search.
+    Search,
+    /// Jump to the next search match.
+    SearchNext,
+    /// Jump to the previous search match.
+    SearchPrev,
+    /// Open the agent switcher.
+    PickAgent,
+    /// Open the picker over tasks, agents and inbox items.
+    PickAny,
+    /// Show the Activity feed in the main region (or go back if it is showing).
+    ShowActivity,
+    /// Show the message timeline in the main region (or go back if it is showing).
+    ShowMessages,
+    /// Return the main region to the conversation.
+    BackToConversation,
+    /// Open the Activity or message item's agent.
+    FeedOpen,
+    /// Start a slice: asks for a name, then a brief.
+    NewSlice,
+    /// Interrupt the focused agent's turn.
+    Interrupt,
+    /// Cycle the focused session's permission mode: auto, acceptEdits, manual.
+    CyclePermissionMode,
+    /// Take the focused session over in a native terminal (a stub until M14).
+    TakeOver,
+    /// Switch project (a stub until M5).
+    SwitchProject,
+    /// Register a project (a stub until M5).
+    RegisterProject,
+    /// Edit the task's notes in `$EDITOR` (arrives with storage in M5).
+    TaskEditNotes,
     // --- tree ---
     /// Open the selected agent's conversation, or the selected task's detail.
     TreeOpen,
     /// Fold or unfold the selected node.
     TreeToggleFold,
-    /// Add a task.
-    TreeAddTask,
     /// Edit the selected task's title.
-    TreeEditTitle,
+    TaskEditTitle,
     /// Cycle the selected task's status: todo, in progress, done.
-    TreeCycleStatus,
+    TaskCycleStatus,
     /// Cycle the selected task's bucket.
-    TreeCycleBucket,
+    TaskCycleBucket,
     /// Cycle the selected task's P-level.
-    TreeCyclePLevel,
+    TaskCyclePLevel,
     /// Move the selected task down within Now.
     TreeMoveDown,
     /// Move the selected task up within Now.
     TreeMoveUp,
     /// Archive the selected task.
-    TreeArchive,
+    TaskArchive,
     // --- inbox ---
     /// Allow a permission request once.
     InboxAllow,

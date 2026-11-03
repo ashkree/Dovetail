@@ -232,6 +232,7 @@ fn a_adds_a_task_by_title() {
             bucket: None,
             notes: String::new(),
             follow_up_of: None,
+            pr: None,
         })]
     );
     assert_eq!(app.mode(), Mode::Normal);

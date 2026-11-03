@@ -147,6 +147,9 @@ const N: Mode = Mode::Normal;
 const G: Scope = Scope::Global;
 const TREE: Scope = Scope::Buffer(BufferKind::Tree);
 const INBOX: Scope = Scope::Buffer(BufferKind::Inbox);
+const ACTIVITY: Scope = Scope::Buffer(BufferKind::Activity);
+const MESSAGES: Scope = Scope::Buffer(BufferKind::Messages);
+const DETAIL: Scope = Scope::Buffer(BufferKind::TaskDetail);
 const CONVERSATION: Scope = Scope::Buffer(BufferKind::Conversation);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
@@ -168,6 +171,30 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>c", Action::FocusCoordinator),
     bind(N, G, "<leader><Tab>", Action::AlternateAgent),
     bind(N, G, "<leader>B", Action::ToggleSolidBackground),
+    bind(N, G, "<leader>t", Action::QuickCapture),
+    bind(N, G, "/", Action::Search),
+    bind(N, G, "n", Action::SearchNext),
+    bind(N, G, "N", Action::SearchPrev),
+    bind(N, G, "<leader>ss", Action::PickAgent),
+    bind(N, G, "<leader><leader>", Action::PickAny),
+    bind(N, G, "<leader>a", Action::ShowActivity),
+    bind(N, G, "<leader>m", Action::ShowMessages),
+    bind(N, G, "<leader>sn", Action::NewSlice),
+    bind(N, G, "<leader>sx", Action::Interrupt),
+    bind(N, G, "<leader>sm", Action::CyclePermissionMode),
+    bind(N, G, "<leader>st", Action::TakeOver),
+    bind(N, G, "<leader>pp", Action::SwitchProject),
+    bind(N, G, "<leader>pr", Action::RegisterProject),
+    // Feeds and the task detail go back with Esc (or the key that opened them).
+    bind(N, ACTIVITY, "<Esc>", Action::BackToConversation),
+    bind(N, MESSAGES, "<Esc>", Action::BackToConversation),
+    bind(N, DETAIL, "<Esc>", Action::BackToConversation),
+    bind(N, ACTIVITY, "<CR>", Action::FeedOpen),
+    bind(N, MESSAGES, "<CR>", Action::FeedOpen),
+    bind(N, DETAIL, "s", Action::TaskCycleStatus),
+    bind(N, DETAIL, "b", Action::TaskCycleBucket),
+    bind(N, DETAIL, "p", Action::TaskCyclePLevel),
+    bind(N, DETAIL, "e", Action::TaskEditNotes),
     // Conversation: reading keys (the brief's "Reading keys").
     bind(N, CONVERSATION, "]]", Action::NextTurn),
     bind(N, CONVERSATION, "[[", Action::PrevTurn),
@@ -176,14 +203,14 @@ pub const BINDINGS: &[Binding] = &[
     // Task tree (Decision 24).
     bind(N, TREE, "<CR>", Action::TreeOpen),
     bind(N, TREE, "o", Action::TreeToggleFold),
-    bind(N, TREE, "a", Action::TreeAddTask),
-    bind(N, TREE, "e", Action::TreeEditTitle),
-    bind(N, TREE, "s", Action::TreeCycleStatus),
-    bind(N, TREE, "b", Action::TreeCycleBucket),
-    bind(N, TREE, "p", Action::TreeCyclePLevel),
+    bind(N, TREE, "a", Action::QuickCapture),
+    bind(N, TREE, "e", Action::TaskEditTitle),
+    bind(N, TREE, "s", Action::TaskCycleStatus),
+    bind(N, TREE, "b", Action::TaskCycleBucket),
+    bind(N, TREE, "p", Action::TaskCyclePLevel),
     bind(N, TREE, "J", Action::TreeMoveDown),
     bind(N, TREE, "K", Action::TreeMoveUp),
-    bind(N, TREE, "dd", Action::TreeArchive),
+    bind(N, TREE, "dd", Action::TaskArchive),
     // Inbox (Decision 17).
     bind(N, INBOX, "y", Action::InboxAllow),
     bind(N, INBOX, "A", Action::InboxAllowAlways),
@@ -422,7 +449,7 @@ mod tests {
         let mut r = Resolver::default();
         assert_eq!(
             feed_all(&mut r, &map, &TREE_SCOPES, "dd", 0),
-            Resolved::Action(Action::TreeArchive)
+            Resolved::Action(Action::TaskArchive)
         );
         // In the inbox `d` is deny, complete on the first key.
         let inbox = [INBOX, G];
@@ -482,13 +509,13 @@ mod tests {
     fn buffer_local_bindings_win_over_global_ones() {
         let map = Keymap::new(&[
             bind(N, G, "x", Action::MoveDown),
-            bind(N, TREE, "x", Action::TreeArchive),
+            bind(N, TREE, "x", Action::TaskArchive),
         ])
         .expect("valid table");
         let mut r = Resolver::default();
         assert_eq!(
             r.feed(&map, Mode::Normal, &TREE_SCOPES, keys("x")[0], 0),
-            Resolved::Action(Action::TreeArchive)
+            Resolved::Action(Action::TaskArchive)
         );
         assert_eq!(
             r.feed(&map, Mode::Normal, &[G], keys("x")[0], 0),

@@ -6,7 +6,7 @@ expression: "render(&mut app, 80, 28)"
 │ ◐ ◆ coordinator   working 1.2G $3.10 ││ you · 10:08                          │
 │ ▾ Now (2)                            ││ Make sure slice-4 doesn't touch the  │
 │ ▾ ⚠ business surface P1     PR #1231 ││ 500 path.                            │
-│   ▾ ◐ ◆ slice-4  edits  working 412M ││                                      │
+│   ▾ ◐ ◆ slice-4  edits   working 71% ││                                      │
 │         ⎇ dovetail/slice-4           ││ coordinator · 10:08                  │
 │         ✓ write route tests          ││ Told slice-4 to stay out of          │
 │         ◐ wire handler to registry   ││ src/decision.rs until slice-7 hands  │
@@ -29,4 +29,4 @@ expression: "render(&mut app, 80, 28)"
 │                                      ││ ──────────────────────────────────── │
 │ y allow · d deny · r reply · x dism… ││ › i to chat · ]] [[ turns · zc zo f… │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G          i chat · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ ·… i chat · ␣ss switch · : command

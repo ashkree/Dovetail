@@ -1,0 +1,32 @@
+---
+source: crates/dovetail-tui/tests/m4.rs
+expression: "render(&mut app, 100, 28)"
+---
+┌ tasks · business ────────────────────┐┌ coordinator · ◐ working · 1.2G · $3.10 ──────────────────┐
+│ ◐ ◆ coordinator   working 1.2G $3.10 ││ you · 10:08                                              │
+│ ▾ Now (2)                            ││ Make sure slice-4 doesn't touch the 500 path.            │
+│ ▾ ⚠ business surface P1     PR #1231 ││                                                          │
+│   ▾ ◐ ◆ slice-4  edits   working 71% ││ coordinator · 10:08                                      │
+│         ⎇ dovetail/slice-4           ││ Told slice-4 to stay out of src/decision.rs until        │
+│         ✓ write route tests          ││ slice-7 hands it back.                                   │
+│         ◐ wire handler to registry   ││                                                          │
+│         ○ update OpenAPI spec ⊘ blo… ││ you · 10:14                                              │
+│       ✓ ◇ rebase          done $0.21 ││ What's blocking slice-7?                                 │
+│       ◐ ◇ explore c… 12 tools · Grep ││                                                          │
+│ ▾ ⚠┌ new task ──────────────────────────────────────────────────────────────────────────────┐    │
+│   ▾│ › check the eval key flow !p1 @next #1240                                              │    │
+│    │ P1 · Next · PR #1240                                                                   │    │
+│ ⏎ o│ linked to: get_decision 500   Ctrl-l unlink                                            │    │
+└────│ ⏎ save · Tab save and open · esc cancel                                                │    │
+┌ inb└────────────────────────────────────────────────────────────────────────────────────────┘    │
+│ ▸ ⚠ slice-7  Bash              10:15 ││                                                          │
+│   │ FS_EVAL_VIRTUAL_KEY=dev cargo    ││                                                          │
+│   │ test -p api get_decision         ││                                                          │
+│   │ A → always allow Bash(cargo      ││                                                          │
+│   │ test:*)                          ││                                                          │
+│   ? slice-4  Question          10:12 ││                                                          │
+│   ✓ slice-4  Finished turn     10:09 ││                                                          │
+│                                      ││ ──────────────────────────────────────────────────────── │
+│ y allow · d deny · r reply · x dism… ││ › i to chat · ]] [[ turns · zc zo fold · gg G            │
+└──────────────────────────────────────┘└──────────────────────────────────────────────────────────┘
+ INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command

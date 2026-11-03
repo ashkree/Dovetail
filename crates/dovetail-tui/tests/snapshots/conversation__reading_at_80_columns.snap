@@ -6,7 +6,7 @@ expression: "render(&mut reading_app(), 80, 40)"
 │ ○ ◆ coordinator      idle 1.2G $3.10 ││                                      │
 │ ▾ Now (2)                            ││ you · 10:14                          │
 │ ▾ ⚠ business surface P1     PR #1231 ││ What's blocking slice-7?             │
-│   ▾ ◐ ◆ slice-4  edits  working 412M ││                                      │
+│   ▾ ◐ ◆ slice-4  edits   working 71% ││                                      │
 │         ⎇ dovetail/slice-4           ││ ▸ read 2 files · checked slice-7's   │
 │         ✓ write route tests          ││ stream · 4 s                         │
 │         ◐ wire handler to registry   ││                                      │
@@ -41,4 +41,4 @@ expression: "render(&mut reading_app(), 80, 40)"
 │                                      ││ ──────────────────────────────────── │
 │ y allow · d deny · r reply · x dism… ││ › i to chat · ]] [[ turns · zc zo f… │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G          i chat · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ ·… i chat · ␣ss switch · : command

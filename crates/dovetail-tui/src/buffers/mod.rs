@@ -2,10 +2,14 @@
 //! and handles its buffer-local actions.
 
 mod conversation;
+mod feed;
 mod inbox;
+pub mod task_detail;
 mod tree;
 
-use dovetail_api::{AgentId, AgentStatus, Command, InboxId, Snapshot, TaskId};
+use dovetail_api::{
+    AgentId, AgentStatus, Bucket, Command, InboxId, PLevel, Snapshot, TaskId, TaskStatus,
+};
 use jiff::tz::TimeZone;
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -15,8 +19,11 @@ use ratatui::widgets::{Block, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
 pub use conversation::ConversationBuffer;
+pub use feed::{ActivityBuffer, MessagesBuffer};
+pub(crate) use inbox::input_summary;
 pub use inbox::{InboxBuffer, ordered as inbox_order};
-pub use tree::TreeBuffer;
+pub use task_detail::TaskDetailBuffer;
+pub use tree::{TreeBuffer, p_label};
 
 use crate::action::Action;
 use crate::region::BufferKind;
@@ -47,8 +54,12 @@ pub enum InputTarget {
     Reply(InboxId),
     /// A new title for a task.
     Title(TaskId),
-    /// The title of a new task.
-    NewTask,
+    /// The name of a new slice (the first of two prompts).
+    SliceName,
+    /// The brief of the slice named here (the second prompt).
+    SliceBrief(String),
+    /// An in-buffer search term.
+    Search,
 }
 
 /// Something a buffer asks the app to do.
@@ -81,6 +92,21 @@ pub trait Buffer {
 
     /// Handles a movement or buffer-local action. Returns whether it was handled.
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool;
+
+    /// The text of each row, for in-buffer search (`/`, `n`, `N`). Empty when the buffer has
+    /// nothing to search.
+    fn search_rows(&self, _cx: &ViewCx) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// The row the cursor (or the top of the view) is on, in the numbering of
+    /// [`search_rows`](Buffer::search_rows).
+    fn current_row(&self, _cx: &ViewCx) -> usize {
+        0
+    }
+
+    /// Moves the cursor (or the view) to a row of [`search_rows`](Buffer::search_rows).
+    fn goto_row(&mut self, _row: usize, _cx: &ViewCx, _effects: &mut Vec<Effect>) {}
 }
 
 /// All buffer instances, one per kind.
@@ -91,6 +117,12 @@ pub struct Buffers {
     pub inbox: InboxBuffer,
     /// A conversation.
     pub conversation: ConversationBuffer,
+    /// A task's detail.
+    pub task_detail: TaskDetailBuffer,
+    /// The Activity feed.
+    pub activity: ActivityBuffer,
+    /// The message timeline.
+    pub messages: MessagesBuffer,
 }
 
 impl Buffers {
@@ -100,6 +132,9 @@ impl Buffers {
             tree: TreeBuffer::default(),
             inbox: InboxBuffer::default(),
             conversation: ConversationBuffer::default(),
+            task_detail: TaskDetailBuffer::default(),
+            activity: ActivityBuffer::default(),
+            messages: MessagesBuffer::default(),
         }
     }
 
@@ -109,6 +144,9 @@ impl Buffers {
             BufferKind::Tree => &mut self.tree,
             BufferKind::Inbox => &mut self.inbox,
             BufferKind::Conversation => &mut self.conversation,
+            BufferKind::TaskDetail => &mut self.task_detail,
+            BufferKind::Activity => &mut self.activity,
+            BufferKind::Messages => &mut self.messages,
         }
     }
 }
@@ -257,6 +295,56 @@ pub(crate) fn status_word(status: AgentStatus) -> &'static str {
     }
 }
 
+/// The next status in the cycle todo, in progress, done (plan B4).
+pub(crate) fn next_status(status: TaskStatus) -> TaskStatus {
+    match status {
+        TaskStatus::Todo => TaskStatus::InProgress,
+        TaskStatus::InProgress => TaskStatus::Done,
+        TaskStatus::Done | TaskStatus::Archived => TaskStatus::Todo,
+    }
+}
+
+/// The next bucket in the cycle Unsorted, Now, Next, Later.
+pub(crate) fn next_bucket(bucket: Option<Bucket>) -> Option<Bucket> {
+    match bucket {
+        None => Some(Bucket::Now),
+        Some(Bucket::Now) => Some(Bucket::Next),
+        Some(Bucket::Next) => Some(Bucket::Later),
+        Some(Bucket::Later) => None,
+    }
+}
+
+/// The next P-level in the cycle none, P0, P1, P2, P3.
+pub(crate) fn next_p_level(p: Option<PLevel>) -> Option<PLevel> {
+    match p {
+        None => Some(PLevel::P0),
+        Some(PLevel::P0) => Some(PLevel::P1),
+        Some(PLevel::P1) => Some(PLevel::P2),
+        Some(PLevel::P2) => Some(PLevel::P3),
+        Some(PLevel::P3) => None,
+    }
+}
+
+/// Words for a task status.
+pub(crate) fn status_label(status: TaskStatus) -> &'static str {
+    match status {
+        TaskStatus::Todo => "to do",
+        TaskStatus::InProgress => "in progress",
+        TaskStatus::Done => "done",
+        TaskStatus::Archived => "archived",
+    }
+}
+
+/// Words for a bucket; no bucket is Unsorted.
+pub(crate) fn bucket_label(bucket: Option<Bucket>) -> &'static str {
+    match bucket {
+        None => "Unsorted",
+        Some(Bucket::Now) => "Now",
+        Some(Bucket::Next) => "Next",
+        Some(Bucket::Later) => "Later",
+    }
+}
+
 /// Moves a selection through `len` rows, clamping at both ends.
 pub(crate) fn step(index: usize, len: usize, delta: isize) -> usize {
     if len == 0 {
@@ -299,6 +387,14 @@ mod tests {
         let line = spread(vec![Span::raw("abcdefgh")], vec![Span::raw("xy")], 8);
         assert_eq!(spans_width(&line.spans), 8);
         assert!(text(&line).ends_with("xy"));
+    }
+
+    #[test]
+    fn the_cycles_wrap_around() {
+        assert_eq!(next_status(TaskStatus::Done), TaskStatus::Todo);
+        assert_eq!(next_bucket(Some(Bucket::Later)), None);
+        assert_eq!(next_p_level(Some(PLevel::P3)), None);
+        assert_eq!(next_p_level(None), Some(PLevel::P0));
     }
 
     #[test]

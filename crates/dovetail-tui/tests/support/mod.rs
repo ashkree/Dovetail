@@ -80,11 +80,13 @@ pub fn world() -> Snapshot {
     );
     coordinator.memory_mb = Some(1229);
     coordinator.cost_usd = 3.10;
+    coordinator.context_pct = Some(62);
 
     let mut slice4 = agent("slice-4", AgentKind::Slice, AgentStatus::Working, Some(1));
     slice4.memory_mb = Some(412);
     slice4.cost_usd = 1.84;
     slice4.permission_mode = PermissionMode::AcceptEdits;
+    slice4.context_pct = Some(71);
     slice4.worktree = Some(WorktreeRef {
         path: "/wt/slice-4".into(),
         branch: "dovetail/slice-4".into(),
@@ -120,6 +122,7 @@ pub fn world() -> Snapshot {
     slice7.memory_mb = Some(388);
     slice7.cost_usd = 0.92;
     slice7.permission_mode = PermissionMode::Manual;
+    slice7.context_pct = Some(85);
     slice7.worktree = Some(WorktreeRef {
         path: "/wt/slice-7".into(),
         branch: "dovetail/slice-7".into(),
@@ -219,6 +222,45 @@ pub fn world() -> Snapshot {
         agents: vec![coordinator, slice4, rebase, explore, slice7],
         todos,
         inbox,
+        activity: vec![
+            ActivityItem {
+                id: 1,
+                at_ms: NOW_MS - 30 * MIN,
+                agent: Some(agent_id("slice-4")),
+                kind: ActivityKind::Pr,
+                text: "pushed to #1231".into(),
+            },
+            ActivityItem {
+                id: 2,
+                at_ms: NOW_MS - 12 * MIN,
+                agent: Some(agent_id("slice-4")),
+                kind: ActivityKind::Ci,
+                text: "#1231 CI passed".into(),
+            },
+            ActivityItem {
+                id: 3,
+                at_ms: NOW_MS - 5 * MIN,
+                agent: None,
+                kind: ActivityKind::Lifecycle,
+                text: "morning review applied".into(),
+            },
+        ],
+        messages: vec![
+            AgentMessage {
+                id: 1,
+                at_ms: NOW_MS - 20 * MIN,
+                from: agent_id("coordinator"),
+                to: agent_id("slice-4"),
+                text: "Stay out of src/decision.rs until slice-7 hands it back.".into(),
+            },
+            AgentMessage {
+                id: 2,
+                at_ms: NOW_MS - 8 * MIN,
+                from: agent_id("slice-4"),
+                to: agent_id("coordinator"),
+                text: "Understood; working on the registry handler instead.".into(),
+            },
+        ],
         totals: Totals {
             memory_mb: 2150,
             needs_you: 3,

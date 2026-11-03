@@ -7,14 +7,17 @@
 pub mod action;
 pub mod app;
 pub mod buffers;
+pub mod capture;
 pub mod command;
 pub mod event_loop;
 pub mod fmt;
 pub mod input;
 pub mod keymap;
 pub mod mode;
+pub mod picker;
 pub mod region;
 pub mod render;
+pub mod switcher;
 pub mod theme;
 
 pub use app::App;

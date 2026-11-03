@@ -60,6 +60,14 @@ impl InboxBuffer {
         self.resolve(&items).map(|i| items[i])
     }
 
+    /// Moves the cursor to an item, if it is still there.
+    pub fn select_item(&mut self, snap: &Snapshot, id: InboxId) {
+        let items = ordered(snap);
+        if let Some(i) = items.iter().position(|item| item.id == id) {
+            self.select(&items, i);
+        }
+    }
+
     fn select(&mut self, items: &[&InboxItem], index: usize) {
         self.selected = Some(items[index].id);
         self.last_index = index;
@@ -77,7 +85,7 @@ fn last_message(snap: &Snapshot, agent: &AgentId) -> Option<String> {
 }
 
 /// What a permission request is about, in full: a command, a path or the raw input.
-fn input_summary(tool: &str, input: &serde_json::Value) -> String {
+pub(crate) fn input_summary(tool: &str, input: &serde_json::Value) -> String {
     let field = |name: &str| input.get(name).and_then(|v| v.as_str());
     match tool {
         "Bash" => field("command").map(str::to_string),
@@ -272,6 +280,38 @@ impl Buffer for InboxBuffer {
             _ => return false,
         }
         true
+    }
+
+    fn search_rows(&self, cx: &ViewCx) -> Vec<String> {
+        ordered(cx.snap)
+            .iter()
+            .map(|item| {
+                let name = cx
+                    .snap
+                    .agents
+                    .iter()
+                    .find(|a| a.id == item.agent)
+                    .map_or(item.agent.0.as_str(), |a| a.name.as_str());
+                let (_, label) = item_label(cx.snap, item);
+                let body = match &item.kind {
+                    InboxKind::Permission { tool, input, .. } => input_summary(tool, input),
+                    InboxKind::Question { text, .. } | InboxKind::Error { text } => text.clone(),
+                    InboxKind::FinishedTurn { preview } => preview.clone(),
+                };
+                format!("{name} {label} {body}")
+            })
+            .collect()
+    }
+
+    fn current_row(&self, cx: &ViewCx) -> usize {
+        self.resolve(&ordered(cx.snap)).unwrap_or(0)
+    }
+
+    fn goto_row(&mut self, row: usize, cx: &ViewCx, _effects: &mut Vec<Effect>) {
+        let items = ordered(cx.snap);
+        if row < items.len() {
+            self.select(&items, row);
+        }
     }
 }
 

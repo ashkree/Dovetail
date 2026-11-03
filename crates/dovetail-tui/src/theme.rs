@@ -91,6 +91,15 @@ impl Theme {
         Style::new().fg(self.ink).bg(background)
     }
 
+    /// Context fill: plain up to 60 %, amber to 80 %, red above (Decision 22).
+    pub fn context(&self, pct: u8) -> Style {
+        match pct {
+            0..=60 => self.dim(),
+            61..=80 => Style::new().fg(self.needs_you),
+            _ => Style::new().fg(self.error),
+        }
+    }
+
     /// The selected row.
     pub fn selected(&self) -> Style {
         Style::new().bg(self.selection)
@@ -100,5 +109,21 @@ impl Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self::dusk()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_fill_is_plain_amber_then_red() {
+        let t = Theme::dusk();
+        assert_eq!(t.context(0).fg, Some(t.dim));
+        assert_eq!(t.context(60).fg, Some(t.dim));
+        assert_eq!(t.context(61).fg, Some(t.needs_you));
+        assert_eq!(t.context(80).fg, Some(t.needs_you));
+        assert_eq!(t.context(81).fg, Some(t.error));
+        assert_eq!(t.context(100).fg, Some(t.error));
     }
 }

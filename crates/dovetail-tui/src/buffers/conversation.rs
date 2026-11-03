@@ -58,6 +58,8 @@ impl Default for AgentView {
 /// What the last draw learned about the text, for the keys that follow it.
 #[derive(Default)]
 struct Layout {
+    /// The lines of the last draw, for search.
+    lines: Vec<Line<'static>>,
     turns: Vec<Turn>,
     max_top: usize,
     /// Older history exists; its oldest known entry.
@@ -369,6 +371,7 @@ impl Buffer for ConversationBuffer {
             );
         }
         self.layout = Layout {
+            lines: built.lines,
             turns: built.turns,
             max_top,
             older,
@@ -431,5 +434,25 @@ impl Buffer for ConversationBuffer {
             _ => return false,
         }
         true
+    }
+
+    fn search_rows(&self, _cx: &ViewCx) -> Vec<String> {
+        self.layout
+            .lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
+    }
+
+    fn current_row(&self, _cx: &ViewCx) -> usize {
+        self.agent
+            .as_ref()
+            .and_then(|a| self.views.get(a))
+            .map_or(0, |v| v.top)
+    }
+
+    fn goto_row(&mut self, row: usize, _cx: &ViewCx, _effects: &mut Vec<Effect>) {
+        // Leave a line of context above the match.
+        self.scroll_to(row.saturating_sub(1));
     }
 }

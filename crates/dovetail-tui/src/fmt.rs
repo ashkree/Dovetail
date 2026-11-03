@@ -89,6 +89,17 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// Time since `then_ms`, as the switcher shows it: `now`, `2m`, `3h`, `4d`.
+pub fn ago(now_ms: i64, then_ms: i64) -> String {
+    let secs = (now_ms - then_ms).max(0) / 1_000;
+    match secs {
+        0..=44 => "now".into(),
+        45..=3_599 => format!("{}m", (secs + 30) / 60),
+        3_600..=86_399 => format!("{}h", secs / 3_600),
+        _ => format!("{}d", secs / 86_400),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,6 +108,16 @@ mod tests {
     fn memory_switches_to_gigabytes() {
         assert_eq!(memory(412), "412M");
         assert_eq!(memory(2150), "2.1G");
+    }
+
+    #[test]
+    fn ago_picks_a_unit() {
+        assert_eq!(ago(100_000, 100_000), "now");
+        assert_eq!(ago(100_000, 70_000), "now");
+        assert_eq!(ago(200_000, 80_000), "2m");
+        assert_eq!(ago(10_000_000, 0), "2h");
+        assert_eq!(ago(200_000_000, 0), "2d");
+        assert_eq!(ago(0, 5_000), "now", "a time in the future reads as now");
     }
 
     #[test]

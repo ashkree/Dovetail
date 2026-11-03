@@ -12,6 +12,12 @@ pub enum BufferKind {
     Inbox,
     /// One agent's conversation.
     Conversation,
+    /// One task's detail.
+    TaskDetail,
+    /// The Activity feed.
+    Activity,
+    /// The message timeline.
+    Messages,
 }
 
 /// A slot in the layout.

@@ -459,8 +459,8 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Scope:** Command mode (`:q`, `:spawn`, `:interrupt`, plus aliases for actions). One picker component using `nucleo`, used for `<leader>ss` and `<leader><leader>`. Quick capture with its token parser, link display and `Ctrl-l`. Task detail buffer with fields, notes and agents; the `e` notes handoff to `$EDITOR` lands in M5 with real storage (A4). Permission-mode cycle and badge. Context-fill display from mock values. In-buffer `/ n N`. Activity and message timeline buffers.
 - **Files:** `command.rs`, `picker.rs`, `capture.rs`, `buffers/{task_detail,activity,messages}.rs`
 - **Done when:**
-  - [ ] **The TUI is usable on the mock with no Claude Code**: every self-hosting flow can be walked by keyboard
-  - [ ] `<leader>ss` opens instantly with preview, and needs-you agents sort first
+  - [x] **The TUI is usable on the mock with no Claude Code**: every self-hosting flow can be walked by keyboard (chat, approve, answer, capture, start a slice, switch, interrupt, cycle mode, read the feeds; 55 tests in `tests/m4.rs` plus a pty walk of the real binary)
+  - [x] `<leader>ss` opens instantly with preview, and needs-you agents sort first (a test opens it over 100 agents and draws in well under 500 ms in a debug build)
 - **Tests:** capture parser, picker ordering, permission cycle, snapshots of overlays
 
 ### M5. Storage, projects and a real task tracker

@@ -85,6 +85,7 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
             bucket: Some(Bucket::Next),
             notes: String::new(),
             follow_up_of: task,
+            pr: None,
         })),
         4 => task.map(|id| Command::ReorderTask { id, delta: 1 }),
         5 => slice.map(|agent| Command::CyclePermissionMode { agent }),

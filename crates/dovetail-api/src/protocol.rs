@@ -243,6 +243,8 @@ pub struct NewTask {
     pub notes: String,
     /// The task it follows up.
     pub follow_up_of: Option<TaskId>,
+    /// Linked pull request number.
+    pub pr: Option<u32>,
 }
 
 /// One field change in [`Command::UpdateTask`].

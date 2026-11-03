@@ -277,6 +277,7 @@ fn every_command_roundtrips() {
             bucket: None,
             notes: String::new(),
             follow_up_of: Some(TaskId(1)),
+            pr: Some(1231),
         }),
         Command::UpdateTask {
             id: TaskId(3),

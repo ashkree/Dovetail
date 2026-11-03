@@ -2,30 +2,44 @@
 //! and core commands. It is plain state with no terminal or thread in it, so tests drive it with
 //! key events and read what it would draw or send.
 
+/// A `ViewCx` over the app's fields, written as a macro so the buffers can be borrowed mutably
+/// beside it (a method would borrow all of `self`).
+macro_rules! cx {
+    ($app:expr) => {
+        $crate::buffers::ViewCx {
+            snap: &$app.snap,
+            theme: &$app.theme,
+            now_ms: $app.now_ms,
+            tz: &$app.tz,
+        }
+    };
+}
+
+mod draw;
+mod focus;
+mod overlay;
+mod search;
+
 use crossterm::event::KeyEvent;
 use dovetail_api::{
-    AgentId, AgentKind, AgentStatus, ApplyResult, Command, Event, InboxKind, NewTask,
-    PROTOCOL_VERSION, PermissionAnswer, ServerMsg, Snapshot, TaskChange, apply,
+    AgentId, AgentKind, AgentStatus, ApplyResult, Command, Event, InboxKind, PROTOCOL_VERSION,
+    PermissionAnswer, ServerMsg, Snapshot, TaskChange, apply,
 };
 use jiff::tz::TimeZone;
-use ratatui::Frame;
-use ratatui::layout::{Position, Rect};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
 
 use crate::action::Action;
-use crate::buffers::{Buffers, Effect, InputTarget, ViewCx, spread_fit};
+use crate::buffers::{Buffers, Effect, InputTarget, ViewCx};
 use crate::command;
-use crate::fmt;
 use crate::input::{InputOutcome, TextInput};
 use crate::keymap::{Key, Keymap, Resolved, Resolver, Scope};
 use crate::mode::Mode;
-use crate::region::{BufferKind, RegionId, Regions, layout};
+use crate::region::{BufferKind, RegionId, Regions};
 use crate::theme::Theme;
+use overlay::Overlay;
 
 /// Hints on the right of the status bar.
-const HINTS: &str = "i chat · ␣c coordinator · ␣⇥ alternate · ␣n inbox · : command";
-const HINTS_SHORT: &str = "i chat · : command";
+const HINTS: &str = "i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command";
+const HINTS_SHORT: &str = "i chat · ␣ss switch · : command";
 
 /// An open prompt row.
 struct Input {
@@ -52,6 +66,12 @@ pub struct App {
     buffers: Buffers,
     input: Option<Input>,
     confirm: Option<Confirm>,
+    /// A picker or the quick-capture box floating over the layout.
+    overlay: Option<Overlay>,
+    /// The last in-buffer search term, for `n` and `N`.
+    search: Option<String>,
+    /// A task saved with `Tab` in quick capture opens its detail once the core announces it.
+    open_after_create: Option<String>,
     note: Option<String>,
     outbox: Vec<Command>,
     /// A resync was requested and its snapshot has not arrived yet.
@@ -75,6 +95,9 @@ impl App {
             buffers: Buffers::new(),
             input: None,
             confirm: None,
+            overlay: None,
+            search: None,
+            open_after_create: None,
             note: None,
             outbox: Vec::new(),
             resyncing: false,
@@ -184,11 +207,24 @@ impl App {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
                 };
+                let created = match &event {
+                    Event::TaskUpserted(task)
+                        if self.open_after_create.as_deref() == Some(task.title.as_str())
+                            && !self.snap.tasks.iter().any(|t| t.id == task.id) =>
+                    {
+                        Some(task.id)
+                    }
+                    _ => None,
+                };
                 match apply(&mut self.snap, seq, event) {
                     ApplyResult::Applied => {
                         if let Some(message) = failure {
                             tracing::info!(%message, "command failed");
                             self.note = Some(message);
+                        }
+                        if let Some(id) = created {
+                            self.open_after_create = None;
+                            self.open_task(id);
                         }
                     }
                     ApplyResult::Gap { expected, got } => {
@@ -225,6 +261,7 @@ impl App {
             }
         }
         if self.regions.focus() == RegionId::Main
+            && self.regions.buffer(RegionId::Main) == BufferKind::Conversation
             && let Some(id) = self.buffers.conversation.agent().cloned()
         {
             self.clear_finished_turn(&id);
@@ -255,6 +292,10 @@ impl App {
             if matches!(event.code, crossterm::event::KeyCode::Char('y' | 'Y')) {
                 self.run(confirm.action);
             }
+            return;
+        }
+        if self.overlay.is_some() {
+            self.overlay_key(event);
             return;
         }
         match self.mode {
@@ -330,7 +371,7 @@ impl App {
     fn submit(&mut self, target: InputTarget, text: String) {
         match target {
             InputTarget::Command => match command::parse(&text) {
-                Ok(parsed) => self.run(parsed.action),
+                Ok(parsed) => self.run_with_arg(parsed.action, &parsed.arg),
                 Err(message) => self.note = Some(message),
             },
             // Chat never comes through the prompt row.
@@ -349,17 +390,18 @@ impl App {
                 id,
                 patch: vec![TaskChange::Title(text)],
             }),
-            InputTarget::NewTask if !text.is_empty() => {
-                self.outbox.push(Command::CreateTask(NewTask {
-                    title: text,
-                    p_level: None,
-                    bucket: None,
-                    notes: String::new(),
-                    follow_up_of: None,
-                }));
+            InputTarget::SliceName if !text.is_empty() => {
+                self.start_input(InputTarget::SliceBrief(text), "");
             }
+            InputTarget::SliceBrief(name) => self.new_slice(name, text),
+            InputTarget::Search => self.start_search(text),
             _ => {}
         }
+    }
+
+    fn new_slice(&mut self, name: String, brief: String) {
+        let task = self.focused_task();
+        self.outbox.push(Command::NewSlice { task, name, brief });
     }
 
     /// Runs an action: global ones here, the rest in the focused buffer.
@@ -387,6 +429,24 @@ impl App {
                 None => self.note = Some("no previous agent".into()),
             },
             Action::ToggleSolidBackground => self.buffers.conversation.toggle_solid(),
+            Action::QuickCapture => self.open_capture(),
+            Action::PickAgent => self.open_switcher(),
+            Action::PickAny => self.open_finder(),
+            Action::Search => self.start_input(InputTarget::Search, ""),
+            Action::SearchNext => self.search_jump(true),
+            Action::SearchPrev => self.search_jump(false),
+            Action::ShowActivity => self.toggle_main(BufferKind::Activity),
+            Action::ShowMessages => self.toggle_main(BufferKind::Messages),
+            Action::BackToConversation => {
+                self.regions.show(RegionId::Main, BufferKind::Conversation);
+            }
+            Action::NewSlice => self.run_with_arg(Action::NewSlice, ""),
+            Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
+            Action::CyclePermissionMode => self.cycle_permission_mode(),
+            Action::TakeOver => self.note = Some("take-over arrives in M14".into()),
+            Action::SwitchProject | Action::RegisterProject => {
+                self.note = Some("projects arrive in M5".into());
+            }
             Action::Quit => {
                 let running = self
                     .snap
@@ -430,7 +490,7 @@ impl App {
         match effect {
             Effect::Command(command) => self.outbox.push(command),
             Effect::OpenAgent(id) => self.open_agent_in_main(id),
-            Effect::OpenTask(_) => self.note = Some("task detail arrives in M4".into()),
+            Effect::OpenTask(id) => self.open_task(id),
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
             Effect::Note(text) => self.note = Some(text),
         }
@@ -448,202 +508,4 @@ impl App {
         self.show_agent(id);
         self.regions.set_focus(RegionId::Main);
     }
-
-    fn coordinator(&self) -> Option<AgentId> {
-        self.snap
-            .agents
-            .iter()
-            .find(|a| a.kind == AgentKind::Coordinator)
-            .map(|a| a.id.clone())
-    }
-
-    /// Who `i` talks to (plan A11): the agent in the main region when it has focus, the agent
-    /// selected in the tree when the tree has focus, otherwise the coordinator.
-    fn chat_target(&mut self) -> Option<AgentId> {
-        let from_tree = if self.regions.focused_buffer() == BufferKind::Tree {
-            let cx = ViewCx {
-                snap: &self.snap,
-                theme: &self.theme,
-                now_ms: self.now_ms,
-                tz: &self.tz,
-            };
-            self.buffers.tree.selected_agent(&cx)
-        } else {
-            None
-        };
-        let from_main = (self.regions.focus() == RegionId::Main)
-            .then(|| self.buffers.conversation.agent().cloned())
-            .flatten();
-        from_main.or(from_tree).or_else(|| self.coordinator())
-    }
-
-    fn start_chat(&mut self, agent: AgentId) {
-        self.show_agent(agent.clone());
-        self.buffers.conversation.begin_chat(agent);
-        self.input = None;
-        // The input lives in the main pane, so focus goes with it.
-        self.regions.set_focus(RegionId::Main);
-        self.mode = Mode::Insert;
-    }
-
-    // --- drawing ---
-
-    /// Draws the whole screen.
-    pub fn draw(&mut self, frame: &mut Frame) {
-        let prompting = self.input.is_some() || self.confirm.is_some();
-        let areas = layout(frame.area(), prompting);
-        let cx = ViewCx {
-            snap: &self.snap,
-            theme: &self.theme,
-            now_ms: self.now_ms,
-            tz: &self.tz,
-        };
-        for (region, area) in [
-            (RegionId::LeftTop, areas.left_top),
-            (RegionId::LeftBottom, areas.left_bottom),
-            (RegionId::Main, areas.main),
-        ] {
-            let focused = self.regions.focus() == region;
-            self.buffers
-                .get_mut(self.regions.buffer(region))
-                .render(&cx, frame, area, focused);
-        }
-        self.draw_status(frame, areas.status);
-        if let Some(area) = areas.prompt {
-            self.draw_prompt(frame, area);
-        }
-    }
-
-    fn draw_status(&self, frame: &mut Frame, area: Rect) {
-        let theme = &self.theme;
-        let badge_color = match self.mode {
-            Mode::Normal => theme.mode_normal,
-            Mode::Insert => theme.mode_insert,
-            Mode::Command => theme.mode_command,
-        };
-        let snap = &self.snap;
-        let tasks = snap
-            .tasks
-            .iter()
-            .filter(|t| {
-                !matches!(
-                    t.status,
-                    dovetail_api::TaskStatus::Done | dovetail_api::TaskStatus::Archived
-                )
-            })
-            .count();
-        let agents = snap
-            .agents
-            .iter()
-            .filter(|a| a.kind.is_session() && a.status != AgentStatus::Done)
-            .count();
-        let needs_you = snap.inbox.len();
-        let mut left = vec![
-            Span::styled(
-                format!(" {} ", self.mode_label()),
-                theme
-                    .badge(badge_color)
-                    .add_modifier(ratatui::style::Modifier::BOLD),
-            ),
-            Span::styled(
-                format!(
-                    "  {} · {tasks} tasks · {agents} agents · ",
-                    snap.project
-                        .as_ref()
-                        .map_or("no project", |p| p.name.as_str())
-                ),
-                theme.body(),
-            ),
-            Span::styled(
-                format!("{needs_you} ⚠"),
-                if needs_you > 0 {
-                    theme.fg(theme.needs_you)
-                } else {
-                    theme.dim()
-                },
-            ),
-            Span::styled(
-                format!(" · {}", fmt::memory(snap.totals.memory_mb)),
-                theme.body(),
-            ),
-        ];
-        if !self.resolver.pending().is_empty() {
-            left.push(Span::styled(
-                format!("  {} …", pending_label(self.resolver.pending())),
-                theme.fg(theme.italic),
-            ));
-        }
-        if let Some(warning) = snap.warnings.first() {
-            left.push(Span::styled(
-                format!("  ⚠ {}", warning.text),
-                theme.fg(theme.needs_you),
-            ));
-        }
-        let rights = match &self.note {
-            Some(note) => vec![vec![Span::styled(note.clone(), theme.fg(theme.needs_you))]],
-            None => vec![
-                vec![Span::styled(HINTS, theme.dim())],
-                vec![Span::styled(HINTS_SHORT, theme.dim())],
-            ],
-        };
-        frame.render_widget(
-            Paragraph::new(spread_fit(left, &rights, usize::from(area.width))),
-            area,
-        );
-    }
-
-    /// Mode label for the status bar; while chatting it names the agent (as in the mocks).
-    fn mode_label(&self) -> String {
-        match (self.mode, self.buffers.conversation.agent()) {
-            (Mode::Insert, Some(agent)) if self.buffers.conversation.is_chatting() => {
-                format!("INSERT · {}", self.agent_name(agent))
-            }
-            (mode, _) => mode.label().to_string(),
-        }
-    }
-
-    fn draw_prompt(&self, frame: &mut Frame, area: Rect) {
-        let theme = &self.theme;
-        if let Some(confirm) = &self.confirm {
-            let line = Line::from(vec![
-                Span::styled(confirm.prompt.clone(), theme.fg(theme.needs_you)),
-                Span::styled(" (y/n)", theme.dim()),
-            ]);
-            frame.render_widget(Paragraph::new(line), area);
-            return;
-        }
-        let Some(input) = &self.input else { return };
-        let label = match &input.target {
-            InputTarget::Command => ":".to_string(),
-            InputTarget::Prompt(agent) => format!("message to {} › ", self.agent_name(agent)),
-            InputTarget::Reason(_) => "deny reason › ".into(),
-            InputTarget::Reply(_) => "reply › ".into(),
-            InputTarget::Title(_) => "title › ".into(),
-            InputTarget::NewTask => "new task › ".into(),
-        };
-        let used = unicode_width::UnicodeWidthStr::width(label.as_str()) as u16;
-        let line = Line::from(vec![
-            Span::styled(label, theme.accent()),
-            Span::styled(input.line.text().to_string(), theme.body()),
-        ]);
-        frame.render_widget(Paragraph::new(line), area);
-        let typed = unicode_width::UnicodeWidthStr::width(input.line.before_cursor()) as u16;
-        frame.set_cursor_position(Position::new(
-            (area.x + used + typed).min(area.x + area.width.saturating_sub(1)),
-            area.y,
-        ));
-    }
-
-    fn agent_name(&self, id: &AgentId) -> String {
-        self.snap
-            .agents
-            .iter()
-            .find(|a| &a.id == id)
-            .map_or_else(|| id.0.clone(), |a| a.name.clone())
-    }
-}
-
-/// Keys of an unfinished sequence, for the status bar.
-fn pending_label(keys: &[Key]) -> String {
-    keys.iter().map(Key::label).collect()
 }

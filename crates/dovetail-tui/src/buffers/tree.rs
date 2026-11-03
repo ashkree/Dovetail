@@ -14,8 +14,8 @@ use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
 use super::{
-    Buffer, Effect, InputTarget, ViewCx, footer, pane, scroll_to, spread_fit, status_glyph,
-    status_word, step, title,
+    Buffer, Effect, InputTarget, ViewCx, footer, next_bucket, next_p_level, next_status, pane,
+    scroll_to, spread_fit, status_glyph, status_word, step, title,
 };
 use crate::action::Action;
 use crate::fmt;
@@ -105,7 +105,7 @@ impl TreeBuffer {
     }
 
     /// The task the cursor is on or under.
-    fn selected_task(&self, cx: &ViewCx) -> Option<TaskId> {
+    pub fn selected_task(&self, cx: &ViewCx) -> Option<TaskId> {
         match self.selected_key(cx)? {
             RowKey::Task(id) => Some(id),
             RowKey::Agent(id) | RowKey::Branch(id) | RowKey::Todo(id, _) => {
@@ -483,13 +483,23 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
         .map(|mb| Span::styled(format!(" {}", fmt::memory(mb)), theme.dim()));
     let cost = (agent.cost_usd > 0.0)
         .then(|| Span::styled(format!(" {}", fmt::cost(agent.cost_usd)), theme.dim()));
-    // Fullest first: status, memory and cost; then without cost; then the status alone.
-    let full: Vec<Span<'static>> = [Some(word.clone()), memory.clone(), cost]
+    // Context fill shows for slices (Decision 22): plain, amber above 60 %, red above 80 %.
+    let context = agent
+        .context_pct
+        .filter(|_| agent.kind == AgentKind::Slice)
+        .map(|p| Span::styled(format!(" {p}%"), theme.context(p)));
+    // Fullest first; a narrow pane drops cost, then memory, then the rest but the status.
+    let versions = [
+        vec![Some(word.clone()), memory.clone(), context.clone(), cost],
+        vec![Some(word.clone()), memory, context.clone()],
+        vec![Some(word.clone()), context],
+        vec![Some(word)],
+    ];
+    let right = versions
         .into_iter()
-        .flatten()
+        .map(|v| v.into_iter().flatten().collect())
         .collect();
-    let no_cost: Vec<Span<'static>> = [Some(word.clone()), memory].into_iter().flatten().collect();
-    (left, vec![full, no_cost, vec![word]])
+    (left, right)
 }
 
 impl Buffer for TreeBuffer {
@@ -597,40 +607,18 @@ impl Buffer for TreeBuffer {
                     RowKey::Branch(_) | RowKey::Todo(..) => {}
                 }
             }
-            Action::TreeAddTask => effects.push(Effect::StartInput {
-                target: InputTarget::NewTask,
-                initial: String::new(),
-            }),
-            Action::TreeEditTitle => self.task_action(cx, effects, |t| Effect::StartInput {
+            Action::TaskEditTitle => self.task_action(cx, effects, |t| Effect::StartInput {
                 target: InputTarget::Title(t.id),
                 initial: t.title.clone(),
             }),
-            Action::TreeCycleStatus => self.task_action(cx, effects, |t| {
-                let next = match t.status {
-                    TaskStatus::Todo => TaskStatus::InProgress,
-                    TaskStatus::InProgress => TaskStatus::Done,
-                    TaskStatus::Done | TaskStatus::Archived => TaskStatus::Todo,
-                };
-                update(t.id, TaskChange::Status(next))
+            Action::TaskCycleStatus => self.task_action(cx, effects, |t| {
+                update(t.id, TaskChange::Status(next_status(t.status)))
             }),
-            Action::TreeCycleBucket => self.task_action(cx, effects, |t| {
-                let next = match t.bucket {
-                    None => Some(Bucket::Now),
-                    Some(Bucket::Now) => Some(Bucket::Next),
-                    Some(Bucket::Next) => Some(Bucket::Later),
-                    Some(Bucket::Later) => None,
-                };
-                update(t.id, TaskChange::Bucket(next))
+            Action::TaskCycleBucket => self.task_action(cx, effects, |t| {
+                update(t.id, TaskChange::Bucket(next_bucket(t.bucket)))
             }),
-            Action::TreeCyclePLevel => self.task_action(cx, effects, |t| {
-                let next = match t.p_level {
-                    None => Some(PLevel::P0),
-                    Some(PLevel::P0) => Some(PLevel::P1),
-                    Some(PLevel::P1) => Some(PLevel::P2),
-                    Some(PLevel::P2) => Some(PLevel::P3),
-                    Some(PLevel::P3) => None,
-                };
-                update(t.id, TaskChange::PLevel(next))
+            Action::TaskCyclePLevel => self.task_action(cx, effects, |t| {
+                update(t.id, TaskChange::PLevel(next_p_level(t.p_level)))
             }),
             Action::TreeMoveDown | Action::TreeMoveUp => {
                 let delta = if action == Action::TreeMoveDown {
@@ -646,12 +634,38 @@ impl Buffer for TreeBuffer {
                     }
                 });
             }
-            Action::TreeArchive => self.task_action(cx, effects, |t| {
+            Action::TaskArchive => self.task_action(cx, effects, |t| {
                 Effect::Command(Command::ArchiveTask { id: t.id })
             }),
             _ => return false,
         }
         true
+    }
+
+    fn search_rows(&self, cx: &ViewCx) -> Vec<String> {
+        // A row the cursor cannot rest on (a branch line) never matches.
+        self.rows(cx)
+            .iter()
+            .map(|r| {
+                if r.selectable() {
+                    r.left.iter().map(|s| s.content.as_ref()).collect()
+                } else {
+                    String::new()
+                }
+            })
+            .collect()
+    }
+
+    fn current_row(&self, cx: &ViewCx) -> usize {
+        let rows = self.rows(cx);
+        self.resolve(&rows).unwrap_or(0)
+    }
+
+    fn goto_row(&mut self, row: usize, cx: &ViewCx, effects: &mut Vec<Effect>) {
+        let rows = self.rows(cx);
+        if row < rows.len() && rows[row].selectable() {
+            self.select(&rows, row, cx, effects);
+        }
     }
 }
 

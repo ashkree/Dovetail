@@ -6,7 +6,7 @@ expression: "render(&mut reading_app(), 120, 40)"
 │ ○ ◆ coordinator           idle 1.2G $3.10 ││                                                                         │
 │ ▾ Now (2)                                 ││ coordinator · 10:06                                                     │
 │ ▾ ⚠ business surface P1          PR #1231 ││ Told slice-4 to stay out of src/decision.rs until slice-7 hands it      │
-│   ▾ ◐ ◆ slice-4  edits       working 412M ││ back.                                                                   │
+│   ▾ ◐ ◆ slice-4  edits   working 412M 71% ││ back.                                                                   │
 │         ⎇ dovetail/slice-4                ││                                                                         │
 │         ✓ write route tests               ││ ▸ sent 1 message · 2 s                                                  │
 │         ◐ wire handler to registry        ││                                                                         │
@@ -14,7 +14,7 @@ expression: "render(&mut reading_app(), 120, 40)"
 │       ✓ ◇ rebase               done $0.21 ││ What's blocking slice-7?                                                │
 │       ◐ ◇ explore callers 12 tools · Grep ││                                                                         │
 │ ▾ ⚠ get_decision 500 P0                   ││ ▸ read 2 files · checked slice-7's stream · 4 s                         │
-│   ▾ ⚠ ◆ slice-7  manual    needs you 388M ││                                                                         │
+│   ▾ ⚠ ◆ slice-7  manual     needs you 85% ││                                                                         │
 │         ⎇ dovetail/slice-7                ││ coordinator · 10:14                                                     │
 │ ▾ Next (1)                                ││ It needs a key. slice-7 can only reach the eval path with               │
 │   ○ idea: eval key flow P2                ││ FS_EVAL_VIRTUAL_KEY set, and the file src/decision.rs reads it once at  │
@@ -41,4 +41,4 @@ expression: "render(&mut reading_app(), 120, 40)"
 │                                           ││ ─────────────────────────────────────────────────────────────────────── │
 │ y allow · d deny · r reply · x dismiss    ││ › i to chat · ]] [[ turns · zc zo fold · gg G                           │
 └───────────────────────────────────────────┘└─────────────────────────────────────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G       i chat · ␣c coordinator · ␣⇥ alternate · ␣n inbox · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

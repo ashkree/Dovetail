@@ -267,7 +267,7 @@ impl MockCore {
                     order: self.next_order(new.bucket),
                     deps: vec![],
                     notes: new.notes,
-                    pr: None,
+                    pr: new.pr,
                     follow_up_of: new.follow_up_of,
                     coordinator_created: false,
                 };
