@@ -36,6 +36,7 @@ pub fn parse(line: &str) -> Result<Parsed, String> {
         "add" | "capture" => Action::QuickCapture,
         "mode" | "perm" => Action::CyclePermissionMode,
         "takeover" => Action::TakeOver,
+        "project" if arg == "add" => Action::RegisterProject,
         "project" => Action::SwitchProject,
         "register" => Action::RegisterProject,
         #[cfg(debug_assertions)]
@@ -63,6 +64,18 @@ mod tests {
     fn unknown_and_empty_commands_are_errors() {
         assert!(parse("frobnicate").is_err());
         assert!(parse("  ").is_err());
+    }
+
+    #[test]
+    fn project_add_registers_the_open_folder() {
+        assert_eq!(
+            parse("project add").map(|p| p.action),
+            Ok(Action::RegisterProject)
+        );
+        assert_eq!(
+            parse("project").map(|p| p.action),
+            Ok(Action::SwitchProject)
+        );
     }
 
     #[test]

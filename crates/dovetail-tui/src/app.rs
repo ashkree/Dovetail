@@ -470,8 +470,19 @@ impl App {
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
             Action::TakeOver => self.note = Some("take-over arrives in M14".into()),
-            Action::SwitchProject | Action::RegisterProject => {
-                self.note = Some("projects arrive in M5".into());
+            Action::RegisterProject => {
+                // The open folder (ADR 0005); the core refuses any other.
+                let path = self
+                    .snap
+                    .project
+                    .as_ref()
+                    .map(|p| p.repo_path.clone())
+                    .unwrap_or_default();
+                self.outbox.push(Command::RegisterProject { path });
+            }
+            Action::SwitchProject => {
+                self.note =
+                    Some("to switch projects, quit and open dovetail in the other folder".into());
             }
             Action::Quit => {
                 let running = self

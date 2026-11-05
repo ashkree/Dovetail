@@ -71,6 +71,12 @@ impl Paths {
         self.data.join("projects").join(project).join("worktrees")
     }
 
+    /// Generated launch files for one session (`settings.json`, `mcp.json`), never in a repo.
+    /// `project` is the project id, or the app's key for a folder not registered yet.
+    pub fn run_dir(&self, project: &str, agent: &str) -> PathBuf {
+        self.state.join("run").join(project).join(agent)
+    }
+
     /// Setup state for one worktree, so a repeat hook call returns at once (B5).
     pub fn setup_state(&self, project: &str, worktree: &str) -> PathBuf {
         self.state.join("setup").join(project).join(worktree)

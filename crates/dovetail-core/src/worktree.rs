@@ -157,7 +157,8 @@ pub struct Inspection {
     pub branch_exists: bool,
     /// Uncommitted entries (git status entries), excluding our own symlinks.
     pub uncommitted: Vec<String>,
-    /// Commits not pushed: ahead of upstream, or, with no upstream, on no remote at all.
+    /// Commits not pushed: ahead of upstream, or, with no upstream, on no remote and not in the
+    /// main checkout's `HEAD`.
     pub unpushed_commits: usize,
     /// Whether the branch has an upstream.
     pub has_upstream: bool,
@@ -242,13 +243,14 @@ where
 }
 
 /// The main checkout of the repository that contains `dir` (which may be one of its worktrees).
+/// The same rule as project identity: this is [`crate::projects::identify`].
 pub fn main_checkout(dir: &Path) -> Result<PathBuf, WorktreeError> {
-    let common = git(
-        dir,
-        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )?;
-    let common = PathBuf::from(common.trim());
-    Ok(common.parent().map(Path::to_path_buf).unwrap_or(common))
+    crate::projects::identify(dir)
+        .map(|identity| identity.repo_path)
+        .map_err(|e| WorktreeError::Git {
+            args: "rev-parse --path-format=absolute --git-common-dir".into(),
+            stderr: e.to_string(),
+        })
 }
 
 struct StatePaths {
@@ -270,6 +272,53 @@ fn state_paths(paths: &Paths, project: &str, name: &str) -> StatePaths {
 
 fn read_state(path: &Path) -> Option<SetupState> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()
+}
+
+/// What the `WorktreeCreate` hook reports when it finishes (`hook.json` in the setup state
+/// directory). The core removes it before launching a slice and waits for it, so it knows the
+/// worktree is ready, or failed, before it sends the first prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookOutcome {
+    /// The worktree path, on success.
+    pub path: Option<PathBuf>,
+    /// What went wrong, on failure.
+    pub error: Option<String>,
+}
+
+/// Where the hook writes its [`HookOutcome`].
+pub fn hook_outcome_path(paths: &Paths, project: &str, name: &str) -> PathBuf {
+    state_paths(paths, project, name).dir.join("hook.json")
+}
+
+/// Records the hook's outcome (called by `dovetail hook worktree-create`).
+pub fn write_hook_outcome(
+    paths: &Paths,
+    project: &str,
+    name: &str,
+    outcome: &HookOutcome,
+) -> Result<(), WorktreeError> {
+    let path = hook_outcome_path(paths, project, name);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(io(format!("creating {}", dir.display())))?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec(outcome).map_err(|e| WorktreeError::State {
+        path: path.clone(),
+        message: e.to_string(),
+    })?;
+    fs::write(&tmp, bytes).map_err(io(format!("writing {}", tmp.display())))?;
+    fs::rename(&tmp, &path).map_err(io(format!("writing {}", path.display())))
+}
+
+/// Reads the hook's outcome, if it has finished.
+pub fn read_hook_outcome(paths: &Paths, project: &str, name: &str) -> Option<HookOutcome> {
+    serde_json::from_slice(&fs::read(hook_outcome_path(paths, project, name)).ok()?).ok()
+}
+
+/// Forgets an earlier outcome, before a new launch.
+pub fn clear_hook_outcome(paths: &Paths, project: &str, name: &str) {
+    // Nothing there is the usual case.
+    let _ = fs::remove_file(hook_outcome_path(paths, project, name));
 }
 
 fn write_state(path: &Path, state: &SetupState) -> Result<(), WorktreeError> {
@@ -512,7 +561,12 @@ pub fn inspect(
                 ["rev-list", "--count", &format!("{upstream}..{branch}")],
             )?
         } else {
-            git(repo, ["rev-list", "--count", &branch, "--not", "--remotes"])?
+            // Only commits after the branch point count: on no remote, and not in the main
+            // checkout's HEAD either (work merged there is safe).
+            git(
+                repo,
+                ["rev-list", "--count", &branch, "--not", "--remotes", "HEAD"],
+            )?
         };
         out.unpushed_commits = count.trim().parse().unwrap_or(0);
     }

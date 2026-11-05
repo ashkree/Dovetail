@@ -26,7 +26,7 @@ pub mod env {
 pub enum Role {
     /// The coordinator: every tool.
     Coordinator,
-    /// A slice: no `create_task` or `start_slice`.
+    /// A slice: no `create_task`, `start_slice` or `add_project`.
     Slice,
 }
 
@@ -63,15 +63,18 @@ pub enum Tool {
     LogDecision(LogDecision),
     /// `start_slice`, coordinator only (ADR 0004).
     StartSlice(StartSlice),
+    /// `add_project`, coordinator only (ADR 0005).
+    AddProject(AddProject),
 }
 
 /// Every tool name, in the order `tools/list` shows them.
-pub const TOOL_NAMES: [&str; 5] = [
+pub const TOOL_NAMES: [&str; 6] = [
     "ask_user",
     "report_status",
     "create_task",
     "log_decision",
     "start_slice",
+    "add_project",
 ];
 
 impl Tool {
@@ -92,13 +95,14 @@ impl Tool {
             Tool::CreateTask(_) => "create_task",
             Tool::LogDecision(_) => "log_decision",
             Tool::StartSlice(_) => "start_slice",
+            Tool::AddProject(_) => "add_project",
         }
     }
 
     /// Whether a session with `role` may call the tool named `name`.
     pub fn allowed(name: &str, role: Role) -> bool {
         match name {
-            "create_task" | "start_slice" => role == Role::Coordinator,
+            "create_task" | "start_slice" | "add_project" => role == Role::Coordinator,
             other => TOOL_NAMES.contains(&other),
         }
     }
@@ -151,6 +155,7 @@ impl Tool {
                 text("name", &s.name)?;
                 text("brief", &s.brief)
             }
+            Tool::AddProject(_) => Ok(()),
         }
     }
 }
@@ -217,3 +222,8 @@ pub struct StartSlice {
     /// The slice's first prompt.
     pub brief: String,
 }
+
+/// `add_project`: register the folder the coordinator runs in as a Dovetail project (ADR 0005).
+/// Takes no arguments.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AddProject {}

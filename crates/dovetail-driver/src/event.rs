@@ -112,6 +112,9 @@ pub struct ToolResult {
     pub content: Value,
     /// `is_error`.
     pub is_error: bool,
+    /// The line's `tool_use_result`: structured details of the result (for `SendMessage`, the
+    /// `msg_id` the receiver's [`PeerMessage`] carries).
+    pub meta: Option<Value>,
 }
 
 impl ToolResult {
@@ -127,6 +130,33 @@ impl ToolResult {
             Value::Null => String::new(),
             other => other.to_string(),
         }
+    }
+}
+
+/// A message another session sent with `SendMessage`, from a `user` line's `origin` object
+/// (`{"kind": "peer", "name", "msg_id", "body", ...}`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerMessage {
+    /// The sender's `--name`.
+    pub name: String,
+    /// Joins with the sender's `SendMessage` result.
+    pub msg_id: Option<String>,
+    /// The message text, unwrapped.
+    pub body: String,
+}
+
+impl PeerMessage {
+    /// Reads an `origin` object; `None` unless its `kind` is `peer`.
+    pub fn from_origin(origin: &Value) -> Option<Self> {
+        if origin.get("kind").and_then(Value::as_str) != Some("peer") {
+            return None;
+        }
+        let text = |key: &str| origin.get(key).and_then(Value::as_str).map(str::to_owned);
+        Some(Self {
+            name: text("name").unwrap_or_default(),
+            msg_id: text("msg_id"),
+            body: text("body").unwrap_or_default(),
+        })
     }
 }
 
@@ -344,7 +374,8 @@ pub enum DriverEvent {
     Assistant(AssistantMessage),
     /// A tool result.
     ToolResult(ToolResult),
-    /// A user message replayed by `--replay-user-messages` (including a subagent's prompt).
+    /// A user message: one replayed by `--replay-user-messages` (our own prompt, a subagent's
+    /// prompt, or a message from another session), or a text block next to tool results.
     UserMessage {
         /// Who it belongs to.
         origin: Origin,
@@ -352,6 +383,13 @@ pub enum DriverEvent {
         uuid: Option<String>,
         /// Text.
         text: String,
+        /// `isReplay`.
+        is_replay: bool,
+        /// The line's `origin` object, present on messages from another session (spike S2);
+        /// see [`PeerMessage::from_origin`].
+        message_origin: Option<Value>,
+        /// The whole line.
+        raw: Value,
     },
     /// `system/task_*`.
     Task(TaskEvent),

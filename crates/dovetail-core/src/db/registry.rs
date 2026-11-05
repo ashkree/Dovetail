@@ -14,7 +14,7 @@ fn row_to_project(row: &Row<'_>) -> rusqlite::Result<Project> {
         id: row.get(0)?,
         name: row.get(1)?,
         repo_path: PathBuf::from(row.get::<_, String>(2)?),
-        git_common_dir: PathBuf::from(row.get::<_, String>(3)?),
+        git_common_dir: row.get::<_, Option<String>>(3)?.map(PathBuf::from),
         last_opened_ms: row.get(4)?,
     })
 }
@@ -24,6 +24,19 @@ pub(super) fn find(conn: &Connection, git_common_dir: &Path) -> Result<Option<Pr
         .query_row(
             &format!("SELECT {COLUMNS} FROM projects WHERE git_common_dir = ?1"),
             [git_common_dir.to_string_lossy()],
+            row_to_project,
+        )
+        .optional()?)
+}
+
+/// A project without git, by its folder.
+pub(super) fn find_folder(conn: &Connection, path: &Path) -> Result<Option<Project>, DbError> {
+    Ok(conn
+        .query_row(
+            &format!(
+                "SELECT {COLUMNS} FROM projects WHERE git_common_dir IS NULL AND repo_path = ?1"
+            ),
+            [path.to_string_lossy()],
             row_to_project,
         )
         .optional()?)
@@ -42,11 +55,15 @@ pub(super) fn register(
     slug: &str,
     name: &str,
     repo_path: &Path,
-    git_common_dir: &Path,
+    git_common_dir: Option<&Path>,
     now_ms: i64,
 ) -> Result<Project, DbError> {
     let tx = conn.transaction()?;
-    if let Some(existing) = find(&tx, git_common_dir)? {
+    let existing = match git_common_dir {
+        Some(dir) => find(&tx, dir)?,
+        None => find_folder(&tx, repo_path)?,
+    };
+    if let Some(existing) = existing {
         return Ok(existing);
     }
     let mut id = slug.to_owned();
@@ -65,7 +82,7 @@ pub(super) fn register(
             id,
             name,
             repo_path.to_string_lossy(),
-            git_common_dir.to_string_lossy(),
+            git_common_dir.map(|d| d.to_string_lossy().into_owned()),
             now_ms
         ],
     )?;
@@ -74,9 +91,28 @@ pub(super) fn register(
         id,
         name: name.to_owned(),
         repo_path: repo_path.to_owned(),
-        git_common_dir: git_common_dir.to_owned(),
+        git_common_dir: git_common_dir.map(Path::to_path_buf),
         last_opened_ms: Some(now_ms),
     })
+}
+
+/// Records that a folder project is now a git repo.
+pub(super) fn set_git_dir(
+    conn: &Connection,
+    id: &str,
+    git_common_dir: &Path,
+) -> Result<Project, DbError> {
+    conn.execute(
+        "UPDATE projects SET git_common_dir = ?2 WHERE id = ?1",
+        params![id, git_common_dir.to_string_lossy()],
+    )?;
+    conn.query_row(
+        &format!("SELECT {COLUMNS} FROM projects WHERE id = ?1"),
+        [id],
+        row_to_project,
+    )
+    .optional()?
+    .ok_or_else(|| DbError::NotFound(format!("no project {id}")))
 }
 
 pub(super) fn touch(conn: &Connection, id: &str, now_ms: i64) -> Result<(), DbError> {

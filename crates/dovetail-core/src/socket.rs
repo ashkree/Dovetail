@@ -2,10 +2,9 @@
 //! `dovetail_api::socket`).
 //!
 //! Framing is NDJSON. Each request runs on its own task and its response goes out when it is
-//! ready, so a held `ask_user` never blocks other requests on the same connection.
-//!
-//! Wave 2 plugs tool handlers in by implementing [`ToolHandler`] and passing it to
-//! [`crate::spawn_with`]; until then [`UnservedTools`] answers every call with an error.
+//! ready, so a held `ask_user` never blocks other requests on the same connection. The core
+//! implements [`SocketHandler`] by handing each request to its loop, so tool handlers see the
+//! core's state.
 
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
@@ -37,31 +36,24 @@ pub struct ToolCall {
     pub call: Tool,
 }
 
-/// Serves MCP tool calls. A call may take as long as it needs (a blocking `ask_user`); the
-/// socket keeps serving other requests meanwhile.
-pub trait ToolHandler: Send + Sync + 'static {
-    /// Answers one call. Return `ToolResult` or `Error`.
-    fn call(&self, call: ToolCall) -> BoxFuture<SocketResponseBody>;
-}
-
-/// The handler used until real tools exist.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct UnservedTools;
-
-impl ToolHandler for UnservedTools {
-    fn call(&self, _call: ToolCall) -> BoxFuture<SocketResponseBody> {
-        Box::pin(async {
-            SocketResponseBody::Error {
-                message: "tool calls are not served yet".into(),
-            }
-        })
-    }
+/// Why a socket request could not be handled.
+#[derive(Debug, thiserror::Error)]
+pub enum HandlerError {
+    /// The core is shutting down.
+    #[error("Dovetail is shutting down")]
+    ShuttingDown,
+    /// The folder is not a project yet, so there is nowhere to put a task (ADR 0005).
+    #[error("this folder is not a Dovetail project yet; run `:project add` in the app")]
+    NotRegistered,
+    /// Storage failed.
+    #[error(transparent)]
+    Db(#[from] crate::db::DbError),
 }
 
 /// What the socket server asks of the core.
 pub trait SocketHandler: Send + Sync + 'static {
     /// Creates a task from `dovetail add`.
-    fn add_task(&self, task: NewTask) -> BoxFuture<Result<TaskId, String>>;
+    fn add_task(&self, task: NewTask) -> BoxFuture<Result<TaskId, HandlerError>>;
     /// Answers a forwarded tool call.
     fn tool_call(&self, call: ToolCall) -> BoxFuture<SocketResponseBody>;
 }
@@ -163,7 +155,9 @@ async fn connection(stream: UnixStream, handler: Arc<dyn SocketHandler>) {
             let body = match request.body {
                 SocketRequestBody::AddTask { task } => match handler.add_task(task).await {
                     Ok(id) => SocketResponseBody::TaskAdded { id },
-                    Err(message) => SocketResponseBody::Error { message },
+                    Err(e) => SocketResponseBody::Error {
+                        message: e.to_string(),
+                    },
                 },
                 SocketRequestBody::ToolCall {
                     agent,
