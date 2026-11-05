@@ -444,7 +444,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - **B. Driver:** the `dovetail-driver` half of M6 (`SessionDriver`, `ClaudeDriver`, `FakeDriver`, event mapping).
   - **C. Worktrees:** the lower half of M8 (`dovetail hook worktree-create`, `core::worktree` create, setup, inspect, remove).
   - **D. MCP bridge:** the lower half of M9 (`dovetail mcp`, tool schemas including `start_slice`, role-prompt edits).
-- **Wave 2: one Opus agent, in order:** the session core of M6, M7, the slice flow of M8, the tool handlers of M9 including `start_slice` ([ADR 0004](adr/0004-start-slice-tool.md)).
+- **Wave 2: one Opus agent, in order:** the session core of M6, M7, the slice flow of M8, the tool handlers of M9 including `start_slice` ([ADR 0004](adr/0004-start-slice-tool.md)). Also [ADR 0005](adr/0005-explicit-projects-any-folder.md): no silent registration, `:project add` and `add_project`, in-memory state until registered, and non-git projects whose slices share the folder.
 - **Live checks:** one batch after wave 2, in `scripts/live-checks.sh`, which you run. Scratch repos in `/tmp`, tiny prompts, Haiku except where auto mode needs a supported model.
 - **Then M10**, the self-hosting point.
 - **Rules from the wave-1 retro:**
@@ -671,7 +671,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 | B22 | **`r` on a finished turn** | Sends a normal message to that agent |
 | B23 | **Quit with live sessions** | Sessions end with the app (no daemon in v1). `:q` asks if a turn is running; everything resumes on open |
 | B24 | **Project switch** | Stops the current project's sessions after asking |
-| B25 | **Starting outside a registered repo** | Offers to register; outside any git repo, opens the last project |
+| B25 | **Starting outside a registered repo** | ~~Offers to register; outside any git repo, opens the last project~~ Superseded by [ADR 0005](adr/0005-explicit-projects-any-folder.md): registered only on request (`:project add` or the coordinator's `add_project`), and any folder can be a project |
 | B26 | **Take-over terminal** | Same terminal, TUI suspended, as the mock shows |
 | B27 | **Key-sequence timeout** | 1000 ms |
 | B28 | **`--strict-mcp-config`** | Not used, so your own MCP servers still load |

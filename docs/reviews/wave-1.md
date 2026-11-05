@@ -34,7 +34,7 @@ Review of `pre-wave-1...wave-1` (the contracts commit, then tracks A storage, B 
 | The `create_task` schema offered bucket `now`; ADR 0002 says "never straight into Now" | Wrong | **Fixed**: `next` and `later` only |
 | `NewTask.notes` was required in serde but optional in the tool schema | Mismatch | **Fixed**: `#[serde(default)]` |
 | The coordinator prompt hard-coded "at most 3", but `max_slices` is configurable | Mismatch | **Fixed** |
-| `resolve` registers an unknown repo silently; B25 says "offers to register" | Deviation | **Open**: a question for the user at the gate |
+| `resolve` registers an unknown repo silently; B25 says "offers to register" | Deviation | **Decided**: [ADR 0005](../adr/0005-explicit-projects-any-folder.md), built in wave 2 |
 | `map_user` drops `origin`, `isReplay` and the raw JSON | Blocks the M8 message timeline (S2) | **Wave 2** |
 | With no upstream and no remote, every removal counts the whole history as unpushed and asks | Safe but noisy | **Wave 2**: count only commits after the branch point |
 | `ToolHandler` gets no access to core state; `create_task` hard-codes `coordinator_created = false` | Makes wave 2 harder | **Wave 2** |
