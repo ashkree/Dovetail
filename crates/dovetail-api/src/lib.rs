@@ -10,6 +10,7 @@
 mod apply;
 mod model;
 mod protocol;
+pub mod socket;
 
 pub use apply::{ApplyResult, apply};
 pub use model::*;

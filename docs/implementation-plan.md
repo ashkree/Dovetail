@@ -2,7 +2,7 @@
 
 **Context.** The design phase is finished and the repo holds only a placeholder binary. This plan sets the order of work for v1: spikes first, then a TUI usable on a mock core, then the shortest route to building Dovetail inside Dovetail.
 
-**Status:** awaiting your OK. Sources: `AGENTS.md`, `docs/design-digest.md`, `docs/design.md`, `docs/ui-session-brief.md`, `docs/screens/`, `README.md`. Checked against this machine on 2026-11-01: Claude Code 2.1.316, cgroup v2 with the `memory` controller delegated to the user session, 30 GB RAM, `claude.ai` login on a Pro plan.
+**Status:** approved; M1–M4 done; waves 1 and 2 (M5–M9) in progress (2026-11-05). Sources: `AGENTS.md`, `docs/design-digest.md`, `docs/design.md`, `docs/ui-session-brief.md`, `docs/screens/`, `README.md`. Checked against this machine on 2026-11-01: Claude Code 2.1.316, cgroup v2 with the `memory` controller delegated to the user session, 30 GB RAM, `claude.ai` login on a Pro plan.
 
 ## At a glance
 
@@ -430,9 +430,23 @@ Tables arrive with the milestone that uses them, so no unused tables sit around.
 
 Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` passing, plus a "how to try it" summary. Then I stop and wait for you.
 
-**Review step.** Each milestone ends with `/code-review` from the latest review tag, followed by `/retro`. Tags are `pre-m1`, set before M1 starts, then `review-1`, `review-2` and so on, each set when that review closes.
+**Review step.** Each wave ends with `/code-review` from the latest review tag, followed by `/retro`. Tags are `pre-m1`, set before M1 starts, then `review-1`, `review-2` and so on, each set when that review closes.
 
-**TDD.** M1 and M6–M8 use the `tdd` skill at agreed seams.
+**TDD.** M1 used the `tdd` skill. From M5 on, tests are written when something breaks (decided 2026-11-05).
+
+### Waves (decided 2026-11-05)
+
+From M5, milestones are built in waves, gated once per wave (Opus `code-review`, then your `/retro`), and merged to `main` by the agent.
+
+- **Contracts commit** (on `wave-1`, before any track): `dovetail_api::socket` (NDJSON request and response types for `dovetail add` and the MCP bridges), `dovetail_core::{paths, recipe}`, empty core modules, and the `add`/`mcp`/`hook` dispatch in `main.rs`. `rusqlite_migration` is dropped: its latest release needs rusqlite 0.40, so migrations use SQLite's `user_version` directly.
+- **Wave 1: four parallel tracks, written by Sonnet agents in their own worktrees, `cargo build` only, no new tests.**
+  - **A. Storage and tracker:** all of M5 (DB thread, migrations, projects, `config.toml` with `max_slices`, socket server, `dovetail add`, the real core's `CoreLink` for tasks, bootstrap).
+  - **B. Driver:** the `dovetail-driver` half of M6 (`SessionDriver`, `ClaudeDriver`, `FakeDriver`, event mapping).
+  - **C. Worktrees:** the lower half of M8 (`dovetail hook worktree-create`, `core::worktree` create, setup, inspect, remove).
+  - **D. MCP bridge:** the lower half of M9 (`dovetail mcp`, tool schemas including `start_slice`, role-prompt edits).
+- **Wave 2: one Opus agent, in order:** the session core of M6, M7, the slice flow of M8, the tool handlers of M9 including `start_slice` ([ADR 0004](adr/0004-start-slice-tool.md)).
+- **Live checks:** one batch after wave 2, in `scripts/live-checks.sh`, which you run. Scratch repos in `/tmp`, tiny prompts, Haiku except where auto mode needs a supported model.
+- **Then M10**, the self-hosting point.
 
 ### M1. Workspace, API, mock core
 - **Spikes needed:** S1–S3 (event shapes)
@@ -458,7 +472,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 - **Scope:** conversation buffer with the readability rules built in from the start: 120-column centred column, spacing, styled and coloured markdown, off-white body, folded tool lines, hidden thinking, truncation with "show more", `j k gg G ]] [[ zc zo`, solid-background toggle. Insert mode with multiline input. Agent switching, `<leader>c`, `<leader><Tab>`.
 - **Files:** `buffers/conversation.rs`, `render/{markdown,reading_column}.rs`, `input.rs`
 - **Done when:**
-  - [ ] You can read a streamed mock reply comfortably in kitty and approve the theme
+  - [x] ~~You can read a streamed mock reply comfortably in kitty and approve the theme~~ (waived by you, 2026-11-05)
   - [x] Streaming redraws stay at or below 30 fps (pty run with the mock at 200x: 28.8 frames a second, logged by the loop at trace level)
   - [x] `Enter`, `Ctrl-j`, `Alt-Enter`, `Ctrl-w`, `Ctrl-u` work (behaviour tests drive them through `App`)
 - **Tests:** markdown spans, spacing, wrapping, snapshots at 80, 120 and 200 columns
@@ -630,7 +644,7 @@ Every milestone ends with `cargo fmt --check`, `cargo clippy --workspace --all-t
 
 | # | Gap | Proposed default |
 | --- | --- | --- |
-| B1 **Your call** | **Who starts slices?** No agent tool exists, yet the coordinator's prompt says to brief slices. This shapes the whole workflow | **Decided: you start them** (`<leader>sn` on a task; prompts for name and brief). The coordinator recommends slices in chat, then messages the slice. Decision 25 is unchanged, so no ADR. Planned upgrade once S2 passes: a `start_slice` tool that raises a Permission request for your `y`/`d`, enforced by Dovetail's handler in every permission mode. It returns at once, needs a ready signal and a start queue, targets existing tasks only, and needs an ADR naming Decision 25 |
+| B1 **Your call** | **Who starts slices?** No agent tool exists, yet the coordinator's prompt says to brief slices. This shapes the whole workflow | **Decided: you start them** (`<leader>sn` on a task; prompts for name and brief). The coordinator recommends slices in chat, then messages the slice. Decision 25 is unchanged, so no ADR. **Superseded 2026-11-05 by [ADR 0004](adr/0004-start-slice-tool.md):** the coordinator also starts slices with `start_slice`, following its permission mode, capped at 3 with a queue. Original upgrade note: a `start_slice` tool that raises a Permission request for your `y`/`d`, enforced by Dovetail's handler in every permission mode. It returns at once, needs a ready signal and a start queue, targets existing tasks only, and needs an ADR naming Decision 25 |
 | B2 **Your call** | **`hjkl` vs lists** (the brief asks me to decide): how to move between tree and inbox when `j/k` move inside lists | **Decided:** `h/l` move between left and right; `h` returns to the left region you came from. `j/k` move inside and never leave a list. `Ctrl-j/k` move between regions in the column. `<leader>n` jumps to the inbox. `Ctrl-hjkl` pan only in MAP mode. `o` folds tree nodes, per the brief |
 | B3 **Your call** | **Every finished turn in Needs you** may flood the inbox, especially from the coordinator you're watching | **Decided, refines Decision 7b ([ADR 0001](adr/0001-collapse-finished-turns.md)):** one item per agent (newest replaces), auto-cleared when you open that agent. None while background subagents remain. Other inbox kinds are never collapsed |
 | B4 **Your call** | **`needs_you` as task status:** set by hand or derived? | **Decided: derived** from agents and inbox, never stored. `s` cycles todo → in progress → done. The board has no needs-you column: a needs-you task shows a marker on its card, in its status column (decided 2026-11-03). Starting a slice moves a todo task to in progress. Done wins: a done task stays done if an agent raises an item, which still shows in the inbox. Coordinator items mark no task |

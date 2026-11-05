@@ -41,7 +41,7 @@ The user wants to switch from building Dovetail with plain agents to building it
 
 1. **Plan before code.** Start by producing `docs/implementation-plan.md` (see "The plan" below) and wait for the user's explicit OK.
 2. **Spikes before the code that depends on them.** Each open spike in the digest gates specific work. Run it as a small throwaway program under `spikes/<name>/` (not a workspace member), record the result in `docs/spikes/<name>.md`, and report it. Spikes that need the user's machine, account or judgement (terms of use, cgroups on their box) are prepared as runnable scripts and handed to the user.
-3. **One milestone at a time.** A milestone is done only when `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass. Then stop, summarise what changed and what to look at (including how to try it), tick it off in the plan, and wait.
+3. **One wave at a time.** A wave is a set of milestones named in the plan (§6, "Waves"). Agents build a wave's tracks in parallel; at the end of the wave an Opus `code-review` runs from the last review tag, the user runs `retro`, and the wave merges. Milestone "done when" boxes are still ticked one by one. A wave is done when `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass, except where the plan relaxes it for that wave (wave 1: `cargo build` only, no new tests; decided 2026-11-05). Then summarise what changed and how to try it.
 4. Keep changes scoped to the milestone. No speculative features, no drive-by refactors.
 5. User-facing decisions (UX, keys, visible naming) → ask. Implementation details with sensible defaults → decide, note in the summary.
 6. Never add a dependency without stating why. Prefer the standard library and small crates.
@@ -53,12 +53,12 @@ The user wants to switch from building Dovetail with plain agents to building it
 - **Decisions:** the decision log in `docs/design.md` is the frozen v1 baseline, never edited. New decisions that meet the `domain-modeling` ADR bar go in `docs/adr/NNNN-slug.md`, linking the spike or discussion behind them. An ADR may refine or supersede a locked decision only with the user's approval in the session, and must name the decision it changes.
 - **Terms:** `GLOSSARY.md` at the repo root.
 - **Spikes:** code in `spikes/<name>/`, results in `docs/spikes/`, never `prototype/` branches.
-- **Commits:** only with the user's OK at a milestone boundary.
+- **Commits:** the agent commits, merges to `main` and pushes on its own judgement (decided 2026-11-05).
 
 Which skill when:
 
 - **Reviews:** `code-review`, then `retro`.
-- **M1 and M6–M8:** `tdd`; confirm seams with the user first.
+- **Tests:** written when something breaks, from wave 2 on; wave 1 adds none (decided 2026-11-05).
 - **Failures:** `diagnosing-bugs`.
 - **S0 and S1:** `research`.
 - **Context running low:** `handoff`.

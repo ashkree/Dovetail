@@ -1,21 +1,16 @@
-# Per-project worktree recipe (Decision 12b) for Dovetail's own repo.
-# Installed to ~/.config/dovetail/projects/<project-id>.toml once Dovetail
-# registers the project; until then scripts/bootstrap.sh keeps it as dovetail.toml.
-# The exact format is a proposal: the implementation plan finalises it.
+# Worktree recipe (Decision 12b) for Dovetail's own repo.
+# Installed to ~/.config/dovetail/projects/<project-id>.toml by scripts/bootstrap.sh.
+# Every section is optional. See crates/dovetail-core/src/recipe.rs for the format.
 
 name = "dovetail"
-repo = "~/code/dovetail"   # edit to where your clone lives
 
 [worktree]
-# Files to symlink from the main checkout into each new slice worktree.
-# Symlink only, never copy (Decision 12c). Dovetail's repo has no .env.
+# Paths relative to the repo root, symlinked (never copied) into each new slice worktree.
 symlink = []
+# Commands run in order in the new worktree before the slice's first prompt.
+# Each must be safe to re-run: an interrupted setup runs again.
+setup = ["cargo fetch"]
 
-# Optional command run in the new worktree before the slice's first prompt.
-# Fetching dependencies once keeps parallel slices from racing on the network.
-setup = "cargo fetch"
-
-# Memory note (16 GB machine): parallel slices each compiling a full target/
-# dir is the biggest cost. Consider exporting CARGO_TARGET_DIR to one shared
-# directory in your shell profile: builds then serialise on cargo's lock
-# instead of running side by side.
+[env]
+# Set for the setup commands and the slice's session.
+# Each slice builds into its own target/ for now (decided 2026-11-05).

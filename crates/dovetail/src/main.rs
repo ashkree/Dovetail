@@ -2,7 +2,10 @@
 //!
 //! `dovetail --mock` opens the TUI on the mock core; `--dump` prints the core's stream instead.
 
+mod add;
+mod hook;
 mod logging;
+mod mcp;
 mod tui;
 
 use std::io::{self, BufWriter, Write};
@@ -10,7 +13,9 @@ use std::io::{self, BufWriter, Write};
 use anyhow::{Context, Result, bail};
 use dovetail_mock::{MockConfig, MockCore};
 
-const USAGE: &str = "usage: dovetail --mock [--seed N] [--speed X]
+const USAGE: &str = "usage: dovetail                     open the TUI for the repo you're in
+       dovetail add \"title !p1 @now\"  capture a task
+       dovetail --mock [--seed N] [--speed X]
        dovetail --mock --dump [--seed N] [--count N]
 
   --mock       use the built-in mock core instead of real sessions
@@ -95,7 +100,15 @@ fn dump(seed: u64, count: usize) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let args = parse_args(std::env::args().skip(1))?;
+    let mut raw: Vec<String> = std::env::args().skip(1).collect();
+    // Subcommands come first; everything else is the TUI's flags.
+    match raw.first().map(String::as_str) {
+        Some("add") => return add::run(raw.split_off(1)),
+        Some("mcp") => return mcp::run(raw.split_off(1)),
+        Some("hook") => return hook::run(raw.split_off(1)),
+        _ => {}
+    }
+    let args = parse_args(raw)?;
     match (args.mock, args.dump) {
         (true, true) => match dump(args.seed.unwrap_or(1), args.count.unwrap_or(200)) {
             // Piped into `head` or `cmp`: the reader has seen enough.
