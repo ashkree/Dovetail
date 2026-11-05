@@ -244,6 +244,7 @@ pub struct NewTask {
     /// Bucket; `None` puts it in Unsorted.
     pub bucket: Option<Bucket>,
     /// Notes.
+    #[serde(default)]
     pub notes: String,
     /// The task it follows up.
     pub follow_up_of: Option<TaskId>,

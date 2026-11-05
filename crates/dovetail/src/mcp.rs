@@ -21,7 +21,7 @@
 //!
 //! # What the core passes to Claude Code (wave 2)
 //!
-//! Per session, in the file given to `--mcp-config` (with `--strict-mcp-config`):
+//! Per session, in the file given to `--mcp-config` (without `--strict-mcp-config`, so the user's own MCP servers still load; plan B28):
 //!
 //! ```json
 //! {"mcpServers": {"dovetail": {
@@ -406,7 +406,7 @@ fn tool_defs() -> Vec<ToolDef> {
                     "title": {"type": "string", "description": "Short imperative title."},
                     "notes": {"type": "string", "description": "Context, acceptance criteria, links."},
                     "p_level": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "Priority, P0 highest. Omit if unsure."},
-                    "bucket": {"type": "string", "enum": ["now", "next", "later"], "description": "Omit to land in Unsorted."},
+                    "bucket": {"type": "string", "enum": ["next", "later"], "description": "Omit to land in Unsorted. Never Now: the user decides what is current."},
                     "follow_up_of": {"type": "integer", "description": "Id of the task this follows up."},
                     "related": {"type": "array", "items": {"type": "integer"}, "description": "Ids of related tasks."}
                 }, "required": ["title"]})
