@@ -489,10 +489,10 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Scope:** DB thread, typed requests, migrations. `dovetail-core` with `CoreLink`. Project identity from `git rev-parse --path-format=absolute --git-common-dir`. Project registration. Recipe reader for `~/.config/dovetail/projects/<id>.toml`. `config.toml`. Unix socket at `$XDG_RUNTIME_DIR/dovetail/<project-id>.sock`. `dovetail add`.
 - **Files:** `crates/dovetail-core/src/{lib,db/,projects,recipe,config,paths,socket}.rs`, `crates/dovetail/src/{main,add}.rs`, `config/projects/dovetail.toml`, `scripts/bootstrap.sh`
 - **Done when:**
-  - [ ] `dovetail` in a registered repo shows persistent tasks with no sessions
-  - [ ] Tasks survive restart
-  - [ ] `dovetail add "x !p1 @now"` appears live if the app is running, or on next open if not
-  - [ ] Recipe format is final and bootstrap matches it
+  - [x] `dovetail` in a registered repo shows persistent tasks with no sessions
+  - [x] Tasks survive restart
+  - [x] `dovetail add "x !p1 @now"` appears live if the app is running, or on next open if not
+  - [x] Recipe format is final and bootstrap matches it
 - **Tests:** migrations from empty, typed requests, project identity from a worktree, recipe parsing, `add` both ways
 
 ### M6. Driver and one coordinator session

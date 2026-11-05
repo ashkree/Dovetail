@@ -36,12 +36,17 @@ for f in "$repo_root"/config/roles/*.md; do
 done
 
 echo "Project recipe for Dovetail itself"
-recipe="$config/projects/dovetail.toml"
+# The project id is the slug of the repo folder's name (lower-case, runs of other characters become
+# one '-'), as dovetail_core::projects::slug does. If another repo already took the id, Dovetail
+# numbers this one (e.g. dovetail-2); rename the installed file to match then.
+project_id="$(basename "$repo_root" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+[[ -n "$project_id" ]] || project_id="project"
+recipe="$config/projects/$project_id.toml"
 if [[ -e "$recipe" ]]; then
   ok "kept existing $recipe"
 else
-  sed "s|^repo = .*|repo = \"$repo_root\"|" "$repo_root/config/projects/dovetail.toml" > "$recipe"
-  ok "installed $recipe (repo = $repo_root)"
+  cp "$repo_root/config/projects/dovetail.toml" "$recipe"
+  ok "installed $recipe (project id: $project_id)"
 fi
 
 echo "Tools"
