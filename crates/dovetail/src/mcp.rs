@@ -231,6 +231,15 @@ impl Bridge {
 
     /// Cheap local checks so the agent gets a precise error without a round trip.
     fn validate(&self, tool: &str, input: &Value) -> Option<String> {
+        let need_id = |field: &str| {
+            let ok = input
+                .get(field)
+                .and_then(Value::as_i64)
+                .is_some_and(|id| id > 0);
+            (!ok).then(|| {
+                format!("`{field}` is required and must be a task id (a positive integer)")
+            })
+        };
         let need = |field: &str| {
             let ok = input
                 .get(field)
@@ -242,12 +251,12 @@ impl Bridge {
             "ask_user" => need("question"),
             "report_status" => need("status"),
             "create_task" => need("title"),
-            "start_slice" => need("task")
+            "start_slice" => need_id("task")
                 .or_else(|| need("name"))
                 .or_else(|| need("brief")),
             "log_decision" => {
                 let task = if self.role == Role::Coordinator {
-                    need("task").map(|_| {
+                    need_id("task").map(|_| {
                         "the coordinator must name the `task` this decision belongs to".to_owned()
                     })
                 } else {
@@ -396,10 +405,10 @@ fn tool_defs() -> Vec<ToolDef> {
                 json!({"type": "object", "properties": {
                     "title": {"type": "string", "description": "Short imperative title."},
                     "notes": {"type": "string", "description": "Context, acceptance criteria, links."},
-                    "p_level": {"type": "string", "enum": ["p0", "p1", "p2", "p3"], "description": "Priority, p0 highest. Omit if unsure."},
+                    "p_level": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "Priority, P0 highest. Omit if unsure."},
                     "bucket": {"type": "string", "enum": ["now", "next", "later"], "description": "Omit to land in Unsorted."},
-                    "follow_up_of": {"type": "string", "description": "Id of the task this follows up."},
-                    "related": {"type": "array", "items": {"type": "string"}, "description": "Ids of related tasks."}
+                    "follow_up_of": {"type": "integer", "description": "Id of the task this follows up."},
+                    "related": {"type": "array", "items": {"type": "integer"}, "description": "Ids of related tasks."}
                 }, "required": ["title"]})
             },
         },
@@ -412,7 +421,7 @@ fn tool_defs() -> Vec<ToolDef> {
                 it. Slices log on their own task by default; the coordinator must name `task`.",
             schema: || {
                 json!({"type": "object", "properties": {
-                    "task": {"type": "string", "description": "Task id. Required for the coordinator; slices default to their own task."},
+                    "task": {"type": "integer", "description": "Task id. Required for the coordinator; slices default to their own task."},
                     "decision": {"type": "string", "description": "The decision, one line."},
                     "why": {"type": "string", "description": "The reason."},
                     "alternatives": {"type": "array", "description": "Options considered and rejected.", "items": {
@@ -420,7 +429,7 @@ fn tool_defs() -> Vec<ToolDef> {
                             "option": {"type": "string"},
                             "why_not": {"type": "string", "description": "Why it lost."}
                         }, "required": ["option"]}},
-                    "supersedes": {"type": "string", "description": "Id of the earlier decision this replaces."}
+                    "supersedes": {"type": "integer", "description": "Id of the earlier decision this replaces."}
                 }, "required": ["decision"]})
             },
         },
@@ -435,7 +444,7 @@ fn tool_defs() -> Vec<ToolDef> {
                 first prompt, so make it complete: goal, scope, files, checks to run.",
             schema: || {
                 json!({"type": "object", "properties": {
-                    "task": {"type": "string", "description": "Id of an existing task."},
+                    "task": {"type": "integer", "description": "Id of an existing task."},
                     "name": {"type": "string", "description": "Short slice name, used for the branch and worktree."},
                     "brief": {"type": "string", "description": "The slice's first prompt."}
                 }, "required": ["task", "name", "brief"]})
