@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
+use dovetail_api::tools::Tool;
 use dovetail_api::{AgentId, NewTask, TaskId};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -30,12 +31,10 @@ pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 pub struct ToolCall {
     /// The calling session.
     pub agent: AgentId,
-    /// Tool name without the MCP server prefix, e.g. `ask_user`.
-    pub tool: String,
     /// The call's tool-use id, for attributing subagent calls.
     pub tool_use_id: Option<String>,
-    /// The tool's arguments.
-    pub input: serde_json::Value,
+    /// The tool and its arguments.
+    pub call: Tool,
 }
 
 /// Serves MCP tool calls. A call may take as long as it needs (a blocking `ask_user`); the
@@ -168,16 +167,14 @@ async fn connection(stream: UnixStream, handler: Arc<dyn SocketHandler>) {
                 },
                 SocketRequestBody::ToolCall {
                     agent,
-                    tool,
                     tool_use_id,
-                    input,
+                    call,
                 } => {
                     handler
                         .tool_call(ToolCall {
                             agent,
-                            tool,
                             tool_use_id,
-                            input,
+                            call,
                         })
                         .await
                 }

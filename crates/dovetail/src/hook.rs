@@ -43,6 +43,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
+use dovetail_api::tools::env;
 use dovetail_core::paths::Paths;
 use dovetail_core::recipe::Recipe;
 use dovetail_core::worktree::{self, CreateRequest};
@@ -80,10 +81,10 @@ fn worktree_create() -> Result<()> {
     {
         bail!("unexpected hook event {ev:?}");
     }
-    let project = std::env::var("DOVETAIL_PROJECT")
+    let project = std::env::var(env::PROJECT)
         .ok()
         .filter(|p| !p.is_empty())
-        .context("DOVETAIL_PROJECT is not set")?;
+        .with_context(|| format!("{} is not set", env::PROJECT))?;
     let paths = Paths::from_env();
     let recipe = Recipe::load(&paths.recipe(&project)).context("loading the project recipe")?;
     let req = CreateRequest {
@@ -93,7 +94,7 @@ fn worktree_create() -> Result<()> {
         recipe,
     };
     let created = worktree::create(&paths, &req).with_context(|| {
-        let agent = std::env::var("DOVETAIL_AGENT_ID").unwrap_or_default();
+        let agent = std::env::var(env::AGENT_ID).unwrap_or_default();
         format!("creating worktree `{}` (agent {agent})", req.name)
     })?;
     println!("{}", created.path.display());

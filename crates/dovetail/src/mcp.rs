@@ -55,15 +55,10 @@ use std::thread;
 use anyhow::Result;
 use dovetail_api::AgentId;
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
+use dovetail_api::tools::{Role, Tool, env};
 use serde_json::{Value, json};
 
 const PROTOCOL_FALLBACK: &str = "2025-06-18";
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Role {
-    Coordinator,
-    Slice,
-}
 
 type Reply = Result<SocketResponseBody, String>;
 type Pending = HashMap<u64, Sender<Reply>>;
@@ -90,13 +85,10 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// Run the subcommand with the arguments after its name.
 pub fn run(_args: Vec<String>) -> Result<()> {
-    let role = match std::env::var("DOVETAIL_ROLE").as_deref() {
-        Ok("coordinator") => Role::Coordinator,
-        _ => Role::Slice,
-    };
+    let role = Role::from_env_value(&std::env::var(env::ROLE).unwrap_or_default());
     let bridge = Arc::new(Bridge {
-        agent: AgentId(std::env::var("DOVETAIL_AGENT_ID").unwrap_or_default()),
-        socket: std::env::var("DOVETAIL_SOCKET").ok(),
+        agent: AgentId(std::env::var(env::AGENT_ID).unwrap_or_default()),
+        socket: std::env::var(env::SOCKET).ok(),
         role,
         next_id: AtomicU64::new(1),
         conn: Mutex::new(None),
@@ -159,7 +151,7 @@ impl Bridge {
             "tools/list" => {
                 let tools: Vec<Value> = tool_defs()
                     .into_iter()
-                    .filter(|t| self.allowed(t.name))
+                    .filter(|t| Tool::allowed(t.name, self.role))
                     .map(|t| {
                         json!({
                             "name": t.name,
@@ -185,25 +177,23 @@ impl Bridge {
         }
     }
 
-    fn allowed(&self, tool: &str) -> bool {
-        match tool {
-            "create_task" | "start_slice" => self.role == Role::Coordinator,
-            _ => tool_defs().iter().any(|t| t.name == tool),
-        }
-    }
-
     fn call_tool(&self, msg: &Value) -> Value {
         let Some(name) = msg.pointer("/params/name").and_then(Value::as_str) else {
             return tool_error("tools/call needs a tool name");
         };
-        if !self.allowed(name) {
+        if !Tool::allowed(name, self.role) {
             return tool_error(&format!("unknown tool `{name}` for this session"));
         }
-        let input = msg
+        let arguments = msg
             .pointer("/params/arguments")
             .cloned()
             .unwrap_or_else(|| json!({}));
-        if let Some(problem) = self.validate(name, &input) {
+        // Local checks, so the agent gets a precise error without a round trip.
+        let call = match Tool::parse(name, arguments) {
+            Ok(call) => call,
+            Err(problem) => return tool_error(&problem),
+        };
+        if let Err(problem) = call.validate(self.role) {
             return tool_error(&problem);
         }
         let tool_use_id = msg
@@ -212,9 +202,8 @@ impl Bridge {
             .map(str::to_owned);
         let body = SocketRequestBody::ToolCall {
             agent: self.agent.clone(),
-            tool: name.to_owned(),
             tool_use_id,
-            input,
+            call,
         };
         match self.roundtrip(body) {
             Ok(SocketResponseBody::ToolResult { text, is_error }) => text_result(&text, is_error),
@@ -226,45 +215,6 @@ impl Bridge {
                 text_result("Dovetail sent an unexpected reply to this call.", true)
             }
             Err(e) => text_result(&e, true),
-        }
-    }
-
-    /// Cheap local checks so the agent gets a precise error without a round trip.
-    fn validate(&self, tool: &str, input: &Value) -> Option<String> {
-        let need_id = |field: &str| {
-            let ok = input
-                .get(field)
-                .and_then(Value::as_i64)
-                .is_some_and(|id| id > 0);
-            (!ok).then(|| {
-                format!("`{field}` is required and must be a task id (a positive integer)")
-            })
-        };
-        let need = |field: &str| {
-            let ok = input
-                .get(field)
-                .and_then(Value::as_str)
-                .is_some_and(|s| !s.trim().is_empty());
-            (!ok).then(|| format!("`{field}` is required and must be a non-empty string"))
-        };
-        match tool {
-            "ask_user" => need("question"),
-            "report_status" => need("status"),
-            "create_task" => need("title"),
-            "start_slice" => need_id("task")
-                .or_else(|| need("name"))
-                .or_else(|| need("brief")),
-            "log_decision" => {
-                let task = if self.role == Role::Coordinator {
-                    need_id("task").map(|_| {
-                        "the coordinator must name the `task` this decision belongs to".to_owned()
-                    })
-                } else {
-                    None
-                };
-                task.or_else(|| need("decision"))
-            }
-            _ => None,
         }
     }
 
@@ -300,7 +250,7 @@ impl Bridge {
         let path = self
             .socket
             .as_deref()
-            .ok_or_else(|| not_running("DOVETAIL_SOCKET is not set"))?;
+            .ok_or_else(|| not_running(&format!("{} is not set", env::SOCKET)))?;
         let stream = UnixStream::connect(path).map_err(|e| not_running(&e.to_string()))?;
         let reader = stream
             .try_clone()

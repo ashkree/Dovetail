@@ -22,8 +22,8 @@ Review of `pre-wave-1...wave-1` (the contracts commit, then tracks A storage, B 
 | `service.rs` holds an unread `config` with `#[allow(dead_code)]` | Speculative Generality | **Wave 2** reads it (`max_slices`) |
 | `projects::identify` and `worktree::main_checkout` both find the main checkout, by different rules | Duplicated Code, could disagree | **Wave 2**: one function |
 | The NDJSON socket client is written twice (`socket::try_add_task`, `mcp::roundtrip`) | Duplicated Code | Kept: the bridge must stay std-only and small, and the two are about 30 lines each |
-| Tool names are matched as strings in three places in `mcp.rs` | Repeated Switches | Open: a `Tool` enum if a sixth tool appears |
-| The `DOVETAIL_*` env var names are literals in `hook.rs` and `mcp.rs` | Shotgun Surgery risk | **Wave 2**: shared constants, which the core's launch code also uses |
+| Tool names are matched as strings in three places in `mcp.rs` | Repeated Switches | **Fixed** in the retro: `dovetail_api::tools::Tool` |
+| The `DOVETAIL_*` env var names are literals in `hook.rs` and `mcp.rs` | Shotgun Surgery risk | **Fixed** in the retro: `dovetail_api::tools::env` |
 | `(paths, project, name)` travel together through `worktree.rs`; the project id is a bare string | Data Clumps | Open |
 
 ## Spec
@@ -47,4 +47,13 @@ Review of `pre-wave-1...wave-1` (the contracts commit, then tracks A storage, B 
 
 ## Retro
 
-The user runs `/retro`; notes go here.
+Run 2026-11-05. Ordered by severity; the outcome is the user's call.
+
+| Finding | Category | Outcome |
+| --- | --- | --- |
+| The worst bugs were mismatches between tracks (string vs integer ids, `p0` vs `P0`, env var literals, `--strict-mcp-config`): the contracts commit covered the socket messages but not tool inputs or env names | Coding standards / process | **Done:** tool inputs (`Tool`, `AskUser`, ..., `StartSlice`), `Role` and the `env` names live in `dovetail_api::tools`; the bridge parses and validates into them and the socket carries the typed `Tool`. The plan's Waves section now says every cross-track value goes in the contracts commit |
+| No guardrail: no pre-commit hook, no CI | Automated checks | **Later:** the project is in its dev phase |
+| Track agents ticked boxes they never verified | Process | **Done:** a Waves rule; only the integrator ticks, after checking |
+| Track D could not drive its own bridge against a socket; the scratchpad path is too long for a unix socket | Information access | **Asked:** explained to the user |
+| The M5–M9 "Tests:" lists contradict "tests when something breaks" | Relevance | **Done:** marked deferred, kept for when tests return |
+| Build output filtered through `grep` hid whether compilation ran | Tool economy | Agent habit: `cargo build 2>&1 \| tail -3` |
