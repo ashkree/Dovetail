@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::tools::Tool;
 use crate::{AgentId, NewTask, TaskId};
 
 /// One request from a socket client.
@@ -31,13 +32,11 @@ pub enum SocketRequestBody {
     ToolCall {
         /// The calling session, from the bridge's `DOVETAIL_AGENT_ID`.
         agent: AgentId,
-        /// Tool name without the MCP server prefix, e.g. `ask_user`.
-        tool: String,
         /// `params._meta["claudecode/toolUseId"]`, matched to the stream's `parent_tool_use_id`
         /// to attribute subagent calls (spike S3).
         tool_use_id: Option<String>,
-        /// The tool's arguments as sent by Claude Code.
-        input: serde_json::Value,
+        /// The tool and its arguments, parsed and validated by the bridge.
+        call: Tool,
     },
 }
 

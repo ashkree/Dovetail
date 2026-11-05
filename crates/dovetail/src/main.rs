@@ -115,12 +115,15 @@ fn main() -> Result<()> {
             Err(e) if is_broken_pipe(&e) => Ok(()),
             other => other,
         },
-        (_, true) => bail!("--dump needs --mock until the real core lands"),
+        (false, true) => bail!("--dump needs --mock"),
         (true, false) => {
             logging::init();
             tui::run_mock(args.seed.unwrap_or(1), args.speed.unwrap_or(1.0))
         }
-        (false, false) => bail!("only `--mock` works until the real core lands (M5)\n\n{USAGE}"),
+        (false, false) => {
+            logging::init();
+            tui::run_real()
+        }
     }
 }
 

@@ -444,9 +444,12 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - **B. Driver:** the `dovetail-driver` half of M6 (`SessionDriver`, `ClaudeDriver`, `FakeDriver`, event mapping).
   - **C. Worktrees:** the lower half of M8 (`dovetail hook worktree-create`, `core::worktree` create, setup, inspect, remove).
   - **D. MCP bridge:** the lower half of M9 (`dovetail mcp`, tool schemas including `start_slice`, role-prompt edits).
-- **Wave 2: one Opus agent, in order:** the session core of M6, M7, the slice flow of M8, the tool handlers of M9 including `start_slice` ([ADR 0004](adr/0004-start-slice-tool.md)).
+- **Wave 2: one Opus agent, in order:** the session core of M6, M7, the slice flow of M8, the tool handlers of M9 including `start_slice` ([ADR 0004](adr/0004-start-slice-tool.md)). Also [ADR 0005](adr/0005-explicit-projects-any-folder.md): no silent registration, `:project add` and `add_project`, in-memory state until registered, and non-git projects whose slices share the folder.
 - **Live checks:** one batch after wave 2, in `scripts/live-checks.sh`, which you run. Scratch repos in `/tmp`, tiny prompts, Haiku except where auto mode needs a supported model.
 - **Then M10**, the self-hosting point.
+- **Rules from the wave-1 retro:**
+  - Every value that crosses a track boundary (wire types, tool inputs, env var names, ids, flags) is defined in the contracts commit, in `dovetail-api` where both sides can import it.
+  - A track agent reports each "done when" item as met or unverified; only the integrator ticks boxes, after checking.
 
 ### M1. Workspace, API, mock core
 - **Spikes needed:** S1–S3 (event shapes)
@@ -489,11 +492,11 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Scope:** DB thread, typed requests, migrations. `dovetail-core` with `CoreLink`. Project identity from `git rev-parse --path-format=absolute --git-common-dir`. Project registration. Recipe reader for `~/.config/dovetail/projects/<id>.toml`. `config.toml`. Unix socket at `$XDG_RUNTIME_DIR/dovetail/<project-id>.sock`. `dovetail add`.
 - **Files:** `crates/dovetail-core/src/{lib,db/,projects,recipe,config,paths,socket}.rs`, `crates/dovetail/src/{main,add}.rs`, `config/projects/dovetail.toml`, `scripts/bootstrap.sh`
 - **Done when:**
-  - [ ] `dovetail` in a registered repo shows persistent tasks with no sessions
-  - [ ] Tasks survive restart
-  - [ ] `dovetail add "x !p1 @now"` appears live if the app is running, or on next open if not
-  - [ ] Recipe format is final and bootstrap matches it
-- **Tests:** migrations from empty, typed requests, project identity from a worktree, recipe parsing, `add` both ways
+  - [x] `dovetail` in a registered repo shows persistent tasks with no sessions
+  - [x] Tasks survive restart
+  - [x] `dovetail add "x !p1 @now"` appears live if the app is running, or on next open if not
+  - [x] Recipe format is final and bootstrap matches it
+- **Tests:** migrations from empty, typed requests, project identity from a worktree, recipe parsing, `add` both ways (deferred: tests are written when something breaks, decided 2026-11-05)
 
 ### M6. Driver and one coordinator session
 - **Spikes needed:** S0, S1
@@ -504,7 +507,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] Interrupt works
   - [ ] Non-`auto` init shows a warning
   - [ ] Child processes are always reaped
-- **Tests:** fixtures for plain turn, double `result`, partial stream; live test behind `DOVETAIL_LIVE_TESTS=1`
+- **Tests:** fixtures for plain turn, double `result`, partial stream; live test behind `DOVETAIL_LIVE_TESTS=1` (deferred: tests are written when something breaks, decided 2026-11-05)
 
 ### M7. Live permissions
 - **Scope:** `can_use_tool` to inbox and back, concurrent answers, `y A d D`, rule suggestions for always-allow, `<leader>sm` over the control protocol, `permission_denials` surfaced, activity feed from real events.
@@ -513,7 +516,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] In manual mode, a real request is answered from the inbox
   - [ ] One held request never blocks another
   - [ ] Mode changes with no restart, and the badge follows
-- **Tests:** `concurrent_permissions` fixture, always-allow payloads, mode mapping (`manual`)
+- **Tests:** `concurrent_permissions` fixture, always-allow payloads, mode mapping (`manual`) (deferred: tests are written when something breaks, decided 2026-11-05)
 
 ### M8. Slices, worktree hooks, cleanup
 - **Spikes needed:** S2 (done: no relay needed)
@@ -527,7 +530,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] Coordinator and slice exchange messages in a scratch repo
   - [ ] Archiving removes everything, after asking when work is unpushed
   - [ ] Only branches appear in the repo
-- **Tests:** hook idempotence, cleanup against real temp git repos, dirty and unpushed detection
+- **Tests:** hook idempotence, cleanup against real temp git repos, dirty and unpushed detection (deferred: tests are written when something breaks, decided 2026-11-05)
 
 ### M9. MCP bridge, `ask_user`, `report_status`, `create_task`, role prompts
 - **Spikes needed:** S3; S6 runs here
@@ -540,7 +543,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] A coordinator `create_task` lands in Unsorted, marked until seen; a slice can't call it
   - [ ] App exit gives the agent a clear error, not a hang
   - [ ] S6 recorded
-- **Tests:** MCP protocol, tool schemas, socket forwarding, blocking and non-blocking
+- **Tests:** MCP protocol, tool schemas, socket forwarding, blocking and non-blocking (deferred: tests are written when something breaks, decided 2026-11-05)
 
 ### M10. Resume, stable install, rehearsal — **SELF-HOSTING POINT**
 - **Scope:** restore on open (coordinator immediately, slices on first touch). Pending inbox items reconciled after restart. A stale-state sweep for agents and worktrees. Stable install (`cargo install --path crates/dovetail --root ~/.local`), with hook and MCP paths using the installed path, not `target/`. `docs/self-hosting.md` covering the daily flow, upgrades and recovery.
@@ -668,7 +671,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 | B22 | **`r` on a finished turn** | Sends a normal message to that agent |
 | B23 | **Quit with live sessions** | Sessions end with the app (no daemon in v1). `:q` asks if a turn is running; everything resumes on open |
 | B24 | **Project switch** | Stops the current project's sessions after asking |
-| B25 | **Starting outside a registered repo** | Offers to register; outside any git repo, opens the last project |
+| B25 | **Starting outside a registered repo** | ~~Offers to register; outside any git repo, opens the last project~~ Superseded by [ADR 0005](adr/0005-explicit-projects-any-folder.md): registered only on request (`:project add` or the coordinator's `add_project`), and any folder can be a project |
 | B26 | **Take-over terminal** | Same terminal, TUI suspended, as the mock shows |
 | B27 | **Key-sequence timeout** | 1000 ms |
 | B28 | **`--strict-mcp-config`** | Not used, so your own MCP servers still load |

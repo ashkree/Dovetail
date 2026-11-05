@@ -11,6 +11,7 @@ mod apply;
 mod model;
 mod protocol;
 pub mod socket;
+pub mod tools;
 
 pub use apply::{ApplyResult, apply};
 pub use model::*;

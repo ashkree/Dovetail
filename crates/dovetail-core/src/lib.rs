@@ -7,5 +7,8 @@ pub mod db;
 pub mod paths;
 pub mod projects;
 pub mod recipe;
+pub mod service;
 pub mod socket;
 pub mod worktree;
+
+pub use service::{CoreError, spawn, spawn_with};
