@@ -187,20 +187,10 @@ impl Core {
             AgentKind::Coordinator => {
                 let cwd = self.project.repo_path().to_path_buf();
                 self.launch(id, cwd, None)?;
-                // Signals held while it could not be woken.
-                let notes = std::mem::take(&mut self.coordinator_notes);
-                if !notes.is_empty() {
-                    self.persist("delivered coordinator notes", self.db.clear_notes());
-                }
-                if let Some(live) = self.live.get_mut(id) {
-                    for note in &notes {
-                        if live.session.send(UserInput::text(note.as_str())).is_ok() {
-                            live.turn.input_sent();
-                        }
-                    }
-                }
-                for note in notes {
-                    self.add_entry(id, EntryKind::Notice, format!("Dovetail: {note}"));
+                // Signals held while it could not be woken, unless its last turn was cut off:
+                // then they wait for the user's next message (decision 1: never continue).
+                if !self.notes_wait_for_user {
+                    self.deliver_notes();
                 }
                 Ok(())
             }
@@ -253,9 +243,51 @@ impl Core {
                 row.agent.status = AgentStatus::Idle;
             }
         });
+        // The user writes to a coordinator whose turn was cut off: the notes held since then go
+        // with this message (decision 1 of 2026-11-06).
+        if id.0 == COORDINATOR && self.notes_wait_for_user {
+            self.notes_wait_for_user = false;
+            if let Err(message) = self.ensure_live(id) {
+                self.fail(message);
+                return;
+            }
+            self.deliver_notes();
+        }
         if let Err(message) = self.send_text(id, &text, EntryKind::User, text.clone()) {
             self.fail(message);
         }
+    }
+
+    /// Sends the held coordinator notes to its running session. They leave storage only once
+    /// every one was sent.
+    pub(crate) fn deliver_notes(&mut self) {
+        let id = AgentId(COORDINATOR.into());
+        let notes = std::mem::take(&mut self.coordinator_notes);
+        if notes.is_empty() {
+            return;
+        }
+        let Some(live) = self.live.get_mut(&id) else {
+            self.coordinator_notes = notes;
+            return;
+        };
+        let mut sent = 0;
+        for note in &notes {
+            if live.session.send(UserInput::text(note.as_str())).is_err() {
+                break;
+            }
+            live.turn.input_sent();
+            sent += 1;
+        }
+        for note in &notes[..sent] {
+            self.add_entry(&id, EntryKind::Notice, format!("Dovetail: {note}"));
+        }
+        if sent == notes.len() {
+            self.persist("delivered coordinator notes", self.db.clear_notes());
+        } else {
+            // Keep them all on record; the next start tries again.
+            self.coordinator_notes = notes;
+        }
+        self.refresh_status(&id);
     }
 
     /// A message from Dovetail itself (a slice's ready signal, an answer that arrives later),
@@ -282,7 +314,7 @@ impl Core {
                 .agents
                 .get(&id)
                 .is_some_and(|r| r.agent.status == AgentStatus::Idle);
-        if self.quitting.is_none() && wakeable {
+        if self.quitting.is_none() && wakeable && !self.notes_wait_for_user {
             self.send_note(&id, &text);
         } else {
             self.persist("a coordinator note", self.db.add_note(text.clone()));

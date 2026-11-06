@@ -18,7 +18,7 @@
 
 use dovetail_api::{
     ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind,
-    REMOVE_WORKTREE_PERMISSION,
+    REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION,
 };
 
 use crate::inbox::Waiter;
@@ -58,6 +58,14 @@ impl Core {
     /// Acts on what [`Restored`] holds. Runs after the first snapshot, so every change goes out
     /// as an event.
     pub(crate) async fn reconcile(&mut self, restored: Restored) {
+        let coordinator_id = AgentId(COORDINATOR.into());
+        if restored
+            .cut_off
+            .iter()
+            .any(|(a, s)| a == &coordinator_id && *s != AgentStatus::SettingUp)
+        {
+            self.notes_wait_for_user = true;
+        }
         let mut asking = std::collections::HashSet::new();
         for item in restored.inbox {
             match &item.kind {
@@ -67,6 +75,19 @@ impl Core {
                         self.db
                             .resolve_inbox(item.id, Some("expired at restart".into())),
                     );
+                    // Dovetail's own items: an approval the coordinator was told is `pending`
+                    // gets an answer; a worktree question is simply asked again (by the sweep,
+                    // or by archiving the slice again).
+                    if tool == START_SLICE_PERMISSION {
+                        let name = input.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                        self.tell_coordinator(format!(
+                            "start_slice {name} expired at restart; call it again if still needed"
+                        ));
+                        continue;
+                    }
+                    if tool == REMOVE_WORKTREE_PERMISSION {
+                        continue;
+                    }
                     let name = self.name_of(&item.agent);
                     self.activity(
                         ActivityKind::Lifecycle,

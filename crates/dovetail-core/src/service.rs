@@ -281,6 +281,9 @@ pub(crate) struct Core {
     /// Signals for a coordinator that may not be woken (it crashed, or the app is quitting);
     /// sent when its session next starts.
     pub(crate) coordinator_notes: Vec<String>,
+    /// The coordinator's last turn was cut off by a restart: held notes wait for the user's
+    /// next message to it instead of waking it.
+    pub(crate) notes_wait_for_user: bool,
     pub(crate) quitting: Option<tokio::time::Instant>,
     pub(crate) killed: bool,
 }
@@ -330,6 +333,7 @@ impl Core {
             queue: VecDeque::new(),
             seen_messages: Default::default(),
             coordinator_notes: Vec::new(),
+            notes_wait_for_user: false,
             quitting: None,
             killed: false,
         }

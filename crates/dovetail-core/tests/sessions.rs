@@ -1203,3 +1203,115 @@ fn inputs_folded_into_the_running_turn_end_with_its_result() {
     });
     h.quit();
 }
+
+/// Raises a pending `start_slice` approval: the coordinator to acceptEdits, a task, the call.
+fn pending_start(h: &mut Harness) {
+    h.send(Command::CyclePermissionMode {
+        agent: AgentId(COORDINATOR.into()),
+    });
+    h.send(Command::CreateTask(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+    }));
+    h.wait_for("mode and task", |s| {
+        !s.tasks.is_empty()
+            && s.agents
+                .iter()
+                .any(|a| a.permission_mode == PermissionMode::AcceptEdits)
+    });
+    let (text, _) = result_text(socket_call(
+        &h.socket(),
+        tool(
+            COORDINATOR,
+            Tool::StartSlice(StartSlice {
+                task: TaskId(1),
+                name: "later".into(),
+                brief: "go".into(),
+            }),
+        ),
+    ));
+    assert!(text.starts_with("pending"), "{text}");
+}
+
+fn sent_users(fake: &FakeDriver) -> Vec<String> {
+    fake.sent()
+        .into_iter()
+        .filter_map(|s| match s {
+            Sent::User(t) => Some(t),
+            _ => None,
+        })
+        .collect()
+}
+
+const EXPIRED: &str = "start_slice later expired at restart; call it again if still needed";
+
+#[test]
+fn a_start_slice_approval_pending_at_quit_is_answered_after_reopen() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    pending_start(&mut h);
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !sent_users(&fake).contains(&EXPIRED.to_string()) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    h.drain(Duration::from_millis(100));
+    assert!(
+        !h.snap
+            .activity
+            .iter()
+            .any(|a| a.text.contains("request expired")),
+        "Dovetail's own approval is not logged as an expired request"
+    );
+    h.quit();
+}
+
+#[test]
+fn notes_for_a_coordinator_cut_off_by_a_restart_wait_for_the_users_next_message() {
+    let mut h = Harness::start(held_turn(), true, Config::default());
+    pending_start(&mut h);
+    prompt(&h, "rename the flag");
+    h.wait_for("the turn to start", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "working on it"))
+    });
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths.clone());
+    h.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
+    h.drain(Duration::from_millis(200));
+    assert!(
+        sent_users(&fake).is_empty(),
+        "nothing continues it: {:?}",
+        fake.sent()
+    );
+    prompt(&h, "carry on");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while sent_users(&fake).len() < 2 {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        sent_users(&fake),
+        vec![EXPIRED.to_string(), "carry on".to_string()]
+    );
+    let _state = h.quit();
+    // Delivered, so not sent again on the next open.
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.drain(Duration::from_millis(300));
+    assert!(!sent_users(&fake).contains(&EXPIRED.to_string()));
+    h.quit();
+}
