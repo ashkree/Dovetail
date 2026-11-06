@@ -640,9 +640,24 @@ impl Buffer for TreeBuffer {
                     }
                 });
             }
-            Action::TaskArchive => self.task_action(cx, effects, |t| {
-                Effect::Command(Command::ArchiveTask { id: t.id })
-            }),
+            Action::TaskArchive => {
+                // On a slice's row, `dd` archives that slice; elsewhere, the task with its slices.
+                let slice = match self.selected_key(cx) {
+                    Some(RowKey::Agent(id)) => cx
+                        .snap
+                        .agents
+                        .iter()
+                        .find(|a| a.id == id && a.kind == AgentKind::Slice)
+                        .map(|a| a.id.clone()),
+                    _ => None,
+                };
+                match slice {
+                    Some(agent) => effects.push(Effect::Command(Command::CloseSlice { agent })),
+                    None => self.task_action(cx, effects, |t| {
+                        Effect::Command(Command::ArchiveTask { id: t.id })
+                    }),
+                }
+            }
             _ => return false,
         }
         true

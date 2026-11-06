@@ -11,14 +11,34 @@ pub struct Parsed {
     pub arg: String,
 }
 
+/// A command line that names no command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandError {
+    /// Nothing after `:`.
+    Empty,
+    /// No command has this name.
+    Unknown(String),
+}
+
+impl std::fmt::Display for CommandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandError::Empty => f.write_str("empty command"),
+            CommandError::Unknown(name) => write!(f, "unknown command :{name}"),
+        }
+    }
+}
+
+impl std::error::Error for CommandError {}
+
 /// Parses a command line (without the leading `:`).
-pub fn parse(line: &str) -> Result<Parsed, String> {
+pub fn parse(line: &str) -> Result<Parsed, CommandError> {
     let line = line.trim();
     let (name, arg) = line
         .split_once(char::is_whitespace)
         .map_or((line, ""), |(n, a)| (n, a.trim()));
     let action = match name {
-        "" => return Err("empty command".into()),
+        "" => return Err(CommandError::Empty),
         "q" | "quit" => Action::Quit,
         "q!" | "quit!" => Action::ForceQuit,
         "spawn" => Action::NewSlice,
@@ -36,11 +56,12 @@ pub fn parse(line: &str) -> Result<Parsed, String> {
         "add" | "capture" => Action::QuickCapture,
         "mode" | "perm" => Action::CyclePermissionMode,
         "takeover" => Action::TakeOver,
+        "project" if arg == "add" => Action::RegisterProject,
         "project" => Action::SwitchProject,
         "register" => Action::RegisterProject,
         #[cfg(debug_assertions)]
         "panic" => Action::DebugPanic,
-        other => return Err(format!("unknown command :{other}")),
+        other => return Err(CommandError::Unknown(other.to_owned())),
     };
     Ok(Parsed {
         action,
@@ -63,6 +84,18 @@ mod tests {
     fn unknown_and_empty_commands_are_errors() {
         assert!(parse("frobnicate").is_err());
         assert!(parse("  ").is_err());
+    }
+
+    #[test]
+    fn project_add_registers_the_open_folder() {
+        assert_eq!(
+            parse("project add").map(|p| p.action),
+            Ok(Action::RegisterProject)
+        );
+        assert_eq!(
+            parse("project").map(|p| p.action),
+            Ok(Action::SwitchProject)
+        );
     }
 
     #[test]

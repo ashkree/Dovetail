@@ -32,7 +32,8 @@ pub fn run(args: Vec<String>) -> Result<()> {
     let paths = Paths::from_env();
     let cwd = std::env::current_dir().context("finding the current directory")?;
     let registry = Db::open(&paths, None).context("opening the project registry")?;
-    let (project, _) = projects::resolve(&registry, &cwd)?;
+    // ADR 0005: only a registered project takes tasks; nothing is registered here.
+    let project = projects::require(&registry, &cwd)?;
     drop(registry);
 
     let socket_path = paths.socket(&project.id);

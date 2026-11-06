@@ -8,9 +8,10 @@
 //! Only `name` and `cwd` are used. On success it prints the worktree path on stdout (one line,
 //! nothing else) and exits 0. It is idempotent: it creates the worktree on branch
 //! `dovetail/<name>` from `cwd`'s `HEAD`, symlinks the recipe's paths, runs the recipe's setup
-//! (slices only, once; interrupted or failed setup runs again) and returns. On failure it prints
-//! a message on stderr and exits non-zero; the core treats that as an inbox error and sends no
-//! first prompt.
+//! (slices only, once; interrupted or failed setup runs again) and returns. Either way it records
+//! a `worktree::HookOutcome` in the setup state directory, which the core waits for before it
+//! sends a slice its first prompt. On failure it prints a message on stderr and exits non-zero;
+//! the core raises an inbox error and sends no first prompt.
 //!
 //! Environment, set by the core at launch:
 //! - `DOVETAIL_PROJECT` (required): the project id (recipe: `~/.config/dovetail/projects/<id>.toml`).
@@ -46,7 +47,7 @@ use anyhow::{Context, Result, bail};
 use dovetail_api::tools::env;
 use dovetail_core::paths::Paths;
 use dovetail_core::recipe::Recipe;
-use dovetail_core::worktree::{self, CreateRequest};
+use dovetail_core::worktree::{self, CreateRequest, HookOutcome};
 use serde::Deserialize;
 
 /// The fields of the hook input that we use.
@@ -93,7 +94,22 @@ fn worktree_create() -> Result<()> {
         cwd: input.cwd,
         recipe,
     };
-    let created = worktree::create(&paths, &req).with_context(|| {
+    let created = worktree::create(&paths, &req);
+    // The core waits for this outcome before it sends a slice its first prompt.
+    let outcome = match &created {
+        Ok(c) => HookOutcome {
+            path: Some(c.path.clone()),
+            error: None,
+        },
+        Err(e) => HookOutcome {
+            path: None,
+            error: Some(e.to_string()),
+        },
+    };
+    if let Err(e) = worktree::write_hook_outcome(&paths, &req.project, &req.name, &outcome) {
+        eprintln!("recording the hook outcome: {e}");
+    }
+    let created = created.with_context(|| {
         let agent = std::env::var(env::AGENT_ID).unwrap_or_default();
         format!("creating worktree `{}` (agent {agent})", req.name)
     })?;

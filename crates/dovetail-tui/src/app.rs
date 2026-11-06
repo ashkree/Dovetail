@@ -386,7 +386,7 @@ impl App {
         match target {
             InputTarget::Command => match command::parse(&text) {
                 Ok(parsed) => self.run_with_arg(parsed.action, &parsed.arg),
-                Err(message) => self.note = Some(message),
+                Err(e) => self.note = Some(e.to_string()),
             },
             // Chat never comes through the prompt row.
             InputTarget::Prompt(_) => {}
@@ -470,8 +470,19 @@ impl App {
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
             Action::TakeOver => self.note = Some("take-over arrives in M14".into()),
-            Action::SwitchProject | Action::RegisterProject => {
-                self.note = Some("projects arrive in M5".into());
+            Action::RegisterProject => {
+                // The open folder (ADR 0005); the core refuses any other.
+                let path = self
+                    .snap
+                    .project
+                    .as_ref()
+                    .map(|p| p.repo_path.clone())
+                    .unwrap_or_default();
+                self.outbox.push(Command::RegisterProject { path });
+            }
+            Action::SwitchProject => {
+                self.note =
+                    Some("to switch projects, quit and open dovetail in the other folder".into());
             }
             Action::Quit => {
                 let running = self

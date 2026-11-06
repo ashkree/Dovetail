@@ -61,7 +61,7 @@ impl Key {
     }
 
     /// Parses a sequence such as `gg`, `<leader>ss`, `<C-j>` or `<CR>`.
-    pub fn parse_sequence(text: &str) -> Result<Vec<Key>, String> {
+    pub fn parse_sequence(text: &str) -> Result<Vec<Key>, KeyError> {
         let mut keys = Vec::new();
         let mut rest = text;
         while let Some(c) = rest.chars().next() {
@@ -76,12 +76,12 @@ impl Key {
             }
         }
         if keys.is_empty() {
-            return Err("empty key sequence".into());
+            return Err(KeyError::Empty);
         }
         Ok(keys)
     }
 
-    fn parse_named(name: &str) -> Result<Key, String> {
+    fn parse_named(name: &str) -> Result<Key, KeyError> {
         let lower = name.to_ascii_lowercase();
         if let Some(rest) = lower.strip_prefix("c-") {
             let mut key = Self::parse_named(rest)?;
@@ -105,9 +105,51 @@ impl Key {
             "right" => KeyCode::Right,
             "lt" => KeyCode::Char('<'),
             s if s.chars().count() == 1 => KeyCode::Char(s.chars().next().unwrap_or(' ')),
-            _ => return Err(format!("unknown key <{name}>")),
+            _ => return Err(KeyError::Unknown(name.to_owned())),
         };
         Ok(Key::new(code))
+    }
+}
+
+/// A key sequence that does not parse. The keymap table becomes user TOML later, so this is
+/// what a user would see.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyError {
+    /// Nothing to parse.
+    Empty,
+    /// `<name>` is not a key Dovetail knows.
+    Unknown(String),
+}
+
+impl std::fmt::Display for KeyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyError::Empty => f.write_str("empty key sequence"),
+            KeyError::Unknown(name) => write!(f, "unknown key <{name}>"),
+        }
+    }
+}
+
+impl std::error::Error for KeyError {}
+
+/// A binding whose keys do not parse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeymapError {
+    /// The binding's keys as written.
+    pub keys: String,
+    /// What is wrong with them.
+    pub source: KeyError,
+}
+
+impl std::fmt::Display for KeymapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "binding {:?}: {}", self.keys, self.source)
+    }
+}
+
+impl std::error::Error for KeymapError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
     }
 }
 
@@ -239,19 +281,21 @@ pub struct Keymap {
 
 impl Keymap {
     /// Parses a table. Fails on a malformed key sequence.
-    pub fn new(bindings: &[Binding]) -> Result<Self, String> {
+    pub fn new(bindings: &[Binding]) -> Result<Self, KeymapError> {
         let entries = bindings
             .iter()
             .map(|b| {
                 Ok(Entry {
                     mode: b.mode,
                     scope: b.scope,
-                    keys: Key::parse_sequence(b.keys)
-                        .map_err(|e| format!("binding {:?}: {e}", b.keys))?,
+                    keys: Key::parse_sequence(b.keys).map_err(|source| KeymapError {
+                        keys: b.keys.to_owned(),
+                        source,
+                    })?,
                     action: b.action,
                 })
             })
-            .collect::<Result<_, String>>()?;
+            .collect::<Result<_, KeymapError>>()?;
         Ok(Self { entries })
     }
 

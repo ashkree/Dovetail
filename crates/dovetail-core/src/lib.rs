@@ -4,11 +4,19 @@
 
 pub mod config;
 pub mod db;
+pub mod error;
+mod inbox;
 pub mod paths;
 pub mod projects;
 pub mod recipe;
+mod registration;
 pub mod service;
+pub mod session;
+mod shutdown;
+mod slice;
 pub mod socket;
+mod tools;
 pub mod worktree;
 
-pub use service::{CoreError, spawn, spawn_with};
+pub use service::{COORDINATOR, CoreError, CoreOptions, spawn};
+pub use shutdown::CoreHandle;

@@ -251,10 +251,19 @@ async fn replay(
             }
         }
         if options.wait_for_answers && is_permission_request(&line.msg) {
-            let next_is_request = lines
-                .get(n + 1)
-                .is_some_and(|l| is_permission_request(&l.msg));
-            if !next_is_request {
+            // Requests of one burst arrive together, possibly with the assistant lines of the
+            // calls between them (the `concurrent_permissions` recording): wait only after the
+            // last request before the next tool result or `result`.
+            let more_in_burst = lines[n + 1..]
+                .iter()
+                .take_while(|l| {
+                    !matches!(
+                        l.msg.get("type").and_then(Value::as_str),
+                        Some("user" | "result")
+                    )
+                })
+                .any(|l| is_permission_request(&l.msg));
+            if !more_in_burst {
                 loop {
                     let empty = shared
                         .outstanding

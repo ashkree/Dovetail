@@ -235,13 +235,20 @@ fn map_assistant(v: &Value) -> DriverEvent {
 fn map_user(v: &Value) -> Vec<DriverEvent> {
     let origin = origin_of(v);
     let uuid = str_of(v, "uuid");
+    let is_replay = v.get("isReplay").and_then(Value::as_bool).unwrap_or(false);
+    let message_origin = v.get("origin").filter(|o| o.is_object()).cloned();
+    let meta = v.get("tool_use_result").cloned();
+    let user = |text: String| DriverEvent::UserMessage {
+        origin: origin.clone(),
+        uuid: uuid.clone(),
+        text,
+        is_replay,
+        message_origin: message_origin.clone(),
+        raw: v.clone(),
+    };
     let content = v.get("message").and_then(|m| m.get("content"));
     match content {
-        Some(Value::String(s)) => vec![DriverEvent::UserMessage {
-            origin,
-            uuid,
-            text: s.clone(),
-        }],
+        Some(Value::String(s)) => vec![user(s.clone())],
         Some(Value::Array(blocks)) => {
             let mut out = Vec::new();
             let mut text = Vec::new();
@@ -252,17 +259,14 @@ fn map_user(v: &Value) -> Vec<DriverEvent> {
                         tool_use_id: str_of(b, "tool_use_id").unwrap_or_default(),
                         content: b.get("content").cloned().unwrap_or(Value::Null),
                         is_error: b.get("is_error").and_then(Value::as_bool).unwrap_or(false),
+                        meta: meta.clone(),
                     })),
                     Some("text") => text.extend(str_of(b, "text")),
                     _ => {}
                 }
             }
             if !text.is_empty() {
-                out.push(DriverEvent::UserMessage {
-                    origin,
-                    uuid,
-                    text: text.join("\n\n"),
-                });
+                out.push(user(text.join("\n\n")));
             }
             if out.is_empty() {
                 out.push(DriverEvent::Unknown(v.clone()));

@@ -793,9 +793,10 @@ fn stubs_say_when_they_arrive() {
     leader(&mut app, "st");
     assert_eq!(app.note(), Some("take-over arrives in M14"));
     leader(&mut app, "pp");
-    assert_eq!(app.note(), Some("projects arrive in M5"));
-    leader(&mut app, "pr");
-    assert_eq!(app.note(), Some("projects arrive in M5"));
+    assert_eq!(
+        app.note(),
+        Some("to switch projects, quit and open dovetail in the other folder")
+    );
 }
 
 // --- snapshots of the overlays and new buffers ---

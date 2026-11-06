@@ -1,13 +1,20 @@
 //! The single DB thread: typed requests, migrations, `registry.db` and per-project `state.db`.
 //!
 //! Every SQLite call in the app goes through one thread that owns the connections. Callers hold a
-//! cheap, cloneable [`Db`] and get a [`Pending`] back from each request, which they either
-//! `.await` (in the core) or [`Pending::wait`] on (in the binary's start-up and `dovetail add`).
-//! Migrations are forward-only and tracked with `PRAGMA user_version`: step `n` of a list moves a
-//! database from version `n` to `n + 1`.
+//! cheap, cloneable [`Db`] and call its typed methods; each returns a [`Pending`], which they
+//! either `.await` (in the core) or [`Pending::wait`] on (in the binary's start-up and
+//! `dovetail add`). Migrations are forward-only and tracked with `PRAGMA user_version`: step `n`
+//! of a list moves a database from version `n` to `n + 1`.
+//!
+//! A folder that is not a project yet keeps its state in an in-memory `state.db`
+//! ([`Db::open_unregistered`]) until [`Db::persist_state`] writes it to the new project's file
+//! (ADR 0005).
 
 mod registry;
+mod sessions;
 mod tasks;
+
+pub use sessions::{AgentRow, QueuedSlice};
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -15,7 +22,10 @@ use std::pin::Pin;
 use std::sync::mpsc;
 use std::task::{Context, Poll};
 
-use dovetail_api::{Decision, DecisionAuthor, NewDecision, NewTask, Task, TaskChange, TaskId};
+use dovetail_api::{
+    ActivityItem, AgentId, AgentMessage, ConversationEntry, Decision, DecisionAuthor, EntryId,
+    InboxId, InboxItem, NewDecision, NewTask, Task, TaskChange, TaskId,
+};
 use rusqlite::Connection;
 use tokio::sync::oneshot;
 
@@ -23,9 +33,17 @@ use crate::paths::Paths;
 use crate::projects::Project;
 
 /// Migrations of `registry.db`, in order.
-const REGISTRY_MIGRATIONS: &[&str] = &[include_str!("db/migrations/registry/0001_init.sql")];
+const REGISTRY_MIGRATIONS: &[&str] = &[
+    include_str!("db/migrations/registry/0001_init.sql"),
+    include_str!("db/migrations/registry/0002_optional_git.sql"),
+];
 /// Migrations of a project's `state.db`, in order.
-const STATE_MIGRATIONS: &[&str] = &[include_str!("db/migrations/state/0001_init.sql")];
+const STATE_MIGRATIONS: &[&str] = &[
+    include_str!("db/migrations/state/0001_init.sql"),
+    include_str!("db/migrations/state/0002_agents_conversation.sql"),
+    include_str!("db/migrations/state/0003_inbox_activity.sql"),
+    include_str!("db/migrations/state/0004_slice_queue.sql"),
+];
 
 /// Errors from the database layer.
 #[derive(Debug, thiserror::Error)]
@@ -60,6 +78,9 @@ pub enum DbError {
     /// A project request on a `Db` opened without a project.
     #[error("no project database is open")]
     NoProject,
+    /// A project's `state.db` already exists where unregistered state was to be written.
+    #[error("{0} already exists; move it away and register again")]
+    StateExists(PathBuf),
     /// The DB thread has stopped.
     #[error("the database thread has stopped")]
     Closed,
@@ -88,77 +109,58 @@ impl<T> Future for Pending<T> {
     }
 }
 
-type Reply<T> = oneshot::Sender<Result<T, DbError>>;
-
-/// What the DB thread can be asked to do.
-enum Request {
-    RegisterProject {
-        slug: String,
-        name: String,
-        repo_path: PathBuf,
-        git_common_dir: PathBuf,
-        reply: Reply<Project>,
-    },
-    ListProjects {
-        reply: Reply<Vec<Project>>,
-    },
-    FindProject {
-        git_common_dir: PathBuf,
-        reply: Reply<Option<Project>>,
-    },
-    TouchProject {
-        id: String,
-        reply: Reply<()>,
-    },
-    LoadTasks {
-        reply: Reply<Vec<Task>>,
-    },
-    LoadDecisions {
-        reply: Reply<Vec<Decision>>,
-    },
-    CreateTask {
-        new: NewTask,
-        coordinator_created: bool,
-        /// The new task first, then every task whose relations changed.
-        reply: Reply<Vec<Task>>,
-    },
-    UpdateTask {
-        id: TaskId,
-        patch: Vec<TaskChange>,
-        /// Every task the patch changed.
-        reply: Reply<Vec<Task>>,
-    },
-    ReorderTask {
-        id: TaskId,
-        delta: i32,
-        /// Every task whose position changed.
-        reply: Reply<Vec<Task>>,
-    },
-    LogDecision {
-        new: NewDecision,
-        by: DecisionAuthor,
-        reply: Reply<Decision>,
-    },
+/// The connections the DB thread owns.
+struct Conns {
+    registry: Connection,
+    state: Option<Connection>,
 }
+
+impl Conns {
+    fn state(&mut self) -> Result<&mut Connection, DbError> {
+        self.state.as_mut().ok_or(DbError::NoProject)
+    }
+}
+
+/// One request: runs on the DB thread with the connections and the time it started. Built only
+/// by [`Db`]'s typed methods, each of which sends its result back on its own reply channel.
+type Job = Box<dyn FnOnce(&mut Conns, i64) + Send>;
 
 /// A handle to the DB thread. Clone it freely; the thread ends when the last handle is dropped.
 #[derive(Debug, Clone)]
 pub struct Db {
-    requests: mpsc::Sender<Request>,
+    requests: mpsc::Sender<Job>,
 }
 
 impl Db {
     /// Opens `registry.db` and, when `project` is given, that project's `state.db`, migrating both,
     /// then starts the DB thread.
     pub fn open(paths: &Paths, project: Option<&str>) -> Result<Self, DbError> {
-        let registry = open_connection(&paths.registry_db(), REGISTRY_MIGRATIONS)?;
         let state = project
             .map(|id| open_connection(&paths.state_db(id), STATE_MIGRATIONS))
             .transpose()?;
-        let (requests, inbox) = mpsc::channel();
+        Self::start(paths, state)
+    }
+
+    /// Opens `registry.db` and an empty in-memory `state.db` for a folder that is not a project
+    /// yet. Nothing is written for the folder until [`Db::persist_state`].
+    pub fn open_unregistered(paths: &Paths) -> Result<Self, DbError> {
+        let mut state = Connection::open_in_memory()?;
+        state.pragma_update(None, "foreign_keys", true)?;
+        migrate(&mut state, Path::new(":memory:"), STATE_MIGRATIONS)?;
+        Self::start(paths, Some(state))
+    }
+
+    fn start(paths: &Paths, state: Option<Connection>) -> Result<Self, DbError> {
+        let registry = open_connection(&paths.registry_db(), REGISTRY_MIGRATIONS)?;
+        let (requests, inbox) = mpsc::channel::<Job>();
+        let mut conns = Conns { registry, state };
         std::thread::Builder::new()
             .name("dovetail-db".into())
-            .spawn(move || run(registry, state, inbox))
+            .spawn(move || {
+                for job in inbox {
+                    job(&mut conns, now_ms());
+                }
+            })
             .map_err(|source| DbError::Io {
                 path: PathBuf::from("dovetail-db"),
                 source,
@@ -166,162 +168,208 @@ impl Db {
         Ok(Self { requests })
     }
 
-    fn send<T>(&self, make: impl FnOnce(Reply<T>) -> Request) -> Pending<T> {
+    fn run<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&mut Conns, i64) -> Result<T, DbError> + Send + 'static,
+    ) -> Pending<T> {
         let (reply, pending) = oneshot::channel();
-        if let Err(mpsc::SendError(request)) = self.requests.send(make(reply)) {
-            // The thread is gone; resolve the request with an error at once.
-            request.fail(DbError::Closed);
-        }
+        // If the thread is gone the job is dropped with its reply, and the caller sees `Closed`.
+        let _ = self.requests.send(Box::new(move |conns, now| {
+            let _ = reply.send(f(conns, now));
+        }));
         Pending(pending)
     }
 
-    /// Adds a project to the registry, or returns the one with this git common dir. The id is
-    /// `slug`, numbered (`slug-2`, ...) when taken by another repo.
+    // --- registry ---
+
+    /// Adds a project to the registry, or returns the one with this git common dir (or, without
+    /// git, this folder). The id is `slug`, numbered (`slug-2`, ...) when taken.
     pub fn register_project(
         &self,
         slug: String,
         name: String,
         repo_path: PathBuf,
-        git_common_dir: PathBuf,
+        git_common_dir: Option<PathBuf>,
     ) -> Pending<Project> {
-        self.send(|reply| Request::RegisterProject {
-            slug,
-            name,
-            repo_path,
-            git_common_dir,
-            reply,
+        self.run(move |c, now| {
+            registry::register(
+                &mut c.registry,
+                &slug,
+                &name,
+                &repo_path,
+                git_common_dir.as_deref(),
+                now,
+            )
         })
     }
 
     /// Every registered project, most recently opened first.
     pub fn list_projects(&self) -> Pending<Vec<Project>> {
-        self.send(|reply| Request::ListProjects { reply })
+        self.run(|c, _| registry::list(&c.registry))
     }
 
     /// The project with this git common dir, if registered.
     pub fn find_project(&self, git_common_dir: PathBuf) -> Pending<Option<Project>> {
-        self.send(|reply| Request::FindProject {
-            git_common_dir,
-            reply,
-        })
+        self.run(move |c, _| registry::find(&c.registry, &git_common_dir))
+    }
+
+    /// The project without git registered for this folder, if any.
+    pub fn find_folder(&self, path: PathBuf) -> Pending<Option<Project>> {
+        self.run(move |c, _| registry::find_folder(&c.registry, &path))
+    }
+
+    /// Records the git common dir of a folder project that has become a repo.
+    pub fn set_git_dir(&self, id: String, git_common_dir: PathBuf) -> Pending<Project> {
+        self.run(move |c, _| registry::set_git_dir(&c.registry, &id, &git_common_dir))
     }
 
     /// Marks a project as opened now.
     pub fn touch_project(&self, id: String) -> Pending<()> {
-        self.send(|reply| Request::TouchProject { id, reply })
+        self.run(move |c, now| registry::touch(&c.registry, &id, now))
     }
+
+    /// Writes the in-memory `state.db` of [`Db::open_unregistered`] to `paths.state_db(project)`
+    /// and continues on the file (ADR 0005). A project already on file is left alone.
+    pub fn persist_state(&self, path: PathBuf) -> Pending<()> {
+        self.run(move |c, _| {
+            let state = c.state()?;
+            if state.path().is_some_and(|p| !p.is_empty()) {
+                return Ok(());
+            }
+            if path.exists() {
+                return Err(DbError::StateExists(path));
+            }
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir).map_err(|source| DbError::Io {
+                    path: dir.to_owned(),
+                    source,
+                })?;
+            }
+            state.execute("VACUUM INTO ?1", [path.to_string_lossy()])?;
+            c.state = Some(open_connection(&path, STATE_MIGRATIONS)?);
+            Ok(())
+        })
+    }
+
+    // --- tasks and decisions ---
 
     /// Every task of the open project, archived ones included.
     pub fn load_tasks(&self) -> Pending<Vec<Task>> {
-        self.send(|reply| Request::LoadTasks { reply })
+        self.run(|c, _| tasks::load_tasks(c.state()?))
     }
 
     /// Every decision of the open project, oldest first.
     pub fn load_decisions(&self) -> Pending<Vec<Decision>> {
-        self.send(|reply| Request::LoadDecisions { reply })
+        self.run(|c, _| tasks::load_decisions(c.state()?))
     }
 
     /// Creates a task. Resolves to the new task followed by tasks whose relations changed.
     pub fn create_task(&self, new: NewTask, coordinator_created: bool) -> Pending<Vec<Task>> {
-        self.send(|reply| Request::CreateTask {
-            new,
-            coordinator_created,
-            reply,
-        })
+        self.run(move |c, now| tasks::create_task(c.state()?, new, coordinator_created, now))
     }
 
     /// Applies a patch. Resolves to every task it changed.
     pub fn update_task(&self, id: TaskId, patch: Vec<TaskChange>) -> Pending<Vec<Task>> {
-        self.send(|reply| Request::UpdateTask { id, patch, reply })
+        self.run(move |c, now| tasks::update_task(c.state()?, id, patch, now))
     }
 
     /// Moves a task within its bucket. Resolves to every task whose position changed.
     pub fn reorder_task(&self, id: TaskId, delta: i32) -> Pending<Vec<Task>> {
-        self.send(|reply| Request::ReorderTask { id, delta, reply })
+        self.run(move |c, _| tasks::reorder(c.state()?, id, delta))
     }
 
     /// Appends to a task's decision log.
     pub fn log_decision(&self, new: NewDecision, by: DecisionAuthor) -> Pending<Decision> {
-        self.send(|reply| Request::LogDecision { new, by, reply })
+        self.run(move |c, now| tasks::log_decision(c.state()?, new, by, now))
+    }
+
+    // --- agents and conversations ---
+
+    /// Every agent not yet closed.
+    pub fn load_agents(&self) -> Pending<Vec<AgentRow>> {
+        self.run(|c, _| sessions::load_agents(c.state()?))
+    }
+
+    /// Inserts or replaces an agent.
+    pub fn upsert_agent(&self, row: AgentRow) -> Pending<()> {
+        self.run(move |c, _| sessions::upsert_agent(c.state()?, &row))
+    }
+
+    /// Marks an agent closed: it no longer loads.
+    pub fn close_agent(&self, id: AgentId) -> Pending<()> {
+        self.run(move |c, now| sessions::close_agent(c.state()?, &id, now))
+    }
+
+    /// Inserts or replaces a conversation entry.
+    pub fn upsert_entry(&self, agent: AgentId, entry: ConversationEntry) -> Pending<()> {
+        self.run(move |c, _| sessions::upsert_entry(c.state()?, &agent, &entry))
+    }
+
+    /// Up to `limit` entries of `agent` before `before` (or the newest), oldest first, and
+    /// whether older ones exist.
+    pub fn load_entries(
+        &self,
+        agent: AgentId,
+        before: Option<EntryId>,
+        limit: usize,
+    ) -> Pending<(Vec<ConversationEntry>, bool)> {
+        self.run(move |c, _| sessions::load_entries(c.state()?, &agent, before, limit))
+    }
+
+    /// The highest ids in use, so new ones continue after them.
+    pub fn max_ids(&self) -> Pending<sessions::MaxIds> {
+        self.run(|c, _| sessions::max_ids(c.state()?))
+    }
+
+    // --- the slice queue ---
+
+    /// Queues a slice start; resolves to its row id.
+    pub fn enqueue_slice(
+        &self,
+        task: Option<TaskId>,
+        name: String,
+        brief: String,
+        by_coordinator: bool,
+    ) -> Pending<i64> {
+        self.run(move |c, now| {
+            sessions::enqueue_slice(c.state()?, task, &name, &brief, by_coordinator, now)
+        })
+    }
+
+    /// Removes a queued start (it started, or its task was archived).
+    pub fn dequeue_slice(&self, id: i64) -> Pending<()> {
+        self.run(move |c, _| sessions::dequeue_slice(c.state()?, id))
+    }
+
+    /// The queued starts, oldest first.
+    pub fn load_queue(&self) -> Pending<Vec<QueuedSlice>> {
+        self.run(|c, _| sessions::load_queue(c.state()?))
+    }
+
+    // --- inbox, activity, messages ---
+
+    /// Records an inbox item.
+    pub fn insert_inbox(&self, item: InboxItem) -> Pending<()> {
+        self.run(move |c, _| sessions::insert_inbox(c.state()?, &item))
+    }
+
+    /// Records how an inbox item left Needs you.
+    pub fn resolve_inbox(&self, id: InboxId, answer: Option<String>) -> Pending<()> {
+        self.run(move |c, now| sessions::resolve_inbox(c.state()?, id, answer.as_deref(), now))
+    }
+
+    /// Records an activity item.
+    pub fn add_activity(&self, item: ActivityItem) -> Pending<()> {
+        self.run(move |c, _| sessions::add_activity(c.state()?, &item))
+    }
+
+    /// Records a message between agents.
+    pub fn add_message(&self, message: AgentMessage, msg_id: Option<String>) -> Pending<()> {
+        self.run(move |c, _| sessions::add_message(c.state()?, &message, msg_id.as_deref()))
     }
 }
 
-impl Request {
-    /// Answers the request with an error without running it.
-    fn fail(self, error: DbError) {
-        match self {
-            Request::RegisterProject { reply, .. } => drop(reply.send(Err(error))),
-            Request::ListProjects { reply } => drop(reply.send(Err(error))),
-            Request::FindProject { reply, .. } => drop(reply.send(Err(error))),
-            Request::TouchProject { reply, .. } => drop(reply.send(Err(error))),
-            Request::LoadTasks { reply } => drop(reply.send(Err(error))),
-            Request::LoadDecisions { reply } => drop(reply.send(Err(error))),
-            Request::CreateTask { reply, .. } => drop(reply.send(Err(error))),
-            Request::UpdateTask { reply, .. } => drop(reply.send(Err(error))),
-            Request::ReorderTask { reply, .. } => drop(reply.send(Err(error))),
-            Request::LogDecision { reply, .. } => drop(reply.send(Err(error))),
-        }
-    }
-}
-
-/// The DB thread's loop.
-fn run(mut registry: Connection, mut state: Option<Connection>, inbox: mpsc::Receiver<Request>) {
-    fn project(state: &mut Option<Connection>) -> Result<&mut Connection, DbError> {
-        state.as_mut().ok_or(DbError::NoProject)
-    }
-    for request in inbox {
-        let now = now_ms();
-        match request {
-            Request::RegisterProject {
-                slug,
-                name,
-                repo_path,
-                git_common_dir,
-                reply,
-            } => drop(reply.send(registry::register(
-                &mut registry,
-                &slug,
-                &name,
-                &repo_path,
-                &git_common_dir,
-                now,
-            ))),
-            Request::ListProjects { reply } => drop(reply.send(registry::list(&registry))),
-            Request::FindProject {
-                git_common_dir,
-                reply,
-            } => drop(reply.send(registry::find(&registry, &git_common_dir))),
-            Request::TouchProject { id, reply } => {
-                drop(reply.send(registry::touch(&registry, &id, now)));
-            }
-            Request::LoadTasks { reply } => {
-                drop(reply.send(project(&mut state).and_then(tasks::load_tasks)));
-            }
-            Request::LoadDecisions { reply } => {
-                drop(reply.send(project(&mut state).and_then(tasks::load_decisions)));
-            }
-            Request::CreateTask {
-                new,
-                coordinator_created,
-                reply,
-            } => drop(
-                reply.send(
-                    project(&mut state)
-                        .and_then(|c| tasks::create_task(c, new, coordinator_created, now)),
-                ),
-            ),
-            Request::UpdateTask { id, patch, reply } => drop(
-                reply.send(project(&mut state).and_then(|c| tasks::update_task(c, id, patch, now))),
-            ),
-            Request::ReorderTask { id, delta, reply } => {
-                drop(reply.send(project(&mut state).and_then(|c| tasks::reorder(c, id, delta))));
-            }
-            Request::LogDecision { new, by, reply } => drop(
-                reply.send(project(&mut state).and_then(|c| tasks::log_decision(c, new, by, now))),
-            ),
-        }
-    }
-}
+pub use sessions::MaxIds;
 
 /// Unix milliseconds now.
 pub(crate) fn now_ms() -> i64 {
@@ -365,4 +413,68 @@ fn migrate(conn: &mut Connection, path: &Path, steps: &[&str]) -> Result<(), DbE
         tx.commit()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn paths(dir: &Path) -> Paths {
+        Paths {
+            data: dir.join("data"),
+            config: dir.join("config"),
+            state: dir.join("state"),
+            runtime: dir.join("run"),
+        }
+    }
+
+    #[test]
+    fn unregistered_state_is_written_on_registration() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let db = Db::open_unregistered(&paths).unwrap();
+        let new = NewTask {
+            title: "kept".into(),
+            p_level: None,
+            bucket: None,
+            notes: String::new(),
+            follow_up_of: None,
+            pr: None,
+            related: vec![],
+        };
+        db.create_task(new, false).wait().unwrap();
+        assert!(!paths.state_db("p").exists());
+        db.persist_state(paths.state_db("p")).wait().unwrap();
+        drop(db);
+        let reopened = Db::open(&paths, Some("p")).unwrap();
+        let tasks = reopened.load_tasks().wait().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].title, "kept");
+    }
+
+    #[test]
+    fn registry_migrates_to_optional_git_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let db = Db::open(&paths, None).unwrap();
+        let folder = db
+            .register_project("notes".into(), "notes".into(), "/x/notes".into(), None)
+            .wait()
+            .unwrap();
+        let again = db
+            .register_project("notes".into(), "notes".into(), "/x/notes".into(), None)
+            .wait()
+            .unwrap();
+        assert_eq!(folder, again);
+        let repo = db
+            .register_project(
+                "notes".into(),
+                "notes".into(),
+                "/y/notes".into(),
+                Some("/y/notes/.git".into()),
+            )
+            .wait()
+            .unwrap();
+        assert_eq!(repo.id, "notes-2");
+    }
 }

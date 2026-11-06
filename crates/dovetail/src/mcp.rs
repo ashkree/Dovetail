@@ -39,16 +39,19 @@
 //!
 //! * both roles: `mcp__dovetail__ask_user`, `mcp__dovetail__report_status`,
 //!   `mcp__dovetail__log_decision`
-//! * coordinator only: `mcp__dovetail__create_task`, `mcp__dovetail__start_slice`
+//! * coordinator only: `mcp__dovetail__create_task`, `mcp__dovetail__start_slice`,
+//!   `mcp__dovetail__add_project`
 //!
-//! Pass these to `--allowedTools` (or use the prefix `mcp__dovetail`). The `tool` field forwarded
-//! to the app is the bare name (`ask_user`). Subagents reach the tools through `ToolSearch`.
+//! The core passes these to `--allowedTools` (`dovetail_core::session::launch`). The `tool`
+//! field forwarded to the app is the bare name (`ask_user`). Subagents reach the tools through
+//! `ToolSearch`. A connection the app closed (it quit or restarted) is replaced once before a
+//! call fails.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Sender, channel};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
@@ -67,6 +70,8 @@ type Pending = HashMap<u64, Sender<Reply>>;
 struct Conn {
     writer: UnixStream,
     pending: Arc<Mutex<Pending>>,
+    /// Cleared by the reader when the app closes the connection (it quit or restarted).
+    alive: Arc<AtomicBool>,
 }
 
 struct Bridge {
@@ -191,10 +196,10 @@ impl Bridge {
         // Local checks, so the agent gets a precise error without a round trip.
         let call = match Tool::parse(name, arguments) {
             Ok(call) => call,
-            Err(problem) => return tool_error(&problem),
+            Err(problem) => return tool_error(&problem.to_string()),
         };
         if let Err(problem) = call.validate(self.role) {
-            return tool_error(&problem);
+            return tool_error(&problem.to_string());
         }
         let tool_use_id = msg
             .pointer("/params/_meta/claudecode~1toolUseId")
@@ -220,30 +225,45 @@ impl Bridge {
 
     fn roundtrip(&self, body: SocketRequestBody) -> Reply {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let (tx, rx) = channel();
         let line = serde_json::to_string(&SocketRequest { id, body })
             .map_err(|e| format!("could not encode the request: {e}"))?;
-        {
-            let mut guard = lock(&self.conn);
-            if guard.is_none() {
-                *guard = Some(self.connect()?);
-            }
-            let Some(conn) = guard.as_mut() else {
-                return Err(not_running("no connection"));
-            };
-            lock(&conn.pending).insert(id, tx);
-            let written = writeln!(conn.writer, "{line}").and_then(|()| conn.writer.flush());
-            if let Err(e) = written {
-                lock(&conn.pending).remove(&id);
-                *guard = None;
-                return Err(not_running(&e.to_string()));
-            }
-        }
+        // After an app restart the old connection is dead: reconnect once before failing.
+        let rx = match self.send_line(id, &line) {
+            Ok(rx) => rx,
+            Err(_) => self.send_line(id, &line)?,
+        };
         // Held calls (blocking `ask_user`) wait here for as long as the app takes.
         match rx.recv() {
             Ok(reply) => reply,
             Err(_) => Err(not_running("the connection closed")),
         }
+    }
+
+    /// Writes one request on the connection, connecting first if there is none or the app
+    /// closed the last one. A failed write drops the connection, so the next try reconnects.
+    fn send_line(&self, id: u64, line: &str) -> Result<Receiver<Reply>, String> {
+        let (tx, rx) = channel();
+        let mut guard = lock(&self.conn);
+        if guard
+            .as_ref()
+            .is_some_and(|c| !c.alive.load(Ordering::SeqCst))
+        {
+            *guard = None;
+        }
+        if guard.is_none() {
+            *guard = Some(self.connect()?);
+        }
+        let Some(conn) = guard.as_mut() else {
+            return Err(not_running("no connection"));
+        };
+        lock(&conn.pending).insert(id, tx);
+        let written = writeln!(conn.writer, "{line}").and_then(|()| conn.writer.flush());
+        if let Err(e) = written {
+            lock(&conn.pending).remove(&id);
+            *guard = None;
+            return Err(not_running(&e.to_string()));
+        }
+        Ok(rx)
     }
 
     fn connect(&self) -> Result<Conn, String> {
@@ -256,17 +276,20 @@ impl Bridge {
             .try_clone()
             .map_err(|e| not_running(&e.to_string()))?;
         let pending: Arc<Mutex<Pending>> = Arc::default();
+        let alive = Arc::new(AtomicBool::new(true));
         let for_reader = Arc::clone(&pending);
-        thread::spawn(move || read_responses(reader, for_reader));
+        let reader_alive = Arc::clone(&alive);
+        thread::spawn(move || read_responses(reader, for_reader, reader_alive));
         Ok(Conn {
             writer: stream,
             pending,
+            alive,
         })
     }
 }
 
 /// Route responses to waiting calls; when the socket closes, fail every call still waiting.
-fn read_responses(stream: UnixStream, pending: Arc<Mutex<Pending>>) {
+fn read_responses(stream: UnixStream, pending: Arc<Mutex<Pending>>, alive: Arc<AtomicBool>) {
     for line in BufReader::new(stream).lines() {
         let Ok(line) = line else { break };
         match serde_json::from_str::<SocketResponse>(&line) {
@@ -278,6 +301,7 @@ fn read_responses(stream: UnixStream, pending: Arc<Mutex<Pending>>) {
             Err(e) => tracing::warn!("bad socket response: {e}"),
         }
     }
+    alive.store(false, Ordering::SeqCst);
     let reason = not_running("the connection closed");
     for (_, tx) in lock(&pending).drain() {
         let _ = tx.send(Err(reason.clone()));
@@ -386,10 +410,11 @@ fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "start_slice",
             description: "Start a slice session (its own git worktree) on an existing task. \
-                For new work call `create_task` first. Depending on the permission mode the \
-                user may be asked to approve. Returns at once with `started`, `queued` (the \
-                maximum number of slices is running; it starts when one is archived) or \
-                `denied`. Do not message the slice until Dovetail sends you \"slice <name> \
+                For new work call `create_task` first. Returns at once with `started`, \
+                `queued` (the maximum number of slices is running; it starts when one is \
+                archived), `denied`, or `pending` (the user is asked to approve; the answer \
+                arrives later as a message, \"start_slice <name> approved\" or \"... \
+                denied\"). Do not message the slice until Dovetail sends you \"slice <name> \
                 ready\"; a setup failure arrives the same way. The brief becomes the slice's \
                 first prompt, so make it complete: goal, scope, files, checks to run.",
             schema: || {
@@ -399,6 +424,14 @@ fn tool_defs() -> Vec<ToolDef> {
                     "brief": {"type": "string", "description": "The slice's first prompt."}
                 }, "required": ["task", "name", "brief"]})
             },
+        },
+        ToolDef {
+            name: "add_project",
+            description: "Make the folder you run in a Dovetail project, so its tasks, inbox \
+                and this conversation are kept. Call it only when the user asks for that. Until \
+                then everything lives in memory and is lost when Dovetail quits. Takes no \
+                arguments; calling it on a folder that is already a project does nothing.",
+            schema: || json!({"type": "object", "properties": {}}),
         },
     ]
 }

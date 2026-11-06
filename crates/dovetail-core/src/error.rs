@@ -1,0 +1,77 @@
+//! Errors of the core's actions. Each is shown to the user (`CommandFailed`) or to an agent (a
+//! tool result) through its `Display`.
+
+use dovetail_driver::DriverError;
+
+use crate::db::DbError;
+use crate::worktree::{SUBAGENT_PREFIX, WorktreeError};
+
+/// Starting, resuming or sending to a session.
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    /// No such agent.
+    #[error("no agent {0}")]
+    NoAgent(String),
+    /// The agent has no running session.
+    #[error("{0} is not running")]
+    NotRunning(String),
+    /// A slice whose session never started cannot be resumed.
+    #[error("slice {0} never started; archive it and start a new one")]
+    NeverStarted(String),
+    /// Subagents run inside their parent's session.
+    #[error("subagents have no session of their own")]
+    Subagent,
+    /// The launch files could not be written.
+    #[error("writing launch settings: {0}")]
+    LaunchFiles(#[source] std::io::Error),
+    /// The driver failed.
+    #[error("{name}: {source}")]
+    Driver {
+        /// The agent's name.
+        name: String,
+        /// The cause.
+        source: DriverError,
+    },
+}
+
+/// Why a slice could not start (`start_slice` answers `denied: <this>`).
+#[derive(Debug, thiserror::Error)]
+pub enum SliceError {
+    /// The name is not usable as a directory and branch name.
+    #[error("{0}: use letters, digits, `-`, `_` or `.`, not starting with `.` or `-`")]
+    BadName(#[source] WorktreeError),
+    /// The name has the subagent prefix.
+    #[error(
+        "slice names may not start with `{SUBAGENT_PREFIX}`: that prefix marks subagent \
+         worktrees, which skip setup"
+    )]
+    SubagentPrefix,
+    /// The name is the coordinator's.
+    #[error("`coordinator` is taken")]
+    Reserved,
+    /// Another slice, running or queued, has the name.
+    #[error("a slice named `{0}` already exists")]
+    Taken(String),
+    /// The task does not exist.
+    #[error("there is no task #{0}; create it first with `create_task`")]
+    NoTask(i64),
+    /// The session did not start.
+    #[error(transparent)]
+    Session(#[from] SessionError),
+    /// Storage failed.
+    #[error(transparent)]
+    Db(#[from] DbError),
+}
+
+/// Why a slice's worktree setup failed, as the hook (or the wait for it) reported it.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct SetupFailure(pub String);
+
+/// Registering the open folder as a project (ADR 0005).
+#[derive(Debug, thiserror::Error)]
+pub enum RegisterError {
+    /// Storage failed.
+    #[error(transparent)]
+    Db(#[from] DbError),
+}
