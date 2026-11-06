@@ -410,8 +410,9 @@ CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms 
 - M5 `0001_init`: `tasks`, `task_deps`, `task_related`, `decisions`
 - M6 `0002_agents_conversation`
 - M7 `0003_inbox_activity`
-- M11 `0004_todos`
-- M15 `0005_maps`
+- Wave 2 `0004_slice_queue` (queued slice starts survive a restart, decided 2026-11-06)
+- M11 `0005_todos`
+- M15 `0006_maps`
 
 Tables arrive with the milestone that uses them, so no unused tables sit around.
 

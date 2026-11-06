@@ -496,11 +496,27 @@ fn slices_over_the_cap_queue_until_one_is_archived() {
         s.activity.iter().any(|a| a.text.contains("second queued"))
     });
     assert!(!h.snap.agents.iter().any(|a| a.name == "second"));
+    h.send(Command::NewSlice {
+        task: None,
+        name: "third".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the second queued start", |s| {
+        s.activity.iter().any(|a| a.text.contains("third queued"))
+    });
     h.send(Command::CloseSlice {
         agent: AgentId("slice-first".into()),
     });
     h.wait_for("the queued slice", |s| {
         s.agents.iter().any(|a| a.name == "second") && !s.agents.iter().any(|a| a.name == "first")
+    });
+
+    // The queue survives a restart: `third` starts as soon as there is room (cap 3 here).
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let mut h = Harness::start_on(fixture("plain_turn"), paths);
+    h.wait_for("the slice queued before the restart", |s| {
+        s.agents.iter().any(|a| a.name == "third")
     });
     h.quit();
 }

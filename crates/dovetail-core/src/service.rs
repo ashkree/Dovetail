@@ -328,7 +328,7 @@ pub(crate) struct Core {
     deltas: BTreeMap<(AgentId, EntryId), String>,
     flush_at: Option<tokio::time::Instant>,
     /// Slice starts over the `max_slices` cap, oldest first (ADR 0004).
-    pub(crate) queue: VecDeque<SliceRequest>,
+    pub(crate) queue: VecDeque<crate::db::QueuedSlice>,
     /// `msg_id`s already on the message timeline, so sender and receiver don't both add one.
     pub(crate) seen_messages: std::collections::HashSet<String>,
     quitting: Option<tokio::time::Instant>,
@@ -394,6 +394,7 @@ impl Core {
         }
         self.startup_warnings();
         self.send_snapshot(true).await;
+        self.start_queued().await;
         loop {
             if self.quitting.is_some() && self.live.is_empty() {
                 break;
@@ -497,6 +498,8 @@ impl Core {
                 .insert(row.agent.id.clone(), ConversationTail { entries, has_more });
             self.agents.insert(row.agent.id.clone(), row);
         }
+        // Queued starts survive a restart and run when a slot frees (decided 2026-11-06).
+        self.queue = self.db.load_queue().await?.into();
         let coordinator = AgentId(COORDINATOR.into());
         if !self.agents.contains_key(&coordinator) {
             let row = AgentRow {
@@ -982,7 +985,16 @@ impl Core {
         for slice in slices {
             self.close_slice(&slice, false);
         }
-        self.queue.retain(|r| r.task != Some(id));
+        let dropped: Vec<i64> = self
+            .queue
+            .iter()
+            .filter(|q| q.task == Some(id))
+            .map(|q| q.id)
+            .collect();
+        self.queue.retain(|q| q.task != Some(id));
+        for queued in dropped {
+            self.persist("the slice queue", self.db.dequeue_slice(queued));
+        }
     }
 
     // --- projects ---

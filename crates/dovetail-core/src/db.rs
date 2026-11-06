@@ -14,7 +14,7 @@ mod registry;
 mod sessions;
 mod tasks;
 
-pub use sessions::AgentRow;
+pub use sessions::{AgentRow, QueuedSlice};
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -42,6 +42,7 @@ const STATE_MIGRATIONS: &[&str] = &[
     include_str!("db/migrations/state/0001_init.sql"),
     include_str!("db/migrations/state/0002_agents_conversation.sql"),
     include_str!("db/migrations/state/0003_inbox_activity.sql"),
+    include_str!("db/migrations/state/0004_slice_queue.sql"),
 ];
 
 /// Errors from the database layer.
@@ -318,6 +319,31 @@ impl Db {
     /// The highest ids in use, so new ones continue after them.
     pub fn max_ids(&self) -> Pending<sessions::MaxIds> {
         self.run(|c, _| sessions::max_ids(c.state()?))
+    }
+
+    // --- the slice queue ---
+
+    /// Queues a slice start; resolves to its row id.
+    pub fn enqueue_slice(
+        &self,
+        task: Option<TaskId>,
+        name: String,
+        brief: String,
+        by_coordinator: bool,
+    ) -> Pending<i64> {
+        self.run(move |c, now| {
+            sessions::enqueue_slice(c.state()?, task, &name, &brief, by_coordinator, now)
+        })
+    }
+
+    /// Removes a queued start (it started, or its task was archived).
+    pub fn dequeue_slice(&self, id: i64) -> Pending<()> {
+        self.run(move |c, _| sessions::dequeue_slice(c.state()?, id))
+    }
+
+    /// The queued starts, oldest first.
+    pub fn load_queue(&self) -> Pending<Vec<QueuedSlice>> {
+        self.run(|c, _| sessions::load_queue(c.state()?))
     }
 
     // --- inbox, activity, messages ---

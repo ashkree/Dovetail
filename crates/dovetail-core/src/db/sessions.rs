@@ -396,3 +396,54 @@ pub(super) fn add_message(
     )?;
     Ok(())
 }
+
+/// A slice start waiting for room under `max_slices` (ADR 0004).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueuedSlice {
+    /// Row id; the queue runs in id order.
+    pub id: i64,
+    /// The task it works on.
+    pub task: Option<TaskId>,
+    /// Slice name.
+    pub name: String,
+    /// First prompt.
+    pub brief: String,
+    /// Started by the coordinator's `start_slice` (it is told if the start fails).
+    pub by_coordinator: bool,
+}
+
+pub(super) fn enqueue_slice(
+    conn: &mut Connection,
+    task: Option<TaskId>,
+    name: &str,
+    brief: &str,
+    by_coordinator: bool,
+    now: i64,
+) -> Result<i64, DbError> {
+    conn.execute(
+        "INSERT INTO slice_queue (task_id, name, brief, by_coordinator, created_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![task.map(|t| t.0), name, brief, by_coordinator, now],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub(super) fn dequeue_slice(conn: &mut Connection, id: i64) -> Result<(), DbError> {
+    conn.execute("DELETE FROM slice_queue WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+pub(super) fn load_queue(conn: &mut Connection) -> Result<Vec<QueuedSlice>, DbError> {
+    let mut stmt = conn
+        .prepare("SELECT id, task_id, name, brief, by_coordinator FROM slice_queue ORDER BY id")?;
+    let rows = stmt.query_map([], |r| {
+        Ok(QueuedSlice {
+            id: r.get(0)?,
+            task: r.get::<_, Option<i64>>(1)?.map(TaskId),
+            name: r.get(2)?,
+            brief: r.get(3)?,
+            by_coordinator: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}

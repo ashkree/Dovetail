@@ -20,7 +20,7 @@ use dovetail_api::{
 use serde_json::json;
 use tokio::sync::oneshot;
 
-use crate::db::{AgentRow, now_ms};
+use crate::db::{AgentRow, QueuedSlice, now_ms};
 use crate::inbox::Waiter;
 use crate::projects;
 use crate::service::{COORDINATOR, Core, Input, new_agent};
@@ -108,7 +108,23 @@ impl Core {
                     self.config.max_slices
                 ),
             );
-            self.queue.push_back(request);
+            let id = self
+                .db
+                .enqueue_slice(
+                    request.task,
+                    name.clone(),
+                    request.brief.clone(),
+                    request.by_coordinator,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            self.queue.push_back(QueuedSlice {
+                id,
+                task: request.task,
+                name: name.clone(),
+                brief: request.brief,
+                by_coordinator: request.by_coordinator,
+            });
             return Ok(SliceStart::Queued(name));
         }
         self.start_slice(request).await?;
@@ -118,8 +134,15 @@ impl Core {
     /// Starts queued slices while there is room.
     pub(crate) async fn start_queued(&mut self) {
         while self.open_slices() < self.config.max_slices as usize {
-            let Some(request) = self.queue.pop_front() else {
+            let Some(queued) = self.queue.pop_front() else {
                 return;
+            };
+            self.persist("the slice queue", self.db.dequeue_slice(queued.id));
+            let request = SliceRequest {
+                task: queued.task,
+                name: queued.name,
+                brief: queued.brief,
+                by_coordinator: queued.by_coordinator,
             };
             let name = request.name.clone();
             let by_coordinator = request.by_coordinator;
