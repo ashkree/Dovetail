@@ -467,6 +467,7 @@ dependencies = [
  "pulldown-cmark",
  "ratatui",
  "serde_json",
+ "signal-hook",
  "tracing",
  "unicode-width",
 ]

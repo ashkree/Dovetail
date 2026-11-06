@@ -25,6 +25,8 @@ enum Msg {
     Resize,
     Server(Box<ServerMsg>),
     ServerClosed,
+    /// SIGINT or SIGTERM.
+    Signal,
 }
 
 /// How long the loop may sleep: until the next draw window if the screen is dirty, until the
@@ -70,6 +72,25 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
             }
         }
     });
+    // Raw mode turns Ctrl-C into a key, but `kill` and a closing terminal still send signals.
+    // They take the same graceful path as a confirmed quit. If the handlers cannot be installed
+    // the UI still works; it just cannot catch signals.
+    let signal_tx = tx.clone();
+    match signal_hook::iterator::Signals::new([
+        signal_hook::consts::SIGINT,
+        signal_hook::consts::SIGTERM,
+    ]) {
+        Ok(mut signals) => {
+            thread::spawn(move || {
+                for _ in signals.forever() {
+                    if signal_tx.send(Msg::Signal).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        Err(e) => tracing::warn!(%e, "could not install signal handlers"),
+    }
     thread::spawn(move || {
         for msg in messages {
             if tx.send(Msg::Server(Box::new(msg))).is_err() {
@@ -142,6 +163,7 @@ fn drive<B: ratatui::backend::Backend>(
                 Msg::Resize => app.on_resize(),
                 Msg::Server(msg) => app.on_server(*msg),
                 Msg::ServerClosed => app.on_core_closed(),
+                Msg::Signal => app.on_signal(),
             }
         }
         app.on_timeout(mono_ms(Instant::now()));

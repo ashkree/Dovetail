@@ -209,6 +209,11 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<C-k>", Action::FocusUp),
     bind(N, G, "<leader>n", Action::FocusInbox),
     bind(N, G, ":", Action::EnterCommand),
+    // Ctrl-C quits in two steps and works in every mode, as in Claude Code. Interrupting a turn
+    // stays on `<leader>sx`.
+    bind(N, G, "<C-c>", Action::QuitOnRepeat),
+    bind(Mode::Insert, G, "<C-c>", Action::QuitOnRepeat),
+    bind(Mode::Command, G, "<C-c>", Action::QuitOnRepeat),
     bind(N, G, "i", Action::EnterInsert),
     bind(N, G, "<leader>c", Action::FocusCoordinator),
     bind(N, G, "<leader><Tab>", Action::AlternateAgent),
@@ -305,6 +310,15 @@ impl Keymap {
         Self::new(BINDINGS).unwrap_or(Self {
             entries: Vec::new(),
         })
+    }
+
+    /// The global single-key binding for `key` in `mode`, if any. Insert and Command mode type
+    /// text, so only such chords (like Ctrl-C) are looked up there; the rest of the keys are text.
+    pub fn global_chord(&self, mode: Mode, key: Key) -> Option<Action> {
+        self.entries
+            .iter()
+            .find(|e| e.mode == mode && e.scope == Scope::Global && e.keys == [key])
+            .map(|e| e.action)
     }
 
     /// Entries for a mode whose scope is one of `scopes`, as (scope rank, keys, action); a lower
