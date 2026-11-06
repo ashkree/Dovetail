@@ -45,6 +45,10 @@ pub struct DecisionId(pub u64);
 #[serde(transparent)]
 pub struct WarningId(pub String);
 
+/// Id of the warning shown while the open folder is not a Dovetail project yet (ADR 0005). The
+/// TUI shows it in the header row instead of the status bar.
+pub const UNREGISTERED_WARNING: &str = "unregistered";
+
 /// The whole client-visible state at one point in the event stream.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {

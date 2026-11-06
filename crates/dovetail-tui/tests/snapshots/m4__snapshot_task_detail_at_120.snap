@@ -2,6 +2,7 @@
 source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 120, 32)"
 ---
+ folder /src/business
 ┌ tasks · business ─────────────────────────┐┌ task · #1 ──────────────────────────────────────────────────────────────┐
 │ ◐ ◆ coordinator        working 1.2G $3.10 ││ business surface                                                        │
 │ ▾ Now (2)                                 ││ P1 · Now · in progress · PR #1231                                       │
@@ -18,10 +19,9 @@ expression: "render(&mut app, 120, 32)"
 │         ⎇ dovetail/slice-7                ││ ✓ ◇ rebase  done                                                        │
 │ ▾ Next (1)                                ││ ◐ ◇ explore callers  working                                            │
 │   ○ idea: eval key flow P2                ││                                                                         │
-│ ▸ Later (1)                               ││ Decisions                                                               │
-│ ⏎ open · o fold · dd archive              ││                                                                         │
-└───────────────────────────────────────────┘│ (none yet · a to add one)                                               │
-┌ inbox · needs you (3) ────────────────────┐│                                                                         │
+│ ⏎ open · o fold · dd archive              ││ Decisions                                                               │
+└───────────────────────────────────────────┘│                                                                         │
+┌ inbox · needs you (3) ────────────────────┐│ (none yet · a to add one)                                               │
 │ ▸ ⚠ slice-7  Bash                   10:15 ││                                                                         │
 │   │ FS_EVAL_VIRTUAL_KEY=dev cargo test    ││                                                                         │
 │   │ -p api get_decision                   ││                                                                         │

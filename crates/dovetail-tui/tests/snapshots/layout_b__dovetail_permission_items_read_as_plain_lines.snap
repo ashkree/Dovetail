@@ -1,6 +1,5 @@
 ---
 source: crates/dovetail-tui/tests/layout_b.rs
-assertion_line: 236
 expression: all
 ---
 ┌ inbox · needs you (3) ────────────────────┐│
@@ -10,7 +9,6 @@ expression: all
 │   │ acceptEdits                           ││
 │   ⚠ slice-4  Remove worktree        10:15 ││
 │   ⚠ coordinator  Start slice        10:15 ││
-│                                           ││
 │                                           ││
 │                                           ││
 │                                           ││
@@ -33,7 +31,6 @@ expression: all
 │                                           ││
 │                                           ││
 │                                           ││
-│                                           ││
 │                                           ││ ───────────────────────
 │ y allow · d deny · r reply · x dismiss    ││ › i to chat · ]] [[ tur
 └───────────────────────────────────────────┘└────────────────────────
@@ -47,7 +44,6 @@ expression: all
 │   │ surface                               ││
 │   │ reply ok                              ││
 │   │ “It needs a key. slice-7 can only …”  ││
-│                                           ││
 │                                           ││
 │                                           ││
 │                                           ││

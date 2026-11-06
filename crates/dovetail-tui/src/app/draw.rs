@@ -1,6 +1,8 @@
-//! Drawing: the regions, the status bar, the prompt row and the overlays.
+//! Drawing: the header row, the regions, the status bar, the prompt row and the overlays.
 
-use dovetail_api::{AgentId, AgentStatus};
+use std::path::Path;
+
+use dovetail_api::{AgentId, AgentStatus, UNREGISTERED_WARNING};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
@@ -23,6 +25,7 @@ impl App {
     pub fn draw(&mut self, frame: &mut Frame) {
         let prompting = self.input.is_some() || self.confirm.is_some();
         let areas = layout(frame.area(), prompting);
+        self.draw_header(frame, areas.header);
         let cx = ViewCx {
             snap: &self.snap,
             theme: &self.theme,
@@ -150,6 +153,55 @@ impl App {
         );
     }
 
+    /// The folder the agent in view works in (a slice's worktree, otherwise the project
+    /// folder), and a warning while that folder is not a Dovetail project yet.
+    fn draw_header(&self, frame: &mut Frame, area: Rect) {
+        let theme = &self.theme;
+        let snap = &self.snap;
+        let worktree = self
+            .buffers
+            .conversation
+            .agent()
+            .and_then(|id| snap.agents.iter().find(|a| &a.id == id))
+            .and_then(|a| a.worktree.as_ref());
+        let mut left = vec![Span::raw(" ")];
+        match (worktree, &snap.project) {
+            (Some(wt), _) => {
+                left.push(Span::styled("worktree ", theme.dim()));
+                left.push(Span::styled(home_relative(&wt.path), theme.body()));
+                left.push(Span::styled(" on ", theme.dim()));
+                left.push(Span::styled(wt.branch.clone(), theme.fg(theme.code)));
+            }
+            (None, Some(project)) => {
+                left.push(Span::styled("folder ", theme.dim()));
+                left.push(Span::styled(
+                    home_relative(&project.repo_path),
+                    theme.body(),
+                ));
+            }
+            (None, None) => left.push(Span::styled("no folder open", theme.dim())),
+        }
+        let unregistered = snap.warnings.iter().any(|w| w.id.0 == UNREGISTERED_WARNING);
+        let rights = if unregistered {
+            vec![
+                vec![Span::styled(
+                    "⚠ not a Dovetail project yet: :project add keeps it ",
+                    theme.fg(theme.needs_you),
+                )],
+                vec![Span::styled(
+                    "⚠ not a project yet ",
+                    theme.fg(theme.needs_you),
+                )],
+            ]
+        } else {
+            Vec::new()
+        };
+        frame.render_widget(
+            Paragraph::new(spread_fit(left, &rights, usize::from(area.width))),
+            area,
+        );
+    }
+
     fn draw_status(&self, frame: &mut Frame, area: Rect) {
         let theme = &self.theme;
         let badge_color = match self.mode {
@@ -216,7 +268,12 @@ impl App {
                 theme.fg(theme.italic),
             ));
         }
-        if let Some(warning) = snap.warnings.first() {
+        // The header row carries the not-a-project warning.
+        if let Some(warning) = snap
+            .warnings
+            .iter()
+            .find(|w| w.id.0 != UNREGISTERED_WARNING)
+        {
             left.push(Span::styled(
                 format!("  ⚠ {}", warning.text),
                 theme.fg(theme.needs_you),
@@ -286,6 +343,18 @@ impl App {
             .iter()
             .find(|a| &a.id == id)
             .map_or_else(|| id.0.clone(), |a| a.name.clone())
+    }
+}
+
+/// `path` with the home directory shown as `~`.
+fn home_relative(path: &Path) -> String {
+    match std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        Some(home) if !home.as_os_str().is_empty() => match path.strip_prefix(&home) {
+            Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
+            Ok(rest) => format!("~/{}", rest.display()),
+            Err(_) => path.display().to_string(),
+        },
+        _ => path.display().to_string(),
     }
 }
 

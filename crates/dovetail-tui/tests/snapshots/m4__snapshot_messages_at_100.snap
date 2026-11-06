@@ -2,6 +2,7 @@
 source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 24)"
 ---
+ folder /src/business
 ┌ tasks · business ────────────────────┐┌ messages between agents ─────────────────────────────────┐
 │ ◐ ◆ coordinator   working 1.2G $3.10 ││ 10:07  slice-4 → coordinator  Understood; working on th… │
 │ ▾ Now (2)                            ││ 09:55  coordinator → slice-4  Stay out of src/decision.… │
@@ -13,7 +14,6 @@ expression: "render(&mut app, 100, 24)"
 │         ○ update OpenAPI spec ⊘ blo… ││                                                          │
 │       ✓ ◇ rebase          done $0.21 ││                                                          │
 │       ◐ ◇ explore c… 12 tools · Grep ││                                                          │
-│ ▾ ⚠ get_decision 500 P0              ││                                                          │
 │ ⏎ open · o fold · dd archive         ││                                                          │
 └──────────────────────────────────────┘│                                                          │
 ┌ inbox · needs you (3) ───────────────┐│                                                          │

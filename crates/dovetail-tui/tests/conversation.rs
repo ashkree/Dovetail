@@ -204,7 +204,7 @@ fn double_bracket_jumps_between_turns() {
     render(&mut app, 100, 30);
     type_keys(&mut app, "]]");
     let screen = render(&mut app, 100, 30);
-    let first_row = screen.lines().nth(1).expect("first pane row");
+    let first_row = screen.lines().nth(2).expect("first pane row");
     assert!(first_row.contains("you · "), "{first_row}");
     assert!(screen.contains("question 1"), "{screen}");
     type_keys(&mut app, "[[");

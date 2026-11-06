@@ -2,8 +2,8 @@
 source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 30)"
 ---
+ folder /src/business
 ┌ tasks · business ────────────────────┐┌ coordinator · ◐ working · 1.2G · $3.10 ──────────────────┐
-│ ◐ ◆ coordinator   working 1.2G $3.10 ││ you · 10:08                                              │
 │ ┌ Switch ─────────────────────────────────┐┌ Preview ──────────────────────────────────────────┐ │
 │ │› slice                               4/5││ ◐ slice-4                                         │ │
 │ │                                         ││ slice · dovetail/slice-4 · 412M · working         │ │
@@ -18,9 +18,9 @@ expression: "render(&mut app, 100, 30)"
 │ │                                         ││                                                   │ │
 │ │                                         ││                                                   │ │
 │ │                                         ││                                                   │ │
+│ │                                         ││                                                   │ │
 └─│                                         ││                                                   │ │
 ┌ │                                         ││                                                   │ │
-│ │                                         ││                                                   │ │
 │ │                                         ││                                                   │ │
 │ │                                         ││                                                   │ │
 │ │                                         ││                                                   │ │

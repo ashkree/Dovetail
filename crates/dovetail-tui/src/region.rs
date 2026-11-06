@@ -131,6 +131,8 @@ impl Regions {
 /// Screen areas of Layout B.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Areas {
+    /// Header row: the folder in view, and whether it is a project.
+    pub header: Rect,
     /// Task tree.
     pub left_top: Rect,
     /// Inbox.
@@ -147,6 +149,7 @@ pub struct Areas {
 /// (when the screen allows) so tree rows stay readable; the inbox takes the lower 40 % of it.
 pub fn layout(screen: Rect, with_prompt: bool) -> Areas {
     let rows = RatLayout::vertical([
+        Constraint::Length(1),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(u16::from(with_prompt)),
@@ -154,15 +157,16 @@ pub fn layout(screen: Rect, with_prompt: bool) -> Areas {
     .split(screen);
     let left_width = (screen.width * 38 / 100).max(40).min(screen.width / 2);
     let columns =
-        RatLayout::horizontal([Constraint::Length(left_width), Constraint::Min(10)]).split(rows[0]);
+        RatLayout::horizontal([Constraint::Length(left_width), Constraint::Min(10)]).split(rows[1]);
     let left = RatLayout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)])
         .split(columns[0]);
     Areas {
+        header: rows[0],
         left_top: left[0],
         left_bottom: left[1],
         main: columns[1],
-        status: rows[1],
-        prompt: with_prompt.then_some(rows[2]),
+        status: rows[2],
+        prompt: with_prompt.then_some(rows[3]),
     }
 }
 
@@ -201,14 +205,16 @@ mod tests {
     }
 
     #[test]
-    fn layout_fills_the_screen_and_reserves_the_prompt_row() {
+    fn layout_fills_the_screen_and_reserves_the_header_and_prompt_rows() {
         let screen = Rect::new(0, 0, 100, 30);
         let a = layout(screen, false);
-        assert_eq!(a.left_top.height + a.left_bottom.height, 29);
-        assert_eq!(a.main.height, 29);
+        assert_eq!(a.header.y, 0);
+        assert_eq!(a.main.y, 1);
+        assert_eq!(a.left_top.height + a.left_bottom.height, 28);
+        assert_eq!(a.main.height, 28);
         assert_eq!(a.prompt, None);
         let b = layout(screen, true);
-        assert_eq!(b.main.height, 28);
+        assert_eq!(b.main.height, 27);
         assert_eq!(b.prompt.map(|p| p.y), Some(29));
     }
 }

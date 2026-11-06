@@ -2,6 +2,7 @@
 source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 24)"
 ---
+ folder /src/business
 ┌ tasks · business ────────────────────┐┌ activity · today ────────────────────────────────────────┐
 │ ◐ ◆ coordinator   working 1.2G $3.10 ││ 10:10  ·   morning review applied                        │
 │ ▾ Now (2)                            ││ 10:03  CI  slice-4  #1231 CI passed                      │
@@ -13,7 +14,6 @@ expression: "render(&mut app, 100, 24)"
 │         ○ update OpenAPI spec ⊘ blo… ││                                                          │
 │       ✓ ◇ rebase          done $0.21 ││                                                          │
 │       ◐ ◇ explore c… 12 tools · Grep ││                                                          │
-│ ▾ ⚠ get_decision 500 P0              ││                                                          │
 │ ⏎ open · o fold · dd archive         ││                                                          │
 └──────────────────────────────────────┘│                                                          │
 ┌ inbox · needs you (3) ───────────────┐│                                                          │

@@ -10,8 +10,8 @@ use crate::projects::{Candidate, Project};
 use crate::service::{Core, CoreHandler, serve};
 use crate::socket::{self, SocketHandler};
 
-/// The status-bar warning shown until the folder is a project.
-pub(crate) const UNREGISTERED_WARNING: &str = "unregistered";
+/// The warning shown until the folder is a project.
+pub(crate) use dovetail_api::UNREGISTERED_WARNING;
 
 /// The open folder: a registered project, or one that is not a project yet (ADR 0005). It
 /// carries its key, so registering switches everything named after it at once.
