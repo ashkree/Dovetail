@@ -450,6 +450,10 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Rules from the wave-1 retro:**
   - Every value that crosses a track boundary (wire types, tool inputs, env var names, ids, flags) is defined in the contracts commit, in `dovetail-api` where both sides can import it.
   - A track agent reports each "done when" item as met or unverified; only the integrator ticks boxes, after checking.
+- **Rules from the wave-2 retro:**
+  - The gate is `scripts/check.sh`; an agent runs it before reporting done.
+  - Commit at every milestone and every coherent step inside one (WIP commits are fine), one milestone per commit even when files overlap (`git add -p`).
+  - The final report lists every place the code departs from a spec line, as a question for the user.
 
 ### M1. Workspace, API, mock core
 - **Spikes needed:** S1–S3 (event shapes)
