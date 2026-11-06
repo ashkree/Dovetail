@@ -40,11 +40,12 @@ scratch_repo() {
   echo "$dir"
 }
 
-# One headless turn with the flags the core uses; extra flags after the prompt.
+# One headless turn with the flags the core uses; extra flags after the prompt. Stdin stays open for
+# HOLD seconds (default 0): closing it right after the prompt aborts permission requests.
 turn() {
   local cwd="$1" prompt="$2"; shift 2
-  (cd "$cwd" && printf '{"type":"user","message":{"role":"user","content":%s},"parent_tool_use_id":null}\n' \
-    "$(printf '%s' "$prompt" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" |
+  (cd "$cwd" && { printf '{"type":"user","message":{"role":"user","content":%s},"parent_tool_use_id":null}\n' \
+    "$(printf '%s' "$prompt" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"; sleep "${HOLD:-0}"; } |
     timeout 180 claude -p --input-format stream-json --output-format stream-json --verbose \
       --include-partial-messages --permission-prompt-tool stdio --replay-user-messages \
       --model "$MODEL" "$@")
@@ -64,7 +65,7 @@ check_driver() {
 check_permissions() {
   # Manual mode: the request must reach stdin as can_use_tool. Answered by the in-app check (app).
   local repo; repo="$(scratch_repo perms)"
-  turn "$repo" "Use the Write tool to create x.txt containing hi." --permission-mode default \
+  HOLD=30 turn "$repo" "Use the Write tool to create x.txt containing hi." --permission-mode default \
     > "$ROOT/perms.ndjson" 2> "$ROOT/perms.err" &
   local pid=$!; sleep 25; kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
   grep -q '"can_use_tool"' "$ROOT/perms.ndjson" && pass "permissions: manual-mode request reaches the host" \
@@ -114,7 +115,8 @@ check_mcp() {
     '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | DOVETAIL_ROLE=slice timeout 5 "$DT" mcp)"
   [[ "$out" == *ask_user* && "$out" != *start_slice* && "$out" != *add_project* ]] \
     && pass "mcp: a slice sees no coordinator tools" || fail "mcp: $out"
-  out="$(printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_status","arguments":{"status":"x"}}}' |
+  # Stdin stays open a moment: on end of input the bridge exits without waiting for its answer.
+  out="$({ printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_status","arguments":{"status":"x"}}}'; sleep 1; } |
     DOVETAIL_ROLE=coordinator DOVETAIL_SOCKET="$ROOT/none.sock" timeout 5 "$DT" mcp)"
   [[ "$out" == *"not running"* ]] && pass "mcp: app absent gives a clear error, no hang" || fail "mcp: $out"
 }
