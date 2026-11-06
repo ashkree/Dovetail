@@ -561,9 +561,10 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   3. **Upgrades.** `scripts/install.sh` runs `cargo install --path crates/dovetail --root ~/.local` and refuses while a Dovetail app runs ("close Dovetail first"). Hook and MCP config always use the running binary's path (`std::env::current_exe`), so the installed app never points at `target/`.
   4. **Stale-state sweep on open.** An agent whose worktree directory is gone is archived with an Activity note. A worktree under Dovetail's worktrees directory that no agent owns raises one "Remove worktree" item (branch, unpushed commits, uncommitted changes); `y` removes it, `d` keeps it and records that, so it is not asked again. Nothing is deleted without `y`.
 - **Done when:**
-  - [ ] **Rehearsal in a scratch repo:** from the installed binary, chat with the coordinator, start two slices, answer one permission and one `ask_user`, have a slice commit, quit, reopen, carry on in the same conversations
-  - [ ] Killing the app mid-turn loses no state, and the next open recovers
-  - [ ] Rebuilding `target/` can't break running sessions
+  - [x] **Rehearsal in a scratch repo:** from the installed binary, chat with the coordinator, start two slices, answer one permission and one `ask_user`, have a slice commit, quit, reopen, carry on in the same conversations
+  - [x] Killing the app mid-turn loses no state, and the next open recovers
+  - [x] Rebuilding `target/` can't break running sessions
+  - Rehearsal run by the integrator on 2026-11-06 against real Claude Code from a scratch install: two slices, one permission, one `ask_user`, a slice commit, quit and reopen (both conversations resumed with context, slices on first touch), `kill -9` mid-turn (no Claude process left; reopen raised the cut-off item). Hook and MCP paths pointed at the installed binary. A partial reply cut off by the kill is not kept in the conversation; Claude Code's own transcript has it. The missed redraw seen once in the first attempt did not reproduce.
   - [ ] Then repeated once on this repo, with your OK
 - **Tests:** restore logic with `FakeDriver`, inbox reconciliation, kill and reopen
 
