@@ -9,11 +9,14 @@ mod inbox;
 pub mod paths;
 pub mod projects;
 pub mod recipe;
+mod registration;
 pub mod service;
 pub mod session;
+mod shutdown;
 mod slice;
 pub mod socket;
 mod tools;
 pub mod worktree;
 
-pub use service::{COORDINATOR, CoreError, CoreHandle, CoreOptions, spawn};
+pub use service::{COORDINATOR, CoreError, CoreOptions, spawn};
+pub use shutdown::CoreHandle;

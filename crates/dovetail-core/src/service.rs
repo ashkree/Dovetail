@@ -20,8 +20,8 @@ use dovetail_api::{
     ACTIVITY_TAIL, ActivityItem, ActivityKind, Agent, AgentId, AgentKind, AgentMessage,
     AgentStatus, CONVERSATION_TAIL, Command, ConversationEntry, ConversationTail, CoreLink,
     DecisionAuthor, EntryId, EntryKind, Event, InboxId, InboxItem, MESSAGE_TAIL, NewTask,
-    PROTOCOL_VERSION, PermissionMode, ProjectSummary, ServerMsg, SessionLock, Snapshot, Task,
-    TaskChange, TaskId, TaskStatus, Totals, Warning, WarningId,
+    PROTOCOL_VERSION, PermissionMode, ServerMsg, SessionLock, Snapshot, Task, TaskChange, TaskId,
+    TaskStatus, Totals, Warning, WarningId,
 };
 use dovetail_driver::{DriverEvent, SessionDriver};
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
@@ -30,8 +30,10 @@ use crate::config::Config;
 use crate::db::{AgentRow, Db, DbError, Pending, now_ms};
 use crate::inbox::Waiter;
 use crate::paths::Paths;
-use crate::projects::{Candidate, Project, Resolution};
+use crate::projects::{Project, Resolution};
+use crate::registration::ProjectState;
 use crate::session::Live;
+use crate::shutdown::CoreHandle;
 use crate::slice::SliceRequest;
 use crate::socket::{self, BoxFuture, HandlerError, SocketError, SocketHandler, ToolCall};
 use crate::worktree::WorktreeError;
@@ -61,74 +63,6 @@ pub struct CoreOptions {
     /// The `dovetail` binary, for the worktree hook and the MCP bridge in launch settings.
     pub exe: PathBuf,
 }
-
-/// Waits for the core thread, so sessions are shut down and reaped before the app exits.
-#[derive(Debug)]
-pub struct CoreHandle {
-    thread: std::thread::JoinHandle<()>,
-}
-
-impl CoreHandle {
-    /// Blocks until the core has stopped or `timeout` passed. `true` if it stopped.
-    pub fn wait(self, timeout: Duration) -> bool {
-        let deadline = std::time::Instant::now() + timeout;
-        while !self.thread.is_finished() {
-            if std::time::Instant::now() >= deadline {
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        // Finished, so join returns at once; a panic was already logged by the hook.
-        let _ = self.thread.join();
-        true
-    }
-}
-
-/// The open folder: a registered project, or one that is not a project yet (ADR 0005). It
-/// carries its key, so registering switches everything named after it at once.
-#[derive(Debug, Clone)]
-pub(crate) enum ProjectState {
-    Registered(Project),
-    Unregistered {
-        candidate: Candidate,
-        /// `new-<pid>` until registration.
-        key: String,
-    },
-}
-
-impl ProjectState {
-    /// The project id, or `new-<pid>` before registration. Names run directories, worktree
-    /// directories, hook outcomes, to-do list ids and the worktree hook's `DOVETAIL_PROJECT`.
-    pub(crate) fn key(&self) -> &str {
-        match self {
-            ProjectState::Registered(p) => &p.id,
-            ProjectState::Unregistered { key, .. } => key,
-        }
-    }
-
-    pub(crate) fn summary(&self) -> ProjectSummary {
-        match self {
-            ProjectState::Registered(p) => p.summary(),
-            ProjectState::Unregistered { candidate, .. } => candidate.summary(),
-        }
-    }
-
-    pub(crate) fn repo_path(&self) -> &std::path::Path {
-        match self {
-            ProjectState::Registered(p) => &p.repo_path,
-            ProjectState::Unregistered { candidate, .. } => &candidate.repo_path,
-        }
-    }
-
-    pub(crate) fn registered(&self) -> Option<&Project> {
-        match self {
-            ProjectState::Registered(p) => Some(p),
-            ProjectState::Unregistered { .. } => None,
-        }
-    }
-}
-
-const UNREGISTERED_WARNING: &str = "unregistered";
 
 /// Starts the core on its own thread for the folder `resolution` names, and returns the UI's end
 /// of the link plus a handle to wait for it on exit.
@@ -221,7 +155,10 @@ pub fn spawn(
     ))
 }
 
-async fn serve(listener: std::os::unix::net::UnixListener, handler: Arc<dyn SocketHandler>) {
+pub(crate) async fn serve(
+    listener: std::os::unix::net::UnixListener,
+    handler: Arc<dyn SocketHandler>,
+) {
     if let Err(e) = socket::serve(listener, handler).await {
         tracing::error!("socket server stopped: {e}");
     }
@@ -261,8 +198,8 @@ pub(crate) enum Input {
 }
 
 /// Hands socket requests to the loop.
-struct CoreHandler {
-    inputs: tokio_mpsc::UnboundedSender<Input>,
+pub(crate) struct CoreHandler {
+    pub(crate) inputs: tokio_mpsc::UnboundedSender<Input>,
 }
 
 impl SocketHandler for CoreHandler {
@@ -331,12 +268,10 @@ pub(crate) struct Core {
     pub(crate) queue: VecDeque<crate::db::QueuedSlice>,
     /// `msg_id`s already on the message timeline, so sender and receiver don't both add one.
     pub(crate) seen_messages: std::collections::HashSet<String>,
-    quitting: Option<tokio::time::Instant>,
-    killed: bool,
+    pub(crate) quitting: Option<tokio::time::Instant>,
+    pub(crate) killed: bool,
 }
 
-/// How long sessions get to exit on quit before they are killed and reaped.
-const QUIT_GRACE: Duration = Duration::from_secs(3);
 /// The streaming coalescing window (≤ ~30 fps).
 const DELTA_WINDOW: Duration = Duration::from_millis(33);
 
@@ -408,17 +343,9 @@ impl Core {
                     continue;
                 }
                 _ = sleep_until(quit_at), if quit_at.is_some() => {
-                    if self.killed {
-                        tracing::warn!("{} sessions still not reaped; giving up", self.live.len());
+                    if self.quit_deadline() {
                         break;
                     }
-                    tracing::warn!("sessions did not exit in time; killing them");
-                    for live in self.live.values() {
-                        live.session.kill();
-                    }
-                    // Killed sessions are still reaped by their supervisors; wait a little.
-                    self.killed = true;
-                    self.quitting = Some(tokio::time::Instant::now() + Duration::from_secs(2));
                     continue;
                 }
             };
@@ -462,17 +389,6 @@ impl Core {
         }
         self.flush_deltas();
         std::mem::take(&mut self.extra_sockets)
-    }
-
-    fn begin_quit(&mut self) {
-        if self.quitting.is_some() {
-            return;
-        }
-        for live in self.live.values_mut() {
-            live.stopping = true;
-            live.session.shutdown(QUIT_GRACE);
-        }
-        self.quitting = Some(tokio::time::Instant::now() + QUIT_GRACE + Duration::from_secs(1));
     }
 
     /// Loads agents, conversation tails and id counters, and makes sure a coordinator exists.
@@ -555,7 +471,7 @@ impl Core {
         }
         if self.project.registered().is_none() {
             self.warnings.push(Warning {
-                id: WarningId(UNREGISTERED_WARNING.into()),
+                id: WarningId(crate::registration::UNREGISTERED_WARNING.into()),
                 text: "not a Dovetail project yet: :project add keeps it".into(),
             });
         }
@@ -1001,69 +917,6 @@ impl Core {
         for queued in dropped {
             self.persist("the slice queue", self.db.dequeue_slice(queued));
         }
-    }
-
-    // --- projects ---
-
-    /// Registers the open folder (ADR 0005): writes the in-memory state to the new project's
-    /// `state.db`, listens on its socket, and sends a fresh snapshot.
-    pub(crate) async fn register_project(
-        &mut self,
-    ) -> Result<Project, crate::error::RegisterError> {
-        let candidate = match &self.project {
-            ProjectState::Registered(p) => return Ok(p.clone()),
-            ProjectState::Unregistered { candidate, .. } => candidate.clone(),
-        };
-        let project = self
-            .db
-            .register_project(
-                candidate.slug(),
-                candidate.name.clone(),
-                candidate.repo_path.clone(),
-                candidate.git_common_dir.clone(),
-            )
-            .await?;
-        self.db
-            .persist_state(self.paths.state_db(&project.id))
-            .await?;
-        let path = self.paths.socket(&project.id);
-        match socket::bind(&path) {
-            Ok(listener) => {
-                let handler: Arc<dyn SocketHandler> = Arc::new(CoreHandler {
-                    inputs: self.inputs.clone(),
-                });
-                tokio::spawn(serve(listener, handler));
-                self.extra_sockets.push(path);
-            }
-            Err(e) => tracing::warn!("project socket: {e}"),
-        }
-        let old_lists = format!("dovetail-{}-", self.project.key());
-        self.project = ProjectState::Registered(project.clone());
-        // To-do lists named after the old key move to the project id for later launches.
-        let new_lists = format!("dovetail-{}-", project.id);
-        let ids: Vec<AgentId> = self.agents.keys().cloned().collect();
-        for id in ids {
-            self.update_agent(&id, |row| {
-                if let Some(list) = &mut row.task_list_id
-                    && let Some(rest) = list.strip_prefix(&old_lists)
-                {
-                    *list = format!("{new_lists}{rest}");
-                }
-            });
-        }
-        self.warnings.retain(|w| w.id.0 != UNREGISTERED_WARNING);
-        self.activity(
-            ActivityKind::Lifecycle,
-            None,
-            format!(
-                "{} added as project {}",
-                project.repo_path.display(),
-                project.id
-            ),
-        );
-        // The project itself changed: there is no event for that, so resend the state.
-        self.send_snapshot(false).await;
-        Ok(project)
     }
 }
 
