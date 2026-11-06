@@ -4,9 +4,8 @@
 use std::path::PathBuf;
 
 use dovetail_api::{
-    ActivityItem, ActivityKind, Agent, AgentId, AgentKind, AgentMessage, AgentStatus,
-    ConversationEntry, EntryId, EntryKind, InboxId, InboxItem, InboxKind, PermissionMode,
-    SessionLock, TaskId, WorktreeRef,
+    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, ConversationEntry, EntryId, InboxId,
+    InboxItem, InboxKind, SessionLock, TaskId, WorktreeRef,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -47,72 +46,18 @@ fn kind_from_text(text: &str) -> Result<AgentKind, DbError> {
     })
 }
 
-fn status_to_text(status: AgentStatus) -> &'static str {
-    match status {
-        AgentStatus::SettingUp => "setting_up",
-        AgentStatus::Working => "working",
-        AgentStatus::Idle => "idle",
-        AgentStatus::NeedsYou => "needs_you",
-        AgentStatus::Done => "done",
-        AgentStatus::Error => "error",
+/// A unit enum's text in the database: its serde name in the API (`setting_up`,
+/// `accept_edits`, `tool_summary`, ...), so the API is the one source of these names.
+fn to_text<T: serde::Serialize>(value: &T) -> Result<String, DbError> {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(s)) => Ok(s),
+        _ => Err(DbError::Corrupt("a value with no text form".into())),
     }
 }
 
-fn status_from_text(text: &str) -> Result<AgentStatus, DbError> {
-    Ok(match text {
-        "setting_up" => AgentStatus::SettingUp,
-        "working" => AgentStatus::Working,
-        "idle" => AgentStatus::Idle,
-        "needs_you" => AgentStatus::NeedsYou,
-        "done" => AgentStatus::Done,
-        "error" => AgentStatus::Error,
-        other => return Err(DbError::Corrupt(format!("agent status {other:?}"))),
-    })
-}
-
-fn mode_to_text(mode: PermissionMode) -> &'static str {
-    match mode {
-        PermissionMode::Auto => "auto",
-        PermissionMode::AcceptEdits => "accept_edits",
-        PermissionMode::Manual => "manual",
-    }
-}
-
-fn mode_from_text(text: &str) -> Result<PermissionMode, DbError> {
-    Ok(match text {
-        "auto" => PermissionMode::Auto,
-        "accept_edits" => PermissionMode::AcceptEdits,
-        "manual" => PermissionMode::Manual,
-        other => return Err(DbError::Corrupt(format!("permission mode {other:?}"))),
-    })
-}
-
-fn entry_kind_to_text(kind: EntryKind) -> &'static str {
-    match kind {
-        EntryKind::User => "user",
-        EntryKind::Assistant => "assistant",
-        EntryKind::ToolSummary => "tool_summary",
-        EntryKind::Notice => "notice",
-    }
-}
-
-fn entry_kind_from_text(text: &str) -> Result<EntryKind, DbError> {
-    Ok(match text {
-        "user" => EntryKind::User,
-        "assistant" => EntryKind::Assistant,
-        "tool_summary" => EntryKind::ToolSummary,
-        "notice" => EntryKind::Notice,
-        other => return Err(DbError::Corrupt(format!("entry kind {other:?}"))),
-    })
-}
-
-fn activity_kind_to_text(kind: ActivityKind) -> &'static str {
-    match kind {
-        ActivityKind::Pr => "pr",
-        ActivityKind::Ci => "ci",
-        ActivityKind::Message => "message",
-        ActivityKind::Lifecycle => "lifecycle",
-    }
+fn from_text<T: serde::de::DeserializeOwned>(what: &str, text: &str) -> Result<T, DbError> {
+    serde_json::from_value(serde_json::Value::String(text.to_owned()))
+        .map_err(|_| DbError::Corrupt(format!("{what} {text:?}")))
 }
 
 fn path_text(path: &Option<PathBuf>) -> Option<String> {
@@ -143,9 +88,9 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
                 .as_ref()
                 .map(|w| w.path.to_string_lossy().into_owned()),
             a.worktree.as_ref().map(|w| w.branch.clone()),
-            status_to_text(a.status),
+            to_text(&a.status)?,
             a.status_line,
-            mode_to_text(a.permission_mode),
+            to_text(&a.permission_mode)?,
             a.cost_usd,
             row.created_ms,
             a.last_activity_ms,
@@ -216,11 +161,11 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 parent: parent.map(AgentId),
                 task: task.map(TaskId),
                 worktree,
-                status: status_from_text(&status)?,
+                status: from_text("agent status", &status)?,
                 status_line,
                 memory_mb: None,
                 cost_usd: cost,
-                permission_mode: mode_from_text(&mode)?,
+                permission_mode: from_text("permission mode", &mode)?,
                 context_pct: None,
                 progress: None,
                 last_activity_ms: last.unwrap_or(0),
@@ -255,7 +200,7 @@ pub(super) fn upsert_entry(
             entry.id.0 as i64,
             agent.0,
             entry.at_ms,
-            entry_kind_to_text(entry.kind),
+            to_text(&entry.kind)?,
             entry.text
         ],
     )?;
@@ -287,7 +232,7 @@ pub(super) fn load_entries(
         entries.push(ConversationEntry {
             id: EntryId(id as u64),
             at_ms,
-            kind: entry_kind_from_text(&kind)?,
+            kind: from_text("entry kind", &kind)?,
             text,
         });
     }
@@ -369,7 +314,7 @@ pub(super) fn add_activity(conn: &mut Connection, item: &ActivityItem) -> Result
         params![
             item.id as i64,
             item.at_ms,
-            activity_kind_to_text(item.kind),
+            to_text(&item.kind)?,
             item.agent.as_ref().map(|a| a.0.clone()),
             item.text
         ],
