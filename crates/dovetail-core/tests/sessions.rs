@@ -978,8 +978,8 @@ fn at_restart_permissions_expire_and_questions_stay_answerable() {
         .find(|i| matches!(i.kind, InboxKind::Question { .. }))
         .unwrap_or_else(|| panic!("the question stays: {:#?}", h.snap.inbox))
         .id;
-    // The question says enough: no separate cut-off item for the coordinator.
-    assert!(cut_off_text(&h.snap).is_none());
+    // A non-blocking question does not explain the stopped turn: its cut-off is reported too.
+    h.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
     h.send(Command::AnswerQuestion {
         item: question,
         text: "8080".into(),

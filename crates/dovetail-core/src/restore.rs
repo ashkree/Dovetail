@@ -98,8 +98,12 @@ impl Core {
                         ),
                     );
                 }
-                InboxKind::Question { text, .. } => {
-                    asking.insert(item.agent.clone());
+                InboxKind::Question { text, blocking } => {
+                    // Only a blocking question explains a stopped turn; after a non-blocking
+                    // one the agent kept working, so its cut-off is still reported.
+                    if *blocking {
+                        asking.insert(item.agent.clone());
+                    }
                     let question = text.clone();
                     self.restore_item(item, Waiter::RestoredQuestion { question });
                 }
