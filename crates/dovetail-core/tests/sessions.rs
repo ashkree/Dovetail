@@ -114,6 +114,21 @@ impl Harness {
         }
     }
 
+    /// Applies whatever arrives within `window`, for checking that something did not happen.
+    fn drain(&mut self, window: Duration) {
+        let until = Instant::now() + window;
+        while let Some(left) = until.checked_duration_since(Instant::now()) {
+            match self.link.messages.recv_timeout(left) {
+                Ok(ServerMsg::Snapshot(s)) => self.snap = s,
+                Ok(ServerMsg::Event { seq, event }) => {
+                    apply(&mut self.snap, seq, event);
+                }
+                Ok(ServerMsg::Hello { .. }) => {}
+                Err(_) => return,
+            }
+        }
+    }
+
     fn entries(&self, agent: &str) -> Vec<(EntryKind, String)> {
         self.snap
             .conversations
@@ -292,6 +307,11 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
 impl Harness {
     /// A second app on the state of an earlier one (registered project `p`).
     fn start_on(driver: FakeDriver, paths: Paths) -> Harness {
+        Self::start_in(driver, paths, None)
+    }
+
+    /// A second app on earlier state, in `repo` (a git repo) or a fresh folder.
+    fn start_in(driver: FakeDriver, paths: Paths, repo: Option<PathBuf>) -> Harness {
         let dir = tempfile::tempdir().expect("tempdir");
         let run = tempfile::Builder::new()
             .prefix("dvt.")
@@ -301,12 +321,13 @@ impl Harness {
             runtime: run.path().to_path_buf(),
             ..paths
         };
-        let repo = dir.path().to_path_buf();
+        let git_common_dir = repo.as_ref().map(|r| r.join(".git"));
+        let repo = repo.unwrap_or_else(|| dir.path().to_path_buf());
         let resolution = Resolution::Registered(Project {
             id: "p".into(),
             name: "work".into(),
             repo_path: repo.clone(),
-            git_common_dir: None,
+            git_common_dir,
             last_opened_ms: None,
         });
         let options = CoreOptions {
@@ -957,5 +978,138 @@ fn at_restart_permissions_expire_and_questions_stay_answerable() {
         assert!(Instant::now() < deadline, "{:?}", fake.sent());
         std::thread::sleep(Duration::from_millis(10));
     }
+    h.quit();
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let ok = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+        .args(args)
+        .status()
+        .expect("git")
+        .success();
+    assert!(ok, "git {args:?}");
+}
+
+#[test]
+fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), "hi").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    // A slice whose worktree has disappeared.
+    {
+        let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+        let mut agent = dovetail_api::Agent {
+            id: AgentId("slice-lost".into()),
+            name: "lost".into(),
+            kind: AgentKind::Slice,
+            parent: None,
+            task: None,
+            worktree: Some(dovetail_api::WorktreeRef {
+                path: paths.worktrees("p").join("lost"),
+                branch: "dovetail/lost".into(),
+            }),
+            status: dovetail_api::AgentStatus::Idle,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: None,
+            last_activity_ms: 0,
+            lock: dovetail_api::SessionLock::Headless,
+        };
+        agent.status_line.clear();
+        db.upsert_agent(dovetail_core::db::AgentRow {
+            agent,
+            session_id: None,
+            transcript_path: None,
+            task_list_id: None,
+            created_ms: 0,
+        })
+        .wait()
+        .expect("agent");
+    }
+    // Two worktrees no agent owns, one with an unpushed commit.
+    std::fs::create_dir_all(paths.worktrees("p")).unwrap();
+    for name in ["orphan", "spare"] {
+        let wt = paths.worktrees("p").join(name);
+        let branch = format!("dovetail/{name}");
+        git(
+            &repo,
+            &["worktree", "add", "-q", "-b", &branch, wt.to_str().unwrap()],
+        );
+    }
+    std::fs::write(paths.worktrees("p").join("orphan/new.txt"), "x").unwrap();
+    git(&paths.worktrees("p").join("orphan"), &["add", "."]);
+    git(
+        &paths.worktrees("p").join("orphan"),
+        &["commit", "-qm", "work"],
+    );
+
+    let mut h = Harness::start_in(fixture("plain_turn"), paths.clone(), Some(repo.clone()));
+    h.wait_for("the sweep", |s| {
+        s.activity.iter().any(|a| a.text.contains("lost archived: its worktree is gone"))
+            && s.inbox
+                .iter()
+                .filter(|i| matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == dovetail_api::REMOVE_WORKTREE_PERMISSION))
+                .count()
+                == 2
+    });
+    assert!(!h.snap.agents.iter().any(|a| a.name == "lost"));
+    let item = |s: &Snapshot, name: &str| {
+        s.inbox
+            .iter()
+            .find(|i| i.agent.0 == format!("worktree:{name}"))
+            .map(|i| (i.id, i.kind.clone()))
+    };
+    let (orphan, kind) = item(&h.snap, "orphan").expect("orphan item");
+    match kind {
+        InboxKind::Permission { input, .. } => assert_eq!(input["unpushed_commits"], 1),
+        other => panic!("{other:?}"),
+    }
+    let (spare, _) = item(&h.snap, "spare").expect("spare item");
+    // y removes; d keeps and is remembered.
+    h.send(Command::AnswerPermission {
+        item: orphan,
+        answer: PermissionAnswer::Allow,
+    });
+    h.send(Command::AnswerPermission {
+        item: spare,
+        answer: PermissionAnswer::Deny { message: None },
+    });
+    h.wait_for("removal and keep", |s| {
+        s.activity
+            .iter()
+            .any(|a| a.text == "worktree orphan removed")
+            && s.activity
+                .iter()
+                .any(|a| a.text.contains("worktree spare kept"))
+    });
+    assert!(!paths.worktrees("p").join("orphan").exists());
+    assert!(
+        paths.worktrees("p").join("spare").exists(),
+        "never deleted without y"
+    );
+    let _state = h.quit();
+
+    let mut h = Harness::start_in(fixture("plain_turn"), paths.clone(), Some(repo));
+    h.drain(Duration::from_millis(500));
+    assert!(
+        item(&h.snap, "spare").is_none(),
+        "a kept worktree is not asked about again"
+    );
     h.quit();
 }

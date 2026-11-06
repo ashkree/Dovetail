@@ -195,6 +195,16 @@ pub(crate) enum Input {
         agent: AgentId,
         result: Result<(), WorktreeError>,
     },
+    /// The sweep inspected a worktree no agent owns.
+    OrphanInspected {
+        name: String,
+        result: Result<crate::worktree::Inspection, WorktreeError>,
+    },
+    /// An unowned worktree's removal (after `y`) finished.
+    OrphanRemoved {
+        name: String,
+        result: Result<(), WorktreeError>,
+    },
 }
 
 /// Hands socket requests to the loop.
@@ -389,6 +399,8 @@ impl Core {
                 Input::WorktreeRemoved { agent, result } => {
                     self.on_worktree_removed(agent, result).await;
                 }
+                Input::OrphanInspected { name, result } => self.on_orphan(name, result),
+                Input::OrphanRemoved { name, result } => self.on_orphan_removed(name, result),
             }
             if self.quitting.is_none() {
                 self.start_queued().await;

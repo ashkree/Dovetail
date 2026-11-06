@@ -8,13 +8,23 @@
 //! - **Restore.** The coordinator's session resumes at once (if it has run before); slices resume
 //!   when first touched (`ensure_live`).
 //!
+//! - **Sweep.** A slice whose worktree directory is gone is archived, with an Activity note. A
+//!   worktree under Dovetail's worktrees directory that no agent owns raises one "Remove
+//!   worktree" item; `y` removes it, `d` keeps it and records that, so it is not asked again.
+//!   Nothing is deleted without `y`.
+//!
 //! The state at quit is kept as it was: statuses are not recomputed while quitting, so a turn
 //! running at quit reads as cut off next time.
 
-use dovetail_api::{ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind};
+use dovetail_api::{
+    ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind,
+    REMOVE_WORKTREE_PERMISSION,
+};
 
 use crate::inbox::Waiter;
-use crate::service::{COORDINATOR, Core, InboxEntry};
+use crate::service::{COORDINATOR, Core, InboxEntry, Input};
+use crate::worktree;
+use serde_json::json;
 
 /// What `load` found that needs acting on once the UI has its snapshot.
 #[derive(Debug, Default)]
@@ -101,6 +111,7 @@ impl Core {
             };
             self.raise(&agent, InboxKind::Error { text }, Waiter::None);
         }
+        self.sweep().await;
         let ids: Vec<AgentId> = self.agents.keys().cloned().collect();
         for id in &ids {
             self.refresh_status(id);
@@ -114,6 +125,133 @@ impl Core {
         if has_run && let Err(e) = self.ensure_live(&coordinator) {
             self.fail(e);
         }
+    }
+
+    /// The stale-state sweep (decision 4 of 2026-11-06).
+    async fn sweep(&mut self) {
+        let gone: Vec<(AgentId, String)> = self
+            .agents
+            .values()
+            .filter(|r| r.agent.worktree.as_ref().is_some_and(|w| !w.path.exists()))
+            .map(|r| (r.agent.id.clone(), r.agent.name.clone()))
+            .collect();
+        for (agent, name) in gone {
+            self.closed(&agent);
+            self.activity(
+                ActivityKind::Lifecycle,
+                None,
+                format!("slice {name} archived: its worktree is gone"),
+            );
+        }
+
+        let key = self.project.key().to_owned();
+        let dir = self.paths.worktrees(&key);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return; // no worktrees yet
+        };
+        let owned: Vec<std::path::PathBuf> = self
+            .agents
+            .values()
+            .filter_map(|r| r.agent.worktree.as_ref().map(|w| w.path.clone()))
+            .collect();
+        let kept = match self.db.kept_worktrees(key.clone()).await {
+            Ok(kept) => kept,
+            Err(e) => {
+                tracing::warn!("reading kept worktrees: {e}");
+                return;
+            }
+        };
+        let repo = self.project.repo_path().to_path_buf();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !path.is_dir() || owned.contains(&path) || kept.contains(&name) {
+                continue;
+            }
+            let paths = self.paths.clone();
+            let key = key.clone();
+            let repo = repo.clone();
+            let inputs = self.inputs.clone();
+            tokio::task::spawn_blocking(move || {
+                let result = worktree::inspect(&paths, &key, &name, &repo);
+                let _ = inputs.send(Input::OrphanInspected { name, result });
+            });
+        }
+    }
+
+    /// The agent id an unowned worktree's item is filed under (no agent owns it).
+    fn orphan_agent(name: &str) -> AgentId {
+        AgentId(format!("worktree:{name}"))
+    }
+
+    pub(crate) fn on_orphan(
+        &mut self,
+        name: String,
+        result: Result<worktree::Inspection, worktree::WorktreeError>,
+    ) {
+        match result {
+            Ok(report) => {
+                let input = json!({
+                    "worktree": worktree::worktree_path(&self.paths, self.project.key(), &name),
+                    "branch": worktree::branch_name(&name),
+                    "uncommitted": report.uncommitted,
+                    "unpushed_commits": report.unpushed_commits,
+                });
+                self.raise(
+                    &Self::orphan_agent(&name),
+                    InboxKind::Permission {
+                        tool: REMOVE_WORKTREE_PERMISSION.into(),
+                        input,
+                        reason: Some("no agent owns this worktree".into()),
+                        suggestions: Vec::new(),
+                    },
+                    Waiter::RemoveOrphan { name },
+                );
+            }
+            Err(e) => self.activity(
+                ActivityKind::Lifecycle,
+                None,
+                format!("worktree {name}: owned by no agent, and could not be inspected: {e}"),
+            ),
+        }
+    }
+
+    /// `y` on an unowned worktree's item.
+    pub(crate) fn remove_orphan(&mut self, name: String) {
+        let paths = self.paths.clone();
+        let key = self.project.key().to_owned();
+        let repo = self.project.repo_path().to_path_buf();
+        let inputs = self.inputs.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = worktree::remove(&paths, &key, &name, &repo, true);
+            let _ = inputs.send(Input::OrphanRemoved { name, result });
+        });
+    }
+
+    pub(crate) fn on_orphan_removed(
+        &mut self,
+        name: String,
+        result: Result<(), worktree::WorktreeError>,
+    ) {
+        let text = match result {
+            Ok(()) => format!("worktree {name} removed"),
+            Err(e) => format!("worktree {name}: removing it failed: {e}"),
+        };
+        self.activity(ActivityKind::Lifecycle, None, text);
+    }
+
+    /// `d` on an unowned worktree's item: keep it, and never ask again.
+    pub(crate) fn keep_orphan(&mut self, name: String) {
+        self.persist(
+            "a kept worktree",
+            self.db
+                .keep_worktree(self.project.key().to_owned(), name.clone()),
+        );
+        self.activity(
+            ActivityKind::Lifecycle,
+            None,
+            format!("worktree {name} kept; Dovetail will not ask about it again"),
+        );
     }
 
     /// Puts an item read from storage back in Needs you, as it was.
@@ -139,7 +277,6 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn expired_requests_name_the_tool_and_its_target() {

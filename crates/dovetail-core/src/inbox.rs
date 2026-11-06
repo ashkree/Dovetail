@@ -42,6 +42,9 @@ pub(crate) enum Waiter {
     /// An `ask_user` question from before a restart: its call is gone, so the answer goes to
     /// the agent as a normal message (M10, decided 2026-11-06).
     RestoredQuestion { question: String },
+    /// A worktree no agent owns, found by the sweep on open (M10): `y` removes it, `d` keeps
+    /// it for good.
+    RemoveOrphan { name: String },
 }
 
 impl Waiter {
@@ -326,6 +329,10 @@ impl Core {
                 PermissionAnswer::Deny { .. } => self.keep_slice(&agent),
                 _ => self.remove_worktree(&agent, true),
             },
+            Waiter::RemoveOrphan { name } => match answer {
+                PermissionAnswer::Deny { .. } => self.keep_orphan(name),
+                _ => self.remove_orphan(name),
+            },
             _ => {}
         }
         self.refresh_status(&agent);
@@ -397,6 +404,7 @@ impl Core {
                 ));
             }
             Waiter::RemoveWorktree => self.keep_slice(&agent),
+            Waiter::RemoveOrphan { name } => self.keep_orphan(name),
             Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }
     }
