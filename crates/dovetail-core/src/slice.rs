@@ -336,6 +336,16 @@ impl Core {
         self.tell_coordinator(format!("slice {name} setup failed: {reason}"));
     }
 
+    /// The key a slice's worktree files live under: a worktree made before registration stays
+    /// under `new-<pid>`, so read it from the recorded path; else the current key.
+    fn worktree_key(&self, agent: &dovetail_api::Agent) -> String {
+        agent
+            .worktree
+            .as_ref()
+            .and_then(|w| worktree::project_of(&self.paths, &w.path))
+            .unwrap_or_else(|| self.project.key().to_owned())
+    }
+
     pub(crate) fn name_of(&self, agent: &AgentId) -> String {
         self.agents
             .get(agent)
@@ -389,13 +399,7 @@ impl Core {
         }
         let name = row.agent.name.clone();
         let paths = self.paths.clone();
-        // A worktree made before registration stays under the old key: use its recorded path.
-        let key = row
-            .agent
-            .worktree
-            .as_ref()
-            .and_then(|w| worktree::project_of(&paths, &w.path))
-            .unwrap_or_else(|| self.project.key().to_owned());
+        let key = self.worktree_key(&row.agent);
         let repo = self.project.repo_path().to_path_buf();
         let inputs = self.inputs.clone();
         let agent = agent.clone();
@@ -474,7 +478,8 @@ impl Core {
         for id in items {
             self.resolve(id, Some("slice archived".into()));
         }
-        worktree::clear_hook_outcome(&self.paths, self.project.key(), &row.agent.name);
+        let key = self.worktree_key(&row.agent);
+        worktree::clear_hook_outcome(&self.paths, &key, &row.agent.name);
         self.persist("a closed agent", self.db.close_agent(agent.clone()));
         self.emit(Event::AgentRemoved(agent.clone()));
         self.activity(

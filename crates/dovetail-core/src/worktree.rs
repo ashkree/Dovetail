@@ -624,3 +624,21 @@ pub fn remove(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_worktree_path_names_the_key_it_was_made_under() {
+        let paths = Paths {
+            data: PathBuf::from("/d"),
+            config: PathBuf::from("/c"),
+            state: PathBuf::from("/s"),
+            runtime: PathBuf::from("/r"),
+        };
+        let path = worktree_path(&paths, "new-42", "early");
+        assert_eq!(project_of(&paths, &path).as_deref(), Some("new-42"));
+        assert_eq!(project_of(&paths, Path::new("/elsewhere/early")), None);
+    }
+}
