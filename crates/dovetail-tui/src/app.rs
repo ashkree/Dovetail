@@ -37,6 +37,9 @@ use crate::region::{BufferKind, RegionId, Regions};
 use crate::theme::Theme;
 use overlay::Overlay;
 
+/// How long the "Press Ctrl-C again to exit" hint waits for the second press.
+pub const EXIT_CONFIRM_MS: u64 = 2000;
+
 /// Hints on the right of the status bar.
 const HINTS: &str = "i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command";
 const HINTS_SHORT: &str = "i chat · ␣ss switch · : command";
@@ -88,6 +91,8 @@ pub struct App {
     /// opening it once, not on every event while it stays focused.
     reading: Option<AgentId>,
     quit: bool,
+    /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
+    exit_armed_until: Option<u64>,
     dirty: bool,
 }
 
@@ -114,6 +119,7 @@ impl App {
             resyncing: false,
             reading: None,
             quit: false,
+            exit_armed_until: None,
             dirty: true,
         }
     }
@@ -177,17 +183,31 @@ impl App {
     /// When the unfinished key sequence gives up, on the loop's monotonic clock. `None` when
     /// nothing is pending, so an idle UI has no deadline and sleeps.
     pub fn next_deadline_ms(&self) -> Option<u64> {
-        self.resolver.deadline_ms()
+        match (self.resolver.deadline_ms(), self.exit_armed_until) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// The loop's deadline passed: run an ambiguous shorter binding or drop the sequence.
     pub fn on_timeout(&mut self, now_ms: u64) {
+        if self.exit_armed_until.is_some_and(|d| d <= now_ms) {
+            self.exit_armed_until = None;
+            self.note = None;
+            self.dirty = true;
+        }
         if self.resolver.deadline_ms().is_some_and(|d| d <= now_ms) {
             self.dirty = true;
             if let Some(action) = self.resolver.on_timeout() {
                 self.run(action);
             }
         }
+    }
+
+    /// SIGINT or SIGTERM arrived as a signal: leave through the same path as a confirmed quit.
+    pub fn on_signal(&mut self) {
+        self.quit = true;
+        self.dirty = true;
     }
 
     /// The terminal was resized.
@@ -309,6 +329,18 @@ impl App {
     pub fn on_key(&mut self, event: KeyEvent, mono_ms: u64) {
         self.dirty = true;
         self.note = None;
+        let armed = self.exit_armed_until.take().is_some_and(|d| d > mono_ms);
+        let mode_key = Key::from_event(event);
+        if self.keymap.global_chord(self.mode, mode_key) == Some(Action::QuitOnRepeat) {
+            self.resolver.reset();
+            if armed {
+                self.quit = true;
+            } else {
+                self.exit_armed_until = Some(mono_ms + EXIT_CONFIRM_MS);
+                self.note = Some("Press Ctrl-C again to exit".into());
+            }
+            return;
+        }
         if let Some(confirm) = self.confirm.take() {
             if matches!(event.code, crossterm::event::KeyCode::Char('y' | 'Y')) {
                 match confirm.then {
@@ -510,6 +542,9 @@ impl App {
                 }
             }
             Action::ForceQuit => self.quit = true,
+            // Handled in `on_key` (it needs the loop clock); reached here only from a table row
+            // in another scope, where a press just arms the hint.
+            Action::QuitOnRepeat => {}
             #[cfg(debug_assertions)]
             Action::DebugPanic => panic!("deliberate panic from :panic"),
             _ => {

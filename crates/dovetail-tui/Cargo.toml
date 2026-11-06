@@ -14,6 +14,7 @@ jiff.workspace = true
 nucleo.workspace = true
 pulldown-cmark.workspace = true
 serde_json.workspace = true
+signal-hook.workspace = true
 ratatui.workspace = true
 tracing.workspace = true
 unicode-width.workspace = true
