@@ -173,12 +173,7 @@ impl Core {
         match row.agent.kind {
             AgentKind::Coordinator => {
                 let cwd = self.project.repo_path().to_path_buf();
-                self.launch(id, cwd, None)?;
-                // Ready and setup-failed signals that came while it was not running.
-                for note in std::mem::take(&mut self.coordinator_notes) {
-                    self.send_note(id, &note);
-                }
-                Ok(())
+                self.launch(id, cwd, None)
             }
             AgentKind::Slice => {
                 if row.transcript_path.is_none() {
@@ -246,14 +241,11 @@ impl Core {
         }
     }
 
-    /// Tells the coordinator something; held until its session runs (ADR 0004 ready signal).
+    /// Tells the coordinator something at once (ADR 0004's signals: slice ready, setup
+    /// failed, start approved or denied). A coordinator that is idle, or not running, starts a
+    /// turn for it (decided 2026-11-06).
     pub(crate) fn tell_coordinator(&mut self, text: String) {
-        let id = AgentId(COORDINATOR.into());
-        if self.live.contains_key(&id) {
-            self.send_note(&id, &text);
-        } else {
-            self.coordinator_notes.push(text);
-        }
+        self.send_note(&AgentId(COORDINATOR.into()), &text);
     }
 
     pub(crate) fn interrupt(&mut self, id: &AgentId) {

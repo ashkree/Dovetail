@@ -329,8 +329,6 @@ pub(crate) struct Core {
     flush_at: Option<tokio::time::Instant>,
     /// Slice starts over the `max_slices` cap, oldest first (ADR 0004).
     pub(crate) queue: VecDeque<SliceRequest>,
-    /// Messages for the coordinator while its session is not running; sent when it starts.
-    pub(crate) coordinator_notes: Vec<String>,
     /// `msg_id`s already on the message timeline, so sender and receiver don't both add one.
     pub(crate) seen_messages: std::collections::HashSet<String>,
     quitting: Option<tokio::time::Instant>,
@@ -382,7 +380,6 @@ impl Core {
             deltas: BTreeMap::new(),
             flush_at: None,
             queue: VecDeque::new(),
-            coordinator_notes: Vec::new(),
             seen_messages: Default::default(),
             quitting: None,
             killed: false,
