@@ -824,7 +824,13 @@ impl Core {
             .agents
             .get(id)
             .is_some_and(|r| r.agent.status == AgentStatus::Error);
-        let status = crate::session::state::status(setting_up, needs_you, busy, failed);
+        let status = crate::session::state::StatusInputs {
+            setting_up,
+            needs_you,
+            busy,
+            failed,
+        }
+        .status();
         self.update_agent(id, |row| {
             row.agent.status = status;
             row.agent.last_activity_ms = now_ms();

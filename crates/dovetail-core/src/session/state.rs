@@ -114,18 +114,33 @@ impl Turn {
     }
 }
 
-/// The status a session shows, from what holds it (most urgent first).
-pub fn status(setting_up: bool, needs_you: bool, busy: bool, failed: bool) -> AgentStatus {
-    if setting_up {
-        AgentStatus::SettingUp
-    } else if needs_you {
-        AgentStatus::NeedsYou
-    } else if busy {
-        AgentStatus::Working
-    } else if failed {
-        AgentStatus::Error
-    } else {
-        AgentStatus::Idle
+/// What decides the status a session shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatusInputs {
+    /// A slice waiting for its worktree.
+    pub setting_up: bool,
+    /// An inbox item holds it (a permission request, a blocking question).
+    pub needs_you: bool,
+    /// In a turn, or with background tasks left.
+    pub busy: bool,
+    /// Its last session failed and nothing has run since.
+    pub failed: bool,
+}
+
+impl StatusInputs {
+    /// The status, most urgent first.
+    pub fn status(self) -> AgentStatus {
+        if self.setting_up {
+            AgentStatus::SettingUp
+        } else if self.needs_you {
+            AgentStatus::NeedsYou
+        } else if self.busy {
+            AgentStatus::Working
+        } else if self.failed {
+            AgentStatus::Error
+        } else {
+            AgentStatus::Idle
+        }
     }
 }
 

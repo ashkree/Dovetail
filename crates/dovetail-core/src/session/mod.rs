@@ -27,6 +27,14 @@ use crate::recipe::Recipe;
 use crate::service::{COORDINATOR, Core, Input};
 use state::{Streaming, Turn};
 
+/// A `SendMessage` call waiting for its result, which carries the `msg_id` (spike S2).
+pub(crate) struct PendingSend {
+    /// The recipient's name, as the sender wrote it.
+    pub(crate) to: String,
+    /// The message.
+    pub(crate) text: String,
+}
+
 /// A running session process and what Dovetail tracks about it.
 pub(crate) struct Live {
     pub(crate) session: Box<dyn Session>,
@@ -43,8 +51,8 @@ pub(crate) struct Live {
     pub(crate) brief: Option<String>,
     /// The first `system/init` has arrived.
     pub(crate) inited: bool,
-    /// Pending `SendMessage` calls: tool use id → (recipient name, text).
-    pub(crate) sends: HashMap<String, (String, String)>,
+    /// Pending `SendMessage` calls, by tool use id.
+    pub(crate) sends: HashMap<String, PendingSend>,
     /// Archive the slice once the process has exited; `Some(true)` if the user already
     /// confirmed losing unsaved work.
     pub(crate) close_after: Option<bool>,
@@ -320,7 +328,7 @@ impl Core {
                     .live
                     .get_mut(&agent)
                     .and_then(|l| l.sends.remove(&result.tool_use_id));
-                if let Some((to, text)) = send
+                if let Some(PendingSend { to, text }) = send
                     && !result.is_error
                 {
                     let msg_id = result
@@ -516,7 +524,7 @@ impl Core {
                     field("message").or_else(|| field("content")),
                 ) && let Some(live) = self.live.get_mut(agent)
                 {
-                    live.sends.insert(id, (to, text));
+                    live.sends.insert(id, PendingSend { to, text });
                 }
             }
             let (entry, line) = match self.live.get_mut(agent) {
