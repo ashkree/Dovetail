@@ -585,3 +585,73 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
     );
     h.quit();
 }
+
+#[test]
+fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_message() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let coordinator = AgentId(COORDINATOR.into());
+    // auto → acceptEdits: approval is needed now.
+    h.send(Command::CyclePermissionMode {
+        agent: coordinator.clone(),
+    });
+    h.wait_for("the mode", |s| {
+        s.agents
+            .iter()
+            .any(|a| a.permission_mode == PermissionMode::AcceptEdits)
+    });
+    let socket = h.socket();
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            COORDINATOR,
+            Tool::StartSlice(StartSlice {
+                task: TaskId(1),
+                name: "later".into(),
+                brief: "go".into(),
+            }),
+        ),
+    ));
+    // No task #1 yet: refused before anyone is asked.
+    assert!(is_error && text.starts_with("denied"), "{text}");
+    h.send(Command::CreateTask(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+    }));
+    h.wait_for("the task", |s| !s.tasks.is_empty());
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            COORDINATOR,
+            Tool::StartSlice(StartSlice {
+                task: TaskId(1),
+                name: "later".into(),
+                brief: "go".into(),
+            }),
+        ),
+    ));
+    assert!(!is_error && text.starts_with("pending"), "{text}");
+    h.wait_for("the approval item", |s| {
+        s.inbox
+            .iter()
+            .any(|i| matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == "start_slice"))
+    });
+    let id = h.snap.inbox[0].id;
+    h.send(Command::AnswerPermission {
+        item: id,
+        answer: PermissionAnswer::Allow,
+    });
+    h.wait_for("the approval message", |s| {
+        s.conversations.get(&coordinator).is_some_and(|t| {
+            t.entries
+                .iter()
+                .any(|e| e.text.contains("start_slice later approved"))
+        })
+    });
+    assert!(h.snap.agents.iter().any(|a| a.name == "later"));
+    h.quit();
+}

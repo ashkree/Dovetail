@@ -15,7 +15,7 @@ use tokio::sync::oneshot;
 
 use crate::db::now_ms;
 use crate::service::{Core, InboxEntry};
-use crate::slice::SliceRequest;
+use crate::slice::{SliceRequest, SliceStart};
 
 /// What waits on an inbox item's answer.
 pub(crate) enum Waiter {
@@ -33,11 +33,9 @@ pub(crate) enum Waiter {
     },
     /// A non-blocking `ask_user`: the answer goes to the session as a message.
     Question { question: String },
-    /// A `start_slice` call waiting for approval (ADR 0004).
-    StartSlice {
-        request: SliceRequest,
-        reply: oneshot::Sender<SocketResponseBody>,
-    },
+    /// A `start_slice` waiting for approval; the call already returned `pending`, and the
+    /// answer goes to the coordinator as a message (ADR 0004).
+    StartSlice { request: SliceRequest },
     /// A slice archive waiting for confirmation that unsaved work may go.
     RemoveWorktree,
 }
@@ -47,7 +45,7 @@ impl Waiter {
     pub(crate) fn holds_agent(&self) -> bool {
         matches!(
             self,
-            Waiter::Control { .. } | Waiter::BlockingQuestion { .. } | Waiter::StartSlice { .. }
+            Waiter::Control { .. } | Waiter::BlockingQuestion { .. }
         )
     }
 }
@@ -266,16 +264,29 @@ impl Core {
                     self.fail(message);
                 }
             }
-            Waiter::StartSlice { request, reply } => match answer {
-                PermissionAnswer::Deny { message } => {
-                    let why = message.map(|m| format!(": {m}")).unwrap_or_default();
-                    let _ = reply.send(tool_result(format!("denied by the user{why}")));
-                }
-                _ => {
-                    let result = self.request_slice(request).await;
-                    let _ = reply.send(crate::tools::slice_reply(result));
-                }
-            },
+            Waiter::StartSlice { request } => {
+                let name = request.name.clone();
+                let text = match answer {
+                    PermissionAnswer::Deny { message } => {
+                        let why = message.map(|m| format!(": {m}")).unwrap_or_default();
+                        format!("start_slice {name} denied by the user{why}")
+                    }
+                    _ => match self.request_slice(request).await {
+                        Ok(SliceStart::Started(_)) => format!(
+                            "start_slice {name} approved: it is setting up; wait for \"slice \
+                             {name} ready\" before you message it"
+                        ),
+                        Ok(SliceStart::Queued(_)) => format!(
+                            "start_slice {name} approved and queued: the maximum number of \
+                             slices is running; it starts when one is archived"
+                        ),
+                        Err(e) => {
+                            format!("start_slice {name} approved, but it could not start: {e}")
+                        }
+                    },
+                };
+                self.tell_coordinator(text);
+            }
             Waiter::RemoveWorktree => match answer {
                 PermissionAnswer::Deny { .. } => self.keep_slice(&agent),
                 _ => self.remove_worktree(&agent, true),
@@ -336,8 +347,11 @@ impl Core {
                     );
                 }
             }
-            Waiter::StartSlice { reply, .. } => {
-                let _ = reply.send(tool_result("denied: the user dismissed the request"));
+            Waiter::StartSlice { request } => {
+                self.tell_coordinator(format!(
+                    "start_slice {} denied: the user dismissed the request",
+                    request.name
+                ));
             }
             Waiter::RemoveWorktree => self.keep_slice(&agent),
             Waiter::None | Waiter::Question { .. } => {}

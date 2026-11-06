@@ -410,10 +410,11 @@ fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "start_slice",
             description: "Start a slice session (its own git worktree) on an existing task. \
-                For new work call `create_task` first. Depending on the permission mode the \
-                user may be asked to approve. Returns at once with `started`, `queued` (the \
-                maximum number of slices is running; it starts when one is archived) or \
-                `denied`. Do not message the slice until Dovetail sends you \"slice <name> \
+                For new work call `create_task` first. Returns at once with `started`, \
+                `queued` (the maximum number of slices is running; it starts when one is \
+                archived), `denied`, or `pending` (the user is asked to approve; the answer \
+                arrives later as a message, \"start_slice <name> approved\" or \"... \
+                denied\"). Do not message the slice until Dovetail sends you \"slice <name> \
                 ready\"; a setup failure arrives the same way. The brief becomes the slice's \
                 first prompt, so make it complete: goal, scope, files, checks to run.",
             schema: || {

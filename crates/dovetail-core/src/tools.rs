@@ -48,8 +48,8 @@ pub(crate) fn slice_reply(result: Result<SliceStart, String>) -> SocketResponseB
 }
 
 impl Core {
-    /// Answers one tool call. Held calls (a blocking `ask_user`, a `start_slice` waiting for
-    /// approval) keep `reply` in their inbox item and answer later.
+    /// Answers one tool call. A blocking `ask_user` keeps `reply` in its inbox item and answers
+    /// later; everything else answers at once.
     pub(crate) async fn tool(
         &mut self,
         call: ToolCall,
@@ -175,6 +175,7 @@ impl Core {
                     .map_or(PermissionMode::Manual, |r| r.agent.permission_mode);
                 if mode != PermissionMode::Auto {
                     // Approval follows the coordinator's permission mode (ADR 0004).
+                    let name = request.name.clone();
                     let input = json!({
                         "task": request.task.map(|t| t.0),
                         "name": request.name,
@@ -188,8 +189,15 @@ impl Core {
                             reason: Some("the coordinator wants to start a slice".into()),
                             suggestions: Vec::new(),
                         },
-                        Waiter::StartSlice { request, reply },
+                        Waiter::StartSlice { request },
                     );
+                    // The call returns at once; the answer comes as a message (decided
+                    // 2026-11-06, ADR 0004).
+                    let _ = reply.send(ok(format!(
+                        "pending: the user is asked to approve slice {name}. The answer arrives \
+                         as a message: \"start_slice {name} approved\" (then wait for \"slice \
+                         {name} ready\") or \"start_slice {name} denied\"."
+                    )));
                     return;
                 }
                 let result = self.request_slice(request).await;

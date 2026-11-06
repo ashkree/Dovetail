@@ -7,7 +7,7 @@ The coordinator gets an MCP tool `start_slice { task, name, brief }`, shipped in
 - **Approval follows the coordinator's permission mode.** In auto mode the slice starts with no prompt; in manual mode (and any mode that asks) it raises a Permission item in the inbox, answered with `y`/`d`/`A`.
 - **Existing tasks only.** `task` must name a task; for new work the coordinator calls `create_task` first.
 - **Capped.** `max_slices` in `config.toml`, default 3. A call over the cap is queued and starts when a slice is archived.
-- **Returns at once** with `started`, `queued` or `denied`. The brief becomes the slice's first prompt after setup, exactly as for `<leader>sn`.
+- **Returns at once** with `started`, `queued`, `denied` or `pending`. `pending` (decided 2026-11-06) is the answer whenever approval is needed: the call does not wait for the user; their approval or denial reaches the coordinator later as a short user message (`start_slice <name> approved`, `start_slice <name> denied`), like the ready signal. The brief becomes the slice's first prompt after setup, exactly as for `<leader>sn`.
 - **Ready signal.** When the slice is ready, or its setup fails, Dovetail sends the coordinator a short user message (`slice <name> ready`, `setup failed: …`), so it knows when `SendMessage` will reach the slice.
 - Slices cannot call it.
 
