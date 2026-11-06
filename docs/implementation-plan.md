@@ -515,7 +515,9 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Tests:** fixtures for plain turn, double `result`, partial stream; live test behind `DOVETAIL_LIVE_TESTS=1` (deferred: tests are written when something breaks, decided 2026-11-05)
 
 ### M7. Live permissions
-- **Scope:** `can_use_tool` to inbox and back, concurrent answers, `y A d D`, rule suggestions for always-allow, `<leader>sm` over the control protocol, `permission_denials` surfaced, activity feed from real events.
+- **Scope:** `can_use_tool` to inbox and back, concurrent answers, `y A d D`, rule suggestions for always-allow, `<leader>sm` over the control protocol, `permission_denials` surfaced, activity feed from real events (slice lifecycle and messages; the rest moved to M16, see below).
+- **Decided 2026-11-06:** "always allow" (`A`) applies the offered rule to the session only. Claude Code offers rules with destination `localSettings` or `projectSettings`, which would write into the repo; Dovetail rewrites the destination to `session` before sending the answer.
+- **Moved to M16 (decided 2026-11-06):** activity items for permission answers, coordinator start and exit, task changes, and PR and CI events.
 - **Files:** `crates/dovetail-core/src/{inbox,permissions}.rs`
 - **Done when:**
   - [ ] In manual mode, a real request is answered from the inbox
@@ -525,7 +527,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 
 ### M8. Slices, worktree hooks, cleanup
 - **Spikes needed:** S2 (done: no relay needed)
-- **Scope:** `dovetail hook worktree-create` (idempotent; symlinks only; recipe setup; prints the path). `SettingUp` state in the tree. `<leader>sn` and `:spawn`. Slice brief from task plus your text. First prompt sent after init. Worktree removal: check for uncommitted or unpushed work, ask, remove our files, `git worktree remove`, delete the `dovetail/*` branch. Message timeline from `SendMessage` calls and `origin` objects joined on `msg_id` (no relay, per S2); sessions launch with `--replay-user-messages` and `SendMessage` in `--allowedTools`. Archive flow with `dd`.
+- **Scope:** `dovetail hook worktree-create` (idempotent; symlinks only; recipe setup; prints the path). `SettingUp` state in the tree. `<leader>sn` and `:spawn`. Slice brief from task plus your text. First prompt sent after init. *As built (wave 2): the first prompt is sent when the `WorktreeCreate` hook records its outcome (`hook.json`), which stands in for "after init": whether `system/init` arrives before the first input is unknown, and waiting for it could deadlock; the outcome also tells success from failure, so a failed setup never gets a prompt.* Worktree removal: check for uncommitted or unpushed work, ask, remove our files, `git worktree remove`, delete the `dovetail/*` branch. Message timeline from `SendMessage` calls and `origin` objects joined on `msg_id` (no relay, per S2); sessions launch with `--replay-user-messages` and `SendMessage` in `--allowedTools`. Archive flow with `dd`.
 - **Files:** `crates/dovetail-core/src/{worktree,slice,messaging}.rs`, `crates/dovetail/src/hook.rs`
 - **Done when:**
   - [ ] A real slice starts in a hook-created worktree outside the repo
@@ -611,7 +613,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Tests:** `draw_map` validation, Mermaid output snapshots, grid layout, hit-testing
 
 ### M16. Hardening and daily-driver polish
-- **Scope:** a real week's use, fixing what hurts. Long-session performance and memory. Startup warnings. Focus mode (A1). README and docs brought up to date.
+- **Scope:** a real week's use, fixing what hurts. Long-session performance and memory. Startup warnings. Focus mode (A1). Activity feed events moved from M7: permission answers, coordinator start and exit, task changes, PR and CI (decided 2026-11-06). README and docs brought up to date.
 - **Slices:** one per defect or theme, decided from real use.
 - **Done when:**
   - [ ] You use it for a full working week on a real project in place of tmux
