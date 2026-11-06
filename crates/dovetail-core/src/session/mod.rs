@@ -182,7 +182,20 @@ impl Core {
         match row.agent.kind {
             AgentKind::Coordinator => {
                 let cwd = self.project.repo_path().to_path_buf();
-                self.launch(id, cwd, None)
+                self.launch(id, cwd, None)?;
+                // Signals held while it could not be woken.
+                let notes = std::mem::take(&mut self.coordinator_notes);
+                if let Some(live) = self.live.get_mut(id) {
+                    for note in &notes {
+                        if live.session.send(UserInput::text(note.as_str())).is_ok() {
+                            live.turn.input_sent();
+                        }
+                    }
+                }
+                for note in notes {
+                    self.add_entry(id, EntryKind::Notice, format!("Dovetail: {note}"));
+                }
+                Ok(())
             }
             AgentKind::Slice => {
                 if row.transcript_path.is_none() {
@@ -251,8 +264,22 @@ impl Core {
     /// Tells the coordinator something at once (ADR 0004's signals: slice ready, setup
     /// failed, start approved or denied). A coordinator that is idle, or not running, starts a
     /// turn for it (decided 2026-11-06).
+    ///
+    /// Only a coordinator that is running, or idle, is woken. One that crashed is not resumed
+    /// for a signal, and nothing is woken while the app quits: the note is held and sent when
+    /// its session next starts.
     pub(crate) fn tell_coordinator(&mut self, text: String) {
-        self.send_note(&AgentId(COORDINATOR.into()), &text);
+        let id = AgentId(COORDINATOR.into());
+        let wakeable = self.live.contains_key(&id)
+            || self
+                .agents
+                .get(&id)
+                .is_some_and(|r| r.agent.status == AgentStatus::Idle);
+        if self.quitting.is_none() && wakeable {
+            self.send_note(&id, &text);
+        } else {
+            self.coordinator_notes.push(text);
+        }
     }
 
     pub(crate) fn interrupt(&mut self, id: &AgentId) {

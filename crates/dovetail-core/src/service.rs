@@ -268,6 +268,9 @@ pub(crate) struct Core {
     pub(crate) queue: VecDeque<crate::db::QueuedSlice>,
     /// `msg_id`s already on the message timeline, so sender and receiver don't both add one.
     pub(crate) seen_messages: std::collections::HashSet<String>,
+    /// Signals for a coordinator that may not be woken (it crashed, or the app is quitting);
+    /// sent when its session next starts.
+    pub(crate) coordinator_notes: Vec<String>,
     pub(crate) quitting: Option<tokio::time::Instant>,
     pub(crate) killed: bool,
 }
@@ -316,6 +319,7 @@ impl Core {
             flush_at: None,
             queue: VecDeque::new(),
             seen_messages: Default::default(),
+            coordinator_notes: Vec::new(),
             quitting: None,
             killed: false,
         }
@@ -370,6 +374,8 @@ impl Core {
                     generation,
                     event,
                 } => self.on_driver(agent, generation, event).await,
+                // During quit nothing new starts, and no signal wakes the coordinator.
+                Input::SetupFinished { .. } if self.quitting.is_some() => {}
                 Input::SetupFinished {
                     agent,
                     generation,
