@@ -369,14 +369,14 @@ impl Db {
         self.run(|c, _| sessions::clear_notes(c.state()?))
     }
 
-    /// Records that the user kept an unowned worktree.
-    pub fn keep_worktree(&self, key: String, name: String) -> Pending<()> {
-        self.run(move |c, now| sessions::keep_worktree(c.state()?, &key, &name, now))
+    /// Records that the user kept the unowned worktree at `path`.
+    pub fn keep_worktree(&self, path: PathBuf) -> Pending<()> {
+        self.run(move |c, now| sessions::keep_worktree(c.state()?, &path, now))
     }
 
-    /// Unowned worktrees under `key` the user chose to keep.
-    pub fn kept_worktrees(&self, key: String) -> Pending<Vec<String>> {
-        self.run(move |c, _| sessions::kept_worktrees(c.state()?, &key))
+    /// Unowned worktrees the user chose to keep, by full path.
+    pub fn kept_worktrees(&self) -> Pending<Vec<PathBuf>> {
+        self.run(|c, _| sessions::kept_worktrees(c.state()?))
     }
 
     // --- inbox, activity, messages ---

@@ -9,11 +9,8 @@ CREATE TABLE coordinator_notes (
 );
 
 -- Worktrees no agent owns that the user chose to keep (`d` on the sweep's item), so the
--- stale-state sweep does not ask about them again. `project_key` is the key the worktree
--- directory sits under.
+-- stale-state sweep does not ask about them again. Keyed by the directory's full path.
 CREATE TABLE kept_worktrees (
-  project_key TEXT NOT NULL,
-  name TEXT NOT NULL,
-  kept_ms INTEGER NOT NULL,
-  PRIMARY KEY (project_key, name)
+  path TEXT PRIMARY KEY,
+  kept_ms INTEGER NOT NULL
 );

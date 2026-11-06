@@ -197,7 +197,7 @@ pub(crate) enum Input {
     },
     /// The sweep inspected a worktree no agent owns.
     OrphanInspected {
-        name: String,
+        found: crate::restore::Orphan,
         result: Result<crate::worktree::Inspection, WorktreeError>,
     },
     /// An unowned worktree's removal (after `y`) finished.
@@ -403,7 +403,7 @@ impl Core {
                 Input::WorktreeRemoved { agent, result } => {
                     self.on_worktree_removed(agent, result).await;
                 }
-                Input::OrphanInspected { name, result } => self.on_orphan(name, result),
+                Input::OrphanInspected { found, result } => self.on_orphan(found, result),
                 Input::OrphanRemoved { name, result } => self.on_orphan_removed(name, result),
             }
             if self.quitting.is_none() {

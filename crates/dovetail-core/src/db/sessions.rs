@@ -442,19 +442,22 @@ pub(super) fn clear_notes(conn: &mut Connection) -> Result<(), DbError> {
 
 pub(super) fn keep_worktree(
     conn: &mut Connection,
-    key: &str,
-    name: &str,
+    path: &std::path::Path,
     now: i64,
 ) -> Result<(), DbError> {
     conn.execute(
-        "INSERT OR REPLACE INTO kept_worktrees (project_key, name, kept_ms) VALUES (?1, ?2, ?3)",
-        params![key, name, now],
+        "INSERT OR REPLACE INTO kept_worktrees (path, kept_ms) VALUES (?1, ?2)",
+        params![path.to_string_lossy(), now],
     )?;
     Ok(())
 }
 
-pub(super) fn kept_worktrees(conn: &mut Connection, key: &str) -> Result<Vec<String>, DbError> {
-    let mut stmt = conn.prepare("SELECT name FROM kept_worktrees WHERE project_key = ?1")?;
-    let rows = stmt.query_map([key], |r| r.get::<_, String>(0))?;
-    Ok(rows.collect::<Result<_, _>>()?)
+pub(super) fn kept_worktrees(conn: &mut Connection) -> Result<Vec<PathBuf>, DbError> {
+    let mut stmt = conn.prepare("SELECT path FROM kept_worktrees")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    Ok(rows
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(PathBuf::from)
+        .collect())
 }

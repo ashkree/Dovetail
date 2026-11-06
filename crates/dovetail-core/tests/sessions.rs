@@ -1086,6 +1086,14 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
         &["commit", "-qm", "work"],
     );
 
+    // Two plain folders: "junk" holds two files; "swapped" is replaced after it is inspected.
+    for name in ["junk", "swapped"] {
+        let dir = paths.worktrees("p").join(name);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        std::fs::write(dir.join("sub/b.txt"), "b").unwrap();
+    }
+
     let mut h = Harness::start_in(fixture("plain_turn"), paths.clone(), Some(repo.clone()));
     h.wait_for("the sweep", |s| {
         s.activity.iter().any(|a| a.text.contains("lost archived: its worktree is gone"))
@@ -1093,7 +1101,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
                 .iter()
                 .filter(|i| matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == dovetail_api::REMOVE_WORKTREE_PERMISSION))
                 .count()
-                == 2
+                == 4
     });
     assert!(!h.snap.agents.iter().any(|a| a.name == "lost"));
     assert!(
@@ -1112,6 +1120,32 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
         other => panic!("{other:?}"),
     }
     let (spare, _) = item(&h.snap, "spare").expect("spare item");
+    let (junk, kind) = item(&h.snap, "junk").expect("junk item");
+    match kind {
+        InboxKind::Permission { input, .. } => assert_eq!(input["files"], 2),
+        other => panic!("{other:?}"),
+    }
+    // Replaced since it was inspected: `y` leaves it alone.
+    let (swapped, _) = item(&h.snap, "swapped").expect("swapped item");
+    let swapped_dir = paths.worktrees("p").join("swapped");
+    std::fs::remove_dir_all(&swapped_dir).unwrap();
+    std::fs::create_dir_all(&swapped_dir).unwrap();
+    h.send(Command::AnswerPermission {
+        item: swapped,
+        answer: PermissionAnswer::Allow,
+    });
+    h.send(Command::AnswerPermission {
+        item: junk,
+        answer: PermissionAnswer::Allow,
+    });
+    h.wait_for("the swapped folder left alone", |s| {
+        s.activity
+            .iter()
+            .any(|a| a.text.contains("swapped: changed since Dovetail asked"))
+            && s.activity.iter().any(|a| a.text == "worktree junk removed")
+    });
+    assert!(swapped_dir.exists());
+    assert!(!paths.worktrees("p").join("junk").exists(), "removed on y");
     // y removes; d keeps and is remembered.
     h.send(Command::AnswerPermission {
         item: orphan,

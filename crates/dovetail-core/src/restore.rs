@@ -26,6 +26,63 @@ use crate::service::{COORDINATOR, Core, InboxEntry, Input};
 use crate::worktree;
 use serde_json::json;
 
+/// A directory under the worktrees directory that no agent owns, as the sweep found it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Orphan {
+    pub(crate) name: String,
+    pub(crate) path: std::path::PathBuf,
+    /// Device, inode and change time when inspected; `y` removes it only if the path still
+    /// names that same directory (an inode alone can be reused by a new one).
+    pub(crate) identity: (u64, u64, i64, i64),
+    /// For a folder with no `.git`: how many files it holds (shown, since `y` deletes them).
+    pub(crate) files: Option<usize>,
+}
+
+/// Most files counted in a folder that is not a worktree.
+const FILES_COUNTED: usize = 100_000;
+
+impl Orphan {
+    /// Looks at a directory (blocking).
+    fn look(name: String, path: std::path::PathBuf) -> Orphan {
+        let files = (!path.join(".git").exists()).then(|| count_files(&path));
+        Orphan {
+            identity: Self::identity(&path).unwrap_or_default(),
+            name,
+            path,
+            files,
+        }
+    }
+
+    fn identity(path: &std::path::Path) -> Option<(u64, u64, i64, i64)> {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::symlink_metadata(path)
+            .ok()
+            .map(|m| (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()))
+    }
+}
+
+/// Files under `dir`, not following symlinks, up to [`FILES_COUNTED`].
+fn count_files(dir: &std::path::Path) -> usize {
+    let mut count = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => stack.push(entry.path()),
+                Ok(_) => count += 1,
+                Err(_) => {}
+            }
+            if count >= FILES_COUNTED {
+                return count;
+            }
+        }
+    }
+    count
+}
+
 /// What `load` found that needs acting on once the UI has its snapshot.
 #[derive(Debug, Default)]
 pub(crate) struct Restored {
@@ -254,7 +311,7 @@ impl Core {
             .values()
             .filter_map(|r| r.agent.worktree.as_ref().map(|w| w.path.clone()))
             .collect();
-        let kept = match self.db.kept_worktrees(key.clone()).await {
+        let kept = match self.db.kept_worktrees().await {
             Ok(kept) => kept,
             Err(e) => {
                 tracing::warn!("reading kept worktrees: {e}");
@@ -265,7 +322,7 @@ impl Core {
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
-            if !path.is_dir() || owned.contains(&path) || kept.contains(&name) {
+            if !path.is_dir() || owned.contains(&path) || kept.contains(&path) {
                 continue;
             }
             let paths = self.paths.clone();
@@ -273,8 +330,9 @@ impl Core {
             let repo = repo.clone();
             let inputs = self.inputs.clone();
             tokio::task::spawn_blocking(move || {
-                let result = worktree::inspect(&paths, &key, &name, &repo);
-                let _ = inputs.send(Input::OrphanInspected { name, result });
+                let found = Orphan::look(name, path);
+                let result = worktree::inspect(&paths, &key, &found.name, &repo);
+                let _ = inputs.send(Input::OrphanInspected { found, result });
             });
         }
     }
@@ -286,42 +344,73 @@ impl Core {
 
     pub(crate) fn on_orphan(
         &mut self,
-        name: String,
+        found: Orphan,
         result: Result<worktree::Inspection, worktree::WorktreeError>,
     ) {
         match result {
             Ok(report) => {
-                let input = json!({
-                    "worktree": worktree::worktree_path(&self.paths, self.project.key(), &name),
-                    "branch": worktree::branch_name(&name),
+                let mut input = json!({
+                    "worktree": found.path,
+                    "branch": worktree::branch_name(&found.name),
                     "uncommitted": report.uncommitted,
                     "unpushed_commits": report.unpushed_commits,
                 });
+                if let Some(files) = found.files {
+                    input["files"] = json!(files);
+                }
+                let reason = if found.files.is_some() {
+                    "no agent owns this folder, and it is not a git worktree"
+                } else {
+                    "no agent owns this worktree"
+                };
                 self.raise(
-                    &Self::orphan_agent(&name),
+                    &Self::orphan_agent(&found.name),
                     InboxKind::Permission {
                         tool: REMOVE_WORKTREE_PERMISSION.into(),
                         input,
-                        reason: Some("no agent owns this worktree".into()),
+                        reason: Some(reason.into()),
                         suggestions: Vec::new(),
                     },
-                    Waiter::RemoveOrphan { name },
+                    Waiter::RemoveOrphan { found },
                 );
             }
             Err(e) => self.activity(
                 ActivityKind::Lifecycle,
                 None,
-                format!("worktree {name}: owned by no agent, and could not be inspected: {e}"),
+                format!(
+                    "worktree {}: owned by no agent, and could not be inspected: {e}",
+                    found.name
+                ),
             ),
         }
     }
 
-    /// `y` on an unowned worktree's item.
-    pub(crate) fn remove_orphan(&mut self, name: String) {
+    /// `y` on an unowned worktree's item. Checked again first: still no owner, and still the
+    /// same directory that was inspected.
+    pub(crate) fn remove_orphan(&mut self, found: Orphan) {
+        let owned = self.agents.values().any(|r| {
+            r.agent
+                .worktree
+                .as_ref()
+                .is_some_and(|w| w.path == found.path)
+        });
+        let same = Orphan::identity(&found.path) == Some(found.identity);
+        if owned || !same {
+            self.activity(
+                ActivityKind::Lifecycle,
+                None,
+                format!(
+                    "worktree {}: changed since Dovetail asked, so it was not removed",
+                    found.name
+                ),
+            );
+            return;
+        }
         let paths = self.paths.clone();
         let key = self.project.key().to_owned();
         let repo = self.project.repo_path().to_path_buf();
         let inputs = self.inputs.clone();
+        let name = found.name;
         tokio::task::spawn_blocking(move || {
             let result = worktree::remove(&paths, &key, &name, &repo, true);
             let _ = inputs.send(Input::OrphanRemoved { name, result });
@@ -341,16 +430,15 @@ impl Core {
     }
 
     /// `d` on an unowned worktree's item: keep it, and never ask again.
-    pub(crate) fn keep_orphan(&mut self, name: String) {
-        self.persist(
-            "a kept worktree",
-            self.db
-                .keep_worktree(self.project.key().to_owned(), name.clone()),
-        );
+    pub(crate) fn keep_orphan(&mut self, found: Orphan) {
+        self.persist("a kept worktree", self.db.keep_worktree(found.path.clone()));
         self.activity(
             ActivityKind::Lifecycle,
             None,
-            format!("worktree {name} kept; Dovetail will not ask about it again"),
+            format!(
+                "worktree {} kept; Dovetail will not ask about it again",
+                found.name
+            ),
         );
     }
 
