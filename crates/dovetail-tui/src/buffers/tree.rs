@@ -12,10 +12,11 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     Buffer, Effect, InputTarget, ViewCx, footer, next_bucket, next_p_level, next_status, pane,
-    scroll_to, spread_fit, status_glyph, status_word, step, title,
+    scroll_to, spans_width, spread_fit, status_glyph, status_word, step, title,
 };
 use crate::action::Action;
 use crate::fmt;
@@ -76,6 +77,9 @@ struct Row {
     left: Vec<Span<'static>>,
     /// Versions of the right-hand side, fullest first; a narrow pane uses a shorter one.
     right: Vec<Vec<Span<'static>>>,
+    /// An agent's one-line status (`report_status`): dim, after the name, cut to the room left
+    /// by the fullest right side, and the first thing dropped in a narrow pane.
+    status: Option<String>,
 }
 
 impl Row {
@@ -177,6 +181,7 @@ impl TreeBuffer {
                     theme.dim().add_modifier(Modifier::BOLD),
                 )],
                 right: vec![],
+                status: None,
             });
             if !open {
                 continue;
@@ -246,6 +251,7 @@ impl TreeBuffer {
             fold: (!sessions.is_empty()).then_some(open),
             left,
             right,
+            status: None,
         });
         if open && group != Group::Done {
             for agent in sessions {
@@ -277,12 +283,14 @@ impl TreeBuffer {
         let has_branch = agent.worktree.is_some() && agent.kind == AgentKind::Slice;
         let foldable = has_branch || !todos.is_empty() || !children.is_empty();
         let (left, right) = agent_line(theme, agent);
+        let status = Some(agent.status_line.trim().to_owned()).filter(|s| !s.is_empty());
         rows.push(Row {
             key,
             depth,
             fold: foldable.then_some(open),
             left,
             right,
+            status,
         });
         if !open {
             return;
@@ -294,6 +302,7 @@ impl TreeBuffer {
                 fold: None,
                 left: vec![Span::styled(format!("⎇ {}", wt.branch), theme.dim())],
                 right: vec![],
+                status: None,
             });
         }
         for todo in todos {
@@ -316,6 +325,7 @@ impl TreeBuffer {
                 fold: None,
                 left,
                 right: vec![],
+                status: None,
             });
         }
         for child in children {
@@ -447,6 +457,38 @@ fn task_glyph(task: &Task, waiting: bool, theme: &Theme) -> (&'static str, ratat
     }
 }
 
+/// Fewest characters of a status line worth showing; below this it is dropped.
+const STATUS_MIN: usize = 8;
+
+/// The status line's spans for a row, cut to fit beside `left` and the fullest right side, or
+/// nothing when the pane is too narrow for even [`STATUS_MIN`] characters.
+fn status_spans(
+    status: &str,
+    left: &[Span<'static>],
+    rights: &[Vec<Span<'static>>],
+    width: usize,
+    theme: &Theme,
+) -> Vec<Span<'static>> {
+    let right_w = rights.first().map_or(0, |r| spans_width(r) + 1);
+    let room = width.saturating_sub(spans_width(left) + right_w + 2);
+    if room < STATUS_MIN {
+        return Vec::new();
+    }
+    let text = if UnicodeWidthStr::width(status) <= room {
+        status.to_owned()
+    } else {
+        let mut cut = String::new();
+        for c in status.chars() {
+            if UnicodeWidthStr::width(cut.as_str()) + c.width().unwrap_or(0) + 1 > room {
+                break;
+            }
+            cut.push(c);
+        }
+        format!("{}…", cut.trim_end())
+    };
+    vec![Span::raw("  "), Span::styled(text, theme.dim())]
+}
+
 fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span<'static>>>) {
     let (glyph, color) = status_glyph(agent.status, theme);
     let kind = if agent.kind.is_session() {
@@ -556,6 +598,9 @@ impl Buffer for TreeBuffer {
                 left.push(Span::styled(glyph, cx.theme.dim()));
             }
             left.extend(row.left.iter().cloned());
+            if let Some(status) = &row.status {
+                left.extend(status_spans(status, &left, &row.right, width, cx.theme));
+            }
             let line = spread_fit(left, &row.right, width);
             let rect = Rect {
                 y: inner.y + n as u16,

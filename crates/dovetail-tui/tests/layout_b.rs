@@ -148,3 +148,24 @@ fn the_selected_row_is_highlighted_only_when_its_region_has_focus() {
     let cell = &terminal.backend().buffer()[(3, 1)];
     assert_eq!(cell.bg, ratatui::style::Color::Reset);
 }
+
+/// `report_status` lines show dim after the agent's name, cut to the pane, and go first when
+/// the pane is narrow (live check, 2026-11-06).
+#[test]
+fn status_lines_show_on_agent_rows_and_drop_first_when_narrow() {
+    let mut snap = world();
+    for a in &mut snap.agents {
+        if a.name == "slice-4" {
+            a.status_line =
+                "rebasing the business surface onto main after the schema change".into();
+        }
+    }
+    let mut app = app_with(snap.clone());
+    let wide = render(&mut app, 200, 32);
+    insta::assert_snapshot!(wide);
+    assert!(wide.contains("rebasing the business"));
+    let mut app = app_with(snap);
+    let narrow = render(&mut app, 80, 28);
+    assert!(!narrow.contains("rebasing"), "dropped in a narrow pane");
+    assert!(narrow.contains("slice-4"));
+}
