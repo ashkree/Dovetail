@@ -84,32 +84,46 @@ impl CoreHandle {
     }
 }
 
-/// The open folder: a registered project, or one that is not a project yet (ADR 0005).
+/// The open folder: a registered project, or one that is not a project yet (ADR 0005). It
+/// carries its key, so registering switches everything named after it at once.
 #[derive(Debug, Clone)]
 pub(crate) enum ProjectState {
     Registered(Project),
-    Unregistered(Candidate),
+    Unregistered {
+        candidate: Candidate,
+        /// `new-<pid>` until registration.
+        key: String,
+    },
 }
 
 impl ProjectState {
+    /// The project id, or `new-<pid>` before registration. Names run directories, worktree
+    /// directories, hook outcomes, to-do list ids and the worktree hook's `DOVETAIL_PROJECT`.
+    pub(crate) fn key(&self) -> &str {
+        match self {
+            ProjectState::Registered(p) => &p.id,
+            ProjectState::Unregistered { key, .. } => key,
+        }
+    }
+
     pub(crate) fn summary(&self) -> ProjectSummary {
         match self {
             ProjectState::Registered(p) => p.summary(),
-            ProjectState::Unregistered(c) => c.summary(),
+            ProjectState::Unregistered { candidate, .. } => candidate.summary(),
         }
     }
 
     pub(crate) fn repo_path(&self) -> &std::path::Path {
         match self {
             ProjectState::Registered(p) => &p.repo_path,
-            ProjectState::Unregistered(c) => &c.repo_path,
+            ProjectState::Unregistered { candidate, .. } => &candidate.repo_path,
         }
     }
 
     pub(crate) fn registered(&self) -> Option<&Project> {
         match self {
             ProjectState::Registered(p) => Some(p),
-            ProjectState::Unregistered(_) => None,
+            ProjectState::Unregistered { .. } => None,
         }
     }
 }
@@ -127,22 +141,18 @@ pub fn spawn(
     config: Config,
     options: CoreOptions,
 ) -> Result<(CoreLink, CoreHandle), CoreError> {
-    let (project, db, key) = match resolution {
+    let (project, db) = match resolution {
         Resolution::Registered(p) => {
             let db = Db::open(&paths, Some(&p.id))?;
-            let key = p.id.clone();
-            (ProjectState::Registered(p), db, key)
+            (ProjectState::Registered(p), db)
         }
-        Resolution::Candidate(c) => {
+        Resolution::Candidate(candidate) => {
             let db = Db::open_unregistered(&paths)?;
-            (
-                ProjectState::Unregistered(c),
-                db,
-                format!("new-{}", std::process::id()),
-            )
+            let key = format!("new-{}", std::process::id());
+            (ProjectState::Unregistered { candidate, key }, db)
         }
     };
-    let socket_path = paths.socket(&key);
+    let socket_path = paths.socket(project.key());
     let listener = socket::bind(&socket_path)?;
 
     let (command_tx, command_rx) = mpsc::channel::<Command>();
@@ -189,7 +199,6 @@ pub fn spawn(
                     config,
                     options,
                     project,
-                    key,
                     socket_path,
                     message_tx,
                     input_tx,
@@ -294,8 +303,6 @@ pub(crate) struct Core {
     pub(crate) config: Config,
     pub(crate) options: CoreOptions,
     pub(crate) project: ProjectState,
-    /// The project id, or `new-<pid>` before registration; names run directories.
-    pub(crate) key: String,
     /// The socket the bridges of this app's sessions use.
     pub(crate) socket: PathBuf,
     /// Sockets bound since start (after registration), removed on exit.
@@ -343,7 +350,6 @@ impl Core {
         config: Config,
         options: CoreOptions,
         project: ProjectState,
-        key: String,
         socket: PathBuf,
         out: mpsc::Sender<ServerMsg>,
         inputs: tokio_mpsc::UnboundedSender<Input>,
@@ -354,7 +360,6 @@ impl Core {
             config,
             options,
             project,
-            key,
             socket,
             extra_sockets: Vec::new(),
             out,
@@ -829,10 +834,11 @@ impl Core {
     /// `dovetail-<project>-coordinator`, `dovetail-<project>-task-<id>` (A12), or
     /// `dovetail-<project>-slice-<name>` for a slice without a task.
     pub(crate) fn task_list_id(&self, task: Option<TaskId>, name: &str) -> String {
+        let key = self.project.key();
         let id = match task {
-            Some(t) => format!("dovetail-{}-task-{}", self.key, t.0),
-            None if name == COORDINATOR => format!("dovetail-{}-coordinator", self.key),
-            None => format!("dovetail-{}-slice-{name}", self.key),
+            Some(t) => format!("dovetail-{key}-task-{}", t.0),
+            None if name == COORDINATOR => format!("dovetail-{key}-coordinator"),
+            None => format!("dovetail-{key}-slice-{name}"),
         };
         id.chars()
             .map(|c| {
@@ -989,7 +995,7 @@ impl Core {
     pub(crate) async fn register_project(&mut self) -> Result<Project, String> {
         let candidate = match &self.project {
             ProjectState::Registered(p) => return Ok(p.clone()),
-            ProjectState::Unregistered(c) => c.clone(),
+            ProjectState::Unregistered { candidate, .. } => candidate.clone(),
         };
         let project = self
             .db
@@ -1016,7 +1022,20 @@ impl Core {
             }
             Err(e) => tracing::warn!("project socket: {e}"),
         }
+        let old_lists = format!("dovetail-{}-", self.project.key());
         self.project = ProjectState::Registered(project.clone());
+        // To-do lists named after the old key move to the project id for later launches.
+        let new_lists = format!("dovetail-{}-", project.id);
+        let ids: Vec<AgentId> = self.agents.keys().cloned().collect();
+        for id in ids {
+            self.update_agent(&id, |row| {
+                if let Some(list) = &mut row.task_list_id
+                    && let Some(rest) = list.strip_prefix(&old_lists)
+                {
+                    *list = format!("{new_lists}{rest}");
+                }
+            });
+        }
         self.warnings.retain(|w| w.id.0 != UNREGISTERED_WARNING);
         self.activity(
             ActivityKind::Lifecycle,

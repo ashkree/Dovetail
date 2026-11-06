@@ -31,6 +31,7 @@ fn fixture(name: &str) -> FakeDriver {
 struct Harness {
     link: CoreLink,
     core: Option<CoreHandle>,
+    fake: FakeDriver,
     snap: Snapshot,
     paths: Paths,
     repo: PathBuf,
@@ -72,7 +73,7 @@ impl Harness {
             })
         };
         let options = CoreOptions {
-            driver: Arc::new(driver),
+            driver: Arc::new(driver.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),
         };
         let (link, core) =
@@ -80,6 +81,7 @@ impl Harness {
         let mut h = Harness {
             link,
             core: Some(core),
+            fake: driver,
             snap: Snapshot::default(),
             paths,
             repo,
@@ -258,7 +260,7 @@ impl Harness {
             last_opened_ms: None,
         });
         let options = CoreOptions {
-            driver: Arc::new(driver),
+            driver: Arc::new(driver.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),
         };
         let (link, core) =
@@ -267,6 +269,7 @@ impl Harness {
         let mut h = Harness {
             link,
             core: Some(core),
+            fake: driver,
             snap: Snapshot::default(),
             paths,
             repo,
@@ -546,5 +549,39 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
         s.warnings.iter().all(|w| w.id.0 != "unregistered")
     });
     assert!(h.paths.state_db("work").exists());
+
+    // Regression: after registration everything is named after the project id, not `new-<pid>`.
+    h.send(Command::NewSlice {
+        task: Some(TaskId(1)),
+        name: "after".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the slice's brief", |s| {
+        s.conversations
+            .get(&AgentId("slice-after".into()))
+            .is_some_and(|t| !t.entries.is_empty())
+    });
+    let fake = h.fake.clone();
+    let spec = fake
+        .started_specs()
+        .into_iter()
+        .find(|s| s.name.as_deref() == Some("after"))
+        .expect("slice spec");
+    let env = |key: &str| {
+        spec.env
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(
+        env("CLAUDE_CODE_TASK_LIST_ID").as_deref(),
+        Some("dovetail-work-task-1")
+    );
+    assert_eq!(env("DOVETAIL_PROJECT").as_deref(), Some("work"));
+    let settings = spec.settings_path.clone().expect("settings");
+    assert!(
+        settings.starts_with(h.paths.state.join("run").join("work")),
+        "{settings:?}"
+    );
     h.quit();
 }

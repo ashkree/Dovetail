@@ -173,7 +173,7 @@ impl Core {
         agent.status = AgentStatus::SettingUp;
         if git {
             agent.worktree = Some(WorktreeRef {
-                path: worktree::worktree_path(&self.paths, &self.key, &name),
+                path: worktree::worktree_path(&self.paths, self.project.key(), &name),
                 branch: worktree::branch_name(&name),
             });
         }
@@ -197,7 +197,7 @@ impl Core {
 
         let cwd = project.repo_path.clone();
         if git {
-            worktree::clear_hook_outcome(&self.paths, &self.key, &name);
+            worktree::clear_hook_outcome(&self.paths, self.project.key(), &name);
         }
         if let Err(e) = self.launch(&id, cwd, git.then(|| name.clone())) {
             self.closed(&id);
@@ -229,7 +229,7 @@ impl Core {
             live.setup_cancel = Some(cancel);
         }
         let paths = self.paths.clone();
-        let key = self.key.clone();
+        let key = self.project.key().to_owned();
         let inputs = self.inputs.clone();
         tokio::spawn(async move {
             let deadline = tokio::time::Instant::now() + SETUP_TIMEOUT;
@@ -378,7 +378,7 @@ impl Core {
         }
         let name = row.agent.name.clone();
         let paths = self.paths.clone();
-        let key = self.key.clone();
+        let key = self.project.key().to_owned();
         let repo = self.project.repo_path().to_path_buf();
         let inputs = self.inputs.clone();
         let agent = agent.clone();
@@ -457,7 +457,7 @@ impl Core {
         for id in items {
             self.resolve(id, Some("slice archived".into()));
         }
-        worktree::clear_hook_outcome(&self.paths, &self.key, &row.agent.name);
+        worktree::clear_hook_outcome(&self.paths, self.project.key(), &row.agent.name);
         self.persist("a closed agent", self.db.close_agent(agent.clone()));
         self.emit(Event::AgentRemoved(agent.clone()));
         self.activity(
