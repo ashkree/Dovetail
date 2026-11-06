@@ -10,6 +10,7 @@ pub mod paths;
 pub mod projects;
 pub mod recipe;
 mod registration;
+mod restore;
 pub mod service;
 pub mod session;
 mod shutdown;

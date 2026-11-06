@@ -787,3 +787,175 @@ fn interrupt_reaches_a_session_waiting_on_background_tasks() {
     fake.resume();
     h.quit();
 }
+
+/// A turn that never reaches its `result`: init, some text, then the replay holds.
+fn held_turn() -> FakeDriver {
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"working on it"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"done","total_cost_usd":0.01}"#,
+    ];
+    FakeDriver::from_ndjson(&lines.join("\n"))
+        .expect("fixture")
+        .with_options(ReplayOptions {
+            pause_before: vec![2],
+            ..ReplayOptions::default()
+        })
+}
+
+fn cut_off_text(s: &Snapshot) -> Option<String> {
+    s.inbox.iter().find_map(|i| match &i.kind {
+        InboxKind::Error { text } if text.contains("cut off by a restart") => Some(text.clone()),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_turn_cut_off_by_quit_is_reported_on_reopen_and_not_continued() {
+    let mut h = Harness::start(held_turn(), true, Config::default());
+    prompt(&h, "rename the flag");
+    h.wait_for("the turn to start", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "working on it"))
+    });
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
+    let text = cut_off_text(&h.snap).unwrap_or_default();
+    assert!(
+        text.contains("coordinator's turn") && text.contains("rename the flag"),
+        "{text}"
+    );
+    // The coordinator's session is back, but nothing was sent to it.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().is_empty() {
+        assert!(Instant::now() < deadline, "the coordinator was not resumed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(fake.started_specs()[0].resume, "resumed, not created");
+    assert!(
+        !fake.sent().iter().any(|s| matches!(s, Sent::User(_))),
+        "{:?}",
+        fake.sent()
+    );
+    h.quit();
+}
+
+#[test]
+fn killing_the_app_mid_turn_loses_no_state() {
+    let mut h = Harness::start(held_turn(), true, Config::default());
+    prompt(&h, "rename the flag");
+    h.wait_for("the turn to start", |s| {
+        s.agents
+            .iter()
+            .any(|a| a.status == dovetail_api::AgentStatus::Working)
+            && s.conversations
+                .get(&AgentId(COORDINATOR.into()))
+                .is_some_and(|t| t.entries.iter().any(|e| e.text == "working on it"))
+    });
+    // Give the DB thread a moment, then copy the database files as a kill would leave them:
+    // the app never gets to quit.
+    std::thread::sleep(Duration::from_millis(200));
+    let crashed = tempfile::tempdir().expect("tempdir");
+    let from = h.paths.state_db("p");
+    let to_paths = Paths {
+        data: crashed.path().join("data"),
+        ..h.paths.clone()
+    };
+    let to = to_paths.state_db("p");
+    std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+    for suffix in ["", "-wal", "-shm"] {
+        let src = PathBuf::from(format!("{}{suffix}", from.display()));
+        if src.exists() {
+            std::fs::copy(&src, format!("{}{suffix}", to.display())).unwrap();
+        }
+    }
+    let mut reopened = Harness::start_on(fixture("plain_turn"), to_paths);
+    reopened.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
+    let entries = reopened.entries(COORDINATOR);
+    assert!(
+        entries.contains(&(EntryKind::User, "rename the flag".into())),
+        "{entries:?}"
+    );
+    reopened.quit();
+    h.quit();
+}
+
+#[test]
+fn at_restart_permissions_expire_and_questions_stay_answerable() {
+    let fake = fixture("concurrent_permissions").with_options(ReplayOptions {
+        wait_for_answers: true,
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake, true, Config::default());
+    prompt(&h, "read two files");
+    h.wait_for("two permission requests", |s| {
+        s.inbox
+            .iter()
+            .filter(|i| matches!(i.kind, InboxKind::Permission { .. }))
+            .count()
+            == 2
+    });
+    let socket = h.socket();
+    let (text, _) = result_text(socket_call(
+        &socket,
+        tool(
+            COORDINATOR,
+            Tool::AskUser(AskUser {
+                question: "Which port?".into(),
+                blocking: false,
+            }),
+        ),
+    ));
+    assert!(text.contains("inbox"), "{text}");
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.wait_for("the expired requests", |s| {
+        s.activity
+            .iter()
+            .filter(|a| a.text.contains("request expired at restart"))
+            .count()
+            == 2
+            && s.inbox
+                .iter()
+                .any(|i| matches!(i.kind, InboxKind::Question { .. }))
+    });
+    assert!(
+        h.snap
+            .activity
+            .iter()
+            .any(|a| a.text.contains("Read one.txt"))
+    );
+    assert!(
+        !h.snap
+            .inbox
+            .iter()
+            .any(|i| matches!(i.kind, InboxKind::Permission { .. }))
+    );
+    let question = h
+        .snap
+        .inbox
+        .iter()
+        .find(|i| matches!(i.kind, InboxKind::Question { .. }))
+        .unwrap_or_else(|| panic!("the question stays: {:#?}", h.snap.inbox))
+        .id;
+    // The question says enough: no separate cut-off item for the coordinator.
+    assert!(cut_off_text(&h.snap).is_none());
+    h.send(Command::AnswerQuestion {
+        item: question,
+        text: "8080".into(),
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let wanted = Sent::User("Answer to your question 'Which port?': 8080".into());
+    while !fake.sent().contains(&wanted) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    h.quit();
+}

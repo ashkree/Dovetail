@@ -327,12 +327,17 @@ impl Core {
 
     /// Runs until the UI quits and every session has exited. Returns sockets to remove.
     async fn run(mut self, mut inputs: tokio_mpsc::UnboundedReceiver<Input>) -> Vec<PathBuf> {
-        if let Err(e) = self.load().await {
-            tracing::error!("loading state: {e}");
-            self.fail(format!("loading state: {e}"));
-        }
+        let restored = match self.load().await {
+            Ok(restored) => restored,
+            Err(e) => {
+                tracing::error!("loading state: {e}");
+                self.fail(format!("loading state: {e}"));
+                crate::restore::Restored::default()
+            }
+        };
         self.startup_warnings();
         self.send_snapshot(true).await;
+        self.reconcile(restored).await;
         self.start_queued().await;
         loop {
             if self.quitting.is_some() && self.live.is_empty() {
@@ -398,18 +403,22 @@ impl Core {
     }
 
     /// Loads agents, conversation tails and id counters, and makes sure a coordinator exists.
-    async fn load(&mut self) -> Result<(), DbError> {
+    async fn load(&mut self) -> Result<crate::restore::Restored, DbError> {
+        let mut restored = crate::restore::Restored::default();
         let ids = self.db.max_ids().await?;
         self.next_entry = ids.entry + 1;
         self.next_inbox = ids.inbox + 1;
         self.next_activity = ids.activity + 1;
         self.next_message = ids.message + 1;
         for mut row in self.db.load_agents().await? {
-            // Nothing runs yet: whatever it was doing, it waits now (M10 resumes on touch).
+            // Nothing runs yet: whatever it was doing was cut off (M10, see `restore`).
             if matches!(
                 row.agent.status,
                 AgentStatus::Working | AgentStatus::NeedsYou | AgentStatus::SettingUp
             ) {
+                restored
+                    .cut_off
+                    .push((row.agent.id.clone(), row.agent.status));
                 row.agent.status = AgentStatus::Idle;
             }
             let (entries, has_more) = self
@@ -424,6 +433,7 @@ impl Core {
         self.queue = self.db.load_queue().await?.into();
         // Signals the coordinator missed while it could not be woken.
         self.coordinator_notes = self.db.load_notes().await?;
+        restored.inbox = self.db.load_open_inbox().await?;
         let coordinator = AgentId(COORDINATOR.into());
         if !self.agents.contains_key(&coordinator) {
             let row = AgentRow {
@@ -441,7 +451,7 @@ impl Core {
             self.db.upsert_agent(row.clone()).await?;
             self.agents.insert(coordinator, row);
         }
-        Ok(())
+        Ok(restored)
     }
 
     /// Status-bar warnings known at start.
@@ -736,6 +746,11 @@ impl Core {
 
     /// Recomputes an agent's status from its session, its inbox items and its setup.
     pub(crate) fn refresh_status(&mut self, id: &AgentId) {
+        // The state at quit is kept as it was, so a turn running then reads as cut off on the
+        // next open (M10).
+        if self.quitting.is_some() {
+            return;
+        }
         let needs_you = self
             .inbox
             .values()

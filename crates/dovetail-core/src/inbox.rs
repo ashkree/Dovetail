@@ -39,6 +39,9 @@ pub(crate) enum Waiter {
     StartSlice { request: SliceRequest },
     /// A slice archive waiting for confirmation that unsaved work may go.
     RemoveWorktree,
+    /// An `ask_user` question from before a restart: its call is gone, so the answer goes to
+    /// the agent as a normal message (M10, decided 2026-11-06).
+    RestoredQuestion { question: String },
 }
 
 impl Waiter {
@@ -353,6 +356,12 @@ impl Core {
                     self.fail(e);
                 }
             }
+            Waiter::RestoredQuestion { question } => {
+                let message = format!("Answer to your question '{question}': {text}");
+                if let Err(e) = self.send_text_as_user(&agent, &message, text) {
+                    self.fail(e);
+                }
+            }
             _ => self.prompt(&agent, text).await,
         }
     }
@@ -388,7 +397,7 @@ impl Core {
                 ));
             }
             Waiter::RemoveWorktree => self.keep_slice(&agent),
-            Waiter::None | Waiter::Question { .. } => {}
+            Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }
     }
 

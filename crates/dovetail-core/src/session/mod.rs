@@ -621,7 +621,10 @@ impl Core {
         let Some(live) = self.live.remove(agent) else {
             return;
         };
-        self.drop_session_items(agent);
+        // At quit, held requests stay on record: the next open reports them as expired (M10).
+        if self.quitting.is_none() {
+            self.drop_session_items(agent);
+        }
         if live.setting_up {
             let detail = info
                 .stderr_tail
