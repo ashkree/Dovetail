@@ -44,8 +44,9 @@ pub(crate) struct Live {
     pub(crate) inited: bool,
     /// Pending `SendMessage` calls: tool use id → (recipient name, text).
     pub(crate) sends: HashMap<String, (String, String)>,
-    /// Archive the slice once the process has exited.
-    pub(crate) close_after: bool,
+    /// Archive the slice once the process has exited; `Some(true)` if the user already
+    /// confirmed losing unsaved work.
+    pub(crate) close_after: Option<bool>,
     /// Dropped to stop the setup watcher.
     pub(crate) setup_cancel: Option<tokio::sync::oneshot::Sender<()>>,
 }
@@ -151,7 +152,7 @@ impl Core {
                 brief: None,
                 inited: false,
                 sends: HashMap::new(),
-                close_after: false,
+                close_after: None,
                 setup_cancel: None,
             },
         );
@@ -609,8 +610,8 @@ impl Core {
                 format!("{} crashed", agent.0),
             );
         }
-        if live.close_after {
-            self.finish_close(agent);
+        if let Some(confirmed) = live.close_after {
+            self.finish_close(agent, confirmed);
         }
         self.refresh_status(agent);
     }

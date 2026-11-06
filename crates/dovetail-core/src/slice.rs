@@ -333,28 +333,29 @@ impl Core {
     }
 
     /// Archives a slice: stop its session, then clean up its worktree.
-    pub(crate) fn close_slice(&mut self, agent: &AgentId) {
+    /// `confirmed`: the user has already agreed to lose unsaved work.
+    pub(crate) fn close_slice(&mut self, agent: &AgentId, confirmed: bool) {
         if self.agents.get(agent).map(|r| r.agent.kind) != Some(AgentKind::Slice) {
             self.fail(format!("{} is not a slice", agent.0));
             return;
         }
         if let Some(live) = self.live.get_mut(agent) {
             live.stopping = true;
-            live.close_after = true;
+            live.close_after = Some(confirmed);
             live.session.shutdown(Duration::from_secs(3));
             return;
         }
-        self.finish_close(agent);
+        self.finish_close(agent, confirmed);
     }
 
     /// The session is gone: remove the worktree if there is one, else close the slice.
-    pub(crate) fn finish_close(&mut self, agent: &AgentId) {
+    pub(crate) fn finish_close(&mut self, agent: &AgentId, confirmed: bool) {
         let has_worktree = self
             .agents
             .get(agent)
             .is_some_and(|r| r.agent.worktree.is_some());
         if has_worktree {
-            self.remove_worktree(agent, false);
+            self.remove_worktree(agent, confirmed);
         } else {
             self.closed(agent);
         }
@@ -365,7 +366,7 @@ impl Core {
     pub(crate) fn remove_worktree(&mut self, agent: &AgentId, confirmed: bool) {
         if self.live.contains_key(agent) {
             // Stop the session first; the removal follows its exit.
-            self.close_slice(agent);
+            self.close_slice(agent, confirmed);
             return;
         }
         let Some(row) = self.agents.get(agent) else {

@@ -913,7 +913,7 @@ impl Core {
                     self.fail(message);
                 }
             }
-            Command::CloseSlice { agent } => self.close_slice(&agent),
+            Command::CloseSlice { agent } => self.close_slice(&agent, false),
             Command::RemoveWorktree { agent, confirmed } => {
                 self.remove_worktree(&agent, confirmed);
             }
@@ -983,7 +983,7 @@ impl Core {
             .map(|r| r.agent.id.clone())
             .collect();
         for slice in slices {
-            self.close_slice(&slice);
+            self.close_slice(&slice, false);
         }
         self.queue.retain(|r| r.task != Some(id));
     }
