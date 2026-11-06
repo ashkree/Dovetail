@@ -206,16 +206,18 @@ fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result()
     // can be checked.
     let lines = [
         r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"first"},"parent_tool_use_id":null,"isReplay":true}"#,
         r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"one"}]},"parent_tool_use_id":null}"#,
         r#"{"type":"result","subtype":"success","is_error":false,"result":"one","total_cost_usd":0.01}"#,
         r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"second"},"parent_tool_use_id":null,"isReplay":true}"#,
         r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"two"}]},"parent_tool_use_id":null}"#,
         r#"{"type":"result","subtype":"success","is_error":false,"result":"two","total_cost_usd":0.02}"#,
     ];
     let fake = FakeDriver::from_ndjson(&lines.join("\n"))
         .expect("fixture")
         .with_options(ReplayOptions {
-            pause_before: vec![2, 3],
+            pause_before: vec![3, 4],
             ..ReplayOptions::default()
         });
     let mut h = Harness::start(fake.clone(), true, Config::default());
@@ -1164,5 +1166,40 @@ fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(names(&fake)[1], ("later".to_string(), true));
+    h.quit();
+}
+
+/// Live rehearsal 2026-11-06: two "slice ready" notes sent mid-turn were folded into the
+/// running turn (both echoed before its one `result`); the coordinator stayed "working".
+#[test]
+fn inputs_folded_into_the_running_turn_end_with_its_result() {
+    // Out line 13 is the echo of the first note; hold before it so the notes can be sent.
+    let fake = fixture("merged_inputs").with_options(ReplayOptions {
+        pause_before: vec![13],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "create tasks and start two slices");
+    h.wait_for("the turn to reach the notes", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.kind == EntryKind::ToolSummary))
+    });
+    prompt(&h, "slice a1 ready");
+    prompt(&h, "slice b1 ready");
+    h.wait_for("both notes sent", |_| {
+        fake.sent()
+            .iter()
+            .filter(|s| matches!(s, Sent::User(_)))
+            .count()
+            == 3
+    });
+    fake.resume();
+    h.wait_for("the one result to end the turn", |s| {
+        finished_turns(s) == 1
+            && s.agents.iter().any(|a| {
+                a.kind == AgentKind::Coordinator && a.status != dovetail_api::AgentStatus::Working
+            })
+    });
     h.quit();
 }

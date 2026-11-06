@@ -383,6 +383,16 @@ impl Core {
                     self.message(agent.clone(), to_id, text, msg_id);
                 }
             }
+            // The echo of one of Dovetail's own inputs (a peer message carries an origin).
+            DriverEvent::UserMessage {
+                is_replay: true,
+                message_origin: None,
+                ..
+            } => {
+                if let Some(live) = self.live.get_mut(&agent) {
+                    live.turn.input_replayed();
+                }
+            }
             DriverEvent::UserMessage {
                 message_origin: Some(origin),
                 ..
