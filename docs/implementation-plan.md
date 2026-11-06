@@ -554,6 +554,11 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 
 ### M10. Resume, stable install, rehearsal — **SELF-HOSTING POINT**
 - **Scope:** restore on open (coordinator immediately, slices on first touch). Pending inbox items reconciled after restart. A stale-state sweep for agents and worktrees. Stable install (`cargo install --path crates/dovetail --root ~/.local`), with hook and MCP paths using the installed path, not `target/`. `docs/self-hosting.md` covering the daily flow, upgrades and recovery.
+- **Decided 2026-11-06:**
+  1. **Cut-off turns.** A turn cut off by quit, kill or crash raises a Needs-you item on reopen, "<agent>'s turn was cut off by a restart", with the last user prompt as its preview. The agent is never continued automatically.
+  2. **In-flight items.** Pending permission requests leave Needs you at restart and become one Activity note each ("Write a.txt: request expired at restart"). Pending `ask_user` questions, blocking or not, stay in Needs you; answering one sends the agent a normal user message, "Answer to your question '<q>': <answer>", resuming it if needed.
+  3. **Upgrades.** `scripts/install.sh` runs `cargo install --path crates/dovetail --root ~/.local` and refuses while a Dovetail app runs ("close Dovetail first"). Hook and MCP config always use the running binary's path (`std::env::current_exe`), so the installed app never points at `target/`.
+  4. **Stale-state sweep on open.** An agent whose worktree directory is gone is archived with an Activity note. A worktree under Dovetail's worktrees directory that no agent owns raises one "Remove worktree" item (branch, unpushed commits, uncommitted changes); `y` removes it, `d` keeps it and records that, so it is not asked again. Nothing is deleted without `y`.
 - **Done when:**
   - [ ] **Rehearsal in a scratch repo:** from the installed binary, chat with the coordinator, start two slices, answer one permission and one `ask_user`, have a slice commit, quit, reopen, carry on in the same conversations
   - [ ] Killing the app mid-turn loses no state, and the next open recovers
