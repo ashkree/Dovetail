@@ -39,7 +39,7 @@ pub(crate) struct Restored {
 fn request_summary(tool: &str, input: &serde_json::Value) -> String {
     let field = |k: &str| input.get(k).and_then(|v| v.as_str());
     let target = field("command")
-        .map(str::to_owned)
+        .map(one_line)
         .or_else(|| {
             field("file_path").map(|p| {
                 std::path::Path::new(p)
@@ -51,6 +51,25 @@ fn request_summary(tool: &str, input: &serde_json::Value) -> String {
     match target {
         Some(t) => format!("{tool} {t}"),
         None => tool.to_owned(),
+    }
+}
+
+/// Longest command shown in an Activity note.
+const COMMAND_MAX: usize = 60;
+
+/// A command's first line, cut to [`COMMAND_MAX`] characters with an ellipsis when it is longer
+/// or has more lines.
+fn one_line(command: &str) -> String {
+    let mut lines = command.trim().lines();
+    let first = lines.next().unwrap_or("").trim_end();
+    let more = lines.next().is_some();
+    if first.chars().count() > COMMAND_MAX {
+        let cut: String = first.chars().take(COMMAND_MAX - 1).collect();
+        format!("{}…", cut.trim_end())
+    } else if more {
+        format!("{first} …")
+    } else {
+        first.to_owned()
     }
 }
 
@@ -313,5 +332,12 @@ mod tests {
             request_summary("Bash", &json!({"command": "cargo test"})),
             "Bash cargo test"
         );
+        assert_eq!(
+            request_summary("Bash", &json!({"command": "cd x &&\n  cargo test"})),
+            "Bash cd x && …"
+        );
+        let long = request_summary("Bash", &json!({"command": "x".repeat(200)}));
+        assert_eq!(long.chars().count(), "Bash ".len() + COMMAND_MAX);
+        assert!(long.ends_with('…'));
     }
 }
