@@ -29,7 +29,7 @@ expression: "render(&mut reading_app(), 120, 40)"
 │ ▸ ⚠ slice-7  Bash                   10:15 ││ • the CI config                                                         │
 │   │ FS_EVAL_VIRTUAL_KEY=dev cargo test    ││                                                                         │
 │   │ -p api get_decision                   ││ rust                                                                    │
-│   │ A → always allow Bash(cargo test:*)   ││   let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                      │
+│   │ A → always allow: Bash(cargo test:*)  ││   let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                      │
 │   ? slice-4  Question               10:12 ││                                                                         │
 │   ✓ slice-4  Finished turn          10:09 ││ Slice   │ State                                                         │
 │                                           ││ ────────┼────────                                                       │

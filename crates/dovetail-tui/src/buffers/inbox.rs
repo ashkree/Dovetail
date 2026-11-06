@@ -2,7 +2,8 @@
 //! preview of the selected item.
 
 use dovetail_api::{
-    AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, PermissionAnswer, Snapshot,
+    AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, PermissionAnswer,
+    REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, Snapshot,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -85,19 +86,74 @@ fn last_message(snap: &Snapshot, agent: &AgentId) -> Option<String> {
 }
 
 /// What a permission request is about, in full: a command, a path or the raw input.
-pub(crate) fn input_summary(tool: &str, input: &serde_json::Value) -> String {
+pub(crate) fn input_summary(snap: &Snapshot, tool: &str, input: &serde_json::Value) -> String {
     let field = |name: &str| input.get(name).and_then(|v| v.as_str());
     match tool {
         "Bash" => field("command").map(str::to_string),
         "Edit" | "Write" | "Read" | "MultiEdit" => field("file_path").map(str::to_string),
+        START_SLICE_PERMISSION => Some(start_slice_summary(snap, input)),
+        REMOVE_WORKTREE_PERMISSION => Some(remove_worktree_summary(input)),
         _ => None,
     }
     .unwrap_or_else(|| input.to_string())
 }
 
+/// `start slice demo-1 on #1 demo`.
+fn start_slice_summary(snap: &Snapshot, input: &serde_json::Value) -> String {
+    let name = input.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    let task = input.get("task").and_then(|v| v.as_i64());
+    match task {
+        Some(id) => {
+            let title = snap
+                .tasks
+                .iter()
+                .find(|t| t.id.0 == id)
+                .map(|t| format!(" {}", t.title))
+                .unwrap_or_default();
+            format!("start slice {name} on #{id}{title}")
+        }
+        None => format!("start slice {name}"),
+    }
+}
+
+/// `dovetail/demo-1 · 1 unpushed commit · no uncommitted changes`.
+fn remove_worktree_summary(input: &serde_json::Value) -> String {
+    let branch = input
+        .get("branch")
+        .and_then(|v| v.as_str())
+        .unwrap_or("the worktree");
+    let unpushed = input
+        .get("unpushed_commits")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let uncommitted = input
+        .get("uncommitted")
+        .and_then(|v| v.as_array())
+        .map_or(0, Vec::len);
+    let plural = |n: usize, one: &str, many: &str| {
+        if n == 1 {
+            format!("1 {one}")
+        } else {
+            format!("{n} {many}")
+        }
+    };
+    let unpushed = match unpushed {
+        0 => "nothing unpushed".to_owned(),
+        n => plural(n as usize, "unpushed commit", "unpushed commits"),
+    };
+    let uncommitted = match uncommitted {
+        0 => "no uncommitted changes".to_owned(),
+        n => plural(n, "uncommitted change", "uncommitted changes"),
+    };
+    format!("{branch} · {unpushed} · {uncommitted}")
+}
+
 fn item_label(snap: &Snapshot, item: &InboxItem) -> (&'static str, String) {
     let _ = snap;
     match &item.kind {
+        InboxKind::Permission { tool, .. } if tool == START_SLICE_PERMISSION => {
+            ("⚠", "Start slice".into())
+        }
         InboxKind::Permission { tool, .. } => ("⚠", tool.clone()),
         InboxKind::Question { blocking: true, .. } => ("?", "Question · blocked".into()),
         InboxKind::Question { .. } => ("?", "Question".into()),
@@ -294,7 +350,9 @@ impl Buffer for InboxBuffer {
                     .map_or(item.agent.0.as_str(), |a| a.name.as_str());
                 let (_, label) = item_label(cx.snap, item);
                 let body = match &item.kind {
-                    InboxKind::Permission { tool, input, .. } => input_summary(tool, input),
+                    InboxKind::Permission { tool, input, .. } => {
+                        input_summary(cx.snap, tool, input)
+                    }
                     InboxKind::Question { text, .. } | InboxKind::Error { text } => text.clone(),
                     InboxKind::FinishedTurn { preview } => preview.clone(),
                 };
@@ -337,7 +395,13 @@ fn preview(cx: &ViewCx, item: &InboxItem, width: usize) -> Vec<Line<'static>> {
             reason,
             suggestions,
         } => {
-            push(&input_summary(tool, input), theme.fg(theme.code));
+            push(&input_summary(cx.snap, tool, input), theme.fg(theme.code));
+            // A slice's brief reads as text under its one-line summary.
+            if tool == START_SLICE_PERMISSION
+                && let Some(brief) = input.get("brief").and_then(|v| v.as_str())
+            {
+                push(brief, theme.body());
+            }
             if let Some(reason) = reason {
                 push(reason, theme.dim());
             }
@@ -352,7 +416,7 @@ fn preview(cx: &ViewCx, item: &InboxItem, width: usize) -> Vec<Line<'static>> {
             }
             if let Some(rule) = suggestions.first() {
                 push(
-                    &format!("A → always allow {}", rule.label),
+                    &format!("A → always allow: {}", rule.label),
                     theme.fg(theme.italic),
                 );
             }

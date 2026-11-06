@@ -51,8 +51,21 @@ impl Waiter {
     }
 }
 
-/// `Bash(cargo test:*)` from an `addRules` suggestion.
+/// A suggestion in words for the inbox hint: the rule text for `addRules`
+/// (`Bash(cargo test:*)`), `switch to acceptEdits` for `setMode`, `add directory /x` for
+/// `addDirectories`; never a bare type name (live check 2026-11-06).
 fn suggestion_label(raw: &Value) -> String {
+    let text = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).map(str::to_owned);
+    let list = |key: &str| -> Vec<String> {
+        raw.get(key)
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
     let rules: Vec<String> = raw
         .get("rules")
         .and_then(Value::as_array)
@@ -60,22 +73,40 @@ fn suggestion_label(raw: &Value) -> String {
             rules
                 .iter()
                 .map(|r| {
-                    let tool = r.get("toolName").and_then(Value::as_str).unwrap_or("?");
-                    match r.get("ruleContent").and_then(Value::as_str) {
+                    let tool = text(r, "toolName").unwrap_or_else(|| "a tool".into());
+                    match text(r, "ruleContent") {
                         Some(content) => format!("{tool}({content})"),
-                        None => tool.to_owned(),
+                        None => tool,
                     }
                 })
                 .collect()
         })
         .unwrap_or_default();
-    if rules.is_empty() {
-        raw.get("type")
-            .and_then(Value::as_str)
-            .unwrap_or("rule")
-            .to_owned()
-    } else {
-        rules.join(", ")
+    let kind = text(raw, "type").unwrap_or_default();
+    match kind.as_str() {
+        "setMode" => match text(raw, "mode").as_deref() {
+            Some("default") => "switch to manual mode".into(),
+            Some(mode) => format!("switch to {mode}"),
+            None => "switch permission mode".into(),
+        },
+        "addDirectories" => format!("add directory {}", list("directories").join(", ")),
+        "removeDirectories" => format!("remove directory {}", list("directories").join(", ")),
+        _ if !rules.is_empty() => rules.join(", "),
+        _ => {
+            // An unknown kind: its name in words (`someNewKind` → `some new kind`).
+            let mut words = String::new();
+            for c in kind.chars() {
+                if c.is_uppercase() && !words.is_empty() {
+                    words.push(' ');
+                }
+                words.extend(c.to_lowercase());
+            }
+            if words.is_empty() {
+                "the offered rule".into()
+            } else {
+                words
+            }
+        }
     }
 }
 
@@ -395,6 +426,10 @@ mod tests {
         let raw = json!({"behavior": "allow", "destination": "localSettings",
             "rules": [{"ruleContent": "cargo test:*", "toolName": "Bash"}], "type": "addRules"});
         assert_eq!(suggestion_label(&raw), "Bash(cargo test:*)");
+        let mode = json!({"type": "setMode", "mode": "acceptEdits", "destination": "session"});
+        assert_eq!(suggestion_label(&mode), "switch to acceptEdits");
+        let dirs = json!({"type": "addDirectories", "directories": ["/tmp/x"]});
+        assert_eq!(suggestion_label(&dirs), "add directory /tmp/x");
         assert_eq!(session_only(raw)["destination"], "session");
     }
 }
