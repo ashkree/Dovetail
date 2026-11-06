@@ -84,6 +84,9 @@ pub struct App {
     outbox: Vec<Command>,
     /// A resync was requested and its snapshot has not arrived yet.
     resyncing: bool,
+    /// The agent whose conversation had focus at the last settle, so focusing it counts as
+    /// opening it once, not on every event while it stays focused.
+    reading: Option<AgentId>,
     quit: bool,
     dirty: bool,
 }
@@ -109,6 +112,7 @@ impl App {
             note: None,
             outbox: Vec::new(),
             resyncing: false,
+            reading: None,
             quit: false,
             dirty: true,
         }
@@ -252,8 +256,10 @@ impl App {
         self.settle();
     }
 
-    /// Keeps the open conversation pointing at a live agent, and clears the finished turn of an
-    /// agent the user is reading (ADR 0001).
+    /// Keeps the open conversation pointing at a live agent, and clears an agent's finished turn
+    /// when the user moves focus onto its conversation (ADR 0001: opening it). A turn that
+    /// finishes while the conversation already has focus stays in Needs you (Decision 7a; live
+    /// check 2026-11-06).
     fn settle(&mut self) {
         let shown_exists = self
             .buffers
@@ -271,12 +277,16 @@ impl App {
                 self.buffers.conversation.show(agent.id.clone());
             }
         }
-        if self.regions.focus() == RegionId::Main
-            && self.regions.buffer(RegionId::Main) == BufferKind::Conversation
-            && let Some(id) = self.buffers.conversation.agent().cloned()
+        let reading = (self.regions.focus() == RegionId::Main
+            && self.regions.buffer(RegionId::Main) == BufferKind::Conversation)
+            .then(|| self.buffers.conversation.agent().cloned())
+            .flatten();
+        if reading != self.reading
+            && let Some(id) = &reading
         {
-            self.clear_finished_turn(&id);
+            self.clear_finished_turn(id);
         }
+        self.reading = reading;
     }
 
     fn clear_finished_turn(&mut self, agent: &AgentId) {

@@ -148,3 +148,90 @@ fn the_selected_row_is_highlighted_only_when_its_region_has_focus() {
     let cell = &terminal.backend().buffer()[(3, 1)];
     assert_eq!(cell.bg, ratatui::style::Color::Reset);
 }
+
+/// `report_status` lines show dim after the agent's name, cut to the pane, and go first when
+/// the pane is narrow (live check, 2026-11-06).
+#[test]
+fn status_lines_show_on_agent_rows_and_drop_first_when_narrow() {
+    let mut snap = world();
+    for a in &mut snap.agents {
+        if a.name == "slice-4" {
+            a.status_line =
+                "rebasing the business surface onto main after the schema change".into();
+        }
+    }
+    let mut app = app_with(snap.clone());
+    let wide = render(&mut app, 200, 32);
+    insta::assert_snapshot!(wide);
+    assert!(wide.contains("rebasing the business"));
+    let mut app = app_with(snap);
+    let narrow = render(&mut app, 80, 28);
+    assert!(!narrow.contains("rebasing"), "dropped in a narrow pane");
+    assert!(narrow.contains("slice-4"));
+}
+
+/// Live check 2026-11-06: Dovetail's own Permission items and "always allow" hints showed raw
+/// JSON and type names. Each selected item's preview, from the inbox region down.
+#[test]
+fn dovetail_permission_items_read_as_plain_lines() {
+    use dovetail_api::{InboxId, InboxItem, InboxKind, RuleSuggestion};
+    let mut snap = world();
+    snap.inbox.clear();
+    let item = |id, agent: &str, tool: &str, input, suggestions| InboxItem {
+        id: InboxId(id),
+        agent: agent_id(agent),
+        at_ms: NOW_MS,
+        kind: InboxKind::Permission {
+            tool: tool.into(),
+            input,
+            reason: None,
+            suggestions,
+        },
+    };
+    snap.inbox.push(item(
+        1,
+        "coordinator",
+        dovetail_api::START_SLICE_PERMISSION,
+        serde_json::json!({"brief": "reply ok", "name": "demo-1", "task": 1}),
+        vec![],
+    ));
+    snap.inbox.push(item(
+        2,
+        "slice-4",
+        dovetail_api::REMOVE_WORKTREE_PERMISSION,
+        serde_json::json!({"branch": "dovetail/demo-1", "uncommitted": [],
+            "unpushed_commits": 1, "worktree": "/w/demo-1"}),
+        vec![],
+    ));
+    snap.inbox.push(item(
+        3,
+        "slice-7",
+        "Write",
+        serde_json::json!({"file_path": "/w/a.txt", "content": "hi"}),
+        vec![RuleSuggestion {
+            label: "switch to acceptEdits".into(),
+            raw: serde_json::json!({"type": "setMode", "mode": "acceptEdits"}),
+        }],
+    ));
+    let mut app = app_with(snap);
+    type_keys(&mut app, " n");
+    let mut previews = Vec::new();
+    for _ in 0..3 {
+        let screen = render(&mut app, 120, 40);
+        let inbox: Vec<String> = screen
+            .lines()
+            .skip_while(|l| !l.contains("inbox"))
+            .map(|l| l.chars().take(70).collect::<String>().trim_end().to_owned())
+            .collect();
+        previews.push(inbox.join("\n"));
+        type_keys(&mut app, "j");
+    }
+    let all = previews.join("\n----\n");
+    assert!(!all.contains('{'), "no raw JSON:\n{all}");
+    assert!(all.contains("start slice demo-1"), "{all}");
+    assert!(all.contains("dovetail/demo-1 · 1 unpushed commit"), "{all}");
+    assert!(all.contains("no uncommitted changes"), "{all}");
+    assert!(all.contains("A → always allow: switch to"), "{all}");
+    assert!(!all.contains("setMode"), "{all}");
+    insta::assert_snapshot!(all);
+}

@@ -185,7 +185,7 @@ impl Core {
                     self.raise(
                         &agent,
                         InboxKind::Permission {
-                            tool: "start_slice".into(),
+                            tool: dovetail_api::START_SLICE_PERMISSION.into(),
                             input,
                             reason: Some("the coordinator wants to start a slice".into()),
                             suggestions: Vec::new(),

@@ -383,6 +383,14 @@ pub enum InboxKind {
     },
 }
 
+/// The `tool` of the Permission item Dovetail raises itself for a `start_slice` that needs
+/// approval (ADR 0004). Its input is `{task, name, brief}`.
+pub const START_SLICE_PERMISSION: &str = "start_slice";
+
+/// The `tool` of the Permission item that asks before removing a slice worktree with unsaved
+/// work. Its input is `{worktree, branch, uncommitted: [..], unpushed_commits}`.
+pub const REMOVE_WORKTREE_PERMISSION: &str = "Remove worktree";
+
 /// A permission rule Claude Code offers for "always allow".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuleSuggestion {

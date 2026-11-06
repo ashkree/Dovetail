@@ -179,7 +179,7 @@ pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem>
                 "⚠",
                 theme.needs_you,
                 tool.clone(),
-                crate::buffers::input_summary(tool, input),
+                crate::buffers::input_summary(snap, tool, input),
             ),
             InboxKind::Question { text, .. } => {
                 ("?", theme.needs_you, "Question".into(), text.clone())
@@ -321,7 +321,7 @@ fn inbox_preview(
     let (head, body) = match &item.kind {
         InboxKind::Permission { tool, input, .. } => (
             format!("{name} asks to use {tool}"),
-            crate::buffers::input_summary(tool, input),
+            crate::buffers::input_summary(snap, tool, input),
         ),
         InboxKind::Question { text, blocking } => (
             format!("{name} asks{}", if *blocking { " (blocked)" } else { "" }),

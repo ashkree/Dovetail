@@ -20,7 +20,7 @@ expression: "render(&mut app, 100, 24)"
 │ ▸ ⚠ slice-7  Bash              10:15 ││                                                          │
 │   │ FS_EVAL_VIRTUAL_KEY=dev cargo    ││                                                          │
 │   │ test -p api get_decision         ││                                                          │
-│   │ A → always allow Bash(cargo      ││                                                          │
+│   │ A → always allow: Bash(cargo     ││                                                          │
 │   │ test:*)                          ││                                                          │
 │   ? slice-4  Question          10:12 ││                                                          │
 │ y allow · d deny · r reply · x dism… ││ ⏎ open agent · / search · esc back                       │

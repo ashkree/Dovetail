@@ -510,3 +510,44 @@ fn an_empty_snapshot_draws_without_panicking() {
     render(&mut app, 20, 6);
     render(&mut app, 1, 1);
 }
+
+/// Live check 2026-11-06: while the user read the coordinator, each finished turn was dismissed
+/// as it arrived (and again on every later event, giving "no inbox item N"), so in auto mode
+/// Needs you stayed empty. Focusing the conversation clears its item once; a turn that
+/// finishes while it already has focus stays (Decision 7a).
+#[test]
+fn a_turn_that_finishes_while_its_conversation_has_focus_stays_in_needs_you() {
+    let mut app = app_with(world());
+    app.on_key(key(' '), 0);
+    app.on_key(key('c'), 1);
+    assert_eq!(app.open_agent(), Some(&agent_id("coordinator")));
+    app.take_commands();
+    let mut seq = app.snapshot().seq;
+    let mut event = |app: &mut dovetail_tui::App, event: Event| {
+        seq += 1;
+        app.on_server(ServerMsg::Event { seq, event });
+    };
+    event(
+        &mut app,
+        Event::InboxUpserted(InboxItem {
+            id: InboxId(10),
+            agent: agent_id("coordinator"),
+            at_ms: NOW_MS,
+            kind: InboxKind::FinishedTurn {
+                preview: "done".into(),
+            },
+        }),
+    );
+    event(&mut app, Event::TotalsChanged(Totals::default()));
+    assert_eq!(app.take_commands(), vec![], "no dismiss while reading");
+    assert!(app.snapshot().inbox.iter().any(|i| i.id == InboxId(10)));
+
+    // Leaving and coming back opens it: one dismiss, not one per event.
+    app.on_key(key('h'), 2);
+    app.on_key(key('l'), 3);
+    event(&mut app, Event::TotalsChanged(Totals::default()));
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::DismissInbox { item: InboxId(10) }]
+    );
+}

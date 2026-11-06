@@ -430,7 +430,7 @@ impl Core {
                 self.raise(
                     &agent,
                     InboxKind::Permission {
-                        tool: "Remove worktree".into(),
+                        tool: dovetail_api::REMOVE_WORKTREE_PERMISSION.into(),
                         input,
                         reason: Some(
                             "the slice has uncommitted or unpushed work, which removing it \
