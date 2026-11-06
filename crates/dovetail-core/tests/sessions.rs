@@ -292,6 +292,16 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
     assert!(mcp.contains("DOVETAIL_AGENT_ID") && mcp.contains("\"coordinator\""));
 
+    // The hook and the bridge are pinned to this app's state, whatever a slice's env says.
+    let settings =
+        std::fs::read_to_string(spec.settings_path.as_ref().expect("settings")).expect("read");
+    let data = h.paths.data.to_string_lossy().into_owned();
+    assert!(
+        settings.contains(&format!("DOVETAIL_DATA_DIR='{data}'")),
+        "{settings}"
+    );
+    assert!(mcp.contains("DOVETAIL_RUNTIME_DIR"), "{mcp}");
+
     let paths = h.paths.clone();
     let _state = h.quit();
     // Reopen on the same state: the conversation and the session id are still there.

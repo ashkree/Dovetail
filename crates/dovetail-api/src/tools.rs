@@ -18,6 +18,15 @@ pub mod env {
     pub const ROLE: &str = "DOVETAIL_ROLE";
     /// The project id; set for the worktree hook.
     pub const PROJECT: &str = "DOVETAIL_PROJECT";
+    /// Replaces `$XDG_DATA_HOME/dovetail` (databases, worktrees). With the three below, lets a
+    /// dev build in a slice run on its own state without touching Claude Code's environment.
+    pub const DATA_DIR: &str = "DOVETAIL_DATA_DIR";
+    /// Replaces `$XDG_CONFIG_HOME/dovetail` (config, role prompts, recipes).
+    pub const CONFIG_DIR: &str = "DOVETAIL_CONFIG_DIR";
+    /// Replaces `$XDG_STATE_HOME/dovetail` (logs, launch files, setup state).
+    pub const STATE_DIR: &str = "DOVETAIL_STATE_DIR";
+    /// Replaces `$XDG_RUNTIME_DIR/dovetail` (sockets; keep it short, ~108-byte limit).
+    pub const RUNTIME_DIR: &str = "DOVETAIL_RUNTIME_DIR";
 }
 
 /// Which tools a session gets.

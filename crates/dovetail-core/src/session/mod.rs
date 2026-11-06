@@ -97,8 +97,12 @@ impl Core {
         let resume = row.transcript_path.is_some();
         let row = row.clone();
         let env = if row.agent.kind == AgentKind::Slice {
+            let place = row.agent.worktree.as_ref().map_or_else(
+                || self.project.repo_path().to_path_buf(),
+                |w| w.path.clone(),
+            );
             Recipe::load(&self.paths.recipe(self.project.key()))
-                .map(|r| r.env.into_iter().collect())
+                .map(|r| r.env_for(&place).into_iter().collect())
                 .unwrap_or_default()
         } else {
             Vec::new()

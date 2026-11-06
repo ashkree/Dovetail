@@ -567,7 +567,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] Then repeated once on this repo, with your OK
 - **Tests:** restore logic with `FakeDriver`, inbox reconciliation, kill and reopen
 
-**From this point:** work runs inside Dovetail, using the installed release. Slices keep their own worktrees, and you still approve each milestone before the next starts. Dev builds in a slice must set separate `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `XDG_RUNTIME_DIR`, never touching your live state. If Dovetail breaks, plain `claude` in the repo still works, since everything is ordinary git.
+**From this point:** work runs inside Dovetail, using the installed release. Slices keep their own worktrees, and you still approve each milestone before the next starts. Dev builds in a slice must use separate data, config, state and runtime directories, never touching your live state. *As built (M10): through Dovetail's own `DOVETAIL_DATA_DIR`, `DOVETAIL_CONFIG_DIR`, `DOVETAIL_STATE_DIR` and `DOVETAIL_RUNTIME_DIR`, set per worktree by the recipe's `[env]` (`{worktree}`, `{worktree_hash}` placeholders), not `XDG_*`, which the slice's Claude Code session would inherit too (its files and messaging sockets would move). The worktree hook and MCP bridge are pinned to the live directories in the launch files.* If Dovetail breaks, plain `claude` in the repo still works, since everything is ordinary git.
 
 ### M11. Subagents and to-do lists
 - **Scope:** subagents as tree nodes from `parent_tool_use_id` and `task_*`, progress, cost, unchanged subagent worktree removal, native list reading with reread on parse error, item-to-agent mapping, lists deleted on archive.

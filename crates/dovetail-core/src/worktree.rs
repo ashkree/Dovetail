@@ -478,7 +478,7 @@ fn run_setup(
     };
     write_state(state_file, &state)?;
     let logf = fs::File::create(log).map_err(io("creating setup log"))?;
-    let envs: &BTreeMap<String, String> = &recipe.env;
+    let envs: BTreeMap<String, String> = recipe.env_for(wt);
     for cmd in &recipe.worktree.setup {
         let out = logf.try_clone().map_err(io("cloning log handle"))?;
         let err = logf.try_clone().map_err(io("cloning log handle"))?;
@@ -492,7 +492,7 @@ fn run_setup(
             .arg("-c")
             .arg(cmd)
             .current_dir(wt)
-            .envs(envs)
+            .envs(&envs)
             .stdin(Stdio::null())
             .stdout(out)
             .stderr(err)

@@ -7,6 +7,10 @@
 //! setup = ["cargo fetch"]   # run in order in the new worktree; each must be safe to re-run (B5)
 //! [env]                     # set for the setup commands and for the slice's session
 //! ```
+//!
+//! `[env]` values may use two placeholders: `{worktree}`, the slice's worktree (or, in a folder
+//! without git, the shared project folder), and `{worktree_hash}`, eight hex digits from that
+//! path, for short per-worktree paths such as a socket directory under `/tmp`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -62,6 +66,21 @@ pub enum RecipeError {
 }
 
 impl Recipe {
+    /// `[env]` with the placeholders filled in for one worktree.
+    pub fn env_for(&self, worktree: &Path) -> BTreeMap<String, String> {
+        let path = worktree.to_string_lossy();
+        let hash = format!("{:08x}", fnv1a(path.as_bytes()) as u32);
+        self.env
+            .iter()
+            .map(|(k, v)| {
+                let v = v
+                    .replace("{worktree_hash}", &hash)
+                    .replace("{worktree}", &path);
+                (k.clone(), v)
+            })
+            .collect()
+    }
+
     /// Parse recipe text.
     pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(text)
@@ -80,5 +99,34 @@ impl Recipe {
                 source,
             }),
         }
+    }
+}
+
+/// FNV-1a: a stable, dependency-free hash for `{worktree_hash}`.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn env_placeholders_name_the_worktree() {
+        let recipe = Recipe::parse(
+            "[env]\nDOVETAIL_DATA_DIR = \"{worktree}/target/dev/data\"\n\
+             DOVETAIL_RUNTIME_DIR = \"/tmp/dvt-{worktree_hash}\"\n",
+        )
+        .unwrap();
+        let env = recipe.env_for(Path::new("/w/slice-a"));
+        assert_eq!(env["DOVETAIL_DATA_DIR"], "/w/slice-a/target/dev/data");
+        let runtime = &env["DOVETAIL_RUNTIME_DIR"];
+        assert_eq!(runtime.len(), "/tmp/dvt-".len() + 8);
+        assert_ne!(
+            runtime,
+            &recipe.env_for(Path::new("/w/slice-b"))["DOVETAIL_RUNTIME_DIR"]
+        );
     }
 }
