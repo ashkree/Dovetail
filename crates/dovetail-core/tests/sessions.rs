@@ -743,3 +743,47 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
     assert!(h.snap.agents.iter().any(|a| a.name == "later"));
     h.quit();
 }
+
+#[test]
+fn interrupt_reaches_a_session_waiting_on_background_tasks() {
+    // Live check 2026-11-06: `sleep 30` went to the background, the turn's result came, the
+    // row said working, and interrupt was refused as "not mid-turn".
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"b1","task_type":"local_bash","description":"sleep 30"}]}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"started it","total_cost_usd":0.01}"#,
+        r#"{"type":"system","subtype":"background_tasks_changed","tasks":[]}"#,
+    ];
+    let fake = FakeDriver::from_ndjson(&lines.join("\n"))
+        .expect("fixture")
+        .with_options(ReplayOptions {
+            pause_before: vec![3],
+            ..ReplayOptions::default()
+        });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "run sleep 30");
+    h.wait_for("the result with a background task left", |s| {
+        s.agents.iter().any(|a| (a.cost_usd - 0.01).abs() < 1e-9)
+    });
+    let coordinator = h
+        .snap
+        .agents
+        .iter()
+        .find(|a| a.kind == AgentKind::Coordinator)
+        .unwrap();
+    assert_eq!(coordinator.status, dovetail_api::AgentStatus::Working);
+    h.send(Command::Interrupt {
+        agent: AgentId(COORDINATOR.into()),
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fake.sent().contains(&Sent::Interrupt) {
+        assert!(
+            Instant::now() < deadline,
+            "no interrupt sent: {:?}",
+            fake.sent()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    fake.resume();
+    h.quit();
+}

@@ -287,8 +287,9 @@ impl Core {
             self.fail(format!("{} is not running", id.0));
             return;
         };
-        if !live.turn.running {
-            self.fail(format!("{} is not mid-turn", id.0));
+        // Busy is what the tree shows as working: a turn, or background tasks after its result.
+        if !live.turn.busy() {
+            self.fail(format!("{} is idle: nothing to interrupt", id.0));
             return;
         }
         match live.session.interrupt() {
