@@ -1123,3 +1123,46 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
     );
     h.quit();
 }
+
+#[test]
+fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    prompt(&h, "hello");
+    h.send(Command::NewSlice {
+        task: None,
+        name: "later".into(),
+        brief: "go".into(),
+    });
+    // Both sessions have run once their replies are in.
+    h.wait_for("both sessions to have run", |s| {
+        ["coordinator", "slice-later"].iter().all(|a| {
+            s.conversations
+                .get(&AgentId((*a).into()))
+                .is_some_and(|t| t.entries.iter().any(|e| e.text == "alpha"))
+        })
+    });
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.drain(Duration::from_millis(300));
+    let names = |fake: &FakeDriver| -> Vec<(String, bool)> {
+        fake.started_specs()
+            .iter()
+            .map(|s| (s.name.clone().unwrap_or_default(), s.resume))
+            .collect()
+    };
+    assert_eq!(names(&fake), vec![("coordinator".to_string(), true)]);
+    h.send(Command::Prompt {
+        agent: AgentId("slice-later".into()),
+        text: "carry on".into(),
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while names(&fake).len() < 2 {
+        assert!(Instant::now() < deadline, "{:?}", names(&fake));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(names(&fake)[1], ("later".to_string(), true));
+    h.quit();
+}
