@@ -762,9 +762,10 @@ impl Core {
 
     /// Recomputes an agent's status from its session, its inbox items and its setup.
     pub(crate) fn refresh_status(&mut self, id: &AgentId) {
-        // The state at quit is kept as it was, so a turn running then reads as cut off on the
-        // next open (M10).
-        if self.quitting.is_some() {
+        // While quitting, a session that has exited keeps the status it had, so a turn cut off
+        // by the quit reads as cut off on the next open (M10). A turn that still ends normally
+        // in the quit window is recorded as ended.
+        if self.quitting.is_some() && !self.live.contains_key(id) {
             return;
         }
         let needs_you = self

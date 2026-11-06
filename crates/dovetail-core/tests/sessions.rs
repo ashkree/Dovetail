@@ -1315,3 +1315,25 @@ fn notes_for_a_coordinator_cut_off_by_a_restart_wait_for_the_users_next_message(
     assert!(!sent_users(&fake).contains(&EXPIRED.to_string()));
     h.quit();
 }
+
+#[test]
+fn a_turn_that_ends_normally_during_quit_is_not_reported_as_cut_off() {
+    let fake = held_turn();
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "rename the flag");
+    h.wait_for("the turn to start", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "working on it"))
+    });
+    // Quit while the turn runs; its result arrives inside the quit window.
+    h.send(Command::Quit { end_sessions: true });
+    std::thread::sleep(Duration::from_millis(100));
+    fake.resume();
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let mut h = Harness::start_on(fixture("plain_turn"), paths);
+    h.drain(Duration::from_millis(300));
+    assert!(cut_off_text(&h.snap).is_none(), "{:#?}", h.snap.inbox);
+    h.quit();
+}
