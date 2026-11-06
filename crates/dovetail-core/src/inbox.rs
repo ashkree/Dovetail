@@ -328,8 +328,10 @@ impl Core {
 
     /// `d` on a non-permission item, or `x`: take it out without an answer.
     pub(crate) async fn dismiss(&mut self, id: InboxId) {
+        // Dismissing is idempotent: the UI may dismiss an item that a newer finished turn or an
+        // answer already took out, and that is no error to show the user.
         let Some(entry) = self.resolve(id, Some("dismissed".into())) else {
-            self.fail(format!("no inbox item {}", id.0));
+            tracing::debug!(item = id.0, "dismissed an item already gone");
             return;
         };
         let agent = entry.item.agent;
