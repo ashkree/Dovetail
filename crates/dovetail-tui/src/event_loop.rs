@@ -79,6 +79,19 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
         let _ = tx.send(Msg::ServerClosed);
     });
 
+    drive(&mut terminal, app, &rx, &commands, &clock)
+}
+
+/// The loop itself, on any backend: draws when dirty (at most ~30 fps), sends the app's
+/// commands, and sleeps until a message, a draw window or a key-sequence deadline. Returns when
+/// the user quits or every sender of `rx` is gone.
+fn drive<B: ratatui::backend::Backend>(
+    terminal: &mut ratatui::Terminal<B>,
+    app: &mut App,
+    rx: &mpsc::Receiver<Msg>,
+    commands: &mpsc::Sender<Command>,
+    clock: &Clock,
+) -> io::Result<()> {
     let started = Instant::now();
     let mono_ms = |at: Instant| at.duration_since(started).as_millis() as u64;
     let mut last_draw: Option<Instant> = None;
@@ -86,7 +99,9 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
         let now = Instant::now();
         let since = last_draw.map_or(MIN_FRAME, |t| now.duration_since(t));
         if app.is_dirty() && since >= MIN_FRAME {
-            terminal.draw(|frame| app.draw(frame))?;
+            terminal
+                .draw(|frame| app.draw(frame))
+                .map_err(|e| io::Error::other(e.to_string()))?;
             tracing::trace!("frame");
             app.take_dirty();
             last_draw = Some(now);
@@ -105,7 +120,11 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
             .next_deadline_ms()
             .map(|d| Duration::from_millis(d.saturating_sub(mono_ms(Instant::now()))));
         let first = match next_wake(app.is_dirty(), since, key_in) {
-            None => rx.recv().ok(),
+            // Every sender gone: nothing can wake the loop again.
+            None => match rx.recv() {
+                Ok(msg) => Some(msg),
+                Err(_) => return Ok(()),
+            },
             Some(wait) => match rx.recv_timeout(wait) {
                 Ok(msg) => Some(msg),
                 Err(mpsc::RecvTimeoutError::Timeout) => None,
@@ -132,6 +151,57 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Rehearsal 2026-11-06: the tree showed no tasks for about 90 s until a key was pressed.
+    /// With no input at all, core events must still reach the screen.
+    #[test]
+    fn core_events_redraw_the_screen_with_no_key_pressed() {
+        use dovetail_api::{Event, Snapshot, Task, TaskId, TaskStatus};
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("terminal");
+        let mut app = App::new(jiff::tz::TimeZone::UTC);
+        let (tx, rx) = mpsc::channel::<Msg>();
+        let (commands, _sent) = mpsc::channel::<Command>();
+        let feeder = thread::spawn(move || {
+            let send = |m| tx.send(Msg::Server(Box::new(m))).expect("loop alive");
+            send(ServerMsg::Hello {
+                protocol: dovetail_api::PROTOCOL_VERSION,
+            });
+            send(ServerMsg::Snapshot(Snapshot::default()));
+            // A pause long enough for the loop to draw and go back to sleep with nothing dirty.
+            thread::sleep(Duration::from_millis(150));
+            send(ServerMsg::Event {
+                seq: 1,
+                event: Event::TaskUpserted(Task {
+                    id: TaskId(1),
+                    title: "alpha from the core".into(),
+                    status: TaskStatus::Todo,
+                    p_level: None,
+                    bucket: None,
+                    order: 0,
+                    deps: vec![],
+                    notes: String::new(),
+                    pr: None,
+                    follow_up_of: None,
+                    coordinator_created: true,
+                    related: vec![],
+                }),
+            });
+            // Long enough for the 33 ms draw window; then end the loop with no key pressed.
+            thread::sleep(Duration::from_millis(200));
+        });
+        let clock: Clock = Box::new(|| 0);
+        drive(&mut terminal, &mut app, &rx, &commands, &clock).expect("loop");
+        feeder.join().expect("feeder");
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(screen.contains("alpha from the core"), "{screen}");
+    }
 
     #[test]
     fn an_idle_ui_sleeps_with_no_deadline() {
