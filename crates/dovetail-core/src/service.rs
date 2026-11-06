@@ -422,6 +422,8 @@ impl Core {
         }
         // Queued starts survive a restart and run when a slot frees (decided 2026-11-06).
         self.queue = self.db.load_queue().await?.into();
+        // Signals the coordinator missed while it could not be woken.
+        self.coordinator_notes = self.db.load_notes().await?;
         let coordinator = AgentId(COORDINATOR.into());
         if !self.agents.contains_key(&coordinator) {
             let row = AgentRow {

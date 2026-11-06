@@ -392,3 +392,69 @@ pub(super) fn load_queue(conn: &mut Connection) -> Result<Vec<QueuedSlice>, DbEr
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
+
+pub(super) fn load_open_inbox(conn: &mut Connection) -> Result<Vec<InboxItem>, DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, agent_id, payload, created_ms FROM inbox_items \
+         WHERE resolved_ms IS NULL ORDER BY id",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
+        ))
+    })?;
+    let mut items = Vec::new();
+    for row in rows {
+        let (id, agent, payload, at_ms) = row?;
+        let kind: InboxKind = serde_json::from_str(&payload)
+            .map_err(|e| DbError::Corrupt(format!("inbox item {id}: {e}")))?;
+        items.push(InboxItem {
+            id: InboxId(id as u64),
+            agent: AgentId(agent),
+            at_ms,
+            kind,
+        });
+    }
+    Ok(items)
+}
+
+pub(super) fn add_note(conn: &mut Connection, text: &str, now: i64) -> Result<(), DbError> {
+    conn.execute(
+        "INSERT INTO coordinator_notes (text, created_ms) VALUES (?1, ?2)",
+        params![text, now],
+    )?;
+    Ok(())
+}
+
+pub(super) fn load_notes(conn: &mut Connection) -> Result<Vec<String>, DbError> {
+    let mut stmt = conn.prepare("SELECT text FROM coordinator_notes ORDER BY id")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+pub(super) fn clear_notes(conn: &mut Connection) -> Result<(), DbError> {
+    conn.execute("DELETE FROM coordinator_notes", [])?;
+    Ok(())
+}
+
+pub(super) fn keep_worktree(
+    conn: &mut Connection,
+    key: &str,
+    name: &str,
+    now: i64,
+) -> Result<(), DbError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO kept_worktrees (project_key, name, kept_ms) VALUES (?1, ?2, ?3)",
+        params![key, name, now],
+    )?;
+    Ok(())
+}
+
+pub(super) fn kept_worktrees(conn: &mut Connection, key: &str) -> Result<Vec<String>, DbError> {
+    let mut stmt = conn.prepare("SELECT name FROM kept_worktrees WHERE project_key = ?1")?;
+    let rows = stmt.query_map([key], |r| r.get::<_, String>(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}

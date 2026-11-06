@@ -43,6 +43,7 @@ const STATE_MIGRATIONS: &[&str] = &[
     include_str!("db/migrations/state/0002_agents_conversation.sql"),
     include_str!("db/migrations/state/0003_inbox_activity.sql"),
     include_str!("db/migrations/state/0004_slice_queue.sql"),
+    include_str!("db/migrations/state/0005_restart_state.sql"),
 ];
 
 /// Errors from the database layer.
@@ -344,6 +345,38 @@ impl Db {
     /// The queued starts, oldest first.
     pub fn load_queue(&self) -> Pending<Vec<QueuedSlice>> {
         self.run(|c, _| sessions::load_queue(c.state()?))
+    }
+
+    // --- restart state (M10) ---
+
+    /// Inbox items not yet resolved, oldest first.
+    pub fn load_open_inbox(&self) -> Pending<Vec<InboxItem>> {
+        self.run(|c, _| sessions::load_open_inbox(c.state()?))
+    }
+
+    /// Holds a signal for the coordinator until its session next starts.
+    pub fn add_note(&self, text: String) -> Pending<()> {
+        self.run(move |c, now| sessions::add_note(c.state()?, &text, now))
+    }
+
+    /// The held coordinator signals, oldest first.
+    pub fn load_notes(&self) -> Pending<Vec<String>> {
+        self.run(|c, _| sessions::load_notes(c.state()?))
+    }
+
+    /// Forgets the held coordinator signals, once delivered.
+    pub fn clear_notes(&self) -> Pending<()> {
+        self.run(|c, _| sessions::clear_notes(c.state()?))
+    }
+
+    /// Records that the user kept an unowned worktree.
+    pub fn keep_worktree(&self, key: String, name: String) -> Pending<()> {
+        self.run(move |c, now| sessions::keep_worktree(c.state()?, &key, &name, now))
+    }
+
+    /// Unowned worktrees under `key` the user chose to keep.
+    pub fn kept_worktrees(&self, key: String) -> Pending<Vec<String>> {
+        self.run(move |c, _| sessions::kept_worktrees(c.state()?, &key))
     }
 
     // --- inbox, activity, messages ---

@@ -185,6 +185,9 @@ impl Core {
                 self.launch(id, cwd, None)?;
                 // Signals held while it could not be woken.
                 let notes = std::mem::take(&mut self.coordinator_notes);
+                if !notes.is_empty() {
+                    self.persist("delivered coordinator notes", self.db.clear_notes());
+                }
                 if let Some(live) = self.live.get_mut(id) {
                     for note in &notes {
                         if live.session.send(UserInput::text(note.as_str())).is_ok() {
@@ -278,6 +281,7 @@ impl Core {
         if self.quitting.is_none() && wakeable {
             self.send_note(&id, &text);
         } else {
+            self.persist("a coordinator note", self.db.add_note(text.clone()));
             self.coordinator_notes.push(text);
         }
     }
