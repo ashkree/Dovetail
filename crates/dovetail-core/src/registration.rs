@@ -90,9 +90,15 @@ impl Core {
         }
         let old_lists = format!("dovetail-{}-", self.project.key());
         self.project = ProjectState::Registered(project.clone());
-        // To-do lists named after the old key move to the project id for later launches.
+        // An agent that never ran takes the project id in its to-do list id. One that has run
+        // keeps the id its process uses (its lists live there), across every later resume.
         let new_lists = format!("dovetail-{}-", project.id);
-        let ids: Vec<AgentId> = self.agents.keys().cloned().collect();
+        let ids: Vec<AgentId> = self
+            .agents
+            .values()
+            .filter(|r| r.transcript_path.is_none() && !self.live.contains_key(&r.agent.id))
+            .map(|r| r.agent.id.clone())
+            .collect();
         for id in ids {
             self.update_agent(&id, |row| {
                 if let Some(list) = &mut row.task_list_id

@@ -666,6 +666,12 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
     let db = dovetail_core::db::Db::open(&paths, Some("work")).expect("db");
     let agents = db.load_agents().wait().expect("agents");
     assert!(agents.iter().any(|r| r.agent.name == "early"), "{agents:?}");
+    // Sessions that ran before registration keep the list id their process used.
+    for name in ["early", COORDINATOR] {
+        let row = agents.iter().find(|r| r.agent.name == name).expect("agent");
+        let list = row.task_list_id.as_deref().unwrap_or_default();
+        assert!(list.starts_with("dovetail-new-"), "{name}: {list}");
+    }
 }
 
 #[test]
