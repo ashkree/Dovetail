@@ -97,9 +97,15 @@ pub struct Turn {
     pub last_text: String,
     /// An interrupt was requested and its `result` has not come yet.
     pub interrupting: bool,
-    /// Inputs sent and not yet answered by a `result`. Claude Code queues an input that
-    /// arrives mid-turn and runs it as its own turn, so one `result` may leave more to come.
+    /// Inputs sent and not yet taken up by a turn. Claude Code echoes each input it takes
+    /// (`--replay-user-messages`): inputs sent mid-turn may be folded into the running turn
+    /// (echoed before its `result`) or run as a turn of their own afterwards. A `result` ends
+    /// the session's work only when every sent input has been echoed (live rehearsal,
+    /// 2026-11-06: three inputs, one turn, one `result`).
     pub queued: usize,
+    /// This process has echoed an input. Without echoes (a stream without
+    /// `--replay-user-messages`), each `result` is taken to answer one input instead.
+    pub replays_seen: bool,
 }
 
 impl Turn {
@@ -114,10 +120,18 @@ impl Turn {
         self.queued += 1;
     }
 
-    /// Clears what belongs to one turn when its `result` arrives. The session stays running
-    /// while inputs sent before it are still queued (stream rule 2).
-    pub fn end(&mut self) {
+    /// Claude Code echoed one of Dovetail's inputs: it belongs to the running turn.
+    pub fn input_replayed(&mut self) {
+        self.replays_seen = true;
         self.queued = self.queued.saturating_sub(1);
+    }
+
+    /// Clears what belongs to one turn when its `result` arrives. The session stays running
+    /// while an input it was sent has not been taken up yet (stream rule 2).
+    pub fn end(&mut self) {
+        if !self.replays_seen {
+            self.queued = self.queued.saturating_sub(1);
+        }
         self.running = self.queued > 0;
         self.streaming = None;
         self.tools = ToolTally::default();

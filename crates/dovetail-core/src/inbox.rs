@@ -39,6 +39,12 @@ pub(crate) enum Waiter {
     StartSlice { request: SliceRequest },
     /// A slice archive waiting for confirmation that unsaved work may go.
     RemoveWorktree,
+    /// An `ask_user` question from before a restart: its call is gone, so the answer goes to
+    /// the agent as a normal message (M10, decided 2026-11-06).
+    RestoredQuestion { question: String },
+    /// A worktree no agent owns, found by the sweep on open (M10): `y` removes it, `d` keeps
+    /// it for good.
+    RemoveOrphan { found: crate::restore::Orphan },
 }
 
 impl Waiter {
@@ -323,6 +329,10 @@ impl Core {
                 PermissionAnswer::Deny { .. } => self.keep_slice(&agent),
                 _ => self.remove_worktree(&agent, true),
             },
+            Waiter::RemoveOrphan { found } => match answer {
+                PermissionAnswer::Deny { .. } => self.keep_orphan(found),
+                _ => self.remove_orphan(found),
+            },
             _ => {}
         }
         self.refresh_status(&agent);
@@ -349,6 +359,12 @@ impl Core {
             }
             Waiter::Question { question } => {
                 let message = format!("The user answered your question \"{question}\":\n\n{text}");
+                if let Err(e) = self.send_text_as_user(&agent, &message, text) {
+                    self.fail(e);
+                }
+            }
+            Waiter::RestoredQuestion { question } => {
+                let message = format!("Answer to your question '{question}': {text}");
                 if let Err(e) = self.send_text_as_user(&agent, &message, text) {
                     self.fail(e);
                 }
@@ -388,7 +404,8 @@ impl Core {
                 ));
             }
             Waiter::RemoveWorktree => self.keep_slice(&agent),
-            Waiter::None | Waiter::Question { .. } => {}
+            Waiter::RemoveOrphan { found } => self.keep_orphan(found),
+            Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }
     }
 

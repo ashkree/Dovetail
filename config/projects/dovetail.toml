@@ -12,5 +12,16 @@ symlink = []
 setup = ["cargo fetch"]
 
 [env]
-# Set for the setup commands and the slice's session.
+# Set for the setup commands and the slice's session. Placeholders: {worktree} is the slice's
+# worktree, {worktree_hash} eight hex digits from its path.
 # Each slice builds into its own target/ for now (decided 2026-11-05).
+#
+# Self-hosting (M10): a dev build of Dovetail run inside a slice uses its own state under the
+# worktree's target/ (gitignored), never your live Dovetail. These are Dovetail's own variables,
+# not XDG_*: changing XDG_* would also move Claude Code's files and messaging sockets. The
+# installed hook and MCP bridge are pinned to your live state, so they ignore these.
+# The runtime dir holds unix sockets (~108-byte path limit), so it stays short, under /tmp.
+DOVETAIL_DATA_DIR = "{worktree}/target/dovetail-dev/data"
+DOVETAIL_CONFIG_DIR = "{worktree}/target/dovetail-dev/config"
+DOVETAIL_STATE_DIR = "{worktree}/target/dovetail-dev/state"
+DOVETAIL_RUNTIME_DIR = "/tmp/dvt-{worktree_hash}"

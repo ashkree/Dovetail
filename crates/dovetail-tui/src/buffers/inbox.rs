@@ -145,6 +145,15 @@ fn remove_worktree_summary(input: &serde_json::Value) -> String {
         0 => "no uncommitted changes".to_owned(),
         n => plural(n, "uncommitted change", "uncommitted changes"),
     };
+    // A folder that is not a git worktree: what `y` would delete is its files.
+    if let Some(files) = input.get("files").and_then(|v| v.as_u64()) {
+        let folder = input
+            .get("worktree")
+            .and_then(|v| v.as_str())
+            .unwrap_or("the folder");
+        let files = plural(files as usize, "file", "files");
+        return format!("{folder} · not a git worktree · {files}");
+    }
     format!("{branch} · {unpushed} · {uncommitted}")
 }
 

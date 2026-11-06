@@ -60,7 +60,15 @@ pub struct Launch {
 pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     let dir = paths.run_dir(&launch.project_key, &launch.agent_id);
     std::fs::create_dir_all(&dir)?;
-    let exe = launch.exe.to_string_lossy();
+    // The hook and the bridge are this app's binary pinned to this app's state: a slice's
+    // session may carry `DOVETAIL_*_DIR` for its own dev builds (recipe `[env]`), and they
+    // must not follow it.
+    let pinned = paths.pinned_env();
+    let pin: String = pinned
+        .iter()
+        .map(|(k, v)| format!("{k}={} ", shell_quote(&v.to_string_lossy())))
+        .collect();
+    let exe = shell_quote(&launch.exe.to_string_lossy());
 
     let settings_path = dir.join("settings.json");
     let settings = json!({
@@ -69,12 +77,12 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
         "hooks": {
             "WorktreeCreate": [{ "hooks": [{
                 "type": "command",
-                "command": format!("{exe} hook worktree-create"),
+                "command": format!("env {pin}{exe} hook worktree-create"),
                 "timeout": 900
             }]}],
             "WorktreeRemove": [{ "hooks": [{
                 "type": "command",
-                "command": format!("{exe} hook worktree-remove"),
+                "command": format!("env {pin}{exe} hook worktree-remove"),
                 "timeout": 30
             }]}]
         }
@@ -82,14 +90,18 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     write_json(&settings_path, &settings)?;
 
     let mcp_path = dir.join("mcp.json");
+    let mut bridge_env = json!({
+        env::AGENT_ID: launch.agent_id,
+        env::SOCKET: launch.socket,
+        env::ROLE: launch.role.as_str(),
+    });
+    for (k, v) in &pinned {
+        bridge_env[*k] = json!(v);
+    }
     let mcp = json!({ "mcpServers": { "dovetail": {
         "command": launch.exe,
         "args": ["mcp"],
-        "env": {
-            env::AGENT_ID: launch.agent_id,
-            env::SOCKET: launch.socket,
-            env::ROLE: launch.role.as_str(),
-        }
+        "env": bridge_env,
     }}});
     write_json(&mcp_path, &mcp)?;
 
@@ -157,6 +169,11 @@ pub fn transcript_path(cwd: &Path, session_id: &str) -> PathBuf {
     base.join("projects")
         .join(encoded)
         .join(format!("{session_id}.jsonl"))
+}
+
+/// Single-quotes a word for `sh`.
+fn shell_quote(word: &str) -> String {
+    format!("'{}'", word.replace('\'', "'\\''"))
 }
 
 fn write_json(path: &Path, value: &serde_json::Value) -> std::io::Result<()> {

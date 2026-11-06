@@ -362,9 +362,10 @@ impl Session for FakeSession {
         self.events.take().unwrap_or_else(|| unbounded_channel().1)
     }
 
+    /// Graceful, like a real session whose stdin closes: the replay goes on to its end (a turn
+    /// in progress can still finish); only `kill` stops it.
     fn shutdown(&self, grace: Duration) {
         self.record(Sent::Shutdown(grace));
-        self.close();
     }
 
     fn kill(&self) {

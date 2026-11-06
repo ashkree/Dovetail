@@ -114,6 +114,21 @@ impl Harness {
         }
     }
 
+    /// Applies whatever arrives within `window`, for checking that something did not happen.
+    fn drain(&mut self, window: Duration) {
+        let until = Instant::now() + window;
+        while let Some(left) = until.checked_duration_since(Instant::now()) {
+            match self.link.messages.recv_timeout(left) {
+                Ok(ServerMsg::Snapshot(s)) => self.snap = s,
+                Ok(ServerMsg::Event { seq, event }) => {
+                    apply(&mut self.snap, seq, event);
+                }
+                Ok(ServerMsg::Hello { .. }) => {}
+                Err(_) => return,
+            }
+        }
+    }
+
     fn entries(&self, agent: &str) -> Vec<(EntryKind, String)> {
         self.snap
             .conversations
@@ -191,16 +206,18 @@ fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result()
     // can be checked.
     let lines = [
         r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"first"},"parent_tool_use_id":null,"isReplay":true}"#,
         r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"one"}]},"parent_tool_use_id":null}"#,
         r#"{"type":"result","subtype":"success","is_error":false,"result":"one","total_cost_usd":0.01}"#,
         r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"second"},"parent_tool_use_id":null,"isReplay":true}"#,
         r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"two"}]},"parent_tool_use_id":null}"#,
         r#"{"type":"result","subtype":"success","is_error":false,"result":"two","total_cost_usd":0.02}"#,
     ];
     let fake = FakeDriver::from_ndjson(&lines.join("\n"))
         .expect("fixture")
         .with_options(ReplayOptions {
-            pause_before: vec![2, 3],
+            pause_before: vec![3, 4],
             ..ReplayOptions::default()
         });
     let mut h = Harness::start(fake.clone(), true, Config::default());
@@ -277,6 +294,16 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
     assert!(mcp.contains("DOVETAIL_AGENT_ID") && mcp.contains("\"coordinator\""));
 
+    // The hook and the bridge are pinned to this app's state, whatever a slice's env says.
+    let settings =
+        std::fs::read_to_string(spec.settings_path.as_ref().expect("settings")).expect("read");
+    let data = h.paths.data.to_string_lossy().into_owned();
+    assert!(
+        settings.contains(&format!("DOVETAIL_DATA_DIR='{data}'")),
+        "{settings}"
+    );
+    assert!(mcp.contains("DOVETAIL_RUNTIME_DIR"), "{mcp}");
+
     let paths = h.paths.clone();
     let _state = h.quit();
     // Reopen on the same state: the conversation and the session id are still there.
@@ -292,6 +319,11 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
 impl Harness {
     /// A second app on the state of an earlier one (registered project `p`).
     fn start_on(driver: FakeDriver, paths: Paths) -> Harness {
+        Self::start_in(driver, paths, None)
+    }
+
+    /// A second app on earlier state, in `repo` (a git repo) or a fresh folder.
+    fn start_in(driver: FakeDriver, paths: Paths, repo: Option<PathBuf>) -> Harness {
         let dir = tempfile::tempdir().expect("tempdir");
         let run = tempfile::Builder::new()
             .prefix("dvt.")
@@ -301,12 +333,13 @@ impl Harness {
             runtime: run.path().to_path_buf(),
             ..paths
         };
-        let repo = dir.path().to_path_buf();
+        let git_common_dir = repo.as_ref().map(|r| r.join(".git"));
+        let repo = repo.unwrap_or_else(|| dir.path().to_path_buf());
         let resolution = Resolution::Registered(Project {
             id: "p".into(),
             name: "work".into(),
             repo_path: repo.clone(),
-            git_common_dir: None,
+            git_common_dir,
             last_opened_ms: None,
         });
         let options = CoreOptions {
@@ -785,5 +818,575 @@ fn interrupt_reaches_a_session_waiting_on_background_tasks() {
         std::thread::sleep(Duration::from_millis(10));
     }
     fake.resume();
+    h.quit();
+}
+
+/// A turn that never reaches its `result`: init, some text, then the replay holds.
+fn held_turn() -> FakeDriver {
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"working on it"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"done","total_cost_usd":0.01}"#,
+    ];
+    FakeDriver::from_ndjson(&lines.join("\n"))
+        .expect("fixture")
+        .with_options(ReplayOptions {
+            pause_before: vec![2],
+            ..ReplayOptions::default()
+        })
+}
+
+fn cut_off_text(s: &Snapshot) -> Option<String> {
+    s.inbox.iter().find_map(|i| match &i.kind {
+        InboxKind::Error { text } if text.contains("cut off by a restart") => Some(text.clone()),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_turn_cut_off_by_quit_is_reported_on_reopen_and_not_continued() {
+    let mut h = Harness::start(held_turn(), true, Config::default());
+    prompt(&h, "rename the flag");
+    h.wait_for("the turn to start", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "working on it"))
+    });
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
+    let text = cut_off_text(&h.snap).unwrap_or_default();
+    assert!(
+        text.contains("coordinator's turn") && text.contains("rename the flag"),
+        "{text}"
+    );
+    // The coordinator's session is back, but nothing was sent to it.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().is_empty() {
+        assert!(Instant::now() < deadline, "the coordinator was not resumed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(fake.started_specs()[0].resume, "resumed, not created");
+    assert!(
+        !fake.sent().iter().any(|s| matches!(s, Sent::User(_))),
+        "{:?}",
+        fake.sent()
+    );
+    h.quit();
+}
+
+#[test]
+fn killing_the_app_mid_turn_loses_no_state() {
+    let mut h = Harness::start(held_turn(), true, Config::default());
+    prompt(&h, "rename the flag");
+    h.wait_for("the turn to start", |s| {
+        s.agents
+            .iter()
+            .any(|a| a.status == dovetail_api::AgentStatus::Working)
+            && s.conversations
+                .get(&AgentId(COORDINATOR.into()))
+                .is_some_and(|t| t.entries.iter().any(|e| e.text == "working on it"))
+    });
+    // Give the DB thread a moment, then copy the database files as a kill would leave them:
+    // the app never gets to quit.
+    std::thread::sleep(Duration::from_millis(200));
+    let crashed = tempfile::tempdir().expect("tempdir");
+    let from = h.paths.state_db("p");
+    let to_paths = Paths {
+        data: crashed.path().join("data"),
+        ..h.paths.clone()
+    };
+    let to = to_paths.state_db("p");
+    std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+    for suffix in ["", "-wal", "-shm"] {
+        let src = PathBuf::from(format!("{}{suffix}", from.display()));
+        if src.exists() {
+            std::fs::copy(&src, format!("{}{suffix}", to.display())).unwrap();
+        }
+    }
+    let mut reopened = Harness::start_on(fixture("plain_turn"), to_paths);
+    reopened.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
+    let entries = reopened.entries(COORDINATOR);
+    assert!(
+        entries.contains(&(EntryKind::User, "rename the flag".into())),
+        "{entries:?}"
+    );
+    reopened.quit();
+    h.quit();
+}
+
+#[test]
+fn at_restart_permissions_expire_and_questions_stay_answerable() {
+    let fake = fixture("concurrent_permissions").with_options(ReplayOptions {
+        wait_for_answers: true,
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake, true, Config::default());
+    prompt(&h, "read two files");
+    h.wait_for("two permission requests", |s| {
+        s.inbox
+            .iter()
+            .filter(|i| matches!(i.kind, InboxKind::Permission { .. }))
+            .count()
+            == 2
+    });
+    let socket = h.socket();
+    let (text, _) = result_text(socket_call(
+        &socket,
+        tool(
+            COORDINATOR,
+            Tool::AskUser(AskUser {
+                question: "Which port?".into(),
+                blocking: false,
+            }),
+        ),
+    ));
+    assert!(text.contains("inbox"), "{text}");
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.wait_for("the expired requests", |s| {
+        s.activity
+            .iter()
+            .filter(|a| a.text.contains("request expired at restart"))
+            .count()
+            == 2
+            && s.inbox
+                .iter()
+                .any(|i| matches!(i.kind, InboxKind::Question { .. }))
+    });
+    assert!(
+        h.snap
+            .activity
+            .iter()
+            .any(|a| a.text.contains("Read one.txt"))
+    );
+    assert!(
+        !h.snap
+            .inbox
+            .iter()
+            .any(|i| matches!(i.kind, InboxKind::Permission { .. }))
+    );
+    let question = h
+        .snap
+        .inbox
+        .iter()
+        .find(|i| matches!(i.kind, InboxKind::Question { .. }))
+        .unwrap_or_else(|| panic!("the question stays: {:#?}", h.snap.inbox))
+        .id;
+    // A non-blocking question does not explain the stopped turn: its cut-off is reported too.
+    h.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
+    h.send(Command::AnswerQuestion {
+        item: question,
+        text: "8080".into(),
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let wanted = Sent::User("Answer to your question 'Which port?': 8080".into());
+    while !fake.sent().contains(&wanted) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    h.quit();
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let ok = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+        .args(args)
+        .status()
+        .expect("git")
+        .success();
+    assert!(ok, "git {args:?}");
+}
+
+#[test]
+fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), "hi").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    // Two slices whose worktree directories have disappeared: "lost" is gone for git too,
+    // "listed" is still in git's worktree list, so it is not proof enough and is kept.
+    std::fs::create_dir_all(paths.worktrees("p")).unwrap();
+    let listed = paths.worktrees("p").join("listed");
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "dovetail/listed",
+            listed.to_str().unwrap(),
+        ],
+    );
+    std::fs::remove_dir_all(&listed).unwrap();
+    for name in ["lost", "listed"] {
+        let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+        let mut agent = dovetail_api::Agent {
+            id: AgentId(format!("slice-{name}")),
+            name: name.into(),
+            kind: AgentKind::Slice,
+            parent: None,
+            task: None,
+            worktree: Some(dovetail_api::WorktreeRef {
+                path: paths.worktrees("p").join(name),
+                branch: format!("dovetail/{name}"),
+            }),
+            status: dovetail_api::AgentStatus::Idle,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: None,
+            last_activity_ms: 0,
+            lock: dovetail_api::SessionLock::Headless,
+        };
+        agent.status_line.clear();
+        db.upsert_agent(dovetail_core::db::AgentRow {
+            agent,
+            session_id: None,
+            transcript_path: None,
+            task_list_id: None,
+            created_ms: 0,
+        })
+        .wait()
+        .expect("agent");
+    }
+    // Two worktrees no agent owns, one with an unpushed commit.
+    std::fs::create_dir_all(paths.worktrees("p")).unwrap();
+    for name in ["orphan", "spare"] {
+        let wt = paths.worktrees("p").join(name);
+        let branch = format!("dovetail/{name}");
+        git(
+            &repo,
+            &["worktree", "add", "-q", "-b", &branch, wt.to_str().unwrap()],
+        );
+    }
+    std::fs::write(paths.worktrees("p").join("orphan/new.txt"), "x").unwrap();
+    git(&paths.worktrees("p").join("orphan"), &["add", "."]);
+    git(
+        &paths.worktrees("p").join("orphan"),
+        &["commit", "-qm", "work"],
+    );
+
+    // Two plain folders: "junk" holds two files; "swapped" is replaced after it is inspected.
+    for name in ["junk", "swapped"] {
+        let dir = paths.worktrees("p").join(name);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        std::fs::write(dir.join("sub/b.txt"), "b").unwrap();
+    }
+
+    let mut h = Harness::start_in(fixture("plain_turn"), paths.clone(), Some(repo.clone()));
+    h.wait_for("the sweep", |s| {
+        s.activity.iter().any(|a| a.text.contains("lost archived: its worktree is gone"))
+            && s.inbox
+                .iter()
+                .filter(|i| matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == dovetail_api::REMOVE_WORKTREE_PERMISSION))
+                .count()
+                == 4
+    });
+    assert!(!h.snap.agents.iter().any(|a| a.name == "lost"));
+    assert!(
+        h.snap.agents.iter().any(|a| a.name == "listed"),
+        "kept: git still lists it"
+    );
+    let item = |s: &Snapshot, name: &str| {
+        s.inbox
+            .iter()
+            .find(|i| i.agent.0 == format!("worktree:{name}"))
+            .map(|i| (i.id, i.kind.clone()))
+    };
+    let (orphan, kind) = item(&h.snap, "orphan").expect("orphan item");
+    match kind {
+        InboxKind::Permission { input, .. } => assert_eq!(input["unpushed_commits"], 1),
+        other => panic!("{other:?}"),
+    }
+    let (spare, _) = item(&h.snap, "spare").expect("spare item");
+    let (junk, kind) = item(&h.snap, "junk").expect("junk item");
+    match kind {
+        InboxKind::Permission { input, .. } => assert_eq!(input["files"], 2),
+        other => panic!("{other:?}"),
+    }
+    // Replaced since it was inspected: `y` leaves it alone.
+    let (swapped, _) = item(&h.snap, "swapped").expect("swapped item");
+    let swapped_dir = paths.worktrees("p").join("swapped");
+    std::fs::remove_dir_all(&swapped_dir).unwrap();
+    std::fs::create_dir_all(&swapped_dir).unwrap();
+    h.send(Command::AnswerPermission {
+        item: swapped,
+        answer: PermissionAnswer::Allow,
+    });
+    h.send(Command::AnswerPermission {
+        item: junk,
+        answer: PermissionAnswer::Allow,
+    });
+    h.wait_for("the swapped folder left alone", |s| {
+        s.activity
+            .iter()
+            .any(|a| a.text.contains("swapped: changed since Dovetail asked"))
+            && s.activity.iter().any(|a| a.text == "worktree junk removed")
+    });
+    assert!(swapped_dir.exists());
+    assert!(!paths.worktrees("p").join("junk").exists(), "removed on y");
+    // y removes; d keeps and is remembered.
+    h.send(Command::AnswerPermission {
+        item: orphan,
+        answer: PermissionAnswer::Allow,
+    });
+    h.send(Command::AnswerPermission {
+        item: spare,
+        answer: PermissionAnswer::Deny { message: None },
+    });
+    h.wait_for("removal and keep", |s| {
+        s.activity
+            .iter()
+            .any(|a| a.text == "worktree orphan removed")
+            && s.activity
+                .iter()
+                .any(|a| a.text.contains("worktree spare kept"))
+    });
+    assert!(!paths.worktrees("p").join("orphan").exists());
+    assert!(
+        paths.worktrees("p").join("spare").exists(),
+        "never deleted without y"
+    );
+    let _state = h.quit();
+
+    let mut h = Harness::start_in(fixture("plain_turn"), paths.clone(), Some(repo));
+    h.drain(Duration::from_millis(500));
+    assert!(
+        item(&h.snap, "spare").is_none(),
+        "a kept worktree is not asked about again"
+    );
+    h.quit();
+}
+
+#[test]
+fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    prompt(&h, "hello");
+    h.send(Command::NewSlice {
+        task: None,
+        name: "later".into(),
+        brief: "go".into(),
+    });
+    // Both sessions have run once their replies are in.
+    h.wait_for("both sessions to have run", |s| {
+        ["coordinator", "slice-later"].iter().all(|a| {
+            s.conversations
+                .get(&AgentId((*a).into()))
+                .is_some_and(|t| t.entries.iter().any(|e| e.text == "alpha"))
+        })
+    });
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.drain(Duration::from_millis(300));
+    let names = |fake: &FakeDriver| -> Vec<(String, bool)> {
+        fake.started_specs()
+            .iter()
+            .map(|s| (s.name.clone().unwrap_or_default(), s.resume))
+            .collect()
+    };
+    assert_eq!(names(&fake), vec![("coordinator".to_string(), true)]);
+    h.send(Command::Prompt {
+        agent: AgentId("slice-later".into()),
+        text: "carry on".into(),
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while names(&fake).len() < 2 {
+        assert!(Instant::now() < deadline, "{:?}", names(&fake));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(names(&fake)[1], ("later".to_string(), true));
+    h.quit();
+}
+
+/// Live rehearsal 2026-11-06: two "slice ready" notes sent mid-turn were folded into the
+/// running turn (both echoed before its one `result`); the coordinator stayed "working".
+#[test]
+fn inputs_folded_into_the_running_turn_end_with_its_result() {
+    // Out line 13 is the echo of the first note; hold before it so the notes can be sent.
+    let fake = fixture("merged_inputs").with_options(ReplayOptions {
+        pause_before: vec![13],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "create tasks and start two slices");
+    h.wait_for("the turn to reach the notes", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.kind == EntryKind::ToolSummary))
+    });
+    prompt(&h, "slice a1 ready");
+    prompt(&h, "slice b1 ready");
+    h.wait_for("both notes sent", |_| {
+        fake.sent()
+            .iter()
+            .filter(|s| matches!(s, Sent::User(_)))
+            .count()
+            == 3
+    });
+    fake.resume();
+    h.wait_for("the one result to end the turn", |s| {
+        finished_turns(s) == 1
+            && s.agents.iter().any(|a| {
+                a.kind == AgentKind::Coordinator && a.status != dovetail_api::AgentStatus::Working
+            })
+    });
+    h.quit();
+}
+
+/// Raises a pending `start_slice` approval: the coordinator to acceptEdits, a task, the call.
+fn pending_start(h: &mut Harness) {
+    h.send(Command::CyclePermissionMode {
+        agent: AgentId(COORDINATOR.into()),
+    });
+    h.send(Command::CreateTask(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+    }));
+    h.wait_for("mode and task", |s| {
+        !s.tasks.is_empty()
+            && s.agents
+                .iter()
+                .any(|a| a.permission_mode == PermissionMode::AcceptEdits)
+    });
+    let (text, _) = result_text(socket_call(
+        &h.socket(),
+        tool(
+            COORDINATOR,
+            Tool::StartSlice(StartSlice {
+                task: TaskId(1),
+                name: "later".into(),
+                brief: "go".into(),
+            }),
+        ),
+    ));
+    assert!(text.starts_with("pending"), "{text}");
+}
+
+fn sent_users(fake: &FakeDriver) -> Vec<String> {
+    fake.sent()
+        .into_iter()
+        .filter_map(|s| match s {
+            Sent::User(t) => Some(t),
+            _ => None,
+        })
+        .collect()
+}
+
+const EXPIRED: &str = "start_slice later expired at restart; call it again if still needed";
+
+#[test]
+fn a_start_slice_approval_pending_at_quit_is_answered_after_reopen() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    pending_start(&mut h);
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !sent_users(&fake).contains(&EXPIRED.to_string()) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    h.drain(Duration::from_millis(100));
+    assert!(
+        !h.snap
+            .activity
+            .iter()
+            .any(|a| a.text.contains("request expired")),
+        "Dovetail's own approval is not logged as an expired request"
+    );
+    h.quit();
+}
+
+#[test]
+fn notes_for_a_coordinator_cut_off_by_a_restart_wait_for_the_users_next_message() {
+    let mut h = Harness::start(held_turn(), true, Config::default());
+    pending_start(&mut h);
+    prompt(&h, "rename the flag");
+    h.wait_for("the turn to start", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "working on it"))
+    });
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths.clone());
+    h.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
+    h.drain(Duration::from_millis(200));
+    assert!(
+        sent_users(&fake).is_empty(),
+        "nothing continues it: {:?}",
+        fake.sent()
+    );
+    prompt(&h, "carry on");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while sent_users(&fake).len() < 2 {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        sent_users(&fake),
+        vec![EXPIRED.to_string(), "carry on".to_string()]
+    );
+    let _state = h.quit();
+    // Delivered, so not sent again on the next open.
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.drain(Duration::from_millis(300));
+    assert!(!sent_users(&fake).contains(&EXPIRED.to_string()));
+    h.quit();
+}
+
+#[test]
+fn a_turn_that_ends_normally_during_quit_is_not_reported_as_cut_off() {
+    let fake = held_turn();
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "rename the flag");
+    h.wait_for("the turn to start", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "working on it"))
+    });
+    // Quit while the turn runs; its result arrives inside the quit window.
+    h.send(Command::Quit { end_sessions: true });
+    std::thread::sleep(Duration::from_millis(100));
+    fake.resume();
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let mut h = Harness::start_on(fixture("plain_turn"), paths);
+    h.drain(Duration::from_millis(300));
+    assert!(cut_off_text(&h.snap).is_none(), "{:#?}", h.snap.inbox);
     h.quit();
 }

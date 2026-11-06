@@ -411,8 +411,9 @@ CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms 
 - M6 `0002_agents_conversation`
 - M7 `0003_inbox_activity`
 - Wave 2 `0004_slice_queue` (queued slice starts survive a restart, decided 2026-11-06)
-- M11 `0005_todos`
-- M15 `0006_maps`
+- M10 `0005_restart_state` (held coordinator notes, kept unowned worktrees)
+- M11 `0006_todos`
+- M15 `0007_maps`
 
 Tables arrive with the milestone that uses them, so no unused tables sit around.
 
@@ -554,14 +555,20 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 
 ### M10. Resume, stable install, rehearsal — **SELF-HOSTING POINT**
 - **Scope:** restore on open (coordinator immediately, slices on first touch). Pending inbox items reconciled after restart. A stale-state sweep for agents and worktrees. Stable install (`cargo install --path crates/dovetail --root ~/.local`), with hook and MCP paths using the installed path, not `target/`. `docs/self-hosting.md` covering the daily flow, upgrades and recovery.
+- **Decided 2026-11-06:**
+  1. **Cut-off turns.** A turn cut off by quit, kill or crash raises a Needs-you item on reopen, "<agent>'s turn was cut off by a restart", with the last user prompt as its preview. The agent is never continued automatically.
+  2. **In-flight items.** Pending permission requests leave Needs you at restart and become one Activity note each ("Write a.txt: request expired at restart"). Pending `ask_user` questions, blocking or not, stay in Needs you; answering one sends the agent a normal user message, "Answer to your question '<q>': <answer>", resuming it if needed.
+  3. **Upgrades.** `scripts/install.sh` runs `cargo install --path crates/dovetail --root ~/.local` and refuses while a Dovetail app runs ("close Dovetail first"). Hook and MCP config always use the running binary's path (`std::env::current_exe`), so the installed app never points at `target/`.
+  4. **Stale-state sweep on open.** An agent whose worktree directory is gone is archived with an Activity note. A worktree under Dovetail's worktrees directory that no agent owns raises one "Remove worktree" item (branch, unpushed commits, uncommitted changes); `y` removes it, `d` keeps it and records that, so it is not asked again. Nothing is deleted without `y`.
 - **Done when:**
-  - [ ] **Rehearsal in a scratch repo:** from the installed binary, chat with the coordinator, start two slices, answer one permission and one `ask_user`, have a slice commit, quit, reopen, carry on in the same conversations
-  - [ ] Killing the app mid-turn loses no state, and the next open recovers
-  - [ ] Rebuilding `target/` can't break running sessions
+  - [x] **Rehearsal in a scratch repo:** from the installed binary, chat with the coordinator, start two slices, answer one permission and one `ask_user`, have a slice commit, quit, reopen, carry on in the same conversations
+  - [x] Killing the app mid-turn loses no state, and the next open recovers
+  - [x] Rebuilding `target/` can't break running sessions
+  - Rehearsal run by the integrator on 2026-11-06 against real Claude Code from a scratch install: two slices, one permission, one `ask_user`, a slice commit, quit and reopen (both conversations resumed with context, slices on first touch), `kill -9` mid-turn (no Claude process left; reopen raised the cut-off item). Hook and MCP paths pointed at the installed binary. A partial reply cut off by the kill is not kept in the conversation; Claude Code's own transcript has it. The missed redraw seen once in the first attempt did not reproduce.
   - [ ] Then repeated once on this repo, with your OK
 - **Tests:** restore logic with `FakeDriver`, inbox reconciliation, kill and reopen
 
-**From this point:** work runs inside Dovetail, using the installed release. Slices keep their own worktrees, and you still approve each milestone before the next starts. Dev builds in a slice must set separate `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `XDG_RUNTIME_DIR`, never touching your live state. If Dovetail breaks, plain `claude` in the repo still works, since everything is ordinary git.
+**From this point:** work runs inside Dovetail, using the installed release. Slices keep their own worktrees, and you still approve each milestone before the next starts. Dev builds in a slice must use separate data, config, state and runtime directories, never touching your live state. *As built (M10): through Dovetail's own `DOVETAIL_DATA_DIR`, `DOVETAIL_CONFIG_DIR`, `DOVETAIL_STATE_DIR` and `DOVETAIL_RUNTIME_DIR`, set per worktree by the recipe's `[env]` (`{worktree}`, `{worktree_hash}` placeholders), not `XDG_*`, which the slice's Claude Code session would inherit too (its files and messaging sockets would move). The worktree hook and MCP bridge are pinned to the live directories in the launch files.* If Dovetail breaks, plain `claude` in the repo still works, since everything is ordinary git.
 
 ### M11. Subagents and to-do lists
 - **Scope:** subagents as tree nodes from `parent_tool_use_id` and `task_*`, progress, cost, unchanged subagent worktree removal, native list reading with reread on parse error, item-to-agent mapping, lists deleted on archive.

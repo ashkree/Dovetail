@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use dovetail_api::tools::env;
+
 /// Base directories, resolved once from the environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
@@ -16,8 +18,34 @@ pub struct Paths {
 }
 
 impl Paths {
-    /// Resolve from `XDG_*` and `HOME`, with the XDG defaults.
+    /// Resolve from `XDG_*` and `HOME`, with the XDG defaults. Each `DOVETAIL_*_DIR`
+    /// (`dovetail_api::tools::env`) replaces one whole directory, for dev builds in a slice.
     pub fn from_env() -> Self {
+        let mut paths = Self::from_xdg();
+        let over = |var: &str, dir: &mut PathBuf| {
+            if let Some(v) = std::env::var_os(var).filter(|v| !v.is_empty()) {
+                *dir = PathBuf::from(v);
+            }
+        };
+        over(env::DATA_DIR, &mut paths.data);
+        over(env::CONFIG_DIR, &mut paths.config);
+        over(env::STATE_DIR, &mut paths.state);
+        over(env::RUNTIME_DIR, &mut paths.runtime);
+        paths
+    }
+
+    /// The four directories as `DOVETAIL_*_DIR` variables, to pin a child process (the worktree
+    /// hook, the MCP bridge) to this app's state whatever its session's environment says.
+    pub fn pinned_env(&self) -> Vec<(&'static str, PathBuf)> {
+        vec![
+            (env::DATA_DIR, self.data.clone()),
+            (env::CONFIG_DIR, self.config.clone()),
+            (env::STATE_DIR, self.state.clone()),
+            (env::RUNTIME_DIR, self.runtime.clone()),
+        ]
+    }
+
+    fn from_xdg() -> Self {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_default();

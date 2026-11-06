@@ -3,7 +3,7 @@
 # Safe to re-run: it never overwrites files you have already edited.
 #
 #   scripts/bootstrap.sh            # set up dirs, install role prompts, check tools
-#   scripts/bootstrap.sh --force    # also overwrite installed role prompts with the repo's
+#   scripts/bootstrap.sh --force    # also overwrite installed role prompts and the recipe
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,8 +42,9 @@ echo "Project recipe for Dovetail itself"
 project_id="$(basename "$repo_root" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
 [[ -n "$project_id" ]] || project_id="project"
 recipe="$config/projects/$project_id.toml"
-if [[ -e "$recipe" ]]; then
-  ok "kept existing $recipe"
+if [[ -e "$recipe" && $force -eq 0 ]]; then
+  if cmp -s "$repo_root/config/projects/dovetail.toml" "$recipe"; then ok "$recipe (up to date)"
+  else warn "$recipe differs from the repo's copy; kept yours (--force to replace)"; fi
 else
   cp "$repo_root/config/projects/dovetail.toml" "$recipe"
   ok "installed $recipe (project id: $project_id)"
