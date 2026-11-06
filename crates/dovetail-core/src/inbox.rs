@@ -376,7 +376,7 @@ impl Core {
                 name: agent.0.clone(),
                 source,
             })?;
-        live.turn.running = true;
+        live.turn.input_sent();
         self.add_entry(agent, dovetail_api::EntryKind::User, shown);
         self.refresh_status(agent);
         Ok(())

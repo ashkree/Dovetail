@@ -186,6 +186,56 @@ fn finished_turns(s: &Snapshot) -> usize {
 }
 
 #[test]
+fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result() {
+    // Two inputs, two results; the replay holds before each result so the state in between
+    // can be checked.
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"one"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"one","total_cost_usd":0.01}"#,
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"two"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"two","total_cost_usd":0.02}"#,
+    ];
+    let fake = FakeDriver::from_ndjson(&lines.join("\n"))
+        .expect("fixture")
+        .with_options(ReplayOptions {
+            pause_before: vec![2, 3],
+            ..ReplayOptions::default()
+        });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "first");
+    prompt(&h, "second");
+    h.wait_for("both inputs and the first reply", |s| {
+        let entries = s.conversations.get(&AgentId(COORDINATOR.into()));
+        entries.is_some_and(|t| {
+            t.entries
+                .iter()
+                .filter(|e| e.kind == EntryKind::User)
+                .count()
+                == 2
+                && t.entries.iter().any(|e| e.text == "one")
+        })
+    });
+    fake.resume();
+    h.wait_for("the first result", |s| {
+        s.agents.iter().any(|a| (a.cost_usd - 0.01).abs() < 1e-9)
+    });
+    // The second input is still queued: not idle, and no finished turn yet.
+    assert_eq!(finished_turns(&h.snap), 0);
+    let coordinator = h
+        .snap
+        .agents
+        .iter()
+        .find(|a| a.kind == AgentKind::Coordinator)
+        .unwrap();
+    assert_eq!(coordinator.status, dovetail_api::AgentStatus::Working);
+    fake.resume();
+    h.wait_for("the second result", |s| finished_turns(s) == 1);
+    h.quit();
+}
+
+#[test]
 fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     let fake = fixture("plain_turn");
     let mut h = Harness::start(fake.clone(), true, Config::default());

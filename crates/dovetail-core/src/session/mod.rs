@@ -215,7 +215,7 @@ impl Core {
         live.session
             .send(UserInput::text(text))
             .map_err(|source| SessionError::Driver { name, source })?;
-        live.turn.running = true;
+        live.turn.input_sent();
         self.add_entry(id, shown, shown_text);
         self.refresh_status(id);
         Ok(())
@@ -557,6 +557,7 @@ impl Core {
         let preview: String = live.turn.last_text.chars().take(200).collect();
         live.turn.end();
         let background = live.turn.background;
+        let more_queued = live.turn.running;
         if let Some(cost) = result.total_cost_usd {
             self.update_agent(agent, |row| row.agent.cost_usd = base + cost);
         }
@@ -576,8 +577,9 @@ impl Core {
             let detail = result.result.unwrap_or(result.subtype);
             self.notice(agent, format!("The turn ended with an error: {detail}"));
         }
-        // Rule 2: with background work left, this is not the end (ADR 0001: no item yet).
-        if background == 0 {
+        // Rule 2: with background work or a queued input left, this is not the end (ADR 0001:
+        // no item yet).
+        if background == 0 && !more_queued {
             self.finished_turn(agent, preview);
         }
         self.refresh_status(agent);
