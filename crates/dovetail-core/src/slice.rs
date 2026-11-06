@@ -63,13 +63,6 @@ impl Core {
 
     /// Everything that makes a request impossible, checked before asking anyone.
     pub(crate) async fn check_slice(&self, request: &SliceRequest) -> Result<(), String> {
-        if self.project.registered().is_none() {
-            return Err(
-                "this folder is not a Dovetail project yet: add it first (`:project add`, \
-                        or the coordinator's `add_project`)"
-                    .into(),
-            );
-        }
         let name = request.name.trim();
         worktree::validate_name(name).map_err(|e| {
             format!("{e}: use letters, digits, `-`, `_` or `.`, not starting with `.` or `-`")
@@ -140,12 +133,12 @@ impl Core {
     }
 
     async fn start_slice(&mut self, request: SliceRequest) -> Result<(), String> {
-        let Some(project) = self.project.registered().cloned() else {
-            return Err("this folder is not a Dovetail project yet".into());
-        };
+        // A folder that is not a project yet may run slices too; their state is kept with the
+        // rest on registration (ADR 0005, decided 2026-11-06).
+        let repo_path = self.project.repo_path().to_path_buf();
         let name = request.name.trim().to_owned();
         let id = slice_id(&name);
-        let git = projects::has_git(&project.repo_path);
+        let git = projects::has_git(&repo_path);
         let task = match request.task {
             Some(t) => self.task(t).await,
             None => None,
@@ -157,7 +150,7 @@ impl Core {
                 "This project has no git repository, so you have no worktree: you work in the \
                  shared project folder `{}`, together with the coordinator and any other slices. \
                  Change only the files your brief gives you.\n\n",
-                project.repo_path.display()
+                repo_path.display()
             ));
         }
         if let Some(task) = &task {
@@ -195,7 +188,7 @@ impl Core {
                 .await;
         }
 
-        let cwd = project.repo_path.clone();
+        let cwd = repo_path.clone();
         if git {
             worktree::clear_hook_outcome(&self.paths, self.project.key(), &name);
         }
@@ -379,7 +372,13 @@ impl Core {
         }
         let name = row.agent.name.clone();
         let paths = self.paths.clone();
-        let key = self.project.key().to_owned();
+        // A worktree made before registration stays under the old key: use its recorded path.
+        let key = row
+            .agent
+            .worktree
+            .as_ref()
+            .and_then(|w| worktree::project_of(&paths, &w.path))
+            .unwrap_or_else(|| self.project.key().to_owned());
         let repo = self.project.repo_path().to_path_buf();
         let inputs = self.inputs.clone();
         let agent = agent.clone();

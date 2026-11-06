@@ -28,8 +28,6 @@ pub const RECORD_ENV: &str = "DOVETAIL_RECORD_STREAMS";
 pub struct Launch {
     /// Project id, or the app's key for an unregistered folder.
     pub project_key: String,
-    /// Whether the project is registered (the worktree hook needs its id).
-    pub registered: bool,
     /// Agent id, also the run directory's name.
     pub agent_id: String,
     /// Display name, `--name`, and the name other sessions message it by.
@@ -115,10 +113,10 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
         ),
         (env::AGENT_ID.into(), launch.agent_id.clone()),
     ];
-    if launch.registered {
-        spec.env
-            .push((env::PROJECT.into(), launch.project_key.clone()));
-    }
+    // The worktree hook names worktrees and finds the recipe by it (`new-<pid>` before
+    // registration: no recipe then).
+    spec.env
+        .push((env::PROJECT.into(), launch.project_key.clone()));
     spec.env.extend(launch.env.iter().cloned());
     if std::env::var(RECORD_ENV).is_ok_and(|v| v == "1") {
         spec.log_path = Some(dir.join(format!("stream-{}.ndjson", crate::db::now_ms())));

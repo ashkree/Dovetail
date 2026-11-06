@@ -87,8 +87,7 @@ impl Core {
             .clone();
         let resume = row.transcript_path.is_some();
         let row = row.clone();
-        let registered = self.project.registered().is_some();
-        let env = if registered && row.agent.kind == AgentKind::Slice {
+        let env = if row.agent.kind == AgentKind::Slice {
             Recipe::load(&self.paths.recipe(self.project.key()))
                 .map(|r| r.env.into_iter().collect())
                 .unwrap_or_default()
@@ -97,7 +96,6 @@ impl Core {
         };
         let launch = launch::Launch {
             project_key: self.project.key().to_owned(),
-            registered,
             agent_id: id.0.clone(),
             name: row.agent.name.clone(),
             role,

@@ -543,6 +543,17 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
         !h.paths.data.join("projects").exists(),
         "nothing written yet"
     );
+    // A slice may start before the folder is a project (decided 2026-11-06).
+    h.send(Command::NewSlice {
+        task: None,
+        name: "early".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the early slice's brief", |s| {
+        s.conversations
+            .get(&AgentId("slice-early".into()))
+            .is_some_and(|t| !t.entries.is_empty())
+    });
     let path = h.repo.clone();
     h.send(Command::RegisterProject { path });
     h.wait_for("registration", |s| {
@@ -583,7 +594,12 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
         settings.starts_with(h.paths.state.join("run").join("work")),
         "{settings:?}"
     );
-    h.quit();
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    // The slice started before registration was written to the project's state.db.
+    let db = dovetail_core::db::Db::open(&paths, Some("work")).expect("db");
+    let agents = db.load_agents().wait().expect("agents");
+    assert!(agents.iter().any(|r| r.agent.name == "early"), "{agents:?}");
 }
 
 #[test]

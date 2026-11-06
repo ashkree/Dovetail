@@ -176,6 +176,15 @@ pub fn branch_name(name: &str) -> String {
     format!("{BRANCH_PREFIX}{name}")
 }
 
+/// The project key a worktree path was made under (`<data>/projects/<key>/worktrees/<name>`),
+/// so a worktree made before registration is found where it is.
+pub fn project_of(paths: &Paths, worktree: &Path) -> Option<String> {
+    let rest = worktree.strip_prefix(paths.data.join("projects")).ok()?;
+    let mut parts = rest.components();
+    let key = parts.next()?.as_os_str().to_string_lossy().into_owned();
+    (parts.next()?.as_os_str() == "worktrees").then_some(key)
+}
+
 /// Path of the worktree.
 pub fn worktree_path(paths: &Paths, project: &str, name: &str) -> PathBuf {
     paths.worktrees(project).join(name)
