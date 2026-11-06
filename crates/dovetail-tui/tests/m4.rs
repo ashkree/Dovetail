@@ -164,7 +164,7 @@ fn colon_aliases_reach_the_same_actions_as_the_keys() {
     let mut app = app_with(world());
     type_keys(&mut app, ":inbox");
     app.on_key(enter(), 9);
-    assert_eq!(app.focus(), RegionId::LeftBottom);
+    assert_eq!(app.focus(), RegionId::SideBottom);
     type_keys(&mut app, ":activity");
     app.on_key(enter(), 19);
     assert_eq!(app.focus(), RegionId::Main);
@@ -296,7 +296,7 @@ fn leader_t_opens_capture_and_enter_saves_with_its_tokens() {
     assert_eq!(app.mode(), Mode::Normal);
     assert_eq!(
         app.focus(),
-        RegionId::LeftTop,
+        RegionId::SideTop,
         "saving returns to where you were"
     );
 }
@@ -488,7 +488,7 @@ fn esc_closes_the_switcher_and_changes_nothing() {
     leader(&mut app, "ss");
     app.on_key(esc(), 50);
     assert_eq!(app.mode(), Mode::Normal);
-    assert_eq!(app.focus(), RegionId::LeftTop);
+    assert_eq!(app.focus(), RegionId::SideTop);
     assert!(!render(&mut app, 120, 40).contains("Preview"));
 }
 
@@ -539,7 +539,7 @@ fn choosing_an_inbox_item_in_the_finder_jumps_to_it() {
     leader(&mut app, " ");
     type_keys(&mut app, "Finished");
     app.on_key(enter(), 50);
-    assert_eq!(app.focus(), RegionId::LeftBottom);
+    assert_eq!(app.focus(), RegionId::SideBottom);
     // The finished turn is the selected item now: `x` dismisses it.
     assert_eq!(
         press(&mut app, "x"),
@@ -618,7 +618,7 @@ fn a_task_with_notes_shows_them_and_one_without_says_so() {
     let screen = render(&mut app, 120, 40);
     assert!(screen.contains("Eval lives in apps/backend."));
     app.on_key(esc(), 1);
-    app.on_key(key('h'), 2);
+    app.on_key(key('l'), 2);
     select(&mut app, "idea: eval key flow");
     app.on_key(enter(), 3);
     assert!(render(&mut app, 120, 40).contains("(no notes)"));
@@ -758,7 +758,7 @@ fn search_in_the_conversation_scrolls_to_the_match() {
     );
     snap.agents[0].status = AgentStatus::Idle;
     let mut app = app_with(snap);
-    app.on_key(key('l'), 0);
+    app.on_key(key('h'), 0);
     render(&mut app, 120, 20);
     type_keys(&mut app, "gg");
     render(&mut app, 120, 20);

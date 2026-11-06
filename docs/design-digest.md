@@ -25,7 +25,7 @@ Spike results were measured on Claude Code **2.1.312** (Oct 29, 2026). Re-check 
 | 12, 12a–c | Worktrees | Strictly one worktree per slice session; coordinator in the main checkout; subagents share the parent's unless Claude isolates them. Created by a `WorktreeCreate` hook passed in `--settings`, under Dovetail's project folder; sessions still start with `--worktree`. Per-project recipe: files to **symlink** (never copy) + optional setup command; slice starts only after setup succeeds |
 | 13 | Editor / file tree | Deferred |
 | 14a / 14b | Switcher | Telescope-style `<leader>ss`, Dovetail's agents only; `<leader><Tab>` alternate agent |
-| **15** | **Default layout** | **Layout B: task tree over the inbox on the left; conversation full height on the right** |
+| **15** | **Default layout** | **Layout B: task tree over the inbox on the right; conversation full height on the left** (placement flipped by ADR 0006) |
 | 15 (perm.) | Permission mode | Every session starts with `--permission-mode auto`; `<leader>sm` cycles auto → acceptEdits → manual via the control protocol (no restart); badge on non-auto agents; if init reports non-auto, run manual and warn in the status bar |
 | 16 | Extra views | Board (kanban by status) `<leader>b`, worktree view `<leader>g`, focus mode `<leader>z` (coordinator only) — buffers in the main region |
 | 16a–c | Readability | Blank rows between blocks, 120-col reading column; bold/italic/code each keep style + get a colour, off-white body; transparent by default, solid-background toggle, auto-on in focus mode |
@@ -142,6 +142,7 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 ## 10. UI essentials
 
 - **Layout B** (Decision 15 — supersedes the UI brief's sketch):
+  The sketch shows the tree on the left; the app mirrors it (ADR 0006).
 
 ```
 ┌ tasks ──────────────────┬ coordinator ──────────────┐

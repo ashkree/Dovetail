@@ -134,7 +134,7 @@ impl App {
             PickerKey::Agent(id) => self.open_agent_in_main(id),
             PickerKey::Task(id) => self.open_task(id),
             PickerKey::Inbox(id) => {
-                self.regions.set_focus(RegionId::LeftBottom);
+                self.regions.set_focus(RegionId::SideBottom);
                 self.buffers.inbox.select_item(&self.snap, id);
             }
         }

@@ -50,6 +50,8 @@ I run several Claude Code agents in parallel and lose track of them. Dovetail's 
 
 ## Layout (fixed, v1)
 
+The sketch shows the tree on the left; the app mirrors it (conversation left, tree over inbox right, ADR 0006).
+
 ```
 ┌ tasks ──────────────────┬ coordinator ──────────────┐
 │ ◐ ◆ coordinator         │ you · 10:14               │
@@ -66,9 +68,9 @@ I run several Claude Code agents in parallel and lose track of them. Dovetail's 
 └─────────────────────────────────────────────────────┘
 ```
 
-- **Left, top:** the task tree. Project, then tasks, then each task's agents (with the branch under each slice), then each agent's to-do items. A background subagent shows as one node with a progress indicator.
-- **Left, bottom:** the inbox ("Needs you").
-- **Right:** a conversation buffer, full height. It shows the **coordinator** by default and switches when I open another agent.
+- **Right, top:** the task tree. Project, then tasks, then each task's agents (with the branch under each slice), then each agent's to-do items. A background subagent shows as one node with a progress indicator.
+- **Right, bottom:** the inbox ("Needs you").
+- **Left:** a conversation buffer, full height. It shows the **coordinator** by default and switches when I open another agent.
 - **Status bar:** mode, project, task count, live agent count, "needs you" count, total memory, and the coordinator's context fill (e.g. `ctx 62%`).
 - **Context fill colors** (status bar for the coordinator, next to each slice session in the tree; not for subagents): normal up to 60%, amber 60–80%, red above 80%.
 - **Task tree grouping:** the tree groups tasks into `Unsorted` (when not empty), `Now`, `Next`, `Later` as described in the data model; the coordinator row stays at the top.
@@ -171,7 +173,7 @@ A which-key popup (press Space, wait, see the bindings) is planned for later. Bu
 ## Milestones for this session (adjust order if you see a better one)
 
 1. Workspace skeleton, event loop, mode state machine, status bar.
-2. Fixed layout (tree over inbox, conversation on the right) and focus movement.
+2. Fixed layout (conversation on the left, tree over inbox on the right) and focus movement.
 3. Task tree buffer on mock data, with expand/collapse, glyphs, branch lines and live updates from `MockCore`.
 4. Inbox buffer, with inline approval keys and the preview.
 5. Conversation buffer, with Insert mode sending to the mock and a streamed mock reply.

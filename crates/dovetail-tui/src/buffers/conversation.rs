@@ -254,6 +254,7 @@ impl Buffer for ConversationBuffer {
             None => "no agent".into(),
         };
         let inner = pane(frame, area, title(&heading, focused, theme), focused, theme);
+        let inner = crate::theme::CHAT_PADDING.shrink(inner);
 
         // Bottom: a rule, then the chat input or a hint.
         let input_rows = self.chat.as_ref().map_or(1, |c| {

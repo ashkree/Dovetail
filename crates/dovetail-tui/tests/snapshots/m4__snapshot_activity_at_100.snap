@@ -3,26 +3,26 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 24)"
 ---
  folder /src/business
-┌ tasks · business ────────────────────┐┌ activity · today ────────────────────────────────────────┐
-│ ◐ ◆ coordinator   working 1.2G $3.10 ││ 10:10  ·   morning review applied                        │
-│ ▾ Now (2)                            ││ 10:03  CI  slice-4  #1231 CI passed                      │
-│ ▾ ⚠ business surface P1     PR #1231 ││ 09:45  PR  slice-4  pushed to #1231                      │
-│   ▾ ◐ ◆ slice-4  edits   working 71% ││                                                          │
-│         ⎇ dovetail/slice-4           ││                                                          │
-│         ✓ write route tests          ││                                                          │
-│         ◐ wire handler to registry   ││                                                          │
-│         ○ update OpenAPI spec ⊘ blo… ││                                                          │
-│       ✓ ◇ rebase          done $0.21 ││                                                          │
-│       ◐ ◇ explore c… 12 tools · Grep ││                                                          │
-│ ⏎ open · o fold · dd archive         ││                                                          │
-└──────────────────────────────────────┘│                                                          │
-┌ inbox · needs you (3) ───────────────┐│                                                          │
-│ ▸ ⚠ slice-7  Bash              10:15 ││                                                          │
-│   │ FS_EVAL_VIRTUAL_KEY=dev cargo    ││                                                          │
-│   │ test -p api get_decision         ││                                                          │
-│   │ A → always allow: Bash(cargo     ││                                                          │
-│   │ test:*)                          ││                                                          │
-│   ? slice-4  Question          10:12 ││                                                          │
-│ y allow · d deny · r reply · x dism… ││ ⏎ open agent · / search · esc back                       │
-└──────────────────────────────────────┘└──────────────────────────────────────────────────────────┘
+┌ activity · today ────────────────────────────────────────┐┌ tasks · business ────────────────────┐
+│ 10:10  ·   morning review applied                        ││ ◐ ◆ coordinator   working 1.2G $3.10 │
+│ 10:03  CI  slice-4  #1231 CI passed                      ││ ▾ Now (2)                            │
+│ 09:45  PR  slice-4  pushed to #1231                      ││ ▾ ⚠ business surface P1     PR #1231 │
+│                                                          ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│                                                          ││         ⎇ dovetail/slice-4           │
+│                                                          ││         ✓ write route tests          │
+│                                                          ││         ◐ wire handler to registry   │
+│                                                          ││         ○ update OpenAPI spec ⊘ blo… │
+│                                                          ││       ✓ ◇ rebase          done $0.21 │
+│                                                          ││       ◐ ◇ explore c… 12 tools · Grep │
+│                                                          ││ ⏎ open · o fold · dd archive         │
+│                                                          │└──────────────────────────────────────┘
+│                                                          │┌ inbox · needs you (3) ───────────────┐
+│                                                          ││ ▸ ⚠ slice-7  Bash              10:15 │
+│                                                          ││   │ FS_EVAL_VIRTUAL_KEY=dev cargo    │
+│                                                          ││   │ test -p api get_decision         │
+│                                                          ││   │ A → always allow: Bash(cargo     │
+│                                                          ││   │ test:*)                          │
+│                                                          ││   ? slice-4  Question          10:12 │
+│ ⏎ open agent · / search · esc back                       ││ y allow · d deny · r reply · x dism… │
+└──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command

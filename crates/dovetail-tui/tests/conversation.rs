@@ -17,7 +17,7 @@ fn reading_app() -> dovetail_tui::App {
         .insert(agent_id("coordinator"), rich_conversation(NOW_MS));
     snap.agents[0].status = AgentStatus::Idle;
     let mut app = app_with(snap);
-    app.on_key(key('l'), 0);
+    app.on_key(key('h'), 0);
     assert_eq!(app.focus(), RegionId::Main);
     app
 }
@@ -53,10 +53,10 @@ fn a_wide_pane_centres_the_reading_column_at_120_columns() {
         .lines()
         .find(|l| l.contains("What's blocking slice-7?"))
         .expect("prompt line");
-    // Left column 98 wide, main pane 162, inside border and padding 158, column 120 wide:
-    // centred, it starts 19 cells into the pane's inner area.
+    // Side column 98 wide on the right, main pane 162 on the left; less border and inset (2)
+    // and CHAT_PADDING (2 a side) leaves 154; a 120 column centred in that starts 17 in.
     let at = line.chars().take_while(|c| *c != 'W').count();
-    assert_eq!(at, 98 + 2 + 19, "{line}");
+    assert_eq!(at, 2 + 2 + 17, "{line}");
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn long_app() -> dovetail_tui::App {
     );
     snap.agents[0].status = AgentStatus::Idle;
     let mut app = app_with(snap);
-    app.on_key(key('l'), 0);
+    app.on_key(key('h'), 0);
     app
 }
 
@@ -204,7 +204,7 @@ fn double_bracket_jumps_between_turns() {
     render(&mut app, 100, 30);
     type_keys(&mut app, "]]");
     let screen = render(&mut app, 100, 30);
-    let first_row = screen.lines().nth(2).expect("first pane row");
+    let first_row = screen.lines().nth(3).expect("first pane row");
     assert!(first_row.contains("you · "), "{first_row}");
     assert!(screen.contains("question 1"), "{screen}");
     type_keys(&mut app, "[[");
@@ -234,7 +234,7 @@ fn every_agent_keeps_its_own_place() {
     render(&mut app, 100, 30);
     // Open slice-7 and come back.
     type_keys(&mut app, " c");
-    app.on_key(key('h'), 0);
+    app.on_key(key('l'), 0);
     select(&mut app, "slice-7");
     app.on_key(enter(), 0);
     assert_eq!(app.open_agent(), Some(&agent_id("slice-7")));
@@ -289,7 +289,7 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
         }]
     );
     // Typing moved focus to the main pane; `h` goes back to the tree.
-    app.on_key(key('h'), 300);
+    app.on_key(key('l'), 300);
     select(&mut app, "slice-7");
     press(&mut app, "i");
     type_keys(&mut app, "key is dev");
@@ -437,7 +437,7 @@ fn reaching_the_top_with_older_history_asks_for_it_once() {
     snap.conversations.insert(agent_id("coordinator"), tail);
     snap.agents[0].status = AgentStatus::Idle;
     let mut app = app_with(snap);
-    app.on_key(key('l'), 0);
+    app.on_key(key('h'), 0);
     render(&mut app, 120, 20);
     type_keys(&mut app, "gg");
     assert!(render(&mut app, 120, 20).contains("↑ older history"));
@@ -462,7 +462,7 @@ fn older_history_arriving_above_keeps_the_lines_being_read_in_place() {
     snap.conversations.insert(agent_id("coordinator"), tail);
     snap.agents[0].status = AgentStatus::Idle;
     let mut app = app_with(snap);
-    app.on_key(key('l'), 0);
+    app.on_key(key('h'), 0);
     render(&mut app, 120, 14);
     type_keys(&mut app, "gg");
     app.take_commands();

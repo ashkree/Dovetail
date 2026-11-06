@@ -379,9 +379,13 @@ pub fn row_text(app: &mut App) -> String {
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw");
     let buffer = terminal.backend().buffer();
+    // The tree sits in the side column; read from its left edge.
+    let side = dovetail_tui::region::layout(buffer.area, false).side_top;
     for y in 0..buffer.area.height {
-        if buffer[(3, y)].bg != ratatui::style::Color::Reset {
-            return (0..45).map(|x| buffer[(x, y)].symbol()).collect();
+        if buffer[(side.x + 3, y)].bg != ratatui::style::Color::Reset {
+            return (side.x..side.x + 45.min(side.width))
+                .map(|x| buffer[(x, y)].symbol())
+                .collect();
         }
     }
     String::new()
