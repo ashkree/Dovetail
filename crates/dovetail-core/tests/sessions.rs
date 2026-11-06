@@ -1020,18 +1020,33 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
         state: dir.path().join("state"),
         runtime: dir.path().join("run"),
     };
-    // A slice whose worktree has disappeared.
-    {
+    // Two slices whose worktree directories have disappeared: "lost" is gone for git too,
+    // "listed" is still in git's worktree list, so it is not proof enough and is kept.
+    std::fs::create_dir_all(paths.worktrees("p")).unwrap();
+    let listed = paths.worktrees("p").join("listed");
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "dovetail/listed",
+            listed.to_str().unwrap(),
+        ],
+    );
+    std::fs::remove_dir_all(&listed).unwrap();
+    for name in ["lost", "listed"] {
         let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
         let mut agent = dovetail_api::Agent {
-            id: AgentId("slice-lost".into()),
-            name: "lost".into(),
+            id: AgentId(format!("slice-{name}")),
+            name: name.into(),
             kind: AgentKind::Slice,
             parent: None,
             task: None,
             worktree: Some(dovetail_api::WorktreeRef {
-                path: paths.worktrees("p").join("lost"),
-                branch: "dovetail/lost".into(),
+                path: paths.worktrees("p").join(name),
+                branch: format!("dovetail/{name}"),
             }),
             status: dovetail_api::AgentStatus::Idle,
             status_line: String::new(),
@@ -1081,6 +1096,10 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
                 == 2
     });
     assert!(!h.snap.agents.iter().any(|a| a.name == "lost"));
+    assert!(
+        h.snap.agents.iter().any(|a| a.name == "listed"),
+        "kept: git still lists it"
+    );
     let item = |s: &Snapshot, name: &str| {
         s.inbox
             .iter()

@@ -54,6 +54,46 @@ fn request_summary(tool: &str, input: &serde_json::Value) -> String {
     }
 }
 
+/// Why a missing worktree could not be confirmed gone.
+#[derive(Debug, thiserror::Error)]
+enum GoneCheck {
+    #[error("the path has no parent directory")]
+    NoParent,
+    #[error("{0}: {1}")]
+    Unreadable(std::path::PathBuf, #[source] std::io::Error),
+    #[error("running git: {0}")]
+    Git(#[source] std::io::Error),
+    #[error("git worktree list failed: {0}")]
+    GitFailed(String),
+}
+
+/// Whether a slice's worktree is really gone: its parent directory reads fine, it is not
+/// there, and `git worktree list` in the main checkout does not name it.
+fn worktree_gone(repo: &std::path::Path, path: &std::path::Path) -> Result<bool, GoneCheck> {
+    let parent = path.parent().ok_or(GoneCheck::NoParent)?;
+    std::fs::read_dir(parent).map_err(|e| GoneCheck::Unreadable(parent.to_owned(), e))?;
+    if path.exists() {
+        return Ok(false);
+    }
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["worktree", "list", "--porcelain"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(GoneCheck::Git)?;
+    if !out.status.success() {
+        return Err(GoneCheck::GitFailed(
+            String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+        ));
+    }
+    let listed = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.strip_prefix("worktree "))
+        .any(|p| std::path::Path::new(p) == path);
+    Ok(!listed)
+}
+
 /// Longest command shown in an Activity note.
 const COMMAND_MAX: usize = 60;
 
@@ -173,19 +213,35 @@ impl Core {
 
     /// The stale-state sweep (decision 4 of 2026-11-06).
     async fn sweep(&mut self) {
-        let gone: Vec<(AgentId, String)> = self
+        let missing: Vec<(AgentId, String, std::path::PathBuf)> = self
             .agents
             .values()
-            .filter(|r| r.agent.worktree.as_ref().is_some_and(|w| !w.path.exists()))
-            .map(|r| (r.agent.id.clone(), r.agent.name.clone()))
+            .filter_map(|r| {
+                let w = r.agent.worktree.as_ref()?;
+                (!w.path.exists())
+                    .then(|| (r.agent.id.clone(), r.agent.name.clone(), w.path.clone()))
+            })
             .collect();
-        for (agent, name) in gone {
-            self.closed(&agent);
-            self.activity(
-                ActivityKind::Lifecycle,
-                None,
-                format!("slice {name} archived: its worktree is gone"),
-            );
+        let repo = self.project.repo_path().to_path_buf();
+        for (agent, name, path) in missing {
+            // One failed `exists()` is not proof: archive only when the parent directory reads
+            // fine and git no longer lists the worktree either.
+            match worktree_gone(&repo, &path) {
+                Ok(true) => {
+                    self.closed(&agent);
+                    self.activity(
+                        ActivityKind::Lifecycle,
+                        None,
+                        format!("slice {name} archived: its worktree is gone"),
+                    );
+                }
+                Ok(false) => {
+                    tracing::warn!(slice = %name, "worktree missing on disk but listed by git; kept")
+                }
+                Err(why) => {
+                    tracing::warn!(slice = %name, "could not check its worktree ({why}); kept")
+                }
+            }
         }
 
         let key = self.project.key().to_owned();
