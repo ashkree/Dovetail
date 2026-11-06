@@ -3,42 +3,42 @@ source: crates/dovetail-tui/tests/conversation.rs
 expression: "render(&mut reading_app(), 120, 40)"
 ---
  folder /src/business
-┌ tasks · business ─────────────────────────┐┌ coordinator · ○ idle · 1.2G · $3.10 ────────────────────────────────────┐
-│ ○ ◆ coordinator           idle 1.2G $3.10 ││ coordinator · 10:06                                                     │
-│ ▾ Now (2)                                 ││ Told slice-4 to stay out of src/decision.rs until slice-7 hands it      │
-│ ▾ ⚠ business surface P1          PR #1231 ││ back.                                                                   │
-│   ▾ ◐ ◆ slice-4  edits   working 412M 71% ││                                                                         │
-│         ⎇ dovetail/slice-4                ││ ▸ sent 1 message · 2 s                                                  │
-│         ✓ write route tests               ││                                                                         │
-│         ◐ wire handler to registry        ││ you · 10:14                                                             │
-│         ○ update OpenAPI spec ⊘ blocked   ││ What's blocking slice-7?                                                │
-│       ✓ ◇ rebase               done $0.21 ││                                                                         │
-│       ◐ ◇ explore callers 12 tools · Grep ││ ▸ read 2 files · checked slice-7's stream · 4 s                         │
-│ ▾ ⚠ get_decision 500 P0                   ││                                                                         │
-│   ▾ ⚠ ◆ slice-7  manual     needs you 85% ││ coordinator · 10:14                                                     │
-│         ⎇ dovetail/slice-7                ││ It needs a key. slice-7 can only reach the eval path with               │
-│ ▾ Next (1)                                ││ FS_EVAL_VIRTUAL_KEY set, and the file src/decision.rs reads it once at  │
-│   ○ idea: eval key flow P2                ││ start-up.                                                               │
-│ ▸ Later (1)                               ││                                                                         │
-│ ▸ Done (1)                                ││ What I checked                                                          │
-│                                           ││                                                                         │
-│                                           ││ • the handler in crates/api/src/routes.rs                               │
-│                                           ││                                                                         │
-│ ⏎ open · o fold · dd archive              ││ • the eval path, which fails before it logs                             │
-└───────────────────────────────────────────┘│                                                                         │
-┌ inbox · needs you (3) ────────────────────┐│ • the CI config                                                         │
-│ ▸ ⚠ slice-7  Bash                   10:15 ││                                                                         │
-│   │ FS_EVAL_VIRTUAL_KEY=dev cargo test    ││ rust                                                                    │
-│   │ -p api get_decision                   ││   let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                      │
-│   │ A → always allow: Bash(cargo test:*)  ││                                                                         │
-│   ? slice-4  Question               10:12 ││ Slice   │ State                                                         │
-│   ✓ slice-4  Finished turn          10:09 ││ ────────┼────────                                                       │
-│                                           ││ slice-4 │ editing                                                       │
-│                                           ││ slice-7 │ blocked                                                       │
-│                                           ││                                                                         │
-│                                           ││ │ Merge order: #1231 first, then the 500 fix.                           │
-│                                           ││                                                                         │
-│                                           ││ ─────────────────────────────────────────────────────────────────────── │
-│ y allow · d deny · r reply · x dismiss    ││ › i to chat · ]] [[ turns · zc zo fold · gg G                           │
-└───────────────────────────────────────────┘└─────────────────────────────────────────────────────────────────────────┘
+┌ coordinator · ○ idle · 1.2G · $3.10 ────────────────────────────────────┐┌ tasks · business ─────────────────────────┐
+│                                                                         ││ ○ ◆ coordinator           idle 1.2G $3.10 │
+│   back.                                                                 ││ ▾ Now (2)                                 │
+│                                                                         ││ ▾ ⚠ business surface P1          PR #1231 │
+│   ▸ sent 1 message · 2 s                                                ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+│                                                                         ││         ⎇ dovetail/slice-4                │
+│   you · 10:14                                                           ││         ✓ write route tests               │
+│   What's blocking slice-7?                                              ││         ◐ wire handler to registry        │
+│                                                                         ││         ○ update OpenAPI spec ⊘ blocked   │
+│   ▸ read 2 files · checked slice-7's stream · 4 s                       ││       ✓ ◇ rebase               done $0.21 │
+│                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
+│   coordinator · 10:14                                                   ││ ▾ ⚠ get_decision 500 P0                   │
+│   It needs a key. slice-7 can only reach the eval path with             ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
+│   FS_EVAL_VIRTUAL_KEY set, and the file src/decision.rs reads it once   ││         ⎇ dovetail/slice-7                │
+│   at start-up.                                                          ││ ▾ Next (1)                                │
+│                                                                         ││   ○ idea: eval key flow P2                │
+│   What I checked                                                        ││ ▸ Later (1)                               │
+│                                                                         ││ ▸ Done (1)                                │
+│   • the handler in crates/api/src/routes.rs                             ││                                           │
+│                                                                         ││                                           │
+│   • the eval path, which fails before it logs                           ││                                           │
+│                                                                         ││ ⏎ open · o fold · dd archive              │
+│   • the CI config                                                       │└───────────────────────────────────────────┘
+│                                                                         │┌ inbox · needs you (3) ────────────────────┐
+│   rust                                                                  ││ ▸ ⚠ slice-7  Bash                   10:15 │
+│     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                    ││   │ FS_EVAL_VIRTUAL_KEY=dev cargo test    │
+│                                                                         ││   │ -p api get_decision                   │
+│   Slice   │ State                                                       ││   │ A → always allow: Bash(cargo test:*)  │
+│   ────────┼────────                                                     ││   ? slice-4  Question               10:12 │
+│   slice-4 │ editing                                                     ││   ✓ slice-4  Finished turn          10:09 │
+│   slice-7 │ blocked                                                     ││                                           │
+│                                                                         ││                                           │
+│   │ Merge order: #1231 first, then the 500 fix.                         ││                                           │
+│                                                                         ││                                           │
+│   ───────────────────────────────────────────────────────────────────   ││                                           │
+│   › i to chat · ]] [[ turns · zc zo fold · gg G                         ││                                           │
+│                                                                         ││ y allow · d deny · r reply · x dismiss    │
+└─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

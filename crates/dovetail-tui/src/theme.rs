@@ -112,6 +112,32 @@ impl Default for Theme {
     }
 }
 
+/// Extra space kept free inside the conversation pane, on top of the pane's own border and
+/// one-column inset. The one place to tune it.
+pub struct Padding {
+    /// Columns free on each of the left and right sides.
+    pub x: u16,
+    /// Rows free at the top and at the bottom.
+    pub y: u16,
+}
+
+impl Padding {
+    /// `area` less this padding on every side (never below zero size).
+    pub fn shrink(&self, area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+        let dx = self.x.min(area.width / 2);
+        let dy = self.y.min(area.height / 2);
+        ratatui::layout::Rect {
+            x: area.x + dx,
+            y: area.y + dy,
+            width: area.width - 2 * dx,
+            height: area.height - 2 * dy,
+        }
+    }
+}
+
+/// Padding inside the coordinator chat pane.
+pub const CHAT_PADDING: Padding = Padding { x: 2, y: 1 };
+
 #[cfg(test)]
 mod tests {
     use super::*;

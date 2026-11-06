@@ -480,7 +480,7 @@ impl App {
             Action::FocusRight => self.regions.focus_right(),
             Action::FocusDown => self.regions.focus_down(),
             Action::FocusUp => self.regions.focus_up(),
-            Action::FocusInbox => self.regions.set_focus(RegionId::LeftBottom),
+            Action::FocusInbox => self.regions.set_focus(RegionId::SideBottom),
             Action::EnterCommand => self.start_input(InputTarget::Command, ""),
             Action::EnterInsert => {
                 if let Some(agent) = self.chat_target() {

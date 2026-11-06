@@ -3,9 +3,9 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 120, 34)"
 ---
  folder /src/business
-┌ tasks · business ─────────────────────────┐┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐
-│ ◐ ◆ coordinator        working 1.2G $3.10 ││ you · 10:08                                                             │
-│ ▾ Now (2)                                 ││ Make sure slice-4 doesn't touch the 500 path.                           │
+┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ tasks · business ─────────────────────────┐
+│                                                                         ││ ◐ ◆ coordinator        working 1.2G $3.10 │
+│   you · 10:08                                                           ││ ▾ Now (2)                                 │
 │ ┌ Switch ──────────────────────────────────────────┐┌ Preview ─────────────────────────────────────────────────────┐ │
 │ │›                                              5/5││ ◐ slice-4                                                    │ │
 │ │                                                  ││ slice · dovetail/slice-4 · 412M · working                    │ │
@@ -21,8 +21,8 @@ expression: "render(&mut app, 120, 34)"
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
-└─│                                                  ││                                                              │ │
-┌ │                                                  ││                                                              │ │
+│ │                                                  ││                                                              │─┘
+│ │                                                  ││                                                              │─┐
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
@@ -32,7 +32,7 @@ expression: "render(&mut app, 120, 34)"
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
 │ └──────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────┘ │
-│                                           ││ ─────────────────────────────────────────────────────────────────────── │
-│ y allow · d deny · r reply · x dismiss    ││ › i to chat · ]] [[ turns · zc zo fold · gg G                           │
-└───────────────────────────────────────────┘└─────────────────────────────────────────────────────────────────────────┘
+│   › i to chat · ]] [[ turns · zc zo fold · gg G                         ││                                           │
+│                                                                         ││ y allow · d deny · r reply · x dismiss    │
+└─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

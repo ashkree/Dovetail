@@ -23,41 +23,41 @@ pub enum BufferKind {
 /// A slot in the layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RegionId {
-    /// Left column, top.
-    LeftTop,
-    /// Left column, bottom.
-    LeftBottom,
-    /// The main region, right, full height.
+    /// Side column, top.
+    SideTop,
+    /// Side column, bottom.
+    SideBottom,
+    /// The main region, left, full height.
     Main,
 }
 
 impl RegionId {
-    /// Whether the region is in the left column.
-    pub fn is_left(self) -> bool {
-        matches!(self, RegionId::LeftTop | RegionId::LeftBottom)
+    /// Whether the region is in the side column (tree over inbox, on the right).
+    pub fn is_side(self) -> bool {
+        matches!(self, RegionId::SideTop | RegionId::SideBottom)
     }
 }
 
 /// The regions, which buffer each shows, and which one has focus.
 #[derive(Debug, Clone)]
 pub struct Regions {
-    left_top: BufferKind,
-    left_bottom: BufferKind,
+    side_top: BufferKind,
+    side_bottom: BufferKind,
     main: BufferKind,
     focus: RegionId,
-    /// The left region focus last left from, for `h` to return to.
-    last_left: RegionId,
+    /// The side region focus last left from, for `l` to return to.
+    last_side: RegionId,
 }
 
 impl Default for Regions {
-    /// Layout B (Decision 15): tree over inbox on the left, conversation on the right.
+    /// Layout B (Decision 15, placement per ADR 0006): conversation on the left, tree over inbox on the right.
     fn default() -> Self {
         Self {
-            left_top: BufferKind::Tree,
-            left_bottom: BufferKind::Inbox,
+            side_top: BufferKind::Tree,
+            side_bottom: BufferKind::Inbox,
             main: BufferKind::Conversation,
-            focus: RegionId::LeftTop,
-            last_left: RegionId::LeftTop,
+            focus: RegionId::SideTop,
+            last_side: RegionId::SideTop,
         }
     }
 }
@@ -66,8 +66,8 @@ impl Regions {
     /// The buffer a region shows.
     pub fn buffer(&self, region: RegionId) -> BufferKind {
         match region {
-            RegionId::LeftTop => self.left_top,
-            RegionId::LeftBottom => self.left_bottom,
+            RegionId::SideTop => self.side_top,
+            RegionId::SideBottom => self.side_bottom,
             RegionId::Main => self.main,
         }
     }
@@ -75,8 +75,8 @@ impl Regions {
     /// Makes a region show another buffer.
     pub fn show(&mut self, region: RegionId, kind: BufferKind) {
         match region {
-            RegionId::LeftTop => self.left_top = kind,
-            RegionId::LeftBottom => self.left_bottom = kind,
+            RegionId::SideTop => self.side_top = kind,
+            RegionId::SideBottom => self.side_bottom = kind,
             RegionId::Main => self.main = kind,
         }
     }
@@ -93,37 +93,37 @@ impl Regions {
 
     /// Moves focus to a region.
     pub fn set_focus(&mut self, region: RegionId) {
-        if self.focus.is_left() {
-            self.last_left = self.focus;
+        if self.focus.is_side() {
+            self.last_side = self.focus;
         }
         self.focus = region;
     }
 
-    /// `l`: from the left column to the main region.
-    pub fn focus_right(&mut self) {
-        if self.focus.is_left() {
+    /// `h`: from the side column to the main region.
+    pub fn focus_left(&mut self) {
+        if self.focus.is_side() {
             self.set_focus(RegionId::Main);
         }
     }
 
-    /// `h`: from the main region back to the left region used last.
-    pub fn focus_left(&mut self) {
+    /// `l`: from the main region to the side region used last.
+    pub fn focus_right(&mut self) {
         if self.focus == RegionId::Main {
-            self.focus = self.last_left;
+            self.focus = self.last_side;
         }
     }
 
-    /// `Ctrl-j`: down within the left column.
+    /// `Ctrl-j`: down within the side column.
     pub fn focus_down(&mut self) {
-        if self.focus == RegionId::LeftTop {
-            self.set_focus(RegionId::LeftBottom);
+        if self.focus == RegionId::SideTop {
+            self.set_focus(RegionId::SideBottom);
         }
     }
 
-    /// `Ctrl-k`: up within the left column.
+    /// `Ctrl-k`: up within the side column.
     pub fn focus_up(&mut self) {
-        if self.focus == RegionId::LeftBottom {
-            self.set_focus(RegionId::LeftTop);
+        if self.focus == RegionId::SideBottom {
+            self.set_focus(RegionId::SideTop);
         }
     }
 }
@@ -134,9 +134,9 @@ pub struct Areas {
     /// Header row: the folder in view, and whether it is a project.
     pub header: Rect,
     /// Task tree.
-    pub left_top: Rect,
+    pub side_top: Rect,
     /// Inbox.
-    pub left_bottom: Rect,
+    pub side_bottom: Rect,
     /// Conversation.
     pub main: Rect,
     /// Status bar row.
@@ -145,8 +145,9 @@ pub struct Areas {
     pub prompt: Option<Rect>,
 }
 
-/// Splits the screen. The left column is about 38 % wide but never narrower than 40 columns
-/// (when the screen allows) so tree rows stay readable; the inbox takes the lower 40 % of it.
+/// Splits the screen. The side column (right) is about 38 % wide but never narrower than 40
+/// columns (when the screen allows) so tree rows stay readable; the inbox takes the lower
+/// 40 % of it. The conversation takes the rest, on the left.
 pub fn layout(screen: Rect, with_prompt: bool) -> Areas {
     let rows = RatLayout::vertical([
         Constraint::Length(1),
@@ -155,16 +156,16 @@ pub fn layout(screen: Rect, with_prompt: bool) -> Areas {
         Constraint::Length(u16::from(with_prompt)),
     ])
     .split(screen);
-    let left_width = (screen.width * 38 / 100).max(40).min(screen.width / 2);
+    let side_width = (screen.width * 38 / 100).max(40).min(screen.width / 2);
     let columns =
-        RatLayout::horizontal([Constraint::Length(left_width), Constraint::Min(10)]).split(rows[1]);
+        RatLayout::horizontal([Constraint::Min(10), Constraint::Length(side_width)]).split(rows[1]);
     let left = RatLayout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(columns[0]);
+        .split(columns[1]);
     Areas {
         header: rows[0],
-        left_top: left[0],
-        left_bottom: left[1],
-        main: columns[1],
+        side_top: left[0],
+        side_bottom: left[1],
+        main: columns[0],
         status: rows[2],
         prompt: with_prompt.then_some(rows[3]),
     }
@@ -175,23 +176,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn h_returns_to_the_left_region_you_came_from() {
+    fn l_returns_to_the_side_region_you_came_from() {
         let mut regions = Regions::default();
         regions.focus_down();
-        assert_eq!(regions.focus(), RegionId::LeftBottom);
-        regions.focus_right();
-        assert_eq!(regions.focus(), RegionId::Main);
+        assert_eq!(regions.focus(), RegionId::SideBottom);
         regions.focus_left();
-        assert_eq!(regions.focus(), RegionId::LeftBottom);
+        assert_eq!(regions.focus(), RegionId::Main);
+        regions.focus_right();
+        assert_eq!(regions.focus(), RegionId::SideBottom);
     }
 
     #[test]
     fn l_and_h_do_nothing_where_there_is_nowhere_to_go() {
         let mut regions = Regions::default();
+        regions.focus_right();
+        assert_eq!(regions.focus(), RegionId::SideTop);
         regions.focus_left();
-        assert_eq!(regions.focus(), RegionId::LeftTop);
-        regions.focus_right();
-        regions.focus_right();
+        regions.focus_left();
         assert_eq!(regions.focus(), RegionId::Main);
         regions.focus_down();
         assert_eq!(regions.focus(), RegionId::Main);
@@ -210,7 +211,7 @@ mod tests {
         let a = layout(screen, false);
         assert_eq!(a.header.y, 0);
         assert_eq!(a.main.y, 1);
-        assert_eq!(a.left_top.height + a.left_bottom.height, 28);
+        assert_eq!(a.side_top.height + a.side_bottom.height, 28);
         assert_eq!(a.main.height, 28);
         assert_eq!(a.prompt, None);
         let b = layout(screen, true);

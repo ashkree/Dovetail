@@ -13,9 +13,9 @@ pub enum Action {
     GoTop,
     /// Jump to the last row.
     GoBottom,
-    /// Focus the region to the left (back to the left region last used).
+    /// Focus the region to the left (the conversation).
     FocusLeft,
-    /// Focus the region to the right.
+    /// Focus the region to the right (back to the side region last used).
     FocusRight,
     /// Focus the region below in the left column.
     FocusDown,

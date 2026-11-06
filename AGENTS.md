@@ -23,7 +23,7 @@ The design phase is finished. **All decisions are locked.** Do not reopen them; 
 The target is **v1** as listed in the digest's roadmap, built so v1.1 features slot in without rewrites. v1.1+ features are out of scope unless the plan says otherwise, but leave the seams for them (e.g. the keymap table must be able to become TOML).
 
 Known conflicts, already resolved:
-- **Layout:** Decision 15 (Layout B — task tree over inbox on the left, conversation full height on the right) supersedes the sketch in `ui-session-brief.md`.
+- **Layout:** Decision 15 (Layout B — conversation full height on the left, task tree over inbox on the right; placement per ADR 0006) supersedes the sketch in `ui-session-brief.md`.
 - **Edition:** the workspace uses edition 2024 (already in `Cargo.toml`).
 
 ## Dogfooding: Dovetail builds Dovetail

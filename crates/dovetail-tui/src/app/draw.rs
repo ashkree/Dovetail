@@ -33,8 +33,8 @@ impl App {
             tz: &self.tz,
         };
         for (region, area) in [
-            (RegionId::LeftTop, areas.left_top),
-            (RegionId::LeftBottom, areas.left_bottom),
+            (RegionId::SideTop, areas.side_top),
+            (RegionId::SideBottom, areas.side_bottom),
             (RegionId::Main, areas.main),
         ] {
             let focused = self.regions.focus() == region;

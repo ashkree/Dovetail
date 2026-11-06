@@ -75,22 +75,22 @@ fn an_unknown_command_shows_a_note_and_leaves_command_mode() {
 #[test]
 fn focus_moves_with_h_l_and_ctrl_j_k() {
     let mut app = app_with(world());
-    assert_eq!(app.focus(), RegionId::LeftTop);
+    assert_eq!(app.focus(), RegionId::SideTop);
     app.on_key(ctrl('j'), 0);
-    assert_eq!(app.focus(), RegionId::LeftBottom);
-    app.on_key(key('l'), 1);
+    assert_eq!(app.focus(), RegionId::SideBottom);
+    app.on_key(key('h'), 1);
     assert_eq!(app.focus(), RegionId::Main);
-    app.on_key(key('h'), 2);
-    assert_eq!(app.focus(), RegionId::LeftBottom);
+    app.on_key(key('l'), 2);
+    assert_eq!(app.focus(), RegionId::SideBottom);
     app.on_key(ctrl('k'), 3);
-    assert_eq!(app.focus(), RegionId::LeftTop);
+    assert_eq!(app.focus(), RegionId::SideTop);
 }
 
 #[test]
 fn leader_n_jumps_to_the_inbox() {
     let mut app = app_with(world());
     type_keys(&mut app, " n");
-    assert_eq!(app.focus(), RegionId::LeftBottom);
+    assert_eq!(app.focus(), RegionId::SideBottom);
 }
 
 #[test]
@@ -99,11 +99,11 @@ fn j_and_k_never_leave_a_list() {
     for _ in 0..80 {
         app.on_key(key('j'), 0);
     }
-    assert_eq!(app.focus(), RegionId::LeftTop);
+    assert_eq!(app.focus(), RegionId::SideTop);
     for _ in 0..80 {
         app.on_key(key('k'), 0);
     }
-    assert_eq!(app.focus(), RegionId::LeftTop);
+    assert_eq!(app.focus(), RegionId::SideTop);
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn a_half_typed_leader_times_out_and_is_dropped() {
     assert_eq!(app.next_deadline_ms(), None);
     // `n` alone is not bound, so nothing moves.
     app.on_key(key('n'), 2_000);
-    assert_eq!(app.focus(), RegionId::LeftTop);
+    assert_eq!(app.focus(), RegionId::SideTop);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn landing_on_a_coordinator_created_task_marks_it_seen() {
 
 fn in_inbox(app: &mut dovetail_tui::App) {
     type_keys(app, " n");
-    assert_eq!(app.focus(), RegionId::LeftBottom);
+    assert_eq!(app.focus(), RegionId::SideBottom);
 }
 
 #[test]
@@ -543,8 +543,8 @@ fn a_turn_that_finishes_while_its_conversation_has_focus_stays_in_needs_you() {
     assert!(app.snapshot().inbox.iter().any(|i| i.id == InboxId(10)));
 
     // Leaving and coming back opens it: one dismiss, not one per event.
-    app.on_key(key('h'), 2);
-    app.on_key(key('l'), 3);
+    app.on_key(key('l'), 2);
+    app.on_key(key('h'), 3);
     event(&mut app, Event::TotalsChanged(Totals::default()));
     assert_eq!(
         app.take_commands(),
