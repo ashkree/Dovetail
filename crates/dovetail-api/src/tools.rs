@@ -77,14 +77,63 @@ pub const TOOL_NAMES: [&str; 6] = [
     "add_project",
 ];
 
+/// Why a tool call is refused before it reaches a handler. `Display` is the message for the
+/// agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolError {
+    /// No tool has this name.
+    Unknown(String),
+    /// The arguments do not fit the tool's schema.
+    BadArguments {
+        /// The tool.
+        tool: String,
+        /// What serde said.
+        message: String,
+    },
+    /// A text field is empty.
+    Empty(&'static str),
+    /// A task id is not positive.
+    NotATaskId(&'static str),
+    /// `create_task` asked for Now (ADR 0002).
+    BucketNow,
+    /// The coordinator logged a decision without naming its task.
+    DecisionNeedsTask,
+}
+
+impl std::fmt::Display for ToolError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ToolError::Unknown(name) => write!(f, "unknown tool `{name}`"),
+            ToolError::BadArguments { tool, message } => {
+                write!(f, "bad arguments for `{tool}`: {message}")
+            }
+            ToolError::Empty(field) => write!(f, "`{field}` must be a non-empty string"),
+            ToolError::NotATaskId(field) => {
+                write!(f, "`{field}` must be a task id (a positive integer)")
+            }
+            ToolError::BucketNow => f.write_str(
+                "`bucket` must be `next` or `later`: the user decides what is current (ADR 0002)",
+            ),
+            ToolError::DecisionNeedsTask => {
+                f.write_str("the coordinator must name the `task` this decision belongs to")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ToolError {}
+
 impl Tool {
     /// Parses MCP `tools/call` arguments for the tool `name` (without the server prefix).
-    pub fn parse(name: &str, arguments: serde_json::Value) -> Result<Tool, String> {
+    pub fn parse(name: &str, arguments: serde_json::Value) -> Result<Tool, ToolError> {
         if !TOOL_NAMES.contains(&name) {
-            return Err(format!("unknown tool `{name}`"));
+            return Err(ToolError::Unknown(name.to_owned()));
         }
         let wire = serde_json::json!({ "tool": name, "input": arguments });
-        serde_json::from_value(wire).map_err(|e| format!("bad arguments for `{name}`: {e}"))
+        serde_json::from_value(wire).map_err(|e| ToolError::BadArguments {
+            tool: name.to_owned(),
+            message: e.to_string(),
+        })
     }
 
     /// The tool's name, without the server prefix.
@@ -108,20 +157,20 @@ impl Tool {
     }
 
     /// Checks what serde cannot: non-empty text, positive ids, the bucket rule, and that the
-    /// coordinator names the task of a decision. Returns the message for the agent.
-    pub fn validate(&self, role: Role) -> Result<(), String> {
-        fn text(field: &str, value: &str) -> Result<(), String> {
+    /// coordinator names the task of a decision.
+    pub fn validate(&self, role: Role) -> Result<(), ToolError> {
+        fn text(field: &'static str, value: &str) -> Result<(), ToolError> {
             if value.trim().is_empty() {
-                Err(format!("`{field}` must be a non-empty string"))
+                Err(ToolError::Empty(field))
             } else {
                 Ok(())
             }
         }
-        fn id(field: &str, value: TaskId) -> Result<(), String> {
+        fn id(field: &'static str, value: TaskId) -> Result<(), ToolError> {
             if value.0 > 0 {
                 Ok(())
             } else {
-                Err(format!("`{field}` must be a task id (a positive integer)"))
+                Err(ToolError::NotATaskId(field))
             }
         }
         match self {
@@ -130,21 +179,13 @@ impl Tool {
             Tool::CreateTask(c) => {
                 text("title", &c.title)?;
                 if c.bucket == Some(Bucket::Now) {
-                    return Err(
-                        "`bucket` must be `next` or `later`: the user decides what is \
-                        current (ADR 0002)"
-                            .into(),
-                    );
+                    return Err(ToolError::BucketNow);
                 }
                 Ok(())
             }
             Tool::LogDecision(d) => {
                 match (role, d.task) {
-                    (Role::Coordinator, None) => {
-                        return Err(
-                            "the coordinator must name the `task` this decision belongs to".into(),
-                        );
-                    }
+                    (Role::Coordinator, None) => return Err(ToolError::DecisionNeedsTask),
                     (_, Some(task)) => id("task", task)?,
                     (Role::Slice, None) => {}
                 }

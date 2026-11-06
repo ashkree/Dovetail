@@ -22,6 +22,7 @@ use dovetail_driver::{
     ContentBlock, DriverEvent, ExitInfo, InitInfo, PeerMessage, Session, TurnResult, UserInput,
 };
 
+use crate::error::SessionError;
 use crate::recipe::Recipe;
 use crate::service::{COORDINATOR, Core, Input};
 use state::{Streaming, Turn};
@@ -74,12 +75,12 @@ impl Core {
         id: &AgentId,
         cwd: PathBuf,
         worktree: Option<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), SessionError> {
         let role = self
             .role_of(id)
-            .ok_or_else(|| format!("no agent {}", id.0))?;
+            .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         let Some(row) = self.agents.get_mut(id) else {
-            return Err(format!("no agent {}", id.0));
+            return Err(SessionError::NoAgent(id.0.clone()));
         };
         let session_id = row
             .session_id
@@ -113,14 +114,16 @@ impl Core {
             model: self.config.default_model.clone(),
             env,
         };
-        let spec = launch::spec(&self.paths, &launch)
-            .map_err(|e| format!("writing launch settings: {e}"))?;
+        let spec = launch::spec(&self.paths, &launch).map_err(SessionError::LaunchFiles)?;
         tracing::info!(agent = %id.0, resume, "starting session");
-        let mut session = self
-            .options
-            .driver
-            .start(spec)
-            .map_err(|e| format!("starting {}: {e}", row.agent.name))?;
+        let mut session =
+            self.options
+                .driver
+                .start(spec)
+                .map_err(|source| SessionError::Driver {
+                    name: row.agent.name.clone(),
+                    source,
+                })?;
         let mut events = session.take_events();
         self.generation += 1;
         let generation = self.generation;
@@ -159,7 +162,7 @@ impl Core {
     }
 
     /// Makes sure agent `id` has a running session, resuming it if needed.
-    pub(crate) fn ensure_live(&mut self, id: &AgentId) -> Result<(), String> {
+    pub(crate) fn ensure_live(&mut self, id: &AgentId) -> Result<(), SessionError> {
         if self.live.contains_key(id) {
             return Ok(());
         }
@@ -167,7 +170,7 @@ impl Core {
             .agents
             .get(id)
             .cloned()
-            .ok_or_else(|| format!("no agent {}", id.0))?;
+            .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         match row.agent.kind {
             AgentKind::Coordinator => {
                 let cwd = self.project.repo_path().to_path_buf();
@@ -175,10 +178,7 @@ impl Core {
             }
             AgentKind::Slice => {
                 if row.transcript_path.is_none() {
-                    return Err(format!(
-                        "slice {} never started; archive it and start a new one",
-                        row.agent.name
-                    ));
+                    return Err(SessionError::NeverStarted(row.agent.name));
                 }
                 // Resume where it ran: its worktree, or the shared folder (ADR 0005).
                 let cwd = row.agent.worktree.as_ref().map_or_else(
@@ -187,7 +187,7 @@ impl Core {
                 );
                 self.launch(id, cwd, None)
             }
-            AgentKind::Subagent { .. } => Err("subagents have no session of their own".into()),
+            AgentKind::Subagent { .. } => Err(SessionError::Subagent),
         }
     }
 
@@ -198,14 +198,15 @@ impl Core {
         text: &str,
         shown: EntryKind,
         shown_text: String,
-    ) -> Result<(), String> {
+    ) -> Result<(), SessionError> {
         self.ensure_live(id)?;
+        let name = self.name_of(id);
         let Some(live) = self.live.get_mut(id) else {
-            return Err(format!("{} is not running", id.0));
+            return Err(SessionError::NotRunning(id.0.clone()));
         };
         live.session
             .send(UserInput::text(text))
-            .map_err(|e| e.to_string())?;
+            .map_err(|source| SessionError::Driver { name, source })?;
         live.turn.running = true;
         self.add_entry(id, shown, shown_text);
         self.refresh_status(id);

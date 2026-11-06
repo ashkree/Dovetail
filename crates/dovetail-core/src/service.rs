@@ -251,7 +251,7 @@ pub(crate) enum Input {
     SetupFinished {
         agent: AgentId,
         generation: u64,
-        outcome: Result<PathBuf, String>,
+        outcome: Result<PathBuf, crate::error::SetupFailure>,
     },
     /// A slice's worktree removal finished.
     WorktreeRemoved {
@@ -627,9 +627,9 @@ impl Core {
         self.send(ServerMsg::Event { seq, event });
     }
 
-    pub(crate) fn fail(&mut self, message: impl Into<String>) {
+    pub(crate) fn fail(&mut self, message: impl std::fmt::Display) {
         self.emit(Event::CommandFailed {
-            message: message.into(),
+            message: message.to_string(),
         });
     }
 
@@ -1001,7 +1001,9 @@ impl Core {
 
     /// Registers the open folder (ADR 0005): writes the in-memory state to the new project's
     /// `state.db`, listens on its socket, and sends a fresh snapshot.
-    pub(crate) async fn register_project(&mut self) -> Result<Project, String> {
+    pub(crate) async fn register_project(
+        &mut self,
+    ) -> Result<Project, crate::error::RegisterError> {
         let candidate = match &self.project {
             ProjectState::Registered(p) => return Ok(p.clone()),
             ProjectState::Unregistered { candidate, .. } => candidate.clone(),
@@ -1014,12 +1016,10 @@ impl Core {
                 candidate.repo_path.clone(),
                 candidate.git_common_dir.clone(),
             )
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
         self.db
             .persist_state(self.paths.state_db(&project.id))
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
         let path = self.paths.socket(&project.id);
         match socket::bind(&path) {
             Ok(listener) => {

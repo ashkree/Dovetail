@@ -21,6 +21,7 @@ use serde_json::json;
 use tokio::sync::oneshot;
 
 use crate::db::{AgentRow, QueuedSlice, now_ms};
+use crate::error::{SessionError, SetupFailure, SliceError};
 use crate::inbox::Waiter;
 use crate::projects;
 use crate::service::{COORDINATOR, Core, Input, new_agent};
@@ -62,32 +63,24 @@ impl Core {
     }
 
     /// Everything that makes a request impossible, checked before asking anyone.
-    pub(crate) async fn check_slice(&self, request: &SliceRequest) -> Result<(), String> {
+    pub(crate) async fn check_slice(&self, request: &SliceRequest) -> Result<(), SliceError> {
         let name = request.name.trim();
-        worktree::validate_name(name).map_err(|e| {
-            format!("{e}: use letters, digits, `-`, `_` or `.`, not starting with `.` or `-`")
-        })?;
+        worktree::validate_name(name).map_err(SliceError::BadName)?;
         if name.starts_with(SUBAGENT_PREFIX) {
-            return Err(format!(
-                "slice names may not start with `{SUBAGENT_PREFIX}`: that prefix marks subagent \
-                 worktrees, which skip setup"
-            ));
+            return Err(SliceError::SubagentPrefix);
         }
         if name == COORDINATOR {
-            return Err("`coordinator` is taken".into());
+            return Err(SliceError::Reserved);
         }
         let taken = self.agents.values().any(|r| r.agent.name == name)
             || self.queue.iter().any(|r| r.name == name);
         if taken {
-            return Err(format!("a slice named `{name}` already exists"));
+            return Err(SliceError::Taken(name.to_owned()));
         }
         if let Some(task) = request.task
             && self.task(task).await.is_none()
         {
-            return Err(format!(
-                "there is no task #{}; create it first with `create_task`",
-                task.0
-            ));
+            return Err(SliceError::NoTask(task.0));
         }
         Ok(())
     }
@@ -96,7 +89,7 @@ impl Core {
     pub(crate) async fn request_slice(
         &mut self,
         request: SliceRequest,
-    ) -> Result<SliceStart, String> {
+    ) -> Result<SliceStart, SliceError> {
         self.check_slice(&request).await?;
         let name = request.name.trim().to_owned();
         if self.open_slices() >= self.config.max_slices as usize {
@@ -116,8 +109,7 @@ impl Core {
                     request.brief.clone(),
                     request.by_coordinator,
                 )
-                .await
-                .map_err(|e| e.to_string())?;
+                .await?;
             self.queue.push_back(QueuedSlice {
                 id,
                 task: request.task,
@@ -155,7 +147,7 @@ impl Core {
         }
     }
 
-    async fn start_slice(&mut self, request: SliceRequest) -> Result<(), String> {
+    async fn start_slice(&mut self, request: SliceRequest) -> Result<(), SliceError> {
         // A folder that is not a project yet may run slices too; their state is kept with the
         // rest on registration (ADR 0005, decided 2026-11-06).
         let repo_path = self.project.repo_path().to_path_buf();
@@ -217,7 +209,7 @@ impl Core {
         }
         if let Err(e) = self.launch(&id, cwd, git.then(|| name.clone())) {
             self.closed(&id);
-            return Err(e);
+            return Err(e.into());
         }
         self.activity(
             ActivityKind::Lifecycle,
@@ -225,7 +217,7 @@ impl Core {
             format!("slice {name} started"),
         );
         let Some(live) = self.live.get_mut(&id) else {
-            return Err("the session did not start".into());
+            return Err(SessionError::NotRunning(id.0.clone()).into());
         };
         live.brief = Some(first_prompt);
         live.setting_up = true;
@@ -257,12 +249,14 @@ impl Core {
                 }
                 if let Some(outcome) = worktree::read_hook_outcome(&paths, &key, &name) {
                     break match outcome.error {
-                        Some(error) => Err(error),
+                        Some(error) => Err(SetupFailure(error)),
                         None => Ok(outcome.path.unwrap_or_default()),
                     };
                 }
                 if tokio::time::Instant::now() >= deadline {
-                    break Err("the worktree hook did not report within 16 minutes".into());
+                    break Err(SetupFailure(
+                        "the worktree hook did not report within 16 minutes".into(),
+                    ));
                 }
             };
             let _ = inputs.send(Input::SetupFinished {
@@ -277,7 +271,7 @@ impl Core {
         &mut self,
         agent: AgentId,
         generation: u64,
-        outcome: Result<std::path::PathBuf, String>,
+        outcome: Result<std::path::PathBuf, SetupFailure>,
     ) {
         let waiting = self
             .live
@@ -288,7 +282,7 @@ impl Core {
         }
         match outcome {
             Ok(_) => self.slice_ready(&agent),
-            Err(reason) => self.setup_failed(&agent, reason),
+            Err(reason) => self.setup_failed(&agent, reason.0),
         }
     }
 

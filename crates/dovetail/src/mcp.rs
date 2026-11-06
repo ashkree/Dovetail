@@ -196,10 +196,10 @@ impl Bridge {
         // Local checks, so the agent gets a precise error without a round trip.
         let call = match Tool::parse(name, arguments) {
             Ok(call) => call,
-            Err(problem) => return tool_error(&problem),
+            Err(problem) => return tool_error(&problem.to_string()),
         };
         if let Err(problem) = call.validate(self.role) {
-            return tool_error(&problem);
+            return tool_error(&problem.to_string());
         }
         let tool_use_id = msg
             .pointer("/params/_meta/claudecode~1toolUseId")

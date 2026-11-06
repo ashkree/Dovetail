@@ -386,7 +386,7 @@ impl App {
         match target {
             InputTarget::Command => match command::parse(&text) {
                 Ok(parsed) => self.run_with_arg(parsed.action, &parsed.arg),
-                Err(message) => self.note = Some(message),
+                Err(e) => self.note = Some(e.to_string()),
             },
             // Chat never comes through the prompt row.
             InputTarget::Prompt(_) => {}

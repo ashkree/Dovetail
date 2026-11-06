@@ -10,6 +10,7 @@ use dovetail_api::{
 use serde_json::json;
 use tokio::sync::oneshot;
 
+use crate::error::SliceError;
 use crate::inbox::Waiter;
 use crate::service::Core;
 use crate::slice::{SliceRequest, SliceStart};
@@ -33,7 +34,7 @@ fn error(text: impl Into<String>) -> SocketResponseBody {
 }
 
 /// `start_slice`'s answer: `started`, `queued` or `denied` first, then what to do next.
-pub(crate) fn slice_reply(result: Result<SliceStart, String>) -> SocketResponseBody {
+pub(crate) fn slice_reply(result: Result<SliceStart, SliceError>) -> SocketResponseBody {
     match result {
         Ok(SliceStart::Started(name)) => ok(format!(
             "started: slice {name} is setting up. Wait for \"slice {name} ready\" before you \
@@ -70,7 +71,7 @@ impl Core {
             return;
         }
         if let Err(problem) = call.validate(role) {
-            let _ = reply.send(error(problem));
+            let _ = reply.send(error(problem.to_string()));
             return;
         }
         let answer = match call {
@@ -241,7 +242,7 @@ mod tests {
         };
         assert!(text(slice_reply(Ok(SliceStart::Started("a".into())))).starts_with("started"));
         assert!(text(slice_reply(Ok(SliceStart::Queued("a".into())))).starts_with("queued"));
-        assert!(text(slice_reply(Err("no".into()))).starts_with("denied"));
+        assert!(text(slice_reply(Err(SliceError::Reserved))).starts_with("denied"));
     }
 
     #[test]

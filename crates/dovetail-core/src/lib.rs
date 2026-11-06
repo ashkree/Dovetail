@@ -4,6 +4,7 @@
 
 pub mod config;
 pub mod db;
+pub mod error;
 mod inbox;
 pub mod paths;
 pub mod projects;

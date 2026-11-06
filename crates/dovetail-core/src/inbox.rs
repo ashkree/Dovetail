@@ -14,6 +14,7 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 
 use crate::db::now_ms;
+use crate::error::SessionError;
 use crate::service::{Core, InboxEntry};
 use crate::slice::{SliceRequest, SliceStart};
 
@@ -364,14 +365,17 @@ impl Core {
         agent: &AgentId,
         message: &str,
         shown: String,
-    ) -> Result<(), String> {
+    ) -> Result<(), SessionError> {
         self.ensure_live(agent)?;
         let Some(live) = self.live.get_mut(agent) else {
-            return Err(format!("{} is not running", agent.0));
+            return Err(SessionError::NotRunning(agent.0.clone()));
         };
         live.session
             .send(dovetail_driver::UserInput::text(message))
-            .map_err(|e| e.to_string())?;
+            .map_err(|source| SessionError::Driver {
+                name: agent.0.clone(),
+                source,
+            })?;
         live.turn.running = true;
         self.add_entry(agent, dovetail_api::EntryKind::User, shown);
         self.refresh_status(agent);
