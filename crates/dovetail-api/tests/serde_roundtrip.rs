@@ -472,6 +472,45 @@ fn an_old_blocking_ask_user_and_inbox_payload_still_parse() {
 }
 
 #[test]
+fn update_task_tells_an_absent_priority_from_a_null_one_and_survives_the_socket() {
+    use dovetail_api::tools::{BucketFilter, Role, Tool, ToolError};
+    let parse = |args| match Tool::parse("update_task", args) {
+        Ok(Tool::UpdateTask(u)) => u,
+        other => panic!("{other:?}"),
+    };
+    let absent = parse(json!({"id": 1, "status": "done"}));
+    assert_eq!(absent.p_level, None);
+    let cleared = parse(json!({"id": 1, "p_level": null}));
+    assert_eq!(cleared.p_level, Some(None));
+    let set = parse(json!({"id": 1, "p_level": "P1", "bucket": "unsorted"}));
+    assert_eq!(set.p_level, Some(Some(PLevel::P1)));
+    assert_eq!(set.bucket, Some(BucketFilter::Unsorted));
+    assert_eq!(set.new_bucket(), Some(None));
+    for u in [absent, cleared, set] {
+        roundtrip(&Tool::UpdateTask(u));
+    }
+
+    let refused = |args| {
+        Tool::parse("update_task", args)
+            .expect("parses")
+            .validate(Role::Coordinator)
+    };
+    assert_eq!(
+        refused(json!({"id": 1, "bucket": "now"})),
+        Err(ToolError::UpdateIntoNow)
+    );
+    assert_eq!(
+        refused(json!({"id": 1, "status": "archived"})),
+        Err(ToolError::UpdateToArchived)
+    );
+    assert_eq!(refused(json!({"id": 1})), Err(ToolError::NothingToUpdate));
+    assert_eq!(
+        refused(json!({"id": 1, "title": " "})),
+        Err(ToolError::Empty("title"))
+    );
+}
+
+#[test]
 fn a_usage_status_word_this_version_does_not_know_parses_as_unknown() {
     let w: UsageWindow = serde_json::from_value(json!({
         "utilization": 0.5, "resets_at_ms": null, "status": "throttled_soon"
