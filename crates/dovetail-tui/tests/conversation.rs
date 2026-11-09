@@ -402,6 +402,36 @@ fn a_long_chat_message_wraps_and_the_input_grows_to_a_limit() {
     assert!(screen.contains("word"));
 }
 
+#[test]
+fn the_chat_input_wraps_at_word_boundaries() {
+    let mut app = app_with(world());
+    press(&mut app, "i");
+    let words = "please rebase the payments slice onto main, rerun the integration \
+                 suite, and tell me whether the flaky checkout-redirect test \
+                 still fails";
+    type_keys(&mut app, words);
+    let screen = render(&mut app, 80, 24);
+    // The input rows, cut at the conversation pane's right border.
+    let input: Vec<&str> = screen
+        .lines()
+        .filter_map(|l| l.strip_prefix('│')?.split('│').next())
+        .skip_while(|l| !l.contains("› please"))
+        .take_while(|l| !l.trim().is_empty())
+        .collect();
+    assert!(input.len() > 1, "{screen}");
+    // Every row ends on a whole word: the words read back unbroken.
+    let read: Vec<&str> = input
+        .iter()
+        .flat_map(|l| l.trim().trim_start_matches('›').split_whitespace())
+        .collect();
+    assert_eq!(
+        read,
+        words.split_whitespace().collect::<Vec<_>>(),
+        "{screen}"
+    );
+    insta::assert_snapshot!(screen);
+}
+
 // --- streaming and history ---
 
 #[test]

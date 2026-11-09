@@ -4,7 +4,9 @@
 use std::ops::Range;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+use crate::render::wrap::wrap_ranges;
 
 /// What a key did to a [`TextInput`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +28,8 @@ pub struct TextInput {
     /// Byte offset of the cursor; always on a char boundary.
     cursor: usize,
     multiline: bool,
+    /// The width last drawn at, so `Up`/`Down` move by display rows; by logical lines if unset.
+    wrap_width: Option<usize>,
 }
 
 impl TextInput {
@@ -35,6 +39,7 @@ impl TextInput {
             text: text.to_string(),
             cursor: text.len(),
             multiline: false,
+            wrap_width: None,
         }
     }
 
@@ -49,6 +54,12 @@ impl TextInput {
     /// The text.
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    /// Records the width the input is drawn at, as given to [`rows`](Self::rows), so `Up` and
+    /// `Down` move across wrapped rows.
+    pub fn set_wrap_width(&mut self, width: usize) {
+        self.wrap_width = Some(width);
     }
 
     /// The text before the cursor, for placing the terminal cursor on a single line.
@@ -171,6 +182,10 @@ impl TextInput {
     }
 
     fn move_vertically(&mut self, delta: i32) {
+        if let Some(width) = self.wrap_width {
+            self.move_by_rows(delta, width);
+            return;
+        }
         let column = self.text[self.line_start()..self.cursor].chars().count();
         let target = if delta < 0 {
             let start = self.line_start();
@@ -200,44 +215,61 @@ impl TextInput {
         self.cursor = target.0 + offset;
     }
 
-    /// The text cut into display rows no wider than `width` (one column is kept free for the
-    /// cursor), as byte ranges. Every logical line gives at least one row.
-    pub fn rows(&self, width: usize) -> Vec<Range<usize>> {
-        let limit = width.saturating_sub(1).max(1);
-        let mut rows = Vec::new();
-        let mut start = 0;
-        let mut used = 0;
-        for (i, c) in self.text.char_indices() {
-            if c == '\n' {
-                rows.push(start..i);
-                start = i + 1;
-                used = 0;
-                continue;
+    /// Moves the cursor one display row up or down at `width`, keeping its screen column.
+    fn move_by_rows(&mut self, delta: i32, width: usize) {
+        let rows = self.rows(width);
+        let (row, column) = self.cursor_position(width);
+        let target = if delta < 0 {
+            match row.checked_sub(1) {
+                Some(t) => t,
+                None => return,
             }
+        } else if row + 1 < rows.len() {
+            row + 1
+        } else {
+            return;
+        };
+        let range = rows[target].clone();
+        let mut pos = range.end;
+        let mut used = 0;
+        for (i, c) in self.text[range.clone()].char_indices() {
             let w = c.width().unwrap_or(0);
-            if used + w > limit {
-                rows.push(start..i);
-                start = i;
-                used = 0;
+            if used + w > column {
+                pos = range.start + i;
+                break;
             }
             used += w;
         }
-        rows.push(start..self.text.len());
-        rows
+        // The end of a soft-wrapped row is the start of the next one; stay on this row.
+        let soft = rows
+            .get(target + 1)
+            .is_some_and(|next| next.start == range.end);
+        if pos == range.end && soft {
+            pos = self.text[range.clone()]
+                .char_indices()
+                .next_back()
+                .map_or(range.start, |(i, _)| range.start + i);
+        }
+        self.cursor = pos;
     }
 
-    /// The cursor's row and column in the rows [`rows`](Self::rows) gives for `width`.
+    /// The text cut into display rows no wider than `width` (one column is kept free for the
+    /// cursor), as byte ranges. Rows break at spaces; only a word longer than the line is split.
+    /// Whitespace at a break hangs off the end of its row. Every logical line gives a row.
+    pub fn rows(&self, width: usize) -> Vec<Range<usize>> {
+        wrap_ranges(&self.text, width.saturating_sub(1).max(1))
+    }
+
+    /// The cursor's row and column in the rows [`rows`](Self::rows) gives for `width`. The
+    /// column never passes the cursor's spare column, even after spaces hanging at a wrap.
     pub fn cursor_position(&self, width: usize) -> (usize, usize) {
         let rows = self.rows(width);
         let row = rows
             .iter()
             .rposition(|r| r.start <= self.cursor)
             .unwrap_or(0);
-        let col = self.text[rows[row].start..self.cursor]
-            .chars()
-            .map(|c| c.width().unwrap_or(0))
-            .sum();
-        (row, col)
+        let col = self.text[rows[row].start..self.cursor].width();
+        (row, col.min(width.saturating_sub(1)))
     }
 }
 
@@ -340,6 +372,71 @@ mod tests {
             .map(|r| &input.text()[r])
             .collect();
         assert_eq!(rows, vec!["abcd", "efgh", "", "xy"]);
+    }
+
+    fn rows_of(input: &TextInput, width: usize) -> Vec<&str> {
+        input
+            .rows(width)
+            .into_iter()
+            .map(|r| &input.text()[r])
+            .collect()
+    }
+
+    #[test]
+    fn rows_break_at_spaces_not_inside_words() {
+        let input = TextInput::multiline("fix the build now");
+        assert_eq!(rows_of(&input, 9), vec!["fix the ", "build ", "now"]);
+    }
+
+    #[test]
+    fn the_cursor_at_the_end_of_a_wrapped_line_sits_on_the_next_row() {
+        let input = TextInput::multiline("hello world");
+        // Limit 7 (one column kept for the cursor): "hello " then "world".
+        assert_eq!(input.cursor_position(8), (1, 5));
+    }
+
+    #[test]
+    fn hanging_spaces_never_push_the_cursor_off_screen() {
+        let input = TextInput::multiline("hello      ");
+        assert_eq!(rows_of(&input, 6), vec!["hello      "]);
+        assert_eq!(input.cursor_position(6), (0, 5));
+    }
+
+    #[test]
+    fn up_and_down_move_across_wrapped_rows() {
+        let mut input = TextInput::multiline("one two three");
+        input.set_wrap_width(9);
+        // Rows at limit 8: "one two ", "three"; cursor at the end of "three" (column 5).
+        input.handle(key(KeyCode::Up));
+        assert_eq!(input.cursor_position(9), (0, 5));
+        typed(&mut input, "!");
+        assert_eq!(input.text(), "one t!wo three");
+        input.handle(key(KeyCode::Down));
+        assert_eq!(input.before_cursor(), "one t!wo three");
+        input.handle(key(KeyCode::Home));
+        input.handle(key(KeyCode::Down));
+        assert_eq!(input.cursor_position(9), (1, 0));
+    }
+
+    #[test]
+    fn moving_up_onto_a_shorter_wrapped_row_stays_on_that_row() {
+        let mut input = TextInput::multiline("ab cdefgh");
+        input.set_wrap_width(7);
+        // Rows: "ab ", "cdefgh"; from column 6 the end of "ab " would be the next row's start.
+        input.handle(key(KeyCode::Up));
+        assert_eq!(input.cursor_position(7), (0, 2));
+        typed(&mut input, "x");
+        assert_eq!(input.text(), "abx cdefgh");
+    }
+
+    #[test]
+    fn editing_rewraps_the_rows() {
+        let mut input = TextInput::multiline("aaa bbb");
+        assert_eq!(rows_of(&input, 8), vec!["aaa bbb"]);
+        typed(&mut input, "b");
+        assert_eq!(rows_of(&input, 8), vec!["aaa ", "bbbb"]);
+        input.handle(key(KeyCode::Backspace));
+        assert_eq!(rows_of(&input, 8), vec!["aaa bbb"]);
     }
 
     #[test]
