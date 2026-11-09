@@ -27,12 +27,12 @@ expression: "render(&mut reading_app(), 120, 40)"
 │                                                                         ││ ⏎ open · o fold · dd archive              │
 │   • the CI config                                                       │└───────────────────────────────────────────┘
 │                                                                         │┌ inbox · needs you (3) ────────────────────┐
-│   rust                                                                  ││ ▸ ⚠ slice-7  Bash                   10:15 │
-│     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                    ││   │ FS_EVAL_VIRTUAL_KEY=dev cargo test    │
-│                                                                         ││   │ -p api get_decision                   │
-│   Slice   │ State                                                       ││   │ A → always allow: Bash(cargo test:*)  │
-│   ────────┼────────                                                     ││   ? slice-4  Question               10:12 │
-│   slice-4 │ editing                                                     ││   ✓ slice-4  Finished turn          10:09 │
+│   rust                                                                  ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
+│     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                    ││   ? slice-4  Which route prefix sh… 10:12 │
+│                                                                         ││   ✓ slice-4  Handler wired; tests … 10:09 │
+│   Slice   │ State                                                       ││                                           │
+│   ────────┼────────                                                     ││                                           │
+│   slice-4 │ editing                                                     ││                                           │
 │   slice-7 │ blocked                                                     ││                                           │
 │                                                                         ││                                           │
 │   │ Merge order: #1231 first, then the 500 fix.                         ││                                           │

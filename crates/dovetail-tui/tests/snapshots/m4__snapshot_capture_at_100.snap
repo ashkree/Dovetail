@@ -20,13 +20,13 @@ expression: "render(&mut app, 100, 28)"
 │   w│ ⏎ save · Tab save and open · esc cancel                                                │    │
 │    └────────────────────────────────────────────────────────────────────────────────────────┘────┘
 │                                                          │┌ inbox · needs you (3) ───────────────┐
-│                                                          ││ ▸ ⚠ slice-7  Bash              10:15 │
-│                                                          ││   │ FS_EVAL_VIRTUAL_KEY=dev cargo    │
-│                                                          ││   │ test -p api get_decision         │
-│                                                          ││   │ A → always allow: Bash(cargo     │
-│                                                          ││   │ test:*)                          │
-│   ────────────────────────────────────────────────────   ││   ? slice-4  Question          10:12 │
-│   › i to chat · ]] [[ turns · zc zo fold · gg G          ││   ✓ slice-4  Finished turn     10:09 │
+│                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
+│                                                          ││   ? slice-4  Which route pref… 10:12 │
+│                                                          ││   ✓ slice-4  Handler wired; t… 10:09 │
+│                                                          ││                                      │
+│                                                          ││                                      │
+│   ────────────────────────────────────────────────────   ││                                      │
+│   › i to chat · ]] [[ turns · zc zo fold · gg G          ││                                      │
 │                                                          ││ y allow · d deny · r reply · x dism… │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
  INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command

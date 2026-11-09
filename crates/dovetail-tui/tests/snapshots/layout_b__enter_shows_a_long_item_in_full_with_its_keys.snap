@@ -1,0 +1,36 @@
+---
+source: crates/dovetail-tui/tests/layout_b.rs
+expression: screen
+---
+ folder /src/business
+┌ inbox item ─────────────────────────────────────────────────────────────┐┌ tasks · business ─────────────────────────┐
+│ ? slice-4  Question · blocked  10:14                                    ││ ◐ ◆ coordinator        working 1.2G $3.10 │
+│                                                                         ││ ▾ Now (2)                                 │
+│ Should the new route live under /v2/decisions or stay under /api? The   ││ ▾ ⚠ business surface P1          PR #1231 │
+│ old clients still call /api, and moving it means a redirect.            ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+│                                                                         ││         ⎇ dovetail/slice-4                │
+│ • /v2 matches the OpenAPI spec draft                                    ││         ✓ write route tests               │
+│                                                                         ││         ◐ wire handler to registry        │
+│ • /api keeps the gateway config as it is                                ││         ○ update OpenAPI spec ⊘ blocked   │
+│                                                                         ││       ✓ ◇ rebase               done $0.21 │
+│ I'd go with /v2 and add the redirect in the same PR.                    ││       ◐ ◇ explore callers 12 tools · Grep │
+│                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
+│                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
+│                                                                         ││         ⎇ dovetail/slice-7                │
+│                                                                         ││ ▾ Next (1)                                │
+│                                                                         ││   ○ idea: eval key flow P2                │
+│                                                                         ││ ⏎ open · o fold · dd archive              │
+│                                                                         │└───────────────────────────────────────────┘
+│                                                                         │┌ inbox · needs you (4) ────────────────────┐
+│                                                                         ││ ▸ ? slice-4  blocked · Should the … 10:14 │
+│                                                                         ││   ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:13 │
+│                                                                         ││   ✗ slice-7  Claude Code exited wi… 10:12 │
+│                                                                         ││   ✓ slice-4  Handler wired to the … 10:11 │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│ r reply · ⏎ open agent · esc back                                       ││ y allow · d deny · r reply · x dismiss    │
+└─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
+ NORMAL   business · 4 tasks · 3 agents · 4 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

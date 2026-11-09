@@ -192,6 +192,7 @@ const INBOX: Scope = Scope::Buffer(BufferKind::Inbox);
 const ACTIVITY: Scope = Scope::Buffer(BufferKind::Activity);
 const MESSAGES: Scope = Scope::Buffer(BufferKind::Messages);
 const DETAIL: Scope = Scope::Buffer(BufferKind::TaskDetail);
+const ITEM: Scope = Scope::Buffer(BufferKind::InboxDetail);
 const CONVERSATION: Scope = Scope::Buffer(BufferKind::Conversation);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
@@ -270,6 +271,15 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, INBOX, "r", Action::InboxReply),
     bind(N, INBOX, "x", Action::InboxDismiss),
     bind(N, INBOX, "<CR>", Action::InboxOpen),
+    // An inbox item in full takes the same answer keys; Enter opens its agent.
+    bind(N, ITEM, "<Esc>", Action::BackToConversation),
+    bind(N, ITEM, "y", Action::InboxAllow),
+    bind(N, ITEM, "A", Action::InboxAllowAlways),
+    bind(N, ITEM, "d", Action::InboxDeny),
+    bind(N, ITEM, "D", Action::InboxDenyWithReason),
+    bind(N, ITEM, "r", Action::InboxReply),
+    bind(N, ITEM, "x", Action::InboxDismiss),
+    bind(N, ITEM, "<CR>", Action::InboxOpen),
 ];
 
 #[derive(Debug, Clone)]
