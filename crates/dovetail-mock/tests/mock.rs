@@ -267,6 +267,13 @@ fn starting_a_slice_on_a_todo_task_marks_it_in_progress() {
             .map(|t| t.status)
     };
     assert_eq!(status(&core), Some(TaskStatus::InProgress));
+    let bucket = core
+        .state()
+        .tasks
+        .iter()
+        .find(|t| t.id == todo)
+        .and_then(|t| t.bucket);
+    assert_eq!(bucket, Some(Bucket::Now));
     core.handle(Command::CloseSlice {
         agent: AgentId("reading-column".into()),
     });

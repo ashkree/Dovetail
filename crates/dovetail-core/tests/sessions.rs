@@ -11,8 +11,9 @@ use std::time::{Duration, Instant};
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::{AskUser, ReportStatus, StartSlice, Tool};
 use dovetail_api::{
-    AgentId, AgentKind, Attachment, Command, CoreLink, EntryKind, ImageType, InboxId, InboxKind,
-    NewTask, PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId, apply,
+    AgentId, AgentKind, Attachment, Bucket, Command, CoreLink, EntryKind, ImageType, InboxId,
+    InboxKind, NewTask, PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId, TaskStatus,
+    apply,
 };
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
@@ -694,6 +695,41 @@ fn slices_over_the_cap_queue_until_one_is_archived() {
     h.wait_for("the slice queued before the restart", |s| {
         s.agents.iter().any(|a| a.name == "third")
     });
+    h.quit();
+}
+
+#[test]
+fn starting_a_slice_on_a_next_task_moves_it_to_now_in_progress() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    h.send(Command::CreateTask(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: Some(Bucket::Next),
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+    }));
+    h.wait_for("the task", |s| !s.tasks.is_empty());
+    let id = h.snap.tasks[0].id;
+    assert_eq!(h.snap.tasks[0].bucket, Some(Bucket::Next));
+    h.send(Command::NewSlice {
+        task: Some(id),
+        name: "work".into(),
+        brief: "go".into(),
+    });
+    let started = |s: &Snapshot| {
+        s.tasks.iter().any(|t| {
+            t.id == id && t.status == TaskStatus::InProgress && t.bucket == Some(Bucket::Now)
+        })
+    };
+    h.wait_for("the task in Now, in progress", started);
+
+    // Through the storage thread: still there after a restart.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let mut h = Harness::start_on(fixture("plain_turn"), paths);
+    h.wait_for("the task after the restart", started);
     h.quit();
 }
 

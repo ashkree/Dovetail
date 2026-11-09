@@ -254,12 +254,19 @@ impl MockCore {
                 slice.worktree = Some(world::worktree(&name));
                 slice.status_line = "setup: cargo fetch".into();
                 self.emit(Event::AgentUpserted(slice));
-                // Starting work on a task marks it started; nothing moves it back (plan B4).
-                if let Some(mut started) = task.and_then(|t| self.task(t))
-                    && started.status == TaskStatus::Todo
-                {
-                    started.status = TaskStatus::InProgress;
-                    self.emit(Event::TaskUpserted(started));
+                // Starting work on a task marks it started and puts it in Now; nothing moves it
+                // back (plan B4, task #7).
+                if let Some(mut started) = task.and_then(|t| self.task(t)) {
+                    let before = started.clone();
+                    if started.status == TaskStatus::Todo {
+                        started.status = TaskStatus::InProgress;
+                    }
+                    if started.status != TaskStatus::Done {
+                        started.bucket = Some(Bucket::Now);
+                    }
+                    if started != before {
+                        self.emit(Event::TaskUpserted(started));
+                    }
                 }
                 self.append(&agent_id(&name), EntryKind::User, brief);
                 self.refresh_totals();
