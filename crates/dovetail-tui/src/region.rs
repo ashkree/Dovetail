@@ -22,6 +22,8 @@ pub enum BufferKind {
     Messages,
     /// Tasks as a kanban, one column per status.
     Board,
+    /// Slice worktrees with their sync, PR and setup state.
+    Worktrees,
 }
 
 /// A slot in the layout.

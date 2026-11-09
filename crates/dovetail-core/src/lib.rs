@@ -5,6 +5,7 @@
 mod clipboard;
 pub mod config;
 pub mod db;
+pub mod editor;
 pub mod error;
 mod inbox;
 pub mod paths;

@@ -78,6 +78,9 @@ pub enum Action {
     ShowMessages,
     /// Show the board in the main region (or go back if it is showing).
     ShowBoard,
+    /// Show the worktree view in the main region and refresh its data (or go back if it is
+    /// showing).
+    ShowWorktrees,
     /// Return the main region to the conversation.
     BackToConversation,
     /// Open the Activity or message item's agent.
@@ -134,6 +137,15 @@ pub enum Action {
     BoardCardDown,
     /// Open the selected card's task detail.
     BoardOpen,
+    // --- worktree view ---
+    /// Open the selected worktree's slice conversation.
+    WorktreeOpen,
+    /// Open the selected worktree in the editor, with the UI suspended.
+    WorktreeEdit,
+    /// Copy the selected worktree's path to the clipboard.
+    WorktreeCopyPath,
+    /// Remove the selected worktree by archiving its slice; asks first if work is unsaved.
+    WorktreeRemove,
     // --- inbox ---
     /// Allow a permission request once.
     InboxAllow,

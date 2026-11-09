@@ -4,6 +4,15 @@
 //! blocks on one channel. It wakes only for a message, the 30 fps draw window after a change,
 //! the timeout of a half-typed key sequence, or a usage-limit reset passing. With nothing
 //! changing it sleeps forever.
+//!
+//! **Lending the terminal** (`e` in the worktree view, [`Command::OpenEditor`]). The input
+//! thread reads one key, hands it over, and waits for a go before reading the next, so it is
+//! never inside a read when a key asks for the terminal. If the key leaves a hand-off in the
+//! app ([`App::take_handoff`]), the loop sends the commands already queued, leaves the
+//! alternate screen and raw mode ([`Lend::release`]), sends the hand-off command, and holds
+//! the go back: the editor the core starts gets every key. Core messages are still folded in
+//! but nothing is drawn. On [`dovetail_api::Event::TerminalReturned`] the loop takes the
+//! terminal back ([`Lend::reclaim`]), redraws it in full and lets the input thread read again.
 
 use std::io;
 use std::sync::mpsc;
@@ -44,6 +53,34 @@ pub fn next_wake(
     }
 }
 
+/// Lets go of the terminal and takes it back, for a program the core runs in it.
+pub trait Lend {
+    /// Leaves the alternate screen and raw mode and shows the cursor.
+    fn release(&mut self) -> io::Result<()>;
+    /// Enters raw mode and the alternate screen again. The loop then clears the screen so the
+    /// next frame is drawn in full.
+    fn reclaim(&mut self) -> io::Result<()>;
+}
+
+/// The real terminal, through crossterm.
+struct Crossterm;
+
+impl Lend for Crossterm {
+    fn release(&mut self) -> io::Result<()> {
+        crossterm::terminal::disable_raw_mode()?;
+        crossterm::execute!(
+            io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::cursor::Show
+        )
+    }
+
+    fn reclaim(&mut self) -> io::Result<()> {
+        crossterm::terminal::enable_raw_mode()?;
+        crossterm::execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)
+    }
+}
+
 /// Restores the terminal when dropped, including on an early return or panic unwind.
 struct TerminalGuard;
 
@@ -59,16 +96,21 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
     let _guard = TerminalGuard;
     let CoreLink { commands, messages } = link;
     let (tx, rx) = mpsc::channel::<Msg>();
+    // One go per key: the input thread reads the next key only once the loop has handled the
+    // last one and kept the terminal (see the module docs).
+    let (go_tx, go_rx) = mpsc::channel::<()>();
 
     let input_tx = tx.clone();
     thread::spawn(move || {
         while let Ok(event) = event::read() {
-            let msg = match event {
-                TermEvent::Key(key) if key.kind != KeyEventKind::Release => Msg::Key(key),
-                TermEvent::Resize(..) => Msg::Resize,
-                _ => continue,
+            let gone = match event {
+                TermEvent::Key(key) if key.kind != KeyEventKind::Release => {
+                    input_tx.send(Msg::Key(key)).is_err() || go_rx.recv().is_err()
+                }
+                TermEvent::Resize(..) => input_tx.send(Msg::Resize).is_err(),
+                _ => false,
             };
-            if input_tx.send(msg).is_err() {
+            if gone {
                 break;
             }
         }
@@ -107,7 +149,51 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
         let _ = tx.send(Msg::ServerClosed);
     });
 
-    drive(&mut terminal, app, &rx, &commands, &clock)
+    let mut io = LoopIo {
+        commands: &commands,
+        go: &go_tx,
+        lend: &mut Crossterm,
+    };
+    drive(&mut terminal, app, &rx, &mut io, &clock)
+}
+
+/// What the loop talks to besides the app: the core's command channel, the input thread's go,
+/// and the terminal it can lend out.
+struct LoopIo<'a> {
+    commands: &'a mpsc::Sender<Command>,
+    go: &'a mpsc::Sender<()>,
+    lend: &'a mut dyn Lend,
+}
+
+impl LoopIo<'_> {
+    fn send_all(&mut self, app: &mut App) {
+        for command in app.take_commands() {
+            let _ = self.commands.send(command);
+        }
+    }
+
+    /// After a key: lends the terminal out if the key asked for it, else lets the input thread
+    /// read the next key.
+    fn after_key(&mut self, app: &mut App) -> io::Result<()> {
+        let Some(handoff) = app.take_handoff() else {
+            let _ = self.go.send(());
+            return Ok(());
+        };
+        // Commands the key queued go first, in order.
+        self.send_all(app);
+        // A worktree that is gone is refused here, before the screen flickers out and back.
+        if let Command::OpenEditor { path } = &handoff
+            && !path.exists()
+        {
+            app.handoff_refused(format!("{} does not exist", path.display()));
+            let _ = self.go.send(());
+            return Ok(());
+        }
+        self.lend.release()?;
+        tracing::debug!(?handoff, "terminal lent out");
+        let _ = self.commands.send(handoff);
+        Ok(())
+    }
 }
 
 /// The loop itself, on any backend: draws when dirty (at most ~30 fps), sends the app's
@@ -117,16 +203,18 @@ fn drive<B: ratatui::backend::Backend>(
     terminal: &mut ratatui::Terminal<B>,
     app: &mut App,
     rx: &mpsc::Receiver<Msg>,
-    commands: &mpsc::Sender<Command>,
+    io: &mut LoopIo,
     clock: &Clock,
 ) -> io::Result<()> {
     let started = Instant::now();
     let mono_ms = |at: Instant| at.duration_since(started).as_millis() as u64;
     let mut last_draw: Option<Instant> = None;
+    // The terminal is lent out: nothing is drawn and no key is read until it comes back.
+    let mut away = false;
     loop {
         let now = Instant::now();
         let since = last_draw.map_or(MIN_FRAME, |t| now.duration_since(t));
-        if app.is_dirty() && since >= MIN_FRAME {
+        if app.is_dirty() && !away && since >= MIN_FRAME {
             terminal
                 .draw(|frame| app.draw(frame))
                 .map_err(|e| io::Error::other(e.to_string()))?;
@@ -134,12 +222,10 @@ fn drive<B: ratatui::backend::Backend>(
             app.take_dirty();
             last_draw = Some(now);
         }
-        for command in app.take_commands() {
-            let _ = commands.send(command);
-        }
+        io.send_all(app);
         if app.should_quit() {
             // Sessions end with the app: there is no daemon in v1 (plan B23).
-            let _ = commands.send(Command::Quit { end_sessions: true });
+            let _ = io.commands.send(Command::Quit { end_sessions: true });
             return Ok(());
         }
 
@@ -155,7 +241,7 @@ fn drive<B: ratatui::backend::Backend>(
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
-        let first = match next_wake(app.is_dirty(), since, key_in) {
+        let first = match next_wake(app.is_dirty() && !away, since, key_in) {
             // Every sender gone: nothing can wake the loop again.
             None => match rx.recv() {
                 Ok(msg) => Some(msg),
@@ -174,12 +260,25 @@ fn drive<B: ratatui::backend::Backend>(
             .chain(std::iter::from_fn(|| rx.try_recv().ok()))
         {
             match msg {
-                Msg::Key(key) => app.on_key(key, mono_ms(Instant::now())),
+                Msg::Key(key) => {
+                    app.on_key(key, mono_ms(Instant::now()));
+                    io.after_key(app)?;
+                    away = app.terminal_away();
+                }
                 Msg::Resize => app.on_resize(),
                 Msg::Server(msg) => app.on_server(*msg),
                 Msg::ServerClosed => app.on_core_closed(),
                 Msg::Signal(signal) => app.on_signal(signal),
             }
+        }
+        if away && !app.terminal_away() {
+            io.lend.reclaim()?;
+            terminal
+                .clear()
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            tracing::debug!("terminal back");
+            away = false;
+            let _ = io.go.send(());
         }
         app.on_timeout(mono_ms(Instant::now()));
     }
@@ -188,6 +287,24 @@ fn drive<B: ratatui::backend::Backend>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A terminal that only records being lent out and taken back.
+    #[derive(Default)]
+    struct Recorder {
+        log: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl Lend for Recorder {
+        fn release(&mut self) -> io::Result<()> {
+            self.log.lock().expect("log").push("release".into());
+            Ok(())
+        }
+
+        fn reclaim(&mut self) -> io::Result<()> {
+            self.log.lock().expect("log").push("reclaim".into());
+            Ok(())
+        }
+    }
 
     /// Rehearsal 2026-11-06: the tree showed no tasks for about 90 s until a key was pressed.
     /// With no input at all, core events must still reach the screen.
@@ -199,6 +316,12 @@ mod tests {
         let mut app = App::new(jiff::tz::TimeZone::UTC);
         let (tx, rx) = mpsc::channel::<Msg>();
         let (commands, _sent) = mpsc::channel::<Command>();
+        let (go, _gone) = mpsc::channel::<()>();
+        let mut io = LoopIo {
+            commands: &commands,
+            go: &go,
+            lend: &mut Recorder::default(),
+        };
         let feeder = thread::spawn(move || {
             let send = |m| tx.send(Msg::Server(Box::new(m))).expect("loop alive");
             send(ServerMsg::Hello {
@@ -228,7 +351,7 @@ mod tests {
             thread::sleep(Duration::from_millis(200));
         });
         let clock: Clock = Box::new(|| 0);
-        drive(&mut terminal, &mut app, &rx, &commands, &clock).expect("loop");
+        drive(&mut terminal, &mut app, &rx, &mut io, &clock).expect("loop");
         feeder.join().expect("feeder");
         let screen: String = terminal
             .backend()
@@ -238,6 +361,130 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
         assert!(screen.contains("alpha from the core"), "{screen}");
+    }
+
+    /// `e` in the worktree view lends the terminal to the core's editor and takes it back:
+    /// the terminal is released before `OpenEditor` goes out, the input thread reads no key
+    /// while the editor runs, and the terminal is reclaimed (and the next key read) only once
+    /// `TerminalReturned` arrives.
+    #[test]
+    fn e_lends_the_terminal_to_the_editor_and_takes_it_back() {
+        let (log, app) = press_e_on(&std::env::temp_dir());
+        assert_eq!(
+            log,
+            ["release", "editor", "reclaim", "next key read"],
+            "each step causes the next"
+        );
+        assert!(!app.terminal_away());
+    }
+
+    /// A worktree that is gone is refused before the terminal is touched: no flicker, no
+    /// `OpenEditor`, the reason in the status bar, and keys keep coming.
+    #[test]
+    fn e_on_a_missing_worktree_never_lets_go_of_the_terminal() {
+        let missing = std::env::temp_dir().join("dovetail-no-such-worktree-4f1c");
+        let (log, app) = press_e_on(&missing);
+        assert_eq!(log, ["next key read"]);
+        assert!(!app.terminal_away());
+        assert_eq!(
+            app.note(),
+            Some(format!("{} does not exist", missing.display()).as_str())
+        );
+    }
+
+    /// Runs the loop over one slice whose worktree is at `path`, pressing `␣g` then `e`. The
+    /// fake core logs each command, answers `OpenEditor` with `TerminalReturned` and stops at
+    /// `Quit`; the fake input thread sends one key per go, as the real one does, then SIGTERM.
+    /// Returns the log of terminal, core and input steps, and the app.
+    fn press_e_on(path: &std::path::Path) -> (Vec<String>, App) {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use dovetail_api::{
+            Agent, AgentId, AgentKind, AgentStatus, Event, PermissionMode, SessionLock, Snapshot,
+            WorktreeRef,
+        };
+
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let note = |log: &std::sync::Arc<std::sync::Mutex<Vec<String>>>, s: &str| {
+            log.lock().expect("log").push(s.to_owned());
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("terminal");
+        let mut app = App::new(jiff::tz::TimeZone::UTC);
+        let mut snap = Snapshot::default();
+        snap.agents.push(Agent {
+            id: AgentId("slice-4".into()),
+            name: "slice-4".into(),
+            kind: AgentKind::Slice,
+            parent: None,
+            task: None,
+            worktree: Some(WorktreeRef {
+                path: path.to_path_buf(),
+                branch: "dovetail/slice-4".into(),
+            }),
+            status: AgentStatus::Idle,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: None,
+            last_activity_ms: 0,
+            lock: SessionLock::Headless,
+            model: None,
+            subagent_tokens: 0,
+        });
+        app.on_server(ServerMsg::Snapshot(snap));
+
+        let (tx, rx) = mpsc::channel::<Msg>();
+        let (commands, sent) = mpsc::channel::<Command>();
+        let (go, gone) = mpsc::channel::<()>();
+
+        // The fake core: "runs the editor" on OpenEditor, then hands the terminal back.
+        let core_tx = tx.clone();
+        let core_log = log.clone();
+        let core = thread::spawn(move || {
+            for command in sent {
+                match command {
+                    Command::OpenEditor { .. } => {
+                        note(&core_log, "editor");
+                        let _ = core_tx.send(Msg::Server(Box::new(ServerMsg::Event {
+                            seq: 1,
+                            event: Event::TerminalReturned { error: None },
+                        })));
+                    }
+                    Command::Quit { .. } => return,
+                    other => note(&core_log, &format!("{other:?}")),
+                }
+            }
+        });
+        // The fake input thread: one key per go, as the real one; then SIGTERM ends the loop.
+        let input_log = log.clone();
+        let input = thread::spawn(move || {
+            for c in [' ', 'g', 'e'] {
+                let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+                tx.send(Msg::Key(key)).expect("loop alive");
+                gone.recv().expect("go");
+            }
+            note(&input_log, "next key read");
+            tx.send(Msg::Signal(Signal::Terminate)).expect("loop alive");
+        });
+
+        let mut recorder = Recorder { log: log.clone() };
+        let mut io = LoopIo {
+            commands: &commands,
+            go: &go,
+            lend: &mut recorder,
+        };
+        let clock: Clock = Box::new(|| 0);
+        drive(&mut terminal, &mut app, &rx, &mut io, &clock).expect("loop");
+        input.join().expect("input");
+        core.join().expect("core");
+        let mut log = log.lock().expect("log").clone();
+        // The fake core logs on its own thread, so the refresh `␣g` sent may land anywhere;
+        // check it, then leave it out of the ordered steps.
+        let refresh = log.iter().position(|l| l == "RefreshWorktrees");
+        log.remove(refresh.expect("␣g asked for a refresh"));
+        (log, app)
     }
 
     #[test]

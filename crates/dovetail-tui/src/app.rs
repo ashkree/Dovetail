@@ -96,6 +96,11 @@ pub struct App {
     open_after_create: Option<String>,
     note: Option<String>,
     outbox: Vec<Command>,
+    /// A command that needs the terminal ([`Command::OpenEditor`]), for the loop to send once
+    /// it has let go of the terminal.
+    handoff: Option<Command>,
+    /// The terminal is lent out until the core sends [`Event::TerminalReturned`].
+    terminal_away: bool,
     /// A resync was requested and its snapshot has not arrived yet.
     resyncing: bool,
     /// The agent whose conversation had focus at the last settle, so focusing it counts as
@@ -132,6 +137,8 @@ impl App {
             open_after_create: None,
             note: None,
             outbox: Vec::new(),
+            handoff: None,
+            terminal_away: false,
             resyncing: false,
             reading: None,
             quit: false,
@@ -195,6 +202,8 @@ impl App {
     /// The core's channel closed; the UI stays up so the user can read it and quit.
     pub fn on_core_closed(&mut self) {
         self.dirty = true;
+        // Nobody is left to hand the terminal back.
+        self.terminal_away = false;
         self.note = Some("core disconnected; :q to quit".into());
     }
 
@@ -206,6 +215,30 @@ impl App {
     /// Commands waiting to go to the core.
     pub fn take_commands(&mut self) -> Vec<Command> {
         std::mem::take(&mut self.outbox)
+    }
+
+    /// A command that must run with the terminal lent out (`e` in the worktree view). The loop
+    /// lets go of the terminal (alternate screen, raw mode, key reading) and then sends it; from
+    /// here until [`Event::TerminalReturned`] arrives, [`App::terminal_away`] is true.
+    pub fn take_handoff(&mut self) -> Option<Command> {
+        let command = self.handoff.take();
+        if command.is_some() {
+            self.terminal_away = true;
+        }
+        command
+    }
+
+    /// The hand-off could not start (its path is gone), so the terminal was never lent out:
+    /// shows why and carries on.
+    pub fn handoff_refused(&mut self, why: String) {
+        self.terminal_away = false;
+        self.note = Some(why);
+        self.dirty = true;
+    }
+
+    /// Whether the terminal is lent out: the loop neither draws nor reads keys until it returns.
+    pub fn terminal_away(&self) -> bool {
+        self.terminal_away
     }
 
     /// When the unfinished key sequence gives up, on the loop's monotonic clock. `None` when
@@ -239,6 +272,8 @@ impl App {
     pub fn on_signal(&mut self, signal: Signal) {
         self.dirty = true;
         match signal {
+            // The editor has the terminal: Ctrl-C there is the editor's, not a request to quit.
+            Signal::Interrupt if self.terminal_away => {}
             Signal::Interrupt if self.confirm.is_some() => {
                 self.confirm = None;
                 self.run(Action::ForceQuit);
@@ -277,6 +312,15 @@ impl App {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
                 };
+                if let Some(note) = self.buffers.worktrees.on_event(&event) {
+                    self.note = Some(note);
+                }
+                if let Event::TerminalReturned { error } = &event {
+                    self.terminal_away = false;
+                    if let Some(error) = error {
+                        self.note = Some(error.clone());
+                    }
+                }
                 if let Event::ClipboardPasted { agent, paste } = &event
                     && let Some(notice) = self
                         .buffers
@@ -583,6 +627,14 @@ impl App {
             Action::ShowActivity => self.toggle_main(BufferKind::Activity),
             Action::ShowMessages => self.toggle_main(BufferKind::Messages),
             Action::ShowBoard => self.toggle_main(BufferKind::Board),
+            Action::ShowWorktrees => {
+                let opening = self.regions.buffer(RegionId::Main) != BufferKind::Worktrees;
+                self.toggle_main(BufferKind::Worktrees);
+                if opening {
+                    self.buffers.worktrees.begin_refresh(&self.snap);
+                    self.outbox.push(Command::RefreshWorktrees);
+                }
+            }
             Action::BackToConversation => {
                 // Leaving an inbox item goes back to the inbox, for the next one.
                 let main = self.regions.buffer(RegionId::Main);
@@ -676,6 +728,7 @@ impl App {
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
             Effect::PickRelated(task) => self.open_relate_picker(task),
             Effect::Note(text) => self.note = Some(text),
+            Effect::OpenEditor(path) => self.handoff = Some(Command::OpenEditor { path }),
         }
     }
 

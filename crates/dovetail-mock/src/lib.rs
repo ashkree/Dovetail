@@ -209,6 +209,12 @@ impl MockCore {
                     .unwrap_or_else(|| Paste::Refused("the mock core has no clipboard".into()));
                 self.emit(Event::ClipboardPasted { agent, paste });
             }
+            // The mock touches nothing outside itself: no clipboard and no editor. The editor
+            // answer still comes, so the UI takes its terminal back.
+            Command::CopyToClipboard { .. } => {}
+            Command::OpenEditor { .. } => self.emit(Event::TerminalReturned {
+                error: Some("the mock core opens no editor".into()),
+            }),
             Command::Interrupt { agent } => {
                 if !self.replying.remove(&agent) {
                     return self.fail(format!("{} is not mid-turn", agent.0));
@@ -225,6 +231,20 @@ impl MockCore {
                     return self.fail("that item is not a permission request".into());
                 }
                 self.resolve(item);
+                let removal = matches!(&found.kind, InboxKind::Permission { tool, .. }
+                    if tool == REMOVE_WORKTREE_PERMISSION);
+                if removal {
+                    // Yes removes the worktree with the slice; no keeps both.
+                    match answer {
+                        PermissionAnswer::Deny { .. } => self.append(
+                            &found.agent,
+                            EntryKind::Notice,
+                            "Kept: the worktree has unsaved work".into(),
+                        ),
+                        _ => self.remove_agent(&found.agent),
+                    }
+                    return;
+                }
                 if let PermissionAnswer::Deny { message } = answer {
                     let text = match message {
                         Some(m) => format!("Denied: {m}"),
@@ -292,8 +312,30 @@ impl MockCore {
                 self.after(2_500, move |core| core.finish_setup(&id));
             }
             Command::CloseSlice { agent } => {
-                if self.agent(&agent).is_none() {
+                let Some(found) = self.agent(&agent) else {
                     return self.fail(format!("no agent {}", agent.0));
+                };
+                // Like the core's archive path: unsaved work in the worktree asks first.
+                if let Some(wt) = found.worktree.clone()
+                    && self.unsaved(&found, &wt)
+                {
+                    if !self.asking_to_remove(&agent) {
+                        let kind = InboxKind::Permission {
+                            tool: REMOVE_WORKTREE_PERMISSION.into(),
+                            input: serde_json::json!({
+                                "worktree": wt.path,
+                                "branch": wt.branch,
+                            }),
+                            reason: Some(
+                                "the slice has uncommitted or unpushed work, which removing it \
+                                 would lose"
+                                    .into(),
+                            ),
+                            suggestions: vec![],
+                        };
+                        self.raise(&agent, kind);
+                    }
+                    return;
                 }
                 self.remove_agent(&agent);
             }
@@ -539,6 +581,28 @@ impl MockCore {
             a.parent.as_ref() == Some(parent)
                 && a.kind == AgentKind::Subagent { background: true }
                 && a.status == AgentStatus::Working
+        })
+    }
+
+    /// Whether removing the slice's worktree would lose work: uncommitted changes or unpushed
+    /// commits, from the worktree view's data (or what a refresh would show).
+    fn unsaved(&self, agent: &Agent, wt: &WorktreeRef) -> bool {
+        let info = self
+            .state
+            .worktrees
+            .iter()
+            .find(|w| w.agent == agent.id)
+            .cloned()
+            .unwrap_or_else(|| world::worktree_info(agent, wt, self.state.now_ms));
+        info.unpushed.is_some_and(|n| n > 0) || info.changes.is_some_and(|c| !c.is_clean())
+    }
+
+    /// Whether the user is already asked about removing the slice's worktree.
+    fn asking_to_remove(&self, agent: &AgentId) -> bool {
+        self.state.inbox.iter().any(|i| {
+            &i.agent == agent
+                && matches!(&i.kind, InboxKind::Permission { tool, .. }
+                    if tool == REMOVE_WORKTREE_PERMISSION)
         })
     }
 

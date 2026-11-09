@@ -107,6 +107,11 @@ impl App {
                 .current(&self.snap)
                 .and_then(|item| task_of(&item.agent)),
             BufferKind::Board => self.buffers.board.selected_task(&self.snap),
+            BufferKind::Worktrees => self
+                .buffers
+                .worktrees
+                .selected_agent(&self.snap)
+                .and_then(|id| task_of(&id)),
             BufferKind::Activity | BufferKind::Messages => None,
         }
     }
