@@ -212,6 +212,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 progress,
                 last_activity_ms: last.unwrap_or(0),
                 lock: SessionLock::Headless,
+                model: None,
             },
             session_id,
             transcript_path: transcript.map(PathBuf::from),

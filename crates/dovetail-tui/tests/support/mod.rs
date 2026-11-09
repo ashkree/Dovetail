@@ -35,6 +35,7 @@ fn agent(id: &str, kind: AgentKind, status: AgentStatus, task: Option<i64>) -> A
         progress: None,
         last_activity_ms: NOW_MS,
         lock: SessionLock::Headless,
+        model: None,
     }
 }
 

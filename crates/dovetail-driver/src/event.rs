@@ -84,6 +84,8 @@ pub struct AssistantMessage {
     pub uuid: Option<String>,
     /// Content blocks in order.
     pub blocks: Vec<ContentBlock>,
+    /// The model that wrote it (`message.model`), when present.
+    pub model: Option<String>,
 }
 
 impl AssistantMessage {

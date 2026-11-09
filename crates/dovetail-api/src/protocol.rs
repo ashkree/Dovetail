@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
     Decision, DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, Snapshot, Task, TaskId,
-    TaskStatus, TodoItem, TodoListId, Totals, Warning, WarningId,
+    TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId,
 };
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
@@ -91,6 +91,8 @@ pub enum Event {
     },
     /// Status-bar totals changed.
     TotalsChanged(Totals),
+    /// A session reported new usage-limit figures.
+    UsageChanged(UsageLimits),
     /// A warning was raised or reworded.
     WarningSet(Warning),
     /// A warning no longer applies.

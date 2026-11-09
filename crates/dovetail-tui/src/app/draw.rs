@@ -19,6 +19,7 @@ use crate::keymap::Key;
 use crate::mode::Mode;
 use crate::region::{RegionId, layout};
 use crate::switcher;
+use crate::usage;
 
 impl App {
     /// Draws the whole screen.
@@ -158,12 +159,12 @@ impl App {
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
         let theme = &self.theme;
         let snap = &self.snap;
-        let worktree = self
+        let in_view = self
             .buffers
             .conversation
             .agent()
-            .and_then(|id| snap.agents.iter().find(|a| &a.id == id))
-            .and_then(|a| a.worktree.as_ref());
+            .and_then(|id| snap.agents.iter().find(|a| &a.id == id));
+        let worktree = in_view.and_then(|a| a.worktree.as_ref());
         let mut left = vec![Span::raw(" ")];
         match (worktree, &snap.project) {
             (Some(wt), _) => {
@@ -182,7 +183,7 @@ impl App {
             (None, None) => left.push(Span::styled("no folder open", theme.dim())),
         }
         let unregistered = snap.warnings.iter().any(|w| w.id.0 == UNREGISTERED_WARNING);
-        let rights = if unregistered {
+        let warnings = if unregistered {
             vec![
                 vec![Span::styled(
                     "⚠ not a Dovetail project yet: :project add keeps it ",
@@ -195,6 +196,30 @@ impl App {
             ]
         } else {
             Vec::new()
+        };
+        // Task #16: the model of the conversation in view and the account's usage limits.
+        let usage = usage::variants(
+            &snap.usage,
+            in_view.and_then(|a| a.model.as_deref()),
+            self.now_ms,
+            &self.tz,
+            theme,
+        );
+        // Every warning version with every usage version, the warning shortening first.
+        let rights: Vec<Vec<Span<'static>>> = match (warnings.is_empty(), usage.is_empty()) {
+            (true, _) => usage,
+            (false, true) => warnings,
+            (false, false) => warnings
+                .iter()
+                .flat_map(|w| {
+                    usage.iter().map(move |u| {
+                        let mut both = w.clone();
+                        both.push(Span::raw(" "));
+                        both.extend(u.iter().cloned());
+                        both
+                    })
+                })
+                .collect(),
         };
         frame.render_widget(
             Paragraph::new(spread_fit(left, &rights, usize::from(area.width))),

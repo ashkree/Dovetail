@@ -81,6 +81,9 @@ pub struct Snapshot {
     /// Every task's decision log, oldest first.
     #[serde(default)]
     pub decisions: Vec<Decision>,
+    /// The account's Claude usage limits, as last reported by any session.
+    #[serde(default)]
+    pub usage: UsageLimits,
 }
 
 impl Snapshot {
@@ -224,6 +227,10 @@ pub struct Agent {
     pub last_activity_ms: i64,
     /// Whether Dovetail or a native terminal drives the session.
     pub lock: SessionLock,
+    /// The model the session runs, as Claude Code names it (`claude-opus-5-5`); `None` until
+    /// the session reports it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// What an agent is. Coordinators and slices are their own Claude Code sessions; subagents
@@ -589,6 +596,27 @@ pub struct Totals {
     pub needs_you: u32,
     /// Cost across all agents, in API-equivalent US dollars.
     pub cost_usd: f64,
+}
+
+/// How close the account is to its Claude usage limits. Limits are per account, so this is the
+/// latest report from any session. Nothing is known until a session finishes a turn.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct UsageLimits {
+    /// The rolling 5-hour window.
+    pub five_hour: Option<UsageWindow>,
+    /// The weekly (7-day) window.
+    pub seven_day: Option<UsageWindow>,
+}
+
+/// One usage-limit window, from Claude Code's `rate_limit_event`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsageWindow {
+    /// How much of the window is used, 0–1 (may exceed 1 when over the limit).
+    pub utilization: f64,
+    /// When the window resets, in Unix seconds; `None` when not reported.
+    pub resets_at: Option<i64>,
+    /// Claude Code's status word for the window, e.g. `allowed`.
+    pub status: String,
 }
 
 /// One entry in a task's decision log. Entries are never edited: a later one can supersede it.

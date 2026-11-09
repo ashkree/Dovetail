@@ -229,6 +229,7 @@ fn map_assistant(v: &Value) -> DriverEvent {
         message_id: str_of(msg, "id"),
         uuid: str_of(v, "uuid"),
         blocks,
+        model: str_of(msg, "model"),
     })
 }
 

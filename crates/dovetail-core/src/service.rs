@@ -21,7 +21,7 @@ use dovetail_api::{
     AgentStatus, Attachment, CONVERSATION_TAIL, Command, ConversationEntry, ConversationTail,
     CoreLink, DecisionAuthor, EntryId, EntryKind, Event, InboxId, InboxItem, MESSAGE_TAIL, NewTask,
     PROTOCOL_VERSION, PermissionMode, ServerMsg, SessionLock, Snapshot, Task, TaskChange, TaskId,
-    TaskStatus, Totals, Warning, WarningId,
+    TaskStatus, Totals, UsageLimits, Warning, WarningId,
 };
 use dovetail_driver::{DriverEvent, SessionDriver};
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
@@ -285,6 +285,8 @@ pub(crate) struct Core {
     pub(crate) messages: VecDeque<AgentMessage>,
     pub(crate) warnings: Vec<Warning>,
     totals: Totals,
+    /// The account's usage limits, as last reported by any session (task #16).
+    pub(crate) usage: UsageLimits,
     pub(crate) next_entry: u64,
     pub(crate) next_inbox: u64,
     next_activity: u64,
@@ -355,6 +357,7 @@ impl Core {
             messages: VecDeque::new(),
             warnings: Vec::new(),
             totals: Totals::default(),
+            usage: UsageLimits::default(),
             next_entry: 1,
             next_inbox: 1,
             next_activity: 1,
@@ -584,6 +587,7 @@ impl Core {
                     seq: self.seq,
                     now_ms: now_ms(),
                     project: Some(self.project.summary()),
+                    usage: self.usage.clone(),
                     ..Snapshot::default()
                 }
             }
@@ -612,6 +616,7 @@ impl Core {
             conversations: self.tails.clone(),
             warnings: self.warnings.clone(),
             todos: self.todos.items(),
+            usage: self.usage.clone(),
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1087,6 +1092,7 @@ pub(crate) fn new_agent(id: AgentId, name: String, kind: AgentKind, task: Option
         progress: None,
         last_activity_ms: now_ms(),
         lock: SessionLock::Headless,
+        model: None,
     }
 }
 

@@ -517,6 +517,7 @@ impl Core {
             DriverEvent::ControlRequest { raw, .. } => {
                 tracing::warn!(agent = %agent.0, "unhandled control request: {raw}");
             }
+            DriverEvent::RateLimit { info } => self.on_rate_limit(&info),
             DriverEvent::Exited(info) => self.on_exit(&agent, info),
             _ => {}
         }
@@ -531,6 +532,7 @@ impl Core {
         let first = !live.inited;
         live.inited = true;
         let setting_up = live.setting_up;
+        self.set_model(agent, init.model.as_deref());
         if first {
             let cwd = init
                 .cwd
@@ -614,6 +616,8 @@ impl Core {
     }
 
     fn on_assistant(&mut self, agent: &AgentId, message: dovetail_driver::AssistantMessage) {
+        // Only main-thread messages get here; a subagent's model is not the session's.
+        self.set_model(agent, message.model.as_deref());
         let mut texts = Vec::new();
         let mut tools = Vec::new();
         for block in &message.blocks {

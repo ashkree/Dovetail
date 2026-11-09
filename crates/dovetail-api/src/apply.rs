@@ -94,6 +94,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         }
         Event::DecisionAdded(decision) => upsert(&mut state.decisions, decision, |d| d.id),
         Event::TotalsChanged(totals) => state.totals = totals,
+        Event::UsageChanged(usage) => state.usage = usage,
         Event::WarningSet(warning) => upsert(&mut state.warnings, warning, |w| w.id.clone()),
         Event::WarningCleared(id) => state.warnings.retain(|w| w.id != id),
         // Nothing to store: the UI shows the message as the event passes through.

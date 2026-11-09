@@ -55,6 +55,7 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
         progress: None,
         last_activity_ms: now_ms,
         lock: SessionLock::Headless,
+        model: Some("claude-opus-5-5".into()),
     }
 }
 
@@ -82,6 +83,7 @@ pub(crate) fn subagent(id: &str, parent: &Agent, background: bool, now_ms: i64) 
         progress: None,
         last_activity_ms: now_ms,
         lock: SessionLock::Headless,
+        model: None,
     }
 }
 
@@ -401,9 +403,28 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         totals: Totals::default(),
         warnings: vec![],
         decisions: decisions(now_ms),
+        usage: usage(now_ms, 0.34),
     };
     snapshot.totals = totals_of(&snapshot);
     snapshot
+}
+
+/// Plausible usage limits: the 5-hour window `five_hour` used and resetting in about 2 h 20 m,
+/// the week 18 % used and resetting in 3 days.
+pub(crate) fn usage(now_ms: i64, five_hour: f64) -> UsageLimits {
+    let now = now_ms / 1_000;
+    UsageLimits {
+        five_hour: Some(UsageWindow {
+            utilization: five_hour,
+            resets_at: Some(now + 2 * 3_600 + 20 * 60),
+            status: "allowed".into(),
+        }),
+        seven_day: Some(UsageWindow {
+            utilization: 0.18,
+            resets_at: Some(now + 3 * 86_400),
+            status: "allowed".into(),
+        }),
+    }
 }
 
 /// Rounds a dollar amount to whole cents.
