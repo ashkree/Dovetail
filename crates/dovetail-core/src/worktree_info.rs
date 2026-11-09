@@ -87,12 +87,24 @@ async fn run<S: AsRef<OsStr>>(
     args: &[S],
     timeout: Duration,
 ) -> Result<String, InfoError> {
+    run_env(dir, program, args, &[], timeout).await
+}
+
+/// [`run`] with extra environment variables.
+async fn run_env<S: AsRef<OsStr>>(
+    dir: &Path,
+    program: &Path,
+    args: &[S],
+    env: &[(&str, String)],
+    timeout: Duration,
+) -> Result<String, InfoError> {
     let name = program.display().to_string();
     let child = tokio::process::Command::new(program)
         .args(args)
         .current_dir(dir)
-        // A fetch must never stop to ask for credentials: it fails instead.
+        // Git must never stop to ask for credentials: it fails instead.
         .env("GIT_TERMINAL_PROMPT", "0")
+        .envs(env.iter().map(|(k, v)| (k, v)))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -286,9 +298,44 @@ pub(crate) struct Context {
     pub repo: PathBuf,
     /// The `gh` program (a path in tests).
     pub gh: PathBuf,
+    /// The user's own `GIT_SSH_COMMAND`, if set: the fetch's ssh command builds on it.
+    pub ssh_command: Option<String>,
+}
+
+/// Environment for `git fetch`: ssh must fail rather than prompt on the terminal the TUI owns.
+/// `user` is the ssh command the user chose (`GIT_SSH_COMMAND`, else `core.sshCommand`);
+/// `BatchMode` is added to it, or to plain `ssh`.
+pub(crate) fn fetch_env(user: Option<&str>) -> [(&'static str, String); 2] {
+    let ssh = match user.map(str::trim).filter(|c| !c.is_empty()) {
+        Some(command) => format!("{command} -o BatchMode=yes"),
+        None => "ssh -o BatchMode=yes".to_owned(),
+    };
+    [
+        ("GIT_SSH_COMMAND", ssh),
+        ("SSH_ASKPASS_REQUIRE", "never".to_owned()),
+    ]
 }
 
 impl Context {
+    /// The ssh command the user chose for git: `GIT_SSH_COMMAND`, else `core.sshCommand`.
+    async fn user_ssh_command(&self) -> Option<String> {
+        if self.ssh_command.is_some() {
+            return self.ssh_command.clone();
+        }
+        // Exit status 1 means unset.
+        git(&self.repo, &["config", "--get", "core.sshCommand"])
+            .await
+            .ok()
+            .map(|c| c.trim().to_owned())
+    }
+
+    /// Fetches `base` from `origin`, never prompting for credentials.
+    async fn fetch(&self, base: &str) -> Result<String, InfoError> {
+        let env = fetch_env(self.user_ssh_command().await.as_deref());
+        let args = ["fetch", "--quiet", "origin", base];
+        run_env(&self.repo, Path::new("git"), &args, &env, NETWORK_TIMEOUT).await
+    }
+
     /// The base branch: the one checked out in the main checkout, or `HEAD` when it is detached
     /// or unknown. A [`Refresh::Full`] first fetches it from `origin`.
     pub(crate) async fn base(&self, refresh: Refresh) -> Base {
@@ -303,13 +350,11 @@ impl Context {
         let origin_known = match refresh {
             Refresh::Local => true,
             Refresh::Full if name == "HEAD" => false,
-            Refresh::Full => {
-                let args = ["fetch", "--quiet", "origin", name.as_str()];
-                run(&self.repo, Path::new("git"), &args, NETWORK_TIMEOUT)
-                    .await
-                    .inspect_err(|e| tracing::warn!("worktree view: fetching {name}: {e}"))
-                    .is_ok()
-            }
+            Refresh::Full => self
+                .fetch(&name)
+                .await
+                .inspect_err(|e| tracing::warn!("worktree view: fetching {name}: {e}"))
+                .is_ok(),
         };
         Base { name, origin_known }
     }
@@ -479,6 +524,7 @@ impl Core {
             paths: self.paths.clone(),
             repo: self.project.repo_path().to_path_buf(),
             gh: PathBuf::from("gh"),
+            ssh_command: std::env::var("GIT_SSH_COMMAND").ok(),
         };
         let inputs = self.inputs.clone();
         let now = now_ms();
@@ -609,6 +655,7 @@ mod tests {
                 paths,
                 repo,
                 gh: dir.path().join("no-such-gh"),
+                ssh_command: None,
             },
             target: Target {
                 agent: AgentId("a1".into()),
@@ -672,6 +719,73 @@ mod tests {
         // A local refresh reads the last fetched ref and makes no network call.
         let local = gathered(&s, Refresh::Local).await.info;
         assert_eq!(behind_origin(&local), Some(0));
+    }
+
+    #[test]
+    fn the_fetch_env_adds_batch_mode_to_the_users_ssh_command() {
+        let value = |user| {
+            let env = fetch_env(user);
+            assert_eq!(env[1], ("SSH_ASKPASS_REQUIRE", "never".to_owned()));
+            env[0].clone()
+        };
+        assert_eq!(
+            value(None),
+            ("GIT_SSH_COMMAND", "ssh -o BatchMode=yes".to_owned())
+        );
+        assert_eq!(
+            value(Some("ssh -i ~/.ssh/work")),
+            (
+                "GIT_SSH_COMMAND",
+                "ssh -i ~/.ssh/work -o BatchMode=yes".to_owned()
+            )
+        );
+    }
+
+    /// A fake ssh that records its arguments and `SSH_ASKPASS_REQUIRE`, then fails.
+    fn fake_ssh(s: &Scratch) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let script = s._dir.path().join("fake-ssh");
+        let log = s._dir.path().join("ssh.log");
+        let body = format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" \"askpass=$SSH_ASKPASS_REQUIRE\" > '{}'\nexit 1\n",
+            log.display()
+        );
+        fs::write(&script, body).expect("write");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).expect("chmod");
+        run_git(
+            &s.ctx.repo,
+            &["remote", "set-url", "origin", "ssh://example.invalid/r.git"],
+        );
+        (script, log)
+    }
+
+    fn assert_batch_mode(log: &Path) {
+        let seen = fs::read_to_string(log).expect("ssh ran");
+        assert!(seen.contains("BatchMode=yes"), "{seen}");
+        assert!(seen.contains("askpass=never"), "{seen}");
+    }
+
+    #[tokio::test]
+    async fn the_fetch_runs_the_users_ssh_command_in_batch_mode() {
+        let mut s = scratch();
+        let (script, log) = fake_ssh(&s);
+        s.ctx.ssh_command = Some(script.to_string_lossy().into_owned());
+        // ssh failed, so the fetch did: origin is unknown, the rest known.
+        let got = info(&s).await;
+        assert_eq!(behind_origin(&got), None);
+        assert_batch_mode(&log);
+    }
+
+    #[tokio::test]
+    async fn the_fetch_keeps_a_configured_ssh_command_in_batch_mode() {
+        let s = scratch();
+        let (script, log) = fake_ssh(&s);
+        run_git(
+            &s.ctx.repo,
+            &["config", "core.sshCommand", &script.to_string_lossy()],
+        );
+        assert_eq!(behind_origin(&info(&s).await), None);
+        assert_batch_mode(&log);
     }
 
     #[tokio::test]
