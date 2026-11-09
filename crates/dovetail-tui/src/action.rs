@@ -120,14 +120,18 @@ pub enum Action {
     /// Archive the selected task.
     TaskArchive,
     // --- board ---
-    /// Move the cursor to the column on the left.
+    /// Move the cursor to the column on the left, wrapping from the first to the last.
     BoardColumnLeft,
-    /// Move the cursor to the column on the right.
+    /// Move the cursor to the column on the right, wrapping from the last to the first.
     BoardColumnRight,
     /// Move the selected card to the previous status (its column on the left).
     BoardMoveCardLeft,
     /// Move the selected card to the next status (its column on the right).
     BoardMoveCardRight,
+    /// Move the selected card up within its column.
+    BoardCardUp,
+    /// Move the selected card down within its column.
+    BoardCardDown,
     /// Open the selected card's task detail.
     BoardOpen,
     // --- inbox ---

@@ -305,7 +305,7 @@ impl App {
                         }
                         if let Some(id) = created {
                             self.open_after_create = None;
-                            self.open_task(id);
+                            self.open_task(id, false);
                         }
                     }
                     ApplyResult::Gap { expected, got } => {
@@ -667,7 +667,11 @@ impl App {
         match effect {
             Effect::Command(command) => self.outbox.push(command),
             Effect::OpenAgent(id) => self.open_agent_in_main(id),
-            Effect::OpenTask(id) => self.open_task(id),
+            Effect::OpenTask(id) => {
+                // Effects come from the focused buffer.
+                let from_board = self.regions.focused_buffer() == BufferKind::Board;
+                self.open_task(id, from_board);
+            }
             Effect::OpenInboxItem(id) => self.open_inbox_item(id),
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
             Effect::PickRelated(task) => self.open_relate_picker(task),

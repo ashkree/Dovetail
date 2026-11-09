@@ -9,13 +9,13 @@ expression: "render(&mut app, 200, 34)"
 │ ──────────────────────────────────────  ──────────────────────────────────────  ──────────────────────────────────────   ││   ✓ slice-4  Handler wired; tests next.                            10:09 │
 │                                                                                                                          ││                                                                          │
 │ ┌────────────────────────────────────┐  ┌────────────────────────────────────┐  ┌────────────────────────────────────┐   ││                                                                          │
-│ │ #4 docs sweep                      │  │ ⚠ #2 get_decision 500              │  │ #5 release notes                   │   ││                                                                          │
-│ │ P0                                 │  │ P0 · ◆ slice-7                     │  │ P2                                 │   ││                                                                          │
+│ │ #3 idea: eval key flow             │  │ ⚠ #1 business surface              │  │ #5 release notes                   │   ││                                                                          │
+│ │ P2                                 │  │ P1 · ◆ slice-4                     │  │ P2                                 │   ││                                                                          │
 │ └────────────────────────────────────┘  └────────────────────────────────────┘  └────────────────────────────────────┘   ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │ ┌────────────────────────────────────┐  ┌────────────────────────────────────┐                                           ││                                                                          │
-│ │ #3 idea: eval key flow             │  │ ⚠ #1 business surface              │                                           ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
-│ │ P2                                 │  │ P1 · ◆ slice-4                     │                                           │└──────────────────────────────────────────────────────────────────────────┘
+│ │ #4 docs sweep                      │  │ ⚠ #2 get_decision 500              │                                           ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
+│ │ P0                                 │  │ P0 · ◆ slice-7                     │                                           │└──────────────────────────────────────────────────────────────────────────┘
 │ └────────────────────────────────────┘  └────────────────────────────────────┘                                           │┌ tasks · business ────────────────────────────────────────────────────────┐
 │                                                                                                                          ││ ◐ ◆ coordinator                                       working 1.2G $3.10 │
 │                                                                                                                          ││ ▾ Now (2)                                                                │
@@ -33,6 +33,6 @@ expression: "render(&mut app, 200, 34)"
 │                                                                                                                          ││ ▾ Next (1)                                                               │
 │                                                                                                                          ││   ○ idea: eval key flow P2                                               │
 │                                                                                                                          ││ ▸ Later (1)                                                              │
-│ j/k card · H/L column · < > move card · ⏎ open · a add · s status · esc back                                             ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
+│ j/k card · ⇥ column · H/L move card · < > reorder · ⏎ open · a add · s status                                            ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command

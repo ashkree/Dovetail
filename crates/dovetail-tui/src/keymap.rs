@@ -31,8 +31,10 @@ impl Key {
     pub fn from_event(event: KeyEvent) -> Self {
         let mut mods = event.modifiers & (KeyModifiers::CONTROL | KeyModifiers::ALT);
         let code = match event.code {
-            // Terminals report Shift-Tab as BackTab; keep it distinct.
             KeyCode::Char(c) => KeyCode::Char(c),
+            // Terminals report Shift-Tab as BackTab, some with Shift and some without; keep it
+            // distinct from Tab, and drop the Shift so both match `<S-Tab>`.
+            KeyCode::BackTab => KeyCode::BackTab,
             other => {
                 mods |= event.modifiers & KeyModifiers::SHIFT;
                 other
@@ -96,6 +98,7 @@ impl Key {
         let code = match lower.as_str() {
             "leader" | "space" => KeyCode::Char(' '),
             "tab" => KeyCode::Tab,
+            "s-tab" | "backtab" => KeyCode::BackTab,
             "cr" | "enter" => KeyCode::Enter,
             "esc" => KeyCode::Esc,
             "bs" => KeyCode::Backspace,
@@ -272,13 +275,16 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, TREE, "J", Action::TreeMoveDown),
     bind(N, TREE, "K", Action::TreeMoveUp),
     bind(N, TREE, "dd", Action::TaskArchive),
-    // Board (brief "Other views"): `H`/`L` move between columns, `<`/`>` move the card to the
-    // previous or next status. Plain `h`/`l` stay focus movement (B2).
+    // Board (task #22, decided 2026-11-09): `Tab`/`Shift-Tab` move between columns, `H`/`L`
+    // move the card to the previous or next status, `<`/`>` move it up or down its column.
+    // `h`/`l` stay region focus (B2).
     bind(N, BOARD, "<Esc>", Action::BackToConversation),
-    bind(N, BOARD, "H", Action::BoardColumnLeft),
-    bind(N, BOARD, "L", Action::BoardColumnRight),
-    bind(N, BOARD, "<lt>", Action::BoardMoveCardLeft),
-    bind(N, BOARD, ">", Action::BoardMoveCardRight),
+    bind(N, BOARD, "<Tab>", Action::BoardColumnRight),
+    bind(N, BOARD, "<S-Tab>", Action::BoardColumnLeft),
+    bind(N, BOARD, "H", Action::BoardMoveCardLeft),
+    bind(N, BOARD, "L", Action::BoardMoveCardRight),
+    bind(N, BOARD, "<lt>", Action::BoardCardUp),
+    bind(N, BOARD, ">", Action::BoardCardDown),
     bind(N, BOARD, "<CR>", Action::BoardOpen),
     bind(N, BOARD, "a", Action::QuickCapture),
     bind(N, BOARD, "s", Action::TaskCycleStatus),
@@ -539,6 +545,15 @@ mod tests {
     fn shift_is_dropped_from_letters() {
         let event = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
         assert_eq!(Key::from_event(event), Key::new(KeyCode::Char('A')));
+    }
+
+    #[test]
+    fn shift_tab_matches_with_or_without_shift() {
+        let expected = Key::parse_sequence("<S-Tab>").expect("parses")[0];
+        for mods in [KeyModifiers::SHIFT, KeyModifiers::NONE] {
+            let event = KeyEvent::new(KeyCode::BackTab, mods);
+            assert_eq!(Key::from_event(event), expected);
+        }
     }
 
     #[test]

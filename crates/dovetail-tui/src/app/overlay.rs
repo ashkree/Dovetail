@@ -131,7 +131,7 @@ impl App {
     fn choose(&mut self, key: PickerKey) {
         match key {
             PickerKey::Agent(id) => self.open_agent_in_main(id),
-            PickerKey::Task(id) => self.open_task(id),
+            PickerKey::Task(id) => self.open_task(id, false),
             PickerKey::Inbox(id) => {
                 self.focus_inbox();
                 self.buffers.inbox.select_item(&self.snap, id);

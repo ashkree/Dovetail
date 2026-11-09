@@ -112,8 +112,10 @@ impl App {
     }
 
     /// Shows a task's detail in the main region.
-    pub(super) fn open_task(&mut self, id: TaskId) {
-        self.detail_from_board = self.regions.buffer(RegionId::Main) == BufferKind::Board;
+    /// `from_board`: opened from a board card, so `Esc` goes back to the board. Every other
+    /// way in (tree, picker, quick capture) goes back to the conversation.
+    pub(super) fn open_task(&mut self, id: TaskId, from_board: bool) {
+        self.detail_from_board = from_board;
         self.buffers.task_detail.show(id);
         self.regions.show(RegionId::Main, BufferKind::TaskDetail);
         self.regions.set_focus(RegionId::Main);

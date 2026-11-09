@@ -4,7 +4,9 @@
 
 use std::collections::HashSet;
 
-use dovetail_api::{AgentKind, AgentStatus, Snapshot, Task, TaskChange, TaskId, TaskStatus};
+use dovetail_api::{
+    AgentKind, AgentStatus, Bucket, Command, Snapshot, Task, TaskChange, TaskId, TaskStatus,
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
@@ -35,6 +37,9 @@ pub struct BoardBuffer {
     last_index: [usize; 3],
     /// First card shown in each column.
     offset: [usize; 3],
+    /// A card sent to another column: the cursor follows it once the core confirms the new
+    /// status, and stays put if the change is refused.
+    pending: Option<(TaskId, TaskStatus)>,
 }
 
 impl BoardBuffer {
@@ -67,6 +72,60 @@ impl BoardBuffer {
         self.last_index[column] = index;
     }
 
+    /// Moves the cursor onto a card whose status change the core has confirmed.
+    fn follow(&mut self, snap: &Snapshot) {
+        let Some((id, status)) = self.pending else {
+            return;
+        };
+        if snap.tasks.iter().any(|t| t.id == id && t.status == status)
+            && let Some(column) = COLUMNS.iter().position(|&s| s == status)
+        {
+            self.column = column;
+            self.selected[column] = Some(id);
+            self.pending = None;
+        }
+    }
+
+    /// `<`/`>`: moves the card past its neighbour in the column. The order is the task's place
+    /// in its bucket ([`Command::ReorderTask`]), so a card moves past neighbours of its own
+    /// bucket only; a column lists Now, Next, Later, then Unsorted.
+    fn reorder(&mut self, snap: &Snapshot, delta: isize, effects: &mut Vec<Effect>) {
+        let cards = cards(snap, COLUMNS[self.column]);
+        let Some(i) = self.resolve(self.column, &cards) else {
+            effects.push(Effect::Note("no card in this column".into()));
+            return;
+        };
+        let task = cards[i];
+        let Some(neighbour) = i
+            .checked_add_signed(delta)
+            .and_then(|j| cards.get(j))
+            .filter(|n| n.bucket == task.bucket)
+        else {
+            let note = if i.checked_add_signed(delta).is_some_and(|j| j < cards.len()) {
+                "cards move within their bucket; b changes the bucket in the tree"
+            } else if delta < 0 {
+                "already at the top"
+            } else {
+                "already at the bottom"
+            };
+            effects.push(Effect::Note(note.into()));
+            return;
+        };
+        let mut peers: Vec<&Task> = snap
+            .tasks
+            .iter()
+            .filter(|t| t.bucket == task.bucket && t.status != TaskStatus::Archived)
+            .collect();
+        peers.sort_by_key(|t| (t.order, t.id));
+        let place = |id: TaskId| peers.iter().position(|t| t.id == id);
+        if let (Some(from), Some(to)) = (place(task.id), place(neighbour.id)) {
+            effects.push(Effect::Command(Command::ReorderTask {
+                id: task.id,
+                delta: to as i32 - from as i32,
+            }));
+        }
+    }
+
     fn move_card(&mut self, snap: &Snapshot, delta: isize, effects: &mut Vec<Effect>) {
         let cards = cards(snap, COLUMNS[self.column]);
         let Some(i) = self.resolve(self.column, &cards) else {
@@ -85,12 +144,11 @@ impl BoardBuffer {
         self.send_to(cards[i].id, to, effects);
     }
 
-    /// Asks the core to give the task the status of column `to`, and moves the cursor with the
-    /// card, so it is selected there once the change arrives.
+    /// Asks the core to give the task the status of column `to`. The cursor follows the card
+    /// once the core confirms it ([`Self::follow`]).
     fn send_to(&mut self, id: TaskId, to: usize, effects: &mut Vec<Effect>) {
-        self.selected[to] = Some(id);
-        self.column = to;
-        effects.push(Effect::Command(dovetail_api::Command::UpdateTask {
+        self.pending = Some((id, COLUMNS[to]));
+        effects.push(Effect::Command(Command::UpdateTask {
             id,
             patch: vec![TaskChange::Status(COLUMNS[to])],
         }));
@@ -182,6 +240,7 @@ impl Buffer for BoardBuffer {
     }
 
     fn render(&mut self, cx: &ViewCx, frame: &mut Frame, area: Rect, focused: bool) {
+        self.follow(cx.snap);
         let theme = cx.theme;
         let open = cx
             .snap
@@ -218,15 +277,18 @@ impl Buffer for BoardBuffer {
             frame,
             inner,
             &[
-                "j/k card · H/L column · < > move card · ⏎ open · a add · s status · esc back",
-                "j/k card · H/L column · < > move · ⏎ open · a add · s status",
-                "jk HL <> ⏎ a s",
+                "j/k card · ⇥ column · H/L move card · < > reorder · ⏎ open · a add · s status",
+                "j/k card · ⇥ column · H/L move · < > reorder · ⏎ open · a add",
+                "jk ⇥ HL <> ⏎ a s",
             ],
             theme,
         );
     }
 
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
+        self.follow(cx.snap);
+        // A refused change is forgotten at the next key, so a later one never moves the cursor.
+        self.pending = None;
         let column = self.column;
         let cards = cards(cx.snap, COLUMNS[column]);
         let current = self.resolve(column, &cards);
@@ -241,10 +303,13 @@ impl Buffer for BoardBuffer {
             Action::GoBottom if !cards.is_empty() => {
                 self.select(column, &cards, cards.len() - 1);
             }
-            Action::BoardColumnLeft => self.column = column.saturating_sub(1),
-            Action::BoardColumnRight => self.column = (column + 1).min(COLUMNS.len() - 1),
+            // `Tab` and `Shift-Tab` wrap around, as a cycle of three columns.
+            Action::BoardColumnLeft => self.column = (column + COLUMNS.len() - 1) % COLUMNS.len(),
+            Action::BoardColumnRight => self.column = (column + 1) % COLUMNS.len(),
             Action::BoardMoveCardLeft => self.move_card(cx.snap, -1, effects),
             Action::BoardMoveCardRight => self.move_card(cx.snap, 1, effects),
+            Action::BoardCardUp => self.reorder(cx.snap, -1, effects),
+            Action::BoardCardDown => self.reorder(cx.snap, 1, effects),
             Action::TaskCycleStatus => match current {
                 Some(i) => {
                     let next = next_status(cards[i].status);
@@ -263,12 +328,21 @@ impl Buffer for BoardBuffer {
     }
 }
 
-/// The tasks in a status column, most important first: by P-level (none last), then the
-/// user's order. Archived tasks never show.
+/// The tasks in a status column, by bucket (Now, Next, Later, Unsorted), then the user's order
+/// within the bucket, which `<`/`>` change. Archived tasks never show.
 fn cards(snap: &Snapshot, status: TaskStatus) -> Vec<&Task> {
     let mut tasks: Vec<&Task> = snap.tasks.iter().filter(|t| t.status == status).collect();
-    tasks.sort_by_key(|t| (t.p_level.is_none(), t.p_level, t.order, t.id));
+    tasks.sort_by_key(|t| (bucket_rank(t.bucket), t.order, t.id));
     tasks
+}
+
+fn bucket_rank(bucket: Option<Bucket>) -> u8 {
+    match bucket {
+        Some(Bucket::Now) => 0,
+        Some(Bucket::Next) => 1,
+        Some(Bucket::Later) => 2,
+        None => 3,
+    }
 }
 
 /// Tasks that need the user, derived from the inbox (plan B4). Done wins: a done task never
