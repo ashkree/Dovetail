@@ -77,6 +77,7 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
         1 => Some(Command::Prompt {
             agent: AgentId("coordinator".into()),
             text: "How are the slices doing?".into(),
+            attachments: Vec::new(),
         }),
         2 => slice.map(|agent| Command::Interrupt { agent }),
         3 => Some(Command::CreateTask(NewTask {

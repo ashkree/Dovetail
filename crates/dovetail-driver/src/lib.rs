@@ -31,6 +31,7 @@
 //!   sent to it.
 //! - [`parse`]: the line-to-event mapping, usable on its own.
 
+mod base64;
 mod claude;
 mod event;
 mod fake;
@@ -103,14 +104,61 @@ pub trait Session: Send {
 /// A user message to send.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UserInput {
-    /// Plain message text.
+    /// Plain message text; may be empty when images are attached.
     pub text: String,
+    /// Images sent before the text, as image content blocks.
+    pub images: Vec<ImageInput>,
+}
+
+/// One image in a [`UserInput`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageInput {
+    /// MIME type: `image/png`, `image/jpeg`, `image/gif` or `image/webp`.
+    pub media_type: String,
+    /// The raw file bytes; the driver base64-encodes them.
+    pub data: Vec<u8>,
 }
 
 impl UserInput {
     /// A text message.
     pub fn text(text: impl Into<String>) -> Self {
-        Self { text: text.into() }
+        Self {
+            text: text.into(),
+            images: Vec::new(),
+        }
+    }
+
+    /// The stream-json `user` line for this message. Text alone goes as a plain string, as
+    /// before; with images, `content` is the image blocks followed by a text block (when the
+    /// text is not empty).
+    pub fn to_stream_json(&self) -> Value {
+        let content = if self.images.is_empty() {
+            Value::String(self.text.clone())
+        } else {
+            let mut blocks: Vec<Value> = self
+                .images
+                .iter()
+                .map(|image| {
+                    serde_json::json!({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image.media_type,
+                            "data": base64::encode(&image.data),
+                        },
+                    })
+                })
+                .collect();
+            if !self.text.is_empty() {
+                blocks.push(serde_json::json!({"type": "text", "text": self.text}));
+            }
+            Value::Array(blocks)
+        };
+        serde_json::json!({
+            "type": "user",
+            "message": {"role": "user", "content": content},
+            "parent_tool_use_id": null,
+        })
     }
 }
 

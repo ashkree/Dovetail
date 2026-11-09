@@ -98,6 +98,8 @@ struct Line {
 struct Recorder {
     sent: Mutex<Vec<Sent>>,
     specs: Mutex<Vec<SessionSpec>>,
+    /// The stream-json line each user message would have been written as.
+    user_lines: Mutex<Vec<Value>>,
 }
 
 /// Replays a fixture as the event stream of every session it starts, and records what it is
@@ -152,6 +154,16 @@ impl FakeDriver {
     pub fn with_options(mut self, options: ReplayOptions) -> Self {
         self.options = options;
         self
+    }
+
+    /// The stream-json `user` lines the real driver would have written for every message sent
+    /// so far, in order.
+    pub fn user_messages(&self) -> Vec<Value> {
+        self.recorder
+            .user_lines
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default()
     }
 
     /// Everything sent to any session of this driver, in order.
@@ -329,6 +341,9 @@ impl Session for FakeSession {
     }
 
     fn send(&self, input: UserInput) -> Result<(), DriverError> {
+        if let Ok(mut lines) = self.recorder.user_lines.lock() {
+            lines.push(input.to_stream_json());
+        }
         self.record(Sent::User(input.text));
         Ok(())
     }

@@ -73,6 +73,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
                         at_ms: now_ms,
                         kind: EntryKind::Assistant,
                         text,
+                        attachments: Vec::new(),
                     },
                 ),
             }

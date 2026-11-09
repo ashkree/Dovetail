@@ -52,6 +52,8 @@ pub enum Action {
     FoldTurn,
     /// Unfold the turn at the top of the view and show its long replies in full.
     UnfoldTurn,
+    /// Ctrl-V in a chat bar: attach the clipboard's image, or paste its text at the cursor.
+    PasteClipboard,
     /// Give the reading column a solid background, or take it away.
     ToggleSolidBackground,
     /// Open quick capture.

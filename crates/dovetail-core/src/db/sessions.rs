@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use dovetail_api::{
-    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, ConversationEntry, EntryId, InboxId,
-    InboxItem, InboxKind, SessionLock, TaskId, WorktreeRef,
+    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, EntryId,
+    InboxId, InboxItem, InboxKind, SessionLock, TaskId, WorktreeRef,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -58,6 +58,16 @@ fn to_text<T: serde::Serialize>(value: &T) -> Result<String, DbError> {
 fn from_text<T: serde::de::DeserializeOwned>(what: &str, text: &str) -> Result<T, DbError> {
     serde_json::from_value(serde_json::Value::String(text.to_owned()))
         .map_err(|_| DbError::Corrupt(format!("{what} {text:?}")))
+}
+
+/// An entry's attachments as stored: a JSON array, or NULL when there are none.
+fn attachments_text(attachments: &[Attachment]) -> Result<Option<String>, DbError> {
+    if attachments.is_empty() {
+        return Ok(None);
+    }
+    serde_json::to_string(attachments)
+        .map(Some)
+        .map_err(|e| DbError::Corrupt(format!("attachments that do not serialise: {e}")))
 }
 
 fn path_text(path: &Option<PathBuf>) -> Option<String> {
@@ -194,14 +204,15 @@ pub(super) fn upsert_entry(
     entry: &ConversationEntry,
 ) -> Result<(), DbError> {
     conn.execute(
-        "INSERT INTO conversation_entries (id, agent_id, at_ms, kind, text) \
-         VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET text = ?5",
+        "INSERT INTO conversation_entries (id, agent_id, at_ms, kind, text, attachments) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET text = ?5",
         params![
             entry.id.0 as i64,
             agent.0,
             entry.at_ms,
             to_text(&entry.kind)?,
-            entry.text
+            entry.text,
+            attachments_text(&entry.attachments)?
         ],
     )?;
     Ok(())
@@ -215,7 +226,7 @@ pub(super) fn load_entries(
 ) -> Result<(Vec<ConversationEntry>, bool), DbError> {
     let before = before.map_or(i64::MAX, |b| b.0 as i64);
     let mut stmt = conn.prepare(
-        "SELECT id, at_ms, kind, text FROM conversation_entries \
+        "SELECT id, at_ms, kind, text, attachments FROM conversation_entries \
          WHERE agent_id = ?1 AND id < ?2 ORDER BY id DESC LIMIT ?3",
     )?;
     let rows = stmt.query_map(params![agent.0, before, limit as i64 + 1], |r| {
@@ -224,16 +235,23 @@ pub(super) fn load_entries(
             r.get::<_, i64>(1)?,
             r.get::<_, String>(2)?,
             r.get::<_, String>(3)?,
+            r.get::<_, Option<String>>(4)?,
         ))
     })?;
     let mut entries = Vec::new();
     for row in rows {
-        let (id, at_ms, kind, text) = row?;
+        let (id, at_ms, kind, text, attachments) = row?;
+        let attachments = match attachments {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|_| DbError::Corrupt(format!("attachments {json:?}")))?,
+            None => Vec::new(),
+        };
         entries.push(ConversationEntry {
             id: EntryId(id as u64),
             at_ms,
             kind: from_text("entry kind", &kind)?,
             text,
+            attachments,
         });
     }
     let has_more = entries.len() > limit;

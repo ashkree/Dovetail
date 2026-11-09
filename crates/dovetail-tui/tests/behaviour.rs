@@ -385,7 +385,8 @@ fn r_on_a_finished_turn_sends_the_agent_a_normal_prompt() {
             Command::DismissInbox { item: InboxId(3) },
             Command::Prompt {
                 agent: agent_id("slice-4"),
-                text: "go on".into()
+                text: "go on".into(),
+                attachments: Vec::new()
             }
         ]
     );

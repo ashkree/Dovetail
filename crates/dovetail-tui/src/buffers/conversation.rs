@@ -3,8 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crossterm::event::KeyEvent;
-use dovetail_api::{AgentId, AgentStatus, Command, EntryId, EntryKind};
+use crossterm::event::{KeyCode, KeyEvent};
+use dovetail_api::{
+    AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS,
+};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
@@ -32,6 +34,8 @@ struct AgentView {
     expanded: HashSet<EntryId>,
     cache: transcript::Cache,
     draft: String,
+    /// Images attached to the unsent draft.
+    draft_images: Vec<Attachment>,
     /// The oldest entry when older history was last asked for, to ask once.
     loading: Option<EntryId>,
     /// Oldest entry and line count at the last draw, to keep the view in place when older
@@ -49,6 +53,7 @@ impl Default for AgentView {
             expanded: HashSet::new(),
             cache: transcript::Cache::default(),
             draft: String::new(),
+            draft_images: Vec::new(),
             loading: None,
             drawn: None,
         }
@@ -72,6 +77,8 @@ pub struct ConversationBuffer {
     previous: Option<AgentId>,
     views: HashMap<AgentId, AgentView>,
     chat: Option<TextInput>,
+    /// Images attached to the message being typed, shown as chips above the input.
+    images: Vec<Attachment>,
     reading_width: u16,
     solid: bool,
     layout: Layout,
@@ -84,6 +91,7 @@ impl Default for ConversationBuffer {
             previous: None,
             views: HashMap::new(),
             chat: None,
+            images: Vec::new(),
             reading_width: DEFAULT_WIDTH,
             solid: false,
             layout: Layout::default(),
@@ -123,8 +131,30 @@ impl ConversationBuffer {
     /// Starts typing to `agent`, picking up its unsent draft.
     pub fn begin_chat(&mut self, agent: AgentId) {
         self.show(agent.clone());
-        let draft = self.views.entry(agent).or_default().draft.clone();
-        self.chat = Some(TextInput::multiline(&draft));
+        let view = self.views.entry(agent).or_default();
+        self.chat = Some(TextInput::multiline(&view.draft));
+        self.images = view.draft_images.clone();
+    }
+
+    /// How many images the message being typed carries.
+    pub fn attachment_count(&self) -> usize {
+        self.images.len()
+    }
+
+    /// Attaches an image to the message being typed. Refused past [`MAX_ATTACHMENTS`].
+    pub fn attach(&mut self, image: Attachment) -> bool {
+        if self.chat.is_none() || self.images.len() >= MAX_ATTACHMENTS {
+            return false;
+        }
+        self.images.push(image);
+        true
+    }
+
+    /// Pastes text at the chat cursor.
+    pub fn paste_text(&mut self, text: &str) {
+        if let Some(chat) = self.chat.as_mut() {
+            chat.insert_str(text);
+        }
     }
 
     /// Whether the chat input is open.
@@ -132,27 +162,35 @@ impl ConversationBuffer {
         self.chat.is_some()
     }
 
-    /// Applies a key to the chat input. `Enter` returns the prompt to send; `Esc` keeps the
-    /// text as the agent's draft.
-    pub fn chat_key(&mut self, key: KeyEvent) -> Option<(AgentId, String)> {
+    /// Applies a key to the chat input. `Enter` returns the prompt and its images to send;
+    /// `Esc` keeps both as the agent's draft. Backspace on an empty input removes the last image.
+    pub fn chat_key(&mut self, key: KeyEvent) -> Option<(AgentId, String, Vec<Attachment>)> {
         let chat = self.chat.as_mut()?;
         let agent = self.agent.clone()?;
+        if key.code == KeyCode::Backspace && chat.text().is_empty() && !self.images.is_empty() {
+            self.images.pop();
+            return None;
+        }
         match chat.handle(key) {
             InputOutcome::Submit => {
                 let text = chat.text().trim().to_string();
                 self.chat = None;
+                let images = std::mem::take(&mut self.images);
                 let view = self.views.entry(agent.clone()).or_default();
-                if text.is_empty() {
+                if text.is_empty() && images.is_empty() {
                     return None;
                 }
                 view.draft.clear();
+                view.draft_images.clear();
                 view.follow = true;
-                Some((agent, text))
+                Some((agent, text, images))
             }
             InputOutcome::Cancel => {
                 let text = chat.text().to_string();
                 self.chat = None;
-                self.views.entry(agent).or_default().draft = text;
+                let view = self.views.entry(agent).or_default();
+                view.draft = text;
+                view.draft_images = std::mem::take(&mut self.images);
                 None
             }
             InputOutcome::Edited | InputOutcome::Ignored => None,
@@ -230,6 +268,26 @@ impl ConversationBuffer {
     }
 }
 
+/// The chip row(s) for pending images, indented under the `› ` prompt and wrapped to `width`.
+fn chip_rows(
+    images: &[Attachment],
+    width: usize,
+    theme: &crate::theme::Theme,
+) -> Vec<Line<'static>> {
+    let chips: Vec<Span<'static>> = images
+        .iter()
+        .enumerate()
+        .map(|(i, a)| Span::styled(fmt::image_chip(i + 1, a.size), theme.chip()))
+        .collect();
+    let mut rows = Vec::new();
+    for line in crate::render::transcript::chip_lines(chips, width) {
+        let mut spans = vec![Span::raw("  ")];
+        spans.extend(line.spans);
+        rows.push(Line::from(spans));
+    }
+    rows
+}
+
 impl Buffer for ConversationBuffer {
     fn kind(&self) -> BufferKind {
         BufferKind::Conversation
@@ -262,7 +320,17 @@ impl Buffer for ConversationBuffer {
                 .len()
                 .clamp(1, MAX_INPUT_ROWS)
         });
-        let bottom = (1 + input_rows as u16).min(inner.height.saturating_sub(1));
+        let chips = if self.chat.is_some() && !self.images.is_empty() {
+            chip_rows(
+                &self.images,
+                usize::from(inner.width.saturating_sub(2)),
+                theme,
+            )
+        } else {
+            Vec::new()
+        };
+        let bottom =
+            (1 + chips.len() as u16 + input_rows as u16).min(inner.height.saturating_sub(1));
         let body = Rect {
             height: inner.height - bottom,
             ..inner
@@ -272,11 +340,28 @@ impl Buffer for ConversationBuffer {
             height: 1.min(bottom),
             ..inner
         };
-        let input_area = Rect {
+        let chip_area = Rect {
             y: rule.y + rule.height,
-            height: bottom - rule.height,
+            height: (chips.len() as u16).min(bottom - rule.height),
             ..inner
         };
+        let input_area = Rect {
+            y: chip_area.y + chip_area.height,
+            height: bottom - rule.height - chip_area.height,
+            ..inner
+        };
+        for (n, line) in chips
+            .into_iter()
+            .take(usize::from(chip_area.height))
+            .enumerate()
+        {
+            let rect = Rect {
+                y: chip_area.y + n as u16,
+                height: 1,
+                ..chip_area
+            };
+            frame.render_widget(Paragraph::new(line), rect);
+        }
         if rule.height > 0 {
             frame.render_widget(
                 Paragraph::new(Span::styled(

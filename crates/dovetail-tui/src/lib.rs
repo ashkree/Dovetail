@@ -8,6 +8,7 @@ pub mod action;
 pub mod app;
 pub mod buffers;
 pub mod capture;
+pub mod clipboard;
 pub mod command;
 pub mod event_loop;
 pub mod fmt;

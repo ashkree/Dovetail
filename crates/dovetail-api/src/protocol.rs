@@ -6,9 +6,9 @@ use std::sync::mpsc::{Receiver, Sender};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    ActivityItem, Agent, AgentId, AgentMessage, Alternative, Bucket, ConversationEntry, Decision,
-    DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, Snapshot, Task, TaskId, TaskStatus,
-    TodoItem, TodoListId, Totals, Warning, WarningId,
+    ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
+    Decision, DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, Snapshot, Task, TaskId,
+    TaskStatus, TodoItem, TodoListId, Totals, Warning, WarningId,
 };
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
@@ -112,8 +112,11 @@ pub enum Command {
     Prompt {
         /// Recipient.
         agent: AgentId,
-        /// Prompt text.
+        /// Prompt text; may be empty when images are attached.
         text: String,
+        /// Images to send with it, saved by the UI; the core reads the files.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        attachments: Vec<Attachment>,
     },
     /// Stop an agent's current turn.
     Interrupt {
