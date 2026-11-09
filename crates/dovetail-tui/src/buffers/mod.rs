@@ -8,6 +8,7 @@ mod inbox;
 mod inbox_detail;
 pub mod task_detail;
 mod tree;
+mod worktrees;
 
 use dovetail_api::{
     AgentId, AgentStatus, Bucket, Command, InboxId, PLevel, Snapshot, TaskId, TaskStatus,
@@ -28,6 +29,7 @@ pub use inbox::{InboxBuffer, ordered as inbox_order};
 pub use inbox_detail::InboxDetailBuffer;
 pub use task_detail::TaskDetailBuffer;
 pub use tree::{TreeBuffer, p_label};
+pub use worktrees::WorktreesBuffer;
 
 use crate::action::Action;
 use crate::region::BufferKind;
@@ -90,6 +92,9 @@ pub enum Effect {
     PickRelated(TaskId),
     /// A one-line note for the status bar.
     Note(String),
+    /// Let go of the terminal and have the core open this path in the user's editor
+    /// ([`Command::OpenEditor`]); the terminal comes back on `Event::TerminalReturned`.
+    OpenEditor(std::path::PathBuf),
 }
 
 /// A view with its own state and buffer-local keys.
@@ -137,6 +142,8 @@ pub struct Buffers {
     pub messages: MessagesBuffer,
     /// The board.
     pub board: BoardBuffer,
+    /// The worktree view.
+    pub worktrees: WorktreesBuffer,
 }
 
 impl Buffers {
@@ -151,6 +158,7 @@ impl Buffers {
             activity: ActivityBuffer::default(),
             messages: MessagesBuffer::default(),
             board: BoardBuffer::default(),
+            worktrees: WorktreesBuffer::default(),
         }
     }
 
@@ -165,6 +173,7 @@ impl Buffers {
             BufferKind::Activity => &mut self.activity,
             BufferKind::Messages => &mut self.messages,
             BufferKind::Board => &mut self.board,
+            BufferKind::Worktrees => &mut self.worktrees,
         }
     }
 }

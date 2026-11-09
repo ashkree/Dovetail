@@ -115,6 +115,13 @@ pub enum Event {
         /// What the clipboard gave.
         paste: Paste,
     },
+    /// The program run in the user's terminal ([`Command::OpenEditor`]) has exited, so the UI
+    /// takes the terminal back. Changes nothing in the snapshot.
+    TerminalReturned {
+        /// Why the program could not run or failed, for the status bar; `None` when it exited
+        /// cleanly.
+        error: Option<String>,
+    },
 }
 
 /// What the core found on the system clipboard.
@@ -150,6 +157,21 @@ pub enum Command {
     PasteClipboard {
         /// The agent whose chat bar is pasting.
         agent: AgentId,
+    },
+    /// Put text on the system clipboard (`c` in the worktree view copies a path). A failure
+    /// comes back as [`Event::CommandFailed`]; success sends nothing.
+    CopyToClipboard {
+        /// The text.
+        text: String,
+    },
+    /// Open a folder or file in the user's editor (`$EDITOR`, else `nvim`), in the terminal the
+    /// UI runs in. The UI sends it only after it has let go of the terminal (left the alternate
+    /// screen and raw mode, stopped reading keys), and takes the terminal back on
+    /// [`Event::TerminalReturned`], which the core always sends once the editor exits or fails
+    /// to start.
+    OpenEditor {
+        /// What to open; the editor also starts in it when it is a folder.
+        path: PathBuf,
     },
     /// Stop an agent's current turn.
     Interrupt {

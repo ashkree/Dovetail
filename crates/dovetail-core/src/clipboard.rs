@@ -1,6 +1,7 @@
-//! The system clipboard, for Ctrl-V in a chat bar ([`dovetail_api::Command::PasteClipboard`]).
-//! Terminals cannot carry an image through a paste, so the core asks the clipboard itself:
-//! `wl-paste` on Wayland, `xclip` on X11. Both run as short-lived child processes that are always
+//! The system clipboard, for Ctrl-V in a chat bar ([`dovetail_api::Command::PasteClipboard`])
+//! and for copying text ([`dovetail_api::Command::CopyToClipboard`]). Terminals cannot carry an
+//! image through a paste, so the core asks the clipboard itself: `wl-paste`/`wl-copy` on
+//! Wayland, `xclip` on X11. Both run as short-lived child processes that are always
 //! reaped; no clipboard crate is used. The service calls [`paste`] on a blocking thread, off its
 //! main loop.
 //!
@@ -8,7 +9,7 @@
 //! attachment; anything else that is text is pasted at the cursor. Nothing is resized or
 //! converted.
 
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -222,6 +223,69 @@ pub fn read() -> Result<Clip, ClipError> {
         };
     }
     Err(ClipError::NoTool)
+}
+
+/// Why text could not be copied. `Display` is the short notice shown in the status bar.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CopyError {
+    /// Neither `wl-copy` nor `xclip` is installed.
+    #[error("can't copy: install wl-clipboard or xclip")]
+    NoTool,
+    /// The tool failed or timed out.
+    #[error("copying failed: {0}")]
+    Failed(String),
+}
+
+/// Puts `text` on the clipboard. Both tools fork a child that keeps serving the clipboard and
+/// let the parent exit once it has read its input; that parent is waited for (at most
+/// [`TIMEOUT`]) and always reaped. Blocks; call it off the core's loop.
+pub fn copy(text: &str) -> Result<(), CopyError> {
+    for tool in tools() {
+        let (program, args): (&str, &[&str]) = match tool {
+            Tool::WlPaste => ("wl-copy", &[]),
+            Tool::Xclip => ("xclip", &["-selection", "clipboard", "-i"]),
+        };
+        let mut child = match Command::new(program)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(CopyError::Failed(format!("{program}: {e}"))),
+        };
+        let written = child
+            .stdin
+            .take()
+            .map(|mut stdin| stdin.write_all(text.as_bytes()));
+        // `stdin` is dropped here, closing the pipe so the tool sees the end of its input.
+        let deadline = Instant::now() + TIMEOUT;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() >= deadline => {
+                    reap(&mut child);
+                    return Err(CopyError::Failed(format!("{program} timed out")));
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(5)),
+                Err(e) => {
+                    reap(&mut child);
+                    return Err(CopyError::Failed(format!("{program}: {e}")));
+                }
+            }
+        };
+        if let Some(Err(e)) = written {
+            return Err(CopyError::Failed(format!("{program}: {e}")));
+        }
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(CopyError::Failed(format!("{program} exited with {status}")))
+        };
+    }
+    Err(CopyError::NoTool)
 }
 
 /// Why running one clipboard tool failed.

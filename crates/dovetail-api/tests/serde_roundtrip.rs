@@ -313,6 +313,10 @@ fn every_event_roundtrips() {
         Event::CommandFailed {
             message: "no such agent".into(),
         },
+        Event::TerminalReturned { error: None },
+        Event::TerminalReturned {
+            error: Some("nvim exited with status 1".into()),
+        },
     ]
     .into_iter()
     .chain(inbox_items().into_iter().map(Event::InboxUpserted))
@@ -436,6 +440,12 @@ fn every_command_roundtrips() {
             before: None,
         },
         Command::RefreshWorktrees,
+        Command::CopyToClipboard {
+            text: "/tmp/wt".into(),
+        },
+        Command::OpenEditor {
+            path: "/tmp/wt".into(),
+        },
         Command::Resync,
         Command::Quit {
             end_sessions: false,

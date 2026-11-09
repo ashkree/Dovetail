@@ -1,0 +1,39 @@
+---
+source: crates/dovetail-tui/tests/worktrees.rs
+assertion_line: 296
+expression: "render(&mut app, 120, 34)"
+---
+ folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+┌ worktrees · Dovetail · 3 · refreshing… ─────────────────────────────────┐┌ inbox · needs you (2) ────────────────────┐
+│ slice         branch               sync  changes  unpushed  PR  setup   ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
+│ ⚠ inbox-keys  dovetail/inbox-keys  —     —        —         —   —       ││   ✓ coordinator  M2 splits into th… 08:58 │
+│ ◌ picker      dovetail/picker      —     —        —         —   —       ││                                           │
+│ ◐ tree-view   dovetail/tree-view   —     —        —         —   —       ││                                           │
+│                                                                         ││                                           │
+│ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││                                           │
+│                                                                         ││                                           │
+│ inbox-keys  ⎇ dovetail/inbox-keys                                       ││                                           │
+│ path     /home/you/.local/share/dovetail/projects/dovetail/worktrees/i… ││                                           │
+│ base     —                                                              ││                                           │
+│ sync     —                                                              ││ y allow · d deny · r reply · x dismiss    │
+│ changes  —                                                              │└───────────────────────────────────────────┘
+│ unpushed —                                                              │┌ tasks · Dovetail ─────────────────────────┐
+│ PR       —                                                              ││ ○ ◆ coordinator  plannin… idle 245M $0.84 │
+│ setup    —                                                              ││ ▾ Unsorted (1)                            │
+│ checked  —                                                              ││   ○ Check the kitty graphics fallback ✦ … │
+│                                                                         ││ ▾ Now (3)                                 │
+│                                                                         ││ ▾ ◐ Task tree with bucket group… PR #1231 │
+│                                                                         ││   ▾ ◐ ◆ tree-view  working 232M 34% $0.41 │
+│                                                                         ││         ⎇ dovetail/tree-view              │
+│                                                                         ││         ✓ Group tasks by bucket           │
+│                                                                         ││         ◐ Sort by P-level within a bucket │
+│                                                                         ││         ○ Mark P-level and bucket mismat… │
+│                                                                         ││         ○ Fold Done into one row          │
+│                                                                         ││       ◐ ◇ explore-keymap    working $0.05 │
+│                                                                         ││ ▾ ⚠ Inbox keys and preview P0 ↔ 1         │
+│                                                                         ││   ▾ ⚠ ◆ inbox-keys  edits   needs you 52% │
+│                                                                         ││         ⎇ dovetail/inbox-keys             │
+│                                                                         ││ ▾ ◐ Fuzzy picker P3 ≠                     │
+│ ⏎ open · e editor · c copy path · X remove                              ││ ⏎ open · o fold · dd archive              │
+└─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
+ NORMAL   Dovetail · 8 tasks · 4 agents · 2 ⚠ · 885M · ctx 18%                           i chat · ␣ss switch · : command
