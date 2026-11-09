@@ -248,7 +248,7 @@ pub struct Agent {
 pub enum InboxKind {
     Permission { tool: String, input: serde_json::Value, reason: Option<String>,
                  suggestions: Vec<RuleSuggestion> },
-    Question { text: String, blocking: bool },
+    Question { text: String },   // never blocking (ADR 0007)
     FinishedTurn { preview: String },
     Error { text: String },
 }
@@ -542,11 +542,11 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 
 ### M9. MCP bridge, `ask_user`, `report_status`, `create_task`, role prompts
 - **Spikes needed:** S3; S6 runs here
-- **Scope:** `dovetail mcp` as a synchronous stdio server, forwarding to the app socket with its agent id. Tool handlers in core. Question inbox items with blocked flag, sorted first. `r` reply. `create_task` for the coordinator only (ADR 0002). `log_decision` for the coordinator and slices (ADR 0003): schema `{task?, decision, why?, alternatives?: [{option, why_not?}], supersedes?}`; slices default to their task, the coordinator must name one. Role prompts passed at launch.
+- **Scope:** `dovetail mcp` as a synchronous stdio server, forwarding to the app socket with its agent id. Tool handlers in core. Question inbox items, after permission requests (ADR 0007: no blocked flag). `r` reply. `create_task` for the coordinator only (ADR 0002). `log_decision` for the coordinator and slices (ADR 0003): schema `{task?, decision, why?, alternatives?: [{option, why_not?}], supersedes?}`; slices default to their task, the coordinator must name one. Role prompts passed at launch.
 - **Role prompt fix:** `config/roles/coordinator.md` tells the coordinator to call `draw_map`, which won't exist until M15. Remove that line now and restore it at M15. Also tell the coordinator that the user starts slices and it recommends them (B1), and that it merges only on the user's yes and then pulls `main` (B7). Tell slices to push and open a PR once checks pass (B7). Then run `scripts/bootstrap.sh --force`, because your installed copy from the earlier run has the old text.
 - **Files:** `crates/dovetail/src/mcp.rs`, `crates/dovetail-core/src/tools/{mod,ask_user,report_status,create_task}.rs`, `config/roles/*.md`
 - **Done when:**
-  - [ ] A blocking `ask_user` reaches the inbox and your reply unblocks the tool
+  - [ ] An `ask_user` reaches the inbox and the chat, returns at once, and your reply arrives as a message (ADR 0007; was: a blocking call your reply unblocks)
   - [ ] Status lines appear in the tree
   - [ ] A coordinator `create_task` lands in Unsorted, marked until seen; a slice can't call it
   - [ ] App exit gives the agent a clear error, not a hang
@@ -557,7 +557,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Scope:** restore on open (coordinator immediately, slices on first touch). Pending inbox items reconciled after restart. A stale-state sweep for agents and worktrees. Stable install (`cargo install --path crates/dovetail --root ~/.local`), with hook and MCP paths using the installed path, not `target/`. `docs/self-hosting.md` covering the daily flow, upgrades and recovery.
 - **Decided 2026-11-06:**
   1. **Cut-off turns.** A turn cut off by quit, kill or crash raises a Needs-you item on reopen, "<agent>'s turn was cut off by a restart", with the last user prompt as its preview. The agent is never continued automatically.
-  2. **In-flight items.** Pending permission requests leave Needs you at restart and become one Activity note each ("Write a.txt: request expired at restart"). Pending `ask_user` questions, blocking or not, stay in Needs you; answering one sends the agent a normal user message, "Answer to your question '<q>': <answer>", resuming it if needed.
+  2. **In-flight items.** Pending permission requests leave Needs you at restart and become one Activity note each ("Write a.txt: request expired at restart"). Pending `ask_user` questions stay in Needs you; answering one sends the agent a normal user message, "Answer to your question '<q>': <answer>", resuming it if needed.
   3. **Upgrades.** `scripts/install.sh` runs `cargo install --path crates/dovetail --root ~/.local` and refuses while a Dovetail app runs ("close Dovetail first"). Hook and MCP config always use the running binary's path (`std::env::current_exe`), so the installed app never points at `target/`.
   4. **Stale-state sweep on open.** An agent whose worktree directory is gone is archived with an Activity note. A worktree under Dovetail's worktrees directory that no agent owns raises one "Remove worktree" item (branch, unpushed commits, uncommitted changes); `y` removes it, `d` keeps it and records that, so it is not asked again. Nothing is deleted without `y`.
 - **Done when:**
@@ -676,7 +676,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 | B13 | **Slice branch base** | Current `HEAD` of the main checkout; branch `dovetail/<slice>` |
 | B14 | **Done and archived tasks** | Collapsed `Done (n)` at the tree bottom, per the mock; archived hidden |
 | B15 | **Agent status for setup:** the mock shows `◌ setting up`; the data model has no such status | Add `SettingUp` |
-| B16 | **`ask_user` schema** | `{ question: string, blocking?: bool }`; blocking holds the call, non-blocking returns at once and the answer arrives as a user message |
+| B16 | **`ask_user` schema** | `{ question: string }`; returns at once and the answer arrives as a user message (ADR 0007 removed `blocking`) |
 | B17 | **`report_status` schema** | `{ status: string }`, one line, truncated to 120 characters |
 | B18 | **Bridge identity** | Per-session MCP config passes `DOVETAIL_AGENT_ID` and the socket path by env |
 | B19 | **App closed with `dovetail add`** | Uses the socket if the app is running; otherwise writes directly to SQLite with its own migration check |

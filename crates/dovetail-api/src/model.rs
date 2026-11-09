@@ -372,8 +372,6 @@ pub enum InboxKind {
     Question {
         /// The question.
         text: String,
-        /// Whether the agent waits for the answer.
-        blocking: bool,
     },
     /// The agent's turn ended; at most one per agent (ADR 0001).
     FinishedTurn {

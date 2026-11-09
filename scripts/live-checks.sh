@@ -134,7 +134,7 @@ check_app() {
    3. i, "Run sleep 30 with Bash", then <leader>sx (interrupt): "Interrupted" appears.     (M6)
    4. <leader>sm to manual. i, "Create a.txt with the Write tool": a Permission item
       appears; answer y. Ask for two writes in one message; answer the second first.      (M7)
-   5. Tell the coordinator: "Call ask_user with blocking true: which colour?". Reply r.   (M9)
+   5. "Call ask_user: which colour?": it shows in the chat and Needs you; reply r.  (ADR 0007)
    6. "Call report_status with 'testing'": the line shows in the tree.                    (M9)
    7. "Create a task 'demo' with create_task, then start_slice on it named demo-1 with
       brief 'reply ok'": Permission item (manual mode); y; slice sets up; the coordinator

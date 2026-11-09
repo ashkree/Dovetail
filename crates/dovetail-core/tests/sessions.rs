@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::{AskUser, ReportStatus, StartSlice, Tool};
 use dovetail_api::{
-    AgentId, AgentKind, Attachment, Command, CoreLink, EntryKind, ImageType, InboxKind, NewTask,
-    PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId, apply,
+    AgentId, AgentKind, Attachment, Command, CoreLink, EntryKind, ImageType, InboxId, InboxKind,
+    NewTask, PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId, apply,
 };
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
@@ -517,7 +517,7 @@ fn a_subagents_permission_request_reaches_the_inbox_marked_as_its() {
 }
 
 #[test]
-fn ask_user_blocks_until_answered_and_report_status_sets_the_line() {
+fn report_status_sets_the_line_cut_at_120_characters() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     let socket = h.socket();
     let (text, is_error) = result_text(socket_call(
@@ -534,36 +534,78 @@ fn ask_user_blocks_until_answered_and_report_status_sets_the_line() {
         s.agents.iter().any(|a| a.status_line.len() == 120)
     });
 
-    let asker = std::thread::spawn(move || {
-        socket_call(
-            &socket,
-            tool(
-                COORDINATOR,
-                Tool::AskUser(AskUser {
-                    question: "Which port?".into(),
-                    blocking: true,
-                }),
-            ),
-        )
-    });
-    h.wait_for("the question", |s| {
-        s.inbox
-            .iter()
-            .any(|i| matches!(&i.kind, InboxKind::Question { blocking: true, .. }))
-    });
-    let id = h
-        .snap
-        .inbox
+    h.quit();
+}
+
+/// Waits until the fake session was sent `wanted` as a user message.
+fn wait_sent(fake: &FakeDriver, wanted: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let wanted = Sent::User(wanted.into());
+    while !fake.sent().contains(&wanted) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn ask(h: &Harness, question: &str) -> (String, bool) {
+    result_text(socket_call(
+        &h.socket(),
+        tool(
+            COORDINATOR,
+            Tool::AskUser(AskUser {
+                question: question.into(),
+            }),
+        ),
+    ))
+}
+
+fn open_questions(s: &Snapshot) -> Vec<InboxId> {
+    s.inbox
         .iter()
-        .find(|i| matches!(i.kind, InboxKind::Question { .. }))
-        .unwrap()
-        .id;
+        .filter(|i| matches!(i.kind, InboxKind::Question { .. }))
+        .map(|i| i.id)
+        .collect()
+}
+
+#[test]
+fn ask_user_returns_at_once_and_an_inbox_answer_arrives_as_a_message() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    // `socket_call` times out after 5 s, so a held call would fail here.
+    let (text, is_error) = ask(&h, "Which port?");
+    assert!(!is_error && text.starts_with("Question sent"), "{text}");
+    h.wait_for("the question", |s| open_questions(s).len() == 1);
+    // It is in the conversation too.
+    assert!(
+        h.entries(COORDINATOR)
+            .iter()
+            .any(|(k, t)| *k == EntryKind::Notice && t.contains("Which port?")),
+        "{:?}",
+        h.entries(COORDINATOR)
+    );
+    let id = open_questions(&h.snap)[0];
     h.send(Command::AnswerQuestion {
         item: id,
         text: "8080".into(),
     });
-    let (text, _) = result_text(asker.join().expect("asker"));
-    assert_eq!(text, "The user answered: 8080");
+    wait_sent(
+        &fake,
+        "The user answered your question \"Which port?\":\n\n8080",
+    );
+    h.wait_for("the item to clear", |s| open_questions(s).is_empty());
+    h.quit();
+}
+
+#[test]
+fn a_chat_message_with_open_questions_goes_through_and_clears_them() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    ask(&h, "Which port?");
+    ask(&h, "Which host?");
+    h.wait_for("both questions", |s| open_questions(s).len() == 2);
+    prompt(&h, "8080 on localhost");
+    wait_sent(&fake, "8080 on localhost");
+    h.wait_for("the items to clear", |s| open_questions(s).is_empty());
     h.quit();
 }
 
@@ -990,11 +1032,10 @@ fn at_restart_permissions_expire_and_questions_stay_answerable() {
             COORDINATOR,
             Tool::AskUser(AskUser {
                 question: "Which port?".into(),
-                blocking: false,
             }),
         ),
     ));
-    assert!(text.contains("inbox"), "{text}");
+    assert!(text.starts_with("Question sent"), "{text}");
     let paths = h.paths.clone();
     let _state = h.quit();
 
@@ -1029,7 +1070,8 @@ fn at_restart_permissions_expire_and_questions_stay_answerable() {
         .find(|i| matches!(i.kind, InboxKind::Question { .. }))
         .unwrap_or_else(|| panic!("the question stays: {:#?}", h.snap.inbox))
         .id;
-    // A non-blocking question does not explain the stopped turn: its cut-off is reported too.
+    // A question does not explain the stopped turn (the agent kept working): its cut-off is
+    // reported too.
     h.wait_for("the cut-off item", |s| cut_off_text(s).is_some());
     h.send(Command::AnswerQuestion {
         item: question,

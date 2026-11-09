@@ -323,10 +323,7 @@ fn inbox_preview(
             format!("{name} asks to use {tool}"),
             crate::buffers::input_summary(snap, tool, input),
         ),
-        InboxKind::Question { text, blocking } => (
-            format!("{name} asks{}", if *blocking { " (blocked)" } else { "" }),
-            text.clone(),
-        ),
+        InboxKind::Question { text } => (format!("{name} asks"), text.clone()),
         InboxKind::FinishedTurn { preview } => (format!("{name} finished a turn"), preview.clone()),
         InboxKind::Error { text } => (format!("{name} hit an error"), text.clone()),
     };
