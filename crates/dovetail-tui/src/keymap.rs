@@ -194,6 +194,7 @@ const MESSAGES: Scope = Scope::Buffer(BufferKind::Messages);
 const DETAIL: Scope = Scope::Buffer(BufferKind::TaskDetail);
 const INBOX_DETAIL: Scope = Scope::Buffer(BufferKind::InboxDetail);
 const CONVERSATION: Scope = Scope::Buffer(BufferKind::Conversation);
+const BOARD: Scope = Scope::Buffer(BufferKind::Board);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
 pub const BINDINGS: &[Binding] = &[
@@ -227,6 +228,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader><leader>", Action::PickAny),
     bind(N, G, "<leader>a", Action::ShowActivity),
     bind(N, G, "<leader>m", Action::ShowMessages),
+    bind(N, G, "<leader>b", Action::ShowBoard),
     bind(N, G, "<leader>sn", Action::NewSlice),
     bind(N, G, "<leader>sx", Action::Interrupt),
     bind(N, G, "<leader>sm", Action::CyclePermissionMode),
@@ -270,6 +272,16 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, TREE, "J", Action::TreeMoveDown),
     bind(N, TREE, "K", Action::TreeMoveUp),
     bind(N, TREE, "dd", Action::TaskArchive),
+    // Board (brief "Other views"): `H`/`L` move between columns, `<`/`>` move the card to the
+    // previous or next status. Plain `h`/`l` stay focus movement (B2).
+    bind(N, BOARD, "<Esc>", Action::BackToConversation),
+    bind(N, BOARD, "H", Action::BoardColumnLeft),
+    bind(N, BOARD, "L", Action::BoardColumnRight),
+    bind(N, BOARD, "<lt>", Action::BoardMoveCardLeft),
+    bind(N, BOARD, ">", Action::BoardMoveCardRight),
+    bind(N, BOARD, "<CR>", Action::BoardOpen),
+    bind(N, BOARD, "a", Action::QuickCapture),
+    bind(N, BOARD, "s", Action::TaskCycleStatus),
     // An inbox item in full goes back with Esc; the answer keys are in `INBOX_ANSWERS`.
     bind(N, INBOX_DETAIL, "<Esc>", Action::BackToConversation),
 ];

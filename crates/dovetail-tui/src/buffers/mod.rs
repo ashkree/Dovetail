@@ -1,6 +1,7 @@
 //! Buffers: every view is one. A region shows a buffer; the buffer owns its state, draws itself
 //! and handles its buffer-local actions.
 
+mod board;
 mod conversation;
 mod feed;
 mod inbox;
@@ -19,6 +20,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
+pub use board::{BoardBuffer, COLUMNS as BOARD_COLUMNS};
 pub use conversation::ConversationBuffer;
 pub use feed::{ActivityBuffer, MessagesBuffer};
 pub(crate) use inbox::input_summary;
@@ -133,6 +135,8 @@ pub struct Buffers {
     pub activity: ActivityBuffer,
     /// The message timeline.
     pub messages: MessagesBuffer,
+    /// The board.
+    pub board: BoardBuffer,
 }
 
 impl Buffers {
@@ -146,6 +150,7 @@ impl Buffers {
             inbox_detail: InboxDetailBuffer::default(),
             activity: ActivityBuffer::default(),
             messages: MessagesBuffer::default(),
+            board: BoardBuffer::default(),
         }
     }
 
@@ -159,6 +164,7 @@ impl Buffers {
             BufferKind::InboxDetail => &mut self.inbox_detail,
             BufferKind::Activity => &mut self.activity,
             BufferKind::Messages => &mut self.messages,
+            BufferKind::Board => &mut self.board,
         }
     }
 }

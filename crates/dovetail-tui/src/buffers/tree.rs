@@ -398,7 +398,7 @@ impl TreeBuffer {
 
 /// Agents with an item in Needs you, mapped to their tasks. A coordinator item marks no task
 /// (plan B4).
-fn agents_waiting(snap: &Snapshot) -> HashSet<TaskId> {
+pub(crate) fn agents_waiting(snap: &Snapshot) -> HashSet<TaskId> {
     snap.inbox
         .iter()
         .filter_map(|item| snap.agents.iter().find(|a| a.id == item.agent)?.task)

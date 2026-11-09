@@ -159,7 +159,7 @@ Visual mode comes later; leave room for it.
 
 **Other views.**
 
-- **Board (`<leader>b`):** tasks as a kanban in the main region, columns Todo, In progress, Needs you, Done. Cards show agents, to-do progress, cost and memory. `j`/`k` card, `H`/`L` column (plain `h`/`l` stay focus movement), `<` `>` move a card to the previous or next status.
+- **Board (`<leader>b`, `:board`):** tasks as a kanban in the main region, columns Todo, In progress, Done. A task that needs you shows `⚠` and an amber border on its card, in its status column; done wins (B4). Cards show the id, the title cut to fit, the P-level and the names of live slices. `j`/`k` card, `H`/`L` column (plain `h`/`l` stay focus movement), `<` `>` move a card to the previous or next status (the cursor goes with it), `s` cycles the status, `a` quick capture, `Enter` the task detail (`Esc` there returns to the board), `Esc` or `<leader>b` back. Task #22, 2026-11-09.
 - **Worktrees (`<leader>g`):** one row per session's worktree: branch, ahead/behind, changes, PR, setup state; the coordinator on the main checkout; subagents Claude isolated, under their parent; archived worktrees waiting for removal. The selected row shows path, setup, base, head, uncommitted files and commits ahead. `Enter` open the session, `e` open in nvim, `c` copy path, `X` remove (asks first if work is unpushed).
 - **Focus mode (`<leader>z`):** only the coordinator conversation and the input; the status bar keeps the "needs you" count.
 

@@ -51,6 +51,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "alternate" => Action::AlternateAgent,
         "activity" => Action::ShowActivity,
         "messages" => Action::ShowMessages,
+        "board" => Action::ShowBoard,
         "switch" => Action::PickAgent,
         "find" => Action::PickAny,
         "add" | "capture" => Action::QuickCapture,

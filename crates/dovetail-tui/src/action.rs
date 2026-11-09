@@ -76,6 +76,8 @@ pub enum Action {
     ShowActivity,
     /// Show the message timeline in the main region (or go back if it is showing).
     ShowMessages,
+    /// Show the board in the main region (or go back if it is showing).
+    ShowBoard,
     /// Return the main region to the conversation.
     BackToConversation,
     /// Open the Activity or message item's agent.
@@ -117,6 +119,17 @@ pub enum Action {
     TreeMoveUp,
     /// Archive the selected task.
     TaskArchive,
+    // --- board ---
+    /// Move the cursor to the column on the left.
+    BoardColumnLeft,
+    /// Move the cursor to the column on the right.
+    BoardColumnRight,
+    /// Move the selected card to the previous status (its column on the left).
+    BoardMoveCardLeft,
+    /// Move the selected card to the next status (its column on the right).
+    BoardMoveCardRight,
+    /// Open the selected card's task detail.
+    BoardOpen,
     // --- inbox ---
     /// Allow a permission request once.
     InboxAllow,

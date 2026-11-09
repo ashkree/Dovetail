@@ -106,12 +106,14 @@ impl App {
                 .inbox_detail
                 .current(&self.snap)
                 .and_then(|item| task_of(&item.agent)),
+            BufferKind::Board => self.buffers.board.selected_task(&self.snap),
             BufferKind::Activity | BufferKind::Messages => None,
         }
     }
 
     /// Shows a task's detail in the main region.
     pub(super) fn open_task(&mut self, id: TaskId) {
+        self.detail_from_board = self.regions.buffer(RegionId::Main) == BufferKind::Board;
         self.buffers.task_detail.show(id);
         self.regions.show(RegionId::Main, BufferKind::TaskDetail);
         self.regions.set_focus(RegionId::Main);
