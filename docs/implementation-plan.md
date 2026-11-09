@@ -578,9 +578,9 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Scope:** subagents as tree nodes from `parent_tool_use_id` and `task_*`, progress, cost, unchanged subagent worktree removal, native list reading with reread on parse error, item-to-agent mapping, lists deleted on archive.
 - **Slices:** (a) subagent routing and nodes; (b) task-file watcher and attribution.
 - **Done when:**
-  - [ ] Background subagent shows progress, summary and cost
-  - [ ] To-do items sit under the agent that created them
-  - [ ] Totals come from task events
+  - [x] Background subagent shows progress, summary and cost (fake-driver replay of subagent_background / todo_tools; tokens stand in for cost per decision #21; not yet checked live)
+  - [x] To-do items sit under the agent that created them (fake-driver replay of subagent_background / todo_tools; tokens stand in for cost per decision #21; not yet checked live)
+  - [x] Totals come from task events (fake-driver replay of subagent_background / todo_tools; tokens stand in for cost per decision #21; not yet checked live)
 - **Tests:** `subagent_background`, `todo_tools`, mid-write JSON parse error
 
 ### M12. Board and worktree view
