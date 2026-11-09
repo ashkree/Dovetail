@@ -315,6 +315,8 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     );
     let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
     assert!(mcp.contains("DOVETAIL_AGENT_ID") && mcp.contains("\"coordinator\""));
+    // No profile in the recipe: the session inherits Dovetail's own Claude home (ADR 0009).
+    assert!(!spec.env.iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"));
 
     // The hook and the bridge are pinned to this app's state, whatever a slice's env says.
     let settings =
@@ -1431,6 +1433,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             task_list_id: None,
             created_ms: 0,
             tool_use_id: None,
+            claude_home: None,
         })
         .wait()
         .expect("agent");
@@ -1809,6 +1812,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             task_list_id: None,
             created_ms: 0,
             tool_use_id: None,
+            claude_home: None,
         })
         .wait()
         .expect("agent");
@@ -2324,5 +2328,141 @@ fn archiving_a_task_deletes_its_todo_list() {
     });
     assert!(!list.exists());
     assert!(other.join("1.json").exists());
+    h.quit();
+}
+
+// --- Profiles (task #27, ADR 0009) ---
+
+/// State dirs for a run whose recipe and config are written before the core starts.
+fn profile_paths(dir: &Path) -> Paths {
+    Paths {
+        data: dir.join("data"),
+        config: dir.join("config"),
+        state: dir.join("state"),
+        runtime: dir.join("unused"),
+    }
+}
+
+fn profiles_config(dir: &Path) -> Config {
+    let mut config = Config::default();
+    for name in ["mine", "work"] {
+        config.profiles.insert(
+            name.into(),
+            dir.join("profiles")
+                .join(name)
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+    config
+}
+
+fn write_recipe(paths: &Paths, text: &str) {
+    let file = paths.recipe("p");
+    std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
+    std::fs::write(file, text).expect("recipe");
+}
+
+fn config_dir_env(spec: &dovetail_driver::SessionSpec) -> Option<String> {
+    spec.env
+        .iter()
+        .find(|(k, _)| k == "CLAUDE_CONFIG_DIR")
+        .map(|(_, v)| v.clone())
+}
+
+fn error_texts(s: &Snapshot) -> Vec<String> {
+    s.inbox
+        .iter()
+        .filter_map(|i| match &i.kind {
+            InboxKind::Error { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn wait_started(fake: &FakeDriver, count: usize) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < count {
+        assert!(Instant::now() < deadline, "sessions did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn a_project_profile_sets_claude_config_dir_and_a_changed_one_is_not_resumed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    let work = dir.path().join("profiles/work");
+    write_recipe(&paths, "profile = \"mine\"\n");
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_with(fake.clone(), paths.clone(), None, config.clone());
+    assert_eq!(h.snap.profile.as_deref(), Some("mine"));
+    prompt(&h, "hello");
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+    h.wait_for("the usage limits", |s| s.usage.five_hour.is_some());
+    let first = fake.started_specs()[0].clone();
+    assert_eq!(
+        config_dir_env(&first),
+        Some(mine.to_string_lossy().into_owned())
+    );
+    let _state = h.quit();
+
+    // The recipe now picks another account: the coordinator is not resumed under it.
+    write_recipe(&paths, "profile = \"work\"\n");
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_with(fake.clone(), paths.clone(), None, config.clone());
+    h.wait_for("the profile notice", |s| {
+        error_texts(s)
+            .iter()
+            .any(|t| t.contains("Claude profile work"))
+    });
+    assert_eq!(h.snap.profile.as_deref(), Some("work"));
+    // Limits are per account: `mine`'s figures are not shown for `work`.
+    assert_eq!(h.snap.usage, dovetail_api::UsageLimits::default());
+    wait_started(&fake, 1);
+    let second = fake.started_specs()[0].clone();
+    assert!(!second.resume, "resumed across profiles");
+    assert_ne!(second.session_id, first.session_id);
+    assert_eq!(
+        config_dir_env(&second),
+        Some(work.to_string_lossy().into_owned())
+    );
+    h.wait_for("the fresh-session notice", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text.contains("fresh session")))
+    });
+    let _state = h.quit();
+
+    // Told once: the next open, under the same profile, resumes and says nothing new.
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_with(fake.clone(), paths, None, config);
+    wait_started(&fake, 1);
+    h.drain(Duration::from_millis(200));
+    assert!(fake.started_specs()[0].resume);
+    let notices = error_texts(&h.snap)
+        .iter()
+        .filter(|t| t.contains("now runs under Claude profile"))
+        .count();
+    assert!(notices <= 1, "{:?}", error_texts(&h.snap));
+    h.quit();
+}
+
+#[test]
+fn an_unknown_profile_is_an_inbox_error_and_starts_nothing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    write_recipe(&paths, "profile = \"ghost\"\n");
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_with(fake.clone(), paths, None, profiles_config(dir.path()));
+    h.wait_for("the profile error", |s| {
+        error_texts(s).iter().any(|t| t.contains("\"ghost\""))
+    });
+    prompt(&h, "hello");
+    h.drain(Duration::from_millis(300));
+    assert!(fake.started_specs().is_empty());
     h.quit();
 }

@@ -1,9 +1,12 @@
 //! Usage limits and the model in use (task #16).
 //!
 //! Every turn's `rate_limit_event` carries a 5-hour and a weekly window, parsed by the driver.
-//! Limits are per account, so the core keeps the latest from any session. Here the driver's
+//! Limits are per account, so the core keeps the latest per Claude home (profile, ADR 0009) and
+//! shows the project's. Here the driver's
 //! windows become the API's: reset times in milliseconds, the status word as [`UsageStatus`].
 //! The model comes from `system/init` and main-thread assistant messages.
+
+use std::path::PathBuf;
 
 use dovetail_api::{AgentId, Event, UsageLimits, UsageStatus, UsageWindow};
 use dovetail_driver::{RateLimitInfo, RateLimitWindow};
@@ -36,16 +39,52 @@ fn merged(current: &UsageLimits, next: UsageLimits) -> UsageLimits {
 }
 
 impl Core {
-    /// A session reported its usage limits: tell the UI if anything changed.
-    pub(crate) fn on_rate_limit(&mut self, info: &RateLimitInfo) {
+    /// Agent `agent`'s session reported its usage limits: keep them for its Claude home, and
+    /// tell the UI if they are the project's and anything changed.
+    pub(crate) fn on_rate_limit(&mut self, agent: &AgentId, info: &RateLimitInfo) {
         let Some(next) = from_rate_limit(info) else {
             return;
         };
-        let usage = merged(&self.usage, next);
-        if usage != self.usage {
-            self.usage = usage.clone();
+        let home = self.home_of(agent);
+        let current = self.usage.get(&home).cloned().unwrap_or_default();
+        let usage = merged(&current, next);
+        if usage == current {
+            return;
+        }
+        self.usage.insert(home.clone(), usage.clone());
+        if home == self.current_home_dir() {
             self.emit(Event::UsageChanged(usage));
         }
+    }
+
+    /// The project's usage limits: those of its Claude home.
+    pub(crate) fn current_usage(&self) -> UsageLimits {
+        self.usage
+            .get(&self.current_home_dir())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// The Claude home this project's sessions run under (the default home if its profile is
+    /// unusable: nothing runs then anyway).
+    pub(crate) fn current_home_dir(&self) -> PathBuf {
+        self.claude
+            .as_ref()
+            .map_or_else(|_| crate::profile::default_dir(), |h| h.dir.clone())
+    }
+
+    /// The project's profile name, for the header.
+    pub(crate) fn profile_name(&self) -> Option<String> {
+        self.claude.as_ref().ok().and_then(|h| h.name.clone())
+    }
+
+    /// The Claude home agent `id` ran under: recorded at launch; before that, or for a row from
+    /// before profiles, the default home.
+    pub(crate) fn home_of(&self, id: &AgentId) -> PathBuf {
+        self.agents
+            .get(id)
+            .and_then(|r| r.claude_home.clone())
+            .unwrap_or_else(crate::profile::default_dir)
     }
 
     /// The session reported its model. Claude Code's own placeholder messages (`<synthetic>`)

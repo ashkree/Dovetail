@@ -3,6 +3,9 @@
 # Every section is optional. See crates/dovetail-core/src/recipe.rs for the format.
 
 name = "dovetail"
+# The Claude account (profile, ADR 0009) this project's sessions run under, from config.toml
+# [profiles]. Left out: your default ~/.claude. Set up with `dovetail login <name>`.
+# profile = "maveron"
 
 [worktree]
 # Paths relative to the repo root, symlinked (never copied) into each new slice worktree.

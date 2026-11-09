@@ -112,6 +112,10 @@ _Avoid_: maps section, maps panel
 A project's instructions for preparing a new worktree: files to symlink in, plus an optional setup command.
 _Avoid_: setup script, template, worktree config
 
+**Profile**:
+A named Claude Code account, kept in its own config folder; each project picks one in its worktree recipe and every session of the project runs under it.
+_Avoid_: account (for the setting), login, identity
+
 **Self-hosting point**:
 The earliest milestone after which the rest of Dovetail's build runs inside Dovetail.
 _Avoid_: bootstrap, dogfooding

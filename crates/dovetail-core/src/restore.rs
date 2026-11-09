@@ -226,6 +226,7 @@ impl Core {
             self.raise(&agent, InboxKind::Error { text }, Waiter::None);
         }
         self.sweep().await;
+        self.profile_notices();
         let ids: Vec<AgentId> = self.agents.keys().cloned().collect();
         for id in &ids {
             self.refresh_status(id);
@@ -239,6 +240,46 @@ impl Core {
         if has_run && let Err(e) = self.ensure_live(&coordinator) {
             self.fail(e);
         }
+    }
+
+    /// Says in Needs you when the project's Claude profile cannot be used, or when it changed
+    /// since sessions were recorded (ADR 0009). The change is told once: the coordinator, which
+    /// comes back at open, is one of those sessions, and its relaunch records the new profile.
+    fn profile_notices(&mut self) {
+        let coordinator = AgentId(COORDINATOR.into());
+        let home = match &self.claude {
+            Ok(home) => home.clone(),
+            Err(e) => {
+                let text = format!("Sessions cannot start: {e}");
+                self.raise(&coordinator, InboxKind::Error { text }, Waiter::None);
+                return;
+            }
+        };
+        let moved = |r: &crate::db::AgentRow| {
+            r.agent.kind.is_session()
+                && r.transcript_path.is_some()
+                && !crate::profile::same_dir(
+                    &r.claude_home
+                        .clone()
+                        .unwrap_or_else(crate::profile::default_dir),
+                    &home.dir,
+                )
+        };
+        if !self.agents.get(&coordinator).is_some_and(moved) {
+            return;
+        }
+        let count = self.agents.values().filter(|r| moved(r)).count();
+        let sessions = if count == 1 {
+            "1 session was".to_owned()
+        } else {
+            format!("{count} sessions were")
+        };
+        let text = format!(
+            "This project now runs under Claude profile {}. {sessions} recorded under another \
+             profile and will start fresh, not resume. Tasks, decisions and worktrees are kept.",
+            home.label()
+        );
+        self.raise(&coordinator, InboxKind::Error { text }, Waiter::None);
     }
 
     /// The stale-state sweep (decision 4 of 2026-11-06).

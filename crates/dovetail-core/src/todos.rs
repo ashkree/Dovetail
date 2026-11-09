@@ -36,20 +36,6 @@ pub(crate) const TODO_WINDOW: Duration = Duration::from_millis(50);
 /// next change.
 const MAX_REREADS: u8 = 5;
 
-/// `<CLAUDE_CONFIG_DIR or ~/.claude>/tasks`, where Claude Code keeps native lists.
-pub(crate) fn default_tasks_dir() -> PathBuf {
-    std::env::var_os("CLAUDE_CONFIG_DIR")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_default()
-                .join(".claude")
-        })
-        .join("tasks")
-}
-
 /// One task file as Claude Code writes it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct TaskFile {
@@ -197,8 +183,17 @@ fn new_watcher(
 }
 
 impl Core {
+    /// A list's folder: `tasks/<list>` in the Claude home of the session it belongs to (its
+    /// profile's folder, ADR 0009), unless tests override the tasks dir.
     fn list_dir(&self, list: &TodoListId) -> PathBuf {
-        self.tasks_dir.join(&list.0)
+        let tasks = match &self.options.tasks_dir {
+            Some(dir) => dir.clone(),
+            None => self
+                .list_owner(list)
+                .map_or_else(|| self.current_home_dir(), |id| self.home_of(&id))
+                .join("tasks"),
+        };
+        tasks.join(&list.0)
     }
 
     /// The native list agent `id`'s session uses.

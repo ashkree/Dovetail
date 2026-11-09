@@ -8,10 +8,14 @@
 //! [memory]
 //! coordinator_gb = 4         # cgroup cap for the coordinator session
 //! slice_gb = 3               # cgroup cap for each slice session
+//! [profiles]                 # Claude Code accounts, by name (ADR 0009, `profile`)
+//! walid = "~/.claude"
+//! maveron = "~/.local/share/dovetail/profiles/maveron"
 //! ```
 //!
 //! Every field is optional.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -32,6 +36,8 @@ pub struct Config {
     pub max_slices: u32,
     /// Memory caps.
     pub memory: MemoryCaps,
+    /// Claude Code config directories by profile name; a project picks one in its recipe.
+    pub profiles: BTreeMap<String, String>,
 }
 
 /// The `[memory]` table: cgroup caps for sessions, in gigabytes.
@@ -52,6 +58,7 @@ impl Default for Config {
             default_model: None,
             max_slices: 3,
             memory: MemoryCaps::default(),
+            profiles: BTreeMap::new(),
         }
     }
 }
@@ -97,6 +104,14 @@ impl Config {
         Self::load_from(&paths.config.join("config.toml"))
     }
 
+    /// The Claude home for a project whose recipe picks `profile` (`None`: the default home).
+    pub fn claude_home(
+        &self,
+        profile: Option<&str>,
+    ) -> Result<crate::profile::ClaudeHome, crate::profile::ProfileError> {
+        crate::profile::resolve(&self.profiles, profile)
+    }
+
     /// Reads a config file; a missing file gives the defaults.
     pub fn load_from(path: &Path) -> Result<Self, ConfigError> {
         match std::fs::read_to_string(path) {
@@ -110,5 +125,24 @@ impl Config {
                 source,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profiles_parse_by_name() {
+        let config = Config::parse(
+            "max_slices = 2\n[profiles]\nwalid = \"~/.claude\"\nmaveron = \"/p/maveron\"\n",
+        )
+        .unwrap();
+        assert_eq!(config.profiles["maveron"], "/p/maveron");
+        assert_eq!(config.profiles["walid"], "~/.claude");
+        let home = config.claude_home(Some("maveron")).unwrap();
+        assert_eq!(home.dir, PathBuf::from("/p/maveron"));
+        assert!(config.claude_home(Some("missing")).is_err());
+        assert!(Config::parse("").unwrap().profiles.is_empty());
     }
 }

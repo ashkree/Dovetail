@@ -1,8 +1,9 @@
 //! The usage indicator on the right of the header row (task #16):
-//! `opus-5-5 · 5h 34% (resets 14:20) · week 18% (resets Thu)`.
+//! `maveron · opus-5-5 · 5h 34% (resets 14:20) · week 18% (resets Thu)`.
 //!
-//! Parts drop as the row narrows: the reset times, then the model, then the week; the 5-hour
-//! figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
+//! The project's Claude profile leads (ADR 0009): limits are per account, so the figures are that
+//! profile's. Parts drop as the row narrows: the reset times, then the profile and model, then the
+//! week; the 5-hour figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
 
 use dovetail_api::{UsageLimits, UsageWindow};
 use jiff::{Timestamp, tz::TimeZone};
@@ -85,6 +86,7 @@ fn part(label: &str, window: Option<&UsageWindow>, now_ms: i64, tz: &TimeZone) -
 /// [`crate::buffers::spread_fit`]. Empty when nothing is known yet.
 pub fn variants(
     usage: &UsageLimits,
+    profile: Option<&str>,
     model: Option<&str>,
     now_ms: i64,
     tz: &TimeZone,
@@ -95,7 +97,7 @@ pub fn variants(
     let five = known.then(|| part("5h", usage.five_hour.as_ref(), now_ms, tz));
     let week = known.then(|| part("week", usage.seven_day.as_ref(), now_ms, tz));
     let model = model.map(short_model);
-    let build = |model: Option<&str>, with_week: bool, resets: bool| {
+    let build = |lead: bool, with_week: bool, resets: bool| {
         let mut items: Vec<Span<'static>> = Vec::new();
         let mut push = |spans: Vec<Span<'static>>| {
             if !items.is_empty() {
@@ -103,8 +105,8 @@ pub fn variants(
             }
             items.extend(spans);
         };
-        if let Some(m) = model {
-            push(vec![Span::styled(m.to_owned(), theme.dim())]);
+        for name in [profile, model].into_iter().flatten().filter(|_| lead) {
+            push(vec![Span::styled(name.to_owned(), theme.dim())]);
         }
         for p in [five.as_ref(), week.as_ref().filter(|_| with_week)]
             .into_iter()
@@ -124,10 +126,10 @@ pub fn variants(
     };
     let mut out: Vec<Vec<Span<'static>>> = Vec::new();
     for v in [
-        build(model, true, true),
-        build(model, true, false),
-        build(None, true, false),
-        build(None, false, false),
+        build(true, true, true),
+        build(true, true, false),
+        build(false, true, false),
+        build(false, false, false),
     ] {
         // A variant that drops nothing new (no resets known, no model yet) is skipped.
         if !v.is_empty() && out.last() != Some(&v) {
@@ -176,6 +178,7 @@ mod tests {
         let theme = Theme::dusk();
         let v = variants(
             &usage(0.34, 0.18, NOW_S),
+            None,
             Some("claude-opus-5-5"),
             NOW_S * 1_000,
             &TimeZone::UTC,
@@ -194,10 +197,27 @@ mod tests {
     }
 
     #[test]
+    fn the_profile_leads_and_drops_with_the_model() {
+        let theme = Theme::dusk();
+        let v = variants(
+            &usage(0.34, 0.18, NOW_S),
+            Some("maveron"),
+            Some("claude-opus-5-5"),
+            NOW_S * 1_000,
+            &TimeZone::UTC,
+            &theme,
+        );
+        let texts: Vec<String> = v.iter().map(|s| text(s)).collect();
+        assert_eq!(texts[1], "maveron · opus-5-5 · 5h 34% · week 18% ");
+        assert_eq!(texts[2], "5h 34% · week 18% ");
+    }
+
+    #[test]
     fn limits_are_coloured_by_threshold() {
         let theme = Theme::dusk();
         let v = variants(
             &usage(0.72, 0.95, NOW_S),
+            None,
             None,
             NOW_S * 1_000,
             &TimeZone::UTC,
@@ -213,6 +233,7 @@ mod tests {
         let low = variants(
             &usage(0.1, 0.1, NOW_S),
             None,
+            None,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -227,15 +248,24 @@ mod tests {
         let v = variants(
             &usage(0.34, 0.18, NOW_S),
             None,
+            None,
             later,
             &TimeZone::UTC,
             &theme,
         );
         assert_eq!(text(&v[0]), "5h — · week 18% (resets Thu) ");
-        let none = variants(&UsageLimits::default(), None, later, &TimeZone::UTC, &theme);
+        let none = variants(
+            &UsageLimits::default(),
+            None,
+            None,
+            later,
+            &TimeZone::UTC,
+            &theme,
+        );
         assert!(none.is_empty());
         let model_only = variants(
             &UsageLimits::default(),
+            None,
             Some("claude-opus-5-5"),
             later,
             &TimeZone::UTC,
@@ -250,7 +280,7 @@ mod tests {
         let theme = Theme::dusk();
         let mut u = usage(0.34, 0.06, NOW_S);
         u.five_hour = None;
-        let v = variants(&u, None, NOW_S * 1_000, &TimeZone::UTC, &theme);
+        let v = variants(&u, None, None, NOW_S * 1_000, &TimeZone::UTC, &theme);
         let texts: Vec<String> = v.iter().map(|s| text(s)).collect();
         assert_eq!(
             texts,

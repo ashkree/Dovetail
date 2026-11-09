@@ -28,6 +28,9 @@ pub struct AgentRow {
     /// Subagents only: the `Agent` tool use that launched it. Its events carry this as
     /// `parent_tool_use_id`.
     pub tool_use_id: Option<String>,
+    /// The Claude Code config directory (profile) its session runs under, set at each launch;
+    /// `None` for the default home of before profiles (ADR 0009). Subagents copy their parent's.
+    pub claude_home: Option<PathBuf>,
 }
 
 fn kind_to_text(kind: AgentKind) -> &'static str {
@@ -91,14 +94,15 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
     conn.execute(
         "INSERT INTO agents (id, kind, name, parent_id, task_id, session_id, transcript_path, \
          task_list_id, worktree_path, branch, status, status_line, permission_mode, cost_usd, \
-         created_ms, last_activity_ms, tool_use_id, output_file, progress, subagent_tokens) \
+         created_ms, last_activity_ms, tool_use_id, output_file, progress, subagent_tokens, \
+         claude_home) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20) \
+         ?18, ?19, ?20, ?21) \
          ON CONFLICT(id) DO UPDATE SET kind = ?2, name = ?3, parent_id = ?4, task_id = ?5, \
          session_id = ?6, transcript_path = ?7, task_list_id = ?8, worktree_path = ?9, \
          branch = ?10, status = ?11, status_line = ?12, permission_mode = ?13, cost_usd = ?14, \
          last_activity_ms = ?16, tool_use_id = ?17, output_file = ?18, progress = ?19, \
-         subagent_tokens = ?20, closed_ms = NULL",
+         subagent_tokens = ?20, claude_home = ?21, closed_ms = NULL",
         params![
             a.id.0,
             kind_to_text(a.kind),
@@ -125,6 +129,7 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
                 .map(|f| f.to_string_lossy().into_owned()),
             progress_text(&a.progress)?,
             i64::try_from(a.subagent_tokens).unwrap_or(i64::MAX),
+            path_text(&row.claude_home),
         ],
     )?;
     Ok(())
@@ -134,7 +139,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
     let mut stmt = conn.prepare(
         "SELECT id, kind, name, parent_id, task_id, session_id, transcript_path, task_list_id, \
          worktree_path, branch, status, status_line, permission_mode, cost_usd, created_ms, \
-         last_activity_ms, tool_use_id, progress, subagent_tokens FROM agents WHERE closed_ms IS NULL \
+         last_activity_ms, tool_use_id, progress, subagent_tokens, claude_home FROM agents WHERE closed_ms IS NULL \
          ORDER BY created_ms, id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -161,6 +166,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 r.get::<_, Option<String>>(16)?,
                 r.get::<_, Option<String>>(17)?,
                 r.get::<_, i64>(18)?,
+                r.get::<_, Option<String>>(19)?,
             ),
         ))
     })?;
@@ -182,7 +188,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             cost,
             created,
             last,
-            (tool_use_id, progress, subagent_tokens),
+            (tool_use_id, progress, subagent_tokens, claude_home),
         ) = row?;
         let progress = progress
             .map(|p| {
@@ -222,6 +228,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             task_list_id: list,
             created_ms: created.unwrap_or(0),
             tool_use_id,
+            claude_home: claude_home.map(PathBuf::from),
         });
     }
     Ok(out)

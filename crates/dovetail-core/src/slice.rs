@@ -214,6 +214,7 @@ impl Core {
             task_list_id: Some(self.task_list_id(request.task, &name)),
             created_ms: now_ms(),
             tool_use_id: None,
+            claude_home: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
