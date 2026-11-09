@@ -54,10 +54,10 @@ The sketch shows the tree on the left; the app mirrors it (conversation left, tr
 
 ```
 ┌ tasks ──────────────────┬ coordinator ──────────────┐
-│ ◐ ◆ coordinator         │ you · 10:14               │
+│ ◐ ◆ coordinator         │ ── You · 10:14 ────────── │
 │ ▾ #1231 business surface│ What's blocking slice-7?  │
 │   ◐ ◆ slice-4           │                           │
-│     ⎇ dovetail/slice-4  │ coordinator · 10:14       │
+│     ⎇ dovetail/slice-4  │ ── coordinator · 10:14 ── │
 │     └ ✓ ◇ rebase        │ It needs FS_EVAL_VIRTUAL… │
 │ ▾ ⚠ get_decision 500    │                           │
 ├ inbox (2) ──────────────┤                           │
@@ -69,7 +69,7 @@ The sketch shows the tree on the left; the app mirrors it (conversation left, tr
 ```
 
 - **Right, top:** the task tree. Project, then tasks, then each task's agents (with the branch under each slice), then each agent's to-do items. A background subagent shows as one node with a progress indicator.
-- **Right, bottom:** the inbox ("Needs you").
+- **Right, bottom:** the inbox ("Needs you"). One line per item: kind glyph, source, a short title cut with `…` to fit, and the time. The title is what a permission request is for, or the first sentence of a question, finished turn or error. The full item opens with `Enter` (see the inbox keys below; task #5, 2026-11-09).
 - **Left:** a conversation buffer, full height. It shows the **coordinator** by default and switches when I open another agent.
 - **Status bar:** mode, project, task count, live agent count, "needs you" count, total memory, and the coordinator's context fill (e.g. `ctx 62%`).
 - **Context fill colors** (status bar for the coordinator, next to each slice session in the tree; not for subagents): normal up to 60%, amber 60–80%, red above 80%.
@@ -93,6 +93,7 @@ Dovetail draws all conversation text itself, so tune it for reading:
   - tool summaries and older turns: dimmed.
   Put all colors in one theme struct so they become configurable later. Use `pulldown-cmark` for parsing; no syntax highlighting in code blocks yet.
 - **Background:** my terminal is transparent and I want to keep that, so don't paint backgrounds by default. Add a toggle that gives the reading column a solid dark background, and turn it on automatically in focus mode.
+- **Message headers:** each message opens with a blank row and a header rule as wide as the reading column, `── <name> · hh:mm ───`. The name is bold in the speaker's colour, the rule dim. `You` for my messages; agents are named exactly as in the tree (e.g. `coordinator`, `slice-4`). Tool summaries, notices and later reply chunks stay under the agent's one header, and the streaming `◐` sits in it (task #6, 2026-11-09).
 - **Fold the noise:** tool activity in a turn collapses into one summary line (e.g. `Edited 3 files · ran tests ✓ · 42 s`), expandable. Hide thinking. Truncate long output with a "show more".
 - **Reading keys** (buffer-local in a conversation, Normal mode): `j`/`k` scroll, `gg`/`G` top and bottom, `]]`/`[[` next and previous turn, `zc`/`zo` fold and unfold a turn.
 
@@ -161,10 +162,11 @@ Visual mode comes later; leave room for it.
 - **Focus mode (`<leader>z`):** only the coordinator conversation and the input; the status bar keeps the "needs you" count.
 
 **Buffer-local:**
-- **Inbox:** `y` allow once, `A` (Shift-a) always allow, `d` deny, `D` deny with a reason (opens input), `r` reply to a question, `x` dismiss a finished turn or error, `Enter` open the agent. `n`/`N` stay global search. The selected item shows a context preview: the tool, its full input, and the agent's last message.
+- **Inbox:** `y` allow once, `A` (Shift-a) always allow, `d` deny, `D` deny with a reason (opens input), `r` reply to a question, `x` dismiss a finished turn or error, `Enter` open the item in full. `n`/`N` stay global search. Rows stay one line; the selected item shows no preview.
+- **Inbox item detail:** `Enter` on an inbox item opens it in an `InboxDetail` buffer in the main region: the whole text in the reading column (questions and briefs as markdown; for a permission request, the tool and its full input). The same `y A d D r x` keys work there, `⏎` opens the agent, and `Esc` goes back to the inbox. Exception: `Enter` on a finished turn opens the agent's conversation, which is that item's full text, and opening it clears the item (ADR 0001). Task #5, 2026-11-09.
 - **Task tree:** `Enter` on an agent opens its conversation; `Enter` on a task opens a task detail view (title, P-level, bucket, notes, decisions, linked PR, agents; mock the notes and a couple of decision entries). `o` expand or collapse, `a` add task, `e` edit title, `s` cycle status, `b` cycle bucket, `p` cycle P-level, `J`/`K` reorder within `Now`, `dd` archive.
 
-**Chat input (Insert mode):** plain multiline input. `Enter` sends. `Ctrl-j` and `Alt-Enter` insert a newline. `Ctrl-w` deletes a word, `Ctrl-u` the line. No vim editing inside the input. `Ctrl-V` reads the system clipboard (`wl-paste`, else `xclip`): an image (PNG, JPEG, GIF or WebP, up to 5 MB, at most 10 per message) is attached and shown as a chip such as `[image 1 · 412 KB]` above the input, and the sent message shows the same chips; otherwise the clipboard's text is pasted at the cursor. `Backspace` on an empty input removes the last chip. Chat bars only (task #1, 2026-11-09).
+**Chat input (Insert mode):** plain multiline input that wraps at word boundaries (only a word longer than the line is broken; task #4, 2026-11-09). `Enter` sends. `Ctrl-j` and `Alt-Enter` insert a newline. `Ctrl-w` deletes a word, `Ctrl-u` the line. No vim editing inside the input. `Ctrl-V` reads the system clipboard (`wl-paste`, else `xclip`): an image (PNG, JPEG, GIF or WebP, up to 5 MB, at most 10 per message) is attached and shown as a chip such as `[image 1 · 412 KB]` above the input, and the sent message shows the same chips; otherwise the clipboard's text is pasted at the cursor. `Backspace` on an empty input removes the last chip. Chat bars only (task #1, 2026-11-09).
 
 **Interrupt** is a Normal-mode action (`<leader>sx`), because `Esc` belongs to mode switching.
 
@@ -175,7 +177,7 @@ A which-key popup (press Space, wait, see the bindings) is planned for later. Bu
 1. Workspace skeleton, event loop, mode state machine, status bar.
 2. Fixed layout (conversation on the left, tree over inbox on the right) and focus movement.
 3. Task tree buffer on mock data, with expand/collapse, glyphs, branch lines and live updates from `MockCore`.
-4. Inbox buffer, with inline approval keys and the preview.
+4. Inbox buffer, with inline approval keys and the item detail.
 5. Conversation buffer, with Insert mode sending to the mock and a streamed mock reply.
 6. Command mode, the session switcher and the picker.
 7. Board, worktree view and focus mode.
