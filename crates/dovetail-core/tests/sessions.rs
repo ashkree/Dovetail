@@ -81,6 +81,7 @@ impl Harness {
             driver: Arc::new(driver.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
+            editor: None,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
@@ -444,6 +445,7 @@ impl Harness {
             driver: Arc::new(driver.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
+            editor: None,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");

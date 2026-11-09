@@ -588,9 +588,9 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Slices:** (a) board; (b) worktree data in core; (c) worktree buffer, after (b).
 - **Board columns:** todo, in progress, done. A task that needs you gets a marker on its card, with no column of its own (B4).
 - **Done when:**
-  - [ ] Both are reachable as buffers in the main region
-  - [ ] `X` asks first if work is unpushed
-  - [ ] `e` opens nvim and returns cleanly
+  - [x] Both are reachable as buffers in the main region
+  - [x] `X` asks first if work is unpushed
+  - [ ] `e` opens nvim and returns cleanly (hand-off sequence tested with a fake core and a fake editor; not yet tried in a real terminal)
 - **Tests:** snapshots, git status parsing in temp repos
 
 ### M13. Memory caps and context fill

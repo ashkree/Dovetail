@@ -100,7 +100,9 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::WarningSet(warning) => upsert(&mut state.warnings, warning, |w| w.id.clone()),
         Event::WarningCleared(id) => state.warnings.retain(|w| w.id != id),
         // Nothing to store: the UI shows the message as the event passes through.
-        Event::CommandFailed { .. } | Event::ClipboardPasted { .. } => {}
+        Event::CommandFailed { .. }
+        | Event::ClipboardPasted { .. }
+        | Event::TerminalReturned { .. } => {}
     }
     ApplyResult::Applied
 }

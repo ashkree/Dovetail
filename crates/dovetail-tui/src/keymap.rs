@@ -198,6 +198,7 @@ const DETAIL: Scope = Scope::Buffer(BufferKind::TaskDetail);
 const INBOX_DETAIL: Scope = Scope::Buffer(BufferKind::InboxDetail);
 const CONVERSATION: Scope = Scope::Buffer(BufferKind::Conversation);
 const BOARD: Scope = Scope::Buffer(BufferKind::Board);
+const WORKTREES: Scope = Scope::Buffer(BufferKind::Worktrees);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
 pub const BINDINGS: &[Binding] = &[
@@ -232,6 +233,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>a", Action::ShowActivity),
     bind(N, G, "<leader>m", Action::ShowMessages),
     bind(N, G, "<leader>b", Action::ShowBoard),
+    bind(N, G, "<leader>g", Action::ShowWorktrees),
     bind(N, G, "<leader>sn", Action::NewSlice),
     bind(N, G, "<leader>sx", Action::Interrupt),
     bind(N, G, "<leader>sm", Action::CyclePermissionMode),
@@ -288,6 +290,13 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, BOARD, "<CR>", Action::BoardOpen),
     bind(N, BOARD, "a", Action::QuickCapture),
     bind(N, BOARD, "s", Action::TaskCycleStatus),
+    // Worktree view (the brief's "Worktrees"): Enter opens the session, `e` the editor, `c`
+    // copies the path, `X` removes (asking first if work is unpushed).
+    bind(N, WORKTREES, "<Esc>", Action::BackToConversation),
+    bind(N, WORKTREES, "<CR>", Action::WorktreeOpen),
+    bind(N, WORKTREES, "e", Action::WorktreeEdit),
+    bind(N, WORKTREES, "c", Action::WorktreeCopyPath),
+    bind(N, WORKTREES, "X", Action::WorktreeRemove),
     // An inbox item in full goes back with Esc; the answer keys are in `INBOX_ANSWERS`.
     bind(N, INBOX_DETAIL, "<Esc>", Action::BackToConversation),
 ];

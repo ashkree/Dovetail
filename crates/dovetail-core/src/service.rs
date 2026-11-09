@@ -65,6 +65,9 @@ pub struct CoreOptions {
     /// Where Claude Code keeps native to-do lists; `None` for `$CLAUDE_CONFIG_DIR/tasks`, else
     /// `~/.claude/tasks`. Tests point it at a temp dir.
     pub tasks_dir: Option<PathBuf>,
+    /// The editor command line for [`Command::OpenEditor`]; `None` for `$EDITOR`, else `nvim`.
+    /// Tests give a fake one.
+    pub editor: Option<std::ffi::OsString>,
 }
 
 /// Starts the core on its own thread for the folder `resolution` names, and returns the UI's end
@@ -225,6 +228,10 @@ pub(crate) enum Input {
         agent: AgentId,
         paste: dovetail_api::Paste,
     },
+    /// Copying text to the clipboard failed.
+    CopyFailed(crate::clipboard::CopyError),
+    /// The editor run in the UI's terminal exited; the message says why it failed, if it did.
+    EditorExited(Option<String>),
 }
 
 /// Hands socket requests to the loop.
@@ -278,6 +285,8 @@ pub(crate) struct Core {
     pub(crate) inputs: tokio_mpsc::UnboundedSender<Input>,
     seq: u64,
     ui_alive: bool,
+    /// An editor runs in the UI's terminal ([`Command::OpenEditor`]).
+    editor_open: bool,
     pub(crate) agents: BTreeMap<AgentId, AgentRow>,
     pub(crate) live: HashMap<AgentId, Live>,
     pub(crate) generation: u64,
@@ -352,6 +361,7 @@ impl Core {
             inputs,
             seq: 0,
             ui_alive: true,
+            editor_open: false,
             agents: BTreeMap::new(),
             live: HashMap::new(),
             generation: 0,
@@ -462,6 +472,11 @@ impl Core {
                 Input::WorktreeGathered(info) => self.on_worktree_gathered(info),
                 Input::Pasted { agent, paste } => {
                     self.emit(Event::ClipboardPasted { agent, paste });
+                }
+                Input::CopyFailed(e) => self.fail(e.to_string()),
+                Input::EditorExited(error) => {
+                    self.editor_open = false;
+                    self.emit(Event::TerminalReturned { error });
                 }
             }
             if self.quitting.is_none() {
@@ -957,6 +972,8 @@ impl Core {
                 attachments,
             } => self.prompt(&agent, text, attachments).await,
             Command::PasteClipboard { agent } => self.paste_clipboard(agent),
+            Command::CopyToClipboard { text } => self.copy_to_clipboard(text),
+            Command::OpenEditor { path } => self.open_editor(path),
             Command::Interrupt { agent } => self.interrupt(&agent),
             Command::AnswerPermission { item, answer } => {
                 self.answer_permission(item, answer).await
@@ -1047,6 +1064,39 @@ impl Core {
         tokio::task::spawn_blocking(move || {
             let paste = crate::clipboard::paste(&dir);
             let _ = inputs.send(Input::Pasted { agent, paste });
+        });
+    }
+
+    /// Copies text to the clipboard on a blocking thread; only a failure is reported.
+    fn copy_to_clipboard(&mut self, text: String) {
+        let inputs = self.inputs.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = crate::clipboard::copy(&text) {
+                let _ = inputs.send(Input::CopyFailed(e));
+            }
+        });
+    }
+
+    /// Runs the editor in the terminal the UI has let go of, and answers
+    /// [`Event::TerminalReturned`] when it exits. A second request while one runs is answered at
+    /// once, so the UI never waits for nothing; it cannot normally happen, as the UI sends no
+    /// commands while the editor has the terminal.
+    fn open_editor(&mut self, path: PathBuf) {
+        if self.editor_open {
+            self.emit(Event::TerminalReturned {
+                error: Some("an editor is already open".into()),
+            });
+            return;
+        }
+        self.editor_open = true;
+        let editor = crate::editor::resolve(self.options.editor.as_deref());
+        let inputs = self.inputs.clone();
+        tokio::task::spawn_blocking(move || {
+            let error = crate::editor::run(&editor, &path).err().map(|e| {
+                tracing::info!(%e, "editor");
+                e.to_string()
+            });
+            let _ = inputs.send(Input::EditorExited(error));
         });
     }
 
