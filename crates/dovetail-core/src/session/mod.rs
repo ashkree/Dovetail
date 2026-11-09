@@ -811,6 +811,20 @@ impl Core {
         } else {
             None
         };
+        // A capped session killed by SIGKILL with no OOM kill seen yet: the watcher's count may
+        // still be on its way, after the scope is gone. Its scope stays watched for it.
+        let unexplained = live.cgroup.clone().filter(|_| {
+            oom.is_none()
+                && !live.stopping
+                && !live.setting_up
+                && info.signal == Some(crate::memory::SIGKILL)
+        });
+        let unexplained_work = unexplained.as_ref().map(|_| self.in_flight(agent));
+        if let Some(cgroup) = live.cgroup.as_deref()
+            && unexplained.is_none()
+        {
+            self.unwatch_oom(cgroup);
+        }
         self.subagents_stopped(agent);
         self.unwatch_todos(agent);
         self.set_memory(agent, None);
@@ -834,13 +848,24 @@ impl Core {
                 text.push_str(":\n");
                 text.push_str(&info.stderr_tail.join("\n"));
             }
-            self.raise(agent, InboxKind::Error { text }, crate::inbox::Waiter::None);
+            let item = self.raise(agent, InboxKind::Error { text }, crate::inbox::Waiter::None);
             self.update_agent(agent, |row| row.agent.status = AgentStatus::Error);
             self.activity(
                 ActivityKind::Lifecycle,
                 Some(agent),
                 format!("{} crashed", agent.0),
             );
+            if let (Some(cgroup), Some(work)) = (unexplained, unexplained_work) {
+                let exit = crate::oom::UnexplainedExit {
+                    agent: agent.clone(),
+                    at: std::time::Instant::now(),
+                    kills: live.oom_kills,
+                    work,
+                    restartable: self.quitting.is_none() && live.close_after.is_none(),
+                    item,
+                };
+                self.remember_exit(cgroup, exit);
+            }
         }
         if let Some(confirmed) = live.close_after {
             self.finish_close(agent, confirmed);

@@ -824,6 +824,50 @@ fn a_session_killed_for_memory_is_resumed_with_its_subagent_work_listed() {
 }
 
 #[test]
+fn an_oom_count_that_arrives_after_the_exit_still_restarts_the_session() {
+    let slice = tempfile::tempdir().expect("tempdir");
+    let cgroup = slice.path().join("dovetail-p-coordinator.scope");
+    std::fs::create_dir(&cgroup).expect("scope dir");
+    std::fs::write(cgroup.join("memory.events"), memory_events(0)).expect("events");
+    let fake = fixture("subagent_background").with_options(ReplayOptions {
+        pause_before: vec![9],
+        kill_first_before: Some((9, 9)),
+        ..ReplayOptions::default()
+    });
+    let scopes = Scopes::Available {
+        slice_dir: slice.path().to_path_buf(),
+        escape_dollars: false,
+    };
+    let mut h = Harness::start_scoped(fake.clone(), true, Config::default(), Some(scopes));
+    prompt(&h, "start a background subagent");
+    h.wait_for("the subagent node", |s| subagent(s).is_some());
+    let description = subagent(&h.snap)
+        .and_then(|a| a.progress.as_ref())
+        .map(|p| p.description.clone())
+        .expect("its description");
+    // The exit is handled first, with no kill counted yet: it reads as a crash.
+    fake.resume();
+    let crashed = |s: &Snapshot| {
+        s.inbox.iter().any(|i| {
+            matches!(&i.kind, InboxKind::Error { text } if text.starts_with("session ended unexpectedly"))
+        })
+    };
+    h.wait_for("the crash item", crashed);
+    // Then the watcher's count arrives.
+    std::fs::write(cgroup.join("memory.events"), memory_events(1)).expect("events");
+    h.wait_for("the out-of-memory item", |s| !oom_items(s).is_empty());
+    assert!(!crashed(&h.snap), "the crash item is replaced");
+    let text = oom_items(&h.snap).remove(0);
+    assert!(text.contains("restarted from its session"), "{text}");
+    assert!(text.contains(&description), "{text}");
+    let specs = fake.started_specs();
+    assert_eq!(specs.len(), 2);
+    assert!(specs[1].resume);
+    fake.resume();
+    h.quit();
+}
+
+#[test]
 fn report_status_sets_the_line_cut_at_120_characters() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     let socket = h.socket();

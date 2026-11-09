@@ -334,17 +334,17 @@ pub struct RestartGuard {
 }
 
 impl RestartGuard {
-    /// Whether `agent` may be restarted automatically at `now`; if so, the restart is counted.
-    pub fn allow(&mut self, agent: &dovetail_api::AgentId, now: std::time::Instant) -> bool {
-        if self
+    /// Whether `agent` may be restarted automatically at `now`.
+    pub fn allowed(&self, agent: &dovetail_api::AgentId, now: std::time::Instant) -> bool {
+        !self
             .last
             .get(agent)
             .is_some_and(|at| now.saturating_duration_since(*at) < RESTART_WINDOW)
-        {
-            return false;
-        }
+    }
+
+    /// Counts an automatic restart of `agent` at `now`. Only restarts that happened count.
+    pub fn record(&mut self, agent: &dovetail_api::AgentId, now: std::time::Instant) {
         self.last.insert(agent.clone(), now);
-        true
     }
 }
 
@@ -602,13 +602,15 @@ mod tests {
         let a = dovetail_api::AgentId("a".into());
         let b = dovetail_api::AgentId("b".into());
         let t = std::time::Instant::now();
-        assert!(guard.allow(&a, t));
-        assert!(!guard.allow(&a, t + Duration::from_secs(60)));
+        // A check alone (a restart that then failed) uses nothing up.
+        assert!(guard.allowed(&a, t));
+        assert!(guard.allowed(&a, t));
+        guard.record(&a, t);
+        assert!(!guard.allowed(&a, t + Duration::from_secs(60)));
         // Another agent has its own allowance.
-        assert!(guard.allow(&b, t + Duration::from_secs(60)));
-        // A refused attempt does not push the window out.
-        assert!(!guard.allow(&a, t + RESTART_WINDOW - Duration::from_secs(1)));
-        assert!(guard.allow(&a, t + RESTART_WINDOW));
+        assert!(guard.allowed(&b, t + Duration::from_secs(60)));
+        assert!(!guard.allowed(&a, t + RESTART_WINDOW - Duration::from_secs(1)));
+        assert!(guard.allowed(&a, t + RESTART_WINDOW));
     }
 
     #[test]

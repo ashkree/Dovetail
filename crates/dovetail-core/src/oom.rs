@@ -15,10 +15,11 @@
 //!   most one automatic restart per agent per [`memory::RESTART_WINDOW`]; after that only the
 //!   item, and the user resumes it by writing to it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use dovetail_api::{ActivityKind, AgentId, AgentKind, AgentStatus, InboxKind};
+use dovetail_api::{ActivityKind, AgentId, AgentKind, AgentStatus, InboxId, InboxKind};
 use notify::Watcher;
 use tokio::sync::mpsc as tokio_mpsc;
 
@@ -34,13 +35,32 @@ pub(crate) struct Oom {
     /// When a kill seen while its session still runs counts as a tool's.
     pub(crate) check_at: Option<tokio::time::Instant>,
     restarts: memory::RestartGuard,
+    /// Capped sessions that died by SIGKILL before any OOM kill was seen, by cgroup: the
+    /// watcher's count may still be queued behind the exit, after the scope is gone.
+    exits: HashMap<PathBuf, UnexplainedExit>,
 }
 
-/// A watcher that reads `memory.events` as soon as it changes and sends the count on as
-/// [`Input::OomKills`].
+/// A capped session's SIGKILL exit, reported as a crash, that a late `oom_kill` rise within
+/// [`memory::OOM_GRACE`] turns into an OOM kill of the session.
+pub(crate) struct UnexplainedExit {
+    pub(crate) agent: AgentId,
+    pub(crate) at: Instant,
+    /// The scope's `oom_kill` count as last seen before the exit.
+    pub(crate) kills: u64,
+    /// Its subagents in flight at the exit.
+    pub(crate) work: Vec<String>,
+    pub(crate) restartable: bool,
+    /// The "ended unexpectedly" item, replaced by the out-of-memory one.
+    pub(crate) item: InboxId,
+}
+
+/// A watcher that reads `memory.events` as soon as it changes and sends the `oom_kill` count on
+/// as [`Input::OomKills`] when it differs from the last one sent for that scope (the file also
+/// changes on every `max` and `high` event while a scope sits at its cap).
 fn new_watcher(
     inputs: tokio_mpsc::UnboundedSender<Input>,
 ) -> notify::Result<notify::RecommendedWatcher> {
+    let mut sent: HashMap<PathBuf, u64> = HashMap::new();
     notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(event) = res else { return };
         if !matches!(event.kind, notify::EventKind::Modify(_)) {
@@ -50,12 +70,16 @@ fn new_watcher(
             let Some(cgroup) = path.parent() else {
                 continue;
             };
-            if let Some(count) = memory::read_oom_kills(cgroup) {
-                let _ = inputs.send(Input::OomKills {
-                    cgroup: cgroup.to_path_buf(),
-                    count,
-                });
+            let Some(count) = memory::read_oom_kills(cgroup) else {
+                continue;
+            };
+            if sent.insert(cgroup.to_path_buf(), count) == Some(count) {
+                continue;
             }
+            let _ = inputs.send(Input::OomKills {
+                cgroup: cgroup.to_path_buf(),
+                count,
+            });
         }
     })
 }
@@ -118,15 +142,50 @@ impl Core {
     }
 
     /// Stops watching a scope's `memory.events` (its session exited).
-    fn unwatch_oom(&mut self, cgroup: &Path) {
+    pub(crate) fn unwatch_oom(&mut self, cgroup: &Path) {
         if let Some(w) = self.oom.watcher.as_mut() {
             // The watch is usually gone already with the scope.
             let _ = w.unwatch(&memory::events_file(cgroup));
         }
     }
 
+    /// Keeps a capped session's SIGKILL exit, reported as a crash, open for a late `oom_kill`
+    /// count. Its scope stays watched until then.
+    pub(crate) fn remember_exit(&mut self, cgroup: PathBuf, exit: UnexplainedExit) {
+        self.prune_exits();
+        self.oom.exits.insert(cgroup, exit);
+    }
+
+    /// Forgets exits older than the grace: no OOM kill explains them.
+    fn prune_exits(&mut self) {
+        let now = Instant::now();
+        let stale: Vec<PathBuf> = self
+            .oom
+            .exits
+            .iter()
+            .filter(|(_, e)| now.saturating_duration_since(e.at) > memory::OOM_GRACE)
+            .map(|(cgroup, _)| cgroup.clone())
+            .collect();
+        for cgroup in stale {
+            self.oom.exits.remove(&cgroup);
+            self.unwatch_oom(&cgroup);
+        }
+    }
+
     /// A scope's `oom_kill` count as the watcher read it.
     pub(crate) fn on_oom_kills(&mut self, cgroup: PathBuf, count: u64) {
+        // The count may arrive after the session's exit was handled: the kill was its own.
+        self.prune_exits();
+        if self.oom.exits.get(&cgroup).is_some_and(|e| count > e.kills)
+            && let Some(exit) = self.oom.exits.remove(&cgroup)
+        {
+            self.unwatch_oom(&cgroup);
+            tracing::warn!(agent = %exit.agent.0, count, "OOM kill seen after the session's exit");
+            self.resolve(exit.item, None);
+            let restartable = exit.restartable && !self.live.contains_key(&exit.agent);
+            self.session_oom(&exit.agent, exit.work, restartable);
+            return;
+        }
         let id = self
             .live
             .iter()
@@ -197,8 +256,8 @@ impl Core {
     }
 
     /// At a session's exit: whether an OOM kill took it (`Some(Session)`), took a tool just
-    /// before (`Some(Tool)`, and the exit is handled as usual), or played no part. Must run
-    /// before the session's subagents are marked stopped.
+    /// before (`Some(Tool)`, and the exit is handled as usual), or played no part as far as
+    /// is known yet (`None`; see [`Core::remember_exit`]). The caller unwatches the scope.
     pub(crate) fn oom_at_exit(
         &mut self,
         id: &AgentId,
@@ -206,7 +265,6 @@ impl Core {
         signal: Option<i32>,
     ) -> Option<OomKill> {
         let cgroup = live.cgroup.as_deref()?;
-        self.unwatch_oom(cgroup);
         if live.stopping {
             return None;
         }
@@ -251,7 +309,7 @@ impl Core {
         let restarted = if !restartable {
             text.push_str("It was not restarted.");
             false
-        } else if !self.oom.restarts.allow(id, Instant::now()) {
+        } else if !self.oom.restarts.allowed(id, Instant::now()) {
             text.push_str(&format!(
                 "It was not restarted: it already ran out of memory less than {minutes} minutes \
                  after an automatic restart. Write to it to resume it."
@@ -260,6 +318,8 @@ impl Core {
         } else {
             match self.ensure_live(id) {
                 Ok(()) => {
+                    // Only a restart that happened uses up the allowance.
+                    self.oom.restarts.record(id, Instant::now());
                     text.push_str("It was restarted from its session.");
                     true
                 }

@@ -600,7 +600,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Slices:** (a) caps and memory display; (b) OOM recovery, after (a); (c) context fill.
 - **Done when:**
   - [x] A forced OOM kills one session only and recovers (kill: `a_forced_oom_kills_one_scope_only` with `DOVETAIL_CGROUP_TESTS=1` on the user's machine, 2026-11-09: a memory eater under a 64 MiB cap dies by SIGKILL, the `memory.events` watch sees `oom_kill` before the scope goes, and a second capped scope runs on. Recovery: fake-driver test, a session dying by SIGKILL after an `oom_kill` rise is resumed from its session id with its running subagent listed. Not yet checked with a real Claude session)
-  - [x] Status bar shows total memory and coordinator `ctx` (TUI snapshot `layout_b_at_120_columns` shows `2.1G · ctx 62%` from mock data; not yet checked in the running app)
+  - [ ] Status bar shows total memory and coordinator `ctx` (needs a look in the running app)
   - [x] Peak memory of this repo's build and test runs is recorded against the B8 caps (docs/spikes/cgroup.md: worst cold run 2735 MiB peak, 1.5 GiB anon, under the 3 GiB slice cap)
   - [x] Missing cgroup support gives a warning, not a failure (startup probe; failure path not yet tried on a machine without user systemd)
 - **Tests:** `memory.events` parsing with fixtures, context calculation
