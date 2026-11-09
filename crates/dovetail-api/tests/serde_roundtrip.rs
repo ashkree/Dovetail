@@ -59,6 +59,7 @@ fn subagent() -> Agent {
         }),
         last_activity_ms: 1_700_000_000_000,
         lock: SessionLock::TakenOver,
+        model: Some("claude-opus-5-5".into()),
     }
 }
 
@@ -189,6 +190,14 @@ fn hello_and_a_full_snapshot_roundtrip() {
         inbox: inbox_items(),
         activity: vec![activity()],
         messages: vec![message()],
+        usage: UsageLimits {
+            five_hour: Some(UsageWindow {
+                utilization: 0.34,
+                resets_at: Some(1_700_008_400),
+                status: "allowed".into(),
+            }),
+            seven_day: None,
+        },
         decisions: vec![
             decision(),
             Decision {
@@ -242,6 +251,7 @@ fn every_event_roundtrips() {
         },
         Event::DecisionAdded(decision()),
         Event::TotalsChanged(totals()),
+        Event::UsageChanged(UsageLimits::default()),
         Event::WarningSet(warning()),
         Event::WarningCleared(WarningId("mode".into())),
         Event::CommandFailed {

@@ -18,6 +18,7 @@ mod slice;
 pub mod socket;
 mod todos;
 mod tools;
+mod usage;
 pub mod worktree;
 
 pub use service::{COORDINATOR, CoreError, CoreOptions, spawn};

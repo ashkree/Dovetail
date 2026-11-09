@@ -369,6 +369,7 @@ mod tests {
             progress: None,
             last_activity_ms: last,
             lock: SessionLock::Headless,
+            model: None,
         }
     }
 

@@ -716,6 +716,15 @@ impl MockCore {
     fn end_turn(&mut self, agent: &AgentId, preview: String, cost: f64) {
         self.replying.remove(agent);
         self.update_agent(agent, |a| a.cost_usd = round_cents(a.cost_usd + cost));
+        // Like Claude Code's `rate_limit_event`: every turn uses a little of the 5-hour window.
+        let used = self
+            .state
+            .usage
+            .five_hour
+            .as_ref()
+            .map_or(0.0, |w| w.utilization);
+        let usage = world::usage(self.state.now_ms, ((used + 0.01) * 100.0).round() / 100.0);
+        self.emit(Event::UsageChanged(usage));
         if !self.running_background_children(agent)
             && self.agent(agent).is_some_and(|a| a.kind.is_session())
         {

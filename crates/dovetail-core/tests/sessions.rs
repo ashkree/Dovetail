@@ -256,6 +256,10 @@ fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result()
     h.quit();
 }
 
+fn s_util(w: &Option<dovetail_api::UsageWindow>) -> Option<f64> {
+    w.as_ref().map(|w| w.utilization)
+}
+
 #[test]
 fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     let fake = fixture("plain_turn");
@@ -272,6 +276,17 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
         fake.sent(),
         vec![Sent::User("Reply with exactly the word: alpha".into())]
     );
+    // Task #16: the turn's rate-limit event and the session's model reach the UI.
+    h.wait_for("the usage limits", |s| s.usage.five_hour.is_some());
+    assert_eq!(s_util(&h.snap.usage.five_hour), Some(0.11));
+    assert_eq!(s_util(&h.snap.usage.seven_day), Some(0.17));
+    let model = h
+        .snap
+        .agents
+        .iter()
+        .find(|a| a.id.0 == COORDINATOR)
+        .and_then(|a| a.model.clone());
+    assert_eq!(model.as_deref(), Some("claude-sonnet-5-5"));
 
     // Launch flags: auto mode, our MCP config without --strict-mcp-config, our settings.
     let spec = &fake.started_specs()[0];
@@ -1349,6 +1364,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             progress: None,
             last_activity_ms: 0,
             lock: dovetail_api::SessionLock::Headless,
+            model: None,
         };
         agent.status_line.clear();
         db.upsert_agent(dovetail_core::db::AgentRow {
@@ -1726,6 +1742,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             progress: None,
             last_activity_ms: 0,
             lock: dovetail_api::SessionLock::Headless,
+            model: None,
         };
         db.upsert_agent(dovetail_core::db::AgentRow {
             agent,
