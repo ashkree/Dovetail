@@ -1731,6 +1731,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             transcript_path: None,
             task_list_id: None,
             created_ms: 0,
+            tool_use_id: None,
         })
         .wait()
         .expect("agent");
