@@ -185,15 +185,17 @@ impl MockCore {
                 if self.agent(&agent).is_none() {
                     return self.fail(format!("no agent {}", agent.0));
                 }
-                self.append_with(&agent, EntryKind::User, text, attachments);
-                // Like the core: a chat message answers the agent's open questions (ADR 0007).
+                // Like the core: a chat message answers the agent's open questions (ADR 0007),
+                // but an image-only one has no words to answer with and leaves them open.
                 let open: Vec<InboxId> = self
                     .state
                     .inbox
                     .iter()
                     .filter(|i| i.agent == agent && matches!(i.kind, InboxKind::Question { .. }))
+                    .filter(|_| !text.trim().is_empty())
                     .map(|i| i.id)
                     .collect();
+                self.append_with(&agent, EntryKind::User, text, attachments);
                 for id in open {
                     self.resolve(id);
                 }

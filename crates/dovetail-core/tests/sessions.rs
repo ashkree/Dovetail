@@ -600,10 +600,7 @@ fn ask_user_returns_at_once_and_an_inbox_answer_arrives_as_a_message() {
         item: id,
         text: "8080".into(),
     });
-    wait_sent(
-        &fake,
-        "The user answered your question \"Which port?\":\n\n8080",
-    );
+    wait_sent(&fake, "Answer to your question 'Which port?': 8080");
     h.wait_for("the item to clear", |s| open_questions(s).is_empty());
     h.quit();
 }
@@ -618,6 +615,33 @@ fn a_chat_message_with_open_questions_goes_through_and_clears_them() {
     prompt(&h, "8080 on localhost");
     wait_sent(&fake, "8080 on localhost");
     h.wait_for("the items to clear", |s| open_questions(s).is_empty());
+    h.quit();
+}
+
+/// Review of 2026-11-09: an image-only message answered open questions with "".
+#[test]
+fn an_image_only_message_leaves_open_questions_open() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    ask(&h, "Which port?");
+    h.wait_for("the question", |s| open_questions(s).len() == 1);
+    let dir = h.paths.data.join("attachments");
+    std::fs::create_dir_all(&dir).expect("attachments dir");
+    let path = dir.join("1.png");
+    let bytes = b"\x89PNG\r\n\x1a\nfake";
+    std::fs::write(&path, bytes).expect("write image");
+    h.send(Command::Prompt {
+        agent: AgentId(COORDINATOR.into()),
+        text: String::new(),
+        attachments: vec![Attachment {
+            path,
+            media_type: ImageType::Png,
+            size: bytes.len() as u64,
+        }],
+    });
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+    assert_eq!(fake.user_messages().len(), 1, "the image went out");
+    assert_eq!(open_questions(&h.snap).len(), 1, "still waiting for words");
     h.quit();
 }
 
