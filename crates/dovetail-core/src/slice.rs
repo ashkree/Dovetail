@@ -593,9 +593,16 @@ impl Core {
 
     /// The slice is gone for good: forget it and make room for a queued one.
     pub(crate) fn closed(&mut self, agent: &AgentId) {
+        let list = self.list_of(agent);
         let Some(row) = self.agents.remove(agent) else {
             return;
         };
+        // A slice without a task had a list of its own; a task's list goes when the task does.
+        if row.agent.task.is_none()
+            && let Some(list) = list
+        {
+            self.delete_todo_list(&list);
+        }
         self.live.remove(agent);
         self.tails.remove(agent);
         let items: Vec<_> = self

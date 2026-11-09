@@ -45,6 +45,7 @@ const STATE_MIGRATIONS: &[&str] = &[
     include_str!("db/migrations/state/0004_slice_queue.sql"),
     include_str!("db/migrations/state/0005_restart_state.sql"),
     include_str!("db/migrations/state/0006_entry_attachments.sql"),
+    include_str!("db/migrations/state/0007_todos.sql"),
 ];
 
 /// Errors from the database layer.
@@ -370,6 +371,21 @@ impl Db {
         self.run(|c, _| sessions::clear_notes(c.state()?))
     }
 
+    /// Records that `agent` created to-do item `item` of native list `list` (M11).
+    pub fn set_todo_owner(&self, list: String, item: String, agent: AgentId) -> Pending<()> {
+        self.run(move |c, _| sessions::set_todo_owner(c.state()?, &list, &item, &agent.0))
+    }
+
+    /// Every recorded to-do owner: `(list id, item id, agent)`.
+    pub fn load_todo_owners(&self) -> Pending<Vec<(String, String, AgentId)>> {
+        self.run(|c, _| sessions::load_todo_owners(c.state()?))
+    }
+
+    /// Forgets the owners of a deleted native list.
+    pub fn forget_todo_list(&self, list: String) -> Pending<()> {
+        self.run(move |c, _| sessions::forget_todo_list(c.state()?, &list))
+    }
+
     /// Records that the user kept the unowned worktree at `path`.
     pub fn keep_worktree(&self, path: PathBuf) -> Pending<()> {
         self.run(move |c, now| sessions::keep_worktree(c.state()?, &path, now))
@@ -460,6 +476,33 @@ mod tests {
             state: dir.join("state"),
             runtime: dir.join("run"),
         }
+    }
+
+    #[test]
+    fn todo_owners_migrate_up_from_empty_and_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let db = Db::open(&paths, Some("p")).unwrap();
+        assert!(db.load_todo_owners().wait().unwrap().is_empty());
+        let agent = AgentId("slice-a".into());
+        db.set_todo_owner("l1".into(), "1".into(), agent.clone())
+            .wait()
+            .unwrap();
+        db.set_todo_owner("l2".into(), "1".into(), agent.clone())
+            .wait()
+            .unwrap();
+        // A second claim on the same item replaces the first.
+        let sub = AgentId("slice-a:toolu_1".into());
+        db.set_todo_owner("l1".into(), "1".into(), sub.clone())
+            .wait()
+            .unwrap();
+        db.forget_todo_list("l2".into()).wait().unwrap();
+        drop(db);
+        let reopened = Db::open(&paths, Some("p")).unwrap();
+        assert_eq!(
+            reopened.load_todo_owners().wait().unwrap(),
+            vec![("l1".into(), "1".into(), sub)]
+        );
     }
 
     #[test]
