@@ -49,7 +49,7 @@ The user wants to switch from building Dovetail with plain agents to building it
 
 ## Conventions for skills
 
-- **Standards:** `AGENTS.md`. **Spec:** `docs/implementation-plan.md` plus `docs/design-digest.md`.
+- **Standards:** `CODING_STANDARDS.md`, plus the hard constraints and architecture rules in `AGENTS.md`. **Spec:** `docs/implementation-plan.md` plus `docs/design-digest.md`.
 - **Decisions:** the decision log in `docs/design.md` is the frozen v1 baseline, never edited. New decisions that meet the `domain-modeling` ADR bar go in `docs/adr/NNNN-slug.md`, linking the spike or discussion behind them. An ADR may refine or supersede a locked decision only with the user's approval in the session, and must name the decision it changes.
 - **Terms:** `GLOSSARY.md` at the repo root.
 - **Spikes:** code in `spikes/<name>/`, results in `docs/spikes/`, never `prototype/` branches.
@@ -62,7 +62,7 @@ Which skill when:
 - **Failures:** `diagnosing-bugs`.
 - **S0 and S1:** `research`.
 - **Context running low:** `handoff`.
-- **Slice PRs:** `pr`.
+- **Slice PRs:** the convention in `config/roles/slice.md`.
 
 `retro` and `handoff` are user-invoked: ask the user to run them.
 
@@ -77,35 +77,11 @@ Which skill when:
 
 ## Architecture rules (non-negotiable)
 
-- **Crate boundaries mirror the architecture.** At minimum: a plain-data **API/protocol** crate (snapshot, events, commands, `apply()` reducer), the **core** (sessions, storage, worktrees, MCP bridge server side), a **mock core** implementing the same API, the **TUI**, and the `dovetail` binary (subcommands: TUI default, `mcp`, `add`). The plan proposes the exact split.
-- **Core / UI boundary is message-passing.** The core sends one `Snapshot`, then deltas; the UI owns its copy and applies them with the shared reducer; the UI sends `Command`s. Types are plain data with `serde` derives, so the core can later become a daemon over a unix socket without changing the TUI. The UI never reaches past this boundary.
-- **`SessionDriver` trait** hides the Claude Code crate entirely: start/resume, send, interrupt, set permission mode, answer control (permission) requests, event stream. A **fake driver** that replays recorded NDJSON fixtures exists for tests.
-- **Stream rules from the spikes are law** (digest §3–§6): route subagent events by `parent_tool_use_id`; never treat the first `result` as done; answer permission requests concurrently; record session ids and transcript paths yourself; attribute to-do items from the stream; clean up worktrees yourself.
-- **One action registry.** Every key and `:` command resolves to one `Action` enum through one data-like keymap table (mode + buffer kind + key sequence → action). Movement global, actions buffer-local.
-- **Buffers in regions.** Never hardcode a buffer to a region. One reusable picker component. One theme struct for all colours.
-- **Storage** goes through one DB thread with typed requests; schema changes through migrations; the UI never touches SQLite.
-- **MCP bridge:** `dovetail mcp` is a stdio MCP server that connects back to the running app over a unix socket and forwards tool calls; tool handlers live in the core.
+- Crates: plain-data API (snapshot, events, commands, `apply()`), core, mock core, TUI, `dovetail` binary. Core and UI talk only by message-passing: `Snapshot` then deltas out, `Command`s in.
+- Claude Code sits behind the `SessionDriver` trait; protocol JSON is parsed in `dovetail-driver`. The stream rules (digest §3–§6) are law.
+- Keys and `:` commands resolve to one `Action` enum through one keymap table. Storage goes through one DB thread. MCP tool handlers live in the core.
 
-## Readability (the user has poor eyesight — a requirement, not polish)
-
-120-column reading column centred in wide panes; blank rows between paragraphs, list items, code blocks and headings; markdown keeps bold/italic/code styling and each also gets its own colour; off-white body text, never pure white; tool activity folded into one summary line per turn; thinking hidden; long output truncated with "show more"; optional solid background for the reading column. Details in the UI brief.
-
-## Code conventions
-
-- Cargo workspace under `crates/`; shared lints in the root `Cargo.toml` (`unsafe_code = "forbid"` — any exception needs the user's OK).
-- Errors: typed (`thiserror`) in libraries, `anyhow` at the binary edge.
-- No `unwrap()`/`expect()` outside tests and genuinely impossible states (comment why).
-- Child processes are always reaped; terminal restored on exit and on panic (panic hook).
-- No stdout/stderr output while the TUI runs; log with `tracing` to `~/.local/state/dovetail/` (or the project's `logs/`).
-- Doc comments on every public type in the API crate.
-
-## Testing
-
-- Unit tests: mode state machine, keymap resolution (`gg`, `dd`, `]]`, `<leader>ss`, timeouts, ambiguity), reducer, quick-capture parser, `draw_map` validation, task-list JSON parsing (including mid-write parse errors).
-- Snapshot tests: ratatui `TestBackend` + `insta`, from deterministic mock data (seeded, time-free).
-- Driver/core tests: replay recorded NDJSON fixtures through the fake driver (subagent routing, double `result`, concurrent permission requests). Capture real fixtures during the driver spike into `tests/fixtures/`.
-- Storage tests: temp-dir databases, migrations up from empty.
-- Live tests only with `DOVETAIL_LIVE_TESTS=1`.
+Standards for review: `CODING_STANDARDS.md` (the detail of these rules, code conventions, readability, testing).
 
 ## The plan (`docs/implementation-plan.md`)
 

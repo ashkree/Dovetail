@@ -343,10 +343,11 @@ fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "ask_user",
             description: "Ask the user a question and get the answer through Dovetail's inbox. \
-                Use this whenever you need a decision, a missing value, credentials or access; \
-                never end your turn with a question in plain text, because the user may not see \
-                it. The call returns at once: the question goes to the user's inbox and \
-                conversation, and the answer arrives later as a new user message. Keep working \
+                Use this for questions that must wait while the user is away, or for what only \
+                the user can give, such as credentials or access; questions for a user who is in \
+                the conversation go in your reply. The call returns at once: the question goes to \
+                the user's inbox and conversation, and the answer arrives later as a new user \
+                message. Keep working \
                 on anything that does not depend on it, or end your turn if nothing is left. \
                 Make the question self-contained, with the options you see.",
             schema: || {

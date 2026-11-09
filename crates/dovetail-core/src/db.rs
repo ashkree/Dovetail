@@ -32,22 +32,36 @@ use tokio::sync::oneshot;
 use crate::paths::Paths;
 use crate::projects::Project;
 
+/// One migration: its path under `db/migrations/` (`<db>/NNNN_slug.sql`) and its SQL. The path is
+/// kept so `migrations_are_contiguous_and_listed_in_order` can check each list against its directory:
+/// `user_version` counts steps, so a gap or a misordered entry would silently skip a migration.
+type Migration = (&'static str, &'static str);
+
+macro_rules! migration {
+    ($db:literal, $file:literal) => {
+        (
+            concat!($db, "/", $file),
+            include_str!(concat!("db/migrations/", $db, "/", $file)),
+        )
+    };
+}
+
 /// Migrations of `registry.db`, in order.
-const REGISTRY_MIGRATIONS: &[&str] = &[
-    include_str!("db/migrations/registry/0001_init.sql"),
-    include_str!("db/migrations/registry/0002_optional_git.sql"),
+const REGISTRY_MIGRATIONS: &[Migration] = &[
+    migration!("registry", "0001_init.sql"),
+    migration!("registry", "0002_optional_git.sql"),
 ];
 /// Migrations of a project's `state.db`, in order.
-const STATE_MIGRATIONS: &[&str] = &[
-    include_str!("db/migrations/state/0001_init.sql"),
-    include_str!("db/migrations/state/0002_agents_conversation.sql"),
-    include_str!("db/migrations/state/0003_inbox_activity.sql"),
-    include_str!("db/migrations/state/0004_slice_queue.sql"),
-    include_str!("db/migrations/state/0005_restart_state.sql"),
-    include_str!("db/migrations/state/0006_entry_attachments.sql"),
-    include_str!("db/migrations/state/0007_todos.sql"),
-    include_str!("db/migrations/state/0008_subagent_progress.sql"),
-    include_str!("db/migrations/state/0009_subagent_tokens.sql"),
+const STATE_MIGRATIONS: &[Migration] = &[
+    migration!("state", "0001_init.sql"),
+    migration!("state", "0002_agents_conversation.sql"),
+    migration!("state", "0003_inbox_activity.sql"),
+    migration!("state", "0004_slice_queue.sql"),
+    migration!("state", "0005_restart_state.sql"),
+    migration!("state", "0006_entry_attachments.sql"),
+    migration!("state", "0007_todos.sql"),
+    migration!("state", "0008_subagent_progress.sql"),
+    migration!("state", "0009_subagent_tokens.sql"),
 ];
 
 /// Errors from the database layer.
@@ -435,7 +449,7 @@ pub(crate) fn now_ms() -> i64 {
         .map_or(0, |d| d.as_millis() as i64)
 }
 
-fn open_connection(path: &Path, migrations: &[&str]) -> Result<Connection, DbError> {
+fn open_connection(path: &Path, migrations: &[Migration]) -> Result<Connection, DbError> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|source| DbError::Io {
             path: dir.to_owned(),
@@ -453,7 +467,7 @@ fn open_connection(path: &Path, migrations: &[&str]) -> Result<Connection, DbErr
 
 /// Applies the steps after the database's `user_version`, each in its own transaction. A database
 /// from a newer build is refused rather than touched.
-fn migrate(conn: &mut Connection, path: &Path, steps: &[&str]) -> Result<(), DbError> {
+fn migrate(conn: &mut Connection, path: &Path, steps: &[Migration]) -> Result<(), DbError> {
     let current: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     let supported = steps.len() as u32;
     if current > supported {
@@ -463,7 +477,7 @@ fn migrate(conn: &mut Connection, path: &Path, steps: &[&str]) -> Result<(), DbE
             supported,
         });
     }
-    for (index, sql) in steps.iter().enumerate().skip(current as usize) {
+    for (index, (_, sql)) in steps.iter().enumerate().skip(current as usize) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
         tx.pragma_update(None, "user_version", index as u32 + 1)?;
@@ -475,6 +489,59 @@ fn migrate(conn: &mut Connection, path: &Path, steps: &[&str]) -> Result<(), DbE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Mechanical rule (CODING_STANDARDS.md "Architecture"; retro 2026-11-09): every migrations
+    /// directory holds `NNNN_slug.sql` files numbered 0001..N with no gaps or duplicates, and its
+    /// list in this file names exactly those files in that order. Fix a failure by renumbering the files or the `migration!` list.
+    #[test]
+    fn migrations_are_contiguous_and_listed_in_order() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/db/migrations");
+        let lists = [
+            ("registry", REGISTRY_MIGRATIONS),
+            ("state", STATE_MIGRATIONS),
+        ];
+        let mut dirs: Vec<String> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        dirs.sort();
+        let mut known: Vec<String> = lists.iter().map(|(db, _)| (*db).to_owned()).collect();
+        known.sort();
+        assert_eq!(
+            dirs, known,
+            "a migrations directory has no list in db.rs (or vice versa)"
+        );
+        for (db, list) in lists {
+            let mut files: Vec<String> = std::fs::read_dir(root.join(db))
+                .unwrap()
+                .map(|e| e.unwrap().file_name().into_string().unwrap())
+                .collect();
+            files.sort();
+            for (index, file) in files.iter().enumerate() {
+                let (number, slug) = file
+                    .strip_suffix(".sql")
+                    .and_then(|stem| stem.split_once('_'))
+                    .unwrap_or_else(|| panic!("{db}/{file}: name it NNNN_slug.sql"));
+                assert!(
+                    number.len() == 4
+                        && number.bytes().all(|b| b.is_ascii_digit())
+                        && !slug.is_empty(),
+                    "{db}/{file}: name it NNNN_slug.sql"
+                );
+                assert_eq!(
+                    number.parse::<usize>().unwrap(),
+                    index + 1,
+                    "{db}/{file}: migrations must be numbered 0001..N with no gaps or duplicates"
+                );
+            }
+            let expected: Vec<String> = files.iter().map(|f| format!("{db}/{f}")).collect();
+            let listed: Vec<&str> = list.iter().map(|(name, _)| *name).collect();
+            assert_eq!(
+                listed, expected,
+                "the {db} migration list in db.rs must name exactly the files in db/migrations/{db}, in order"
+            );
+        }
+    }
 
     fn paths(dir: &Path) -> Paths {
         Paths {
