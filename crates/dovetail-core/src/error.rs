@@ -69,6 +69,12 @@ pub enum SliceError {
     /// The task does not exist.
     #[error("there is no task #{0}; create it first with `create_task`")]
     NoTask(i64),
+    /// `archive_slice` named the coordinator.
+    #[error("the coordinator cannot be archived")]
+    ArchiveCoordinator,
+    /// `archive_slice` named no open slice.
+    #[error("there is no slice named {0} (unknown or already archived)")]
+    NoSlice(String),
     /// The session did not start.
     #[error(transparent)]
     Session(#[from] SessionError),
