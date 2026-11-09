@@ -84,6 +84,22 @@ fn new_watcher(
     })
 }
 
+/// The note a session gets when it is restarted after an OOM kill: one line, then the subagent
+/// work that was in flight, if any.
+fn restart_note(cap_gb: u32, work: &[String]) -> String {
+    let mut note = format!(
+        "You were killed for running out of memory (cap {cap_gb} GB) and have been restarted."
+    );
+    if !work.is_empty() {
+        note.push_str(
+            "\nThis subagent work was in flight and stopped with you; restart what still \
+             matters:\n",
+        );
+        note.push_str(&work.join("\n"));
+    }
+    note
+}
+
 /// A subagent that was still running when its session died, for the inbox item and the note.
 fn in_flight_line(agent: &dovetail_api::Agent) -> String {
     let what = agent
@@ -336,15 +352,8 @@ impl Core {
         self.raise(id, InboxKind::Error { text }, Waiter::None);
         if restarted {
             self.update_agent(id, |row| row.agent.status = AgentStatus::Idle);
-            if !work.is_empty() {
-                let note = format!(
-                    "Your previous process was killed for running out of memory (cap {cap} GB) \
-                     and this session was resumed. This subagent work was in flight and stopped \
-                     with it; restart what still matters:\n{}",
-                    work.join("\n")
-                );
-                self.send_note(id, &note);
-            }
+            // Every automatic restart tells the session (PR #31, the user's answer to Q1).
+            self.send_note(id, &restart_note(cap, &work));
         }
         self.refresh_status(id);
     }
@@ -368,6 +377,23 @@ mod tests {
             ..SubagentProgress::default()
         });
         agent
+    }
+
+    #[test]
+    fn every_restart_note_says_why_and_lists_work_only_when_there_is_some() {
+        assert_eq!(
+            restart_note(3, &[]),
+            "You were killed for running out of memory (cap 3 GB) and have been restarted."
+        );
+        let note = restart_note(4, &["- Survey (background)".into()]);
+        let mut lines = note.lines();
+        assert_eq!(
+            lines.next(),
+            Some("You were killed for running out of memory (cap 4 GB) and have been restarted.")
+        );
+        assert!(lines.next().is_some_and(|l| l.contains("in flight")));
+        assert_eq!(lines.next(), Some("- Survey (background)"));
+        assert_eq!(lines.next(), None);
     }
 
     #[test]

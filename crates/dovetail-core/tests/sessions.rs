@@ -768,6 +768,22 @@ fn oom_items(s: &Snapshot) -> Vec<String> {
         .collect()
 }
 
+/// Waits until the restarted session was told, in one line, that it was OOM-killed and
+/// restarted, followed by the in-flight subagent `work`.
+fn wait_restart_note(fake: &FakeDriver, work: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let is_note = |s: &Sent| {
+        matches!(s, Sent::User(t) if t.lines().next().is_some_and(|l| {
+            l.starts_with("You were killed for running out of memory")
+                && l.ends_with("and have been restarted.")
+        }) && t.contains(work))
+    };
+    while !fake.sent().iter().any(is_note) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[test]
 fn a_session_killed_for_memory_is_resumed_with_its_subagent_work_listed() {
     // A temp dir stands in for the cgroup slice; the coordinator's scope is in it.
@@ -807,13 +823,7 @@ fn a_session_killed_for_memory_is_resumed_with_its_subagent_work_listed() {
     assert_eq!(specs.len(), 2);
     assert!(specs[1].resume);
     assert_eq!(specs[1].session_id, specs[0].session_id);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !fake.sent().iter().any(
-        |s| matches!(s, Sent::User(t) if t.contains("running out of memory") && t.contains(&description)),
-    ) {
-        assert!(Instant::now() < deadline, "{:?}", fake.sent());
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_restart_note(&fake, &description);
     h.wait_for("the coordinator running again", |s| {
         coordinator_of(s).status != AgentStatus::Error
     });
@@ -863,6 +873,7 @@ fn an_oom_count_that_arrives_after_the_exit_still_restarts_the_session() {
     let specs = fake.started_specs();
     assert_eq!(specs.len(), 2);
     assert!(specs[1].resume);
+    wait_restart_note(&fake, &description);
     fake.resume();
     h.quit();
 }
