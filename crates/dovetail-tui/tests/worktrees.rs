@@ -12,6 +12,7 @@ mod support;
 use dovetail_api::*;
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;
+use dovetail_tui::app::Signal;
 use dovetail_tui::region::RegionId;
 use support::*;
 
@@ -154,10 +155,15 @@ fn x_on_unsaved_work_asks_first_and_yes_removes_it() {
             agent: agent_id("tree-view")
         }]
     );
+    assert_eq!(app.note(), None, "nothing is said until the core answers");
     for command in commands {
         core.handle(command);
     }
     deliver(&mut core, &mut app);
+    assert_eq!(
+        app.note(),
+        Some("tree-view has unsaved work: waiting for your answer in Needs you")
+    );
     let ask = app
         .snapshot()
         .inbox
@@ -215,8 +221,9 @@ fn x_on_a_clean_pushed_worktree_removes_it_at_once() {
     app.on_key(key('g'), 0);
     app.on_key(key('g'), 1);
     app.on_key(key('X'), 10);
-    assert_eq!(app.note(), Some("removing fresh…"));
+    assert_eq!(app.note(), None, "nothing is said until the core answers");
     deliver(&mut core, &mut app);
+    assert_eq!(app.note(), Some("removed fresh"));
     assert!(app.snapshot().inbox.iter().all(|i| !matches!(
         &i.kind,
         InboxKind::Permission { tool, .. } if tool == REMOVE_WORKTREE_PERMISSION
@@ -251,6 +258,22 @@ fn e_hands_off_the_terminal_and_takes_it_back_on_the_core_answer() {
     deliver(&mut core, &mut app);
     assert!(!app.terminal_away());
     assert_eq!(app.note(), Some("the mock core opens no editor"));
+}
+
+#[test]
+fn ctrl_c_in_the_editor_is_the_editor_s_but_sigterm_still_quits() {
+    let (_core, mut app) = view();
+    // tree-view is mid-turn, so a SIGINT would normally ask "Quit anyway?".
+    on(&mut app, "tree-view");
+    app.on_key(key('e'), 10);
+    app.take_handoff().expect("a hand-off");
+    app.on_signal(Signal::Interrupt);
+    app.on_signal(Signal::Interrupt);
+    assert!(!app.should_quit());
+    assert!(app.terminal_away());
+    assert!(!render(&mut app, 160, 40).contains("Quit anyway"));
+    app.on_signal(Signal::Terminate);
+    assert!(app.should_quit());
 }
 
 #[test]

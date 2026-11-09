@@ -7,8 +7,8 @@
 use std::collections::HashSet;
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, Changes, Command, Event, PrLookup, PrState, Snapshot, SyncState,
-    WorktreeInfo, WorktreeRef, WorktreeSetup,
+    Agent, AgentId, AgentKind, Changes, Command, Event, InboxKind, PrLookup, PrState,
+    REMOVE_WORKTREE_PERMISSION, Snapshot, SyncState, WorktreeInfo, WorktreeRef, WorktreeSetup,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -30,7 +30,7 @@ const UNKNOWN: &str = "—";
 
 /// Column headings, left to right.
 const HEADINGS: [&str; 7] = [
-    "session", "branch", "sync", "changes", "unpushed", "PR", "setup",
+    "slice", "branch", "sync", "changes", "unpushed", "PR", "setup",
 ];
 /// Index of the branch column, the one left out when the row would not fit.
 const BRANCH: usize = 1;
@@ -48,6 +48,9 @@ pub struct WorktreesBuffer {
     offset: usize,
     /// Worktrees asked about by the last refresh that have not answered yet.
     refreshing: HashSet<AgentId>,
+    /// Slices `X` asked to remove, by id with their name, until the core removes them or asks
+    /// first.
+    removing: Vec<(AgentId, String)>,
 }
 
 /// One slice worktree and what the core last found in it.
@@ -78,17 +81,32 @@ impl WorktreesBuffer {
         !self.refreshing.is_empty()
     }
 
-    /// Notes a worktree's answer (or its agent's removal) to the refresh.
-    pub fn on_event(&mut self, event: &Event) {
-        match event {
+    /// Notes a worktree's answer (or its agent's removal) to the refresh, and how an `X` came
+    /// out. Returns a status-bar note when a removal settles: removed, or waiting for the
+    /// user's answer to the core's ask-first item.
+    pub fn on_event(&mut self, event: &Event) -> Option<String> {
+        let (agent, note): (&AgentId, fn(&str) -> String) = match event {
             Event::WorktreeUpserted(info) => {
                 self.refreshing.remove(&info.agent);
+                return None;
             }
             Event::AgentRemoved(id) => {
                 self.refreshing.remove(id);
+                (id, |name| format!("removed {name}"))
             }
-            _ => {}
-        }
+            Event::InboxUpserted(item)
+                if matches!(&item.kind, InboxKind::Permission { tool, .. }
+                    if tool == REMOVE_WORKTREE_PERMISSION) =>
+            {
+                (&item.agent, |name| {
+                    format!("{name} has unsaved work: waiting for your answer in Needs you")
+                })
+            }
+            _ => return None,
+        };
+        let at = self.removing.iter().position(|(id, _)| id == agent)?;
+        let (_, name) = self.removing.remove(at);
+        Some(note(&name))
     }
 
     /// The slice on the selected row.
@@ -248,9 +266,12 @@ impl Buffer for WorktreesBuffer {
                     // The archive path, as `dd` on a slice in the tree: the core removes a
                     // clean, pushed worktree at once and asks first (a Permission item) when
                     // work is unpushed or uncommitted.
+                    // The note comes when the core answers ([`Self::on_event`]).
                     _ => {
+                        if !self.removing.iter().any(|(id, _)| id == &agent) {
+                            self.removing.push((agent.clone(), row.agent.name.clone()));
+                        }
                         effects.push(Effect::Command(Command::CloseSlice { agent }));
-                        effects.push(Effect::Note(format!("removing {}…", row.agent.name)));
                     }
                 }
             }

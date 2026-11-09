@@ -181,6 +181,14 @@ impl LoopIo<'_> {
         };
         // Commands the key queued go first, in order.
         self.send_all(app);
+        // A worktree that is gone is refused here, before the screen flickers out and back.
+        if let Command::OpenEditor { path } = &handoff
+            && !path.exists()
+        {
+            app.handoff_refused(format!("{} does not exist", path.display()));
+            let _ = self.go.send(());
+            return Ok(());
+        }
         self.lend.release()?;
         tracing::debug!(?handoff, "terminal lent out");
         let _ = self.commands.send(handoff);
@@ -361,6 +369,34 @@ mod tests {
     /// `TerminalReturned` arrives.
     #[test]
     fn e_lends_the_terminal_to_the_editor_and_takes_it_back() {
+        let (log, app) = press_e_on(&std::env::temp_dir());
+        assert_eq!(
+            log,
+            ["release", "editor", "reclaim", "next key read"],
+            "each step causes the next"
+        );
+        assert!(!app.terminal_away());
+    }
+
+    /// A worktree that is gone is refused before the terminal is touched: no flicker, no
+    /// `OpenEditor`, the reason in the status bar, and keys keep coming.
+    #[test]
+    fn e_on_a_missing_worktree_never_lets_go_of_the_terminal() {
+        let missing = std::env::temp_dir().join("dovetail-no-such-worktree-4f1c");
+        let (log, app) = press_e_on(&missing);
+        assert_eq!(log, ["next key read"]);
+        assert!(!app.terminal_away());
+        assert_eq!(
+            app.note(),
+            Some(format!("{} does not exist", missing.display()).as_str())
+        );
+    }
+
+    /// Runs the loop over one slice whose worktree is at `path`, pressing `␣g` then `e`. The
+    /// fake core logs each command, answers `OpenEditor` with `TerminalReturned` and stops at
+    /// `Quit`; the fake input thread sends one key per go, as the real one does, then SIGTERM.
+    /// Returns the log of terminal, core and input steps, and the app.
+    fn press_e_on(path: &std::path::Path) -> (Vec<String>, App) {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         use dovetail_api::{
             Agent, AgentId, AgentKind, AgentStatus, Event, PermissionMode, SessionLock, Snapshot,
@@ -382,7 +418,7 @@ mod tests {
             parent: None,
             task: None,
             worktree: Some(WorktreeRef {
-                path: "/tmp/wt/slice-4".into(),
+                path: path.to_path_buf(),
                 branch: "dovetail/slice-4".into(),
             }),
             status: AgentStatus::Idle,
@@ -403,23 +439,25 @@ mod tests {
         let (commands, sent) = mpsc::channel::<Command>();
         let (go, gone) = mpsc::channel::<()>();
 
-        // The fake core: runs a fake "editor" on OpenEditor, then hands the terminal back.
+        // The fake core: "runs the editor" on OpenEditor, then hands the terminal back.
         let core_tx = tx.clone();
         let core_log = log.clone();
         let core = thread::spawn(move || {
             for command in sent {
-                if let Command::OpenEditor { path } = command {
-                    note(&core_log, &format!("editor {}", path.display()));
-                    let _ = core_tx.send(Msg::Server(Box::new(ServerMsg::Event {
-                        seq: 1,
-                        event: Event::TerminalReturned { error: None },
-                    })));
-                    return;
+                match command {
+                    Command::OpenEditor { .. } => {
+                        note(&core_log, "editor");
+                        let _ = core_tx.send(Msg::Server(Box::new(ServerMsg::Event {
+                            seq: 1,
+                            event: Event::TerminalReturned { error: None },
+                        })));
+                    }
+                    Command::Quit { .. } => return,
+                    other => note(&core_log, &format!("{other:?}")),
                 }
-                note(&core_log, &format!("{command:?}"));
             }
         });
-        // The fake input thread: one key per go, as the real one.
+        // The fake input thread: one key per go, as the real one; then SIGTERM ends the loop.
         let input_log = log.clone();
         let input = thread::spawn(move || {
             for c in [' ', 'g', 'e'] {
@@ -428,6 +466,7 @@ mod tests {
                 gone.recv().expect("go");
             }
             note(&input_log, "next key read");
+            tx.send(Msg::Signal(Signal::Terminate)).expect("loop alive");
         });
 
         let mut recorder = Recorder { log: log.clone() };
@@ -437,23 +476,15 @@ mod tests {
             lend: &mut recorder,
         };
         let clock: Clock = Box::new(|| 0);
-        // Ends once both fakes are done and their senders gone.
         drive(&mut terminal, &mut app, &rx, &mut io, &clock).expect("loop");
-        drop(commands);
         input.join().expect("input");
         core.join().expect("core");
-
-        assert_eq!(
-            *log.lock().expect("log"),
-            [
-                "RefreshWorktrees",
-                "release",
-                "editor /tmp/wt/slice-4",
-                "reclaim",
-                "next key read",
-            ]
-        );
-        assert!(!app.terminal_away());
+        let mut log = log.lock().expect("log").clone();
+        // The fake core logs on its own thread, so the refresh `␣g` sent may land anywhere;
+        // check it, then leave it out of the ordered steps.
+        let refresh = log.iter().position(|l| l == "RefreshWorktrees");
+        log.remove(refresh.expect("␣g asked for a refresh"));
+        (log, app)
     }
 
     #[test]

@@ -228,6 +228,14 @@ impl App {
         command
     }
 
+    /// The hand-off could not start (its path is gone), so the terminal was never lent out:
+    /// shows why and carries on.
+    pub fn handoff_refused(&mut self, why: String) {
+        self.terminal_away = false;
+        self.note = Some(why);
+        self.dirty = true;
+    }
+
     /// Whether the terminal is lent out: the loop neither draws nor reads keys until it returns.
     pub fn terminal_away(&self) -> bool {
         self.terminal_away
@@ -264,6 +272,8 @@ impl App {
     pub fn on_signal(&mut self, signal: Signal) {
         self.dirty = true;
         match signal {
+            // The editor has the terminal: Ctrl-C there is the editor's, not a request to quit.
+            Signal::Interrupt if self.terminal_away => {}
             Signal::Interrupt if self.confirm.is_some() => {
                 self.confirm = None;
                 self.run(Action::ForceQuit);
@@ -302,7 +312,9 @@ impl App {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
                 };
-                self.buffers.worktrees.on_event(&event);
+                if let Some(note) = self.buffers.worktrees.on_event(&event) {
+                    self.note = Some(note);
+                }
                 if let Event::TerminalReturned { error } = &event {
                     self.terminal_away = false;
                     if let Some(error) = error {
