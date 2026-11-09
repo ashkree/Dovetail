@@ -2,6 +2,7 @@
 //!
 //! The core hands the UI the same [`dovetail_api::CoreLink`] that `MockCore` does.
 
+mod clipboard;
 pub mod config;
 pub mod db;
 pub mod error;

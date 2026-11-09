@@ -552,3 +552,69 @@ fn a_turn_that_finishes_while_its_conversation_has_focus_stays_in_needs_you() {
         vec![Command::DismissInbox { item: InboxId(10) }]
     );
 }
+
+// --- Ctrl-C and signals (task #13, decision A) ---
+
+fn idle_world() -> Snapshot {
+    let mut snap = world();
+    for a in &mut snap.agents {
+        a.status = AgentStatus::Idle;
+    }
+    snap
+}
+
+#[test]
+fn double_ctrl_c_with_a_turn_running_asks_first() {
+    let mut app = app_with(world());
+    app.on_key(ctrl('c'), 0);
+    assert_eq!(app.note(), Some("Press Ctrl-C again to exit"));
+    app.on_key(ctrl('c'), 100);
+    assert!(!app.should_quit(), "a session is working");
+    assert!(render(&mut app, 100, 30).contains("A turn is running. Quit anyway? (y/n)"));
+    app.on_key(key('n'), 200);
+    assert!(!app.should_quit());
+
+    app.on_key(ctrl('c'), 300);
+    app.on_key(ctrl('c'), 400);
+    app.on_key(key('y'), 500);
+    assert!(app.should_quit());
+}
+
+#[test]
+fn double_ctrl_c_with_nothing_running_quits_but_not_after_the_hint_expires() {
+    use dovetail_tui::app::EXIT_CONFIRM_MS;
+    let mut app = app_with(idle_world());
+    app.on_key(ctrl('c'), 0);
+    app.on_timeout(EXIT_CONFIRM_MS + 1);
+    assert_eq!(app.note(), None);
+    app.on_key(ctrl('c'), EXIT_CONFIRM_MS + 2);
+    assert!(!app.should_quit(), "the first press had expired");
+    // Another key in between disarms it.
+    app.on_key(key('i'), EXIT_CONFIRM_MS + 3);
+    assert_eq!(app.mode(), Mode::Insert);
+    app.on_key(ctrl('c'), EXIT_CONFIRM_MS + 4);
+    assert!(!app.should_quit());
+    // Insert mode takes it too.
+    app.on_key(ctrl('c'), EXIT_CONFIRM_MS + 5);
+    assert!(app.should_quit());
+}
+
+#[test]
+fn sigint_asks_like_q_and_sigterm_quits() {
+    use dovetail_tui::app::Signal;
+    let mut app = app_with(world());
+    app.on_signal(Signal::Interrupt);
+    assert!(!app.should_quit());
+    assert!(render(&mut app, 100, 30).contains("A turn is running. Quit anyway? (y/n)"));
+    // A second SIGINT while the question is open answers yes.
+    app.on_signal(Signal::Interrupt);
+    assert!(app.should_quit());
+
+    let mut app = app_with(world());
+    app.on_signal(Signal::Terminate);
+    assert!(app.should_quit());
+
+    let mut app = app_with(idle_world());
+    app.on_signal(Signal::Interrupt);
+    assert!(app.should_quit());
+}

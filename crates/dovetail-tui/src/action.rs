@@ -31,7 +31,8 @@ pub enum Action {
     /// Quit without asking.
     ForceQuit,
     /// Ctrl-C: the first press shows "Press Ctrl-C again to exit", a second within
-    /// [`crate::app::EXIT_CONFIRM_MS`] quits. Any other key or the timeout disarms it.
+    /// [`crate::app::EXIT_CONFIRM_MS`] runs [`Action::Quit`] (which asks first when a turn is
+    /// running). Any other key or the timeout disarms it.
     QuitOnRepeat,
     /// Panic on purpose, to check that the terminal is restored. Debug builds only.
     #[cfg(debug_assertions)]
@@ -54,6 +55,9 @@ pub enum Action {
     UnfoldTurn,
     /// Ctrl-V in a chat bar: attach the clipboard's image, or paste its text at the cursor.
     PasteClipboard,
+    /// Backspace on an empty chat input: drop the last image chip. With text typed, or no chip,
+    /// the key edits text as usual.
+    DropLastAttachment,
     /// Give the reading column a solid background, or take it away.
     ToggleSolidBackground,
     /// Open quick capture.

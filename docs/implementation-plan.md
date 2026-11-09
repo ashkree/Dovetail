@@ -188,6 +188,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | *none:* hand-written NDJSON layer on `tokio` + `serde_json` | driver | n/a | Decision 4a fallback. S1 (2026-11-02): `claude-agent-sdk-rs` and `rusty_claw` both fail C (concurrent permissions) and H (tolerance); the hand-written layer passed A–H (18 crates, +1.39 MB, 4.3 MB RSS) |
 | `merman` | maps | PNG/SVG only | Decision 23c, pending S5 |
 | `ratatui-image` (latest stable) | tui, M15 only | `crossterm` | kitty graphics |
+| `signal-hook` | tui | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; no unsafe of ours |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
 
 **Deliberately not added**
@@ -551,7 +552,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] A coordinator `create_task` lands in Unsorted, marked until seen; a slice can't call it
   - [ ] App exit gives the agent a clear error, not a hang
   - [ ] S6 recorded
-- **Tests:** MCP protocol, tool schemas, socket forwarding, blocking and non-blocking (deferred: tests are written when something breaks, decided 2026-11-05)
+- **Tests:** MCP protocol, tool schemas, socket forwarding, `ask_user` returning at once with the answer arriving as a message (ADR 0007) (deferred: tests are written when something breaks, decided 2026-11-05)
 
 ### M10. Resume, stable install, rehearsal — **SELF-HOSTING POINT**
 - **Scope:** restore on open (coordinator immediately, slices on first touch). Pending inbox items reconciled after restart. A stale-state sweep for agents and worktrees. Stable install (`cargo install --path crates/dovetail --root ~/.local`), with hook and MCP paths using the installed path, not `target/`. `docs/self-hosting.md` covering the daily flow, upgrades and recovery.
