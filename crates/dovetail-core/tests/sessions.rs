@@ -76,6 +76,7 @@ impl Harness {
         let options = CoreOptions {
             driver: Arc::new(driver.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),
+            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
@@ -397,6 +398,7 @@ impl Harness {
         let options = CoreOptions {
             driver: Arc::new(driver.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),
+            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), Config::default(), options)
@@ -1518,5 +1520,144 @@ fn a_turn_that_ends_normally_during_quit_is_not_reported_as_cut_off() {
     let mut h = Harness::start_on(fixture("plain_turn"), paths);
     h.drain(Duration::from_millis(300));
     assert!(cut_off_text(&h.snap).is_none(), "{:#?}", h.snap.inbox);
+    h.quit();
+}
+
+// --- native to-do lists (M11, task #12) ---
+
+/// The temp dir standing in for `~/.claude/tasks` (see `Harness::start`).
+fn tasks_dir(paths: &Paths) -> PathBuf {
+    paths.data.with_file_name("claude-tasks")
+}
+
+/// Writes one task file the way Claude Code does.
+fn write_item(list: &Path, id: &str, subject: &str, status: &str) {
+    std::fs::create_dir_all(list).expect("list dir");
+    let text = format!(
+        "{{\n  \"id\": \"{id}\",\n  \"subject\": \"{subject}\",\n  \"description\": \"{subject}\",\n  \
+         \"status\": \"{status}\",\n  \"blocks\": [],\n  \"blockedBy\": []\n}}"
+    );
+    std::fs::write(list.join(format!("{id}.json")), text).expect("task file");
+}
+
+fn todo(s: &Snapshot, id: &str) -> Option<dovetail_api::TodoItem> {
+    s.todos.iter().find(|t| t.id == id).cloned()
+}
+
+fn owner(s: &Snapshot, id: &str) -> Option<String> {
+    todo(s, id).and_then(|t| t.created_by).map(|a| a.0)
+}
+
+#[test]
+fn todo_items_attach_to_the_agent_that_created_them_and_survive_a_restart() {
+    let fake = fixture("todo_tools");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    // What Claude Code leaves on disk after the recorded turn, plus an item nobody created in
+    // the stream (an external edit).
+    let list = tasks_dir(&h.paths).join("dovetail-p-coordinator");
+    write_item(&list, "1", "alpha", "completed");
+    write_item(&list, "2", "beta", "pending");
+    write_item(&list, "3", "outside", "pending");
+    prompt(&h, "make two to-dos");
+    h.wait_for("both items attributed", |s| {
+        owner(s, "1").as_deref() == Some(COORDINATOR)
+            && owner(s, "2").as_deref() == Some(COORDINATOR)
+    });
+    assert_eq!(
+        todo(&h.snap, "1").map(|t| t.status),
+        Some(dovetail_api::TodoStatus::Completed)
+    );
+    // No TaskCreate in the stream: no owner, so it sits under no agent.
+    assert_eq!(todo(&h.snap, "3").map(|t| t.created_by), Some(None));
+    assert!(
+        fake.started_specs()[0]
+            .env
+            .iter()
+            .any(|(k, v)| k == "CLAUDE_CODE_ENABLE_TODO_TOOLS" && v == "1")
+    );
+
+    // An edit outside the stream reaches the UI through the watcher.
+    write_item(&list, "2", "beta", "in_progress");
+    h.wait_for("the external edit", |s| {
+        todo(s, "2").map(|t| t.status) == Some(dovetail_api::TodoStatus::InProgress)
+    });
+    std::fs::remove_file(list.join("3.json")).expect("delete");
+    h.wait_for("the deleted item gone", |s| todo(s, "3").is_none());
+
+    // The owners are in state.db: a reopen shows the items where they were.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let h = Harness::start_on(fixture("plain_turn"), paths);
+    assert_eq!(owner(&h.snap, "1").as_deref(), Some(COORDINATOR));
+    assert_eq!(owner(&h.snap, "2").as_deref(), Some(COORDINATOR));
+    h.quit();
+}
+
+#[test]
+fn a_foreground_subagents_todo_is_its_own() {
+    // The recorded turn, with the second TaskCreate (call and result) made inside a subagent.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../dovetail-driver/tests/fixtures/todo_tools.ndjson");
+    let text = std::fs::read_to_string(path).expect("fixture");
+    let text: String = text
+        .lines()
+        .map(|line| {
+            let line = if line.contains("toolu_01PDiMXF9E6gftnQXY5xYUhf") {
+                line.replace(
+                    "\"parent_tool_use_id\":null",
+                    "\"parent_tool_use_id\":\"toolu_sub\"",
+                )
+            } else {
+                line.to_owned()
+            };
+            line + "\n"
+        })
+        .collect();
+    let fake = FakeDriver::from_ndjson(&text).expect("fixture");
+    let mut h = Harness::start(fake, true, Config::default());
+    let list = tasks_dir(&h.paths).join("dovetail-p-coordinator");
+    write_item(&list, "1", "alpha", "completed");
+    write_item(&list, "2", "beta", "pending");
+    prompt(&h, "make two to-dos");
+    h.wait_for("the subagent's item", |s| {
+        owner(s, "2").as_deref() == Some("coordinator:toolu_sub")
+    });
+    assert_eq!(owner(&h.snap, "1").as_deref(), Some(COORDINATOR));
+    h.quit();
+}
+
+#[test]
+fn archiving_a_task_deletes_its_todo_list() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    h.send(Command::CreateTask(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+    }));
+    h.wait_for("the task", |s| !s.tasks.is_empty());
+    let id = h.snap.tasks[0].id;
+    let list = tasks_dir(&h.paths).join(format!("dovetail-p-task-{}", id.0));
+    write_item(&list, "1", "alpha", "pending");
+    // The coordinator's list is not the task's and stays.
+    let other = tasks_dir(&h.paths).join("dovetail-p-coordinator");
+    write_item(&other, "1", "keep", "pending");
+    h.send(Command::NewSlice {
+        task: Some(id),
+        name: "work".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the slice's list read", |s| {
+        s.todos.iter().any(|t| t.subject == "alpha")
+    });
+    h.send(Command::ArchiveTask { id });
+    h.wait_for("the list gone", |s| {
+        !s.todos.iter().any(|t| t.subject == "alpha")
+    });
+    assert!(!list.exists());
+    assert!(other.join("1.json").exists());
     h.quit();
 }

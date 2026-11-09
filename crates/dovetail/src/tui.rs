@@ -49,6 +49,7 @@ pub fn run_real() -> Result<()> {
     let options = CoreOptions {
         driver: Arc::new(ClaudeDriver::with_program(program)),
         exe: std::env::current_exe().context("finding the dovetail binary")?,
+        tasks_dir: None,
     };
     let (link, core) =
         dovetail_core::spawn(resolution, paths, config, options).context("starting the core")?;

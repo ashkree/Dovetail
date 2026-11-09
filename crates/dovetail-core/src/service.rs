@@ -62,6 +62,9 @@ pub struct CoreOptions {
     pub driver: Arc<dyn SessionDriver>,
     /// The `dovetail` binary, for the worktree hook and the MCP bridge in launch settings.
     pub exe: PathBuf,
+    /// Where Claude Code keeps native to-do lists; `None` for `$CLAUDE_CONFIG_DIR/tasks`, else
+    /// `~/.claude/tasks`. Tests point it at a temp dir.
+    pub tasks_dir: Option<PathBuf>,
 }
 
 /// Starts the core on its own thread for the folder `resolution` names, and returns the UI's end
@@ -205,6 +208,10 @@ pub(crate) enum Input {
         name: String,
         result: Result<(), WorktreeError>,
     },
+    /// A file in a watched native to-do list changed (M11).
+    TodosChanged {
+        list: dovetail_api::TodoListId,
+    },
 }
 
 /// Hands socket requests to the loop.
@@ -286,6 +293,10 @@ pub(crate) struct Core {
     pub(crate) notes_wait_for_user: bool,
     pub(crate) quitting: Option<tokio::time::Instant>,
     pub(crate) killed: bool,
+    /// Native to-do lists: items, owners, the watcher (M11, `todos`).
+    pub(crate) todos: crate::todos::Todos,
+    /// Where Claude Code keeps them.
+    pub(crate) tasks_dir: PathBuf,
 }
 
 /// The streaming coalescing window (≤ ~30 fps).
@@ -303,6 +314,10 @@ impl Core {
         out: mpsc::Sender<ServerMsg>,
         inputs: tokio_mpsc::UnboundedSender<Input>,
     ) -> Self {
+        let tasks_dir = options
+            .tasks_dir
+            .clone()
+            .unwrap_or_else(crate::todos::default_tasks_dir);
         Core {
             db,
             paths,
@@ -336,6 +351,8 @@ impl Core {
             notes_wait_for_user: false,
             quitting: None,
             killed: false,
+            todos: Default::default(),
+            tasks_dir,
         }
     }
 
@@ -359,10 +376,15 @@ impl Core {
             }
             let flush_at = self.flush_at;
             let quit_at = self.quitting;
+            let todos_at = self.todos.flush_at;
             let input = tokio::select! {
                 input = inputs.recv() => input,
                 _ = sleep_until(flush_at), if flush_at.is_some() => {
                     self.flush_deltas();
+                    continue;
+                }
+                _ = sleep_until(todos_at), if todos_at.is_some() => {
+                    self.flush_todos();
                     continue;
                 }
                 _ = sleep_until(quit_at), if quit_at.is_some() => {
@@ -405,6 +427,7 @@ impl Core {
                 }
                 Input::OrphanInspected { found, result } => self.on_orphan(found, result),
                 Input::OrphanRemoved { name, result } => self.on_orphan_removed(name, result),
+                Input::TodosChanged { list } => self.mark_todos(list),
             }
             if self.quitting.is_none() {
                 self.start_queued().await;
@@ -467,6 +490,8 @@ impl Core {
             self.db.upsert_agent(row.clone()).await?;
             self.agents.insert(coordinator, row);
         }
+        // The native lists as they are on disk now, with their owners.
+        self.load_todos().await?;
         Ok(restored)
     }
 
@@ -549,6 +574,7 @@ impl Core {
             messages: self.messages.iter().cloned().collect(),
             conversations: self.tails.clone(),
             warnings: self.warnings.clone(),
+            todos: self.todos.items(),
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -970,6 +996,8 @@ impl Core {
             .map(|q| q.id)
             .collect();
         self.queue.retain(|q| q.task != Some(id));
+        // Digest §4: the lists Dovetail created go with their task.
+        self.delete_task_todos(id);
         for queued in dropped {
             self.persist("the slice queue", self.db.dequeue_slice(queued));
         }
