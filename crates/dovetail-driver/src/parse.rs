@@ -228,6 +228,15 @@ fn map_assistant(v: &Value) -> DriverEvent {
         uuid: str_of(v, "uuid"),
         blocks,
         model: str_of(msg, "model"),
+        usage: msg
+            .get("usage")
+            .filter(|u| u.is_object())
+            .map(|u| TokenUsage {
+                input_tokens: u64_of(u, "input_tokens").unwrap_or(0),
+                cache_read_tokens: u64_of(u, "cache_read_input_tokens").unwrap_or(0),
+                cache_creation_tokens: u64_of(u, "cache_creation_input_tokens").unwrap_or(0),
+                output_tokens: u64_of(u, "output_tokens").unwrap_or(0),
+            }),
     })
 }
 

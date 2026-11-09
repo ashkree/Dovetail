@@ -299,6 +299,8 @@ pub(crate) struct Core {
     /// Usage limits per Claude home (limits are per account, task #16 and ADR 0009), as last
     /// reported by a session running under it.
     pub(crate) usage: BTreeMap<PathBuf, UsageLimits>,
+    /// Context windows by model id, as `result`s report them (decision #22, `context`).
+    pub(crate) context_windows: BTreeMap<String, u64>,
     pub(crate) next_entry: u64,
     pub(crate) next_inbox: u64,
     next_activity: u64,
@@ -390,6 +392,7 @@ impl Core {
             warnings: Vec::new(),
             totals: Totals::default(),
             usage: BTreeMap::new(),
+            context_windows: BTreeMap::new(),
             next_entry: 1,
             next_inbox: 1,
             next_activity: 1,
