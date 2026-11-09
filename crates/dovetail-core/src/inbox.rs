@@ -1,17 +1,15 @@
 //! Needs you: raising inbox items and acting on their answers (M7, M9).
 //!
-//! Each item remembers what waits on it ([`Waiter`]): a held permission request in a session, a
-//! held `ask_user` call, a `start_slice` call waiting for approval, or a worktree removal waiting
-//! for confirmation. Answers go straight to whatever waits, so one held item never blocks
+//! Each item remembers what waits on it ([`Waiter`]): a held permission request in a session, an
+//! `ask_user` question whose answer goes to the agent as a message, a `start_slice` call waiting
+//! for approval, or a worktree removal waiting for confirmation. Answers go straight to whatever waits, so one held item never blocks
 //! another (stream rule 3).
 
-use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::{
     AgentId, Event, InboxId, InboxItem, InboxKind, PermissionAnswer, RuleSuggestion,
 };
 use dovetail_driver::{ControlAnswer, ControlId, PermissionRequest};
 use serde_json::Value;
-use tokio::sync::oneshot;
 
 use crate::db::now_ms;
 use crate::error::SessionError;
@@ -28,11 +26,8 @@ pub(crate) enum Waiter {
         /// The rules Claude Code offered, as sent, for "always allow".
         suggestions: Vec<Value>,
     },
-    /// A blocking `ask_user` call, held until the answer.
-    BlockingQuestion {
-        reply: oneshot::Sender<SocketResponseBody>,
-    },
-    /// A non-blocking `ask_user`: the answer goes to the session as a message.
+    /// An `ask_user` question: it never blocks, and the answer goes to the session as a message
+    /// (ADR 0007).
     Question { question: String },
     /// A `start_slice` waiting for approval; the call already returned `pending`, and the
     /// answer goes to the coordinator as a message (ADR 0004).
@@ -50,10 +45,7 @@ pub(crate) enum Waiter {
 impl Waiter {
     /// Whether the agent is held until the answer (it shows as needing you).
     pub(crate) fn holds_agent(&self) -> bool {
-        matches!(
-            self,
-            Waiter::Control { .. } | Waiter::BlockingQuestion { .. }
-        )
+        matches!(self, Waiter::Control { .. })
     }
 }
 
@@ -125,13 +117,6 @@ fn session_only(mut raw: Value) -> Value {
         obj.insert("destination".into(), Value::String("session".into()));
     }
     raw
-}
-
-fn tool_result(text: impl Into<String>) -> SocketResponseBody {
-    SocketResponseBody::ToolResult {
-        text: text.into(),
-        is_error: false,
-    }
 }
 
 impl Core {
@@ -353,10 +338,6 @@ impl Core {
         };
         let agent = entry.item.agent;
         match entry.waiter {
-            Waiter::BlockingQuestion { reply } => {
-                self.add_entry(&agent, dovetail_api::EntryKind::User, text.clone());
-                let _ = reply.send(tool_result(format!("The user answered: {text}")));
-            }
             Waiter::Question { question } => {
                 let message = format!("The user answered your question \"{question}\":\n\n{text}");
                 if let Err(e) = self.send_text_as_user(&agent, &message, text) {
@@ -383,12 +364,6 @@ impl Core {
         };
         let agent = entry.item.agent;
         match entry.waiter {
-            Waiter::BlockingQuestion { reply } => {
-                let _ = reply.send(tool_result(
-                    "The user dismissed the question without answering. Carry on without it, \
-                     or ask again later if you must.",
-                ));
-            }
             Waiter::Control { control, .. } => {
                 if let Some(live) = self.live.get(&agent) {
                     let _ = live.session.answer_control(
@@ -406,6 +381,26 @@ impl Core {
             Waiter::RemoveWorktree => self.keep_slice(&agent),
             Waiter::RemoveOrphan { found } => self.keep_orphan(found),
             Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
+        }
+    }
+
+    /// The user wrote to `agent` in the chat: its open questions count as answered by that
+    /// message, which goes to the session as it is (ADR 0007).
+    pub(crate) fn chat_answers_questions(&mut self, agent: &AgentId, text: &str) {
+        let open: Vec<InboxId> = self
+            .inbox
+            .values()
+            .filter(|p| {
+                &p.item.agent == agent
+                    && matches!(
+                        p.waiter,
+                        Waiter::Question { .. } | Waiter::RestoredQuestion { .. }
+                    )
+            })
+            .map(|p| p.item.id)
+            .collect();
+        for id in open {
+            self.resolve(id, Some(text.to_owned()));
         }
     }
 

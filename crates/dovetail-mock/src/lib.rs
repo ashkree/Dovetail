@@ -177,6 +177,17 @@ impl MockCore {
                     return self.fail(format!("no agent {}", agent.0));
                 }
                 self.append_with(&agent, EntryKind::User, text, attachments);
+                // Like the core: a chat message answers the agent's open questions (ADR 0007).
+                let open: Vec<InboxId> = self
+                    .state
+                    .inbox
+                    .iter()
+                    .filter(|i| i.agent == agent && matches!(i.kind, InboxKind::Question { .. }))
+                    .map(|i| i.id)
+                    .collect();
+                for id in open {
+                    self.resolve(id);
+                }
                 self.update_agent(&agent, |a| a.status = AgentStatus::Working);
                 self.schedule_reply(agent, true);
             }
@@ -505,6 +516,11 @@ impl MockCore {
         if self.agent(agent).is_none() {
             return;
         }
+        if let InboxKind::Question { text } = &kind {
+            // Like the core: the question shows in the conversation too.
+            let notice = format!("Question for you (also in Needs you): {text}");
+            self.append(agent, EntryKind::Notice, notice);
+        }
         let item = InboxItem {
             id: InboxId(self.next_inbox),
             agent: agent.clone(),
@@ -803,15 +819,8 @@ impl MockCore {
                     .cloned()
                 {
                     let text = self.rng.pick(world::QUESTIONS).copied().unwrap_or_default();
-                    let blocking = self.rng.chance(50);
                     self.after(pause, move |core| {
-                        core.raise(
-                            &agent,
-                            InboxKind::Question {
-                                text: text.into(),
-                                blocking,
-                            },
-                        )
+                        core.raise(&agent, InboxKind::Question { text: text.into() })
                     });
                     return true;
                 }

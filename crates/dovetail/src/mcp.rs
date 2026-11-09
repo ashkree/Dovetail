@@ -2,8 +2,8 @@
 //!
 //! One bridge runs per Claude Code session (subagents share their parent's connection), so it is
 //! deliberately small: synchronous, std plus `serde_json`, no MCP crate, no async runtime. The main
-//! thread reads JSON-RPC lines from stdin. Each `tools/call` runs on its own thread, so a held
-//! `ask_user` (15+ minutes) never blocks `ping`, `tools/list` or other calls. One reader thread
+//! thread reads JSON-RPC lines from stdin. Each `tools/call` runs on its own thread, so a slow
+//! call never blocks `ping`, `tools/list` or other calls. One reader thread
 //! per socket connection matches [`SocketResponse`]s to waiting calls by `id`.
 //!
 //! # Methods
@@ -232,7 +232,7 @@ impl Bridge {
             Ok(rx) => rx,
             Err(_) => self.send_line(id, &line)?,
         };
-        // Held calls (blocking `ask_user`) wait here for as long as the app takes.
+        // A call waits here for as long as the app takes to answer it.
         match rx.recv() {
             Ok(reply) => reply,
             Err(_) => Err(not_running("the connection closed")),
@@ -344,15 +344,13 @@ fn tool_defs() -> Vec<ToolDef> {
             description: "Ask the user a question and get the answer through Dovetail's inbox. \
                 Use this whenever you need a decision, a missing value, credentials or access; \
                 never end your turn with a question in plain text, because the user may not see \
-                it. Set `blocking: true` if you cannot continue without the answer: the call then \
-                waits (possibly many minutes) and returns the answer. Otherwise it returns at \
-                once and the answer arrives later as a new user message, so keep working on \
-                anything that does not depend on it. Make the question self-contained, with the \
-                options you see.",
+                it. The call returns at once: the question goes to the user's inbox and \
+                conversation, and the answer arrives later as a new user message. Keep working \
+                on anything that does not depend on it, or end your turn if nothing is left. \
+                Make the question self-contained, with the options you see.",
             schema: || {
                 json!({"type": "object", "properties": {
-                    "question": {"type": "string", "description": "The question, self-contained, with the options if there are any."},
-                    "blocking": {"type": "boolean", "description": "Wait for the answer (true) or return at once and get the answer as a later message (false, the default)."}
+                    "question": {"type": "string", "description": "The question, self-contained, with the options if there are any."}
                 }, "required": ["question"]})
             },
         },

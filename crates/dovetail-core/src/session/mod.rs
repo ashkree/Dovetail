@@ -284,8 +284,11 @@ impl Core {
             text: text.clone(),
             images,
         };
-        if let Err(message) = self.send_input(id, input, EntryKind::User, text, attachments) {
-            self.fail(message);
+        let answer = text.clone();
+        match self.send_input(id, input, EntryKind::User, text, attachments) {
+            // It goes through at once; any questions the agent left open count as answered.
+            Ok(()) => self.chat_answers_questions(id, &answer),
+            Err(message) => self.fail(message),
         }
     }
 

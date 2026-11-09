@@ -56,7 +56,6 @@ fn question(id: u64, agent: &str) -> InboxItem {
         at_ms: 1_000,
         kind: InboxKind::Question {
             text: "Which port?".into(),
-            blocking: true,
         },
     }
 }

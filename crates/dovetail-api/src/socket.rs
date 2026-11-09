@@ -2,7 +2,7 @@
 //!
 //! Clients are `dovetail add` and the per-session `dovetail mcp` bridges. Framing is NDJSON: one
 //! [`SocketRequest`] per line from the client, one [`SocketResponse`] per line back, matched on
-//! `id`. Responses may arrive out of order, since a held tool call (a blocking `ask_user`) must not
+//! `id`. Responses may arrive out of order, since a slow tool call must not
 //! stop other requests on the same connection.
 
 use serde::{Deserialize, Serialize};

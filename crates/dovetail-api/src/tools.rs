@@ -210,14 +210,12 @@ impl Tool {
     }
 }
 
-/// `ask_user`: a question for the user's inbox.
+/// `ask_user`: a question for the user's inbox. It never blocks: the call returns at once and the
+/// answer arrives as a user message (ADR 0007). An old caller's `blocking` field is ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AskUser {
     /// The question, self-contained.
     pub question: String,
-    /// Wait for the answer (true) or get it later as a user message (false).
-    #[serde(default)]
-    pub blocking: bool,
 }
 
 /// `report_status`: the agent's one-line status.
