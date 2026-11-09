@@ -336,6 +336,26 @@ pub struct ExitInfo {
     pub stderr_tail: Vec<String>,
 }
 
+/// `rate_limit_info.unifiedWindows` of a `rate_limit_event`. Limits are per account.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RateLimitInfo {
+    /// `five_hour`, the rolling 5-hour window.
+    pub five_hour: Option<RateLimitWindow>,
+    /// `seven_day`, the weekly window.
+    pub seven_day: Option<RateLimitWindow>,
+}
+
+/// One window of [`RateLimitInfo`], as Claude Code reports it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RateLimitWindow {
+    /// `utilization`, 0–1 (may exceed 1 when over the limit).
+    pub utilization: f64,
+    /// `resetsAt`, in Unix seconds.
+    pub resets_at_s: Option<i64>,
+    /// `status`, e.g. `allowed`; empty when missing.
+    pub status: String,
+}
+
 /// Everything a session reports. Mapped from raw lines by [`crate::parse::map_value`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum DriverEvent {
@@ -429,11 +449,8 @@ pub enum DriverEvent {
         /// Message.
         message: Option<String>,
     },
-    /// `rate_limit_event` (arrives every turn); `info` is `rate_limit_info`.
-    RateLimit {
-        /// Raw `rate_limit_info`.
-        info: Value,
-    },
+    /// `rate_limit_event` (arrives every turn), with the windows of its `rate_limit_info`.
+    RateLimit(RateLimitInfo),
     /// The process ended and was reaped. Always the last event.
     Exited(ExitInfo),
     /// A line whose type or subtype is not mapped (or was not JSON): never fatal.

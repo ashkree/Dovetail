@@ -35,8 +35,8 @@ pub enum SessionError {
         /// The cause.
         source: std::io::Error,
     },
-    /// A saved image is over the 5 MB limit.
-    #[error("image {0} is over 5 MB")]
+    /// A saved image is over [`dovetail_api::MAX_ATTACHMENT_BYTES`].
+    #[error("image {} is over {}", .0.display(), dovetail_api::attachment_limit_text())]
     ImageTooLarge(std::path::PathBuf),
     /// The driver failed.
     #[error("{name}: {source}")]

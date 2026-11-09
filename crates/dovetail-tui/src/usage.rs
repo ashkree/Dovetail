@@ -22,11 +22,11 @@ pub fn short_model(model: &str) -> &str {
 }
 
 /// A reset time in `tz`: `14:20` within 24 hours of `now_ms`, otherwise the weekday (`Thu`).
-pub fn reset_label(resets_at_s: i64, now_ms: i64, tz: &TimeZone) -> String {
-    let Ok(ts) = Timestamp::from_second(resets_at_s) else {
+pub fn reset_label(resets_at_ms: i64, now_ms: i64, tz: &TimeZone) -> String {
+    let Ok(ts) = Timestamp::from_millisecond(resets_at_ms) else {
         return "?".into();
     };
-    let format = if resets_at_s * 1_000 - now_ms < DAY_MS {
+    let format = if resets_at_ms - now_ms < DAY_MS {
         "%H:%M"
     } else {
         "%a"
@@ -40,8 +40,8 @@ pub fn next_change_ms(usage: &UsageLimits, now_ms: i64) -> Option<i64> {
     [&usage.five_hour, &usage.seven_day]
         .into_iter()
         .flatten()
-        .filter_map(|w| w.resets_at)
-        .flat_map(|s| [s * 1_000 - DAY_MS, s * 1_000])
+        .filter_map(|w| w.resets_at_ms)
+        .flat_map(|t| [t - DAY_MS, t])
         .filter(|&t| t > now_ms)
         .min()
 }
@@ -57,7 +57,7 @@ struct Part {
 
 fn part(label: &str, window: Option<&UsageWindow>, now_ms: i64, tz: &TimeZone) -> Option<Part> {
     let w = window?;
-    if w.resets_at.is_some_and(|s| s * 1_000 <= now_ms) {
+    if w.resets_at_ms.is_some_and(|t| t <= now_ms) {
         return Some(Part {
             figure: format!("{label} —"),
             resets: String::new(),
@@ -69,8 +69,8 @@ fn part(label: &str, window: Option<&UsageWindow>, now_ms: i64, tz: &TimeZone) -
     Some(Part {
         figure: format!("{label} {pct}%"),
         resets: w
-            .resets_at
-            .map(|s| format!(" (resets {})", reset_label(s, now_ms, tz)))
+            .resets_at_ms
+            .map(|t| format!(" (resets {})", reset_label(t, now_ms, tz)))
             .unwrap_or_default(),
         pct: Some(pct),
     })
@@ -133,6 +133,7 @@ pub fn variants(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dovetail_api::UsageStatus;
 
     fn text(spans: &[Span]) -> String {
         spans.iter().map(|s| s.content.as_ref()).collect()
@@ -142,13 +143,13 @@ mod tests {
         UsageLimits {
             five_hour: Some(UsageWindow {
                 utilization: five,
-                resets_at: Some(now_s + 2 * 3_600),
-                status: "allowed".into(),
+                resets_at_ms: Some((now_s + 2 * 3_600) * 1_000),
+                status: UsageStatus::Allowed,
             }),
             seven_day: Some(UsageWindow {
                 utilization: week,
-                resets_at: Some(now_s + 3 * 86_400),
-                status: "allowed".into(),
+                resets_at_ms: Some((now_s + 3 * 86_400) * 1_000),
+                status: UsageStatus::Allowed,
             }),
         }
     }

@@ -30,12 +30,7 @@ pub fn memory(mb: u32) -> String {
 
 /// A file size as `412 KB` or `1.2 MB` (binary units, at least `1 KB`).
 pub fn bytes(size: u64) -> String {
-    const MB: u64 = 1024 * 1024;
-    if size >= MB {
-        format!("{:.1} MB", size as f64 / MB as f64)
-    } else {
-        format!("{} KB", size.div_ceil(1024).max(1))
-    }
+    dovetail_api::size_text(size)
 }
 
 /// An attachment chip, as in the chat bar and the conversation: `[image 1 · 412 KB]`.

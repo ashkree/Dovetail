@@ -6,7 +6,7 @@ use super::{App, Confirm, Then};
 use crate::action::Action;
 use crate::buffers::InputTarget;
 use crate::mode::Mode;
-use crate::region::{BufferKind, RegionId};
+use crate::region::{BufferKind, RegionId, Regions};
 
 /// The next mode in the cycle auto, acceptEdits, manual (Decision 15, permission mode).
 fn next_mode(mode: PermissionMode) -> PermissionMode {
@@ -27,11 +27,18 @@ fn mode_name(mode: PermissionMode) -> &'static str {
 
 impl App {
     /// Focuses the side region showing the inbox (the top one by default, ADR 0008).
+    /// Focuses the inbox; when no region shows it, it goes back where the default layout has it.
     pub(super) fn focus_inbox(&mut self) {
-        let region = self
-            .regions
-            .side_showing(BufferKind::Inbox)
-            .unwrap_or(RegionId::SideTop);
+        let region = match self.regions.side_showing(BufferKind::Inbox) {
+            Some(region) => region,
+            None => {
+                let Some(region) = Regions::default_side_of(BufferKind::Inbox) else {
+                    return;
+                };
+                self.regions.show(region, BufferKind::Inbox);
+                region
+            }
+        };
         self.regions.set_focus(region);
     }
 

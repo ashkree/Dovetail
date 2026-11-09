@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::tools::{Role, TOOL_NAMES, Tool, env};
+use dovetail_api::tools::{Role, TOOLS, Tool, env};
 use dovetail_driver::{PermissionMode as CliMode, SessionSpec};
 use serde_json::json;
 
@@ -138,10 +138,10 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
 
 /// Dovetail's tools for the role as Claude Code names them, plus native messaging.
 pub fn allowed_tools(role: Role) -> Vec<String> {
-    let mut tools: Vec<String> = TOOL_NAMES
+    let mut tools: Vec<String> = TOOLS
         .iter()
-        .filter(|name| Tool::allowed(name, role))
-        .map(|name| format!("mcp__dovetail__{name}"))
+        .filter(|t| Tool::allowed(t.name, role))
+        .map(|t| format!("mcp__dovetail__{}", t.name))
         .collect();
     tools.push("SendMessage".into());
     tools.push("ListAgents".into());

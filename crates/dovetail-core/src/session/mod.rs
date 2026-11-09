@@ -517,7 +517,7 @@ impl Core {
             DriverEvent::ControlRequest { raw, .. } => {
                 tracing::warn!(agent = %agent.0, "unhandled control request: {raw}");
             }
-            DriverEvent::RateLimit { info } => self.on_rate_limit(&info),
+            DriverEvent::RateLimit(info) => self.on_rate_limit(&info),
             DriverEvent::Exited(info) => self.on_exit(&agent, info),
             _ => {}
         }

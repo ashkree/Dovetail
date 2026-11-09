@@ -194,8 +194,8 @@ fn hello_and_a_full_snapshot_roundtrip() {
         usage: UsageLimits {
             five_hour: Some(UsageWindow {
                 utilization: 0.34,
-                resets_at: Some(1_700_008_400),
-                status: "allowed".into(),
+                resets_at_ms: Some(1_700_008_400_000),
+                status: UsageStatus::Allowed,
             }),
             seven_day: None,
         },
@@ -413,4 +413,18 @@ fn an_old_blocking_ask_user_and_inbox_payload_still_parse() {
             text: "Which port?".into()
         }
     );
+}
+
+#[test]
+fn a_usage_status_word_this_version_does_not_know_parses_as_unknown() {
+    let w: UsageWindow = serde_json::from_value(json!({
+        "utilization": 0.5, "resets_at_ms": null, "status": "throttled_soon"
+    }))
+    .expect("an unknown word still parses");
+    assert_eq!(w.status, UsageStatus::Unknown);
+    assert_eq!(
+        UsageStatus::from_word("allowed_warning"),
+        UsageStatus::AllowedWarning
+    );
+    assert_eq!(UsageStatus::from_word(""), UsageStatus::Unknown);
 }
