@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{self, Event as TermEvent, KeyEventKind};
 use dovetail_api::{Command, CoreLink, ServerMsg};
 
-use crate::app::App;
+use crate::app::{App, Signal};
 
 /// Shortest time between two draws: about 30 fps, so streaming text is coalesced.
 pub const MIN_FRAME: Duration = Duration::from_millis(33);
@@ -25,8 +25,8 @@ enum Msg {
     Resize,
     Server(Box<ServerMsg>),
     ServerClosed,
-    /// SIGINT or SIGTERM.
-    Signal,
+    /// SIGINT, SIGTERM or SIGHUP.
+    Signal(Signal),
 }
 
 /// How long the loop may sleep: until the next draw window if the screen is dirty, until the
@@ -73,17 +73,23 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
         }
     });
     // Raw mode turns Ctrl-C into a key, but `kill` and a closing terminal still send signals.
-    // They take the same graceful path as a confirmed quit. If the handlers cannot be installed
-    // the UI still works; it just cannot catch signals.
+    // SIGINT asks like `:q`; SIGTERM and SIGHUP quit at once (see `App::on_signal`). If the
+    // handlers cannot be installed the UI still works; it just cannot catch signals.
     let signal_tx = tx.clone();
     match signal_hook::iterator::Signals::new([
         signal_hook::consts::SIGINT,
         signal_hook::consts::SIGTERM,
+        signal_hook::consts::SIGHUP,
     ]) {
         Ok(mut signals) => {
             thread::spawn(move || {
-                for _ in signals.forever() {
-                    if signal_tx.send(Msg::Signal).is_err() {
+                for number in signals.forever() {
+                    let signal = if number == signal_hook::consts::SIGINT {
+                        Signal::Interrupt
+                    } else {
+                        Signal::Terminate
+                    };
+                    if signal_tx.send(Msg::Signal(signal)).is_err() {
                         break;
                     }
                 }
@@ -163,7 +169,7 @@ fn drive<B: ratatui::backend::Backend>(
                 Msg::Resize => app.on_resize(),
                 Msg::Server(msg) => app.on_server(*msg),
                 Msg::ServerClosed => app.on_core_closed(),
-                Msg::Signal => app.on_signal(),
+                Msg::Signal(signal) => app.on_signal(signal),
             }
         }
         app.on_timeout(mono_ms(Instant::now()));

@@ -48,6 +48,15 @@ const HINTS_SHORT: &str = "i chat · ␣ss switch · : command";
 /// Reads the system clipboard; swapped out in tests.
 pub type ClipboardReader = Box<dyn FnMut() -> Result<Clip, ClipError>>;
 
+/// A signal the event loop caught.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signal {
+    /// SIGINT (`kill -INT`; in raw mode Ctrl-C arrives as a key instead).
+    Interrupt,
+    /// SIGTERM or SIGHUP: nobody is there to answer a question.
+    Terminate,
+}
+
 /// An open prompt row.
 struct Input {
     target: InputTarget,
@@ -97,6 +106,10 @@ pub struct App {
     quit: bool,
     /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
     exit_armed_until: Option<u64>,
+    /// The key being handled is a second Ctrl-C inside the hint's window.
+    exit_armed: bool,
+    /// The loop clock at the key being handled, for actions that arm a timeout.
+    mono_ms: u64,
     /// Where pasted images are saved (`attachments/` under Dovetail's data dir); `None` turns
     /// image paste off.
     attachments_dir: Option<std::path::PathBuf>,
@@ -128,6 +141,8 @@ impl App {
             reading: None,
             quit: false,
             exit_armed_until: None,
+            exit_armed: false,
+            mono_ms: 0,
             attachments_dir: None,
             clipboard: Box::new(clipboard::read),
             dirty: true,
@@ -224,10 +239,20 @@ impl App {
         }
     }
 
-    /// SIGINT or SIGTERM arrived as a signal: leave through the same path as a confirmed quit.
-    pub fn on_signal(&mut self) {
-        self.quit = true;
+    /// A signal arrived. SIGINT takes the same path as `:q` ([`Action::Quit`]): it asks first
+    /// when a turn is running, and a second SIGINT while that question is open answers yes.
+    /// SIGTERM and SIGHUP come from something that cannot answer (a closed terminal, the end of
+    /// the login session), so they quit as a confirmed quit does ([`Action::ForceQuit`]).
+    pub fn on_signal(&mut self, signal: Signal) {
         self.dirty = true;
+        match signal {
+            Signal::Interrupt if self.confirm.is_some() => {
+                self.confirm = None;
+                self.run(Action::ForceQuit);
+            }
+            Signal::Interrupt => self.run(Action::Quit),
+            Signal::Terminate => self.run(Action::ForceQuit),
+        }
     }
 
     /// The terminal was resized.
@@ -349,18 +374,8 @@ impl App {
     pub fn on_key(&mut self, event: KeyEvent, mono_ms: u64) {
         self.dirty = true;
         self.note = None;
-        let armed = self.exit_armed_until.take().is_some_and(|d| d > mono_ms);
-        let mode_key = Key::from_event(event);
-        if self.keymap.global_chord(self.mode, mode_key) == Some(Action::QuitOnRepeat) {
-            self.resolver.reset();
-            if armed {
-                self.quit = true;
-            } else {
-                self.exit_armed_until = Some(mono_ms + EXIT_CONFIRM_MS);
-                self.note = Some("Press Ctrl-C again to exit".into());
-            }
-            return;
-        }
+        self.mono_ms = mono_ms;
+        self.exit_armed = self.exit_armed_until.take().is_some_and(|d| d > mono_ms);
         if let Some(confirm) = self.confirm.take() {
             if matches!(event.code, crossterm::event::KeyCode::Char('y' | 'Y')) {
                 match confirm.then {
@@ -368,6 +383,14 @@ impl App {
                     Then::Commands(commands) => self.outbox.extend(commands),
                 }
             }
+            return;
+        }
+        // Ctrl-C works in every mode and over pickers, mid-sequence too, so it is looked up
+        // before them; it runs through `run` like any other action.
+        if self.keymap.global_chord(self.mode, Key::from_event(event)) == Some(Action::QuitOnRepeat)
+        {
+            self.resolver.reset();
+            self.run(Action::QuitOnRepeat);
             return;
         }
         if self.overlay.is_some() {
@@ -613,9 +636,15 @@ impl App {
                 }
             }
             Action::ForceQuit => self.quit = true,
-            // Handled in `on_key` (it needs the loop clock); reached here only from a table row
-            // in another scope, where a press just arms the hint.
-            Action::QuitOnRepeat => {}
+            Action::QuitOnRepeat => {
+                if std::mem::take(&mut self.exit_armed) {
+                    // The second press quits the way `:q` does, asking first if a turn runs.
+                    self.run(Action::Quit);
+                } else {
+                    self.exit_armed_until = Some(self.mono_ms + EXIT_CONFIRM_MS);
+                    self.note = Some("Press Ctrl-C again to exit".into());
+                }
+            }
             #[cfg(debug_assertions)]
             Action::DebugPanic => panic!("deliberate panic from :panic"),
             _ => {
