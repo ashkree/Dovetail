@@ -35,7 +35,7 @@ pub mod env {
 pub enum Role {
     /// The coordinator: every tool.
     Coordinator,
-    /// A slice: none of the [`COORDINATOR_ONLY`] tools.
+    /// A slice: none of the [`Access::CoordinatorOnly`] tools.
     Slice,
 }
 
@@ -58,48 +58,75 @@ impl Role {
     }
 }
 
-/// One tool call: the tool and its arguments. On the wire, `{"tool": "<name>", "input": {..}}`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "tool", content = "input", rename_all = "snake_case")]
-pub enum Tool {
-    /// `ask_user`.
-    AskUser(AskUser),
-    /// `report_status`.
-    ReportStatus(ReportStatus),
-    /// `create_task`, coordinator only.
-    CreateTask(CreateTask),
-    /// `log_decision`.
-    LogDecision(LogDecision),
-    /// `start_slice`, coordinator only (ADR 0004).
-    StartSlice(StartSlice),
-    /// `add_project`, coordinator only (ADR 0005).
-    AddProject(AddProject),
-    /// `archive_slice`, coordinator only (task #9).
-    ArchiveSlice(ArchiveSlice),
-    /// `archive_task`, coordinator only (task #9).
-    ArchiveTask(ArchiveTask),
+/// Who may call a tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    /// Every session.
+    Everyone,
+    /// The coordinator only; refused to slices.
+    CoordinatorOnly,
 }
 
-/// Every tool name, in the order `tools/list` shows them.
-pub const TOOL_NAMES: [&str; 8] = [
-    "ask_user",
-    "report_status",
-    "create_task",
-    "log_decision",
-    "start_slice",
-    "add_project",
-    "archive_slice",
-    "archive_task",
-];
+/// A row of [`TOOLS`]: a tool's name and who may call it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolSpec {
+    /// The name, without the server prefix.
+    pub name: &'static str,
+    /// Who may call it.
+    pub access: Access,
+}
 
-/// The tools a slice may not call.
-pub const COORDINATOR_ONLY: [&str; 5] = [
-    "create_task",
-    "start_slice",
-    "add_project",
-    "archive_slice",
-    "archive_task",
-];
+/// Defines [`Tool`], [`TOOLS`] and [`Tool::name`] from one list, so a tool's variant, wire name
+/// and access rule are written once.
+macro_rules! tools {
+    ($( $(#[doc = $doc:literal])* $variant:ident($input:ident) = $name:literal, $access:ident; )*) => {
+        /// One tool call: the tool and its arguments. On the wire,
+        /// `{"tool": "<name>", "input": {..}}`.
+        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+        #[serde(tag = "tool", content = "input")]
+        pub enum Tool {
+            $( $(#[doc = $doc])* #[serde(rename = $name)] $variant($input), )*
+        }
+
+        /// Every tool, in the order `tools/list` shows them.
+        pub const TOOLS: &[ToolSpec] = &[
+            $( ToolSpec { name: $name, access: Access::$access }, )*
+        ];
+
+        impl Tool {
+            /// The tool's name, without the server prefix.
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $( Tool::$variant(_) => $name, )*
+                }
+            }
+        }
+    };
+}
+
+tools! {
+    /// `ask_user`.
+    AskUser(AskUser) = "ask_user", Everyone;
+    /// `report_status`.
+    ReportStatus(ReportStatus) = "report_status", Everyone;
+    /// `create_task`, coordinator only.
+    CreateTask(CreateTask) = "create_task", CoordinatorOnly;
+    /// `log_decision`.
+    LogDecision(LogDecision) = "log_decision", Everyone;
+    /// `start_slice`, coordinator only (ADR 0004).
+    StartSlice(StartSlice) = "start_slice", CoordinatorOnly;
+    /// `add_project`, coordinator only (ADR 0005).
+    AddProject(AddProject) = "add_project", CoordinatorOnly;
+    /// `archive_slice`, coordinator only (task #9).
+    ArchiveSlice(ArchiveSlice) = "archive_slice", CoordinatorOnly;
+    /// `archive_task`, coordinator only (task #9).
+    ArchiveTask(ArchiveTask) = "archive_task", CoordinatorOnly;
+}
+
+/// The row of [`TOOLS`] named `name`.
+pub fn tool_spec(name: &str) -> Option<&'static ToolSpec> {
+    TOOLS.iter().find(|t| t.name == name)
+}
 
 /// The first word of an `archive_slice` / `archive_task` answer that did not fail.
 pub mod archive_result {
@@ -158,7 +185,7 @@ impl std::error::Error for ToolError {}
 impl Tool {
     /// Parses MCP `tools/call` arguments for the tool `name` (without the server prefix).
     pub fn parse(name: &str, arguments: serde_json::Value) -> Result<Tool, ToolError> {
-        if !TOOL_NAMES.contains(&name) {
+        if tool_spec(name).is_none() {
             return Err(ToolError::Unknown(name.to_owned()));
         }
         let wire = serde_json::json!({ "tool": name, "input": arguments });
@@ -168,26 +195,12 @@ impl Tool {
         })
     }
 
-    /// The tool's name, without the server prefix.
-    pub fn name(&self) -> &'static str {
-        match self {
-            Tool::AskUser(_) => "ask_user",
-            Tool::ReportStatus(_) => "report_status",
-            Tool::CreateTask(_) => "create_task",
-            Tool::LogDecision(_) => "log_decision",
-            Tool::StartSlice(_) => "start_slice",
-            Tool::AddProject(_) => "add_project",
-            Tool::ArchiveSlice(_) => "archive_slice",
-            Tool::ArchiveTask(_) => "archive_task",
-        }
-    }
-
     /// Whether a session with `role` may call the tool named `name`.
     pub fn allowed(name: &str, role: Role) -> bool {
-        match name {
-            name if COORDINATOR_ONLY.contains(&name) => role == Role::Coordinator,
-            other => TOOL_NAMES.contains(&other),
-        }
+        tool_spec(name).is_some_and(|t| match t.access {
+            Access::Everyone => true,
+            Access::CoordinatorOnly => role == Role::Coordinator,
+        })
     }
 
     /// Checks what serde cannot: non-empty text, positive ids, the bucket rule, and that the

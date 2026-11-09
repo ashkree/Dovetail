@@ -47,6 +47,7 @@ const STATE_MIGRATIONS: &[&str] = &[
     include_str!("db/migrations/state/0006_entry_attachments.sql"),
     include_str!("db/migrations/state/0007_todos.sql"),
     include_str!("db/migrations/state/0008_subagent_progress.sql"),
+    include_str!("db/migrations/state/0009_subagent_tokens.sql"),
 ];
 
 /// Errors from the database layer.

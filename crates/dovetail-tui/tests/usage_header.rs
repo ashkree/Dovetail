@@ -2,21 +2,20 @@
 
 mod support;
 
-use dovetail_api::{Event, ServerMsg, UsageLimits, UsageWindow};
+use dovetail_api::{Event, ServerMsg, UsageLimits, UsageStatus, UsageWindow};
 use support::*;
 
 fn usage(five: f64, week: f64) -> UsageLimits {
-    let now_s = NOW_MS / 1_000;
     UsageLimits {
         five_hour: Some(UsageWindow {
             utilization: five,
-            resets_at: Some(now_s + 2 * 3_600 + 20 * 60),
-            status: "allowed".into(),
+            resets_at_ms: Some(NOW_MS + (2 * 3_600 + 20 * 60) * 1_000),
+            status: UsageStatus::Allowed,
         }),
         seven_day: Some(UsageWindow {
             utilization: week,
-            resets_at: Some(now_s + 3 * 86_400),
-            status: "allowed".into(),
+            resets_at_ms: Some(NOW_MS + 3 * 86_400_000),
+            status: UsageStatus::Allowed,
         }),
     }
 }
@@ -79,7 +78,7 @@ fn a_reset_passing_redraws_once_and_shows_a_dash() {
     // The next report, for the new window, replaces the dash.
     let mut next = usage(0.02, 0.18);
     if let Some(w) = next.five_hour.as_mut() {
-        w.resets_at = Some(reset_ms / 1_000 + 5 * 3_600);
+        w.resets_at_ms = Some(reset_ms + 5 * 3_600_000);
     }
     app.on_server(ServerMsg::Event {
         seq: 1,

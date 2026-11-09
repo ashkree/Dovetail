@@ -205,7 +205,8 @@ impl App {
             &self.tz,
             theme,
         );
-        // Every warning version with every usage version, the warning shortening first.
+        // Every warning version with every usage version: the usage shortens through all of its
+        // versions before the warning shortens.
         let rights: Vec<Vec<Span<'static>>> = match (warnings.is_empty(), usage.is_empty()) {
             (true, _) => usage,
             (false, true) => warnings,

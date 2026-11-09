@@ -51,9 +51,7 @@ pub fn map_value(v: Value) -> Vec<DriverEvent> {
         "assistant" => vec![map_assistant(&v)],
         "user" => map_user(&v),
         "result" => vec![DriverEvent::TurnResult(map_result(v))],
-        "rate_limit_event" => vec![DriverEvent::RateLimit {
-            info: v.get("rate_limit_info").cloned().unwrap_or(Value::Null),
-        }],
+        "rate_limit_event" => vec![DriverEvent::RateLimit(map_rate_limit(&v))],
         "control_request" => vec![map_control_request(v)],
         "control_response" => {
             let r = v.get("response").cloned().unwrap_or(Value::Null);
@@ -294,6 +292,26 @@ fn map_usage(obj: &Value) -> Vec<ModelUsage> {
             cache_creation_tokens: u64_of(u, "cacheCreationInputTokens").unwrap_or(0),
         })
         .collect()
+}
+
+/// `rate_limit_info.unifiedWindows` of a `rate_limit_event`; a window without `utilization` is
+/// left out.
+fn map_rate_limit(v: &Value) -> RateLimitInfo {
+    let windows = v
+        .get("rate_limit_info")
+        .and_then(|i| i.get("unifiedWindows"));
+    let window = |key: &str| {
+        let w = windows?.get(key)?;
+        Some(RateLimitWindow {
+            utilization: w.get("utilization")?.as_f64()?,
+            resets_at_s: w.get("resetsAt").and_then(Value::as_i64),
+            status: str_of(w, "status").unwrap_or_default(),
+        })
+    };
+    RateLimitInfo {
+        five_hour: window("five_hour"),
+        seven_day: window("seven_day"),
+    }
 }
 
 fn map_result(v: Value) -> TurnResult {

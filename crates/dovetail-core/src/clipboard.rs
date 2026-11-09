@@ -14,7 +14,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use dovetail_api::{Attachment, ImageType, MAX_ATTACHMENT_BYTES, Paste};
+use dovetail_api::{
+    Attachment, ImageType, MAX_ATTACHMENT_BYTES, Paste, attachment_limit_text, size_text,
+};
 
 /// How long one clipboard tool may take before it is killed.
 const TIMEOUT: Duration = Duration::from_secs(3);
@@ -45,17 +47,12 @@ pub enum ClipError {
     /// The clipboard holds an image in a format Claude does not take.
     #[error("can't attach {0}: only PNG, JPEG, GIF or WebP")]
     Unsupported(String),
-    /// The image is over 5 MB.
-    #[error("image is {}: the limit is 5 MB", megabytes(*.0))]
+    /// The image is over [`MAX_ATTACHMENT_BYTES`].
+    #[error("image is {}: the limit is {}", size_text(*.0), attachment_limit_text())]
     TooLarge(u64),
     /// The tool failed or timed out.
     #[error("clipboard read failed: {0}")]
     Failed(String),
-}
-
-/// A size over the limit, as the chat bar shows sizes: `5.2 MB`.
-fn megabytes(size: u64) -> String {
-    format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
 }
 
 /// Reads the clipboard and, for an image, saves it under `dir`. Blocks for up to a few seconds;

@@ -262,6 +262,12 @@ fn agent_preview(
         facts.push(fmt::memory(mb));
     }
     facts.push(status_word(agent.status).to_string());
+    if agent.subagent_tokens > 0 {
+        facts.push(format!(
+            "{} tokens in subagents",
+            fmt::tokens(agent.subagent_tokens)
+        ));
+    }
     out.push(Line::from(Span::styled(facts.join(" · "), theme.dim())));
     out.push(Line::default());
 
@@ -370,6 +376,7 @@ mod tests {
             last_activity_ms: last,
             lock: SessionLock::Headless,
             model: None,
+            subagent_tokens: 0,
         }
     }
 

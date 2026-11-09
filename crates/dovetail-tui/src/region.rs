@@ -82,6 +82,11 @@ impl Regions {
             .find(|&region| self.buffer(region) == kind)
     }
 
+    /// Where the default layout puts a buffer, if it puts it in a side region.
+    pub fn default_side_of(kind: BufferKind) -> Option<RegionId> {
+        Regions::default().side_showing(kind)
+    }
+
     /// Makes a region show another buffer.
     pub fn show(&mut self, region: RegionId, kind: BufferKind) {
         match region {

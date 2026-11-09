@@ -224,6 +224,11 @@ impl Core {
             .as_deref()
             .filter(|f| !f.is_empty())
             .map(PathBuf::from);
+        let before = self
+            .agents
+            .get(&id)
+            .and_then(|r| r.agent.progress.as_ref())
+            .map_or(0, |p| p.total_tokens);
         self.update_agent(&id, |row| {
             let a = &mut row.agent;
             a.last_activity_ms = now_ms();
@@ -269,6 +274,14 @@ impl Core {
                 a.status_line = first_line(d);
             }
         });
+        // The session's total gains what this subagent used since its last event; the count
+        // stays with the session after the node is pruned.
+        let added = event.total_tokens.map_or(0, |n| n.saturating_sub(before));
+        if added > 0 {
+            self.update_agent(parent, |row| {
+                row.agent.subagent_tokens = row.agent.subagent_tokens.saturating_add(added);
+            });
+        }
         let ended = match event.phase {
             TaskPhase::Updated | TaskPhase::Notification => terminal(event.status.as_deref()),
             _ => None,
@@ -418,6 +431,7 @@ impl Core {
         }
         self.tails.remove(id);
         self.persist("a closed subagent", self.db.close_agent(id.clone()));
+        self.reassign_todos_of(id);
         self.emit(Event::AgentRemoved(id.clone()));
     }
 

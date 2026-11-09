@@ -519,8 +519,8 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
     } else {
         theme.dim()
     };
-    // A running subagent shows its progress instead of a status word; tokens go first when the
-    // pane is narrow.
+    // A running subagent shows its progress instead of a status word; a narrow pane drops the
+    // token count first.
     let (word, short_word) = match (&agent.kind, &agent.progress) {
         (AgentKind::Subagent { .. }, Some(p))
             if p.summary.is_none() && agent.status == AgentStatus::Working =>
@@ -794,6 +794,7 @@ mod tests {
             last_activity_ms: 0,
             lock: SessionLock::Headless,
             model: None,
+            subagent_tokens: 0,
         }
     }
 

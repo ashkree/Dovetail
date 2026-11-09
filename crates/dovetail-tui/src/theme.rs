@@ -63,14 +63,17 @@ impl Theme {
             needs_you: Color::Rgb(0xdf, 0x7e, 0x3a),
             ok: Color::Rgb(0x75, 0xd7, 0x7e),
             error: Color::Rgb(0xed, 0x72, 0x6a),
-            focus: Color::Rgb(0x6c, 0xb6, 0xff),
+            focus: Color::Rgb(0x5e, 0x9e, 0xde),
             line: Color::Rgb(0x4a, 0x52, 0x5e),
             selection: Color::Rgb(0x2a, 0x32, 0x40),
             ink: Color::Rgb(0x15, 0x17, 0x1c),
             reading_bg: Color::Rgb(0x1b, 0x20, 0x28),
-            mode_normal: Color::Rgb(0xe5, 0xb5, 0x67),
-            mode_insert: Color::Rgb(0x7e, 0xe7, 0x87),
-            mode_command: Color::Rgb(0xc0, 0xa5, 0xe0),
+            // Mode badges are backgrounds under `ink` text: softened like the text colours, but
+            // never below 7:1 contrast with `ink` (WCAG AAA). Normal and Insert take the full
+            // ~13 % (7.2:1 and 8.8:1); Command only ~7 %, as 13 % would leave 6.3:1.
+            mode_normal: Color::Rgb(0xc7, 0x9d, 0x5a),
+            mode_insert: Color::Rgb(0x6e, 0xc9, 0x76),
+            mode_command: Color::Rgb(0xb3, 0x99, 0xd0),
             chip: Color::Rgb(0x88, 0xab, 0xca),
             speaker_you: Color::Rgb(0x5e, 0x9e, 0xde),
             speaker_agent: Color::Rgb(0xc7, 0x9d, 0x5a),
@@ -110,19 +113,22 @@ impl Theme {
 
     /// Context fill: plain up to 60 %, amber to 80 %, red above (Decision 22).
     pub fn context(&self, pct: u8) -> Style {
-        match pct {
-            0..=60 => self.dim(),
-            61..=80 => Style::new().fg(self.needs_you),
-            _ => Style::new().fg(self.error),
-        }
+        self.level(u32::from(pct), 61, 81)
     }
 
     /// A usage limit (task #16): dim below 70 %, orange from 70 %, red from 90 %.
     pub fn usage(&self, pct: u32) -> Style {
-        match pct {
-            0..=69 => self.dim(),
-            70..=89 => Style::new().fg(self.needs_you),
-            _ => Style::new().fg(self.error),
+        self.level(pct, 70, 90)
+    }
+
+    /// Dim below `warn`, amber from `warn`, red from `alarm`.
+    fn level(&self, pct: u32, warn: u32, alarm: u32) -> Style {
+        if pct >= alarm {
+            Style::new().fg(self.error)
+        } else if pct >= warn {
+            Style::new().fg(self.needs_you)
+        } else {
+            self.dim()
         }
     }
 

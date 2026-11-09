@@ -184,7 +184,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `jiff` | core, tui, binary | default | Local-time display with no unsafe of ours; the binary passes the system time zone to the UI |
 | `unicode-width` | tui | default | Pad, clip and wrap rows by terminal cell width (already a `ratatui` dependency) |
 | `uuid` | core | `v4` | Choose session ids |
-| `notify` (latest stable, not the 9 rc) | core | default | Watch native task files (M11) |
+| `notify` (latest stable, not the 9 rc) | core | `default-features = false` | Watch native task files (M11). Its only default feature is `macos_fsevent` (FSEvents bindings through `objc2`); Linux uses inotify without it |
 | *none:* hand-written NDJSON layer on `tokio` + `serde_json` | driver | n/a | Decision 4a fallback. S1 (2026-11-02): `claude-agent-sdk-rs` and `rusty_claw` both fail C (concurrent permissions) and H (tolerance); the hand-written layer passed A–H (18 crates, +1.39 MB, 4.3 MB RSS) |
 | `merman` | maps | PNG/SVG only | Decision 23c, pending S5 |
 | `ratatui-image` (latest stable) | tui, M15 only | `crossterm` | kitty graphics |
@@ -413,8 +413,11 @@ CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms 
 - M7 `0003_inbox_activity`
 - Wave 2 `0004_slice_queue` (queued slice starts survive a restart, decided 2026-11-06)
 - M10 `0005_restart_state` (held coordinator notes, kept unowned worktrees)
-- M11 `0007_todos` (`todo_items`; 0006 went to entry attachments, task #1)
-- M15 `0007_maps`
+- Task #1 `0006_entry_attachments` (image paths on user entries)
+- M11 `0007_todos` (`todo_items`)
+- M11 `0008_subagent_progress` (`agents.progress`, a subagent's progress as JSON)
+- M11 `0009_subagent_tokens` (`agents.subagent_tokens`, a session's total summed from task events, task #17)
+- M15 `0010_maps`
 
 Tables arrive with the milestone that uses them, so no unused tables sit around.
 
@@ -575,9 +578,9 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Scope:** subagents as tree nodes from `parent_tool_use_id` and `task_*`, progress, cost, unchanged subagent worktree removal, native list reading with reread on parse error, item-to-agent mapping, lists deleted on archive.
 - **Slices:** (a) subagent routing and nodes; (b) task-file watcher and attribution.
 - **Done when:**
-  - [ ] Background subagent shows progress, summary and cost
-  - [ ] To-do items sit under the agent that created them
-  - [ ] Totals come from task events
+  - [x] Background subagent shows progress, summary and cost (fake-driver replay of subagent_background / todo_tools; tokens stand in for cost per decision #21; not yet checked live)
+  - [x] To-do items sit under the agent that created them (fake-driver replay of subagent_background / todo_tools; tokens stand in for cost per decision #21; not yet checked live)
+  - [x] Totals come from task events (fake-driver replay of subagent_background / todo_tools; tokens stand in for cost per decision #21; not yet checked live)
 - **Tests:** `subagent_background`, `todo_tools`, mid-write JSON parse error
 
 ### M12. Board and worktree view
@@ -639,7 +642,14 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | #5 | Inbox rows are one line; `Enter` opens the item in full in an `InboxDetail` buffer (finished turns still open the conversation) | #8 |
 | #6 | A header rule opens each conversation message | #7 |
 | #7 | Starting a slice on a task moves the task to Now | #9 |
-| #9 | Coordinator-only `archive_slice { name }` and `archive_task { id }` tools, through the same archive path as the UI: clean, pushed work goes at once (`archived`, the queue place freed); unsaved work raises the usual Permission item (`waiting_for_user`, the user's answer reaches the coordinator as "slice <name> archived" or "… kept"). The role prompt archives after merge and pull | — |
+| #9 | Coordinator-only `archive_slice { name }` and `archive_task { id }` tools, through the same archive path as the UI: clean, pushed work goes at once (`archived`, the queue place freed); unsaved work raises the usual Permission item (`waiting_for_user`, the user's answer reaches the coordinator as "slice <name> archived" or "… kept"). The role prompt archives after merge and pull | #11 |
+| #11 | M11a: subagents as tree nodes, from `parent_tool_use_id` and `task_*` events, with progress, summary and cost; unchanged subagent worktrees removed | #12 |
+| #12 | M11b: native to-do lists under the agent that created them, watched with inotify and reread on a parse error; lists deleted on archive | #13 |
+| #13 | Fixes from the `review-wave-2` code review: double `Ctrl-C` asks while a turn runs, SIGHUP is treated like SIGTERM, clipboard and image saving move to the core | #16 |
+| #14 | The inbox sits over the tree in the side column (ADR 0008) | #14 |
+| #15 | Text colours softened ~13 % for dark translucent terminals | #15 |
+| #16 | The header shows the model and the 5-hour and weekly usage limits (decision #25) | #17 |
+| #17 | Fixes from the wave-3 code review: subagent worktree cleanup keeps the worktree when git's output does not parse; to-dos of a pruned subagent fall back to the list owner; a session's subagent tokens summed from task events and shown in the switcher; code smells | #18 |
 
 **Open follow-ups:** #3 attach an image when a pasted or dropped file path points to one; #8 clean up saved paste attachments.
 

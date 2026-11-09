@@ -1,34 +1,30 @@
 //! Usage limits and the model in use (task #16).
 //!
-//! Every turn's `rate_limit_event` carries `rate_limit_info.unifiedWindows.five_hour` and
-//! `.seven_day`. Limits are per account, so the core keeps the latest from any session. The
-//! model comes from `system/init` and main-thread assistant messages.
+//! Every turn's `rate_limit_event` carries a 5-hour and a weekly window, parsed by the driver.
+//! Limits are per account, so the core keeps the latest from any session. Here the driver's
+//! windows become the API's: reset times in milliseconds, the status word as [`UsageStatus`].
+//! The model comes from `system/init` and main-thread assistant messages.
 
-use dovetail_api::{AgentId, Event, UsageLimits, UsageWindow};
-use serde_json::Value;
+use dovetail_api::{AgentId, Event, UsageLimits, UsageStatus, UsageWindow};
+use dovetail_driver::{RateLimitInfo, RateLimitWindow};
 
 use crate::service::Core;
 
-/// Reads the windows out of a `rate_limit_info`. `None` when it carries neither window.
-pub(crate) fn from_rate_limit_info(info: &Value) -> Option<UsageLimits> {
-    let windows = info.get("unifiedWindows")?;
+/// The API's view of a `rate_limit_event`. `None` when it carries neither window.
+pub(crate) fn from_rate_limit(info: &RateLimitInfo) -> Option<UsageLimits> {
     let usage = UsageLimits {
-        five_hour: windows.get("five_hour").and_then(window),
-        seven_day: windows.get("seven_day").and_then(window),
+        five_hour: info.five_hour.as_ref().map(window),
+        seven_day: info.seven_day.as_ref().map(window),
     };
     (usage.five_hour.is_some() || usage.seven_day.is_some()).then_some(usage)
 }
 
-fn window(v: &Value) -> Option<UsageWindow> {
-    Some(UsageWindow {
-        utilization: v.get("utilization")?.as_f64()?,
-        resets_at: v.get("resetsAt").and_then(Value::as_i64),
-        status: v
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-    })
+fn window(w: &RateLimitWindow) -> UsageWindow {
+    UsageWindow {
+        utilization: w.utilization,
+        resets_at_ms: w.resets_at_s.map(|s| s.saturating_mul(1_000)),
+        status: UsageStatus::from_word(&w.status),
+    }
 }
 
 /// `next` over `current`: a window the event leaves out keeps its last value.
@@ -41,8 +37,8 @@ fn merged(current: &UsageLimits, next: UsageLimits) -> UsageLimits {
 
 impl Core {
     /// A session reported its usage limits: tell the UI if anything changed.
-    pub(crate) fn on_rate_limit(&mut self, info: &Value) {
-        let Some(next) = from_rate_limit_info(info) else {
+    pub(crate) fn on_rate_limit(&mut self, info: &RateLimitInfo) {
+        let Some(next) = from_rate_limit(info) else {
             return;
         };
         let usage = merged(&self.usage, next);
@@ -70,51 +66,68 @@ impl Core {
 mod tests {
     use super::*;
     use dovetail_driver::DriverEvent;
+    use serde_json::{Value, json};
 
     /// The first `rate_limit_event` of a recorded fixture, through the driver's parser.
-    fn fixture_info() -> Value {
+    fn fixture_info() -> RateLimitInfo {
         let text = include_str!("../../dovetail-driver/tests/fixtures/flags.ndjson");
         text.lines()
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
             .filter_map(|l| l.get("msg").cloned())
             .flat_map(dovetail_driver::parse::map_value)
             .find_map(|e| match e {
-                DriverEvent::RateLimit { info } => Some(info),
+                DriverEvent::RateLimit(info) => Some(info),
                 _ => None,
             })
-            .unwrap_or(Value::Null)
+            .unwrap_or_default()
+    }
+
+    /// A `rate_limit_info`, through the driver's parser.
+    fn info(rate_limit_info: Value) -> RateLimitInfo {
+        let line = json!({"type": "rate_limit_event", "rate_limit_info": rate_limit_info});
+        match dovetail_driver::parse::map_value(line).pop() {
+            Some(DriverEvent::RateLimit(info)) => info,
+            _ => RateLimitInfo::default(),
+        }
     }
 
     #[test]
     fn parses_both_windows_from_a_fixture() {
-        let usage = from_rate_limit_info(&fixture_info());
+        let usage = from_rate_limit(&fixture_info());
         assert_eq!(
             usage,
             Some(UsageLimits {
                 five_hour: Some(UsageWindow {
                     utilization: 0.13,
-                    resets_at: Some(1_793_584_200),
-                    status: "allowed".into(),
+                    resets_at_ms: Some(1_793_584_200_000),
+                    status: UsageStatus::Allowed,
                 }),
                 seven_day: Some(UsageWindow {
                     utilization: 0.17,
-                    resets_at: Some(1_794_128_400),
-                    status: "allowed".into(),
+                    resets_at_ms: Some(1_794_128_400_000),
+                    status: UsageStatus::Allowed,
                 }),
             })
         );
     }
 
     #[test]
+    fn an_unknown_status_word_still_parses() {
+        let usage = from_rate_limit(&info(json!({
+            "unifiedWindows": {"five_hour": {"utilization": 0.5, "status": "throttled_soon"}}
+        })));
+        let five = usage.and_then(|u| u.five_hour);
+        assert_eq!(five.as_ref().map(|w| w.status), Some(UsageStatus::Unknown));
+        assert_eq!(five.and_then(|w| w.resets_at_ms), None);
+    }
+
+    #[test]
     fn info_without_windows_is_ignored_and_missing_windows_keep_their_value() {
-        assert_eq!(
-            from_rate_limit_info(&serde_json::json!({"status": "allowed"})),
-            None
-        );
-        let full = from_rate_limit_info(&fixture_info()).unwrap_or_default();
-        let only_5h = from_rate_limit_info(&serde_json::json!({
+        assert_eq!(from_rate_limit(&info(json!({"status": "allowed"}))), None);
+        let full = from_rate_limit(&fixture_info()).unwrap_or_default();
+        let only_5h = from_rate_limit(&info(json!({
             "unifiedWindows": {"five_hour": {"utilization": 0.5, "resetsAt": 1, "status": "allowed"}}
-        }))
+        })))
         .unwrap_or_default();
         let m = merged(&full, only_5h);
         assert_eq!(m.five_hour.map(|w| w.utilization), Some(0.5));
