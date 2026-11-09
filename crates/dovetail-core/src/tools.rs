@@ -6,8 +6,8 @@ use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::tools::Tool;
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
 use dovetail_api::{
-    DecisionAuthor, EntryKind, Event, InboxKind, NewDecision, NewTask, PermissionMode, TaskId,
-    TaskStatus,
+    Agent, AgentKind, DecisionAuthor, EntryKind, Event, InboxKind, NewDecision, NewTask,
+    PermissionMode, TaskId, TaskStatus,
 };
 use serde_json::json;
 use tokio::sync::oneshot;
@@ -17,6 +17,8 @@ use crate::inbox::Waiter;
 use crate::service::Core;
 use crate::slice::{ArchiveCall, SliceRequest, SliceStart};
 use crate::socket::ToolCall;
+
+mod read;
 
 /// Most characters of a status line (B17).
 const STATUS_MAX: usize = 120;
@@ -327,8 +329,35 @@ impl Core {
                     }
                 }
             }
+            Tool::ListTasks(filter) => match self.db.load_tasks().await {
+                Ok(tasks) => ok(read::task_list(&tasks, &filter, |id| self.live_slices(id))),
+                Err(e) => error(format!("could not read the tasks: {e}")),
+            },
+            Tool::GetTask(get) => match self.task(get.id).await {
+                None => error(format!("there is no task #{}", get.id.0)),
+                Some(task) => match self.db.task_decisions(task.id).await {
+                    Ok(decisions) => ok(read::task_detail(
+                        &task,
+                        &self.live_slices(task.id),
+                        &decisions,
+                    )),
+                    Err(e) => error(format!("could not read the decisions: {e}")),
+                },
+            },
         };
         let _ = reply.send(answer);
+    }
+
+    /// The live slices on task `id`, by name.
+    fn live_slices(&self, id: TaskId) -> Vec<&Agent> {
+        let mut slices: Vec<&Agent> = self
+            .agents
+            .values()
+            .map(|r| &r.agent)
+            .filter(|a| a.kind == AgentKind::Slice && a.task == Some(id))
+            .collect();
+        slices.sort_by(|a, b| a.name.cmp(&b.name));
+        slices
     }
 }
 
@@ -354,6 +383,8 @@ mod tests {
         assert!(!Tool::allowed("add_project", Role::Slice));
         assert!(!Tool::allowed("archive_slice", Role::Slice));
         assert!(!Tool::allowed("archive_task", Role::Slice));
+        assert!(!Tool::allowed("list_tasks", Role::Slice));
+        assert!(!Tool::allowed("get_task", Role::Slice));
         assert!(Tool::allowed("archive_slice", Role::Coordinator));
         assert!(Tool::allowed("ask_user", Role::Slice));
     }

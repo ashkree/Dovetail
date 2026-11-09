@@ -265,7 +265,12 @@ impl Db {
 
     /// Every decision of the open project, oldest first.
     pub fn load_decisions(&self) -> Pending<Vec<Decision>> {
-        self.run(|c, _| tasks::load_decisions(c.state()?))
+        self.run(|c, _| tasks::load_decisions(c.state()?, None))
+    }
+
+    /// The decisions of task `task`, oldest first.
+    pub fn task_decisions(&self, task: TaskId) -> Pending<Vec<Decision>> {
+        self.run(move |c, _| tasks::load_decisions(c.state()?, Some(task)))
     }
 
     /// Creates a task. Resolves to the new task followed by tasks whose relations changed.

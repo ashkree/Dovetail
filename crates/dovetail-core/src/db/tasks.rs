@@ -380,13 +380,16 @@ pub(super) fn log_decision(
     })
 }
 
-/// Every decision, oldest first.
-pub(super) fn load_decisions(conn: &mut Connection) -> Result<Vec<Decision>, DbError> {
+/// Every decision, or only those of `task`, oldest first.
+pub(super) fn load_decisions(
+    conn: &mut Connection,
+    task: Option<TaskId>,
+) -> Result<Vec<Decision>, DbError> {
     let mut stmt = conn.prepare(
         "SELECT id, task_id, at_ms, author, text, why, alternatives, supersedes \
-         FROM decisions ORDER BY id",
+         FROM decisions WHERE ?1 IS NULL OR task_id = ?1 ORDER BY id",
     )?;
-    let rows = stmt.query_map([], |r| {
+    let rows = stmt.query_map([task.map(|t| t.0)], |r| {
         Ok((
             r.get::<_, i64>(0)?,
             r.get::<_, i64>(1)?,

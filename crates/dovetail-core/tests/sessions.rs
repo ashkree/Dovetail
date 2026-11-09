@@ -10,11 +10,14 @@ use std::time::{Duration, Instant};
 
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
-use dovetail_api::tools::{ArchiveSlice, ArchiveTask, AskUser, ReportStatus, StartSlice, Tool};
+use dovetail_api::tools::{
+    ArchiveSlice, ArchiveTask, AskUser, BucketFilter, GetTask, ListTasks, LogDecision,
+    ReportStatus, StartSlice, Tool,
+};
 use dovetail_api::{
-    AgentId, AgentKind, AgentStatus, Attachment, Bucket, Command, CoreLink, EntryKind, ImageType,
-    InboxId, InboxKind, NewTask, PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId,
-    TaskStatus, apply,
+    AgentId, AgentKind, AgentStatus, Alternative, Attachment, Bucket, Command, CoreLink,
+    DecisionId, EntryKind, ImageType, InboxId, InboxKind, NewTask, PLevel, PermissionAnswer,
+    PermissionMode, ServerMsg, Snapshot, TaskId, TaskStatus, apply,
 };
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
@@ -1986,6 +1989,105 @@ fn archive_task_archives_the_task_and_its_live_slice() {
 
     let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, archive)));
     assert!(is_error && text.contains("already archived"), "{text}");
+    h.quit();
+}
+
+// --- reading tasks and decisions (task #20) ---
+
+#[test]
+fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_only() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    for (title, bucket, p_level) in [
+        ("later one", Some(Bucket::Later), Some(PLevel::P0)),
+        ("unsorted one", None, None),
+        ("next one", Some(Bucket::Next), Some(PLevel::P2)),
+        ("urgent next", Some(Bucket::Next), Some(PLevel::P1)),
+    ] {
+        h.send(Command::CreateTask(NewTask {
+            title: title.into(),
+            p_level,
+            bucket,
+            notes: format!("notes for {title}"),
+            follow_up_of: None,
+            pr: None,
+            related: vec![],
+        }));
+    }
+    h.wait_for("the tasks", |s| s.tasks.len() == 4);
+    // Task 3 gets a slice, which moves it to Now.
+    h.send(Command::NewSlice {
+        task: Some(TaskId(3)),
+        name: "work".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "work"));
+    let socket = h.socket();
+    let call = |agent: &str, t: Tool| result_text(socket_call(&socket, tool(agent, t)));
+
+    let decide = |text: &str, supersedes: Option<DecisionId>| {
+        Tool::LogDecision(LogDecision {
+            task: Some(TaskId(3)),
+            decision: text.into(),
+            why: Some(format!("why {text}")),
+            alternatives: vec![Alternative {
+                option: "other".into(),
+                why_not: Some("worse".into()),
+            }],
+            supersedes,
+        })
+    };
+    let (text, is_error) = call(COORDINATOR, decide("first", None));
+    assert!(!is_error, "{text}");
+    let (text, is_error) = call(COORDINATOR, decide("second", Some(DecisionId(1))));
+    assert!(!is_error, "{text}");
+
+    let (text, is_error) = call(COORDINATOR, Tool::ListTasks(ListTasks::default()));
+    assert!(!is_error, "{text}");
+    let ids: Vec<&str> = text
+        .lines()
+        .map(|l| l.split_whitespace().next().unwrap_or(""))
+        .collect();
+    assert_eq!(ids, ["#3", "#4", "#2", "#1"], "{text}");
+    assert!(
+        text.contains("#3 [in_progress · now · P2] next one (slice work)"),
+        "{text}"
+    );
+
+    let (text, _) = call(
+        COORDINATOR,
+        Tool::ListTasks(ListTasks {
+            bucket: Some(BucketFilter::Next),
+            ..ListTasks::default()
+        }),
+    );
+    assert_eq!(text.lines().count(), 1, "{text}");
+    assert!(text.starts_with("#4 "), "{text}");
+
+    let (text, is_error) = call(COORDINATOR, Tool::GetTask(GetTask { id: TaskId(3) }));
+    assert!(!is_error, "{text}");
+    for want in [
+        "# #3 next one",
+        "notes for next one",
+        "- slice work:",
+        "- D1 (agent coordinator): first [superseded by D2]",
+        "  Why: why first",
+        "  Rejected: other, because worse",
+        "- D2 (agent coordinator): second",
+        "  Supersedes: D1",
+    ] {
+        assert!(text.contains(want), "missing {want:?} in:\n{text}");
+    }
+
+    let (text, is_error) = call(COORDINATOR, Tool::GetTask(GetTask { id: TaskId(99) }));
+    assert!(is_error && text.contains("no task #99"), "{text}");
+
+    for refused in [
+        Tool::ListTasks(ListTasks::default()),
+        Tool::GetTask(GetTask { id: TaskId(3) }),
+    ] {
+        let (text, is_error) = call("slice-work", refused);
+        assert!(is_error && text.contains("coordinator only"), "{text}");
+    }
     h.quit();
 }
 
