@@ -371,6 +371,19 @@ impl MockCore {
                     has_more: false,
                 });
             }
+            Command::RefreshWorktrees => {
+                let now_ms = self.state.now_ms;
+                let infos: Vec<WorktreeInfo> = self
+                    .state
+                    .agents
+                    .iter()
+                    .filter(|a| a.kind == AgentKind::Slice)
+                    .filter_map(|a| Some(world::worktree_info(a, a.worktree.as_ref()?, now_ms)))
+                    .collect();
+                for info in infos {
+                    self.emit(Event::WorktreeUpserted(info));
+                }
+            }
             Command::Resync => self
                 .ready
                 .push_back(ServerMsg::Snapshot(self.state.trimmed())),

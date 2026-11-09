@@ -406,9 +406,82 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         warnings: vec![],
         decisions: decisions(now_ms),
         usage: usage(now_ms, 0.34),
+        // Like the core: empty until the worktree view asks for a refresh.
+        worktrees: vec![],
     };
     snapshot.totals = totals_of(&snapshot);
     snapshot
+}
+
+/// Plausible worktree-view data for slice `agent` with worktree `wt`: the seeded slices each
+/// show a different case (an open PR with work in progress, behind main with no PR, a failed
+/// setup whose PR lookup failed); any other slice is fresh.
+pub(crate) fn worktree_info(agent: &Agent, wt: &WorktreeRef, now_ms: i64) -> WorktreeInfo {
+    let pr = |number: u32, state: PrState| {
+        PrLookup::Found(PullRequest {
+            number,
+            state,
+            url: format!("https://github.com/you/dovetail/pull/{number}"),
+        })
+    };
+    let (sync, changes, unpushed, pr, setup) = match agent.name.as_str() {
+        "tree-view" => (
+            (3, 0, Some(0)),
+            Changes {
+                staged: 1,
+                unstaged: 2,
+                untracked: 1,
+                conflicted: 0,
+            },
+            1,
+            pr(1231, PrState::Open),
+            WorktreeSetup::Done,
+        ),
+        "inbox-keys" => (
+            (1, 4, Some(2)),
+            Changes::default(),
+            1,
+            PrLookup::None,
+            WorktreeSetup::Done,
+        ),
+        "picker" => (
+            (0, 0, None),
+            Changes {
+                untracked: 3,
+                ..Changes::default()
+            },
+            0,
+            PrLookup::Unknown {
+                reason: "gh is not installed".into(),
+            },
+            WorktreeSetup::Failed {
+                error: Some("`cargo fetch` exited with exit status: 101".into()),
+            },
+        ),
+        _ => (
+            (0, 0, Some(0)),
+            Changes::default(),
+            0,
+            PrLookup::None,
+            WorktreeSetup::Done,
+        ),
+    };
+    WorktreeInfo {
+        agent: agent.id.clone(),
+        path: wt.path.clone(),
+        branch: wt.branch.clone(),
+        base: "main".into(),
+        sync: Some(SyncState {
+            ahead: sync.0,
+            behind: sync.1,
+            behind_origin: sync.2,
+        }),
+        changes: Some(changes),
+        unpushed: Some(unpushed),
+        pr,
+        setup,
+        checked_ms: now_ms,
+    }
 }
 
 /// Plausible usage limits: the 5-hour window `five_hour` used and resetting in about 2 h 20 m,

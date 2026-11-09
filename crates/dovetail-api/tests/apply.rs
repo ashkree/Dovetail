@@ -202,6 +202,41 @@ fn agent_removed_drops_the_agent_and_its_conversation() {
     assert!(state.conversations.contains_key(&id("s2")));
 }
 
+// Worktree view
+
+#[test]
+fn worktree_info_is_replaced_per_slice_and_goes_with_it() {
+    let info = |agent: &str, staged: u32| WorktreeInfo {
+        agent: id(agent),
+        path: format!("/w/{agent}").into(),
+        branch: format!("dovetail/{agent}"),
+        base: "main".into(),
+        sync: None,
+        changes: Some(Changes {
+            staged,
+            ..Changes::default()
+        }),
+        unpushed: None,
+        pr: PrLookup::None,
+        setup: WorktreeSetup::None,
+        checked_ms: 1_000,
+    };
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::AgentUpserted(agent("s1", AgentStatus::Idle)),
+            Event::AgentUpserted(agent("s2", AgentStatus::Idle)),
+            Event::WorktreeUpserted(info("s1", 1)),
+            Event::WorktreeUpserted(info("s2", 1)),
+            Event::WorktreeUpserted(info("s1", 4)),
+        ],
+    );
+    assert_eq!(state.worktrees, vec![info("s1", 4), info("s2", 1)]);
+    run(&mut state, vec![Event::AgentRemoved(id("s1"))]);
+    assert_eq!(state.worktrees, vec![info("s2", 1)]);
+}
+
 // To-do items
 
 #[test]

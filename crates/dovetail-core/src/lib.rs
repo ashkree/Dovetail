@@ -21,6 +21,7 @@ mod todos;
 mod tools;
 mod usage;
 pub mod worktree;
+mod worktree_info;
 
 pub use service::{COORDINATOR, CoreError, CoreOptions, spawn};
 pub use shutdown::CoreHandle;

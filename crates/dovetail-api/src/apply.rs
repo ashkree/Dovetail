@@ -43,7 +43,9 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::AgentRemoved(id) => {
             state.agents.retain(|a| a.id != id);
             state.conversations.remove(&id);
+            state.worktrees.retain(|w| w.agent != id);
         }
+        Event::WorktreeUpserted(info) => upsert(&mut state.worktrees, info, |w| w.agent.clone()),
         Event::TodosReplaced { list, items } => {
             state.todos.retain(|t| t.list != list);
             state.todos.extend(items);

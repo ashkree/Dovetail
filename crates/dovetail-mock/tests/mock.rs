@@ -405,3 +405,25 @@ fn a_logged_decision_lands_on_its_task_and_a_snapshot_is_trimmed() {
             .all(|t| t.entries.len() <= CONVERSATION_TAIL)
     );
 }
+
+#[test]
+fn refreshing_worktrees_fills_one_entry_per_slice_worktree() {
+    let mut core = MockCore::new(config(1));
+    assert!(core.state().worktrees.is_empty());
+    core.handle(Command::RefreshWorktrees);
+    let slices = core
+        .state()
+        .agents
+        .iter()
+        .filter(|a| a.kind == AgentKind::Slice && a.worktree.is_some())
+        .count();
+    assert!(slices > 0);
+    assert_eq!(core.state().worktrees.len(), slices);
+    for info in &core.state().worktrees {
+        let agent = core.state().agents.iter().find(|a| a.id == info.agent);
+        assert_eq!(
+            agent.and_then(|a| a.worktree.as_ref()).map(|w| &w.branch),
+            Some(&info.branch)
+        );
+    }
+}
