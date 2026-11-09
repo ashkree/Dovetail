@@ -12,7 +12,7 @@ use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, Soc
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
 use dovetail_api::tools::{
     ArchiveSlice, ArchiveTask, AskUser, BucketFilter, GetTask, ListTasks, LogDecision,
-    ReportStatus, StartSlice, Tool,
+    ReportStatus, StartSlice, Tool, UpdateTask,
 };
 use dovetail_api::{
     AgentId, AgentKind, AgentStatus, Alternative, Attachment, Bucket, Command, CoreLink,
@@ -2109,6 +2109,147 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
         let (text, is_error) = call("slice-work", refused);
         assert!(is_error && text.contains("coordinator only"), "{text}");
     }
+    h.quit();
+}
+
+// --- updating tasks (task #25) ---
+
+fn update(id: i64) -> UpdateTask {
+    UpdateTask {
+        id: TaskId(id),
+        status: None,
+        bucket: None,
+        p_level: None,
+        title: None,
+        notes: None,
+    }
+}
+
+#[test]
+fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    for title in ["one", "two"] {
+        h.send(Command::CreateTask(NewTask {
+            title: title.into(),
+            p_level: Some(PLevel::P2),
+            bucket: Some(Bucket::Next),
+            notes: "old notes".into(),
+            follow_up_of: None,
+            pr: None,
+            related: vec![],
+        }));
+    }
+    h.wait_for("the tasks", |s| s.tasks.len() == 2);
+    // Task 2 gets a slice, which moves it to Now.
+    h.send(Command::NewSlice {
+        task: Some(TaskId(2)),
+        name: "work".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "work"));
+    let socket = h.socket();
+    let call = |agent: &str, u: UpdateTask| {
+        result_text(socket_call(&socket, tool(agent, Tool::UpdateTask(u))))
+    };
+
+    let (text, is_error) = call(
+        COORDINATOR,
+        UpdateTask {
+            status: Some(TaskStatus::Done),
+            ..update(1)
+        },
+    );
+    assert!(!is_error, "{text}");
+    assert_eq!(text, "#1 [done · next · P2] one");
+    let (text, _) = call(
+        COORDINATOR,
+        UpdateTask {
+            bucket: Some(BucketFilter::Later),
+            ..update(1)
+        },
+    );
+    assert_eq!(text, "#1 [done · later · P2] one");
+    let (text, _) = call(
+        COORDINATOR,
+        UpdateTask {
+            p_level: Some(Some(PLevel::P0)),
+            ..update(1)
+        },
+    );
+    assert_eq!(text, "#1 [done · later · P0] one");
+    let (text, _) = call(
+        COORDINATOR,
+        UpdateTask {
+            p_level: Some(None),
+            bucket: Some(BucketFilter::Unsorted),
+            ..update(1)
+        },
+    );
+    assert_eq!(text, "#1 [done · unsorted] one");
+    let (text, _) = call(
+        COORDINATOR,
+        UpdateTask {
+            title: Some("  renamed ".into()),
+            notes: Some("new notes".into()),
+            ..update(1)
+        },
+    );
+    assert_eq!(text, "#1 [done · unsorted] renamed");
+    // The TUI sees each change live.
+    h.wait_for("the edits in the snapshot", |s| {
+        s.tasks.iter().any(|t| {
+            t.id == TaskId(1)
+                && t.title == "renamed"
+                && t.notes == "new notes"
+                && t.bucket.is_none()
+                && t.p_level.is_none()
+                && t.status == TaskStatus::Done
+        })
+    });
+
+    let (text, is_error) = call(
+        COORDINATOR,
+        UpdateTask {
+            bucket: Some(BucketFilter::Now),
+            ..update(1)
+        },
+    );
+    assert!(
+        is_error && text.contains("cannot be `now`") && text.contains("start_slice"),
+        "{text}"
+    );
+
+    // Out of Now is fine, and leaves the slice running.
+    let (text, is_error) = call(
+        COORDINATOR,
+        UpdateTask {
+            bucket: Some(BucketFilter::Next),
+            status: Some(TaskStatus::Done),
+            ..update(2)
+        },
+    );
+    assert!(!is_error, "{text}");
+    assert_eq!(text, "#2 [done · next · P2] two (slice work)");
+
+    let (text, is_error) = call(
+        "slice-work",
+        UpdateTask {
+            status: Some(TaskStatus::Done),
+            ..update(2)
+        },
+    );
+    assert!(is_error && text.contains("coordinator only"), "{text}");
+
+    let (text, is_error) = call(
+        COORDINATOR,
+        UpdateTask {
+            status: Some(TaskStatus::Done),
+            ..update(99)
+        },
+    );
+    assert!(is_error && text.contains("no task #99"), "{text}");
+    let (text, is_error) = call(COORDINATOR, update(1));
+    assert!(is_error && text.contains("at least one field"), "{text}");
     h.quit();
 }
 

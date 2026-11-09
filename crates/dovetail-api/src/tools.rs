@@ -125,6 +125,8 @@ tools! {
     ListTasks(ListTasks) = "list_tasks", CoordinatorOnly;
     /// `get_task`, coordinator only (task #20).
     GetTask(GetTask) = "get_task", CoordinatorOnly;
+    /// `update_task`, coordinator only (task #25).
+    UpdateTask(UpdateTask) = "update_task", CoordinatorOnly;
 }
 
 /// The row of [`TOOLS`] named `name`.
@@ -161,6 +163,12 @@ pub enum ToolError {
     BucketNow,
     /// The coordinator logged a decision without naming its task.
     DecisionNeedsTask,
+    /// `update_task` asked for Now: only starting a slice moves a task there (task #25).
+    UpdateIntoNow,
+    /// `update_task` asked for `archived`, which is `archive_task`'s job.
+    UpdateToArchived,
+    /// `update_task` named no field to change.
+    NothingToUpdate,
 }
 
 impl std::fmt::Display for ToolError {
@@ -180,6 +188,18 @@ impl std::fmt::Display for ToolError {
             ToolError::DecisionNeedsTask => {
                 f.write_str("the coordinator must name the `task` this decision belongs to")
             }
+            ToolError::UpdateIntoNow => f.write_str(
+                "`bucket` cannot be `now`: a task moves into Now only when a slice starts on it \
+                 (`start_slice`). Use `next`, `later` or `unsorted`",
+            ),
+            ToolError::UpdateToArchived => f.write_str(
+                "`status` must be `todo`, `in_progress` or `done`: archive a task with \
+                 `archive_task`",
+            ),
+            ToolError::NothingToUpdate => f.write_str(
+                "give at least one field to change: `status`, `bucket`, `p_level`, `title` or \
+                 `notes`",
+            ),
         }
     }
 }
@@ -252,6 +272,27 @@ impl Tool {
             Tool::ArchiveTask(a) => id("id", a.id),
             Tool::ListTasks(_) => Ok(()),
             Tool::GetTask(g) => id("id", g.id),
+            Tool::UpdateTask(u) => {
+                id("id", u.id)?;
+                if let Some(title) = &u.title {
+                    text("title", title)?;
+                }
+                if u.bucket == Some(BucketFilter::Now) {
+                    return Err(ToolError::UpdateIntoNow);
+                }
+                if u.status == Some(TaskStatus::Archived) {
+                    return Err(ToolError::UpdateToArchived);
+                }
+                if u.status.is_none()
+                    && u.bucket.is_none()
+                    && u.p_level.is_none()
+                    && u.title.is_none()
+                    && u.notes.is_none()
+                {
+                    return Err(ToolError::NothingToUpdate);
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -382,4 +423,52 @@ pub struct ListTasks {
 pub struct GetTask {
     /// The task.
     pub id: TaskId,
+}
+
+/// `update_task`: change some fields of a task (task #25). Only the fields given change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateTask {
+    /// The task.
+    pub id: TaskId,
+    /// `todo`, `in_progress` or `done`; `archived` fails [`Tool::validate`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<TaskStatus>,
+    /// `next`, `later` or `unsorted`; `now` fails [`Tool::validate`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket: Option<BucketFilter>,
+    /// Absent: unchanged; `null`: no priority; a level: that level.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub p_level: Option<Option<PLevel>>,
+    /// New title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// New notes, replacing the old.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+impl UpdateTask {
+    /// Where `bucket` moves the task: `Some(None)` is Unsorted, `None` leaves it.
+    pub fn new_bucket(&self) -> Option<Option<Bucket>> {
+        self.bucket.map(|b| match b {
+            BucketFilter::Now => Some(Bucket::Now),
+            BucketFilter::Next => Some(Bucket::Next),
+            BucketFilter::Unsorted => None,
+            BucketFilter::Later => Some(Bucket::Later),
+        })
+    }
+}
+
+/// Deserializes a field that is present, so `null` becomes `Some(None)`; only an absent field
+/// (through `#[serde(default)]`) stays `None`.
+fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
