@@ -179,6 +179,11 @@ impl Core {
         let unit = crate::memory::unit_name(self.project.key(), &id.0);
         spec.systemd_scope = self.scopes.scope(&unit, crate::memory::cap_bytes(cap_gb));
         let cgroup = self.scopes.cgroup(&unit);
+        if let Some(cgroup) = &cgroup
+            && !self.live.contains_key(id)
+        {
+            crate::memory::clear_stale_scope(cgroup, &unit);
+        }
         tracing::info!(agent = %id.0, resume, capped = cgroup.is_some(), "starting session");
         let mut session =
             self.options

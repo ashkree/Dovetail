@@ -429,11 +429,22 @@ impl Core {
                 crate::restore::Restored::default()
             }
         };
-        if self.options.memory_caps {
-            self.scopes = crate::memory::probe().await;
-        }
         self.startup_warnings();
         self.send_snapshot(true).await;
+        // After the first snapshot, so a slow user systemd never holds up the UI; before
+        // anything can start a session (restore, the queue, commands), so every session gets
+        // the probe's answer.
+        if self.options.memory_caps {
+            self.scopes = crate::memory::probe().await;
+            if let crate::memory::Scopes::Unavailable(reason) = &self.scopes {
+                let warning = Warning {
+                    id: WarningId("memory-caps".into()),
+                    text: format!("memory caps off, sessions run uncapped: {reason}"),
+                };
+                self.warnings.push(warning.clone());
+                self.emit(Event::WarningSet(warning));
+            }
+        }
         self.reconcile(restored).await;
         self.start_queued().await;
         loop {
@@ -628,12 +639,6 @@ impl Core {
                     "role prompts missing ({}): run scripts/bootstrap.sh",
                     missing.join(", ")
                 ),
-            });
-        }
-        if let crate::memory::Scopes::Unavailable(reason) = &self.scopes {
-            self.warnings.push(Warning {
-                id: WarningId("memory-caps".into()),
-                text: format!("memory caps off, sessions run uncapped: {reason}"),
             });
         }
         if self.project.registered().is_none() {

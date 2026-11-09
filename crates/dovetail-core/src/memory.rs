@@ -57,8 +57,9 @@ impl Scopes {
 }
 
 /// The scope unit of a session (without `.scope`): `dovetail-<project>-<agent>`. Stable for an
-/// agent across restarts, so its cgroup can be found from the agent alone. Characters systemd
-/// does not allow in unit names become `_`.
+/// agent across restarts, so its cgroup can be found from the agent alone. Project keys are slugs
+/// (B9) and slice names pass `worktree::validate_name` (`[A-Za-z0-9._-]`, at most 100), so names
+/// are unique and well under systemd's 255; mapping other characters to `_` is only a guard.
 pub fn unit_name(project_key: &str, agent_id: &str) -> String {
     format!("dovetail-{project_key}-{agent_id}")
         .chars()
@@ -70,6 +71,50 @@ pub fn unit_name(project_key: &str, agent_id: &str) -> String {
             }
         })
         .collect()
+}
+
+/// The `systemctl` calls that clear a scope left behind by a session that is gone: kill what is
+/// left in it, then stop it. A SIGKILLed `claude`, or a crashed Dovetail, can leave tools running
+/// in its scope, which keeps the unit alive (`--collect` only removes empty or failed scopes), so
+/// relaunching the agent would fail with "unit already exists".
+pub fn clear_scope_commands(unit: &str) -> [Vec<String>; 2] {
+    let scope = format!("{unit}.scope");
+    [
+        vec![
+            "--user".into(),
+            "kill".into(),
+            "--signal=SIGKILL".into(),
+            scope.clone(),
+        ],
+        vec!["--user".into(), "stop".into(), scope],
+    ]
+}
+
+/// Before launching agent `unit` when it has no running session: if its scope still exists,
+/// whatever runs in it belongs to a dead session, so it is killed and the scope stopped.
+/// Returns whether a scope was cleared. Blocks briefly; only happens after a crash.
+pub fn clear_stale_scope(cgroup: &Path, unit: &str) -> bool {
+    if !cgroup.exists() {
+        return false;
+    }
+    tracing::info!(unit, "stopping a scope left by a dead session");
+    for args in clear_scope_commands(unit) {
+        match std::process::Command::new("systemctl")
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+        {
+            // `stop` fails harmlessly once the emptied scope has been collected.
+            Ok(status) if !status.success() => {
+                tracing::debug!(unit, ?args, %status, "systemctl");
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(unit, "running systemctl: {e}"),
+        }
+    }
+    true
 }
 
 /// A cap from `config.toml`, in bytes.
@@ -226,6 +271,24 @@ mod tests {
     }
 
     #[test]
+    fn a_stale_scope_is_killed_then_stopped() {
+        let [kill, stop] = clear_scope_commands("dovetail-p-coordinator");
+        assert_eq!(
+            kill,
+            [
+                "--user",
+                "kill",
+                "--signal=SIGKILL",
+                "dovetail-p-coordinator.scope"
+            ]
+        );
+        assert_eq!(stop, ["--user", "stop", "dovetail-p-coordinator.scope"]);
+        // No cgroup, nothing to clear (and no systemctl call).
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!clear_stale_scope(&dir.path().join("x.scope"), "x"));
+    }
+
+    #[test]
     fn caps_come_from_gigabytes() {
         assert_eq!(cap_bytes(4), 4_294_967_296);
         assert_eq!(cap_bytes(3), 3 * GIB);
@@ -298,7 +361,7 @@ mod tests {
         let scope = scopes.scope(&unit, 64 * MIB).unwrap();
         let mut child = tokio::process::Command::new("systemd-run")
             .args(scope.args())
-            .args(["sleep", "2"])
+            .args(["sleep", "30"])
             .kill_on_drop(true)
             .spawn()
             .unwrap();
@@ -314,7 +377,18 @@ mod tests {
         let max = std::fs::read_to_string(cgroup.join("memory.max")).unwrap();
         assert_eq!(max.trim(), (64 * MIB).to_string());
         assert!(current.is_some_and(|b| b > 0));
-        child.kill().await.unwrap();
+        // A scope still in use is cleared before a relaunch, freeing its name.
+        assert!(clear_stale_scope(&cgroup, &unit));
+        assert!(!child.wait().await.unwrap().success());
+        let mut gone = false;
+        for _ in 0..50 {
+            gone = !cgroup.exists();
+            if gone {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(gone, "the scope's cgroup is still there");
     }
 
     #[test]
