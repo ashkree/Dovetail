@@ -20,6 +20,8 @@ pub enum BufferKind {
     Activity,
     /// The message timeline.
     Messages,
+    /// Tasks as a kanban, one column per status.
+    Board,
 }
 
 /// A slot in the layout.

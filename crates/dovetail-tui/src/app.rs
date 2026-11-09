@@ -90,6 +90,8 @@ pub struct App {
     overlay: Option<Overlay>,
     /// The last in-buffer search term, for `n` and `N`.
     search: Option<String>,
+    /// The task detail was opened from the board, so `Esc` goes back to the board.
+    detail_from_board: bool,
     /// A task saved with `Tab` in quick capture opens its detail once the core announces it.
     open_after_create: Option<String>,
     note: Option<String>,
@@ -126,6 +128,7 @@ impl App {
             confirm: None,
             overlay: None,
             search: None,
+            detail_from_board: false,
             open_after_create: None,
             note: None,
             outbox: Vec::new(),
@@ -302,7 +305,7 @@ impl App {
                         }
                         if let Some(id) = created {
                             self.open_after_create = None;
-                            self.open_task(id);
+                            self.open_task(id, false);
                         }
                     }
                     ApplyResult::Gap { expected, got } => {
@@ -579,12 +582,20 @@ impl App {
             Action::SearchPrev => self.search_jump(false),
             Action::ShowActivity => self.toggle_main(BufferKind::Activity),
             Action::ShowMessages => self.toggle_main(BufferKind::Messages),
+            Action::ShowBoard => self.toggle_main(BufferKind::Board),
             Action::BackToConversation => {
                 // Leaving an inbox item goes back to the inbox, for the next one.
-                if self.regions.buffer(RegionId::Main) == BufferKind::InboxDetail {
+                let main = self.regions.buffer(RegionId::Main);
+                if main == BufferKind::InboxDetail {
                     self.focus_inbox();
                 }
-                self.regions.show(RegionId::Main, BufferKind::Conversation);
+                // A task opened from the board goes back to the board.
+                let back = if main == BufferKind::TaskDetail && self.detail_from_board {
+                    BufferKind::Board
+                } else {
+                    BufferKind::Conversation
+                };
+                self.regions.show(RegionId::Main, back);
             }
             Action::NewSlice => self.run_with_arg(Action::NewSlice, ""),
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
@@ -656,7 +667,11 @@ impl App {
         match effect {
             Effect::Command(command) => self.outbox.push(command),
             Effect::OpenAgent(id) => self.open_agent_in_main(id),
-            Effect::OpenTask(id) => self.open_task(id),
+            Effect::OpenTask(id) => {
+                // Effects come from the focused buffer.
+                let from_board = self.regions.focused_buffer() == BufferKind::Board;
+                self.open_task(id, from_board);
+            }
             Effect::OpenInboxItem(id) => self.open_inbox_item(id),
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
             Effect::PickRelated(task) => self.open_relate_picker(task),

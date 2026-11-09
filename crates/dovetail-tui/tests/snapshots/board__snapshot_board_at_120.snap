@@ -1,0 +1,38 @@
+---
+source: crates/dovetail-tui/tests/board.rs
+expression: "render(&mut app, 120, 34)"
+---
+ folder /src/business
+┌ board · business · 4 open ──────────────────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
+│                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
+│ ○ Todo 2                ◐ In progress 2         ✓ Done 1                ││   ? slice-4  Which route prefix sh… 10:12 │
+│ ──────────────────────  ──────────────────────  ──────────────────────  ││   ✓ slice-4  Handler wired; tests … 10:09 │
+│                                                                         ││                                           │
+│ ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐  ││                                           │
+│ │ #3 idea: eval key… │  │ ⚠ #1 business sur… │  │ #5 release notes   │  ││                                           │
+│ │ P2                 │  │ P1 · ◆ slice-4     │  │ P2                 │  ││                                           │
+│ └────────────────────┘  └────────────────────┘  └────────────────────┘  ││                                           │
+│                                                                         ││                                           │
+│ ┌────────────────────┐  ┌────────────────────┐                          ││                                           │
+│ │ #4 docs sweep      │  │ ⚠ #2 get_decision… │                          ││ y allow · d deny · r reply · x dismiss    │
+│ │ P0                 │  │ P0 · ◆ slice-7     │                          │└───────────────────────────────────────────┘
+│ └────────────────────┘  └────────────────────┘                          │┌ tasks · business ─────────────────────────┐
+│                                                                         ││ ◐ ◆ coordinator        working 1.2G $3.10 │
+│                                                                         ││ ▾ Now (2)                                 │
+│                                                                         ││ ▾ ⚠ business surface P1          PR #1231 │
+│                                                                         ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+│                                                                         ││         ⎇ dovetail/slice-4                │
+│                                                                         ││         ✓ write route tests               │
+│                                                                         ││         ◐ wire handler to registry        │
+│                                                                         ││         ○ update OpenAPI spec ⊘ blocked   │
+│                                                                         ││       ✓ ◇ rebase               done $0.21 │
+│                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
+│                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
+│                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
+│                                                                         ││         ⎇ dovetail/slice-7                │
+│                                                                         ││ ▾ Next (1)                                │
+│                                                                         ││   ○ idea: eval key flow P2                │
+│                                                                         ││ ▸ Later (1)                               │
+│ j/k card · ⇥ column · H/L move · < > reorder · ⏎ open · a add           ││ ⏎ open · o fold · dd archive              │
+└─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command
