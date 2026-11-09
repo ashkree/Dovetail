@@ -253,8 +253,10 @@ impl Core {
             }
             self.deliver_notes();
         }
-        if let Err(message) = self.send_text(id, &text, EntryKind::User, text.clone()) {
-            self.fail(message);
+        match self.send_text(id, &text, EntryKind::User, text.clone()) {
+            // It goes through at once; any questions the agent left open count as answered.
+            Ok(()) => self.chat_answers_questions(id, &text),
+            Err(message) => self.fail(message),
         }
     }
 

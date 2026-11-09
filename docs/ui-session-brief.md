@@ -43,7 +43,7 @@ I run several Claude Code agents in parallel and lose track of them. Dovetail's 
   - **Sessions and foreground subagents** can have to-do items.
 - **TodoItem**: id, subject, status (`pending`, `in_progress`, `completed`), blocked-by ids, created-by agent.
 - **InboxItem**:
-  - kind: `Permission { tool, input }`, `Question { text, blocking }`, `FinishedTurn { preview }`, `Error { text }`.
+  - kind: `Permission { tool, input }`, `Question { text }` (never blocking, ADR 0007), `FinishedTurn { preview }`, `Error { text }`.
   - The agent it came from, and a timestamp.
   - "Needs you" items only. Activity (PR pushed, CI status, messages between agents) is a separate feed.
 - **Conversation entries** per agent: my message, assistant text (streams in), and a compact tool-call line (e.g. `Edit src/routes.rs`).

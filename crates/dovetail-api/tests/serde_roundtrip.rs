@@ -83,7 +83,6 @@ fn inbox_items() -> Vec<InboxItem> {
         },
         InboxKind::Question {
             text: "Which port?".into(),
-            blocking: false,
         },
         InboxKind::FinishedTurn {
             preview: "Done with the tree".into(),
@@ -361,4 +360,30 @@ fn every_command_roundtrips() {
     for command in &commands {
         roundtrip(command);
     }
+}
+
+#[test]
+fn an_old_blocking_ask_user_and_inbox_payload_still_parse() {
+    use dovetail_api::tools::{AskUser, Tool};
+    // `ask_user` never blocks (ADR 0007): an old caller's `blocking` is ignored, not refused.
+    let tool = Tool::parse(
+        "ask_user",
+        json!({"question": "Which port?", "blocking": true}),
+    );
+    assert_eq!(
+        tool,
+        Ok(Tool::AskUser(AskUser {
+            question: "Which port?".into()
+        }))
+    );
+    // Inbox rows stored before the change carry the field too.
+    let kind: InboxKind =
+        serde_json::from_value(json!({"question": {"text": "Which port?", "blocking": true}}))
+            .expect("old payload parses");
+    assert_eq!(
+        kind,
+        InboxKind::Question {
+            text: "Which port?".into()
+        }
+    );
 }

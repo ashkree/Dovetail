@@ -413,7 +413,7 @@ fn opening_an_agent_from_the_inbox_clears_its_finished_turn() {
 }
 
 #[test]
-fn the_inbox_orders_blocked_questions_then_permissions_then_the_rest() {
+fn the_inbox_orders_permissions_then_questions_newest_first_then_the_rest() {
     let mut snap = world();
     snap.inbox.push(InboxItem {
         id: InboxId(4),
@@ -421,14 +421,13 @@ fn the_inbox_orders_blocked_questions_then_permissions_then_the_rest() {
         at_ms: NOW_MS - 20 * 60_000,
         kind: InboxKind::Question {
             text: "Which key?".into(),
-            blocking: true,
         },
     });
     let ids: Vec<u64> = dovetail_tui::buffers::inbox_order(&snap)
         .iter()
         .map(|i| i.id.0)
         .collect();
-    assert_eq!(ids, vec![4, 1, 2, 3]);
+    assert_eq!(ids, vec![1, 2, 4, 3]);
 }
 
 #[test]

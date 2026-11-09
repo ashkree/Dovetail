@@ -198,7 +198,6 @@ pub fn world() -> Snapshot {
             at_ms: NOW_MS - 3 * MIN,
             kind: InboxKind::Question {
                 text: "Which route prefix should the handler use?".into(),
-                blocking: false,
             },
         },
         InboxItem {
