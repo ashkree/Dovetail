@@ -417,7 +417,8 @@ CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms 
 - M11 `0007_todos` (`todo_items`)
 - M11 `0008_subagent_progress` (`agents.progress`, a subagent's progress as JSON)
 - M11 `0009_subagent_tokens` (`agents.subagent_tokens`, a session's total summed from task events, task #17)
-- M15 `0010_maps`
+- Task #27 `0010_agent_claude_home` (`agents.claude_home`, the Claude config folder a session ran under; ADR 0009)
+- M15 `0011_maps`
 
 Tables arrive with the milestone that uses them, so no unused tables sit around.
 

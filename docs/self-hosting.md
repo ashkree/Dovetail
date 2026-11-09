@@ -56,7 +56,7 @@ A profile is a Claude Code account, kept in its own config folder (ADR 0009). Ea
 To name your existing login too, add it by hand under `[profiles]`, for example `walid = "~/.claude"`. `dovetail login --list` shows every profile, its folder, and whether it is logged in.
 
 - When a project's profile changes, sessions recorded under the old one start fresh: one Needs-you item says how many. Tasks, decisions and worktrees are kept. A session never resumes under another account.
-- An unknown profile name shows as an error in Needs you, and no session starts until you fix it.
+- An unknown profile name shows as an error in Needs you, and no session starts until you fix it. So does a recipe `[env]` that sets `CLAUDE_CONFIG_DIR`: use `profile = …` instead.
 - `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `CLAUDE_SECURESTORAGE_CONFIG_DIR` in your environment override every profile's login, so leave them unset.
 - A new profile starts without your `~/.claude` settings, skills and plugins. Copy over what you want; Dovetail itself needs none of them.
 

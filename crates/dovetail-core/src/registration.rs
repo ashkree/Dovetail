@@ -93,6 +93,7 @@ impl Core {
         // A recipe may already pick a profile; sessions that ran before keep theirs until they
         // next start (ADR 0009).
         self.claude = crate::service::project_claude_home(&self.paths, &self.config, &self.project);
+        self.profile_error_notice();
         // An agent that never ran takes the project id in its to-do list id. One that has run
         // keeps the id its process uses (its lists live there), across every later resume.
         let new_lists = format!("dovetail-{}-", project.id);

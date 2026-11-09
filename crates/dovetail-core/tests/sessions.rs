@@ -2592,18 +2592,75 @@ fn a_project_profile_sets_claude_config_dir_and_a_changed_one_is_not_resumed() {
     h.quit();
 }
 
+fn profile_errors(s: &Snapshot, needle: &str) -> usize {
+    error_texts(s).iter().filter(|t| t.contains(needle)).count()
+}
+
+/// Review of PR #26: exactly one inbox error, also for a coordinator that would resume at open,
+/// and not again on the next open while it is still unanswered.
 #[test]
-fn an_unknown_profile_is_an_inbox_error_and_starts_nothing() {
+fn an_unknown_profile_is_one_inbox_error_and_starts_nothing() {
     let dir = tempfile::tempdir().expect("tempdir");
     let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    write_recipe(&paths, "profile = \"mine\"\n");
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_with(fake.clone(), paths.clone(), None, config.clone());
+    prompt(&h, "hello");
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+    let _state = h.quit();
+
     write_recipe(&paths, "profile = \"ghost\"\n");
+    for _ in 0..2 {
+        let fake = fixture("plain_turn");
+        let mut h = Harness::start_with(fake.clone(), paths.clone(), None, config.clone());
+        h.wait_for("the profile error", |s| profile_errors(s, "\"ghost\"") > 0);
+        prompt(&h, "hello");
+        h.drain(Duration::from_millis(300));
+        assert_eq!(
+            profile_errors(&h.snap, "\"ghost\""),
+            1,
+            "{:?}",
+            error_texts(&h.snap)
+        );
+        assert!(fake.started_specs().is_empty());
+        let _state = h.quit();
+    }
+}
+
+#[test]
+fn a_recipe_env_setting_claude_config_dir_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    write_recipe(&paths, "[env]\nCLAUDE_CONFIG_DIR = \"/elsewhere\"\n");
     let fake = fixture("plain_turn");
     let mut h = Harness::start_with(fake.clone(), paths, None, profiles_config(dir.path()));
-    h.wait_for("the profile error", |s| {
-        error_texts(s).iter().any(|t| t.contains("\"ghost\""))
-    });
+    h.wait_for("the env error", |s| profile_errors(s, "profile = ") > 0);
+    assert!(error_texts(&h.snap)[0].contains("CLAUDE_CONFIG_DIR"));
     prompt(&h, "hello");
     h.drain(Duration::from_millis(300));
     assert!(fake.started_specs().is_empty());
+    assert_eq!(profile_errors(&h.snap, "profile = "), 1);
     h.quit();
+}
+
+#[test]
+fn project_add_with_an_unknown_profile_raises_the_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut h = Harness::start(fixture("plain_turn"), false, profiles_config(dir.path()));
+    assert_eq!(profile_errors(&h.snap, "\"ghost\""), 0);
+    // `:project add` names it `work`, whose recipe picks a profile config.toml lacks.
+    write_recipe_for(&h.paths, "work", "profile = \"ghost\"\n");
+    let path = h.repo.clone();
+    h.send(Command::RegisterProject { path });
+    h.wait_for("the profile error", |s| profile_errors(s, "\"ghost\"") > 0);
+    h.drain(Duration::from_millis(200));
+    assert_eq!(profile_errors(&h.snap, "\"ghost\""), 1);
+    h.quit();
+}
+
+fn write_recipe_for(paths: &Paths, project: &str, text: &str) {
+    let file = paths.recipe(project);
+    std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
+    std::fs::write(file, text).expect("recipe");
 }

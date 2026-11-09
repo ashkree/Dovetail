@@ -146,7 +146,29 @@ fn add_to_config(file: &Path, name: &str, dir: &Path) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    std::fs::write(file, out).with_context(|| format!("writing {}", file.display()))
+    write_atomic(file, &out)
+}
+
+/// Writes through a temp file in the same folder, then renames it over `file`, so a crash
+/// never leaves the user's config half written. Keeps the file's permissions.
+fn write_atomic(file: &Path, text: &str) -> Result<()> {
+    let tmp = file.with_file_name(format!(
+        ".{}.dovetail-{}.tmp",
+        file.file_name()
+            .map_or_else(|| "config".into(), |n| n.to_string_lossy()),
+        std::process::id()
+    ));
+    let result = (|| {
+        std::fs::write(&tmp, text)?;
+        if let Ok(meta) = std::fs::metadata(file) {
+            std::fs::set_permissions(&tmp, meta.permissions())?;
+        }
+        std::fs::rename(&tmp, file)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.with_context(|| format!("writing {}", file.display()))
 }
 
 /// Creates a folder readable by its owner only (it will hold credentials).
@@ -226,6 +248,13 @@ mod tests {
         let after = std::fs::read_to_string(paths.config.join("config.toml")).unwrap();
         assert_eq!(before, after);
         assert!(ensure_profile(&paths, &config, "bad name").is_err());
+        // Written atomically: no temp file left beside it.
+        let left: Vec<_> = std::fs::read_dir(&paths.config)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(left, vec![std::ffi::OsString::from("config.toml")]);
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

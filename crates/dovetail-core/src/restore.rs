@@ -237,7 +237,10 @@ impl Core {
             .agents
             .get(&coordinator)
             .is_some_and(|r| r.transcript_path.is_some());
-        if has_run && let Err(e) = self.ensure_live(&coordinator) {
+        if has_run
+            && self.claude.is_ok()
+            && let Err(e) = self.ensure_live(&coordinator)
+        {
             self.fail(e);
         }
     }
@@ -249,9 +252,8 @@ impl Core {
         let coordinator = AgentId(COORDINATOR.into());
         let home = match &self.claude {
             Ok(home) => home.clone(),
-            Err(e) => {
-                let text = format!("Sessions cannot start: {e}");
-                self.raise(&coordinator, InboxKind::Error { text }, Waiter::None);
+            Err(_) => {
+                self.profile_error_notice();
                 return;
             }
         };
@@ -280,6 +282,21 @@ impl Core {
             home.label()
         );
         self.raise(&coordinator, InboxKind::Error { text }, Waiter::None);
+    }
+
+    /// The one Needs-you error for a profile that cannot be used, unless it is already open (from
+    /// an earlier open, or raised at `:project add`).
+    pub(crate) fn profile_error_notice(&mut self) {
+        let Err(e) = &self.claude else { return };
+        let text = format!("Sessions cannot start: {e}");
+        let open = self
+            .inbox
+            .values()
+            .any(|p| matches!(&p.item.kind, InboxKind::Error { text: t } if *t == text));
+        if !open {
+            let coordinator = AgentId(COORDINATOR.into());
+            self.raise(&coordinator, InboxKind::Error { text }, Waiter::None);
+        }
     }
 
     /// The stale-state sweep (decision 4 of 2026-11-06).

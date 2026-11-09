@@ -329,15 +329,17 @@ pub(crate) fn project_claude_home(
     config: &Config,
     project: &ProjectState,
 ) -> Result<crate::profile::ClaudeHome, crate::profile::ProfileError> {
-    let profile = match project.registered() {
-        Some(p) => {
-            crate::recipe::Recipe::load(&paths.recipe(&p.id))
-                .map_err(|e| crate::profile::ProfileError::Recipe(e.to_string()))?
-                .profile
-        }
-        None => None,
+    let Some(p) = project.registered() else {
+        return config.claude_home(None);
     };
-    config.claude_home(profile.as_deref())
+    let recipe = crate::recipe::Recipe::load(&paths.recipe(&p.id))
+        .map_err(|e| crate::profile::ProfileError::Recipe(e.to_string()))?;
+    // The agent row records the profile's folder: a recipe moving it behind Dovetail's back
+    // would make that record wrong.
+    if recipe.env.contains_key("CLAUDE_CONFIG_DIR") {
+        return Err(crate::profile::ProfileError::EnvOverride);
+    }
+    config.claude_home(recipe.profile.as_deref())
 }
 
 /// The streaming coalescing window (≤ ~30 fps).

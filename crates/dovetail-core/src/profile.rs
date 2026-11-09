@@ -51,6 +51,12 @@ pub enum ProfileError {
          [profiles]; add it there (or run `dovetail login {0}`), then restart"
     )]
     Unknown(String),
+    /// The recipe's `[env]` sets `CLAUDE_CONFIG_DIR` itself.
+    #[error(
+        "the project's recipe sets CLAUDE_CONFIG_DIR in [env]; pick the account with \
+         profile = \"<name>\" instead (a profile from config.toml [profiles]), then restart"
+    )]
+    EnvOverride,
     /// The recipe could not be read, so which profile it picks is unknown.
     #[error("{0}; fix the recipe, then restart")]
     Recipe(String),
@@ -175,6 +181,8 @@ pub fn display_dir(dir: &Path) -> String {
 /// is appended. `None` if the result would not parse to a config listing the profile (the table
 /// written some other way, say inline): the user adds it by hand then.
 pub fn add_profile_text(text: &str, name: &str, dir: &str) -> Option<String> {
+    // Keep the file's line endings.
+    let nl = if text.contains("\r\n") { "\r\n" } else { "\n" };
     let entry = format!("{name} = {}", toml::Value::String(dir.to_owned()));
     let header = text.lines().position(|l| {
         l.split('#')
@@ -185,19 +193,19 @@ pub fn add_profile_text(text: &str, name: &str, dir: &str) -> Option<String> {
         Some(at) => {
             let mut lines: Vec<&str> = text.lines().collect();
             lines.insert(at + 1, &entry);
-            let mut out = lines.join("\n");
-            out.push('\n');
+            let mut out = lines.join(nl);
+            out.push_str(nl);
             out
         }
         None => {
             let mut out = text.to_owned();
             if !out.is_empty() && !out.ends_with('\n') {
-                out.push('\n');
+                out.push_str(nl);
             }
             if !out.is_empty() {
-                out.push('\n');
+                out.push_str(nl);
             }
-            out.push_str(&format!("[profiles]\n{entry}\n"));
+            out.push_str(&format!("[profiles]{nl}{entry}{nl}"));
             out
         }
     };
@@ -250,6 +258,15 @@ mod tests {
         assert_eq!(
             add_profile_text("", "a", "/x").as_deref(),
             Some("[profiles]\na = \"/x\"\n")
+        );
+        // CRLF files stay CRLF.
+        assert_eq!(
+            add_profile_text("a = 1\r\n[profiles]\r\nb = \"/b\"\r\n", "c", "/c").as_deref(),
+            Some("a = 1\r\n[profiles]\r\nc = \"/c\"\r\nb = \"/b\"\r\n")
+        );
+        assert_eq!(
+            add_profile_text("a = 1\r\n", "c", "/c").as_deref(),
+            Some("a = 1\r\n\r\n[profiles]\r\nc = \"/c\"\r\n")
         );
         // Written inline: not touched.
         assert_eq!(
