@@ -1,0 +1,28 @@
+---
+source: crates/dovetail-tui/tests/conversation.rs
+expression: screen
+---
+ folder /src/business
+┌ coordinator · ◐ working · 1.2G · $3.1┐┌ tasks · business ────────────────────┐
+│                                      ││ ◐ ◆ coordinator   working 1.2G $3.10 │
+│   src/decision.rs until slice-7      ││ ▾ Now (2)                            │
+│   hands it back.                     ││ ▾ ⚠ business surface P1     PR #1231 │
+│                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│   you · 10:14                        ││         ⎇ dovetail/slice-4           │
+│   What's blocking slice-7?           ││         ✓ write route tests          │
+│                                      ││         ◐ wire handler to registry   │
+│   coordinator · 10:14 ◐              ││         ○ update OpenAPI spec ⊘ blo… │
+│   It needs a key. slice-7 can only   ││       ✓ ◇ rebase          done $0.21 │
+│   reach the eval path with           ││       ◐ ◇ explore c… 12 tools · Grep │
+│   FS_EVAL_VIRTUAL_KEY set.▌          ││ ⏎ open · o fold · dd archive         │
+│                                      │└──────────────────────────────────────┘
+│   ────────────────────────────────   │┌ inbox · needs you (3) ───────────────┐
+│   › please rebase the payments       ││ ▸ ⚠ slice-7  Bash              10:15 │
+│     slice onto main, rerun the       ││   │ FS_EVAL_VIRTUAL_KEY=dev cargo    │
+│     integration suite, and tell      ││   │ test -p api get_decision         │
+│     me whether the flaky             ││   │ A → always allow: Bash(cargo     │
+│     checkout-redirect test still     ││   │ test:*)                          │
+│     fails                            ││   ? slice-4  Question          10:12 │
+│                                      ││ y allow · d deny · r reply · x dism… │
+└──────────────────────────────────────┘└──────────────────────────────────────┘
+ INSERT · coordinator   business · 4 tasks · 3 … i chat · ␣ss switch · : command

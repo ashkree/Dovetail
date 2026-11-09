@@ -257,10 +257,10 @@ impl Buffer for ConversationBuffer {
         let inner = crate::theme::CHAT_PADDING.shrink(inner);
 
         // Bottom: a rule, then the chat input or a hint.
-        let input_rows = self.chat.as_ref().map_or(1, |c| {
-            c.rows(usize::from(inner.width.saturating_sub(2)))
-                .len()
-                .clamp(1, MAX_INPUT_ROWS)
+        let input_rows = self.chat.as_mut().map_or(1, |c| {
+            let width = usize::from(inner.width.saturating_sub(2));
+            c.set_wrap_width(width);
+            c.rows(width).len().clamp(1, MAX_INPUT_ROWS)
         });
         let bottom = (1 + input_rows as u16).min(inner.height.saturating_sub(1));
         let body = Rect {
