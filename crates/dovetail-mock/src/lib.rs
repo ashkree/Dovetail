@@ -524,7 +524,12 @@ impl MockCore {
     /// context would pass 95 %, and returns the fill the core would show. A session with no fill
     /// yet keeps none.
     fn grow_context(&mut self, agent: &AgentId, call: u64, compacted: u64) -> Option<u8> {
-        let start = self.state.agents.iter().find(|a| &a.id == agent)?.context_pct?;
+        let start = self
+            .state
+            .agents
+            .iter()
+            .find(|a| &a.id == agent)?
+            .context_pct?;
         let tokens = self
             .context_tokens
             .entry(agent.clone())

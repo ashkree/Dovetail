@@ -52,7 +52,12 @@ pub(crate) fn fill_pct(tokens: u64, window: u64) -> u8 {
 /// The window a `result` reports for `model`: its own `modelUsage` entry, else the only entry
 /// with a window (a result names the session's model by the same id the session reports).
 fn reported_window(result: &TurnResult, model: Option<&str>) -> Option<(String, u64)> {
-    let with_window = || result.model_usage.iter().filter(|m| m.context_window.is_some());
+    let with_window = || {
+        result
+            .model_usage
+            .iter()
+            .filter(|m| m.context_window.is_some())
+    };
     let entry = match model {
         Some(model) => with_window().find(|m| m.model == model),
         None => None,
@@ -86,7 +91,10 @@ impl Core {
 
     /// The window of the agent's model: reported by the stream, else from the table.
     fn context_window(&self, agent: &AgentId) -> u64 {
-        let model = self.agents.get(agent).and_then(|r| r.agent.model.as_deref());
+        let model = self
+            .agents
+            .get(agent)
+            .and_then(|r| r.agent.model.as_deref());
         model
             .and_then(|m| self.context_windows.get(m).copied())
             .unwrap_or_else(|| table_window(model))
