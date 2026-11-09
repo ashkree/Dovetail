@@ -75,8 +75,13 @@ pub struct MockCore {
     reply_count: u64,
     /// What [`Command::PasteClipboard`] answers, in turn; see [`MockCore::queue_clipboard`].
     clipboard: VecDeque<Paste>,
+    /// Tokens in each session's context, as the core counts them from the stream (M13c).
+    context_tokens: BTreeMap<AgentId, u64>,
     quit: bool,
 }
+
+/// The mock sessions' window: they run `claude-opus-5-5`, a 1M model.
+const CONTEXT_WINDOW: u64 = 1_000_000;
 
 impl MockCore {
     /// A mock core with its starting world.
@@ -96,6 +101,7 @@ impl MockCore {
             next_subagent: 1,
             reply_count: 0,
             clipboard: VecDeque::new(),
+            context_tokens: BTreeMap::new(),
             quit: false,
         };
         core.after(3_000, |core| core.finish_setup(&agent_id("picker")));
@@ -512,6 +518,23 @@ impl MockCore {
 
     fn inbox_item(&self, id: InboxId) -> Option<InboxItem> {
         self.state.inbox.iter().find(|i| i.id == id).cloned()
+    }
+
+    /// Adds `call` tokens to a session's context, or starts over at `compacted` tokens when the
+    /// context would pass 95 %, and returns the fill the core would show. A session with no fill
+    /// yet keeps none.
+    fn grow_context(&mut self, agent: &AgentId, call: u64, compacted: u64) -> Option<u8> {
+        let start = self.state.agents.iter().find(|a| &a.id == agent)?.context_pct?;
+        let tokens = self
+            .context_tokens
+            .entry(agent.clone())
+            .or_insert(u64::from(start) * CONTEXT_WINDOW / 100);
+        *tokens += call;
+        if *tokens * 100 > CONTEXT_WINDOW * 95 {
+            *tokens = compacted;
+        }
+        let pct = (*tokens * 100 + CONTEXT_WINDOW / 2) / CONTEXT_WINDOW;
+        Some(u8::try_from(pct.min(100)).unwrap_or(100))
     }
 
     fn update_agent(&mut self, id: &AgentId, change: impl FnOnce(&mut Agent)) {
@@ -1012,11 +1035,15 @@ impl MockCore {
                     .map(|a| a.id.clone())
                     .collect();
                 if let Some(agent) = self.rng.pick(&sessions).cloned() {
-                    let ctx = self.rng.range(1, 4) as u8;
+                    // One API call's worth of new context; near full, Claude Code compacts. One
+                    // draw only: more would shift the seeded stream the tests rely on.
+                    let call = self.rng.range(8_000, 40_000);
+                    let compacted = 60_000 + call * 3;
                     let memory = self.rng.range(0, 30) as u32;
                     self.after(pause, move |core| {
+                        let pct = core.grow_context(&agent, call, compacted);
                         core.update_agent(&agent, |a| {
-                            a.context_pct = a.context_pct.map(|c| (c + ctx).min(95));
+                            a.context_pct = pct;
                             a.memory_mb = a
                                 .memory_mb
                                 .map(|m| (m + memory).saturating_sub(12).max(180));
@@ -1406,5 +1433,36 @@ pub fn spawn(config: MockConfig, speed: f64) -> CoreLink {
     CoreLink {
         commands: command_tx,
         messages: message_rx,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_sessions_fill_grows_by_tokens_and_drops_when_it_compacts() {
+        let mut core = MockCore::new(MockConfig::default());
+        let coordinator = agent_id(COORDINATOR);
+        let start = core
+            .state
+            .agents
+            .iter()
+            .find(|a| a.id == coordinator)
+            .and_then(|a| a.context_pct)
+            .expect("the coordinator has a fill");
+        let grown = core.grow_context(&coordinator, 40_000, 100_000);
+        assert_eq!(grown, Some(start + 4));
+        // Past 95 % the session compacts to the given size.
+        let mut pct = grown;
+        while pct.is_some_and(|p| p >= 20) {
+            pct = core.grow_context(&coordinator, 40_000, 100_000);
+        }
+        assert_eq!(pct, Some(10));
+        // A subagent has no fill and gets none.
+        let sub = core.state.agents.iter().find(|a| !a.kind.is_session());
+        if let Some(sub) = sub.map(|a| a.id.clone()) {
+            assert_eq!(core.grow_context(&sub, 40_000, 100_000), None);
+        }
     }
 }
