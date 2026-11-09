@@ -1824,8 +1824,8 @@ fn todo_items_attach_to_the_agent_that_created_them_and_survive_a_restart() {
         todo(&h.snap, "1").map(|t| t.status),
         Some(dovetail_api::TodoStatus::Completed)
     );
-    // No TaskCreate in the stream: no owner, so it sits under no agent.
-    assert_eq!(todo(&h.snap, "3").map(|t| t.created_by), Some(None));
+    // No TaskCreate in the stream: it falls back to the session whose list it is.
+    assert_eq!(owner(&h.snap, "3").as_deref(), Some(COORDINATOR));
     assert!(
         fake.started_specs()[0]
             .env
@@ -1880,6 +1880,27 @@ fn a_foreground_subagents_todo_is_its_own() {
         owner(s, "2").as_deref() == Some("coordinator:toolu_sub")
     });
     assert_eq!(owner(&h.snap, "1").as_deref(), Some(COORDINATOR));
+    // The stream's attribution is in state.db, not just the list owner's fallback.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let h = Harness::start_on(fixture("plain_turn"), paths);
+    assert_eq!(
+        owner(&h.snap, "2").as_deref(),
+        Some("coordinator:toolu_sub")
+    );
+    h.quit();
+}
+
+#[test]
+fn items_with_no_known_creator_sit_under_the_session_whose_list_it_is() {
+    // No TaskCreate in the stream at all: the items were put there some other way.
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let list = tasks_dir(&h.paths).join("dovetail-p-coordinator");
+    write_item(&list, "1", "by hand", "pending");
+    prompt(&h, "hello");
+    h.wait_for("the item under the coordinator", |s| {
+        owner(s, "1").as_deref() == Some(COORDINATOR)
+    });
     h.quit();
 }
 

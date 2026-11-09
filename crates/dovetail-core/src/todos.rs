@@ -12,7 +12,9 @@
 //!   yet when its session started.
 //! - Nothing on disk says who created an item. `TaskCreate` results carry the new item's id, and a
 //!   foreground subagent's call carries `parent_tool_use_id`, so the core records item → agent in
-//!   `state.db` (`todo_items`). Background subagents cannot use the task tools.
+//!   `state.db` (`todo_items`). Background subagents cannot use the task tools. An item with no
+//!   known creator (edited in by hand, or made while Dovetail was not watching) is shown under
+//!   the session whose list it is.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -210,6 +212,21 @@ impl Core {
         })))
     }
 
+    /// The agent an item with no known creator is shown under: the session whose list it is
+    /// (decided 2026-11-09, PR #13). When sessions share a task's list, a running one first,
+    /// then the first by id.
+    fn list_owner(&self, list: &TodoListId) -> Option<AgentId> {
+        let mut owners = self.agents.iter().filter(|(id, row)| {
+            !matches!(row.agent.kind, AgentKind::Subagent { .. })
+                && self.list_of(id).as_ref() == Some(list)
+        });
+        let first = owners.clone().next().map(|(id, _)| id.clone());
+        owners
+            .find(|(id, _)| self.live.contains_key(*id))
+            .map(|(id, _)| id.clone())
+            .or(first)
+    }
+
     /// At start: the recorded owners, and every known agent's list as it is on disk now.
     pub(crate) async fn load_todos(&mut self) -> Result<(), crate::db::DbError> {
         for (list, item, agent) in self.db.load_todo_owners().await? {
@@ -317,6 +334,7 @@ impl Core {
     fn reread_list(&mut self, list: &TodoListId, emit: bool) -> bool {
         let read = read_list(&self.list_dir(list));
         let previous = self.todos.lists.get(list).cloned().unwrap_or_default();
+        let fallback = self.list_owner(list);
         let mut items: Vec<TodoItem> = read
             .items
             .into_iter()
@@ -326,7 +344,8 @@ impl Core {
                     .todos
                     .owners
                     .get(&(list.clone(), f.id.clone()))
-                    .cloned(),
+                    .cloned()
+                    .or_else(|| fallback.clone()),
                 id: f.id,
                 subject: f.subject,
                 status: f.status,
