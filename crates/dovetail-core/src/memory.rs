@@ -3,7 +3,10 @@
 //! Every session runs in its own `systemd-run --user --scope` with a hard `MemoryMax` from
 //! `config.toml` (B8). A probe at startup checks that capped scopes start and that the memory
 //! controller reaches them; without that, sessions run uncapped and the status bar says so.
-//! Memory is read from each scope's `memory.current` on [`SAMPLE_INTERVAL`] while sessions run.
+//! Memory is read from each scope's `memory.current` on [`SAMPLE_INTERVAL`] while sessions run;
+//! when caps are unavailable, from `/proc` instead (the resident memory of each session's process
+//! and its descendants, decision #47). OOM kills are counted from `memory.events` (M13b, and
+//! `crate::oom` for what happens then).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -171,7 +174,10 @@ pub enum ProbeError {
 }
 
 async fn probe_inner() -> Result<Scopes, ProbeError> {
-    let unit = format!("dovetail-probe-{}", std::process::id());
+    // Unique per probe, so probes running at once (tests) don't collide on the unit name.
+    static PROBES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = PROBES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let unit = format!("dovetail-probe-{}-{n}", std::process::id());
     let out = run_scoped(&unit, &["cat", "/proc/self/cgroup"]).await?;
     let cgroup = parse_proc_cgroup(&out).ok_or_else(|| ProbeError::NoCgroup(out.clone()))?;
     let scope_dir = Path::new(CGROUP_ROOT).join(cgroup.trim_start_matches('/'));
@@ -255,6 +261,163 @@ pub fn shown_mb(bytes: u64) -> u32 {
         (tenths * 1024 + 5) / 10
     };
     u32::try_from(mb).unwrap_or(u32::MAX)
+}
+
+// --- OOM kills (M13b) ---
+
+/// How long after an `oom_kill` rise the session process may still die of it. Dying by SIGKILL
+/// within this window means the kernel killed the session itself; still running after it means
+/// only one of its tools was killed (scopes run with `OOMPolicy=continue`).
+pub const OOM_GRACE: Duration = Duration::from_secs(3);
+
+/// After an automatic restart, an agent killed again for memory within this window is not
+/// restarted again: the user is asked instead, so a session that keeps hitting its cap does not
+/// loop.
+pub const RESTART_WINDOW: Duration = Duration::from_secs(10 * 60);
+
+/// The signal the kernel's OOM killer sends.
+pub const SIGKILL: i32 = 9;
+
+/// The `oom_kill` count in a scope's `memory.events` text.
+pub fn parse_oom_kills(text: &str) -> Option<u64> {
+    text.lines().find_map(|l| {
+        let (key, value) = l.split_once(' ')?;
+        if key == "oom_kill" {
+            value.trim().parse().ok()
+        } else {
+            None
+        }
+    })
+}
+
+/// A scope's `memory.events` file.
+pub fn events_file(cgroup: &Path) -> PathBuf {
+    cgroup.join("memory.events")
+}
+
+/// A scope's `oom_kill` count; `None` while the file cannot be read (gone with the scope).
+pub fn read_oom_kills(cgroup: &Path) -> Option<u64> {
+    parse_oom_kills(&std::fs::read_to_string(events_file(cgroup)).ok()?)
+}
+
+/// What an OOM kill in a session's scope killed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OomKill {
+    /// The session process itself: it is restarted.
+    Session,
+    /// One of its tools; the session runs on.
+    Tool,
+}
+
+/// What the `oom_kill` rise seen at `seen` killed, as known at `now`. `exit` is the session
+/// process's exit signal (`Some(None)`: it exited without one) once it has exited. `None` while
+/// it cannot be told yet.
+pub fn oom_verdict(
+    seen: std::time::Instant,
+    now: std::time::Instant,
+    exit: Option<Option<i32>>,
+) -> Option<OomKill> {
+    let since = now.saturating_duration_since(seen);
+    match exit {
+        Some(Some(SIGKILL)) if since <= OOM_GRACE => Some(OomKill::Session),
+        // It died some other way, or long after: the kill hit a tool.
+        Some(_) => Some(OomKill::Tool),
+        None if since >= OOM_GRACE => Some(OomKill::Tool),
+        None => None,
+    }
+}
+
+/// Automatic restarts after OOM kills, per agent: at most one per [`RESTART_WINDOW`].
+#[derive(Debug, Default)]
+pub struct RestartGuard {
+    last: std::collections::HashMap<dovetail_api::AgentId, std::time::Instant>,
+}
+
+impl RestartGuard {
+    /// Whether `agent` may be restarted automatically at `now`; if so, the restart is counted.
+    pub fn allow(&mut self, agent: &dovetail_api::AgentId, now: std::time::Instant) -> bool {
+        if self
+            .last
+            .get(agent)
+            .is_some_and(|at| now.saturating_duration_since(*at) < RESTART_WINDOW)
+        {
+            return false;
+        }
+        self.last.insert(agent.clone(), now);
+        true
+    }
+}
+
+// --- /proc fallback (decision #47) ---
+
+/// Where the proc filesystem is mounted.
+const PROC_ROOT: &str = "/proc";
+
+/// `(pid, ppid)` from a `/proc/<pid>/stat` line. The command name sits in parentheses and may
+/// itself hold spaces and parentheses, so fields are counted from the last `)`.
+pub fn parse_stat(text: &str) -> Option<(u32, u32)> {
+    let (head, rest) = text.rsplit_once(')')?;
+    let pid = head.split_once(" (")?.0.trim().parse().ok()?;
+    let mut fields = rest.split_whitespace();
+    let _state = fields.next()?;
+    let ppid = fields.next()?.parse().ok()?;
+    Some((pid, ppid))
+}
+
+/// `VmRSS` from `/proc/<pid>/status` text, in bytes. Kernel threads have none.
+pub fn parse_vm_rss(text: &str) -> Option<u64> {
+    let line = text.lines().find_map(|l| l.strip_prefix("VmRSS:"))?;
+    let kb: u64 = line.trim().strip_suffix("kB")?.trim().parse().ok()?;
+    Some(kb * 1024)
+}
+
+/// `root` and every process descended from it, given each process's `(pid, ppid)`.
+pub fn tree_of(root: u32, parents: &[(u32, u32)]) -> Vec<u32> {
+    let mut tree = vec![root];
+    let mut i = 0;
+    while i < tree.len() {
+        let pid = tree[i];
+        tree.extend(
+            parents
+                .iter()
+                .filter(|(child, ppid)| *ppid == pid && *child != pid)
+                .map(|(child, _)| *child),
+        );
+        i += 1;
+    }
+    tree
+}
+
+/// Every process's `(pid, ppid)`, read once per sample for all sessions.
+pub fn read_parents() -> Vec<(u32, u32)> {
+    let Ok(dir) = std::fs::read_dir(PROC_ROOT) else {
+        return Vec::new();
+    };
+    dir.filter_map(Result::ok)
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit()))
+        })
+        .filter_map(|e| parse_stat(&std::fs::read_to_string(e.path().join("stat")).ok()?))
+        .collect()
+}
+
+/// The resident memory of `root` and its descendants in bytes, or `None` once `root` is gone.
+/// For sessions that run uncapped and so have no scope to read.
+pub fn read_tree_rss(root: u32, parents: &[(u32, u32)]) -> Option<u64> {
+    let rss = |pid: u32| {
+        std::fs::read_to_string(Path::new(PROC_ROOT).join(pid.to_string()).join("status"))
+            .ok()
+            .map(|t| parse_vm_rss(&t).unwrap_or(0))
+    };
+    let own = rss(root)?;
+    let rest: u64 = tree_of(root, parents)
+        .into_iter()
+        .skip(1)
+        .filter_map(rss)
+        .sum();
+    Some(own + rest)
 }
 
 #[cfg(test)]
@@ -389,6 +552,184 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert!(gone, "the scope's cgroup is still there");
+    }
+
+    /// `memory.events` of a scope after one OOM kill, as kernel 6.x writes it.
+    const EVENTS: &str = "low 0\nhigh 0\nmax 213\noom 1\noom_kill 1\noom_group_kill 0\n";
+
+    #[test]
+    fn oom_kills_are_read_from_memory_events() {
+        assert_eq!(parse_oom_kills(EVENTS), Some(1));
+        assert_eq!(
+            parse_oom_kills("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n"),
+            Some(0)
+        );
+        // `oom_group_kill` is another counter, not this one.
+        assert_eq!(parse_oom_kills("oom_group_kill 3\n"), None);
+        assert_eq!(parse_oom_kills(""), None);
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_oom_kills(dir.path()), None);
+        std::fs::write(events_file(dir.path()), EVENTS).unwrap();
+        assert_eq!(read_oom_kills(dir.path()), Some(1));
+    }
+
+    #[test]
+    fn a_kill_the_session_dies_of_at_once_is_the_sessions() {
+        let seen = std::time::Instant::now();
+        let soon = seen + Duration::from_millis(200);
+        let late = seen + OOM_GRACE + Duration::from_secs(1);
+        // Dead by SIGKILL within the grace: the session itself.
+        assert_eq!(
+            oom_verdict(seen, soon, Some(Some(SIGKILL))),
+            Some(OomKill::Session)
+        );
+        // Still running after the grace: a tool.
+        assert_eq!(oom_verdict(seen, late, None), Some(OomKill::Tool));
+        // Too early to tell.
+        assert_eq!(oom_verdict(seen, soon, None), None);
+        // Dead another way, or by SIGKILL long after: not this kill.
+        assert_eq!(oom_verdict(seen, soon, Some(None)), Some(OomKill::Tool));
+        assert_eq!(oom_verdict(seen, soon, Some(Some(15))), Some(OomKill::Tool));
+        assert_eq!(
+            oom_verdict(seen, late, Some(Some(SIGKILL))),
+            Some(OomKill::Tool)
+        );
+    }
+
+    #[test]
+    fn an_agent_is_restarted_automatically_at_most_once_per_window() {
+        let mut guard = RestartGuard::default();
+        let a = dovetail_api::AgentId("a".into());
+        let b = dovetail_api::AgentId("b".into());
+        let t = std::time::Instant::now();
+        assert!(guard.allow(&a, t));
+        assert!(!guard.allow(&a, t + Duration::from_secs(60)));
+        // Another agent has its own allowance.
+        assert!(guard.allow(&b, t + Duration::from_secs(60)));
+        // A refused attempt does not push the window out.
+        assert!(!guard.allow(&a, t + RESTART_WINDOW - Duration::from_secs(1)));
+        assert!(guard.allow(&a, t + RESTART_WINDOW));
+    }
+
+    #[test]
+    fn stat_lines_give_pid_and_parent_even_with_odd_names() {
+        let stat = "4242 (claude) S 4100 4242 4100 0 -1 4194560 1 0 0 0 0 0 0 0 20 0 11 0 1 1 1";
+        assert_eq!(parse_stat(stat), Some((4242, 4100)));
+        // A command name with spaces and parentheses.
+        let odd = "77 (tmux: server (1)) R 1 77 77 0 -1 0 0 0 0 0";
+        assert_eq!(parse_stat(odd), Some((77, 1)));
+        assert_eq!(parse_stat("garbage"), None);
+    }
+
+    #[test]
+    fn rss_comes_from_status_in_bytes() {
+        let status = "Name:\tclaude\nVmPeak:\t 999 kB\nVmRSS:\t  215040 kB\nRssAnon:\t 1 kB\n";
+        assert_eq!(parse_vm_rss(status), Some(215_040 * 1024));
+        // Kernel threads have no VmRSS line.
+        assert_eq!(parse_vm_rss("Name:\tkthreadd\n"), None);
+    }
+
+    #[test]
+    fn a_session_tree_holds_its_descendants_only() {
+        // 10 is claude; 11 its MCP bridge; 12 a shell running cargo (13), whose rustc is 14.
+        // 20 and 21 belong to something else; 1 is init.
+        let parents = [
+            (1, 0),
+            (10, 1),
+            (11, 10),
+            (12, 10),
+            (13, 12),
+            (14, 13),
+            (20, 1),
+            (21, 20),
+        ];
+        let mut tree = tree_of(10, &parents);
+        tree.sort_unstable();
+        assert_eq!(tree, [10, 11, 12, 13, 14]);
+        assert_eq!(tree_of(99, &parents), [99]);
+    }
+
+    /// This test's own process tree is readable from `/proc`.
+    #[test]
+    fn the_proc_walk_reads_a_live_tree() {
+        let me = std::process::id();
+        let parents = read_parents();
+        assert!(parents.iter().any(|(pid, _)| *pid == me));
+        assert!(read_tree_rss(me, &parents).is_some_and(|b| b > 0));
+        assert_eq!(read_tree_rss(u32::MAX, &parents), None);
+    }
+
+    /// On a machine with user systemd: an OOM in one capped scope kills only that scope's
+    /// process, the watch on its `memory.events` sees the kill before the scope is gone, and a
+    /// second capped scope runs on. Opt-in, like the live tests.
+    #[tokio::test]
+    async fn a_forced_oom_kills_one_scope_only() {
+        if std::env::var("DOVETAIL_CGROUP_TESTS").as_deref() != Ok("1") {
+            return;
+        }
+        use notify::Watcher;
+        use std::os::unix::process::ExitStatusExt;
+        let scopes = probe().await;
+        let Scopes::Available { .. } = &scopes else {
+            panic!("probe failed: {scopes:?}");
+        };
+        let start = |name: &str, script: &str| {
+            let unit = unit_name("test", &format!("{name}-{}", std::process::id()));
+            let scope = scopes.scope(&unit, 64 * MIB).unwrap();
+            let child = tokio::process::Command::new("systemd-run")
+                .args(scope.args())
+                .args(["sh", "-c", script])
+                .kill_on_drop(true)
+                .spawn()
+                .unwrap();
+            (unit.clone(), scopes.cgroup(&unit).unwrap(), child)
+        };
+        let wait_for = |cgroup: PathBuf| async move {
+            for _ in 0..100 {
+                if events_file(&cgroup).exists() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            panic!("no scope at {}", cgroup.display());
+        };
+        let (survivor, survivor_cgroup, mut survivor_child) = start("survivor", "sleep 30");
+        // The eater replaces the shell after a pause, so the process the scope started is the
+        // one killed, as when the kernel kills a session's `claude`.
+        let (_, eater_cgroup, mut eater_child) = start("eater", "sleep 1; exec tail /dev/zero");
+        wait_for(survivor_cgroup.clone()).await;
+        wait_for(eater_cgroup.clone()).await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            let Ok(event) = res else { return };
+            for path in event.paths {
+                if let Some(count) = path.parent().and_then(read_oom_kills) {
+                    let _ = tx.send(count);
+                }
+            }
+        })
+        .unwrap();
+        watcher
+            .watch(
+                &events_file(&eater_cgroup),
+                notify::RecursiveMode::NonRecursive,
+            )
+            .unwrap();
+        let status = tokio::time::timeout(Duration::from_secs(20), eater_child.wait())
+            .await
+            .expect("the eater was not killed")
+            .unwrap();
+        assert_eq!(status.signal(), Some(SIGKILL), "{status:?}");
+        // The watcher's thread read the count before the scope went; give its send a moment.
+        let mut seen = 0;
+        while let Ok(Some(count)) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
+            seen = seen.max(count);
+        }
+        assert!(seen >= 1, "the watch saw no oom_kill");
+        // The other scope is untouched.
+        assert!(survivor_child.try_wait().unwrap().is_none());
+        assert_eq!(read_oom_kills(&survivor_cgroup), Some(0));
+        assert!(clear_stale_scope(&survivor_cgroup, &survivor));
     }
 
     #[test]
