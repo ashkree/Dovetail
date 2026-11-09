@@ -40,7 +40,7 @@
 //! * both roles: `mcp__dovetail__ask_user`, `mcp__dovetail__report_status`,
 //!   `mcp__dovetail__log_decision`
 //! * coordinator only: `mcp__dovetail__create_task`, `mcp__dovetail__start_slice`,
-//!   `mcp__dovetail__add_project`
+//!   `mcp__dovetail__add_project`, `mcp__dovetail__archive_slice`, `mcp__dovetail__archive_task`
 //!
 //! The core passes these to `--allowedTools` (`dovetail_core::session::launch`). The `tool`
 //! field forwarded to the app is the bare name (`ask_user`). Subagents reach the tools through
@@ -430,6 +430,33 @@ fn tool_defs() -> Vec<ToolDef> {
                 then everything lives in memory and is lost when Dovetail quits. Takes no \
                 arguments; calling it on a folder that is already a project does nothing.",
             schema: || json!({"type": "object", "properties": {}}),
+        },
+        ToolDef {
+            name: "archive_slice",
+            description: "Archive a slice once its work is done, normally right after its PR \
+                is merged and you have pulled. It stops the slice's session and removes its \
+                worktree and `dovetail/*` branch, freeing a place for a queued slice. Returns \
+                `archived` when it is gone, or `waiting_for_user` when the worktree has \
+                uncommitted or unpushed work: the user is asked before anything is lost, and \
+                their answer arrives later as a message (\"slice <name> archived\" or \"... \
+                kept\"). Fails for an unknown or already archived name.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "name": {"type": "string", "description": "The slice's name, as given to `start_slice`."}
+                }, "required": ["name"]})
+            },
+        },
+        ToolDef {
+            name: "archive_task",
+            description: "Archive a finished task. Its live slices are archived first, with \
+                `archive_slice`'s rules (unsaved work waits for the user), and its queued \
+                slice starts are dropped. Returns `archived`, or `waiting_for_user` if a slice \
+                still waits for the user.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "id": {"type": "integer", "description": "The task's id."}
+                }, "required": ["id"]})
+            },
         },
     ]
 }

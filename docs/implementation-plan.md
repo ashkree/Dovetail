@@ -638,8 +638,9 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | #5 | Inbox rows are one line; `Enter` opens the item in full in an `InboxDetail` buffer (finished turns still open the conversation) | #8 |
 | #6 | A header rule opens each conversation message | #7 |
 | #7 | Starting a slice on a task moves the task to Now | #9 |
+| #9 | Coordinator-only `archive_slice { name }` and `archive_task { id }` tools, through the same archive path as the UI: clean, pushed work goes at once (`archived`, the queue place freed); unsaved work raises the usual Permission item (`waiting_for_user`, the user's answer reaches the coordinator as "slice <name> archived" or "… kept"). The role prompt archives after merge and pull | — |
 
-**Open follow-ups:** #3 attach an image when a pasted or dropped file path points to one; #8 clean up saved paste attachments; #9 let the coordinator archive slices and tasks (MCP tool).
+**Open follow-ups:** #3 attach an image when a pasted or dropped file path points to one; #8 clean up saved paste attachments.
 
 ---
 
