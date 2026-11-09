@@ -2087,6 +2087,65 @@ fn a_foreground_subagents_todo_is_its_own() {
 }
 
 #[test]
+fn a_pruned_subagents_todo_falls_back_to_the_list_owner() {
+    // As above, then the subagent ends, and a second one runs and ends: only the newest finished
+    // subagent keeps its node, so the first one's item must not point at a gone agent.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../dovetail-driver/tests/fixtures/todo_tools.ndjson");
+    let text = std::fs::read_to_string(path).expect("fixture");
+    let session = "f0e55c68-6629-4132-b963-ccb23955bc1a";
+    let result = |tool: &str| {
+        format!(
+            "{{\"dir\":\"out\",\"msg\":{{\"message\":{{\"content\":[{{\"content\":\"ok\",\
+             \"tool_use_id\":\"{tool}\",\"type\":\"tool_result\"}}],\"role\":\"user\"}},\
+             \"parent_tool_use_id\":null,\"session_id\":\"{session}\",\"type\":\"user\"}},\"t\":6000}}\n"
+        )
+    };
+    let second = format!(
+        "{{\"dir\":\"out\",\"msg\":{{\"message\":{{\"content\":[{{\"text\":\"hi\",\"type\":\"text\"}}],\
+         \"id\":\"msg_sub2\",\"model\":\"claude-sonnet-5-5\",\"role\":\"assistant\",\"type\":\"message\"}},\
+         \"parent_tool_use_id\":\"toolu_sub2\",\"session_id\":\"{session}\",\"type\":\"assistant\"}},\"t\":6000}}\n"
+    );
+    let mut out = String::new();
+    for line in text.lines() {
+        if line.contains("\"text\":\"done\"") {
+            out += &result("toolu_sub");
+            out += &second;
+            out += &result("toolu_sub2");
+        }
+        let line = if line.contains("toolu_01PDiMXF9E6gftnQXY5xYUhf") {
+            line.replace(
+                "\"parent_tool_use_id\":null",
+                "\"parent_tool_use_id\":\"toolu_sub\"",
+            )
+        } else {
+            line.to_owned()
+        };
+        out += &line;
+        out.push('\n');
+    }
+    let fake = FakeDriver::from_ndjson(&out).expect("fixture");
+    let mut h = Harness::start(fake, true, Config::default());
+    let list = tasks_dir(&h.paths).join("dovetail-p-coordinator");
+    write_item(&list, "1", "alpha", "completed");
+    write_item(&list, "2", "beta", "pending");
+    prompt(&h, "make two to-dos");
+    h.wait_for("the first subagent pruned", |s| {
+        !s.agents.iter().any(|a| a.id.0 == "coordinator:toolu_sub")
+            && s.agents.iter().any(|a| a.id.0 == "coordinator:toolu_sub2")
+    });
+    h.wait_for("its item back under the coordinator", |s| {
+        owner(s, "2").as_deref() == Some(COORDINATOR)
+    });
+    // A reopen agrees: the recorded creator is gone, so the list owner shows it.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let h = Harness::start_on(fixture("plain_turn"), paths);
+    assert_eq!(owner(&h.snap, "2").as_deref(), Some(COORDINATOR));
+    h.quit();
+}
+
+#[test]
 fn items_with_no_known_creator_sit_under_the_session_whose_list_it_is() {
     // No TaskCreate in the stream at all: the items were put there some other way.
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());

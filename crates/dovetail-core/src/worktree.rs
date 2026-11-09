@@ -70,6 +70,26 @@ pub enum WorktreeError {
         /// What went wrong.
         message: String,
     },
+    /// A git command succeeded but printed something we could not parse.
+    #[error("git {args} printed {output:?}, expected a count")]
+    UnexpectedOutput {
+        /// The command, space-joined.
+        args: String,
+        /// Trimmed stdout.
+        output: String,
+    },
+}
+
+/// Parses the `--count` output of `git rev-list`. Garbage is an error, never 0: a 0 would make
+/// unsaved work look absent and let cleanup delete it.
+fn parse_count(output: &str) -> Result<usize, WorktreeError> {
+    output
+        .trim()
+        .parse()
+        .map_err(|_| WorktreeError::UnexpectedOutput {
+            args: "rev-list --count".to_owned(),
+            output: output.trim().to_owned(),
+        })
 }
 
 fn io(context: impl Into<String>) -> impl FnOnce(std::io::Error) -> WorktreeError {
@@ -587,7 +607,7 @@ pub fn inspect(
                 ["rev-list", "--count", &branch, "--not", "--remotes", "HEAD"],
             )?
         };
-        out.unpushed_commits = count.trim().parse().unwrap_or(0);
+        out.unpushed_commits = parse_count(&count)?;
     }
     Ok(out)
 }
@@ -669,7 +689,7 @@ fn own_commits(repo: &Path, branch: &str) -> Result<usize, WorktreeError> {
             "--remotes",
         ],
     )?;
-    Ok(count.trim().parse().unwrap_or(0))
+    parse_count(&count)
 }
 
 /// Removes a finished subagent's worktree (`agent-<id>`) if it is unchanged: no uncommitted
@@ -680,6 +700,17 @@ pub fn remove_if_unchanged(
     project: &str,
     name: &str,
     repo: &Path,
+) -> Result<SubagentCleanup, WorktreeError> {
+    remove_if_unchanged_with(paths, project, name, repo, own_commits)
+}
+
+/// [`remove_if_unchanged`] with the commit count injectable, so tests can feed it bad output.
+fn remove_if_unchanged_with(
+    paths: &Paths,
+    project: &str,
+    name: &str,
+    repo: &Path,
+    own_commits: impl Fn(&Path, &str) -> Result<usize, WorktreeError>,
 ) -> Result<SubagentCleanup, WorktreeError> {
     let report = inspect(paths, project, name, repo)?;
     if !report.exists && !report.branch_exists {
@@ -807,6 +838,16 @@ mod tests {
             }
         );
         assert!(sub.join("c.txt").exists());
+    }
+
+    #[test]
+    fn an_unparsable_commit_count_keeps_the_worktree() {
+        let (_dir, paths, repo, sub) = scratch();
+        let found =
+            remove_if_unchanged_with(&paths, "p", "agent-a1", &repo, |_, _| parse_count("?\n"));
+        assert!(matches!(found, Err(WorktreeError::UnexpectedOutput { .. })));
+        assert!(sub.exists());
+        assert!(branch_exists(&repo, "dovetail/agent-a1"));
     }
 
     #[test]

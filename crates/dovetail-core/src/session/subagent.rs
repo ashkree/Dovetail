@@ -418,6 +418,7 @@ impl Core {
         }
         self.tails.remove(id);
         self.persist("a closed subagent", self.db.close_agent(id.clone()));
+        self.reassign_todos_of(id);
         self.emit(Event::AgentRemoved(id.clone()));
     }
 

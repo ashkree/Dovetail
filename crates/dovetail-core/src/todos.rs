@@ -227,6 +227,32 @@ impl Core {
             .or(first)
     }
 
+    /// Agent `gone` was closed: its items move to the session whose list they are on, the same
+    /// rule as items with no known creator, so no item points at an agent the UI no longer has.
+    /// The recorded owner stays in `state.db`; only what is shown changes.
+    pub(crate) fn reassign_todos_of(&mut self, gone: &AgentId) {
+        let lists: Vec<TodoListId> = self
+            .todos
+            .lists
+            .iter()
+            .filter(|(_, items)| items.iter().any(|t| t.created_by.as_ref() == Some(gone)))
+            .map(|(list, _)| list.clone())
+            .collect();
+        for list in lists {
+            let fallback = self.list_owner(&list);
+            let Some(items) = self.todos.lists.get_mut(&list) else {
+                continue;
+            };
+            for item in items.iter_mut() {
+                if item.created_by.as_ref() == Some(gone) {
+                    item.created_by = fallback.clone();
+                }
+            }
+            let items = items.clone();
+            self.emit(Event::TodosReplaced { list, items });
+        }
+    }
+
     /// At start: the recorded owners, and every known agent's list as it is on disk now.
     pub(crate) async fn load_todos(&mut self) -> Result<(), crate::db::DbError> {
         for (list, item, agent) in self.db.load_todo_owners().await? {
@@ -344,6 +370,7 @@ impl Core {
                     .todos
                     .owners
                     .get(&(list.clone(), f.id.clone()))
+                    .filter(|a| self.agents.contains_key(*a))
                     .cloned()
                     .or_else(|| fallback.clone()),
                 id: f.id,
