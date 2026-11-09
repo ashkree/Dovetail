@@ -3,52 +3,52 @@ source: crates/dovetail-tui/tests/layout_b.rs
 expression: all
 ---
 ┌ inbox · needs you (3) ────────────────────┐
-│ ▸ ⚠ slice-7  Write                  10:15 │
-│   │ /w/a.txt                              │
-│   │ A → always allow: switch to           │
-│   │ acceptEdits                           │
-│   ⚠ slice-4  Remove worktree        10:15 │
-│   ⚠ coordinator  Start slice        10:15 │
+│ ▸ ⚠ slice-7  Write · /w/a.txt       10:15 │
+│   ⚠ slice-4  Remove worktree · dov… 10:15 │
+│   ⚠ coordinator  start slice demo-… 10:15 │
 │                                           │
-│                                           │
-│                                           │
-│                                           │
-│                                           │
-│                                           │
-│ y allow · d deny · r reply · x dismiss    │
-└───────────────────────────────────────────┘
-              i chat · ␣ss switch · : command
 ----
-┌ inbox · needs you (3) ────────────────────┐
-│   ⚠ slice-7  Write                  10:15 │
-│ ▸ ⚠ slice-4  Remove worktree        10:15 │
-│   │ dovetail/demo-1 · 1 unpushed commit   │
-│   │ · no uncommitted changes              │
-│   ⚠ coordinator  Start slice        10:15 │
-│                                           │
-│                                           │
-│                                           │
-│                                           │
-│                                           │
-│                                           │
-│                                           │
-│ y allow · d deny · r reply · x dismiss    │
-└───────────────────────────────────────────┘
-              i chat · ␣ss switch · : command
+┌ inbox item ─────────────────────────────────────────────────────────────┐
+│ ⚠ slice-7  Write  10:15                                                 │
+│                                                                         │
+│ /w/a.txt                                                                │
+│                                                                         │
+│ A → always allow: switch to acceptEdits                                 │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
 ----
-┌ inbox · needs you (3) ────────────────────┐
-│   ⚠ slice-7  Write                  10:15 │
-│   ⚠ slice-4  Remove worktree        10:15 │
-│ ▸ ⚠ coordinator  Start slice        10:15 │
-│   │ start slice demo-1 on #1 business     │
-│   │ surface                               │
-│   │ reply ok                              │
-│   │ “It needs a key. slice-7 can only …”  │
-│                                           │
-│                                           │
-│                                           │
-│                                           │
-│                                           │
-│ y allow · d deny · r reply · x dismiss    │
-└───────────────────────────────────────────┘
-              i chat · ␣ss switch · : command
+┌ inbox item ─────────────────────────────────────────────────────────────┐
+│ ⚠ slice-4  Remove worktree  10:15                                       │
+│                                                                         │
+│ dovetail/demo-1 · 1 unpushed commit · no uncommitted changes            │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+----
+┌ inbox item ─────────────────────────────────────────────────────────────┐
+│ ⚠ coordinator  Start slice  10:15                                       │
+│                                                                         │
+│ start slice demo-1 on #1 business surface                               │
+│                                                                         │
+│ reply ok                                                                │
+│                                                                         │
+│ “It needs a key. slice-7 can only reach the eval path with              │
+│ FS_EVAL_VIRTUAL_KEY set.”                                               │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │
+│                                                                         │

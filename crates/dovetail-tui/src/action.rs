@@ -126,6 +126,6 @@ pub enum Action {
     InboxReply,
     /// Dismiss a finished turn or error.
     InboxDismiss,
-    /// Open the item's agent.
+    /// Open the item in full (a finished turn: its agent); from the item, open its agent.
     InboxOpen,
 }

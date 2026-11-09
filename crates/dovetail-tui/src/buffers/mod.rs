@@ -4,6 +4,7 @@
 mod conversation;
 mod feed;
 mod inbox;
+mod inbox_detail;
 pub mod task_detail;
 mod tree;
 
@@ -22,6 +23,7 @@ pub use conversation::ConversationBuffer;
 pub use feed::{ActivityBuffer, MessagesBuffer};
 pub(crate) use inbox::input_summary;
 pub use inbox::{InboxBuffer, ordered as inbox_order};
+pub use inbox_detail::InboxDetailBuffer;
 pub use task_detail::TaskDetailBuffer;
 pub use tree::{TreeBuffer, p_label};
 
@@ -73,6 +75,8 @@ pub enum Effect {
     OpenAgent(AgentId),
     /// Show a task's detail.
     OpenTask(TaskId),
+    /// Show an inbox item in full.
+    OpenInboxItem(InboxId),
     /// Open the prompt row.
     StartInput {
         /// What the text is for.
@@ -123,6 +127,8 @@ pub struct Buffers {
     pub conversation: ConversationBuffer,
     /// A task's detail.
     pub task_detail: TaskDetailBuffer,
+    /// An inbox item in full.
+    pub inbox_detail: InboxDetailBuffer,
     /// The Activity feed.
     pub activity: ActivityBuffer,
     /// The message timeline.
@@ -137,6 +143,7 @@ impl Buffers {
             inbox: InboxBuffer::default(),
             conversation: ConversationBuffer::default(),
             task_detail: TaskDetailBuffer::default(),
+            inbox_detail: InboxDetailBuffer::default(),
             activity: ActivityBuffer::default(),
             messages: MessagesBuffer::default(),
         }
@@ -149,6 +156,7 @@ impl Buffers {
             BufferKind::Inbox => &mut self.inbox,
             BufferKind::Conversation => &mut self.conversation,
             BufferKind::TaskDetail => &mut self.task_detail,
+            BufferKind::InboxDetail => &mut self.inbox_detail,
             BufferKind::Activity => &mut self.activity,
             BufferKind::Messages => &mut self.messages,
         }

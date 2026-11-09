@@ -14,6 +14,8 @@ pub enum BufferKind {
     Conversation,
     /// One task's detail.
     TaskDetail,
+    /// One inbox item in full.
+    InboxDetail,
     /// The Activity feed.
     Activity,
     /// The message timeline.

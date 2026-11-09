@@ -1,5 +1,5 @@
-//! Needs you: permission requests, questions, finished turns and errors, with a context
-//! preview of the selected item.
+//! Needs you: permission requests, questions, finished turns and errors, one line each. Enter
+//! opens an item's full text in the inbox detail.
 
 use dovetail_api::{
     AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, PermissionAnswer,
@@ -7,7 +7,7 @@ use dovetail_api::{
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::text::{Line, Span};
+use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
 use super::{Buffer, Effect, InputTarget, ViewCx, footer, pane, scroll_to, spread, step, title};
@@ -74,7 +74,7 @@ impl InboxBuffer {
     }
 }
 
-fn last_message(snap: &Snapshot, agent: &AgentId) -> Option<String> {
+pub(crate) fn last_message(snap: &Snapshot, agent: &AgentId) -> Option<String> {
     snap.conversations
         .get(agent)?
         .entries
@@ -156,8 +156,8 @@ fn remove_worktree_summary(input: &serde_json::Value) -> String {
     format!("{branch} · {unpushed} · {uncommitted}")
 }
 
-fn item_label(snap: &Snapshot, item: &InboxItem) -> (&'static str, String) {
-    let _ = snap;
+/// The item's glyph and what kind of thing it is, as the detail heading says it.
+pub(crate) fn item_label(item: &InboxItem) -> (&'static str, String) {
     match &item.kind {
         InboxKind::Permission { tool, .. } if tool == START_SLICE_PERMISSION => {
             ("⚠", "Start slice".into())
@@ -167,6 +167,120 @@ fn item_label(snap: &Snapshot, item: &InboxItem) -> (&'static str, String) {
         InboxKind::FinishedTurn { .. } => ("✓", "Finished turn".into()),
         InboxKind::Error { .. } => ("✗", "Error".into()),
     }
+}
+
+/// The agent's display name.
+pub(crate) fn source_name<'a>(snap: &'a Snapshot, item: &'a InboxItem) -> &'a str {
+    snap.agents
+        .iter()
+        .find(|a| a.id == item.agent)
+        .map_or(item.agent.0.as_str(), |a| a.name.as_str())
+}
+
+/// The colour of an item's glyph and source.
+pub(crate) fn kind_color(item: &InboxItem, theme: &crate::theme::Theme) -> ratatui::style::Color {
+    match &item.kind {
+        InboxKind::Permission { .. } | InboxKind::Question { .. } => theme.needs_you,
+        InboxKind::FinishedTurn { .. } => theme.ok,
+        InboxKind::Error { .. } => theme.error,
+    }
+}
+
+/// The short title of a row: what a permission request is for, or the first sentence of a
+/// question, finished turn or error. The row cuts it to fit; the detail shows it all.
+pub(crate) fn row_title(snap: &Snapshot, item: &InboxItem) -> String {
+    match &item.kind {
+        InboxKind::Permission { tool, input, .. } => {
+            let summary = input_summary(snap, tool, input);
+            let summary = fmt::first_line(summary.trim());
+            if tool == START_SLICE_PERMISSION {
+                summary.to_string()
+            } else {
+                format!("{tool} · {summary}")
+            }
+        }
+        InboxKind::Question { text }
+        | InboxKind::FinishedTurn { preview: text }
+        | InboxKind::Error { text } => first_sentence(text),
+    }
+}
+
+/// The first non-blank line of `text`, cut after its first sentence, without markdown heading
+/// or list markers.
+pub(crate) fn first_sentence(text: &str) -> String {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("");
+    let line = line
+        .trim_start_matches('#')
+        .trim_start_matches(['-', '*', '>'])
+        .trim();
+    let end = line
+        .char_indices()
+        .find(|&(i, c)| {
+            matches!(c, '.' | '?' | '!')
+                && line[i + c.len_utf8()..].starts_with(char::is_whitespace)
+        })
+        .map_or(line.len(), |(i, c)| i + c.len_utf8());
+    line[..end].to_string()
+}
+
+/// What `y`, `A`, `d`, `D`, `r` and `x` do to an item, from the inbox or its detail. Returns
+/// whether the action was one of them.
+pub(crate) fn answer_action(action: Action, item: &InboxItem, effects: &mut Vec<Effect>) -> bool {
+    match (action, &item.kind) {
+        (Action::InboxAllow, InboxKind::Permission { .. }) => {
+            effects.push(answer(item.id, PermissionAnswer::Allow));
+        }
+        (Action::InboxAllowAlways, InboxKind::Permission { suggestions, .. }) => {
+            if suggestions.is_empty() {
+                // Plan B21.
+                effects.push(Effect::Note("no rule was offered to always allow".into()));
+            } else {
+                effects.push(answer(item.id, PermissionAnswer::AllowAlways));
+            }
+        }
+        (Action::InboxDeny, InboxKind::Permission { .. }) => {
+            effects.push(answer(item.id, PermissionAnswer::Deny { message: None }));
+        }
+        (Action::InboxDenyWithReason, InboxKind::Permission { .. }) => {
+            effects.push(Effect::StartInput {
+                target: InputTarget::Reason(item.id),
+                initial: String::new(),
+            });
+        }
+        (Action::InboxAllow | Action::InboxAllowAlways | Action::InboxDeny, _)
+        | (Action::InboxDenyWithReason, _) => {
+            effects.push(Effect::Note("that item is not a permission request".into()))
+        }
+        (Action::InboxReply, InboxKind::Question { .. }) => effects.push(Effect::StartInput {
+            target: InputTarget::Reply(item.id),
+            initial: String::new(),
+        }),
+        // Plan B22: replying to a finished turn sends the agent a normal prompt.
+        (Action::InboxReply, InboxKind::FinishedTurn { .. }) => {
+            effects.push(Effect::StartInput {
+                target: InputTarget::Prompt(item.agent.clone()),
+                initial: String::new(),
+            });
+        }
+        (Action::InboxReply, _) => effects.push(Effect::Note(
+            "only questions and finished turns take a reply".into(),
+        )),
+        (Action::InboxDismiss, InboxKind::FinishedTurn { .. } | InboxKind::Error { .. }) => {
+            effects.push(Effect::Command(Command::DismissInbox { item: item.id }));
+        }
+        (Action::InboxDismiss, _) => {
+            effects.push(Effect::Note(
+                "answer permission requests and questions; x dismisses finished turns and errors"
+                    .into(),
+            ));
+        }
+        _ => return false,
+    }
+    true
 }
 
 impl Buffer for InboxBuffer {
@@ -194,22 +308,21 @@ impl Buffer for InboxBuffer {
             self.select(&items, i);
         }
 
-        // Build every line, remembering where the selected row and its preview sit.
-        let mut lines: Vec<Line<'static>> = Vec::new();
-        let mut selected_rows = (0, 0);
-        for (i, item) in items.iter().enumerate() {
-            let name = cx
-                .snap
-                .agents
-                .iter()
-                .find(|a| a.id == item.agent)
-                .map_or(item.agent.0.as_str(), |a| a.name.as_str());
-            let (glyph, label) = item_label(cx.snap, item);
-            let color = match &item.kind {
-                InboxKind::Permission { .. } | InboxKind::Question { .. } => theme.needs_you,
-                InboxKind::FinishedTurn { .. } => theme.ok,
-                InboxKind::Error { .. } => theme.error,
-            };
+        // One line per item; the full text opens with Enter.
+        let body_height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
+        if let Some(i) = selected {
+            self.offset = scroll_to(self.offset, i, i, body_height);
+        }
+        self.offset = self.offset.min(items.len().saturating_sub(body_height));
+        for (n, (i, item)) in items
+            .iter()
+            .enumerate()
+            .skip(self.offset)
+            .take(body_height)
+            .enumerate()
+        {
+            let color = kind_color(item, theme);
+            let (glyph, _) = item_label(item);
             let is_selected = selected == Some(i);
             let left = vec![
                 Span::styled(
@@ -218,38 +331,17 @@ impl Buffer for InboxBuffer {
                 ),
                 Span::styled(glyph, theme.fg(color)),
                 Span::raw(" "),
-                Span::styled(name.to_string(), theme.fg(color)),
-                Span::styled(format!("  {label}"), theme.body()),
+                Span::styled(source_name(cx.snap, item).to_string(), theme.fg(color)),
+                Span::styled(format!("  {}", row_title(cx.snap, item)), theme.body()),
             ];
             let right = vec![Span::styled(fmt::hhmm(item.at_ms, cx.tz), theme.dim())];
-            let row = lines.len();
-            lines.push(spread(left, right, width));
-            if is_selected {
-                selected_rows.0 = row;
-                lines.extend(preview(cx, item, width));
-                selected_rows.1 = lines.len() - 1;
-            }
-        }
-
-        let body_height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
-        if selected.is_some() {
-            self.offset = scroll_to(self.offset, selected_rows.0, selected_rows.1, body_height);
-        }
-        self.offset = self.offset.min(lines.len().saturating_sub(body_height));
-        for (n, line) in lines
-            .into_iter()
-            .skip(self.offset)
-            .take(body_height)
-            .enumerate()
-        {
             let rect = Rect {
                 y: inner.y + n as u16,
                 height: 1,
                 ..inner
             };
-            let is_row = self.offset + n == selected_rows.0 && selected.is_some();
-            frame.render_widget(Paragraph::new(line), rect);
-            if is_row && focused {
+            frame.render_widget(Paragraph::new(spread(left, right, width)), rect);
+            if is_selected && focused {
                 frame.buffer_mut().set_style(rect, theme.selected());
             }
         }
@@ -295,52 +387,13 @@ impl Buffer for InboxBuffer {
             return true;
         };
         match (action, &item.kind) {
-            (Action::InboxAllow, InboxKind::Permission { .. }) => {
-                effects.push(answer(item.id, PermissionAnswer::Allow));
+            // A finished turn's full text is its conversation; opening it clears the item
+            // (ADR 0001).
+            (Action::InboxOpen, InboxKind::FinishedTurn { .. }) => {
+                effects.push(Effect::OpenAgent(item.agent.clone()))
             }
-            (Action::InboxAllowAlways, InboxKind::Permission { suggestions, .. }) => {
-                if suggestions.is_empty() {
-                    // Plan B21.
-                    effects.push(Effect::Note("no rule was offered to always allow".into()));
-                } else {
-                    effects.push(answer(item.id, PermissionAnswer::AllowAlways));
-                }
-            }
-            (Action::InboxDeny, InboxKind::Permission { .. }) => {
-                effects.push(answer(item.id, PermissionAnswer::Deny { message: None }));
-            }
-            (Action::InboxDenyWithReason, InboxKind::Permission { .. }) => {
-                effects.push(Effect::StartInput {
-                    target: InputTarget::Reason(item.id),
-                    initial: String::new(),
-                });
-            }
-            (Action::InboxAllow | Action::InboxAllowAlways | Action::InboxDeny, _)
-            | (Action::InboxDenyWithReason, _) => {
-                effects.push(Effect::Note("that item is not a permission request".into()))
-            }
-            (Action::InboxReply, InboxKind::Question { .. }) => effects.push(Effect::StartInput {
-                target: InputTarget::Reply(item.id),
-                initial: String::new(),
-            }),
-            // Plan B22: replying to a finished turn sends the agent a normal prompt.
-            (Action::InboxReply, InboxKind::FinishedTurn { .. }) => {
-                effects.push(Effect::StartInput {
-                    target: InputTarget::Prompt(item.agent.clone()),
-                    initial: String::new(),
-                });
-            }
-            (Action::InboxReply, _) => effects.push(Effect::Note(
-                "only questions and finished turns take a reply".into(),
-            )),
-            (Action::InboxDismiss, InboxKind::FinishedTurn { .. } | InboxKind::Error { .. }) => {
-                effects.push(Effect::Command(Command::DismissInbox { item: item.id }));
-            }
-            (Action::InboxDismiss, _) => {
-                effects.push(Effect::Note("answer permission requests and questions; x dismisses finished turns and errors".into()));
-            }
-            (Action::InboxOpen, _) => effects.push(Effect::OpenAgent(item.agent.clone())),
-            _ => return false,
+            (Action::InboxOpen, _) => effects.push(Effect::OpenInboxItem(item.id)),
+            _ => return answer_action(action, item, effects),
         }
         true
     }
@@ -349,13 +402,8 @@ impl Buffer for InboxBuffer {
         ordered(cx.snap)
             .iter()
             .map(|item| {
-                let name = cx
-                    .snap
-                    .agents
-                    .iter()
-                    .find(|a| a.id == item.agent)
-                    .map_or(item.agent.0.as_str(), |a| a.name.as_str());
-                let (_, label) = item_label(cx.snap, item);
+                let name = source_name(cx.snap, item);
+                let (_, label) = item_label(item);
                 let body = match &item.kind {
                     InboxKind::Permission { tool, input, .. } => {
                         input_summary(cx.snap, tool, input)
@@ -382,61 +430,4 @@ impl Buffer for InboxBuffer {
 
 fn answer(item: InboxId, answer: PermissionAnswer) -> Effect {
     Effect::Command(Command::AnswerPermission { item, answer })
-}
-
-/// The context preview under the selected item: the tool and its full input, why it was
-/// escalated, the agent's last message and the rule `A` would add.
-fn preview(cx: &ViewCx, item: &InboxItem, width: usize) -> Vec<Line<'static>> {
-    let theme = cx.theme;
-    let text_width = width.saturating_sub(5);
-    let mut body: Vec<Line<'static>> = Vec::new();
-    let mut push = |text: &str, style: ratatui::style::Style| {
-        for line in fmt::wrap(text, text_width) {
-            body.push(Line::from(Span::styled(line, style)));
-        }
-    };
-    match &item.kind {
-        InboxKind::Permission {
-            tool,
-            input,
-            reason,
-            suggestions,
-        } => {
-            push(&input_summary(cx.snap, tool, input), theme.fg(theme.code));
-            // A slice's brief reads as text under its one-line summary.
-            if tool == START_SLICE_PERMISSION
-                && let Some(brief) = input.get("brief").and_then(|v| v.as_str())
-            {
-                push(brief, theme.body());
-            }
-            if let Some(reason) = reason {
-                push(reason, theme.dim());
-            }
-            if let Some(message) = last_message(cx.snap, &item.agent) {
-                push(
-                    &format!(
-                        "“{}”",
-                        fmt::truncate(fmt::first_line(&message), text_width.saturating_sub(2))
-                    ),
-                    theme.dim(),
-                );
-            }
-            if let Some(rule) = suggestions.first() {
-                push(
-                    &format!("A → always allow: {}", rule.label),
-                    theme.fg(theme.italic),
-                );
-            }
-        }
-        InboxKind::Question { text, .. } => push(text, theme.body()),
-        InboxKind::FinishedTurn { preview } => push(preview, theme.body()),
-        InboxKind::Error { text } => push(text, theme.fg(theme.error)),
-    }
-    body.into_iter()
-        .map(|line| {
-            let mut spans = vec![Span::styled("  │ ", theme.fg(theme.needs_you))];
-            spans.extend(line.spans);
-            Line::from(spans)
-        })
-        .collect()
 }

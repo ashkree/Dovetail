@@ -573,6 +573,10 @@ impl App {
             Action::ShowActivity => self.toggle_main(BufferKind::Activity),
             Action::ShowMessages => self.toggle_main(BufferKind::Messages),
             Action::BackToConversation => {
+                // Leaving an inbox item goes back to the inbox, for the next one.
+                if self.regions.buffer(RegionId::Main) == BufferKind::InboxDetail {
+                    self.regions.set_focus(RegionId::SideBottom);
+                }
                 self.regions.show(RegionId::Main, BufferKind::Conversation);
             }
             Action::NewSlice => self.run_with_arg(Action::NewSlice, ""),
@@ -640,6 +644,7 @@ impl App {
             Effect::Command(command) => self.outbox.push(command),
             Effect::OpenAgent(id) => self.open_agent_in_main(id),
             Effect::OpenTask(id) => self.open_task(id),
+            Effect::OpenInboxItem(id) => self.open_inbox_item(id),
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
             Effect::PickRelated(task) => self.open_relate_picker(task),
             Effect::Note(text) => self.note = Some(text),

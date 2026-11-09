@@ -1,6 +1,6 @@
 //! What "this agent" and "this task" mean right now, and the actions that act on them.
 
-use dovetail_api::{AgentId, AgentKind, Command, PermissionMode, TaskId};
+use dovetail_api::{AgentId, AgentKind, Command, InboxId, PermissionMode, TaskId};
 
 use super::{App, Confirm, Then};
 use crate::action::Action;
@@ -52,9 +52,12 @@ impl App {
     /// The agent `<leader>sm` and `<leader>sx` act on: like [`chat_target`](Self::chat_target),
     /// except that with the inbox focused it is the selected item's agent.
     pub(super) fn focused_agent(&self) -> Option<AgentId> {
-        if self.regions.focused_buffer() == BufferKind::Inbox
-            && let Some(item) = self.buffers.inbox.selected(&self.snap)
-        {
+        let item = match self.regions.focused_buffer() {
+            BufferKind::Inbox => self.buffers.inbox.selected(&self.snap),
+            BufferKind::InboxDetail => self.buffers.inbox_detail.current(&self.snap),
+            _ => None,
+        };
+        if let Some(item) = item {
             return Some(item.agent.clone());
         }
         self.chat_target()
@@ -82,6 +85,11 @@ impl App {
                 .and_then(|item| task_of(&item.agent)),
             BufferKind::Conversation => self.buffers.conversation.agent().and_then(task_of),
             BufferKind::TaskDetail => self.buffers.task_detail.task(),
+            BufferKind::InboxDetail => self
+                .buffers
+                .inbox_detail
+                .current(&self.snap)
+                .and_then(|item| task_of(&item.agent)),
             BufferKind::Activity | BufferKind::Messages => None,
         }
     }
@@ -90,6 +98,14 @@ impl App {
     pub(super) fn open_task(&mut self, id: TaskId) {
         self.buffers.task_detail.show(id);
         self.regions.show(RegionId::Main, BufferKind::TaskDetail);
+        self.regions.set_focus(RegionId::Main);
+    }
+
+    /// Shows an inbox item in full in the main region; the inbox keeps it selected.
+    pub(super) fn open_inbox_item(&mut self, id: InboxId) {
+        self.buffers.inbox.select_item(&self.snap, id);
+        self.buffers.inbox_detail.show(id);
+        self.regions.show(RegionId::Main, BufferKind::InboxDetail);
         self.regions.set_focus(RegionId::Main);
     }
 

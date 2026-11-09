@@ -2,6 +2,7 @@
 
 mod support;
 
+use dovetail_tui::region::RegionId;
 use support::*;
 
 #[test]
@@ -174,7 +175,7 @@ fn status_lines_show_on_agent_rows_and_drop_first_when_narrow() {
 }
 
 /// Live check 2026-11-06: Dovetail's own Permission items and "always allow" hints showed raw
-/// JSON and type names. Each selected item's preview, from the inbox region down.
+/// JSON and type names. The inbox rows, then each item opened in full (the main pane).
 #[test]
 fn dovetail_permission_items_read_as_plain_lines() {
     use dovetail_api::{InboxId, InboxItem, InboxKind, RuleSuggestion};
@@ -218,18 +219,37 @@ fn dovetail_permission_items_read_as_plain_lines() {
     ));
     let mut app = app_with(snap);
     type_keys(&mut app, " n");
-    let mut previews = Vec::new();
-    for _ in 0..3 {
-        let screen = render(&mut app, 120, 40);
-        let inbox: Vec<String> = screen
+    let side = |screen: &str| -> String {
+        screen
             .lines()
             .skip_while(|l| !l.contains("inbox"))
+            .take(5)
             .map(|l| l.chars().skip(75).collect::<String>().trim_end().to_owned())
-            .collect();
-        previews.push(inbox.join("\n"));
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let main = |screen: &str| -> String {
+        screen
+            .lines()
+            .skip(1)
+            .take(14)
+            .map(|l| l.chars().take(75).collect::<String>().trim_end().to_owned())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let mut views = vec![side(&render(&mut app, 120, 40))];
+    for _ in 0..3 {
+        app.on_key(enter(), 0);
+        views.push(main(&render(&mut app, 120, 40)));
+        app.on_key(esc(), 0);
+        assert_eq!(
+            app.focus(),
+            RegionId::SideBottom,
+            "Esc goes back to the inbox"
+        );
         type_keys(&mut app, "j");
     }
-    let all = previews.join("\n----\n");
+    let all = views.join("\n----\n");
     assert!(!all.contains('{'), "no raw JSON:\n{all}");
     assert!(all.contains("start slice demo-1"), "{all}");
     assert!(all.contains("dovetail/demo-1 · 1 unpushed commit"), "{all}");
@@ -237,4 +257,127 @@ fn dovetail_permission_items_read_as_plain_lines() {
     assert!(all.contains("A → always allow: switch to"), "{all}");
     assert!(!all.contains("setMode"), "{all}");
     insta::assert_snapshot!(all);
+}
+
+/// Task #5: long items filled the inbox. Each is one row, cut with …; Enter shows it in full.
+fn long_items() -> dovetail_api::Snapshot {
+    use dovetail_api::{InboxId, InboxItem, InboxKind};
+    let mut snap = world();
+    snap.inbox.clear();
+    let item = |id: u64, agent: &str, kind| InboxItem {
+        id: InboxId(id),
+        agent: agent_id(agent),
+        at_ms: NOW_MS - id as i64 * 60_000,
+        kind,
+    };
+    snap.inbox.push(item(
+        1,
+        "slice-4",
+        InboxKind::Question {
+            text: "Should the new route live under /v2/decisions or stay under /api? \
+                   The old clients still call /api, and moving it means a redirect.\n\n\
+                   - /v2 matches the OpenAPI spec draft\n\
+                   - /api keeps the gateway config as it is\n\n\
+                   I'd go with /v2 and add the redirect in the same PR."
+                .into(),
+        },
+    ));
+    snap.inbox.push(item(
+        2,
+        "slice-7",
+        InboxKind::Permission {
+            tool: "Bash".into(),
+            input: serde_json::json!({"command":
+                "FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get_decision -- --nocapture --test-threads=1"}),
+            reason: Some("Bash commands with environment variables need approval".into()),
+            suggestions: vec![],
+        },
+    ));
+    snap.inbox.push(item(
+        3,
+        "slice-7",
+        InboxKind::Error {
+            text: "Claude Code exited with status 1: the session ran out of memory while \
+                   compiling the workspace and was killed by the cgroup limit (2G)."
+                .into(),
+        },
+    ));
+    snap.inbox.push(item(
+        4,
+        "slice-4",
+        InboxKind::FinishedTurn {
+            preview: "Handler wired to the registry and the route tests pass. \
+                      Next I'll update the OpenAPI spec."
+                .into(),
+        },
+    ));
+    snap
+}
+
+#[test]
+fn long_inbox_items_take_one_line_each() {
+    let mut app = app_with(long_items());
+    type_keys(&mut app, " n");
+    let screen = render(&mut app, 120, 32);
+    let rows: Vec<&str> = screen
+        .lines()
+        .skip_while(|l| !l.contains("inbox · needs you (4)"))
+        .skip(1)
+        .take(5)
+        .collect();
+    for (row, needle) in rows
+        .iter()
+        .zip(["slice-7", "slice-4", "slice-7", "slice-4"])
+    {
+        assert!(row.contains(needle) && row.contains('…'), "{row}");
+    }
+    assert!(
+        rows[4].chars().skip(75).all(|c| c == ' ' || c == '│'),
+        "nothing under the four rows: {}",
+        rows[4]
+    );
+    assert!(
+        !screen.contains("gateway config"),
+        "full text stays in the detail"
+    );
+    insta::assert_snapshot!(screen);
+}
+
+#[test]
+fn enter_shows_a_long_item_in_full_with_its_keys() {
+    let mut app = app_with(long_items());
+    // Permission requests sort first; the question is the second row.
+    type_keys(&mut app, " nj");
+    app.on_key(enter(), 0);
+    assert_eq!(app.focus(), RegionId::Main);
+    let screen = render(&mut app, 120, 32);
+    assert!(screen.contains("gateway config"), "{screen}");
+    insta::assert_snapshot!(screen);
+    // The answer keys work in the detail too.
+    assert_eq!(press(&mut app, "r"), vec![], "r opens a prompt");
+    type_keys(&mut app, "/v2 please");
+    app.on_key(enter(), 1);
+    assert_eq!(
+        app.take_commands(),
+        vec![dovetail_api::Command::AnswerQuestion {
+            item: dovetail_api::InboxId(1),
+            text: "/v2 please".into()
+        }]
+    );
+}
+
+#[test]
+fn y_in_a_permission_items_detail_allows_it() {
+    let mut app = app_with(long_items());
+    type_keys(&mut app, " n");
+    app.on_key(enter(), 0);
+    let screen = render(&mut app, 120, 32);
+    assert!(screen.contains("--test-threads=1"), "{screen}");
+    assert_eq!(
+        press(&mut app, "y"),
+        vec![dovetail_api::Command::AnswerPermission {
+            item: dovetail_api::InboxId(2),
+            answer: dovetail_api::PermissionAnswer::Allow
+        }]
+    );
 }

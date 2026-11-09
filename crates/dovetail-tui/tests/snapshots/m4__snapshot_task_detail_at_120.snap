@@ -22,12 +22,12 @@ expression: "render(&mut app, 120, 32)"
 │ Decisions                                                               ││ ⏎ open · o fold · dd archive              │
 │                                                                         │└───────────────────────────────────────────┘
 │ (none yet · a to add one)                                               │┌ inbox · needs you (3) ────────────────────┐
-│                                                                         ││ ▸ ⚠ slice-7  Bash                   10:15 │
-│                                                                         ││   │ FS_EVAL_VIRTUAL_KEY=dev cargo test    │
-│                                                                         ││   │ -p api get_decision                   │
-│                                                                         ││   │ A → always allow: Bash(cargo test:*)  │
-│                                                                         ││   ? slice-4  Question               10:12 │
-│                                                                         ││   ✓ slice-4  Finished turn          10:09 │
+│                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
+│                                                                         ││   ? slice-4  Which route prefix sh… 10:12 │
+│                                                                         ││   ✓ slice-4  Handler wired; tests … 10:09 │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
 │                                                                         ││                                           │
 │                                                                         ││                                           │
 │                                                                         ││                                           │
