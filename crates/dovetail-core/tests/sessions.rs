@@ -291,6 +291,10 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
         .find(|a| a.id.0 == COORDINATOR)
         .and_then(|a| a.model.clone());
     assert_eq!(model.as_deref(), Some("claude-sonnet-5-5"));
+    // M13c: 19 564 tokens in context (input, cache read and creation, output) of the 1M window
+    // the result reports.
+    let fill = coordinator_of(&h.snap).context_pct;
+    assert_eq!(fill, Some(2));
 
     // Launch flags: auto mode, our MCP config without --strict-mcp-config, our settings.
     let spec = &fake.started_specs()[0];
@@ -634,6 +638,8 @@ fn a_background_subagent_is_a_node_with_progress_cost_and_its_summary_at_the_end
     assert_eq!(coordinator.status, AgentStatus::Working);
     assert_eq!(finished_turns(&h.snap), 0);
     let sub = subagent(&h.snap).expect("node");
+    // M13c: a subagent's calls fill its own context, not its parent's; it shows no fill.
+    assert_eq!(sub.context_pct, None);
     let progress = sub.progress.as_ref().expect("progress");
     assert_eq!(progress.total_tokens, 17164);
     assert_eq!(progress.duration_ms, 11302);

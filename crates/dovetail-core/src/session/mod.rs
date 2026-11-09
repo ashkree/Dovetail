@@ -72,6 +72,8 @@ pub(crate) struct Live {
     pub(crate) subagent_tasks: HashMap<String, String>,
     /// Subagent tool use ids to Claude Code's agent id, which names its worktree `agent-<id>`.
     pub(crate) subagent_keys: HashMap<String, String>,
+    /// Tokens the context held after the latest main-thread API call (decision #22).
+    pub(crate) context_tokens: Option<u64>,
 }
 
 impl Core {
@@ -209,6 +211,7 @@ impl Core {
                 setup_cancel: None,
                 subagent_tasks: HashMap::new(),
                 subagent_keys: HashMap::new(),
+                context_tokens: None,
             },
         );
         self.save_agent(id);
@@ -644,6 +647,9 @@ impl Core {
     fn on_assistant(&mut self, agent: &AgentId, message: dovetail_driver::AssistantMessage) {
         // Only main-thread messages get here; a subagent's model is not the session's.
         self.set_model(agent, message.model.as_deref());
+        if let Some(usage) = message.usage {
+            self.on_context_usage(agent, usage);
+        }
         let mut texts = Vec::new();
         let mut tools = Vec::new();
         for block in &message.blocks {
@@ -726,6 +732,7 @@ impl Core {
         if let Some(cost) = result.total_cost_usd {
             self.update_agent(agent, |row| row.agent.cost_usd = base + cost);
         }
+        self.learn_context_window(agent, &result);
         for denial in &result.permission_denials {
             let what = denial
                 .tool_input
