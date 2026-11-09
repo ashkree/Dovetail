@@ -8,7 +8,7 @@ These are **reference, not spec**: where a screen disagrees with `docs/design.md
 
 | File | Screen | Status |
 | --- | --- | --- |
-| `b.*` | **Layout B, the v1 default** (Decision 15): tree over inbox, conversation full height. The screens draw the tree on the left; the app now puts the conversation on the left and the tree over inbox on the right (ADR 0006). Shows glyphs, permission-mode badges, branch lines, to-do items, subagent progress, the inbox preview with an "always allow" rule and the reading theme | **v1 target** |
+| `b.*` | **Layout B, the v1 default** (Decision 15): tree over inbox, conversation full height. The screens draw the tree on the left; the app now puts the conversation on the left and the tree over inbox on the right (ADR 0006). Shows glyphs, permission-mode badges, branch lines, to-do items, subagent progress, the inbox preview with an "always allow" rule (the app now keeps inbox rows to one line and shows the full item on `Enter`, task #5) and the reading theme | **v1 target** |
 | `navigation.*` | Every screen and the key that reaches it, around the main layout (rev 121 of the design doc). Includes morning review, end-of-day record, picker, search, quick capture, task detail, command line, focus, map mode, side helper, insert, board, worktrees, activity, message timeline, take-over | **v1 + v1.1 overview** (v1.1 screens are tagged) |
 | `switcher.*` | Telescope-style session switcher (`<leader>ss`) | v1 |
 | `board.*` | Kanban board in the main region (`<leader>b`) | v1 |

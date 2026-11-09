@@ -627,6 +627,20 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] Every item in the digest's v1 roadmap is shipped, or listed by you as cut
   - [ ] App RSS under 100 MB after a day's use (proposed target)
 
+### Daily-driver fixes (after M10)
+Fixes from the first days of building Dovetail inside Dovetail, one slice and PR each, all merged on 2026-11-09. They come ahead of M11 and count towards M16's "fixing what hurts"; no milestone box is ticked by them.
+
+| Task | Fix | PR |
+| --- | --- | --- |
+| #1 | `Ctrl-V` pastes clipboard images into the chat bar as attachments | #5 |
+| #2 | `ask_user` never blocks; a chat reply reaches the agent at once and clears its open questions (ADR 0007) | #6 |
+| #4 | The chat bar wraps at word boundaries, not mid-word | #4 |
+| #5 | Inbox rows are one line; `Enter` opens the item in full in an `InboxDetail` buffer (finished turns still open the conversation) | #8 |
+| #6 | A header rule opens each conversation message | #7 |
+| #7 | Starting a slice on a task moves the task to Now | #9 |
+
+**Open follow-ups:** #3 attach an image when a pasted or dropped file path points to one; #8 clean up saved paste attachments; #9 let the coordinator archive slices and tasks (MCP tool).
+
 ---
 
 ## 7. Where the docs disagree or say nothing
