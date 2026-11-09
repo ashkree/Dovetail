@@ -230,7 +230,8 @@ pub enum Command {
         confirmed: bool,
     },
     /// Gather every slice worktree's git and PR state again (sent when the worktree view
-    /// opens). The core answers with one [`Event::WorktreeUpserted`] per worktree.
+    /// opens): `git fetch origin <base>` first, then local git and `gh pr list`. The core
+    /// answers with one [`Event::WorktreeUpserted`] per worktree.
     RefreshWorktrees,
     /// Switch to another project.
     OpenProject {

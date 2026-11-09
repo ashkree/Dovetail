@@ -22,8 +22,8 @@ use crate::worktree::{self, SetupStatus};
 
 /// Longest a `git` command may run before it is killed. Every one here is local.
 pub(crate) const GIT_TIMEOUT: Duration = Duration::from_secs(10);
-/// Longest `gh pr list` may run before it is killed. It goes over the network.
-pub(crate) const GH_TIMEOUT: Duration = Duration::from_secs(15);
+/// Longest a network command (`git fetch`, `gh pr list`) may run before it is killed.
+pub(crate) const NETWORK_TIMEOUT: Duration = Duration::from_secs(15);
 /// Most PRs asked of `gh` per branch; an open one among them wins.
 const PR_LIMIT: &str = "10";
 
@@ -91,6 +91,8 @@ async fn run<S: AsRef<OsStr>>(
     let child = tokio::process::Command::new(program)
         .args(args)
         .current_dir(dir)
+        // A fetch must never stop to ask for credentials: it fails instead.
+        .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -236,6 +238,45 @@ pub(crate) struct Target {
     pub branch: String,
 }
 
+/// How much a refresh looks up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Refresh {
+    /// The worktree view asked: fetch the base from `origin` and look up PRs with `gh`.
+    Full,
+    /// After an event: local `git` only; the PR stays as last looked up.
+    Local,
+}
+
+/// The base branch of one refresh.
+#[derive(Debug, Clone)]
+pub(crate) struct Base {
+    /// Its name, or `HEAD` when the main checkout is detached.
+    pub name: String,
+    /// Whether `origin/<name>` can be trusted: false when a fetch was tried and failed.
+    pub origin_known: bool,
+}
+
+/// One worktree's gathered state, before the core merges it with what it held.
+#[derive(Debug, Clone)]
+pub(crate) struct Gathered {
+    /// The state. Without `pr_checked` its `pr` is a placeholder.
+    pub info: WorktreeInfo,
+    /// Whether `gh` was asked this time.
+    pub pr_checked: bool,
+}
+
+/// What the core should hold after `new` arrives, given the `old` entry: `None` when `old` is
+/// newer. A refresh that did not ask `gh` keeps the PR last looked up.
+pub(crate) fn merge(old: Option<&WorktreeInfo>, new: Gathered) -> Option<WorktreeInfo> {
+    let mut info = new.info;
+    match old {
+        Some(old) if old.checked_ms > info.checked_ms => return None,
+        Some(old) if !new.pr_checked => info.pr = old.pr.clone(),
+        _ => {}
+    }
+    Some(info)
+}
+
 /// Where to look, shared by every target of one refresh.
 #[derive(Debug, Clone)]
 pub(crate) struct Context {
@@ -248,28 +289,58 @@ pub(crate) struct Context {
 }
 
 impl Context {
-    /// The branch checked out in the main checkout, or `HEAD` when it is detached or unknown.
-    pub(crate) async fn base(&self) -> String {
-        match git(&self.repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).await {
+    /// The base branch: the one checked out in the main checkout, or `HEAD` when it is detached
+    /// or unknown. A [`Refresh::Full`] first fetches it from `origin`.
+    pub(crate) async fn base(&self, refresh: Refresh) -> Base {
+        let name = match git(&self.repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).await {
             Ok(name) if !name.trim().is_empty() => name.trim().to_owned(),
             Ok(_) => "HEAD".to_owned(),
             Err(e) => {
                 tracing::debug!("worktree view: main checkout's branch: {e}");
                 "HEAD".to_owned()
             }
-        }
+        };
+        let origin_known = match refresh {
+            Refresh::Local => true,
+            Refresh::Full if name == "HEAD" => false,
+            Refresh::Full => {
+                let args = ["fetch", "--quiet", "origin", name.as_str()];
+                run(&self.repo, Path::new("git"), &args, NETWORK_TIMEOUT)
+                    .await
+                    .inspect_err(|e| tracing::warn!("worktree view: fetching {name}: {e}"))
+                    .is_ok()
+            }
+        };
+        Base { name, origin_known }
     }
 
-    /// Everything the view shows for `target`, compared with `base`.
-    pub(crate) async fn gather(&self, target: Target, base: &str, now_ms: i64) -> WorktreeInfo {
+    /// Everything the view shows for `target`, compared with `base`. `gh` is asked only on a
+    /// [`Refresh::Full`].
+    pub(crate) async fn gather(
+        &self,
+        target: Target,
+        base: &Base,
+        now_ms: i64,
+        refresh: Refresh,
+    ) -> Gathered {
+        let pr_checked = refresh == Refresh::Full;
+        let pr = async {
+            if pr_checked {
+                self.pr(&target.branch).await
+            } else {
+                PrLookup::Unknown {
+                    reason: "not looked up yet".to_owned(),
+                }
+            }
+        };
         let (sync, changes, unpushed, pr) = tokio::join!(
             self.sync(&target.branch, base),
             self.changes(&target),
             self.unpushed(&target.branch),
-            self.pr(&target.branch),
+            pr,
         );
         let label = |part: &str| format!("worktree view: {} {part}", target.name);
-        WorktreeInfo {
+        let info = WorktreeInfo {
             sync: sync
                 .inspect_err(|e| tracing::warn!("{}: {e}", label("sync")))
                 .ok(),
@@ -281,20 +352,23 @@ impl Context {
                 .ok(),
             pr,
             setup: setup(&self.paths, &target.key, &target.name),
-            base: base.to_owned(),
+            base: base.name.clone(),
             agent: target.agent,
             path: target.path,
             branch: target.branch,
             checked_ms: now_ms,
-        }
+        };
+        Gathered { info, pr_checked }
     }
 
-    async fn sync(&self, branch: &str, base: &str) -> Result<SyncState, InfoError> {
+    async fn sync(&self, branch: &str, base: &Base) -> Result<SyncState, InfoError> {
+        let (known, base) = (base.origin_known, base.name.as_str());
         let range = format!("{base}...{branch}");
         let out = git(&self.repo, &["rev-list", "--left-right", "--count", &range]).await?;
         let (behind, ahead) = parse_left_right(&out)?;
         let origin = format!("refs/remotes/origin/{base}");
-        let behind_origin = if base != "HEAD"
+        let behind_origin = if known
+            && base != "HEAD"
             && git_check(&self.repo, &["rev-parse", "--verify", "--quiet", &origin]).await?
         {
             let range = format!("{branch}..{origin}");
@@ -340,7 +414,7 @@ impl Context {
             "--limit",
             PR_LIMIT,
         ];
-        let found = run(&self.repo, &self.gh, &args, GH_TIMEOUT)
+        let found = run(&self.repo, &self.gh, &args, NETWORK_TIMEOUT)
             .await
             .and_then(|out| parse_prs(&out));
         match found {
@@ -361,7 +435,8 @@ impl Context {
 }
 
 impl Core {
-    /// Gathers every slice worktree's state afresh ([`Command::RefreshWorktrees`]).
+    /// Gathers every slice worktree's state afresh, with a fetch and PR lookups
+    /// ([`Command::RefreshWorktrees`]).
     ///
     /// [`Command::RefreshWorktrees`]: dovetail_api::Command::RefreshWorktrees
     pub(crate) fn refresh_worktrees(&mut self) {
@@ -371,17 +446,17 @@ impl Core {
             .filter(|r| r.agent.kind == AgentKind::Slice && r.agent.worktree.is_some())
             .map(|r| r.agent.id.clone())
             .collect();
-        self.gather_worktrees(&slices);
+        self.gather_worktrees(&slices, Refresh::Full);
     }
 
-    /// Gathers one slice's worktree state afresh; nothing for other agents.
+    /// Gathers one slice's local git state afresh after an event; nothing for other agents.
     pub(crate) fn refresh_worktree(&mut self, agent: &AgentId) {
-        self.gather_worktrees(std::slice::from_ref(agent));
+        self.gather_worktrees(std::slice::from_ref(agent), Refresh::Local);
     }
 
     /// Looks at `agents`' worktrees in the background; each result arrives as
     /// [`Input::WorktreeGathered`].
-    fn gather_worktrees(&mut self, agents: &[AgentId]) {
+    fn gather_worktrees(&mut self, agents: &[AgentId], refresh: Refresh) {
         let targets: Vec<Target> = agents
             .iter()
             .filter_map(|id| self.agents.get(id))
@@ -408,13 +483,13 @@ impl Core {
         let inputs = self.inputs.clone();
         let now = now_ms();
         tokio::spawn(async move {
-            let base = ctx.base().await;
+            let base = ctx.base(refresh).await;
             let mut set = tokio::task::JoinSet::new();
             for target in targets {
                 let (ctx, base, inputs) = (ctx.clone(), base.clone(), inputs.clone());
                 set.spawn(async move {
-                    let info = ctx.gather(target, &base, now).await;
-                    let _ = inputs.send(Input::WorktreeGathered(info));
+                    let gathered = ctx.gather(target, &base, now, refresh).await;
+                    let _ = inputs.send(Input::WorktreeGathered(gathered));
                 });
             }
             while set.join_next().await.is_some() {}
@@ -422,17 +497,13 @@ impl Core {
     }
 
     /// Stores and sends a gathered state, unless the slice is gone or a newer one is in.
-    pub(crate) fn on_worktree_gathered(&mut self, info: WorktreeInfo) {
-        if !self.agents.contains_key(&info.agent) {
+    pub(crate) fn on_worktree_gathered(&mut self, gathered: Gathered) {
+        if !self.agents.contains_key(&gathered.info.agent) {
             return;
         }
-        if self
-            .worktrees
-            .get(&info.agent)
-            .is_some_and(|old| old.checked_ms > info.checked_ms)
-        {
+        let Some(info) = merge(self.worktrees.get(&gathered.info.agent), gathered) else {
             return;
-        }
+        };
         self.worktrees.insert(info.agent.clone(), info.clone());
         self.emit(Event::WorktreeUpserted(info));
     }
@@ -550,9 +621,123 @@ mod tests {
         }
     }
 
+    async fn gathered(s: &Scratch, refresh: Refresh) -> Gathered {
+        let base = s.ctx.base(refresh).await;
+        s.ctx.gather(s.target.clone(), &base, 1, refresh).await
+    }
+
+    /// A full refresh, as when the worktree view opens.
     async fn info(s: &Scratch) -> WorktreeInfo {
-        let base = s.ctx.base().await;
-        s.ctx.gather(s.target.clone(), &base, 1).await
+        gathered(s, Refresh::Full).await.info
+    }
+
+    fn behind_origin(info: &WorktreeInfo) -> Option<u32> {
+        info.sync.expect("sync").behind_origin
+    }
+
+    /// Someone else pushes a commit to `origin/main`.
+    fn push_elsewhere(s: &Scratch) {
+        let other = s._dir.path().join("other");
+        let origin = s._dir.path().join("origin.git");
+        run_git(
+            s._dir.path(),
+            &["clone", "-q", &origin.to_string_lossy(), "other"],
+        );
+        commit(&other, "theirs.txt");
+        run_git(&other, &["push", "-q", "origin", "main"]);
+    }
+
+    #[tokio::test]
+    async fn a_full_refresh_fetches_the_base_and_a_local_one_does_not() {
+        let s = scratch();
+        push_elsewhere(&s);
+        let local = gathered(&s, Refresh::Local).await.info;
+        // As of the last fetch, origin had not moved.
+        assert_eq!(behind_origin(&local), Some(0));
+        assert_eq!(behind_origin(&info(&s).await), Some(1));
+    }
+
+    #[tokio::test]
+    async fn a_failed_fetch_leaves_behind_origin_unknown_and_the_rest_known() {
+        let s = scratch();
+        let gone = s._dir.path().join("gone.git");
+        run_git(
+            &s.ctx.repo,
+            &["remote", "set-url", "origin", &gone.to_string_lossy()],
+        );
+        let got = info(&s).await;
+        let sync = got.sync.expect("sync");
+        assert_eq!((sync.ahead, sync.behind, sync.behind_origin), (0, 0, None));
+        assert_eq!(got.changes, Some(Changes::default()));
+        // A local refresh reads the last fetched ref and makes no network call.
+        let local = gathered(&s, Refresh::Local).await.info;
+        assert_eq!(behind_origin(&local), Some(0));
+    }
+
+    #[tokio::test]
+    async fn a_local_refresh_does_not_ask_gh_and_keeps_the_last_pr() {
+        let mut s = scratch();
+        // `gh` would fail if it were asked.
+        s.ctx.gh = PathBuf::from("false");
+        let local = gathered(&s, Refresh::Local).await;
+        assert!(!local.pr_checked);
+        let found = PrLookup::Found(PullRequest {
+            number: 9,
+            state: PrState::Open,
+            url: "u".into(),
+        });
+        let old = WorktreeInfo {
+            pr: found.clone(),
+            checked_ms: 0,
+            ..local.info.clone()
+        };
+        let kept = merge(Some(&old), local).expect("newer");
+        assert_eq!(kept.pr, found);
+    }
+
+    #[test]
+    fn merging_keeps_the_newest_and_a_full_refresh_replaces_the_pr() {
+        let info = |checked_ms: i64, pr: PrLookup| WorktreeInfo {
+            agent: AgentId("a".into()),
+            path: PathBuf::from("/w"),
+            branch: "dovetail/a".into(),
+            base: "main".into(),
+            sync: None,
+            changes: None,
+            unpushed: None,
+            pr,
+            setup: WorktreeSetup::None,
+            checked_ms,
+        };
+        let placeholder = PrLookup::Unknown {
+            reason: "not looked up yet".into(),
+        };
+        let old = info(5, PrLookup::None);
+        let stale = Gathered {
+            info: info(4, PrLookup::None),
+            pr_checked: true,
+        };
+        assert_eq!(merge(Some(&old), stale), None);
+        let first_local = Gathered {
+            info: info(6, placeholder.clone()),
+            pr_checked: false,
+        };
+        assert_eq!(merge(None, first_local).map(|i| i.pr), Some(placeholder));
+        let full = Gathered {
+            info: info(
+                6,
+                PrLookup::Unknown {
+                    reason: "gh failed".into(),
+                },
+            ),
+            pr_checked: true,
+        };
+        assert_eq!(
+            merge(Some(&old), full).map(|i| i.pr),
+            Some(PrLookup::Unknown {
+                reason: "gh failed".into()
+            })
+        );
     }
 
     #[tokio::test]

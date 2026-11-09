@@ -720,8 +720,9 @@ pub struct Warning {
 
 /// Git and pull-request state of one slice's worktree, for the worktree view (`<leader>g`).
 ///
-/// The core fills it on [`crate::Command::RefreshWorktrees`] and after a slice's turn finishes.
-/// Each part is looked up on its own: one that could not be read is `None` (or
+/// The core fills it in full on [`crate::Command::RefreshWorktrees`] (fetching the base and
+/// asking `gh`), and refreshes the local git parts after a slice's turn finishes; the PR then
+/// stays as last looked up. Each part is looked up on its own: one that could not be read is `None` (or
 /// [`PrLookup::Unknown`]) and the rest still shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorktreeInfo {
@@ -758,7 +759,7 @@ pub struct SyncState {
     pub behind: u32,
     /// Commits on `origin/<base>` that the branch lacks, as of the last fetch: non-zero means
     /// the remote base has moved since the branch last took it in. `None` without such a
-    /// remote branch.
+    /// remote branch, or when the fetch on [`crate::Command::RefreshWorktrees`] failed.
     pub behind_origin: Option<u32>,
 }
 
@@ -787,7 +788,7 @@ impl Changes {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrLookup {
-    /// `gh` is missing, failed or timed out.
+    /// `gh` is missing, failed or timed out, or has not been asked yet.
     Unknown {
         /// Why, in a few words.
         reason: String,

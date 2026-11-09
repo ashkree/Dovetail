@@ -219,7 +219,7 @@ pub(crate) enum Input {
         list: dovetail_api::TodoListId,
     },
     /// A slice worktree's state for the worktree view was gathered.
-    WorktreeGathered(dovetail_api::WorktreeInfo),
+    WorktreeGathered(crate::worktree_info::Gathered),
     /// A clipboard read for an agent's chat bar finished.
     Pasted {
         agent: AgentId,
