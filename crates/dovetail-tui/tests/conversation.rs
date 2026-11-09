@@ -285,7 +285,8 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
-            text: "hello".into()
+            text: "hello".into(),
+            attachments: Vec::new()
         }]
     );
     // Typing moved focus to the main pane; `h` goes back to the tree.
@@ -298,7 +299,8 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("slice-7"),
-            text: "key is dev".into()
+            text: "key is dev".into(),
+            attachments: Vec::new()
         }]
     );
     assert_eq!(
@@ -319,7 +321,8 @@ fn i_from_the_inbox_targets_the_coordinator() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
-            text: "x".into()
+            text: "x".into(),
+            attachments: Vec::new()
         }]
     );
 }
@@ -337,7 +340,8 @@ fn i_in_the_main_region_targets_the_agent_it_shows() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("slice-4"),
-            text: "go".into()
+            text: "go".into(),
+            attachments: Vec::new()
         }]
     );
 }
@@ -363,7 +367,8 @@ fn the_chat_input_takes_enter_ctrl_j_alt_enter_ctrl_w_and_ctrl_u() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
-            text: "first line\nsecond\nthird".into()
+            text: "first line\nsecond\nthird".into(),
+            attachments: Vec::new()
         }]
     );
     assert_eq!(app.mode(), Mode::Normal);

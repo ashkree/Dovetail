@@ -67,6 +67,17 @@ impl TextInput {
         &self.text[..self.cursor]
     }
 
+    /// Inserts pasted text at the cursor. A single-line input takes only the first line.
+    pub fn insert_str(&mut self, text: &str) {
+        let text = if self.multiline {
+            text
+        } else {
+            text.lines().next().unwrap_or("")
+        };
+        self.text.insert_str(self.cursor, text);
+        self.cursor += text.len();
+    }
+
     /// Applies a key.
     pub fn handle(&mut self, key: KeyEvent) -> InputOutcome {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);

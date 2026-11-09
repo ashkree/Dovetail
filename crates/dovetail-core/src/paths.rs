@@ -69,6 +69,11 @@ impl Paths {
         }
     }
 
+    /// `attachments/`: images pasted into a chat bar, kept so a sent message can name its files.
+    pub fn attachments(&self) -> PathBuf {
+        self.data.join("attachments")
+    }
+
     /// `registry.db`, listing every registered project.
     pub fn registry_db(&self) -> PathBuf {
         self.data.join("registry.db")

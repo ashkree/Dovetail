@@ -24,6 +24,20 @@ pub enum SessionError {
     /// The launch files could not be written.
     #[error("writing launch settings: {0}")]
     LaunchFiles(#[source] std::io::Error),
+    /// More images than one message may carry.
+    #[error("at most {0} images per message")]
+    TooManyImages(usize),
+    /// A pasted image could not be read from its saved file.
+    #[error("could not read image {path}: {source}")]
+    ImageUnreadable {
+        /// The saved file.
+        path: std::path::PathBuf,
+        /// The cause.
+        source: std::io::Error,
+    },
+    /// A saved image is over the 5 MB limit.
+    #[error("image {0} is over 5 MB")]
+    ImageTooLarge(std::path::PathBuf),
     /// The driver failed.
     #[error("{name}: {source}")]
     Driver {

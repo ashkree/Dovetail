@@ -357,11 +357,7 @@ impl Session for ClaudeSession {
     }
 
     fn send(&self, input: UserInput) -> Result<(), DriverError> {
-        self.write(json!({
-            "type": "user",
-            "message": {"role": "user", "content": input.text},
-            "parent_tool_use_id": null,
-        }))
+        self.write(input.to_stream_json())
     }
 
     fn interrupt(&self) -> Result<(), DriverError> {

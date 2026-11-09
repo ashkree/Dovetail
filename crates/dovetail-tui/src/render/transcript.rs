@@ -143,16 +143,49 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
     out
 }
 
+/// Attachment chips laid out two spaces apart, a chip never split across rows.
+pub fn chip_lines(chips: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
+    let mut rows: Vec<Vec<Span<'static>>> = Vec::new();
+    let mut used = 0;
+    for chip in chips {
+        let w = chip.width();
+        match rows.last_mut() {
+            Some(row) if used + 2 + w <= width => {
+                row.push(Span::raw("  "));
+                row.push(chip);
+                used += 2 + w;
+            }
+            _ => {
+                rows.push(vec![chip]);
+                used = w;
+            }
+        }
+    }
+    rows.into_iter().map(Line::from).collect()
+}
+
 fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<Line<'static>> {
     let theme = p.theme;
     let width = p.width;
     match entry.kind {
         EntryKind::User => {
             let mut lines = vec![label("you", entry, p, false)];
-            for text in entry.text.split('\n') {
-                let spans = [Span::styled(text.to_string(), theme.body())];
-                for line in wrap_spans(&spans, width) {
-                    lines.push(Line::from(line));
+            if !entry.attachments.is_empty() {
+                let chips = entry
+                    .attachments
+                    .iter()
+                    .enumerate()
+                    .map(|(i, a)| Span::styled(fmt::image_chip(i + 1, a.size), theme.chip()))
+                    .collect();
+                lines.extend(chip_lines(chips, width));
+            }
+            // An image-only message has no text lines.
+            if !(entry.text.is_empty() && !entry.attachments.is_empty()) {
+                for text in entry.text.split('\n') {
+                    let spans = [Span::styled(text.to_string(), theme.body())];
+                    for line in wrap_spans(&spans, width) {
+                        lines.push(Line::from(line));
+                    }
                 }
             }
             lines
@@ -230,6 +263,7 @@ mod tests {
             at_ms: 1_793_528_040_000,
             kind,
             text: text.into(),
+            attachments: Vec::new(),
         }
     }
 

@@ -168,11 +168,15 @@ impl MockCore {
     /// Carries out a command. Its effects are delivered before anything already scheduled.
     pub fn handle(&mut self, command: Command) {
         match command {
-            Command::Prompt { agent, text } => {
+            Command::Prompt {
+                agent,
+                text,
+                attachments,
+            } => {
                 if self.agent(&agent).is_none() {
                     return self.fail(format!("no agent {}", agent.0));
                 }
-                self.append(&agent, EntryKind::User, text);
+                self.append_with(&agent, EntryKind::User, text, attachments);
                 self.update_agent(&agent, |a| a.status = AgentStatus::Working);
                 self.schedule_reply(agent, true);
             }
@@ -383,6 +387,17 @@ impl MockCore {
 
     /// Adds a finished entry to an agent's conversation.
     fn append(&mut self, agent: &AgentId, kind: EntryKind, text: String) {
+        self.append_with(agent, kind, text, Vec::new());
+    }
+
+    /// Adds a finished entry with attached images.
+    fn append_with(
+        &mut self,
+        agent: &AgentId,
+        kind: EntryKind,
+        text: String,
+        attachments: Vec<Attachment>,
+    ) {
         let id = self.entry_id();
         self.emit(Event::ConversationAppended {
             agent: agent.clone(),
@@ -391,6 +406,7 @@ impl MockCore {
                 at_ms: self.state.now_ms,
                 kind,
                 text,
+                attachments,
             },
         });
     }
@@ -622,6 +638,7 @@ impl MockCore {
                     at_ms: core.state.now_ms,
                     kind: EntryKind::Assistant,
                     text: String::new(),
+                    attachments: Vec::new(),
                 },
             });
         });

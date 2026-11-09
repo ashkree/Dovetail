@@ -249,6 +249,8 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, CONVERSATION, "[[", Action::PrevTurn),
     bind(N, CONVERSATION, "zc", Action::FoldTurn),
     bind(N, CONVERSATION, "zo", Action::UnfoldTurn),
+    // The chat bar only: not quick capture, task notes or inbox answers (task #1).
+    bind(Mode::Insert, CONVERSATION, "<C-v>", Action::PasteClipboard),
     // Task tree (Decision 24).
     bind(N, TREE, "<CR>", Action::TreeOpen),
     bind(N, TREE, "o", Action::TreeToggleFold),
@@ -315,9 +317,15 @@ impl Keymap {
     /// The global single-key binding for `key` in `mode`, if any. Insert and Command mode type
     /// text, so only such chords (like Ctrl-C) are looked up there; the rest of the keys are text.
     pub fn global_chord(&self, mode: Mode, key: Key) -> Option<Action> {
+        self.chord(mode, Scope::Global, key)
+    }
+
+    /// The single-key binding for `key` in `mode` and exactly `scope`, if any. Used for chords
+    /// that only one text input takes, such as Ctrl-V in a chat bar.
+    pub fn chord(&self, mode: Mode, scope: Scope, key: Key) -> Option<Action> {
         self.entries
             .iter()
-            .find(|e| e.mode == mode && e.scope == Scope::Global && e.keys == [key])
+            .find(|e| e.mode == mode && e.scope == scope && e.keys == [key])
             .map(|e| e.action)
     }
 

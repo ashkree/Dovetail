@@ -18,8 +18,8 @@ use std::time::Duration;
 use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::{
     ACTIVITY_TAIL, ActivityItem, ActivityKind, Agent, AgentId, AgentKind, AgentMessage,
-    AgentStatus, CONVERSATION_TAIL, Command, ConversationEntry, ConversationTail, CoreLink,
-    DecisionAuthor, EntryId, EntryKind, Event, InboxId, InboxItem, MESSAGE_TAIL, NewTask,
+    AgentStatus, Attachment, CONVERSATION_TAIL, Command, ConversationEntry, ConversationTail,
+    CoreLink, DecisionAuthor, EntryId, EntryKind, Event, InboxId, InboxItem, MESSAGE_TAIL, NewTask,
     PROTOCOL_VERSION, PermissionMode, ServerMsg, SessionLock, Snapshot, Task, TaskChange, TaskId,
     TaskStatus, Totals, Warning, WarningId,
 };
@@ -634,11 +634,23 @@ impl Core {
 
     /// Adds an entry to an agent's conversation, tells the UI and stores it.
     pub(crate) fn add_entry(&mut self, agent: &AgentId, kind: EntryKind, text: String) -> EntryId {
+        self.add_entry_with(agent, kind, text, Vec::new())
+    }
+
+    /// [`add_entry`](Self::add_entry) with images attached (a user message).
+    pub(crate) fn add_entry_with(
+        &mut self,
+        agent: &AgentId,
+        kind: EntryKind,
+        text: String,
+        attachments: Vec<Attachment>,
+    ) -> EntryId {
         let entry = ConversationEntry {
             id: EntryId(self.next_entry),
             at_ms: now_ms(),
             kind,
             text,
+            attachments,
         };
         self.next_entry += 1;
         let tail = self.tails.entry(agent.clone()).or_default();
@@ -856,7 +868,11 @@ impl Core {
 
     async fn command(&mut self, command: Command) {
         match command {
-            Command::Prompt { agent, text } => self.prompt(&agent, text).await,
+            Command::Prompt {
+                agent,
+                text,
+                attachments,
+            } => self.prompt(&agent, text, attachments).await,
             Command::Interrupt { agent } => self.interrupt(&agent),
             Command::AnswerPermission { item, answer } => {
                 self.answer_permission(item, answer).await

@@ -16,10 +16,12 @@ use std::path::PathBuf;
 
 use dovetail_api::tools::Role;
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, AgentStatus, EntryKind, InboxKind, Warning, WarningId,
+    ActivityKind, AgentId, AgentKind, AgentStatus, Attachment, EntryKind, InboxKind,
+    MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, Warning, WarningId,
 };
 use dovetail_driver::{
-    ContentBlock, DriverEvent, ExitInfo, InitInfo, PeerMessage, Session, TurnResult, UserInput,
+    ContentBlock, DriverEvent, ExitInfo, ImageInput, InitInfo, PeerMessage, Session, TurnResult,
+    UserInput,
 };
 
 use crate::error::SessionError;
@@ -217,26 +219,51 @@ impl Core {
         shown: EntryKind,
         shown_text: String,
     ) -> Result<(), SessionError> {
+        self.send_input(id, UserInput::text(text), shown, shown_text, Vec::new())
+    }
+
+    /// Sends a message, with any images, and records `shown` (with `attachments`) in the
+    /// agent's conversation. Starts a turn.
+    fn send_input(
+        &mut self,
+        id: &AgentId,
+        input: UserInput,
+        shown: EntryKind,
+        shown_text: String,
+        attachments: Vec<Attachment>,
+    ) -> Result<(), SessionError> {
         self.ensure_live(id)?;
         let name = self.name_of(id);
         let Some(live) = self.live.get_mut(id) else {
             return Err(SessionError::NotRunning(id.0.clone()));
         };
         live.session
-            .send(UserInput::text(text))
+            .send(input)
             .map_err(|source| SessionError::Driver { name, source })?;
         live.turn.input_sent();
-        self.add_entry(id, shown, shown_text);
+        self.add_entry_with(id, shown, shown_text, attachments);
         self.refresh_status(id);
         Ok(())
     }
 
     /// The user's prompt.
-    pub(crate) async fn prompt(&mut self, id: &AgentId, text: String) {
+    pub(crate) async fn prompt(
+        &mut self,
+        id: &AgentId,
+        text: String,
+        attachments: Vec<Attachment>,
+    ) {
         if self.live.get(id).is_some_and(|l| l.setting_up) {
             self.fail("this slice is still setting up");
             return;
         }
+        let images = match read_attachments(&attachments) {
+            Ok(images) => images,
+            Err(message) => {
+                self.fail(message);
+                return;
+            }
+        };
         // A failed session gets another go when the user writes to it.
         self.update_agent(id, |row| {
             if row.agent.status == AgentStatus::Error {
@@ -253,7 +280,11 @@ impl Core {
             }
             self.deliver_notes();
         }
-        if let Err(message) = self.send_text(id, &text, EntryKind::User, text.clone()) {
+        let input = UserInput {
+            text: text.clone(),
+            images,
+        };
+        if let Err(message) = self.send_input(id, input, EntryKind::User, text, attachments) {
             self.fail(message);
         }
     }
@@ -705,4 +736,28 @@ fn exit_text(info: &ExitInfo) -> String {
         (None, Some(signal)) => format!("signal {signal}"),
         (None, None) => "unknown status".into(),
     }
+}
+
+/// Reads the image files the UI saved for a prompt. The UI checked them already; the limits
+/// are checked again because the files are read here, not where they were written.
+fn read_attachments(attachments: &[Attachment]) -> Result<Vec<ImageInput>, SessionError> {
+    if attachments.len() > MAX_ATTACHMENTS {
+        return Err(SessionError::TooManyImages(MAX_ATTACHMENTS));
+    }
+    attachments
+        .iter()
+        .map(|a| {
+            let data = std::fs::read(&a.path).map_err(|source| SessionError::ImageUnreadable {
+                path: a.path.clone(),
+                source,
+            })?;
+            if data.len() as u64 > MAX_ATTACHMENT_BYTES {
+                return Err(SessionError::ImageTooLarge(a.path.clone()));
+            }
+            Ok(ImageInput {
+                media_type: a.media_type.mime().to_string(),
+                data,
+            })
+        })
+        .collect()
 }
