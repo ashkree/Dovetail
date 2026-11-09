@@ -54,6 +54,9 @@ pub struct ReplayOptions {
     /// Pause before emitting the fixture's n-th `out` line (0-based, counted over replayed lines)
     /// until [`FakeDriver::resume`] is called.
     pub pause_before: Vec<usize>,
+    /// `(n, signal)`: the first session started dies before its n-th `out` line (after any pause
+    /// there) and exits by `signal`, as an OOM-killed session does. Later sessions replay in full.
+    pub kill_first_before: Option<(usize, i32)>,
 }
 
 impl Default for ReplayOptions {
@@ -62,6 +65,7 @@ impl Default for ReplayOptions {
             timing: ReplayTiming::Instant,
             wait_for_answers: false,
             pause_before: Vec::new(),
+            kill_first_before: None,
         }
     }
 }
@@ -193,14 +197,18 @@ impl FakeDriver {
 impl SessionDriver for FakeDriver {
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {
         let handle = tokio::runtime::Handle::try_current().map_err(|_| DriverError::NoRuntime)?;
+        let mut options = self.options.clone();
         if let Ok(mut s) = self.recorder.specs.lock() {
             s.push(spec.clone());
+            if s.len() > 1 {
+                options.kill_first_before = None;
+            }
         }
         let (tx, rx) = unbounded_channel();
         let shared = Arc::new(Shared::default());
         handle.spawn(replay(
             self.lines.clone(),
-            self.options.clone(),
+            options,
             tx,
             shared.clone(),
             self.gate.clone(),
@@ -242,6 +250,17 @@ async fn replay(
         }
         if options.pause_before.contains(&n) {
             gate.notified().await;
+        }
+        if let Some((at, signal)) = options.kill_first_before
+            && at == n
+        {
+            let _ = tx.send(DriverEvent::Exited(ExitInfo {
+                code: None,
+                signal: Some(signal),
+                success: false,
+                stderr_tail: Vec::new(),
+            }));
+            return;
         }
         match options.timing {
             ReplayTiming::Instant => {}
