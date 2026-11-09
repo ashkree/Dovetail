@@ -60,7 +60,10 @@ fn esc_goes_back_to_the_conversation() {
 #[test]
 fn greater_than_moves_the_card_to_the_next_status() {
     let mut app = board();
-    assert_eq!(press(&mut app, ">"), vec![status_to(4, TaskStatus::InProgress)]);
+    assert_eq!(
+        press(&mut app, ">"),
+        vec![status_to(4, TaskStatus::InProgress)]
+    );
 }
 
 #[test]
@@ -82,15 +85,24 @@ fn greater_than_stops_at_the_last_column() {
 #[test]
 fn j_and_k_pick_the_card_within_the_column() {
     let mut app = board();
-    assert_eq!(press(&mut app, "j>"), vec![status_to(3, TaskStatus::InProgress)]);
+    assert_eq!(
+        press(&mut app, "j>"),
+        vec![status_to(3, TaskStatus::InProgress)]
+    );
     let mut app = board();
-    assert_eq!(press(&mut app, "jkk>"), vec![status_to(4, TaskStatus::InProgress)]);
+    assert_eq!(
+        press(&mut app, "jkk>"),
+        vec![status_to(4, TaskStatus::InProgress)]
+    );
 }
 
 #[test]
 fn s_cycles_the_status_and_wraps_from_done_to_todo() {
     let mut app = board();
-    assert_eq!(press(&mut app, "s"), vec![status_to(4, TaskStatus::InProgress)]);
+    assert_eq!(
+        press(&mut app, "s"),
+        vec![status_to(4, TaskStatus::InProgress)]
+    );
     let mut app = board();
     assert_eq!(press(&mut app, "LLs"), vec![status_to(5, TaskStatus::Todo)]);
 }
@@ -98,9 +110,16 @@ fn s_cycles_the_status_and_wraps_from_done_to_todo() {
 #[test]
 fn the_cursor_follows_a_moved_card_once_the_core_applies_it() {
     let mut app = board();
-    assert_eq!(press(&mut app, ">"), vec![status_to(4, TaskStatus::InProgress)]);
+    assert_eq!(
+        press(&mut app, ">"),
+        vec![status_to(4, TaskStatus::InProgress)]
+    );
     let mut snap = app.snapshot().clone();
-    let task = snap.tasks.iter_mut().find(|t| t.id == TaskId(4)).expect("#4");
+    let task = snap
+        .tasks
+        .iter_mut()
+        .find(|t| t.id == TaskId(4))
+        .expect("#4");
     task.status = TaskStatus::InProgress;
     app.on_server(ServerMsg::Snapshot(snap));
     // #4 is now in progress, and still the card the keys act on.
@@ -113,8 +132,14 @@ fn a_task_that_needs_you_shows_the_marker_on_its_card() {
     let screen = render(&mut app, 160, 40);
     // slice-7 has a permission request waiting and slice-4 a question, so tasks #2 and #1 are
     // marked, in their own column; #3 has no agent and no mark.
-    assert!(line_with(&screen, "#2 get_decision").contains("│ ⚠ #2"), "{screen}");
-    assert!(line_with(&screen, "#1 business").contains("│ ⚠ #1"), "{screen}");
+    assert!(
+        line_with(&screen, "#2 get_decision").contains("│ ⚠ #2"),
+        "{screen}"
+    );
+    assert!(
+        line_with(&screen, "#1 business").contains("│ ⚠ #1"),
+        "{screen}"
+    );
     assert!(line_with(&screen, "#3 idea").contains("│ #3"), "{screen}");
     // There is no needs-you column.
     assert!(!screen.contains("Needs you"));
@@ -123,12 +148,19 @@ fn a_task_that_needs_you_shows_the_marker_on_its_card() {
 #[test]
 fn a_done_task_shows_no_marker_even_with_an_item_waiting() {
     let mut snap = world();
-    let t2 = snap.tasks.iter_mut().find(|t| t.id == TaskId(2)).expect("#2");
+    let t2 = snap
+        .tasks
+        .iter_mut()
+        .find(|t| t.id == TaskId(2))
+        .expect("#2");
     t2.status = TaskStatus::Done;
     let mut app = app_with(snap);
     leader(&mut app, "b");
     let screen = render(&mut app, 160, 40);
-    assert!(line_with(&screen, "#2 get_decision").contains("│ #2"), "{screen}");
+    assert!(
+        line_with(&screen, "#2 get_decision").contains("│ #2"),
+        "{screen}"
+    );
 }
 
 #[test]

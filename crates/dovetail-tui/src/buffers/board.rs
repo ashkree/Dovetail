@@ -392,4 +392,3 @@ fn live_slices(snap: &Snapshot, task: TaskId) -> Vec<(String, bool)> {
         .map(|a| (a.name.clone(), a.status == AgentStatus::NeedsYou))
         .collect()
 }
-
