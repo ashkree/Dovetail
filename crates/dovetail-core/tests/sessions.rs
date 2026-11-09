@@ -338,6 +338,23 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     h.quit();
 }
 
+/// Task #26: Claude Code 2.1.319 can send a `rate_limit_event` with only the weekly window
+/// (`rate_limit_week_only` holds the live line). The core reports the weekly window and no 5-hour
+/// one; the header turns that into `5h —` (dovetail-tui `usage_header` tests).
+#[test]
+fn a_rate_limit_event_with_only_the_weekly_window_reaches_the_ui_as_such() {
+    let mut h = Harness::start(fixture("rate_limit_week_only"), true, Config::default());
+    prompt(&h, "Reply with exactly the word: alpha");
+    h.wait_for("the usage limits", |s| s.usage.seven_day.is_some());
+    assert_eq!(s_util(&h.snap.usage.seven_day), Some(0.06));
+    assert_eq!(
+        h.snap.usage.seven_day.as_ref().and_then(|w| w.resets_at_ms),
+        Some(1_794_754_800_000)
+    );
+    assert_eq!(h.snap.usage.five_hour, None);
+    h.quit();
+}
+
 #[test]
 fn a_prompt_with_an_image_sends_an_image_block_and_keeps_the_path_after_a_restart() {
     let fake = fixture("plain_turn");
