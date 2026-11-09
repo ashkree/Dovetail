@@ -38,11 +38,59 @@ impl PermissionMode {
     }
 }
 
-/// Run the session inside `systemd-run --user --scope` (memory caps, M13).
+/// Run the session inside `systemd-run --user --scope` (memory caps, M13; spike S4).
+///
+/// The scope is always started with `--collect` (an OOM-killed scope otherwise lingers) and a
+/// fixed `--unit`, so the core knows its cgroup.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SystemdScope {
-    /// `-p` properties, e.g. `MemoryMax=4G`, `MemoryHigh=3G`.
+    /// The unit name without `.scope`, e.g. `dovetail-myproj-coordinator`.
+    pub unit: String,
+    /// `-p` properties, e.g. `MemoryMax=4294967296`.
     pub properties: Vec<String>,
+    /// This `systemd-run` expands `$` in the command's arguments (S4: `$$` arrives as `$`):
+    /// every `$` is written as `$$` so the session gets its arguments unchanged.
+    pub escape_dollars: bool,
+}
+
+impl SystemdScope {
+    /// A scope with a hard memory cap and no swap. `OOMPolicy=continue` keeps the session alive
+    /// when the kernel kills only one of its tools (S4: the default policy stops the scope).
+    pub fn capped(unit: impl Into<String>, max_bytes: u64, escape_dollars: bool) -> Self {
+        Self {
+            unit: unit.into(),
+            properties: vec![
+                format!("MemoryMax={max_bytes}"),
+                "MemorySwapMax=0".into(),
+                "OOMPolicy=continue".into(),
+            ],
+            escape_dollars,
+        }
+    }
+
+    /// `systemd-run` arguments up to and including `--`.
+    pub fn args(&self) -> Vec<String> {
+        let mut args: Vec<String> = ["--user", "--scope", "--quiet", "--collect"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        args.push(format!("--unit={}", self.unit));
+        for p in &self.properties {
+            args.push("-p".into());
+            args.push(p.clone());
+        }
+        args.push("--".into());
+        args
+    }
+
+    /// One argument of the wrapped command as `systemd-run` must receive it.
+    pub fn escape(&self, arg: &str) -> String {
+        if self.escape_dollars {
+            arg.replace('$', "$$")
+        } else {
+            arg.to_owned()
+        }
+    }
 }
 
 /// Everything needed to launch one session.

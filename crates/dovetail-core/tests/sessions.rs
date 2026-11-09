@@ -82,6 +82,7 @@ impl Harness {
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
+            memory_caps: false,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
@@ -448,6 +449,7 @@ impl Harness {
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
+            memory_caps: false,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");

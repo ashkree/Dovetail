@@ -72,6 +72,9 @@ pub(crate) struct Live {
     pub(crate) subagent_tasks: HashMap<String, String>,
     /// Subagent tool use ids to Claude Code's agent id, which names its worktree `agent-<id>`.
     pub(crate) subagent_keys: HashMap<String, String>,
+    /// The cgroup of the session's capped scope (`None`: it runs uncapped). Its `memory.current`
+    /// is the session's memory, and its `memory.events` counts OOM kills (M13).
+    pub(crate) cgroup: Option<PathBuf>,
 }
 
 impl Core {
@@ -166,8 +169,17 @@ impl Core {
             env,
             claude_config_dir: home.explicit.then(|| home.dir.clone()),
         };
-        let spec = launch::spec(&self.paths, &launch).map_err(SessionError::LaunchFiles)?;
-        tracing::info!(agent = %id.0, resume, "starting session");
+        let mut spec = launch::spec(&self.paths, &launch).map_err(SessionError::LaunchFiles)?;
+        // B8: the coordinator gets the higher cap.
+        let cap_gb = if row.agent.kind == AgentKind::Coordinator {
+            self.config.memory.coordinator_gb
+        } else {
+            self.config.memory.slice_gb
+        };
+        let unit = crate::memory::unit_name(self.project.key(), &id.0);
+        spec.systemd_scope = self.scopes.scope(&unit, crate::memory::cap_bytes(cap_gb));
+        let cgroup = self.scopes.cgroup(&unit);
+        tracing::info!(agent = %id.0, resume, capped = cgroup.is_some(), "starting session");
         let mut session =
             self.options
                 .driver
@@ -209,6 +221,7 @@ impl Core {
                 setup_cancel: None,
                 subagent_tasks: HashMap::new(),
                 subagent_keys: HashMap::new(),
+                cgroup,
             },
         );
         self.save_agent(id);
@@ -758,6 +771,7 @@ impl Core {
         };
         self.subagents_stopped(agent);
         self.unwatch_todos(agent);
+        self.set_memory(agent, None);
         // At quit, held requests stay on record: the next open reports them as expired (M10).
         if self.quitting.is_none() {
             self.drop_session_items(agent);

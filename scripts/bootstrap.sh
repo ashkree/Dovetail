@@ -82,10 +82,12 @@ fi
 
 echo "Memory caps (systemd-run --user)"
 if command -v systemd-run >/dev/null; then
-  if systemd-run --user --scope --quiet -p MemoryMax=64M true 2>/dev/null; then
+  # The same properties a session gets (dovetail-core `memory`); Dovetail probes again at start.
+  if systemd-run --user --scope --quiet --collect -p MemoryMax=64M -p MemorySwapMax=0 \
+      -p OOMPolicy=continue true 2>/dev/null; then
     ok "per-session cgroup caps work without root"
   else
-    fail "systemd-run --user --scope -p MemoryMax=… failed: caps will be unavailable (open spike)"
+    warn "systemd-run --user --scope -p MemoryMax=… failed: sessions will run without memory caps"
   fi
 else
   fail "systemd-run not found: caps will be unavailable"
