@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Alternative, Bucket, DecisionId, PLevel, TaskId};
+use crate::{Alternative, Bucket, DecisionId, PLevel, TaskId, TaskStatus};
 
 /// Names of the environment variables Dovetail passes to the processes it launches.
 pub mod env {
@@ -121,6 +121,10 @@ tools! {
     ArchiveSlice(ArchiveSlice) = "archive_slice", CoordinatorOnly;
     /// `archive_task`, coordinator only (task #9).
     ArchiveTask(ArchiveTask) = "archive_task", CoordinatorOnly;
+    /// `list_tasks`, coordinator only (task #20).
+    ListTasks(ListTasks) = "list_tasks", CoordinatorOnly;
+    /// `get_task`, coordinator only (task #20).
+    GetTask(GetTask) = "get_task", CoordinatorOnly;
 }
 
 /// The row of [`TOOLS`] named `name`.
@@ -246,6 +250,8 @@ impl Tool {
             Tool::AddProject(_) => Ok(()),
             Tool::ArchiveSlice(a) => text("name", &a.name),
             Tool::ArchiveTask(a) => id("id", a.id),
+            Tool::ListTasks(_) => Ok(()),
+            Tool::GetTask(g) => id("id", g.id),
         }
     }
 }
@@ -327,6 +333,53 @@ pub struct ArchiveSlice {
 /// `archive_task`: archive a task, and first its live slices, with `archive_slice`'s rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveTask {
+    /// The task.
+    pub id: TaskId,
+}
+
+/// A bucket as `list_tasks` filters it: the three [`Bucket`]s plus Unsorted (no bucket).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BucketFilter {
+    /// [`Bucket::Now`].
+    Now,
+    /// [`Bucket::Next`].
+    Next,
+    /// No bucket yet.
+    Unsorted,
+    /// [`Bucket::Later`].
+    Later,
+}
+
+impl BucketFilter {
+    /// Whether a task with `bucket` is in this one.
+    pub fn matches(self, bucket: Option<Bucket>) -> bool {
+        match self {
+            BucketFilter::Now => bucket == Some(Bucket::Now),
+            BucketFilter::Next => bucket == Some(Bucket::Next),
+            BucketFilter::Unsorted => bucket.is_none(),
+            BucketFilter::Later => bucket == Some(Bucket::Later),
+        }
+    }
+}
+
+/// `list_tasks`: one line per task, Now, Next, Unsorted, Later (task #20). Every field is
+/// optional.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ListTasks {
+    /// Only tasks in this bucket.
+    pub bucket: Option<BucketFilter>,
+    /// Only tasks with this status; `archived` lists archived tasks without
+    /// `include_archived`.
+    pub status: Option<TaskStatus>,
+    /// Also list archived tasks.
+    pub include_archived: bool,
+}
+
+/// `get_task`: one task in full, with its agents and decision log (task #20).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetTask {
     /// The task.
     pub id: TaskId,
 }

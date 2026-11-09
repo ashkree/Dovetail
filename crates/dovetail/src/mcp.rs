@@ -40,7 +40,8 @@
 //! * both roles: `mcp__dovetail__ask_user`, `mcp__dovetail__report_status`,
 //!   `mcp__dovetail__log_decision`
 //! * coordinator only: `mcp__dovetail__create_task`, `mcp__dovetail__start_slice`,
-//!   `mcp__dovetail__add_project`, `mcp__dovetail__archive_slice`, `mcp__dovetail__archive_task`
+//!   `mcp__dovetail__add_project`, `mcp__dovetail__archive_slice`, `mcp__dovetail__archive_task`,
+//!   `mcp__dovetail__list_tasks`, `mcp__dovetail__get_task`
 //!
 //! The core passes these to `--allowedTools` (`dovetail_core::session::launch`). The `tool`
 //! field forwarded to the app is the bare name (`ask_user`). Subagents reach the tools through
@@ -453,6 +454,32 @@ fn tool_defs() -> Vec<ToolDef> {
                 `archive_slice`'s rules (unsaved work waits for the user), and its queued \
                 slice starts are dropped. Returns `archived`, or `waiting_for_user` if a slice \
                 still waits for the user.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "id": {"type": "integer", "description": "The task's id."}
+                }, "required": ["id"]})
+            },
+        },
+        ToolDef {
+            name: "list_tasks",
+            description: "Find tasks: one line each with id, status, bucket, priority, title \
+                and live slice, ordered Now, Next, Unsorted, Later, then by priority. Archived \
+                tasks are left out unless asked for. Use `get_task` for one task's notes and \
+                decisions.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "bucket": {"type": "string", "enum": ["now", "next", "unsorted", "later"], "description": "Only tasks in this bucket."},
+                    "status": {"type": "string", "enum": ["todo", "in_progress", "done", "archived"], "description": "Only tasks with this status."},
+                    "include_archived": {"type": "boolean", "default": false, "description": "Also list archived tasks."}
+                }})
+            },
+        },
+        ToolDef {
+            name: "get_task",
+            description: "Read one task in full: status, bucket, priority, notes, \
+                follow-up and related ids, its live slices, and its decision log oldest \
+                first (text, why, rejected alternatives, what superseded what, user or agent). \
+                Use it to brief a slice or hand a reviewer the decisions as spec.",
             schema: || {
                 json!({"type": "object", "properties": {
                     "id": {"type": "integer", "description": "The task's id."}
