@@ -45,6 +45,7 @@ const STATE_MIGRATIONS: &[&str] = &[
     include_str!("db/migrations/state/0004_slice_queue.sql"),
     include_str!("db/migrations/state/0005_restart_state.sql"),
     include_str!("db/migrations/state/0006_entry_attachments.sql"),
+    include_str!("db/migrations/state/0008_subagent_progress.sql"),
 ];
 
 /// Errors from the database layer.

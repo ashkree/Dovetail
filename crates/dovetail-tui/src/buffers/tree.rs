@@ -519,12 +519,28 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
     } else {
         theme.dim()
     };
-    let word = match (&agent.kind, &agent.progress) {
-        (AgentKind::Subagent { background: true }, Some(p)) if p.summary.is_none() => {
+    // A running subagent shows its progress instead of a status word; tokens go first when the
+    // pane is narrow.
+    let (word, short_word) = match (&agent.kind, &agent.progress) {
+        (AgentKind::Subagent { .. }, Some(p))
+            if p.summary.is_none() && agent.status == AgentStatus::Working =>
+        {
             let last = p.last_tool.as_deref().unwrap_or("starting");
-            Span::styled(format!("{} tools · {last}", p.tool_uses), theme.dim())
+            let short = format!("{} tools · {last}", p.tool_uses);
+            let full = if p.total_tokens > 0 {
+                format!("{short} · {} tok", fmt::tokens(p.total_tokens))
+            } else {
+                short.clone()
+            };
+            (
+                Span::styled(full, theme.dim()),
+                Span::styled(short, theme.dim()),
+            )
         }
-        _ => Span::styled(status_word(agent.status), word_style),
+        _ => {
+            let word = Span::styled(status_word(agent.status), word_style);
+            (word.clone(), word)
+        }
     };
     let memory = agent
         .memory_mb
@@ -542,6 +558,7 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
         vec![Some(word.clone()), memory, context.clone()],
         vec![Some(word.clone()), context],
         vec![Some(word)],
+        vec![Some(short_word)],
     ];
     let right = versions
         .into_iter()
@@ -740,4 +757,58 @@ fn update(id: TaskId, change: TaskChange) -> Effect {
         id,
         patch: vec![change],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use dovetail_api::{AgentId, SessionLock, SubagentProgress};
+
+    use super::*;
+
+    fn text(spans: &[Span<'_>]) -> String {
+        spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn subagent(status: AgentStatus, summary: Option<&str>) -> Agent {
+        Agent {
+            id: AgentId("coordinator:toolu_1".into()),
+            name: "Background sleep task".into(),
+            kind: AgentKind::Subagent { background: true },
+            parent: Some(AgentId("coordinator".into())),
+            task: None,
+            worktree: None,
+            status,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: Some(SubagentProgress {
+                description: "Background sleep task".into(),
+                last_tool: Some("Bash".into()),
+                tool_uses: 2,
+                summary: summary.map(str::to_owned),
+                total_tokens: 17_164,
+                ..SubagentProgress::default()
+            }),
+            last_activity_ms: 0,
+            lock: SessionLock::Headless,
+        }
+    }
+
+    #[test]
+    fn a_running_subagent_shows_its_progress_and_drops_tokens_when_narrow() {
+        let theme = Theme::default();
+        let (left, right) = agent_line(&theme, &subagent(AgentStatus::Working, None));
+        assert_eq!(text(&left), "◐ ◇ Background sleep task");
+        assert_eq!(text(&right[0]), "2 tools · Bash · 17k tok");
+        assert_eq!(text(right.last().expect("narrowest")), "2 tools · Bash");
+    }
+
+    #[test]
+    fn a_finished_subagent_shows_its_status_word() {
+        let theme = Theme::default();
+        let (_, right) = agent_line(&theme, &subagent(AgentStatus::Done, Some("bg-done")));
+        assert_eq!(text(&right[0]), "done");
+    }
 }
