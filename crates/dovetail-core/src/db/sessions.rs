@@ -513,3 +513,37 @@ pub(super) fn kept_worktrees(conn: &mut Connection) -> Result<Vec<PathBuf>, DbEr
         .map(PathBuf::from)
         .collect())
 }
+
+// --- native to-do attribution (M11) ---
+
+pub(super) fn set_todo_owner(
+    conn: &mut Connection,
+    list: &str,
+    item: &str,
+    agent: &str,
+) -> Result<(), DbError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO todo_items (list_id, item_id, agent_id) VALUES (?1, ?2, ?3)",
+        params![list, item, agent],
+    )?;
+    Ok(())
+}
+
+pub(super) fn load_todo_owners(
+    conn: &mut Connection,
+) -> Result<Vec<(String, String, AgentId)>, DbError> {
+    let mut stmt = conn.prepare("SELECT list_id, item_id, agent_id FROM todo_items")?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            AgentId(r.get::<_, String>(2)?),
+        ))
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+pub(super) fn forget_todo_list(conn: &mut Connection, list: &str) -> Result<(), DbError> {
+    conn.execute("DELETE FROM todo_items WHERE list_id = ?1", params![list])?;
+    Ok(())
+}

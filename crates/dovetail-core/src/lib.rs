@@ -16,6 +16,7 @@ pub mod session;
 mod shutdown;
 mod slice;
 pub mod socket;
+mod todos;
 mod tools;
 pub mod worktree;
 

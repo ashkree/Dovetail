@@ -30,9 +30,10 @@ use crate::recipe::Recipe;
 use crate::service::{COORDINATOR, Core, Input};
 use state::{Streaming, Turn};
 
-/// The tree node of the subagent that `parent`'s `Agent` call `tool_use_id` launched: its events
-/// carry that id as `parent_tool_use_id`. Shared with to-do attribution (M11b).
-pub(crate) fn subagent_id(parent: &AgentId, tool_use_id: &str) -> AgentId {
+/// The agent id of the subagent that `parent`'s tool use `tool_use_id` launched: the
+/// `parent_tool_use_id` its events carry. Its tree node ([`subagent`]) and its to-do items
+/// share it.
+pub fn subagent_id(parent: &AgentId, tool_use_id: &str) -> AgentId {
     AgentId(format!("{}:{tool_use_id}", parent.0))
 }
 
@@ -185,6 +186,7 @@ impl Core {
             },
         );
         self.save_agent(id);
+        self.watch_todos(id);
         Ok(())
     }
 
@@ -416,6 +418,8 @@ impl Core {
         if self.live.get(&agent).map(|l| l.generation) != Some(generation) {
             return; // an earlier process of this agent
         }
+        // To-do items are attributed from any origin, foreground subagents included.
+        self.track_todos(&agent, &event);
         // Rule 1: a subagent's events are its own: routed to its node, never into the parent's
         // conversation.
         if let Some(origin) = event.origin().filter(|o| !o.is_main()).cloned() {
@@ -721,6 +725,7 @@ impl Core {
             return;
         };
         self.subagents_stopped(agent);
+        self.unwatch_todos(agent);
         // At quit, held requests stay on record: the next open reports them as expired (M10).
         if self.quitting.is_none() {
             self.drop_session_items(agent);
