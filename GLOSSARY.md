@@ -89,7 +89,7 @@ An inbox item asking the user to allow or deny a tool use.
 _Avoid_: approval (the answer, not the request), prompt
 
 **Question**:
-An inbox item from an agent's `ask_user` call, which may block the agent until answered.
+An inbox item from an agent's `ask_user` call. It never blocks the agent: `ask_user` returns at once, and the answer arrives later as a message (ADR 0007).
 _Avoid_: blocker, prompt
 
 **Finished turn**:
