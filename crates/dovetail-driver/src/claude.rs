@@ -54,22 +54,17 @@ impl ClaudeDriver {
     /// The full command line for a spec, `systemd-run` prefix included. Public so the core can
     /// log it and tests can assert it.
     pub fn command_line(&self, spec: &SessionSpec) -> (OsString, Vec<OsString>) {
-        let claude_args: Vec<OsString> =
-            spec.claude_args().into_iter().map(OsString::from).collect();
+        let claude_args = spec.claude_args();
         match &spec.systemd_scope {
-            None => (self.program.clone(), claude_args),
+            None => (
+                self.program.clone(),
+                claude_args.into_iter().map(OsString::from).collect(),
+            ),
             Some(scope) => {
-                let mut args: Vec<OsString> = ["--user", "--scope", "--quiet", "--collect"]
-                    .iter()
-                    .map(OsString::from)
-                    .collect();
-                for p in &scope.properties {
-                    args.push("-p".into());
-                    args.push(p.into());
-                }
-                args.push("--".into());
-                args.push(self.program.clone());
-                args.extend(claude_args);
+                let mut args: Vec<OsString> =
+                    scope.args().into_iter().map(OsString::from).collect();
+                args.push(scope.escape(&self.program.to_string_lossy()).into());
+                args.extend(claude_args.iter().map(|a| OsString::from(scope.escape(a))));
                 ("systemd-run".into(), args)
             }
         }
@@ -407,5 +402,69 @@ impl Session for ClaudeSession {
 
     fn kill(&self) {
         let _ = self.ctl.send(Ctl::Kill);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SystemdScope;
+
+    fn strings(args: &[OsString]) -> Vec<String> {
+        args.iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn a_capped_session_runs_under_a_collected_scope() {
+        let mut spec = SessionSpec::new("s1", "/tmp");
+        spec.name = Some("cost $$ and $HOME".into());
+        spec.systemd_scope = Some(SystemdScope::capped(
+            "dovetail-p-coordinator",
+            4 << 30,
+            true,
+        ));
+        let (program, args) = ClaudeDriver::with_program("/opt/$bin/claude").command_line(&spec);
+        let args = strings(&args);
+        assert_eq!(program, "systemd-run");
+        assert_eq!(
+            args[..12],
+            [
+                "--user",
+                "--scope",
+                "--quiet",
+                "--collect",
+                "--unit=dovetail-p-coordinator",
+                "-p",
+                "MemoryMax=4294967296",
+                "-p",
+                "MemorySwapMax=0",
+                "-p",
+                "OOMPolicy=continue",
+                "--",
+            ]
+        );
+        // systemd-run turns `$$` into `$` (S4), so every `$` after `--` is doubled.
+        assert_eq!(args[12], "/opt/$$bin/claude");
+        let name = args.iter().position(|a| a == "--name").unwrap();
+        assert_eq!(args[name + 1], "cost $$$$ and $$HOME");
+    }
+
+    #[test]
+    fn without_escaping_arguments_pass_unchanged() {
+        let mut spec = SessionSpec::new("s1", "/tmp");
+        spec.name = Some("a$b".into());
+        spec.systemd_scope = Some(SystemdScope::capped("u", 1, false));
+        let (_, args) = ClaudeDriver::new().command_line(&spec);
+        assert!(strings(&args).contains(&"a$b".to_string()));
+    }
+
+    #[test]
+    fn an_uncapped_session_runs_claude_directly() {
+        let spec = SessionSpec::new("s1", "/tmp");
+        let (program, args) = ClaudeDriver::new().command_line(&spec);
+        assert_eq!(program, "claude");
+        assert_eq!(strings(&args), spec.claude_args());
     }
 }

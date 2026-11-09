@@ -145,4 +145,17 @@ mod tests {
         assert!(config.claude_home(Some("missing")).is_err());
         assert!(Config::parse("").unwrap().profiles.is_empty());
     }
+
+    #[test]
+    fn memory_caps_default_to_b8_and_parse_per_key() {
+        let defaults = Config::parse("").unwrap().memory;
+        assert_eq!((defaults.coordinator_gb, defaults.slice_gb), (4, 3));
+        let partial = Config::parse("[memory]\nslice_gb = 2\n").unwrap().memory;
+        assert_eq!((partial.coordinator_gb, partial.slice_gb), (4, 2));
+        let both = Config::parse("[memory]\ncoordinator_gb = 6\nslice_gb = 5\n")
+            .unwrap()
+            .memory;
+        assert_eq!((both.coordinator_gb, both.slice_gb), (6, 5));
+        assert!(Config::parse("[memory]\nslice_gb = \"3G\"\n").is_err());
+    }
 }

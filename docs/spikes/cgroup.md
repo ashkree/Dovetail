@@ -51,6 +51,21 @@ Findings for later milestones (M13 memory caps):
 
 First two runs failed on script bugs (not real results): scope names did not advance (subshell counter), `$$` was escaped by systemd, and the cgroup vanished before `oom_kill` could be read. The kernel log showed the cap enforced throughout.
 
+## This repo's build and test peaks against B8 (M13a)
+
+Measured 2026-11-09 on the user's machine (12 cores, 15 GiB, systemd 262) at commit `fdb42e8`. Each command ran alone in a `systemd-run --user --scope` with `MemoryMax=8G`, `MemorySwapMax=0`, and a fresh `CARGO_TARGET_DIR` on disk (the worktree's `target/`, as slices build). `memory.peak` is the scope's own figure and includes page cache charged to it (written build output, mostly reclaimable). "Anon peak" is the highest `anon` from `memory.stat`, sampled every 0.2 s, and is the memory that cannot be reclaimed.
+
+| Run | Time | `memory.peak` | Anon peak |
+| --- | --- | --- | --- |
+| `cargo build --workspace`, cold | 21 s | 2163 MiB | 1516 MiB |
+| `cargo test --workspace`, after that build | 16 s | 2292 MiB | 1457 MiB |
+| `cargo test --workspace`, cold | 32 s | 2735 MiB | 1496 MiB |
+| `scripts/check.sh` (fmt, clippy, tests, rules), cold | 41 s | 2720 MiB | 1377 MiB |
+
+Against B8, a slice's cap is 3 GiB (3072 MiB). It has to hold the session itself (~210 MB at rest, digest §9) plus whatever the build uses. The worst cold run peaks at 2735 MiB, leaving about 340 MiB. Under the cap the kernel reclaims page cache before it OOM-kills anything, and the unreclaimable part (~1.5 GiB) leaves about 1.3 GiB of headroom. So the 3 GiB slice cap holds for this repo today, but a cold `cargo test` runs into page-cache pressure near the cap, which slows it down. The coordinator's 4 GiB cap is not near any of these. No change to B8 is proposed. Measure again if the workspace grows a lot, or if `cargo` gets more parallel jobs.
+
+A first attempt put the target dirs on `/tmp`. That is a tmpfs, and its pages count as the scope's memory, so those peaks were inflated and are not recorded. Slices must not build into tmpfs under a cap.
+
 ## Open
 
 None.

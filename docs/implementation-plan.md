@@ -601,8 +601,8 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Done when:**
   - [ ] A forced OOM kills one session only and recovers
   - [ ] Status bar shows total memory and coordinator `ctx`
-  - [ ] Peak memory of this repo's build and test runs is recorded against the B8 caps
-  - [ ] Missing cgroup support gives a warning, not a failure
+  - [x] Peak memory of this repo's build and test runs is recorded against the B8 caps (docs/spikes/cgroup.md: worst cold run 2735 MiB peak, 1.5 GiB anon, under the 3 GiB slice cap)
+  - [x] Missing cgroup support gives a warning, not a failure (startup probe; failure path not yet tried on a machine without user systemd)
 - **Tests:** `memory.events` parsing with fixtures, context calculation
 
 ### M14. Take-over

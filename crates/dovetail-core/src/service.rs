@@ -68,6 +68,9 @@ pub struct CoreOptions {
     /// The editor command line for [`Command::OpenEditor`]; `None` for `$EDITOR`, else `nvim`.
     /// Tests give a fake one.
     pub editor: Option<std::ffi::OsString>,
+    /// Probe `systemd-run --user --scope` at start and run sessions under memory caps (M13).
+    /// Tests leave it off: sessions run uncapped and no warning is raised.
+    pub memory_caps: bool,
 }
 
 /// Starts the core on its own thread for the folder `resolution` names, and returns the UI's end
@@ -331,6 +334,10 @@ pub(crate) struct Core {
     pub(crate) claude: Result<crate::profile::ClaudeHome, crate::profile::ProfileError>,
     /// The worktree view's data, per slice (M12b, `worktree_info`).
     pub(crate) worktrees: BTreeMap<AgentId, dovetail_api::WorktreeInfo>,
+    /// Whether sessions run under capped scopes (M13, `memory`).
+    pub(crate) scopes: crate::memory::Scopes,
+    /// When running sessions' memory is next read.
+    next_sample: tokio::time::Instant,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -410,6 +417,8 @@ impl Core {
             todos: Default::default(),
             claude,
             worktrees: BTreeMap::new(),
+            scopes: crate::memory::Scopes::Off,
+            next_sample: tokio::time::Instant::now(),
         }
     }
 
@@ -425,6 +434,20 @@ impl Core {
         };
         self.startup_warnings();
         self.send_snapshot(true).await;
+        // After the first snapshot, so a slow user systemd never holds up the UI; before
+        // anything can start a session (restore, the queue, commands), so every session gets
+        // the probe's answer.
+        if self.options.memory_caps {
+            self.scopes = crate::memory::probe().await;
+            if let crate::memory::Scopes::Unavailable(reason) = &self.scopes {
+                let warning = Warning {
+                    id: WarningId("memory-caps".into()),
+                    text: format!("memory caps off, sessions run uncapped: {reason}"),
+                };
+                self.warnings.push(warning.clone());
+                self.emit(Event::WarningSet(warning));
+            }
+        }
         self.reconcile(restored).await;
         self.start_queued().await;
         loop {
@@ -434,6 +457,12 @@ impl Core {
             let flush_at = self.flush_at;
             let quit_at = self.quitting;
             let todos_at = self.todos.flush_at;
+            // No idle ticks: memory is read only while a capped session runs.
+            let sample_at = self
+                .live
+                .values()
+                .any(|l| l.cgroup.is_some())
+                .then_some(self.next_sample);
             let input = tokio::select! {
                 input = inputs.recv() => input,
                 _ = sleep_until(flush_at), if flush_at.is_some() => {
@@ -442,6 +471,10 @@ impl Core {
                 }
                 _ = sleep_until(todos_at), if todos_at.is_some() => {
                     self.flush_todos();
+                    continue;
+                }
+                _ = sleep_until(sample_at), if sample_at.is_some() => {
+                    self.sample_memory();
                     continue;
                 }
                 _ = sleep_until(quit_at), if quit_at.is_some() => {
@@ -717,6 +750,40 @@ impl Core {
             self.totals = totals.clone();
             self.emit(Event::TotalsChanged(totals));
         }
+    }
+
+    /// Reads each capped session's memory from its scope and tells the UI about figures that
+    /// changed as shown (see [`crate::memory::shown_mb`]).
+    fn sample_memory(&mut self) {
+        self.next_sample = tokio::time::Instant::now() + crate::memory::SAMPLE_INTERVAL;
+        let readings: Vec<(AgentId, Option<u32>)> = self
+            .live
+            .iter()
+            .filter_map(|(id, live)| {
+                let cgroup = live.cgroup.as_deref()?;
+                Some((
+                    id.clone(),
+                    crate::memory::read_current(cgroup).map(crate::memory::shown_mb),
+                ))
+            })
+            .collect();
+        for (id, mb) in readings {
+            self.set_memory(&id, mb);
+        }
+        self.refresh_totals();
+    }
+
+    /// Sets an agent's shown memory. Memory is not stored, so only the UI hears of it.
+    pub(crate) fn set_memory(&mut self, id: &AgentId, mb: Option<u32>) {
+        let Some(row) = self.agents.get_mut(id) else {
+            return;
+        };
+        if row.agent.memory_mb == mb {
+            return;
+        }
+        row.agent.memory_mb = mb;
+        let agent = row.agent.clone();
+        self.emit(Event::AgentUpserted(agent));
     }
 
     // --- streaming text ---
