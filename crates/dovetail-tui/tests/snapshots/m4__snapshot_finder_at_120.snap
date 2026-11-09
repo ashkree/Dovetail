@@ -5,9 +5,9 @@ expression: "render(&mut app, 120, 38)"
  folder /src/business
 ┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ tasks · business ─────────────────────────┐
 │                                                                         ││ ◐ ◆ coordinator        working 1.2G $3.10 │
-│   you · 10:08                                                           ││ ▾ Now (2)                                 │
-│   Make sure slice-4 doesn't touch the 500 path.                         ││ ▾ ⚠ business surface P1          PR #1231 │
-│                                                                         ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+│                                                                         ││ ▾ Now (2)                                 │
+│   ── You · 10:08 ────────────────────────────────────────────────────   ││ ▾ ⚠ business surface P1          PR #1231 │
+│   Make sure slice-4 doesn't touch the 500 path.                         ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
 │ ┌ Find ────────────────────────────────────────────┐┌ Task ────────────────────────────────────────────────────────┐ │
 │ │›                                            13/13││ business surface                                             │ │
 │ │                                                  ││ P1 · Now · in progress · PR #1231                            │ │
