@@ -3,11 +3,11 @@
 //! hand-written socket client.
 
 use dovetail_api::socket::SocketResponseBody;
-use dovetail_api::tools::Tool;
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
+use dovetail_api::tools::{Tool, UpdateTask};
 use dovetail_api::{
     Agent, AgentKind, DecisionAuthor, EntryKind, Event, InboxKind, NewDecision, NewTask,
-    PermissionMode, TaskId, TaskStatus,
+    PermissionMode, TaskChange, TaskId, TaskStatus,
 };
 use serde_json::json;
 use tokio::sync::oneshot;
@@ -344,8 +344,52 @@ impl Core {
                     Err(e) => error(format!("could not read the decisions: {e}")),
                 },
             },
+            Tool::UpdateTask(update) => self.update_task_tool(update).await,
         };
         let _ = reply.send(answer);
+    }
+
+    /// `update_task`: applies only the fields given, through the same patch path as the TUI's
+    /// edits, and answers with the task's new `list_tasks` line. Validation already refused
+    /// Now and `archived`.
+    async fn update_task_tool(&mut self, update: UpdateTask) -> SocketResponseBody {
+        let id = update.id;
+        match self.task(id).await {
+            None => return error(format!("there is no task #{}", id.0)),
+            Some(t) if t.status == TaskStatus::Archived => {
+                return error(format!("task #{} is archived", id.0));
+            }
+            Some(_) => {}
+        }
+        let mut patch = Vec::new();
+        if let Some(status) = update.status {
+            patch.push(TaskChange::Status(status));
+        }
+        if let Some(bucket) = update.new_bucket() {
+            patch.push(TaskChange::Bucket(bucket));
+        }
+        if let Some(p_level) = update.p_level {
+            patch.push(TaskChange::PLevel(p_level));
+        }
+        if let Some(title) = update.title {
+            patch.push(TaskChange::Title(title.trim().to_owned()));
+        }
+        if let Some(notes) = update.notes {
+            patch.push(TaskChange::Notes(notes));
+        }
+        let changed = match self.db.update_task(id, patch).await {
+            Ok(changed) => changed,
+            Err(e) => return error(format!("could not update task #{}: {e}", id.0)),
+        };
+        let line = changed
+            .iter()
+            .find(|t| t.id == id)
+            .map(|task| read::task_line(task, &self.live_slices(id)));
+        self.emit_tasks(changed);
+        match line {
+            Some(line) => ok(line),
+            None => ok(format!("Updated task #{}.", id.0)),
+        }
     }
 
     /// The live slices on task `id`, by name.
@@ -385,6 +429,7 @@ mod tests {
         assert!(!Tool::allowed("archive_task", Role::Slice));
         assert!(!Tool::allowed("list_tasks", Role::Slice));
         assert!(!Tool::allowed("get_task", Role::Slice));
+        assert!(!Tool::allowed("update_task", Role::Slice));
         assert!(Tool::allowed("archive_slice", Role::Coordinator));
         assert!(Tool::allowed("ask_user", Role::Slice));
     }

@@ -82,29 +82,33 @@ pub(crate) fn task_list<'a>(
             t.id,
         )
     });
-    let mut out = String::new();
-    for task in shown {
-        let mut tags = vec![word(task.status), bucket_word(task.bucket)];
-        if let Some(p) = task.p_level {
-            tags.push(word(p));
-        }
-        let title: String = if task.title.chars().count() > TITLE_MAX {
-            let cut: String = task.title.chars().take(TITLE_MAX).collect();
-            format!("{}…", cut.trim_end())
-        } else {
-            task.title.clone()
-        };
-        let _ = writeln!(
-            out,
-            "#{} [{}] {}{}",
-            task.id.0,
-            tags.join(" · "),
-            title,
-            slices_note(&slices(task.id))
-        );
+    shown
+        .into_iter()
+        .map(|task| task_line(task, &slices(task.id)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// One task as a line of `list_tasks` (also `update_task`'s answer):
+/// `#3 [in_progress · now · P2] title (slice work)`.
+pub(crate) fn task_line(task: &Task, slices: &[&Agent]) -> String {
+    let mut tags = vec![word(task.status), bucket_word(task.bucket)];
+    if let Some(p) = task.p_level {
+        tags.push(word(p));
     }
-    out.truncate(out.trim_end().len());
-    out
+    let title: String = if task.title.chars().count() > TITLE_MAX {
+        let cut: String = task.title.chars().take(TITLE_MAX).collect();
+        format!("{}…", cut.trim_end())
+    } else {
+        task.title.clone()
+    };
+    format!(
+        "#{} [{}] {}{}",
+        task.id.0,
+        tags.join(" · "),
+        title,
+        slices_note(slices)
+    )
 }
 
 fn author(by: &DecisionAuthor) -> String {
