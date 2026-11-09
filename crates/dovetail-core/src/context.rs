@@ -49,6 +49,16 @@ pub(crate) fn fill_pct(tokens: u64, window: u64) -> u8 {
     u8::try_from(pct.min(100)).unwrap_or(100)
 }
 
+/// The context tokens an assistant line measures, or `None` for lines no API call produced:
+/// Claude Code's own messages (model `<synthetic>`, after an interrupt or an API error) carry
+/// all-zero usage, which would read as an empty context until the next real call.
+fn measured_tokens(model: Option<&str>, usage: TokenUsage) -> Option<u64> {
+    if model.is_some_and(|m| m.starts_with('<')) {
+        return None;
+    }
+    Some(usage.context_tokens()).filter(|&t| t > 0)
+}
+
 /// The window a `result` reports for `model`: its own `modelUsage` entry, else the only entry
 /// with a window (a result names the session's model by the same id the session reports).
 fn reported_window(result: &TurnResult, model: Option<&str>) -> Option<(String, u64)> {
@@ -72,11 +82,19 @@ fn reported_window(result: &TurnResult, model: Option<&str>) -> Option<(String, 
 
 impl Core {
     /// A main-thread assistant line's usage: the session's context now holds this many tokens.
-    pub(crate) fn on_context_usage(&mut self, agent: &AgentId, usage: TokenUsage) {
+    pub(crate) fn on_context_usage(
+        &mut self,
+        agent: &AgentId,
+        model: Option<&str>,
+        usage: TokenUsage,
+    ) {
+        let Some(tokens) = measured_tokens(model, usage) else {
+            return;
+        };
         let Some(live) = self.live.get_mut(agent) else {
             return;
         };
-        live.context_tokens = Some(usage.context_tokens());
+        live.context_tokens = Some(tokens);
         self.refresh_context(agent);
     }
 
@@ -139,6 +157,40 @@ mod tests {
         assert_eq!(fill_pct(250_000, 200_000), 100);
         assert_eq!(fill_pct(u64::MAX, 1), 100);
         assert_eq!(fill_pct(5, 0), 100);
+    }
+
+    /// Review of PR #29: a `<synthetic>` line (interrupt, API error) has all-zero usage and
+    /// must not empty the fill.
+    #[test]
+    fn synthetic_and_zero_usage_lines_measure_nothing() {
+        let line = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "id": "msg_x", "model": "<synthetic>", "role": "assistant",
+                "content": [{"type": "text", "text": "API Error"}],
+                "usage": {"input_tokens": 0, "output_tokens": 0,
+                          "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+            },
+            "parent_tool_use_id": null
+        });
+        let Some(DriverEvent::Assistant(m)) =
+            dovetail_driver::parse::map_value(line).into_iter().next()
+        else {
+            panic!("assistant");
+        };
+        let usage = m.usage.expect("usage");
+        assert_eq!(measured_tokens(m.model.as_deref(), usage), None);
+        assert_eq!(
+            measured_tokens(Some("claude-opus-5-5"), TokenUsage::default()),
+            None
+        );
+        let real = TokenUsage {
+            cache_read_tokens: 1_000,
+            ..TokenUsage::default()
+        };
+        assert_eq!(measured_tokens(Some("<synthetic>"), real), None);
+        assert_eq!(measured_tokens(Some("claude-opus-5-5"), real), Some(1_000));
+        assert_eq!(measured_tokens(None, real), Some(1_000));
     }
 
     #[test]

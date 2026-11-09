@@ -648,7 +648,7 @@ impl Core {
         // Only main-thread messages get here; a subagent's model is not the session's.
         self.set_model(agent, message.model.as_deref());
         if let Some(usage) = message.usage {
-            self.on_context_usage(agent, usage);
+            self.on_context_usage(agent, message.model.as_deref(), usage);
         }
         let mut texts = Vec::new();
         let mut tools = Vec::new();
