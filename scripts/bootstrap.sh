@@ -50,6 +50,15 @@ else
   ok "installed $recipe (project id: $project_id)"
 fi
 
+echo "Claude profiles"
+# A profile is a Claude account per project (ADR 0009). Bootstrap never creates one: that needs a
+# login, which `dovetail login <name>` runs.
+if grep -qE '^\s*\[profiles\]' "$config/config.toml" 2>/dev/null; then
+  ok "profiles listed in $config/config.toml (dovetail login --list shows them)"
+else
+  ok "none: every project uses ~/.claude. For another account: dovetail login <name>, then profile = \"<name>\" in the project's recipe"
+fi
+
 echo "Tools"
 need_version="2.1.224"
 if command -v claude >/dev/null; then

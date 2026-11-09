@@ -197,9 +197,11 @@ impl App {
         } else {
             Vec::new()
         };
-        // Task #16: the model of the conversation in view and the account's usage limits.
+        // Task #16: the project's profile (ADR 0009), the model of the conversation in view and
+        // the profile's usage limits.
         let usage = usage::variants(
             &snap.usage,
+            snap.profile.as_deref(),
             in_view.and_then(|a| a.model.as_deref()),
             self.now_ms,
             &self.tz,

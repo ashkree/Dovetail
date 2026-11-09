@@ -101,15 +101,40 @@ impl Core {
         let role = self
             .role_of(id)
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
+        let home = self.claude.clone()?;
         let Some(row) = self.agents.get_mut(id) else {
             return Err(SessionError::NoAgent(id.0.clone()));
         };
+        // A session is resumed only under the Claude home it was recorded with: its transcript
+        // lives there, and another account must not take it over (ADR 0009). Recorded under
+        // another profile, it starts fresh.
+        let recorded = row
+            .claude_home
+            .clone()
+            .unwrap_or_else(crate::profile::default_dir);
+        let moved =
+            row.transcript_path.is_some() && !crate::profile::same_dir(&recorded, &home.dir);
+        if moved {
+            row.session_id = Some(uuid::Uuid::new_v4().to_string());
+            row.transcript_path = None;
+        }
+        row.claude_home = Some(home.dir.clone());
         let session_id = row
             .session_id
             .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
             .clone();
         let resume = row.transcript_path.is_some();
         let row = row.clone();
+        if moved {
+            self.notice(
+                id,
+                format!(
+                    "Started a fresh session under Claude profile {}: the last one was recorded \
+                     under another profile and is not resumed",
+                    home.label()
+                ),
+            );
+        }
         let env = if row.agent.kind == AgentKind::Slice {
             let place = row.agent.worktree.as_ref().map_or_else(
                 || self.project.repo_path().to_path_buf(),
@@ -139,6 +164,7 @@ impl Core {
             exe: self.options.exe.clone(),
             model: self.config.default_model.clone(),
             env,
+            claude_config_dir: home.explicit.then(|| home.dir.clone()),
         };
         let spec = launch::spec(&self.paths, &launch).map_err(SessionError::LaunchFiles)?;
         tracing::info!(agent = %id.0, resume, "starting session");
@@ -517,7 +543,7 @@ impl Core {
             DriverEvent::ControlRequest { raw, .. } => {
                 tracing::warn!(agent = %agent.0, "unhandled control request: {raw}");
             }
-            DriverEvent::RateLimit(info) => self.on_rate_limit(&info),
+            DriverEvent::RateLimit(info) => self.on_rate_limit(&agent, &info),
             DriverEvent::Exited(info) => self.on_exit(&agent, info),
             _ => {}
         }
@@ -547,7 +573,7 @@ impl Core {
             if session_id != init.session_id {
                 tracing::warn!(agent = %agent.0, ours = %session_id, theirs = %init.session_id, "session id differs");
             }
-            let transcript = launch::transcript_path(&cwd, &session_id);
+            let transcript = launch::transcript_path(&self.home_of(agent), &cwd, &session_id);
             let mode = init.permission_mode.as_deref().and_then(state::from_cli);
             let mut warn = None;
             self.update_agent(agent, |row| {

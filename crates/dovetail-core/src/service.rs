@@ -62,8 +62,8 @@ pub struct CoreOptions {
     pub driver: Arc<dyn SessionDriver>,
     /// The `dovetail` binary, for the worktree hook and the MCP bridge in launch settings.
     pub exe: PathBuf,
-    /// Where Claude Code keeps native to-do lists; `None` for `$CLAUDE_CONFIG_DIR/tasks`, else
-    /// `~/.claude/tasks`. Tests point it at a temp dir.
+    /// Where Claude Code keeps native to-do lists; `None` for `tasks/` in each session's Claude
+    /// home (its profile's folder, ADR 0009). Tests point it at a temp dir.
     pub tasks_dir: Option<PathBuf>,
 }
 
@@ -287,8 +287,9 @@ pub(crate) struct Core {
     pub(crate) messages: VecDeque<AgentMessage>,
     pub(crate) warnings: Vec<Warning>,
     totals: Totals,
-    /// The account's usage limits, as last reported by any session (task #16).
-    pub(crate) usage: UsageLimits,
+    /// Usage limits per Claude home (limits are per account, task #16 and ADR 0009), as last
+    /// reported by a session running under it.
+    pub(crate) usage: BTreeMap<PathBuf, UsageLimits>,
     pub(crate) next_entry: u64,
     pub(crate) next_inbox: u64,
     next_activity: u64,
@@ -315,10 +316,30 @@ pub(crate) struct Core {
     pub(crate) killed: bool,
     /// Native to-do lists: items, owners, the watcher (M11, `todos`).
     pub(crate) todos: crate::todos::Todos,
-    /// Where Claude Code keeps them.
-    pub(crate) tasks_dir: PathBuf,
+    /// The Claude home (profile) this project's sessions run under, or why it cannot be used.
+    pub(crate) claude: Result<crate::profile::ClaudeHome, crate::profile::ProfileError>,
     /// The worktree view's data, per slice (M12b, `worktree_info`).
     pub(crate) worktrees: BTreeMap<AgentId, dovetail_api::WorktreeInfo>,
+}
+
+/// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
+/// a folder not registered yet (it has no recipe).
+pub(crate) fn project_claude_home(
+    paths: &Paths,
+    config: &Config,
+    project: &ProjectState,
+) -> Result<crate::profile::ClaudeHome, crate::profile::ProfileError> {
+    let Some(p) = project.registered() else {
+        return config.claude_home(None);
+    };
+    let recipe = crate::recipe::Recipe::load(&paths.recipe(&p.id))
+        .map_err(|e| crate::profile::ProfileError::Recipe(e.to_string()))?;
+    // The agent row records the profile's folder: a recipe moving it behind Dovetail's back
+    // would make that record wrong.
+    if recipe.env.contains_key("CLAUDE_CONFIG_DIR") {
+        return Err(crate::profile::ProfileError::EnvOverride);
+    }
+    config.claude_home(recipe.profile.as_deref())
 }
 
 /// The streaming coalescing window (≤ ~30 fps).
@@ -336,10 +357,7 @@ impl Core {
         out: mpsc::Sender<ServerMsg>,
         inputs: tokio_mpsc::UnboundedSender<Input>,
     ) -> Self {
-        let tasks_dir = options
-            .tasks_dir
-            .clone()
-            .unwrap_or_else(crate::todos::default_tasks_dir);
+        let claude = project_claude_home(&paths, &config, &project);
         Core {
             db,
             paths,
@@ -361,7 +379,7 @@ impl Core {
             messages: VecDeque::new(),
             warnings: Vec::new(),
             totals: Totals::default(),
-            usage: UsageLimits::default(),
+            usage: BTreeMap::new(),
             next_entry: 1,
             next_inbox: 1,
             next_activity: 1,
@@ -377,7 +395,7 @@ impl Core {
             quitting: None,
             killed: false,
             todos: Default::default(),
-            tasks_dir,
+            claude,
             worktrees: BTreeMap::new(),
         }
     }
@@ -532,6 +550,7 @@ impl Core {
                 task_list_id: Some(self.task_list_id(None, COORDINATOR)),
                 created_ms: now_ms(),
                 tool_use_id: None,
+                claude_home: None,
             };
             self.db.upsert_agent(row.clone()).await?;
             self.agents.insert(coordinator, row);
@@ -593,7 +612,8 @@ impl Core {
                     seq: self.seq,
                     now_ms: now_ms(),
                     project: Some(self.project.summary()),
-                    usage: self.usage.clone(),
+                    usage: self.current_usage(),
+                    profile: self.profile_name(),
                     ..Snapshot::default()
                 }
             }
@@ -622,7 +642,8 @@ impl Core {
             conversations: self.tails.clone(),
             warnings: self.warnings.clone(),
             todos: self.todos.items(),
-            usage: self.usage.clone(),
+            usage: self.current_usage(),
+            profile: self.profile_name(),
             worktrees: self.worktrees.values().cloned().collect(),
             ..Snapshot::default()
         };

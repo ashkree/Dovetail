@@ -269,6 +269,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
         totals: totals(),
         warnings: vec![warning()],
         worktrees: worktree_infos(),
+        profile: Some("maveron".into()),
     };
     roundtrip(&ServerMsg::Hello {
         protocol: PROTOCOL_VERSION,

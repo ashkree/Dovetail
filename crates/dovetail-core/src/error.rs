@@ -21,6 +21,9 @@ pub enum SessionError {
     /// Subagents run inside their parent's session.
     #[error("subagents have no session of their own")]
     Subagent,
+    /// The project's Claude profile cannot be used (ADR 0009).
+    #[error(transparent)]
+    Profile(#[from] crate::profile::ProfileError),
     /// The launch files could not be written.
     #[error("writing launch settings: {0}")]
     LaunchFiles(#[source] std::io::Error),

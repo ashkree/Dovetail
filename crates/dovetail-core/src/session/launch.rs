@@ -7,7 +7,8 @@
 //!   Never `--strict-mcp-config`, so the user's own MCP servers still load (B28).
 //! - `--append-system-prompt-file`: the installed role prompt (Decision 8c).
 //! - `--allowedTools`: Dovetail's tools for the role, plus `SendMessage` and `ListAgents` (S2).
-//! - Environment: native to-do tools on, the to-do list id (A12), and the hook's project id.
+//! - Environment: native to-do tools on, the to-do list id (A12), the hook's project id, and
+//!   `CLAUDE_CONFIG_DIR` when the project picks a Claude profile (ADR 0009).
 //!
 //! Never bare mode: it disables the messaging socket.
 
@@ -54,6 +55,8 @@ pub struct Launch {
     pub model: Option<String>,
     /// Extra environment (a slice's recipe `[env]`).
     pub env: Vec<(String, String)>,
+    /// `CLAUDE_CONFIG_DIR`: the project's profile folder; `None` to inherit Dovetail's own.
+    pub claude_config_dir: Option<PathBuf>,
 }
 
 /// Writes the launch files and returns the spec. The role prompt is passed only if installed.
@@ -130,6 +133,14 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     spec.env
         .push((env::PROJECT.into(), launch.project_key.clone()));
     spec.env.extend(launch.env.iter().cloned());
+    // After the recipe's `[env]`, so the profile always wins.
+    if let Some(dir) = &launch.claude_config_dir {
+        spec.env.retain(|(k, _)| k != "CLAUDE_CONFIG_DIR");
+        spec.env.push((
+            "CLAUDE_CONFIG_DIR".into(),
+            dir.to_string_lossy().into_owned(),
+        ));
+    }
     if std::env::var(RECORD_ENV).is_ok_and(|v| v == "1") {
         spec.log_path = Some(dir.join(format!("stream-{}.ndjson", crate::db::now_ms())));
     }
@@ -148,25 +159,17 @@ pub fn allowed_tools(role: Role) -> Vec<String> {
     tools
 }
 
-/// Where Claude Code files a session's transcript: `~/.claude/projects/<cwd with every
+/// Where Claude Code files a session's transcript: `<claude home>/projects/<cwd with every
 /// character but letters and digits turned into '-'>/<session id>.jsonl` (spike S4: under the
-/// worktree for a slice). `CLAUDE_CONFIG_DIR` replaces `~/.claude` when set.
-pub fn transcript_path(cwd: &Path, session_id: &str) -> PathBuf {
-    let base = std::env::var_os("CLAUDE_CONFIG_DIR")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_default()
-                .join(".claude")
-        });
+/// worktree for a slice). The home is the session's profile folder (ADR 0009), by default
+/// `$CLAUDE_CONFIG_DIR` or `~/.claude`.
+pub fn transcript_path(home: &Path, cwd: &Path, session_id: &str) -> PathBuf {
     let encoded: String = cwd
         .to_string_lossy()
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    base.join("projects")
+    home.join("projects")
         .join(encoded)
         .join(format!("{session_id}.jsonl"))
 }
@@ -187,8 +190,15 @@ mod tests {
 
     #[test]
     fn transcripts_are_filed_under_the_encoded_cwd() {
-        let path = transcript_path(Path::new("/tmp/dovetail-spikes/driver/repo"), "abc");
-        assert!(path.ends_with("projects/-tmp-dovetail-spikes-driver-repo/abc.jsonl"));
+        let path = transcript_path(
+            Path::new("/p/maveron"),
+            Path::new("/tmp/dovetail-spikes/driver/repo"),
+            "abc",
+        );
+        assert_eq!(
+            path,
+            Path::new("/p/maveron/projects/-tmp-dovetail-spikes-driver-repo/abc.jsonl")
+        );
     }
 
     #[test]

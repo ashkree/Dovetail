@@ -81,9 +81,14 @@ pub struct Snapshot {
     /// Every task's decision log, oldest first.
     #[serde(default)]
     pub decisions: Vec<Decision>,
-    /// The account's Claude usage limits, as last reported by any session.
+    /// The open project's Claude usage limits, as last reported by a session of its profile
+    /// (limits are per account).
     #[serde(default)]
     pub usage: UsageLimits,
+    /// The Claude profile the open project's sessions run under (ADR 0009); `None` when nothing
+    /// names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     /// Git and PR state of each slice's worktree, as last gathered (empty until the first
     /// refresh).
     #[serde(default)]

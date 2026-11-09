@@ -84,6 +84,12 @@ impl Paths {
         self.data.join("projects").join(project).join("state.db")
     }
 
+    /// Default parent of new Claude profiles made by `dovetail login`: `<data>/profiles/` (ADR
+    /// 0009).
+    pub fn profiles(&self) -> PathBuf {
+        self.data.join("profiles")
+    }
+
     /// A project's worktree recipe.
     pub fn recipe(&self, project: &str) -> PathBuf {
         self.config.join("projects").join(format!("{project}.toml"))
