@@ -485,9 +485,9 @@ fn migrate(conn: &mut Connection, path: &Path, steps: &[Migration]) -> Result<()
 mod tests {
     use super::*;
 
-    /// Mechanical rule (retro 2026-11-09): every migrations directory holds `NNNN_slug.sql` files
-    /// numbered 0001..N with no gaps or duplicates, and its list in this file names exactly those
-    /// files in that order. Fix a failure by renumbering the files or the `migration!` list.
+    /// Mechanical rule (CODING_STANDARDS.md "Architecture"; retro 2026-11-09): every migrations
+    /// directory holds `NNNN_slug.sql` files numbered 0001..N with no gaps or duplicates, and its
+    /// list in this file names exactly those files in that order. Fix a failure by renumbering the files or the `migration!` list.
     #[test]
     fn migrations_are_contiguous_and_listed_in_order() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/db/migrations");

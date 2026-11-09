@@ -7,10 +7,11 @@ cd "$(dirname "$0")/.."
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-# Also enforced by `cargo test`: migrations are contiguous and listed in order
+# Also enforced by `cargo test` (CODING_STANDARDS.md "Architecture", schema changes go through
+# migrations): migrations are contiguous and listed in order
 # (dovetail-core `db::tests::migrations_are_contiguous_and_listed_in_order`).
 
-# AGENTS.md "Code conventions": typed (thiserror) errors in libraries; String errors only in the binary.
+# CODING_STANDARDS.md "Code": typed (thiserror) errors in libraries; String errors only in the binary.
 libs=(crates/dovetail-api crates/dovetail-core crates/dovetail-driver crates/dovetail-mock crates/dovetail-tui)
 if hits=$(grep -rnE 'Result<[^;{]*,[[:space:]]*String>' "${libs[@]/%//src}"); then
     echo "check.sh: library code returns String errors; use a thiserror type:" >&2
@@ -18,7 +19,7 @@ if hits=$(grep -rnE 'Result<[^;{]*,[[:space:]]*String>' "${libs[@]/%//src}"); th
     exit 1
 fi
 
-# AGENTS.md "Architecture rules": the core / UI boundary is message-passing (decision 15). The TUI
+# CODING_STANDARDS.md "Architecture": the core / UI boundary is message-passing (decision 15). The TUI
 # sends Commands; it never spawns processes or writes files itself. Test modules are skipped: by
 # convention each file's `#[cfg(test)]` module comes last, so everything after it is ignored.
 tui_banned='std::process|Command::new|fs::write|File::create|create_dir|remove_file|OpenOptions'
