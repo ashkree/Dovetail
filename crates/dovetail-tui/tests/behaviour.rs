@@ -75,22 +75,23 @@ fn an_unknown_command_shows_a_note_and_leaves_command_mode() {
 #[test]
 fn focus_moves_with_h_l_and_ctrl_j_k() {
     let mut app = app_with(world());
-    assert_eq!(app.focus(), RegionId::SideTop);
-    app.on_key(ctrl('j'), 0);
+    // Inbox on top, tree below (ADR 0008); focus starts on the tree.
     assert_eq!(app.focus(), RegionId::SideBottom);
+    app.on_key(ctrl('k'), 0);
+    assert_eq!(app.focus(), RegionId::SideTop);
     app.on_key(key('h'), 1);
     assert_eq!(app.focus(), RegionId::Main);
     app.on_key(key('l'), 2);
-    assert_eq!(app.focus(), RegionId::SideBottom);
-    app.on_key(ctrl('k'), 3);
     assert_eq!(app.focus(), RegionId::SideTop);
+    app.on_key(ctrl('j'), 3);
+    assert_eq!(app.focus(), RegionId::SideBottom);
 }
 
 #[test]
 fn leader_n_jumps_to_the_inbox() {
     let mut app = app_with(world());
     type_keys(&mut app, " n");
-    assert_eq!(app.focus(), RegionId::SideBottom);
+    assert_eq!(app.focus(), RegionId::SideTop);
 }
 
 #[test]
@@ -99,11 +100,11 @@ fn j_and_k_never_leave_a_list() {
     for _ in 0..80 {
         app.on_key(key('j'), 0);
     }
-    assert_eq!(app.focus(), RegionId::SideTop);
+    assert_eq!(app.focus(), RegionId::SideBottom);
     for _ in 0..80 {
         app.on_key(key('k'), 0);
     }
-    assert_eq!(app.focus(), RegionId::SideTop);
+    assert_eq!(app.focus(), RegionId::SideBottom);
 }
 
 #[test]
@@ -115,7 +116,7 @@ fn a_half_typed_leader_times_out_and_is_dropped() {
     assert_eq!(app.next_deadline_ms(), None);
     // `n` alone is not bound, so nothing moves.
     app.on_key(key('n'), 2_000);
-    assert_eq!(app.focus(), RegionId::SideTop);
+    assert_eq!(app.focus(), RegionId::SideBottom);
 }
 
 #[test]
@@ -280,7 +281,7 @@ fn landing_on_a_coordinator_created_task_marks_it_seen() {
 
 fn in_inbox(app: &mut dovetail_tui::App) {
     type_keys(app, " n");
-    assert_eq!(app.focus(), RegionId::SideBottom);
+    assert_eq!(app.focus(), RegionId::SideTop);
 }
 
 #[test]

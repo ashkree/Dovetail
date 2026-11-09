@@ -164,7 +164,7 @@ fn colon_aliases_reach_the_same_actions_as_the_keys() {
     let mut app = app_with(world());
     type_keys(&mut app, ":inbox");
     app.on_key(enter(), 9);
-    assert_eq!(app.focus(), RegionId::SideBottom);
+    assert_eq!(app.focus(), RegionId::SideTop);
     type_keys(&mut app, ":activity");
     app.on_key(enter(), 19);
     assert_eq!(app.focus(), RegionId::Main);
@@ -296,7 +296,7 @@ fn leader_t_opens_capture_and_enter_saves_with_its_tokens() {
     assert_eq!(app.mode(), Mode::Normal);
     assert_eq!(
         app.focus(),
-        RegionId::SideTop,
+        RegionId::SideBottom,
         "saving returns to where you were"
     );
 }
@@ -488,7 +488,7 @@ fn esc_closes_the_switcher_and_changes_nothing() {
     leader(&mut app, "ss");
     app.on_key(esc(), 50);
     assert_eq!(app.mode(), Mode::Normal);
-    assert_eq!(app.focus(), RegionId::SideTop);
+    assert_eq!(app.focus(), RegionId::SideBottom);
     assert!(!render(&mut app, 120, 40).contains("Preview"));
 }
 
@@ -539,7 +539,7 @@ fn choosing_an_inbox_item_in_the_finder_jumps_to_it() {
     leader(&mut app, " ");
     type_keys(&mut app, "Finished");
     app.on_key(enter(), 50);
-    assert_eq!(app.focus(), RegionId::SideBottom);
+    assert_eq!(app.focus(), RegionId::SideTop);
     // The finished turn is the selected item now: `x` dismisses it.
     assert_eq!(
         press(&mut app, "x"),
