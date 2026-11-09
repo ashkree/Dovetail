@@ -625,9 +625,186 @@ pub fn remove(
     Ok(())
 }
 
+/// What [`remove_if_unchanged`] found and did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubagentCleanup {
+    /// There was no such worktree or branch: the subagent shared its parent's.
+    Absent,
+    /// The worktree was unchanged and is gone, with its branch.
+    Removed,
+    /// The subagent left work behind; nothing was touched.
+    Changed {
+        /// Uncommitted entries, excluding our symlinks.
+        uncommitted: usize,
+        /// Commits that exist only on the subagent's branch.
+        commits: usize,
+    },
+}
+
+/// Commits reachable from `branch` and from no other branch or remote: the work done on it.
+/// A subagent's branch starts from its parent's `HEAD`, so the parent's own unpushed commits
+/// are not counted.
+fn own_commits(repo: &Path, branch: &str) -> Result<usize, WorktreeError> {
+    // With `--branches` the pattern names the branch without `refs/heads/` (git-rev-list(1)).
+    let exclude = format!("--exclude={branch}");
+    let count = git(
+        repo,
+        [
+            "rev-list",
+            "--count",
+            branch,
+            "--not",
+            exclude.as_str(),
+            "--branches",
+            "--remotes",
+        ],
+    )?;
+    Ok(count.trim().parse().unwrap_or(0))
+}
+
+/// Removes a finished subagent's worktree (`agent-<id>`) if it is unchanged: no uncommitted
+/// entries besides our symlinks and no commits of its own (digest §6: `WorktreeRemove` does not
+/// fire when subagents finish, so Dovetail cleans up). A changed one is left for the parent.
+pub fn remove_if_unchanged(
+    paths: &Paths,
+    project: &str,
+    name: &str,
+    repo: &Path,
+) -> Result<SubagentCleanup, WorktreeError> {
+    let report = inspect(paths, project, name, repo)?;
+    if !report.exists && !report.branch_exists {
+        return Ok(SubagentCleanup::Absent);
+    }
+    let commits = if report.branch_exists {
+        own_commits(repo, &branch_name(name))?
+    } else {
+        0
+    };
+    if !report.uncommitted.is_empty() || commits > 0 {
+        return Ok(SubagentCleanup::Changed {
+            uncommitted: report.uncommitted.len(),
+            commits,
+        });
+    }
+    // Checked above; the parent's unpushed commits on the branch are not the subagent's work,
+    // so `remove`'s own unpushed check would refuse wrongly.
+    remove(paths, project, name, repo, true)?;
+    Ok(SubagentCleanup::Removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn run_git(dir: &Path, args: &[&str]) {
+        let ok = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("git")
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+
+    /// A repo with a slice worktree that has an unpushed commit of its own, and a subagent
+    /// worktree made from the slice (as the hook does), with `.env` symlinked into both.
+    fn scratch() -> (tempfile::TempDir, Paths, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let paths = Paths {
+            data: dir.path().join("data"),
+            config: dir.path().join("config"),
+            state: dir.path().join("state"),
+            runtime: dir.path().join("run"),
+        };
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git(&repo, &["init", "-q", "-b", "main"]);
+        fs::write(repo.join("a.txt"), "a\n").expect("write");
+        fs::write(repo.join(".env"), "SECRET=1\n").expect("write");
+        fs::write(repo.join(".gitignore"), ".env\n").expect("write");
+        run_git(&repo, &["add", "a.txt", ".gitignore"]);
+        run_git(&repo, &["commit", "-q", "-m", "init"]);
+        let recipe = Recipe {
+            worktree: crate::recipe::WorktreeRecipe {
+                symlink: vec![PathBuf::from(".env")],
+                setup: Vec::new(),
+            },
+            ..Recipe::default()
+        };
+        let slice = create(
+            &paths,
+            &CreateRequest {
+                project: "p".into(),
+                name: "slice".into(),
+                cwd: repo.clone(),
+                recipe: recipe.clone(),
+            },
+        )
+        .expect("slice worktree");
+        fs::write(slice.path.join("b.txt"), "b\n").expect("write");
+        run_git(&slice.path, &["add", "b.txt"]);
+        run_git(&slice.path, &["commit", "-q", "-m", "slice work"]);
+        let sub = create(
+            &paths,
+            &CreateRequest {
+                project: "p".into(),
+                name: "agent-a1".into(),
+                cwd: slice.path.clone(),
+                recipe,
+            },
+        )
+        .expect("subagent worktree");
+        assert!(fs::symlink_metadata(sub.path.join(".env")).is_ok());
+        (dir, paths, repo, sub.path)
+    }
+
+    #[test]
+    fn an_unchanged_subagent_worktree_is_removed_with_its_branch() {
+        let (_dir, paths, repo, sub) = scratch();
+        let done = remove_if_unchanged(&paths, "p", "agent-a1", &repo).expect("cleanup");
+        assert_eq!(done, SubagentCleanup::Removed);
+        assert!(!sub.exists());
+        assert!(!branch_exists(&repo, "dovetail/agent-a1"));
+        // The slice is untouched.
+        assert!(branch_exists(&repo, "dovetail/slice"));
+        assert!(worktree_path(&paths, "p", "slice").join("b.txt").exists());
+    }
+
+    #[test]
+    fn a_subagent_worktree_with_work_is_left_alone() {
+        let (_dir, paths, repo, sub) = scratch();
+        fs::write(sub.join("c.txt"), "c\n").expect("write");
+        let found = remove_if_unchanged(&paths, "p", "agent-a1", &repo).expect("cleanup");
+        assert_eq!(
+            found,
+            SubagentCleanup::Changed {
+                uncommitted: 1,
+                commits: 0
+            }
+        );
+        run_git(&sub, &["add", "c.txt"]);
+        run_git(&sub, &["commit", "-q", "-m", "sub work"]);
+        let found = remove_if_unchanged(&paths, "p", "agent-a1", &repo).expect("cleanup");
+        assert_eq!(
+            found,
+            SubagentCleanup::Changed {
+                uncommitted: 0,
+                commits: 1
+            }
+        );
+        assert!(sub.join("c.txt").exists());
+    }
+
+    #[test]
+    fn a_subagent_without_a_worktree_needs_no_cleanup() {
+        let (_dir, paths, repo, _sub) = scratch();
+        let found = remove_if_unchanged(&paths, "p", "agent-none", &repo).expect("cleanup");
+        assert_eq!(found, SubagentCleanup::Absent);
+    }
 
     #[test]
     fn a_worktree_path_names_the_key_it_was_made_under() {

@@ -1189,6 +1189,7 @@ impl MockCore {
                 last_tool: None,
                 tool_uses: 0,
                 summary: None,
+                ..SubagentProgress::default()
             });
         }
         self.emit(Event::AgentUpserted(sub));

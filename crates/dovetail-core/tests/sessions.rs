@@ -12,9 +12,9 @@ use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, Soc
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
 use dovetail_api::tools::{ArchiveSlice, ArchiveTask, AskUser, ReportStatus, StartSlice, Tool};
 use dovetail_api::{
-    AgentId, AgentKind, Attachment, Bucket, Command, CoreLink, EntryKind, ImageType, InboxId,
-    InboxKind, NewTask, PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId, TaskStatus,
-    apply,
+    AgentId, AgentKind, AgentStatus, Attachment, Bucket, Command, CoreLink, EntryKind, ImageType,
+    InboxId, InboxKind, NewTask, PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId,
+    TaskStatus, apply,
 };
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
@@ -519,12 +519,164 @@ fn a_subagents_permission_request_reaches_the_inbox_marked_as_its() {
             matches!(&i.kind, InboxKind::Permission { reason: Some(r), .. } if r.starts_with("from subagent"))
         })
     });
+    // The foreground subagent is a node under the coordinator while it runs.
+    let sub = subagent(&h.snap).expect("a subagent node");
+    assert_eq!(sub.kind, AgentKind::Subagent { background: false });
+    assert_eq!(sub.name, "Read one.txt file");
+    assert_eq!(sub.status, AgentStatus::Working);
     let id = h.snap.inbox[0].id;
     h.send(Command::AnswerPermission {
         item: id,
         answer: PermissionAnswer::Deny { message: None },
     });
     h.wait_for("the reply", |s| finished_turns(s) == 1);
+    let sub = subagent(&h.snap).expect("a subagent node");
+    assert_eq!(sub.status, AgentStatus::Done);
+    let progress = sub.progress.as_ref().expect("progress");
+    assert_eq!(progress.tool_uses, 1);
+    assert!(
+        progress
+            .summary
+            .as_deref()
+            .is_some_and(|s| s.contains("uno")),
+        "{progress:?}"
+    );
+    h.quit();
+}
+
+/// The one subagent node in the snapshot.
+fn subagent(s: &Snapshot) -> Option<&dovetail_api::Agent> {
+    s.agents
+        .iter()
+        .find(|a| matches!(a.kind, AgentKind::Subagent { .. }))
+}
+
+#[test]
+fn a_background_subagent_is_a_node_with_progress_cost_and_its_summary_at_the_end() {
+    // Out lines 8 and 22 are the two `result`s; 17 is `task_updated` (completed).
+    let fake = fixture("subagent_background").with_options(ReplayOptions {
+        pause_before: vec![8, 17, 22],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "start a background subagent");
+    h.wait_for("the subagent node", |s| subagent(s).is_some());
+    let sub = subagent(&h.snap).expect("node").clone();
+    assert_eq!(sub.kind, AgentKind::Subagent { background: true });
+    assert_eq!(sub.parent, Some(AgentId(COORDINATOR.into())));
+    assert_eq!(
+        sub.id,
+        AgentId("coordinator:toolu_01WrSGRZBAmUyjsWgzW1pdsV".into())
+    );
+    assert_eq!(sub.name, "Background sleep task");
+    assert_eq!(sub.status, AgentStatus::Working);
+
+    // Past the first `result` and the subagent's progress: the parent is not done.
+    fake.resume();
+    h.wait_for("the last progress", |s| {
+        subagent(s)
+            .and_then(|a| a.progress.as_ref())
+            .is_some_and(|p| p.tool_uses == 2)
+    });
+    let coordinator = h
+        .snap
+        .agents
+        .iter()
+        .find(|a| a.kind == AgentKind::Coordinator)
+        .expect("coordinator");
+    assert!((coordinator.cost_usd - 0.0494268).abs() < 1e-6);
+    assert_eq!(coordinator.status, AgentStatus::Working);
+    assert_eq!(finished_turns(&h.snap), 0);
+    let sub = subagent(&h.snap).expect("node");
+    let progress = sub.progress.as_ref().expect("progress");
+    assert_eq!(progress.total_tokens, 17164);
+    assert_eq!(progress.duration_ms, 11302);
+    assert_eq!(progress.last_tool.as_deref(), Some("SubagentHandback"));
+    assert_eq!(sub.status, AgentStatus::Working);
+
+    // Completed, with the hand-back as its summary, before the parent's second `result`.
+    fake.resume();
+    h.wait_for("the summary", |s| {
+        subagent(s)
+            .and_then(|a| a.progress.as_ref())
+            .is_some_and(|p| p.summary.is_some())
+    });
+    let sub = subagent(&h.snap).expect("node");
+    assert_eq!(sub.status, AgentStatus::Done);
+    assert_eq!(sub.status_line, "bg-done");
+    let progress = sub.progress.as_ref().expect("progress");
+    assert_eq!(progress.summary.as_deref(), Some("bg-done"));
+    assert_eq!(progress.total_tokens, 17175);
+    assert!(
+        progress
+            .output_file
+            .as_ref()
+            .is_some_and(|f| f.ends_with("ad6b787476c37b6da.output"))
+    );
+    // Its own Bash task is not a node.
+    assert_eq!(
+        h.snap
+            .agents
+            .iter()
+            .filter(|a| matches!(a.kind, AgentKind::Subagent { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(finished_turns(&h.snap), 0);
+
+    fake.resume();
+    h.wait_for("the finished turn", |s| finished_turns(s) == 1);
+    // The parent's cost includes the subagent's; the subagent adds nothing to the totals.
+    h.wait_for("the totals", |s| (s.totals.cost_usd - 0.1).abs() < 1e-9);
+    assert_eq!(subagent(&h.snap).expect("node").cost_usd, 0.0);
+    // Its Bash call never reached the parent's conversation.
+    assert!(
+        !h.entries(COORDINATOR)
+            .iter()
+            .any(|(_, t)| t.contains("Bash"))
+    );
+
+    // The node survives a restart, summary and all.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let h = Harness::start_on(fixture("plain_turn"), paths);
+    let sub = subagent(&h.snap).expect("node after restart");
+    assert_eq!(sub.status, AgentStatus::Done);
+    assert_eq!(sub.parent, Some(AgentId(COORDINATOR.into())));
+    assert_eq!(
+        sub.progress.as_ref().and_then(|p| p.summary.as_deref()),
+        Some("bg-done")
+    );
+    h.quit();
+}
+
+#[test]
+fn a_subagent_cut_off_by_a_restart_reopens_as_stopped() {
+    // Hold before the subagent's first progress: it is still running at quit.
+    let fake = fixture("subagent_background").with_options(ReplayOptions {
+        pause_before: vec![9],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "start a background subagent");
+    h.wait_for("the subagent node", |s| subagent(s).is_some());
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let h = Harness::start_on(fixture("plain_turn"), paths);
+    let sub = subagent(&h.snap).expect("node after restart");
+    assert_eq!(sub.status, AgentStatus::Error);
+    assert!(
+        sub.status_line.starts_with("stopped"),
+        "{}",
+        sub.status_line
+    );
+    // Only the parent's cut-off turn is reported, not the subagent.
+    assert!(
+        h.snap
+            .inbox
+            .iter()
+            .all(|i| i.agent == AgentId(COORDINATOR.into()))
+    );
     h.quit();
 }
 
@@ -1205,6 +1357,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             transcript_path: None,
             task_list_id: None,
             created_ms: 0,
+            tool_use_id: None,
         })
         .wait()
         .expect("agent");
@@ -1580,6 +1733,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             transcript_path: None,
             task_list_id: None,
             created_ms: 0,
+            tool_use_id: None,
         })
         .wait()
         .expect("agent");

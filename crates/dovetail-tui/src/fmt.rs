@@ -43,6 +43,27 @@ pub fn image_chip(n: usize, size: u64) -> String {
     format!("[image {n} · {}]", bytes(size))
 }
 
+/// A token count as `950`, `17k` or `1.2M`.
+pub fn tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{}k", n / 1_000)
+    } else {
+        n.to_string()
+    }
+}
+
+/// A run time as `45s` or `3m 05s`.
+pub fn duration(ms: u64) -> String {
+    let s = ms / 1_000;
+    if s >= 60 {
+        format!("{}m {:02}s", s / 60, s % 60)
+    } else {
+        format!("{s}s")
+    }
+}
+
 /// Cost as `$1.84`.
 pub fn cost(usd: f64) -> String {
     format!("${usd:.2}")

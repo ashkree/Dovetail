@@ -118,6 +118,7 @@ pub fn world() -> Snapshot {
         last_tool: Some("Grep".into()),
         tool_uses: 12,
         summary: None,
+        ..SubagentProgress::default()
     });
 
     let mut slice7 = agent("slice-7", AgentKind::Slice, AgentStatus::NeedsYou, Some(2));
