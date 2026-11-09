@@ -1093,6 +1093,7 @@ pub(crate) fn new_agent(id: AgentId, name: String, kind: AgentKind, task: Option
         last_activity_ms: now_ms(),
         lock: SessionLock::Headless,
         model: None,
+        subagent_tokens: 0,
     }
 }
 

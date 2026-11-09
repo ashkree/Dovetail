@@ -794,6 +794,7 @@ mod tests {
             last_activity_ms: 0,
             lock: SessionLock::Headless,
             model: None,
+            subagent_tokens: 0,
         }
     }
 

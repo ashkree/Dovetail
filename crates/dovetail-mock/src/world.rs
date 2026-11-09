@@ -56,6 +56,7 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
         last_activity_ms: now_ms,
         lock: SessionLock::Headless,
         model: Some("claude-opus-5-5".into()),
+        subagent_tokens: 0,
     }
 }
 
@@ -84,6 +85,7 @@ pub(crate) fn subagent(id: &str, parent: &Agent, background: bool, now_ms: i64) 
         last_activity_ms: now_ms,
         lock: SessionLock::Headless,
         model: None,
+        subagent_tokens: 0,
     }
 }
 

@@ -91,14 +91,14 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
     conn.execute(
         "INSERT INTO agents (id, kind, name, parent_id, task_id, session_id, transcript_path, \
          task_list_id, worktree_path, branch, status, status_line, permission_mode, cost_usd, \
-         created_ms, last_activity_ms, tool_use_id, output_file, progress) \
+         created_ms, last_activity_ms, tool_use_id, output_file, progress, subagent_tokens) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19) \
+         ?18, ?19, ?20) \
          ON CONFLICT(id) DO UPDATE SET kind = ?2, name = ?3, parent_id = ?4, task_id = ?5, \
          session_id = ?6, transcript_path = ?7, task_list_id = ?8, worktree_path = ?9, \
          branch = ?10, status = ?11, status_line = ?12, permission_mode = ?13, cost_usd = ?14, \
          last_activity_ms = ?16, tool_use_id = ?17, output_file = ?18, progress = ?19, \
-         closed_ms = NULL",
+         subagent_tokens = ?20, closed_ms = NULL",
         params![
             a.id.0,
             kind_to_text(a.kind),
@@ -124,6 +124,7 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
                 .and_then(|p| p.output_file.as_ref())
                 .map(|f| f.to_string_lossy().into_owned()),
             progress_text(&a.progress)?,
+            i64::try_from(a.subagent_tokens).unwrap_or(i64::MAX),
         ],
     )?;
     Ok(())
@@ -133,7 +134,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
     let mut stmt = conn.prepare(
         "SELECT id, kind, name, parent_id, task_id, session_id, transcript_path, task_list_id, \
          worktree_path, branch, status, status_line, permission_mode, cost_usd, created_ms, \
-         last_activity_ms, tool_use_id, progress FROM agents WHERE closed_ms IS NULL \
+         last_activity_ms, tool_use_id, progress, subagent_tokens FROM agents WHERE closed_ms IS NULL \
          ORDER BY created_ms, id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -159,6 +160,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             (
                 r.get::<_, Option<String>>(16)?,
                 r.get::<_, Option<String>>(17)?,
+                r.get::<_, i64>(18)?,
             ),
         ))
     })?;
@@ -180,7 +182,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             cost,
             created,
             last,
-            (tool_use_id, progress),
+            (tool_use_id, progress, subagent_tokens),
         ) = row?;
         let progress = progress
             .map(|p| {
@@ -213,6 +215,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 last_activity_ms: last.unwrap_or(0),
                 lock: SessionLock::Headless,
                 model: None,
+                subagent_tokens: u64::try_from(subagent_tokens).unwrap_or(0),
             },
             session_id,
             transcript_path: transcript.map(PathBuf::from),

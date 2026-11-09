@@ -231,6 +231,10 @@ pub struct Agent {
     /// the session reports it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Tokens its subagents used, summed from their `task_*` events (sessions only; digest §3:
+    /// the final `result` undercounts). Includes subagents whose nodes are gone.
+    #[serde(default)]
+    pub subagent_tokens: u64,
 }
 
 /// What an agent is. Coordinators and slices are their own Claude Code sessions; subagents

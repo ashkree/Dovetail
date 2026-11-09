@@ -60,6 +60,7 @@ fn subagent() -> Agent {
         last_activity_ms: 1_700_000_000_000,
         lock: SessionLock::TakenOver,
         model: Some("claude-opus-5-5".into()),
+        subagent_tokens: 12_345,
     }
 }
 

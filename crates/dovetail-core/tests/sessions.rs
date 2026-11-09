@@ -566,6 +566,13 @@ fn subagent(s: &Snapshot) -> Option<&dovetail_api::Agent> {
         .find(|a| matches!(a.kind, AgentKind::Subagent { .. }))
 }
 
+fn coordinator_of(s: &Snapshot) -> &dovetail_api::Agent {
+    s.agents
+        .iter()
+        .find(|a| a.kind == AgentKind::Coordinator)
+        .expect("coordinator")
+}
+
 #[test]
 fn a_background_subagent_is_a_node_with_progress_cost_and_its_summary_at_the_end() {
     // Out lines 8 and 22 are the two `result`s; 17 is `task_updated` (completed).
@@ -628,6 +635,10 @@ fn a_background_subagent_is_a_node_with_progress_cost_and_its_summary_at_the_end
             .as_ref()
             .is_some_and(|f| f.ends_with("ad6b787476c37b6da.output"))
     );
+    // The session's total is summed from the task events, not taken from its `result`.
+    h.wait_for("the session total", |s| {
+        coordinator_of(s).subagent_tokens == 17175
+    });
     // Its own Bash task is not a node.
     assert_eq!(
         h.snap
@@ -656,6 +667,7 @@ fn a_background_subagent_is_a_node_with_progress_cost_and_its_summary_at_the_end
     let _state = h.quit();
     let h = Harness::start_on(fixture("plain_turn"), paths);
     let sub = subagent(&h.snap).expect("node after restart");
+    assert_eq!(coordinator_of(&h.snap).subagent_tokens, 17175);
     assert_eq!(sub.status, AgentStatus::Done);
     assert_eq!(sub.parent, Some(AgentId(COORDINATOR.into())));
     assert_eq!(
@@ -1389,6 +1401,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             last_activity_ms: 0,
             lock: dovetail_api::SessionLock::Headless,
             model: None,
+            subagent_tokens: 0,
         };
         agent.status_line.clear();
         db.upsert_agent(dovetail_core::db::AgentRow {
@@ -1767,6 +1780,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             last_activity_ms: 0,
             lock: dovetail_api::SessionLock::Headless,
             model: None,
+            subagent_tokens: 0,
         };
         db.upsert_agent(dovetail_core::db::AgentRow {
             agent,
