@@ -75,6 +75,8 @@ pub(crate) struct Live {
     /// The cgroup of the session's capped scope (`None`: it runs uncapped). Its `memory.current`
     /// is the session's memory, and its `memory.events` counts OOM kills (M13).
     pub(crate) cgroup: Option<PathBuf>,
+    /// Tokens the context held after the latest main-thread API call (decision #22).
+    pub(crate) context_tokens: Option<u64>,
 }
 
 impl Core {
@@ -227,6 +229,7 @@ impl Core {
                 subagent_tasks: HashMap::new(),
                 subagent_keys: HashMap::new(),
                 cgroup,
+                context_tokens: None,
             },
         );
         self.save_agent(id);
@@ -662,6 +665,9 @@ impl Core {
     fn on_assistant(&mut self, agent: &AgentId, message: dovetail_driver::AssistantMessage) {
         // Only main-thread messages get here; a subagent's model is not the session's.
         self.set_model(agent, message.model.as_deref());
+        if let Some(usage) = message.usage {
+            self.on_context_usage(agent, message.model.as_deref(), usage);
+        }
         let mut texts = Vec::new();
         let mut tools = Vec::new();
         for block in &message.blocks {
@@ -744,6 +750,7 @@ impl Core {
         if let Some(cost) = result.total_cost_usd {
             self.update_agent(agent, |row| row.agent.cost_usd = base + cost);
         }
+        self.learn_context_window(agent, &result);
         for denial in &result.permission_denials {
             let what = denial
                 .tool_input

@@ -4,6 +4,7 @@
 
 mod clipboard;
 pub mod config;
+mod context;
 pub mod db;
 pub mod editor;
 pub mod error;

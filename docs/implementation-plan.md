@@ -591,7 +591,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Done when:**
   - [x] Both are reachable as buffers in the main region
   - [x] `X` asks first if work is unpushed
-  - [ ] `e` opens nvim and returns cleanly (hand-off sequence tested with a fake core and a fake editor; not yet tried in a real terminal)
+  - [x] `e` opens nvim and returns cleanly (hand-off tested with a fake core and editor; confirmed by the user in a real terminal, 2026-11-09)
 - **Tests:** snapshots, git status parsing in temp repos
 
 ### M13. Memory caps and context fill

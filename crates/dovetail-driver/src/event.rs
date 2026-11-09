@@ -86,6 +86,33 @@ pub struct AssistantMessage {
     pub blocks: Vec<ContentBlock>,
     /// The model that wrote it (`message.model`), when present.
     pub model: Option<String>,
+    /// The API call's token usage (`message.usage`), when present.
+    pub usage: Option<TokenUsage>,
+}
+
+/// Token usage of one API call, from an assistant line's `message.usage`. Every line of one
+/// message carries the same figures.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TokenUsage {
+    /// `input_tokens`: uncached input after the last cache breakpoint.
+    pub input_tokens: u64,
+    /// `cache_read_input_tokens`.
+    pub cache_read_tokens: u64,
+    /// `cache_creation_input_tokens`.
+    pub cache_creation_tokens: u64,
+    /// `output_tokens`.
+    pub output_tokens: u64,
+}
+
+impl TokenUsage {
+    /// Tokens the conversation holds after this call: the whole prompt (uncached, read from and
+    /// written to the cache) plus the reply, which the next call reads back.
+    pub fn context_tokens(&self) -> u64 {
+        self.input_tokens
+            .saturating_add(self.cache_read_tokens)
+            .saturating_add(self.cache_creation_tokens)
+            .saturating_add(self.output_tokens)
+    }
 }
 
 impl AssistantMessage {
