@@ -50,7 +50,7 @@ I run several Claude Code agents in parallel and lose track of them. Dovetail's 
 
 ## Layout (fixed, v1)
 
-The sketch shows the tree on the left; the app mirrors it (conversation left, tree over inbox right, ADR 0006).
+The sketch shows the tree over the inbox on the left; the app mirrors it (conversation left, ADR 0006) and stacks the inbox over the tree on the right, 40/60 (ADR 0008).
 
 ```
 ┌ tasks ──────────────────┬ coordinator ──────────────┐
@@ -68,8 +68,8 @@ The sketch shows the tree on the left; the app mirrors it (conversation left, tr
 └─────────────────────────────────────────────────────┘
 ```
 
-- **Right, top:** the task tree. Project, then tasks, then each task's agents (with the branch under each slice), then each agent's to-do items. A background subagent shows as one node with a progress indicator.
-- **Right, bottom:** the inbox ("Needs you"). One line per item: kind glyph, source, a short title cut with `…` to fit, and the time. The title is what a permission request is for, or the first sentence of a question, finished turn or error. The full item opens with `Enter` (see the inbox keys below; task #5, 2026-11-09).
+- **Right, top (40 %):** the inbox ("Needs you"). One line per item: kind glyph, source, a short title cut with `…` to fit, and the time. The title is what a permission request is for, or the first sentence of a question, finished turn or error. The full item opens with `Enter` (see the inbox keys below; task #5, 2026-11-09).
+- **Right, bottom (60 %):** the task tree (ADR 0008). Project, then tasks, then each task's agents (with the branch under each slice), then each agent's to-do items. A background subagent shows as one node with a progress indicator.
 - **Left:** a conversation buffer, full height. It shows the **coordinator** by default and switches when I open another agent.
 - **Header row:** one row above the regions naming what is open: `worktree <path> on <branch>` inside a slice's worktree, `folder <path>` otherwise (home shown as `~`). While the open folder is not a Dovetail project yet (ADR 0005), its right end carries the warning `⚠ not a Dovetail project yet: :project add keeps it` (cut to `⚠ not a project yet` when narrow) in the needs-you colour; that warning shows here, not in the status bar.
 - **Status bar:** mode, project, task count, live agent count, "needs you" count, total memory, and the coordinator's context fill (e.g. `ctx 62%`).
@@ -177,7 +177,7 @@ A which-key popup (press Space, wait, see the bindings) is planned for later. Bu
 ## Milestones for this session (adjust order if you see a better one)
 
 1. Workspace skeleton, event loop, mode state machine, status bar.
-2. Fixed layout (conversation on the left, tree over inbox on the right) and focus movement.
+2. Fixed layout (conversation on the left, inbox over tree on the right) and focus movement.
 3. Task tree buffer on mock data, with expand/collapse, glyphs, branch lines and live updates from `MockCore`.
 4. Inbox buffer, with inline approval keys and the item detail.
 5. Conversation buffer, with Insert mode sending to the mock and a streamed mock reply.

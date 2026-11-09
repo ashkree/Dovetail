@@ -3,9 +3,18 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 24)"
 ---
  folder /src/business
-┌ messages between agents ─────────────────────────────────┐┌ tasks · business ────────────────────┐
-│ 10:07  slice-4 → coordinator  Understood; working on th… ││ ◐ ◆ coordinator   working 1.2G $3.10 │
-│ 09:55  coordinator → slice-4  Stay out of src/decision.… ││ ▾ Now (2)                            │
+┌ messages between agents ─────────────────────────────────┐┌ inbox · needs you (3) ───────────────┐
+│ 10:07  slice-4 → coordinator  Understood; working on th… ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
+│ 09:55  coordinator → slice-4  Stay out of src/decision.… ││   ? slice-4  Which route pref… 10:12 │
+│                                                          ││   ✓ slice-4  Handler wired; t… 10:09 │
+│                                                          ││                                      │
+│                                                          ││                                      │
+│                                                          ││                                      │
+│                                                          ││ y allow · d deny · r reply · x dism… │
+│                                                          │└──────────────────────────────────────┘
+│                                                          │┌ tasks · business ────────────────────┐
+│                                                          ││ ◐ ◆ coordinator   working 1.2G $3.10 │
+│                                                          ││ ▾ Now (2)                            │
 │                                                          ││ ▾ ⚠ business surface P1     PR #1231 │
 │                                                          ││   ▾ ◐ ◆ slice-4  edits   working 71% │
 │                                                          ││         ⎇ dovetail/slice-4           │
@@ -14,15 +23,6 @@ expression: "render(&mut app, 100, 24)"
 │                                                          ││         ○ update OpenAPI spec ⊘ blo… │
 │                                                          ││       ✓ ◇ rebase          done $0.21 │
 │                                                          ││       ◐ ◇ explore c… 12 tools · Grep │
-│                                                          ││ ⏎ open · o fold · dd archive         │
-│                                                          │└──────────────────────────────────────┘
-│                                                          │┌ inbox · needs you (3) ───────────────┐
-│                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
-│                                                          ││   ? slice-4  Which route pref… 10:12 │
-│                                                          ││   ✓ slice-4  Handler wired; t… 10:09 │
-│                                                          ││                                      │
-│                                                          ││                                      │
-│                                                          ││                                      │
-│ ⏎ open agent · / search · esc back                       ││ y allow · d deny · r reply · x dism… │
+│ ⏎ open agent · / search · esc back                       ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command

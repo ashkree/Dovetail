@@ -3,30 +3,30 @@ source: crates/dovetail-tui/tests/layout_b.rs
 expression: "render(&mut app, 80, 28)"
 ---
  folder /src/business
-┌ coordinator · ◐ working · 1.2G · $3.1┐┌ tasks · business ────────────────────┐
+┌ coordinator · ◐ working · 1.2G · $3.1┐┌ inbox · needs you (3) ───────────────┐
+│                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
+│                                      ││   ? slice-4  Which route pref… 10:12 │
+│   ── You · 10:08 ─────────────────   ││   ✓ slice-4  Handler wired; t… 10:09 │
+│   Make sure slice-4 doesn't touch    ││                                      │
+│   the 500 path.                      ││                                      │
+│                                      ││                                      │
+│   ── coordinator · 10:08 ─────────   ││                                      │
+│   Told slice-4 to stay out of        ││ y allow · d deny · r reply · x dism… │
+│   src/decision.rs until slice-7      │└──────────────────────────────────────┘
+│   hands it back.                     │┌ tasks · business ────────────────────┐
 │                                      ││ ◐ ◆ coordinator   working 1.2G $3.10 │
-│                                      ││ ▾ Now (2)                            │
-│   ── You · 10:08 ─────────────────   ││ ▾ ⚠ business surface P1     PR #1231 │
-│   Make sure slice-4 doesn't touch    ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│   the 500 path.                      ││         ⎇ dovetail/slice-4           │
-│                                      ││         ✓ write route tests          │
-│   ── coordinator · 10:08 ─────────   ││         ◐ wire handler to registry   │
-│   Told slice-4 to stay out of        ││         ○ update OpenAPI spec ⊘ blo… │
-│   src/decision.rs until slice-7      ││       ✓ ◇ rebase          done $0.21 │
-│   hands it back.                     ││       ◐ ◇ explore c… 12 tools · Grep │
+│   ── You · 10:14 ─────────────────   ││ ▾ Now (2)                            │
+│   What's blocking slice-7?           ││ ▾ ⚠ business surface P1     PR #1231 │
+│                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│   ── coordinator · 10:14 ◐ ───────   ││         ⎇ dovetail/slice-4           │
+│   It needs a key. slice-7 can only   ││         ✓ write route tests          │
+│   reach the eval path with           ││         ◐ wire handler to registry   │
+│   FS_EVAL_VIRTUAL_KEY set.▌          ││         ○ update OpenAPI spec ⊘ blo… │
+│                                      ││       ✓ ◇ rebase          done $0.21 │
+│                                      ││       ◐ ◇ explore c… 12 tools · Grep │
 │                                      ││ ▾ ⚠ get_decision 500 P0              │
-│   ── You · 10:14 ─────────────────   ││   ▾ ⚠ ◆ slice-7  manual    needs you │
-│   What's blocking slice-7?           ││         ⎇ dovetail/slice-7           │
+│   ────────────────────────────────   ││   ▾ ⚠ ◆ slice-7  manual    needs you │
+│   › i to chat · ]] [[ turns · zc …   ││         ⎇ dovetail/slice-7           │
 │                                      ││ ⏎ open · o fold · dd archive         │
-│   ── coordinator · 10:14 ◐ ───────   │└──────────────────────────────────────┘
-│   It needs a key. slice-7 can only   │┌ inbox · needs you (3) ───────────────┐
-│   reach the eval path with           ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
-│   FS_EVAL_VIRTUAL_KEY set.▌          ││   ? slice-4  Which route pref… 10:12 │
-│                                      ││   ✓ slice-4  Handler wired; t… 10:09 │
-│                                      ││                                      │
-│                                      ││                                      │
-│   ────────────────────────────────   ││                                      │
-│   › i to chat · ]] [[ turns · zc …   ││                                      │
-│                                      ││ y allow · d deny · r reply · x dism… │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ ·… i chat · ␣ss switch · : command

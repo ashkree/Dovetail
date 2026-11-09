@@ -198,6 +198,12 @@ pub(crate) enum Input {
         agent: AgentId,
         result: Result<(), WorktreeError>,
     },
+    /// A finished subagent's worktree `name` was checked and, if unchanged, removed.
+    SubagentWorktree {
+        agent: AgentId,
+        name: String,
+        result: Result<crate::worktree::SubagentCleanup, WorktreeError>,
+    },
     /// The sweep inspected a worktree no agent owns.
     OrphanInspected {
         found: crate::restore::Orphan,
@@ -437,6 +443,11 @@ impl Core {
                 Input::WorktreeRemoved { agent, result } => {
                     self.on_worktree_removed(agent, result).await;
                 }
+                Input::SubagentWorktree {
+                    agent,
+                    name,
+                    result,
+                } => self.on_subagent_worktree(&agent, &name, result),
                 Input::OrphanInspected { found, result } => self.on_orphan(found, result),
                 Input::OrphanRemoved { name, result } => self.on_orphan_removed(name, result),
                 Input::TodosChanged { list } => self.mark_todos(list),
@@ -465,6 +476,16 @@ impl Core {
         self.next_activity = ids.activity + 1;
         self.next_message = ids.message + 1;
         for mut row in self.db.load_agents().await? {
+            // A subagent ran inside its parent's process, which is gone: it stopped with it. Its
+            // parent's cut-off turn is what gets reported.
+            if !row.agent.kind.is_session() {
+                if row.agent.status == AgentStatus::Working {
+                    crate::session::subagent::mark_stopped(&mut row.agent, "stopped by a restart");
+                    self.db.upsert_agent(row.clone()).await?;
+                }
+                self.agents.insert(row.agent.id.clone(), row);
+                continue;
+            }
             // Nothing runs yet: whatever it was doing was cut off (M10, see `restore`).
             if matches!(
                 row.agent.status,
@@ -501,6 +522,7 @@ impl Core {
                 transcript_path: None,
                 task_list_id: Some(self.task_list_id(None, COORDINATOR)),
                 created_ms: now_ms(),
+                tool_use_id: None,
             };
             self.db.upsert_agent(row.clone()).await?;
             self.agents.insert(coordinator, row);
@@ -819,6 +841,14 @@ impl Core {
         // by the quit reads as cut off on the next open (M10). A turn that still ends normally
         // in the quit window is recorded as ended.
         if self.quitting.is_some() && !self.live.contains_key(id) {
+            return;
+        }
+        // A subagent's status comes from its `task_*` events (see `session::subagent`).
+        if self
+            .agents
+            .get(id)
+            .is_some_and(|r| !r.agent.kind.is_session())
+        {
             return;
         }
         let needs_you = self

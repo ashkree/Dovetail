@@ -213,6 +213,7 @@ impl Core {
             transcript_path: None,
             task_list_id: Some(self.task_list_id(request.task, &name)),
             created_ms: now_ms(),
+            tool_use_id: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
@@ -614,6 +615,7 @@ impl Core {
         for id in items {
             self.resolve(id, Some("slice archived".into()));
         }
+        self.close_subagents_of(agent);
         let key = self.worktree_key(&row.agent);
         worktree::clear_hook_outcome(&self.paths, &key, &row.agent.name);
         self.persist("a closed agent", self.db.close_agent(agent.clone()));

@@ -55,6 +55,7 @@ fn subagent() -> Agent {
             last_tool: Some("Grep".into()),
             tool_uses: 4,
             summary: None,
+            ..SubagentProgress::default()
         }),
         last_activity_ms: 1_700_000_000_000,
         lock: SessionLock::TakenOver,

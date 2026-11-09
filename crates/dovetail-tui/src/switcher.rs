@@ -270,17 +270,23 @@ fn agent_preview(
             progress.description.clone(),
             theme.body(),
         )));
-        out.push(Line::from(Span::styled(
-            format!(
-                "{} tool uses{}",
-                progress.tool_uses,
-                progress
-                    .last_tool
-                    .as_ref()
-                    .map_or(String::new(), |t| format!(" · last {t}"))
-            ),
-            theme.dim(),
-        )));
+        let mut facts = vec![format!("{} tool uses", progress.tool_uses)];
+        if let Some(t) = &progress.last_tool {
+            facts.push(format!("last {t}"));
+        }
+        if progress.total_tokens > 0 {
+            facts.push(format!("{} tokens", fmt::tokens(progress.total_tokens)));
+        }
+        if progress.duration_ms > 0 {
+            facts.push(fmt::duration(progress.duration_ms));
+        }
+        out.push(Line::from(Span::styled(facts.join(" · "), theme.dim())));
+        if let Some(file) = &progress.output_file {
+            out.push(Line::from(Span::styled(
+                format!("output {}", file.display()),
+                theme.dim(),
+            )));
+        }
         if let Some(summary) = &progress.summary {
             out.push(Line::default());
             for line in fmt::wrap(summary, width) {

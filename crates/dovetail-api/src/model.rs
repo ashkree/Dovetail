@@ -218,7 +218,7 @@ pub struct Agent {
     pub permission_mode: PermissionMode,
     /// How full the context window is, 0–100 (sessions only).
     pub context_pct: Option<u8>,
-    /// Progress of a background subagent.
+    /// Progress of a subagent (subagents only).
     pub progress: Option<SubagentProgress>,
     /// Last stream activity, in Unix milliseconds.
     pub last_activity_ms: i64,
@@ -288,8 +288,8 @@ pub enum PermissionMode {
     Manual,
 }
 
-/// Progress of a background subagent, from `task_*` events.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Progress of a subagent, from `task_*` events.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubagentProgress {
     /// What the subagent was asked to do.
     pub description: String,
@@ -299,6 +299,15 @@ pub struct SubagentProgress {
     pub tool_uses: u32,
     /// Final summary, once finished.
     pub summary: Option<String>,
+    /// Tokens used so far (`usage.total_tokens`).
+    #[serde(default)]
+    pub total_tokens: u64,
+    /// Time it has run, in milliseconds (`usage.duration_ms`).
+    #[serde(default)]
+    pub duration_ms: u64,
+    /// The file Claude Code writes its transcript to, once known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_file: Option<PathBuf>,
 }
 
 /// Whether Dovetail or a native terminal drives a session.

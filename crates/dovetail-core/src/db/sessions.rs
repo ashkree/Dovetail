@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use dovetail_api::{
     ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, EntryId,
-    InboxId, InboxItem, InboxKind, SessionLock, TaskId, WorktreeRef,
+    InboxId, InboxItem, InboxKind, SessionLock, SubagentProgress, TaskId, WorktreeRef,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -25,6 +25,9 @@ pub struct AgentRow {
     pub task_list_id: Option<String>,
     /// When it was created, in Unix milliseconds.
     pub created_ms: i64,
+    /// Subagents only: the `Agent` tool use that launched it. Its events carry this as
+    /// `parent_tool_use_id`.
+    pub tool_use_id: Option<String>,
 }
 
 fn kind_to_text(kind: AgentKind) -> &'static str {
@@ -70,6 +73,15 @@ fn attachments_text(attachments: &[Attachment]) -> Result<Option<String>, DbErro
         .map_err(|e| DbError::Corrupt(format!("attachments that do not serialise: {e}")))
 }
 
+/// A subagent's progress as stored: JSON, or NULL for sessions.
+fn progress_text(progress: &Option<SubagentProgress>) -> Result<Option<String>, DbError> {
+    progress
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| DbError::Corrupt(format!("progress that does not serialise: {e}")))
+}
+
 fn path_text(path: &Option<PathBuf>) -> Option<String> {
     path.as_ref().map(|p| p.to_string_lossy().into_owned())
 }
@@ -79,12 +91,14 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
     conn.execute(
         "INSERT INTO agents (id, kind, name, parent_id, task_id, session_id, transcript_path, \
          task_list_id, worktree_path, branch, status, status_line, permission_mode, cost_usd, \
-         created_ms, last_activity_ms) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16) \
+         created_ms, last_activity_ms, tool_use_id, output_file, progress) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
+         ?18, ?19) \
          ON CONFLICT(id) DO UPDATE SET kind = ?2, name = ?3, parent_id = ?4, task_id = ?5, \
          session_id = ?6, transcript_path = ?7, task_list_id = ?8, worktree_path = ?9, \
          branch = ?10, status = ?11, status_line = ?12, permission_mode = ?13, cost_usd = ?14, \
-         last_activity_ms = ?16, closed_ms = NULL",
+         last_activity_ms = ?16, tool_use_id = ?17, output_file = ?18, progress = ?19, \
+         closed_ms = NULL",
         params![
             a.id.0,
             kind_to_text(a.kind),
@@ -104,6 +118,12 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
             a.cost_usd,
             row.created_ms,
             a.last_activity_ms,
+            row.tool_use_id,
+            a.progress
+                .as_ref()
+                .and_then(|p| p.output_file.as_ref())
+                .map(|f| f.to_string_lossy().into_owned()),
+            progress_text(&a.progress)?,
         ],
     )?;
     Ok(())
@@ -113,7 +133,8 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
     let mut stmt = conn.prepare(
         "SELECT id, kind, name, parent_id, task_id, session_id, transcript_path, task_list_id, \
          worktree_path, branch, status, status_line, permission_mode, cost_usd, created_ms, \
-         last_activity_ms FROM agents WHERE closed_ms IS NULL ORDER BY created_ms, id",
+         last_activity_ms, tool_use_id, progress FROM agents WHERE closed_ms IS NULL \
+         ORDER BY created_ms, id",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -135,6 +156,10 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             r.get::<_, f64>(13)?,
             r.get::<_, Option<i64>>(14)?,
             r.get::<_, Option<i64>>(15)?,
+            (
+                r.get::<_, Option<String>>(16)?,
+                r.get::<_, Option<String>>(17)?,
+            ),
         ))
     })?;
     let mut out = Vec::new();
@@ -155,7 +180,14 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             cost,
             created,
             last,
+            (tool_use_id, progress),
         ) = row?;
+        let progress = progress
+            .map(|p| {
+                serde_json::from_str::<SubagentProgress>(&p)
+                    .map_err(|e| DbError::Corrupt(format!("subagent progress: {e}")))
+            })
+            .transpose()?;
         let worktree = match (wt_path, branch) {
             (Some(path), Some(branch)) => Some(WorktreeRef {
                 path: PathBuf::from(path),
@@ -177,7 +209,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 cost_usd: cost,
                 permission_mode: from_text("permission mode", &mode)?,
                 context_pct: None,
-                progress: None,
+                progress,
                 last_activity_ms: last.unwrap_or(0),
                 lock: SessionLock::Headless,
             },
@@ -185,6 +217,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             transcript_path: transcript.map(PathBuf::from),
             task_list_id: list,
             created_ms: created.unwrap_or(0),
+            tool_use_id,
         });
     }
     Ok(out)

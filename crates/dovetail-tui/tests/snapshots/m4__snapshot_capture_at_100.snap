@@ -3,30 +3,30 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 28)"
 ---
  folder /src/business
-┌ coordinator · ◐ working · 1.2G · $3.10 ──────────────────┐┌ tasks · business ────────────────────┐
-│                                                          ││ ◐ ◆ coordinator   working 1.2G $3.10 │
-│                                                          ││ ▾ Now (2)                            │
-│   ── You · 10:08 ─────────────────────────────────────   ││ ▾ ⚠ business surface P1     PR #1231 │
-│   Make sure slice-4 doesn't touch the 500 path.          ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│                                                          ││         ⎇ dovetail/slice-4           │
-│   ── coordinator · 10:08 ─────────────────────────────   ││         ✓ write route tests          │
-│   Told slice-4 to stay out of src/decision.rs until      ││         ◐ wire handler to registry   │
-│   slice-7 hands it back.                                 ││         ○ update OpenAPI spec ⊘ blo… │
-│                                                          ││       ✓ ◇ rebase          done $0.21 │
-│   ─┌ new task ──────────────────────────────────────────────────────────────────────────────┐rep │
-│   W│ › check the eval key flow !p1 @next #1240                                              │    │
-│    │ P1 · Next · PR #1240                                                                   │you │
-│   ─│ linked to: get_decision 500   Ctrl-l unlink                                            │    │
-│   I│ ⏎ save · Tab save and open · esc cancel                                                │    │
-│   w└────────────────────────────────────────────────────────────────────────────────────────┘────┘
-│                                                          │┌ inbox · needs you (3) ───────────────┐
+┌ coordinator · ◐ working · 1.2G · $3.10 ──────────────────┐┌ inbox · needs you (3) ───────────────┐
 │                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │                                                          ││   ? slice-4  Which route pref… 10:12 │
-│                                                          ││   ✓ slice-4  Handler wired; t… 10:09 │
+│   ── You · 10:08 ─────────────────────────────────────   ││   ✓ slice-4  Handler wired; t… 10:09 │
+│   Make sure slice-4 doesn't touch the 500 path.          ││                                      │
 │                                                          ││                                      │
-│                                                          ││                                      │
-│   ────────────────────────────────────────────────────   ││                                      │
-│   › i to chat · ]] [[ turns · zc zo fold · gg G          ││                                      │
-│                                                          ││ y allow · d deny · r reply · x dism… │
+│   ── coordinator · 10:08 ─────────────────────────────   ││                                      │
+│   Told slice-4 to stay out of src/decision.rs until      ││                                      │
+│   slice-7 hands it back.                                 ││ y allow · d deny · r reply · x dism… │
+│                                                          │└──────────────────────────────────────┘
+│   ─┌ new task ──────────────────────────────────────────────────────────────────────────────┐────┐
+│   W│ › check the eval key flow !p1 @next #1240                                              │.10 │
+│    │ P1 · Next · PR #1240                                                                   │    │
+│   ─│ linked to: get_decision 500   Ctrl-l unlink                                            │231 │
+│   I│ ⏎ save · Tab save and open · esc cancel                                                │71% │
+│   w└────────────────────────────────────────────────────────────────────────────────────────┘    │
+│                                                          ││         ✓ write route tests          │
+│                                                          ││         ◐ wire handler to registry   │
+│                                                          ││         ○ update OpenAPI spec ⊘ blo… │
+│                                                          ││       ✓ ◇ rebase          done $0.21 │
+│                                                          ││       ◐ ◇ explore c… 12 tools · Grep │
+│                                                          ││ ▾ ⚠ get_decision 500 P0              │
+│   ────────────────────────────────────────────────────   ││   ▾ ⚠ ◆ slice-7  manual    needs you │
+│   › i to chat · ]] [[ turns · zc zo fold · gg G          ││         ⎇ dovetail/slice-7           │
+│                                                          ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
  INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command

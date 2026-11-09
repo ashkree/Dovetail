@@ -1,8 +1,8 @@
 //! Sessions: launching and resuming them, sending to them, and turning their stream into the
 //! API's events (plan §4's table). The stream rules of digest §3 are law here:
 //!
-//! - a subagent's events carry `parent_tool_use_id` and are routed by it, never into the
-//!   parent's conversation (their tree nodes arrive at M11);
+//! - a subagent's events carry `parent_tool_use_id` and are routed by it to its tree node
+//!   ([`subagent`]), never into the parent's conversation;
 //! - a `result` ends a turn, not the session: a finished-turn item is raised only when no
 //!   background tasks remain;
 //! - permission requests become inbox items at once and are answered in any order;
@@ -10,6 +10,7 @@
 
 pub mod launch;
 pub mod state;
+pub(crate) mod subagent;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -30,7 +31,8 @@ use crate::service::{COORDINATOR, Core, Input};
 use state::{Streaming, Turn};
 
 /// The agent id of the subagent that `parent`'s tool use `tool_use_id` launched: the
-/// `parent_tool_use_id` its events carry. Shared with M11's subagent nodes.
+/// `parent_tool_use_id` its events carry. Its tree node ([`subagent`]) and its to-do items
+/// share it.
 pub fn subagent_id(parent: &AgentId, tool_use_id: &str) -> AgentId {
     AgentId(format!("{}:{tool_use_id}", parent.0))
 }
@@ -66,6 +68,10 @@ pub(crate) struct Live {
     pub(crate) close_after: Option<bool>,
     /// Dropped to stop the setup watcher.
     pub(crate) setup_cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Subagent task ids to the tool use that launched them (`task_updated` has only the id).
+    pub(crate) subagent_tasks: HashMap<String, String>,
+    /// Subagent tool use ids to Claude Code's agent id, which names its worktree `agent-<id>`.
+    pub(crate) subagent_keys: HashMap<String, String>,
 }
 
 impl Core {
@@ -175,6 +181,8 @@ impl Core {
                 sends: HashMap::new(),
                 close_after: None,
                 setup_cancel: None,
+                subagent_tasks: HashMap::new(),
+                subagent_keys: HashMap::new(),
             },
         );
         self.save_agent(id);
@@ -412,9 +420,10 @@ impl Core {
         }
         // To-do items are attributed from any origin, foreground subagents included.
         self.track_todos(&agent, &event);
-        // Rule 1: a subagent's events are its own (M11 gives them tree nodes).
-        if event.origin().is_some_and(|o| !o.is_main()) {
-            tracing::trace!(agent = %agent.0, "subagent event");
+        // Rule 1: a subagent's events are its own: routed to its node, never into the parent's
+        // conversation.
+        if let Some(origin) = event.origin().filter(|o| !o.is_main()).cloned() {
+            self.on_subagent_event(&agent, &origin, &event);
             return;
         }
         match event {
@@ -435,6 +444,7 @@ impl Core {
             }
             DriverEvent::Assistant(message) => self.on_assistant(&agent, message),
             DriverEvent::ToolResult(result) => {
+                self.subagent_tool_result(&agent, &result);
                 let send = self
                     .live
                     .get_mut(&agent)
@@ -484,6 +494,7 @@ impl Core {
                 }
                 self.refresh_status(&agent);
             }
+            DriverEvent::Task(task) => self.on_task_event(&agent, task),
             DriverEvent::TurnResult(result) => self.on_result(&agent, result),
             DriverEvent::PermissionRequest(request) => self.permission_request(&agent, request),
             DriverEvent::PermissionCancelled(control) => {
@@ -638,6 +649,9 @@ impl Core {
             }
         }
         for (id, name, input) in tools {
+            if subagent::launches_subagent(&name) {
+                self.subagent_launched(agent, &id, &input);
+            }
             if name == "SendMessage" {
                 let field = |k: &str| input.get(k).and_then(|v| v.as_str()).map(str::to_owned);
                 if let (Some(to), Some(text)) = (
@@ -710,6 +724,7 @@ impl Core {
         let Some(live) = self.live.remove(agent) else {
             return;
         };
+        self.subagents_stopped(agent);
         self.unwatch_todos(agent);
         // At quit, held requests stay on record: the next open reports them as expired (M10).
         if self.quitting.is_none() {

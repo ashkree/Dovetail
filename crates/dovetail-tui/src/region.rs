@@ -34,7 +34,7 @@ pub enum RegionId {
 }
 
 impl RegionId {
-    /// Whether the region is in the side column (tree over inbox, on the right).
+    /// Whether the region is in the side column (inbox over tree, on the right).
     pub fn is_side(self) -> bool {
         matches!(self, RegionId::SideTop | RegionId::SideBottom)
     }
@@ -52,14 +52,15 @@ pub struct Regions {
 }
 
 impl Default for Regions {
-    /// Layout B (Decision 15, placement per ADR 0006): conversation on the left, tree over inbox on the right.
+    /// Layout B (Decision 15, placement per ADR 0006 and ADR 0008): conversation on the left,
+    /// inbox over tree on the right. Focus starts on the tree.
     fn default() -> Self {
         Self {
-            side_top: BufferKind::Tree,
-            side_bottom: BufferKind::Inbox,
+            side_top: BufferKind::Inbox,
+            side_bottom: BufferKind::Tree,
             main: BufferKind::Conversation,
-            focus: RegionId::SideTop,
-            last_side: RegionId::SideTop,
+            focus: RegionId::SideBottom,
+            last_side: RegionId::SideBottom,
         }
     }
 }
@@ -72,6 +73,13 @@ impl Regions {
             RegionId::SideBottom => self.side_bottom,
             RegionId::Main => self.main,
         }
+    }
+
+    /// The side region showing a buffer, if one does.
+    pub fn side_showing(&self, kind: BufferKind) -> Option<RegionId> {
+        [RegionId::SideTop, RegionId::SideBottom]
+            .into_iter()
+            .find(|&region| self.buffer(region) == kind)
     }
 
     /// Makes a region show another buffer.
@@ -135,9 +143,9 @@ impl Regions {
 pub struct Areas {
     /// Header row: the folder in view, and whether it is a project.
     pub header: Rect,
-    /// Task tree.
+    /// Side column, top (the inbox by default).
     pub side_top: Rect,
-    /// Inbox.
+    /// Side column, bottom (the task tree by default).
     pub side_bottom: Rect,
     /// Conversation.
     pub main: Rect,
@@ -148,8 +156,8 @@ pub struct Areas {
 }
 
 /// Splits the screen. The side column (right) is about 38 % wide but never narrower than 40
-/// columns (when the screen allows) so tree rows stay readable; the inbox takes the lower
-/// 40 % of it. The conversation takes the rest, on the left.
+/// columns (when the screen allows) so tree rows stay readable; the top region (inbox) takes
+/// 40 % of it and the bottom region (tree) the rest (ADR 0008). The conversation takes the rest, on the left.
 pub fn layout(screen: Rect, with_prompt: bool) -> Areas {
     let rows = RatLayout::vertical([
         Constraint::Length(1),
@@ -161,7 +169,7 @@ pub fn layout(screen: Rect, with_prompt: bool) -> Areas {
     let side_width = (screen.width * 38 / 100).max(40).min(screen.width / 2);
     let columns =
         RatLayout::horizontal([Constraint::Min(10), Constraint::Length(side_width)]).split(rows[1]);
-    let left = RatLayout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)])
+    let left = RatLayout::vertical([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(columns[1]);
     Areas {
         header: rows[0],
@@ -180,19 +188,19 @@ mod tests {
     #[test]
     fn l_returns_to_the_side_region_you_came_from() {
         let mut regions = Regions::default();
-        regions.focus_down();
-        assert_eq!(regions.focus(), RegionId::SideBottom);
+        regions.focus_up();
+        assert_eq!(regions.focus(), RegionId::SideTop);
         regions.focus_left();
         assert_eq!(regions.focus(), RegionId::Main);
         regions.focus_right();
-        assert_eq!(regions.focus(), RegionId::SideBottom);
+        assert_eq!(regions.focus(), RegionId::SideTop);
     }
 
     #[test]
     fn l_and_h_do_nothing_where_there_is_nowhere_to_go() {
         let mut regions = Regions::default();
         regions.focus_right();
-        assert_eq!(regions.focus(), RegionId::SideTop);
+        assert_eq!(regions.focus(), RegionId::SideBottom);
         regions.focus_left();
         regions.focus_left();
         assert_eq!(regions.focus(), RegionId::Main);

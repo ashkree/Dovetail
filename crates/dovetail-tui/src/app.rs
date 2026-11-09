@@ -543,7 +543,7 @@ impl App {
             Action::FocusRight => self.regions.focus_right(),
             Action::FocusDown => self.regions.focus_down(),
             Action::FocusUp => self.regions.focus_up(),
-            Action::FocusInbox => self.regions.set_focus(RegionId::SideBottom),
+            Action::FocusInbox => self.focus_inbox(),
             Action::EnterCommand => self.start_input(InputTarget::Command, ""),
             Action::EnterInsert => {
                 if let Some(agent) = self.chat_target() {
@@ -572,7 +572,7 @@ impl App {
             Action::BackToConversation => {
                 // Leaving an inbox item goes back to the inbox, for the next one.
                 if self.regions.buffer(RegionId::Main) == BufferKind::InboxDetail {
-                    self.regions.set_focus(RegionId::SideBottom);
+                    self.focus_inbox();
                 }
                 self.regions.show(RegionId::Main, BufferKind::Conversation);
             }
