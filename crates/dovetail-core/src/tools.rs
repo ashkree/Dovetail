@@ -49,8 +49,8 @@ pub(crate) fn slice_reply(result: Result<SliceStart, SliceError>) -> SocketRespo
 }
 
 impl Core {
-    /// Answers one tool call. A blocking `ask_user` keeps `reply` in its inbox item and answers
-    /// later; everything else answers at once.
+    /// Answers one tool call, at once: `ask_user` too, whose answer arrives later as a message
+    /// (ADR 0007).
     pub(crate) async fn tool(
         &mut self,
         call: ToolCall,
@@ -78,12 +78,13 @@ impl Core {
             Tool::AskUser(ask) => {
                 let kind = InboxKind::Question {
                     text: ask.question.clone(),
-                    blocking: ask.blocking,
                 };
-                if ask.blocking {
-                    self.raise(&agent, kind, Waiter::BlockingQuestion { reply });
-                    return;
-                }
+                // Shown in the conversation too, where it is easier to read than in Needs you.
+                self.add_entry(
+                    &agent,
+                    EntryKind::Notice,
+                    format!("Question for you (also in Needs you): {}", ask.question),
+                );
                 self.raise(
                     &agent,
                     kind,
@@ -92,8 +93,8 @@ impl Core {
                     },
                 );
                 ok(
-                    "Your question is in the user's inbox. The answer will arrive as a new \
-                    message; carry on with anything that does not depend on it.",
+                    "Question sent; the answer will arrive as a new message. Carry on with \
+                    anything that does not depend on it, or end your turn if nothing is left.",
                 )
             }
             Tool::ReportStatus(report) => {

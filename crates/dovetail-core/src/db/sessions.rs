@@ -292,7 +292,8 @@ pub(super) fn max_ids(conn: &mut Connection) -> Result<MaxIds, DbError> {
 pub(super) fn insert_inbox(conn: &mut Connection, item: &InboxItem) -> Result<(), DbError> {
     let (kind, blocking) = match &item.kind {
         InboxKind::Permission { .. } => ("permission", false),
-        InboxKind::Question { blocking, .. } => ("question", *blocking),
+        // `ask_user` never blocks (ADR 0007); the column stays for old rows.
+        InboxKind::Question { .. } => ("question", false),
         InboxKind::FinishedTurn { .. } => ("finished_turn", false),
         InboxKind::Error { .. } => ("error", false),
     };

@@ -17,7 +17,7 @@ Spike results were measured on Claude Code **2.1.312** (Oct 29, 2026). Re-check 
 | 4b | Process ownership | v1 single app with project persistence; split into a daemon later for remote |
 | 5a–c | State | Global `registry.db` + one folder per project, nothing in repos; app state + search index (no tool output); transcripts referenced not copied; `rusqlite` (bundled) on a dedicated thread, WAL |
 | 6a / 6b | Panes / projects | Buffers from day one; fixed layout in v1, splits later. One active project |
-| 7a–c | Inbox | Two tiers (Needs you / Activity); every finished turn lands in Needs you, `ask_user` adds a blocked flag; approvals inline with a context preview |
+| 7a–c | Inbox | Two tiers (Needs you / Activity); every finished turn lands in Needs you, `ask_user` adds a question item, never blocking (ADR 0007); approvals inline with a context preview |
 | 8 | Wrapper MCP | 8a stdio MCP server = same binary run as `dovetail mcp`, connecting back to the app's unix socket; 8b tools in order (see §6); 8c short role prompts in v1 via `--append-system-prompt-file`, plugin skills later |
 | 9 | Lifecycle | Coordinator always live with a higher memory cap; quick work as subagents; per-session cgroup caps + memory display in v1; idle reaping later |
 | 10a–c | Keymap | Mnemonic leader groups + single-key hot actions, which-key popup; hardcoded → TOML → Lua; global movement, buffer-local actions |
@@ -122,7 +122,7 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 
 | Tool | Purpose | Coordinator | Slices | Helper | Ships |
 | --- | --- | --- | --- | --- | --- |
-| `ask_user` | Question to the inbox, optionally blocking | ✓ | ✓ | – | v1 |
+| `ask_user` | Question to the inbox and chat; returns at once (ADR 0007) | ✓ | ✓ | – | v1 |
 | `report_status` | One-line status for the tree | ✓ | ✓ | – | v1 |
 | `draw_map` | Create/update a map | ✓ | ✓ | ✓ | v1 |
 | `log_decision` | Add to a task's decision log | ✓ | ✓ | – | v1.1 |

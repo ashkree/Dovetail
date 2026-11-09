@@ -144,7 +144,7 @@ impl Turn {
 pub struct StatusInputs {
     /// A slice waiting for its worktree.
     pub setting_up: bool,
-    /// An inbox item holds it (a permission request, a blocking question).
+    /// An inbox item holds it (a permission request).
     pub needs_you: bool,
     /// In a turn, or with background tasks left.
     pub busy: bool,

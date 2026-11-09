@@ -537,7 +537,7 @@ pub(crate) const SUBAGENT_TASKS: &[&str] = &[
 pub(crate) const FOLLOW_UPS: &[&str] = &[
     "rename the sequence-timeout constant",
     "check kitty with a 200-column pane",
-    "decide whether blocked questions beep",
+    "decide whether questions beep",
     "trim the preview in the switcher",
 ];
 

@@ -15,8 +15,8 @@ use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
 
-/// Inbox items in display order: blocked questions first, then permission requests, questions,
-/// errors and finished turns; newest first within each.
+/// Inbox items in display order: permission requests first, then questions, errors and finished
+/// turns; newest first within each.
 pub fn ordered(snap: &Snapshot) -> Vec<&InboxItem> {
     let mut items: Vec<&InboxItem> = snap.inbox.iter().collect();
     items.sort_by_key(|i| (rank(&i.kind), std::cmp::Reverse((i.at_ms, i.id))));
@@ -25,11 +25,10 @@ pub fn ordered(snap: &Snapshot) -> Vec<&InboxItem> {
 
 fn rank(kind: &InboxKind) -> u8 {
     match kind {
-        InboxKind::Question { blocking: true, .. } => 0,
-        InboxKind::Permission { .. } => 1,
-        InboxKind::Question { .. } => 2,
-        InboxKind::Error { .. } => 3,
-        InboxKind::FinishedTurn { .. } => 4,
+        InboxKind::Permission { .. } => 0,
+        InboxKind::Question { .. } => 1,
+        InboxKind::Error { .. } => 2,
+        InboxKind::FinishedTurn { .. } => 3,
     }
 }
 
@@ -164,7 +163,6 @@ pub(crate) fn item_label(item: &InboxItem) -> (&'static str, String) {
             ("⚠", "Start slice".into())
         }
         InboxKind::Permission { tool, .. } => ("⚠", tool.clone()),
-        InboxKind::Question { blocking: true, .. } => ("?", "Question · blocked".into()),
         InboxKind::Question { .. } => ("?", "Question".into()),
         InboxKind::FinishedTurn { .. } => ("✓", "Finished turn".into()),
         InboxKind::Error { .. } => ("✗", "Error".into()),

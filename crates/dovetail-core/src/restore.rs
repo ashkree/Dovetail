@@ -182,7 +182,6 @@ impl Core {
         {
             self.notes_wait_for_user = true;
         }
-        let mut asking = std::collections::HashSet::new();
         for item in restored.inbox {
             match &item.kind {
                 InboxKind::Permission { tool, input, .. } => {
@@ -214,12 +213,7 @@ impl Core {
                         ),
                     );
                 }
-                InboxKind::Question { text, blocking } => {
-                    // Only a blocking question explains a stopped turn; after a non-blocking
-                    // one the agent kept working, so its cut-off is still reported.
-                    if *blocking {
-                        asking.insert(item.agent.clone());
-                    }
+                InboxKind::Question { text } => {
                     let question = text.clone();
                     self.restore_item(item, Waiter::RestoredQuestion { question });
                 }
@@ -234,10 +228,6 @@ impl Core {
             }
             // Store the reset status, so the next open does not report it again.
             self.save_agent(&agent);
-            // A question still waiting says enough: answering it resumes the agent.
-            if asking.contains(&agent) {
-                continue;
-            }
             let name = self.name_of(&agent);
             let text = if status == AgentStatus::SettingUp {
                 format!("{name}'s setup was cut off by a restart; archive it and start it again")
