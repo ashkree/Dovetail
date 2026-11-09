@@ -14,7 +14,7 @@
 use std::time::Duration;
 
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, AgentStatus, Event, InboxKind, TaskChange, TaskId,
+    ActivityKind, AgentId, AgentKind, AgentStatus, Bucket, Event, InboxKind, TaskChange, TaskId,
     TaskStatus, WorktreeRef,
 };
 use serde_json::json;
@@ -195,12 +195,19 @@ impl Core {
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
 
-        if let Some(task) = &task
-            && task.status == TaskStatus::Todo
-        {
-            // Starting a slice starts the task (B4).
-            self.update_task(task.id, vec![TaskChange::Status(TaskStatus::InProgress)])
-                .await;
+        if let Some(task) = &task {
+            // Starting a slice starts the task (B4) and puts it in Now (task #7). Queued and
+            // approval-gated starts reach this point only when they actually start.
+            let mut patch = Vec::new();
+            if task.status == TaskStatus::Todo {
+                patch.push(TaskChange::Status(TaskStatus::InProgress));
+            }
+            if task.status != TaskStatus::Done && task.bucket != Some(Bucket::Now) {
+                patch.push(TaskChange::Bucket(Some(Bucket::Now)));
+            }
+            if !patch.is_empty() {
+                self.update_task(task.id, patch).await;
+            }
         }
 
         let cwd = repo_path.clone();
