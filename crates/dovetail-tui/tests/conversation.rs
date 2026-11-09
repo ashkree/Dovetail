@@ -63,8 +63,8 @@ fn a_wide_pane_centres_the_reading_column_at_120_columns() {
 fn rendering_shows_labels_blank_rows_and_folded_tool_lines() {
     let mut app = reading_app();
     let screen = render(&mut app, 120, 50);
-    assert!(screen.contains("you · 10:06"));
-    assert!(screen.contains("coordinator · 10:14"));
+    assert!(screen.contains("── You · 10:06 ─"));
+    assert!(screen.contains("── coordinator · 10:14 ─"));
     assert!(screen.contains("▸ read 2 files · checked slice-7's stream · 4 s"));
     assert!(screen.contains("• the handler in"));
     assert!(screen.contains("│ Merge order: #1231 first, then the 500 fix."));
@@ -204,8 +204,11 @@ fn double_bracket_jumps_between_turns() {
     render(&mut app, 100, 30);
     type_keys(&mut app, "]]");
     let screen = render(&mut app, 100, 30);
-    let first_row = screen.lines().nth(3).expect("first pane row");
-    assert!(first_row.contains("you · "), "{first_row}");
+    let first_row = screen
+        .lines()
+        .nth(4)
+        .expect("header row below the turn's blank row");
+    assert!(first_row.contains("── You · "), "{first_row}");
     assert!(screen.contains("question 1"), "{screen}");
     type_keys(&mut app, "[[");
     assert!(render(&mut app, 100, 30).contains("question 0"));
@@ -285,7 +288,8 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
-            text: "hello".into()
+            text: "hello".into(),
+            attachments: Vec::new()
         }]
     );
     // Typing moved focus to the main pane; `h` goes back to the tree.
@@ -298,7 +302,8 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("slice-7"),
-            text: "key is dev".into()
+            text: "key is dev".into(),
+            attachments: Vec::new()
         }]
     );
     assert_eq!(
@@ -319,7 +324,8 @@ fn i_from_the_inbox_targets_the_coordinator() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
-            text: "x".into()
+            text: "x".into(),
+            attachments: Vec::new()
         }]
     );
 }
@@ -337,7 +343,8 @@ fn i_in_the_main_region_targets_the_agent_it_shows() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("slice-4"),
-            text: "go".into()
+            text: "go".into(),
+            attachments: Vec::new()
         }]
     );
 }
@@ -363,7 +370,8 @@ fn the_chat_input_takes_enter_ctrl_j_alt_enter_ctrl_w_and_ctrl_u() {
         app.take_commands(),
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
-            text: "first line\nsecond\nthird".into()
+            text: "first line\nsecond\nthird".into(),
+            attachments: Vec::new()
         }]
     );
     assert_eq!(app.mode(), Mode::Normal);
@@ -400,6 +408,36 @@ fn a_long_chat_message_wraps_and_the_input_grows_to_a_limit() {
     let screen = render(&mut app, 100, 30);
     assert!(screen.lines().filter(|l| l.contains("word word")).count() <= 6);
     assert!(screen.contains("word"));
+}
+
+#[test]
+fn the_chat_input_wraps_at_word_boundaries() {
+    let mut app = app_with(world());
+    press(&mut app, "i");
+    let words = "please rebase the payments slice onto main, rerun the integration \
+                 suite, and tell me whether the flaky checkout-redirect test \
+                 still fails";
+    type_keys(&mut app, words);
+    let screen = render(&mut app, 80, 24);
+    // The input rows, cut at the conversation pane's right border.
+    let input: Vec<&str> = screen
+        .lines()
+        .filter_map(|l| l.strip_prefix('│')?.split('│').next())
+        .skip_while(|l| !l.contains("› please"))
+        .take_while(|l| !l.trim().is_empty())
+        .collect();
+    assert!(input.len() > 1, "{screen}");
+    // Every row ends on a whole word: the words read back unbroken.
+    let read: Vec<&str> = input
+        .iter()
+        .flat_map(|l| l.trim().trim_start_matches('›').split_whitespace())
+        .collect();
+    assert_eq!(
+        read,
+        words.split_whitespace().collect::<Vec<_>>(),
+        "{screen}"
+    );
+    insta::assert_snapshot!(screen);
 }
 
 // --- streaming and history ---

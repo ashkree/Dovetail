@@ -350,7 +350,7 @@ impl Core {
                     self.fail(e);
                 }
             }
-            _ => self.prompt(&agent, text).await,
+            _ => self.prompt(&agent, text, Vec::new()).await,
         }
     }
 

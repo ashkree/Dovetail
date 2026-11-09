@@ -91,6 +91,7 @@ fn entry(id: u64, at_ms: i64, kind: EntryKind, text: &str) -> ConversationEntry 
         at_ms,
         kind,
         text: text.into(),
+        attachments: Vec::new(),
     }
 }
 

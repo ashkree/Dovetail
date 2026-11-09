@@ -164,7 +164,7 @@ Visual mode comes later; leave room for it.
 - **Inbox:** `y` allow once, `A` (Shift-a) always allow, `d` deny, `D` deny with a reason (opens input), `r` reply to a question, `x` dismiss a finished turn or error, `Enter` open the agent. `n`/`N` stay global search. The selected item shows a context preview: the tool, its full input, and the agent's last message.
 - **Task tree:** `Enter` on an agent opens its conversation; `Enter` on a task opens a task detail view (title, P-level, bucket, notes, decisions, linked PR, agents; mock the notes and a couple of decision entries). `o` expand or collapse, `a` add task, `e` edit title, `s` cycle status, `b` cycle bucket, `p` cycle P-level, `J`/`K` reorder within `Now`, `dd` archive.
 
-**Chat input (Insert mode):** plain multiline input. `Enter` sends. `Ctrl-j` and `Alt-Enter` insert a newline. `Ctrl-w` deletes a word, `Ctrl-u` the line. No vim editing inside the input.
+**Chat input (Insert mode):** plain multiline input. `Enter` sends. `Ctrl-j` and `Alt-Enter` insert a newline. `Ctrl-w` deletes a word, `Ctrl-u` the line. No vim editing inside the input. `Ctrl-V` reads the system clipboard (`wl-paste`, else `xclip`): an image (PNG, JPEG, GIF or WebP, up to 5 MB, at most 10 per message) is attached and shown as a chip such as `[image 1 · 412 KB]` above the input, and the sent message shows the same chips; otherwise the clipboard's text is pasted at the cursor. `Backspace` on an empty input removes the last chip. Chat bars only (task #1, 2026-11-09).
 
 **Interrupt** is a Normal-mode action (`<leader>sx`), because `Esc` belongs to mode switching.
 

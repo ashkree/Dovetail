@@ -67,6 +67,7 @@ pub fn entry(id: u64, at: i64, kind: EntryKind, text: &str) -> ConversationEntry
         at_ms: at,
         kind,
         text: text.into(),
+        attachments: Vec::new(),
     }
 }
 

@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::{AskUser, ReportStatus, StartSlice, Tool};
 use dovetail_api::{
-    AgentId, AgentKind, Command, CoreLink, EntryKind, InboxId, InboxKind, NewTask,
-    PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId, apply,
+    AgentId, AgentKind, Attachment, Command, CoreLink, EntryKind, ImageType, InboxId, InboxKind,
+    NewTask, PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId, apply,
 };
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
@@ -190,6 +190,7 @@ fn prompt(h: &Harness, text: &str) {
     h.send(Command::Prompt {
         agent: AgentId(COORDINATOR.into()),
         text: text.into(),
+        attachments: Vec::new(),
     });
 }
 
@@ -313,6 +314,56 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
         h.entries(COORDINATOR)
             .contains(&(EntryKind::Assistant, "alpha".into()))
     );
+    h.quit();
+}
+
+#[test]
+fn a_prompt_with_an_image_sends_an_image_block_and_keeps_the_path_after_a_restart() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    let dir = h.paths.data.join("attachments");
+    std::fs::create_dir_all(&dir).expect("attachments dir");
+    let path = dir.join("1.png");
+    let bytes = b"\x89PNG\r\n\x1a\nfake";
+    std::fs::write(&path, bytes).expect("write image");
+    let attachment = Attachment {
+        path: path.clone(),
+        media_type: ImageType::Png,
+        size: bytes.len() as u64,
+    };
+    h.send(Command::Prompt {
+        agent: AgentId(COORDINATOR.into()),
+        text: "what is this?".into(),
+        attachments: vec![attachment.clone()],
+    });
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+
+    let lines = fake.user_messages();
+    assert_eq!(lines.len(), 1);
+    let content = lines[0]["message"]["content"]
+        .as_array()
+        .expect("content blocks");
+    assert_eq!(content[0]["type"], "image");
+    assert_eq!(content[0]["source"]["type"], "base64");
+    assert_eq!(content[0]["source"]["media_type"], "image/png");
+    // base64 of the 12 bytes above.
+    assert_eq!(content[0]["source"]["data"], "iVBORw0KGgpmYWtl");
+    assert_eq!(content[1]["text"], "what is this?");
+
+    let user = |h: &Harness| {
+        h.snap.conversations[&AgentId(COORDINATOR.into())]
+            .entries
+            .iter()
+            .find(|e| e.kind == EntryKind::User)
+            .cloned()
+            .expect("the user entry")
+    };
+    assert_eq!(user(&h).attachments, vec![attachment.clone()]);
+
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let h = Harness::start_on(fixture("plain_turn"), paths);
+    assert_eq!(user(&h).attachments, vec![attachment]);
     h.quit();
 }
 
@@ -1254,6 +1305,7 @@ fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
     h.send(Command::Prompt {
         agent: AgentId("slice-later".into()),
         text: "carry on".into(),
+        attachments: Vec::new(),
     });
     let deadline = Instant::now() + Duration::from_secs(5);
     while names(&fake).len() < 2 {

@@ -40,6 +40,14 @@ pub struct Theme {
     pub mode_insert: Color,
     /// Status-bar mode badge in Command mode.
     pub mode_command: Color,
+    /// Image attachment chips (`[image 1 · 412 KB]`), foreground only.
+    pub chip: Color,
+    /// Your name in a message header rule.
+    pub speaker_you: Color,
+    /// An agent's name in a message header rule.
+    pub speaker_agent: Color,
+    /// The rule glyphs of a message header.
+    pub rule: Color,
 }
 
 impl Theme {
@@ -63,7 +71,16 @@ impl Theme {
             mode_normal: Color::Rgb(0xe5, 0xb5, 0x67),
             mode_insert: Color::Rgb(0x7e, 0xe7, 0x87),
             mode_command: Color::Rgb(0xc0, 0xa5, 0xe0),
+            chip: Color::Rgb(0x9c, 0xc4, 0xe8),
+            speaker_you: Color::Rgb(0x6c, 0xb6, 0xff),
+            speaker_agent: Color::Rgb(0xe5, 0xb5, 0x67),
+            rule: Color::Rgb(0x5c, 0x65, 0x72),
         }
+    }
+
+    /// An attachment chip.
+    pub fn chip(&self) -> Style {
+        Style::new().fg(self.chip)
     }
 
     /// Plain body text.

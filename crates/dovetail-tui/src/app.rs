@@ -29,6 +29,7 @@ use jiff::tz::TimeZone;
 
 use crate::action::Action;
 use crate::buffers::{Buffers, Effect, InputTarget, ViewCx};
+use crate::clipboard::{self, Clip, ClipError};
 use crate::command;
 use crate::input::{InputOutcome, TextInput};
 use crate::keymap::{Key, Keymap, Resolved, Resolver, Scope};
@@ -43,6 +44,9 @@ pub const EXIT_CONFIRM_MS: u64 = 2000;
 /// Hints on the right of the status bar.
 const HINTS: &str = "i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command";
 const HINTS_SHORT: &str = "i chat · ␣ss switch · : command";
+
+/// Reads the system clipboard; swapped out in tests.
+pub type ClipboardReader = Box<dyn FnMut() -> Result<Clip, ClipError>>;
 
 /// An open prompt row.
 struct Input {
@@ -93,6 +97,10 @@ pub struct App {
     quit: bool,
     /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
     exit_armed_until: Option<u64>,
+    /// Where pasted images are saved (`attachments/` under Dovetail's data dir); `None` turns
+    /// image paste off.
+    attachments_dir: Option<std::path::PathBuf>,
+    clipboard: ClipboardReader,
     dirty: bool,
 }
 
@@ -120,8 +128,20 @@ impl App {
             reading: None,
             quit: false,
             exit_armed_until: None,
+            attachments_dir: None,
+            clipboard: Box::new(clipboard::read),
             dirty: true,
         }
+    }
+
+    /// Sets the folder pasted images are saved in. Without one, Ctrl-V pastes text only.
+    pub fn set_attachments_dir(&mut self, dir: std::path::PathBuf) {
+        self.attachments_dir = Some(dir);
+    }
+
+    /// Replaces the clipboard reader (tests).
+    pub fn set_clipboard(&mut self, reader: ClipboardReader) {
+        self.clipboard = reader;
     }
 
     /// The UI's copy of the core's state.
@@ -380,8 +400,21 @@ impl App {
                 self.mode = Mode::Normal;
                 return;
             }
-            if let Some((agent, text)) = self.buffers.conversation.chat_key(event) {
-                self.outbox.push(Command::Prompt { agent, text });
+            let chord = self.keymap.chord(
+                Mode::Insert,
+                Scope::Buffer(BufferKind::Conversation),
+                Key::from_event(event),
+            );
+            if chord == Some(Action::PasteClipboard) {
+                self.paste_clipboard();
+                return;
+            }
+            if let Some((agent, text, attachments)) = self.buffers.conversation.chat_key(event) {
+                self.outbox.push(Command::Prompt {
+                    agent,
+                    text,
+                    attachments,
+                });
             }
             if !self.buffers.conversation.is_chatting() {
                 self.mode = Mode::Normal;
@@ -403,6 +436,39 @@ impl App {
                 self.mode = Mode::Normal;
             }
             InputOutcome::Edited | InputOutcome::Ignored => {}
+        }
+    }
+
+    /// Ctrl-V in the chat bar: attach the clipboard's image, or paste its text.
+    fn paste_clipboard(&mut self) {
+        if !self.buffers.conversation.is_chatting() {
+            return;
+        }
+        let full = self.buffers.conversation.attachment_count() >= dovetail_api::MAX_ATTACHMENTS;
+        match (self.clipboard)() {
+            Ok(Clip::Text(text)) => self.buffers.conversation.paste_text(&text),
+            Ok(Clip::Image { .. }) if full => {
+                self.note = Some(format!(
+                    "at most {} images per message",
+                    dovetail_api::MAX_ATTACHMENTS
+                ));
+            }
+            Ok(Clip::Image { media_type, bytes }) => {
+                let Some(dir) = self.attachments_dir.clone() else {
+                    self.note = Some("image paste is off: no attachments folder".into());
+                    return;
+                };
+                match clipboard::save(&dir, media_type, &bytes) {
+                    Ok(attachment) => {
+                        self.buffers.conversation.attach(attachment);
+                    }
+                    Err(e) => {
+                        tracing::warn!("saving a pasted image failed: {e}");
+                        self.note = Some(format!("could not save the image: {e}"));
+                    }
+                }
+            }
+            Err(e) => self.note = Some(e.to_string()),
         }
     }
 
@@ -497,6 +563,7 @@ impl App {
                 None => self.note = Some("no previous agent".into()),
             },
             Action::ToggleSolidBackground => self.buffers.conversation.toggle_solid(),
+            Action::PasteClipboard => self.paste_clipboard(),
             Action::QuickCapture => self.open_capture(),
             Action::PickAgent => self.open_switcher(),
             Action::PickAny => self.open_finder(),

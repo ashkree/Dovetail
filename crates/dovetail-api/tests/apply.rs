@@ -45,6 +45,7 @@ fn entry(id: u64, kind: EntryKind, text: &str) -> ConversationEntry {
         at_ms: 1_000,
         kind,
         text: text.into(),
+        attachments: Vec::new(),
     }
 }
 
@@ -503,6 +504,7 @@ fn assistant_delta_for_an_unknown_entry_starts_one_at_snapshot_time() {
             at_ms: 5_000,
             kind: EntryKind::Assistant,
             text: "Hi".into(),
+            attachments: Vec::new(),
         }]
     );
 }

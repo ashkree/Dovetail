@@ -468,6 +468,7 @@ dependencies = [
  "ratatui",
  "serde_json",
  "signal-hook",
+ "tempfile",
  "tracing",
  "unicode-width",
 ]

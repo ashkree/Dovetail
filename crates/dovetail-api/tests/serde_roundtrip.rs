@@ -67,6 +67,11 @@ fn entry() -> ConversationEntry {
         at_ms: 5,
         kind: EntryKind::ToolSummary,
         text: "Edit src/app.rs · Bash cargo test".into(),
+        attachments: vec![Attachment {
+            path: "/data/dovetail/attachments/1.png".into(),
+            media_type: ImageType::Png,
+            size: 421_888,
+        }],
     }
 }
 
@@ -258,6 +263,16 @@ fn every_command_roundtrips() {
         Command::Prompt {
             agent: id("coordinator"),
             text: "plan M2".into(),
+            attachments: Vec::new(),
+        },
+        Command::Prompt {
+            agent: id("coordinator"),
+            text: String::new(),
+            attachments: vec![Attachment {
+                path: "/data/dovetail/attachments/2.webp".into(),
+                media_type: ImageType::Webp,
+                size: 10,
+            }],
         },
         Command::Interrupt {
             agent: id("slice-a"),
