@@ -9,12 +9,12 @@ expression: "render(&mut reading_app(), 120, 40)"
 │                                                                         ││ ▾ ⚠ business surface P1          PR #1231 │
 │   ▸ sent 1 message · 2 s                                                ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
 │                                                                         ││         ⎇ dovetail/slice-4                │
-│   you · 10:14                                                           ││         ✓ write route tests               │
+│   ── You · 10:14 ────────────────────────────────────────────────────   ││         ✓ write route tests               │
 │   What's blocking slice-7?                                              ││         ◐ wire handler to registry        │
 │                                                                         ││         ○ update OpenAPI spec ⊘ blocked   │
-│   ▸ read 2 files · checked slice-7's stream · 4 s                       ││       ✓ ◇ rebase               done $0.21 │
-│                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
-│   coordinator · 10:14                                                   ││ ▾ ⚠ get_decision 500 P0                   │
+│   ── coordinator · 10:14 ────────────────────────────────────────────   ││       ✓ ◇ rebase               done $0.21 │
+│   ▸ read 2 files · checked slice-7's stream · 4 s                       ││       ◐ ◇ explore callers 12 tools · Grep │
+│                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
 │   It needs a key. slice-7 can only reach the eval path with             ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │   FS_EVAL_VIRTUAL_KEY set, and the file src/decision.rs reads it once   ││         ⎇ dovetail/slice-7                │
 │   at start-up.                                                          ││ ▾ Next (1)                                │

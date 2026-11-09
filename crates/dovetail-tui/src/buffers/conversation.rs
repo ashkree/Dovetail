@@ -415,9 +415,10 @@ impl Buffer for ConversationBuffer {
                 "↑ older history · k or gg at the top loads it",
                 theme.dim(),
             ));
-            built.lines.splice(0..0, [note, Line::default()]);
+            // The transcript already opens with a blank row before its first header.
+            built.lines.insert(0, note);
             for turn in &mut built.turns {
-                turn.start_line += 2;
+                turn.start_line += 1;
             }
         }
 

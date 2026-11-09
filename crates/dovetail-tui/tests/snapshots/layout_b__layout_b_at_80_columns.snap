@@ -5,23 +5,23 @@ expression: "render(&mut app, 80, 28)"
  folder /src/business
 ┌ coordinator · ◐ working · 1.2G · $3.1┐┌ tasks · business ────────────────────┐
 │                                      ││ ◐ ◆ coordinator   working 1.2G $3.10 │
-│   you · 10:08                        ││ ▾ Now (2)                            │
-│   Make sure slice-4 doesn't touch    ││ ▾ ⚠ business surface P1     PR #1231 │
-│   the 500 path.                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│                                      ││         ⎇ dovetail/slice-4           │
-│   coordinator · 10:08                ││         ✓ write route tests          │
-│   Told slice-4 to stay out of        ││         ◐ wire handler to registry   │
-│   src/decision.rs until slice-7      ││         ○ update OpenAPI spec ⊘ blo… │
-│   hands it back.                     ││       ✓ ◇ rebase          done $0.21 │
-│                                      ││       ◐ ◇ explore c… 12 tools · Grep │
-│   you · 10:14                        ││ ▾ ⚠ get_decision 500 P0              │
-│   What's blocking slice-7?           ││   ▾ ⚠ ◆ slice-7  manual    needs you │
-│                                      ││         ⎇ dovetail/slice-7           │
-│   coordinator · 10:14 ◐              ││ ⏎ open · o fold · dd archive         │
-│   It needs a key. slice-7 can only   │└──────────────────────────────────────┘
-│   reach the eval path with           │┌ inbox · needs you (3) ───────────────┐
-│   FS_EVAL_VIRTUAL_KEY set.▌          ││ ▸ ⚠ slice-7  Bash              10:15 │
-│                                      ││   │ FS_EVAL_VIRTUAL_KEY=dev cargo    │
+│                                      ││ ▾ Now (2)                            │
+│   ── You · 10:08 ─────────────────   ││ ▾ ⚠ business surface P1     PR #1231 │
+│   Make sure slice-4 doesn't touch    ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│   the 500 path.                      ││         ⎇ dovetail/slice-4           │
+│                                      ││         ✓ write route tests          │
+│   ── coordinator · 10:08 ─────────   ││         ◐ wire handler to registry   │
+│   Told slice-4 to stay out of        ││         ○ update OpenAPI spec ⊘ blo… │
+│   src/decision.rs until slice-7      ││       ✓ ◇ rebase          done $0.21 │
+│   hands it back.                     ││       ◐ ◇ explore c… 12 tools · Grep │
+│                                      ││ ▾ ⚠ get_decision 500 P0              │
+│   ── You · 10:14 ─────────────────   ││   ▾ ⚠ ◆ slice-7  manual    needs you │
+│   What's blocking slice-7?           ││         ⎇ dovetail/slice-7           │
+│                                      ││ ⏎ open · o fold · dd archive         │
+│   ── coordinator · 10:14 ◐ ───────   │└──────────────────────────────────────┘
+│   It needs a key. slice-7 can only   │┌ inbox · needs you (3) ───────────────┐
+│   reach the eval path with           ││ ▸ ⚠ slice-7  Bash              10:15 │
+│   FS_EVAL_VIRTUAL_KEY set.▌          ││   │ FS_EVAL_VIRTUAL_KEY=dev cargo    │
 │                                      ││   │ test -p api get_decision         │
 │                                      ││   │ A → always allow: Bash(cargo     │
 │                                      ││   │ test:*)                          │
