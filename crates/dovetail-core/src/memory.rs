@@ -82,35 +82,68 @@ pub fn cap_bytes(gb: u32) -> u64 {
 pub async fn probe() -> Scopes {
     match probe_inner().await {
         Ok(scopes) => scopes,
-        Err(reason) => {
-            tracing::warn!("memory caps off: {reason}");
-            Scopes::Unavailable(reason)
+        Err(e) => {
+            tracing::warn!("memory caps off: {e}");
+            Scopes::Unavailable(e.to_string())
         }
     }
 }
 
-async fn probe_inner() -> Result<Scopes, String> {
+/// Why sessions cannot run under capped scopes.
+#[derive(Debug, thiserror::Error)]
+pub enum ProbeError {
+    /// `systemd-run` could not be started.
+    #[error("running systemd-run: {0}")]
+    Spawn(std::io::Error),
+    /// It did not finish within [`PROBE_TIMEOUT`].
+    #[error("systemd-run --user --scope did not finish in {} s", PROBE_TIMEOUT.as_secs())]
+    Timeout,
+    /// It ran and failed (no user systemd instance, no delegation, unknown property).
+    #[error("systemd-run --user --scope failed ({status}): {stderr}")]
+    Failed {
+        /// Its exit status.
+        status: std::process::ExitStatus,
+        /// What it printed.
+        stderr: String,
+    },
+    /// The scope is not in a cgroup v2 hierarchy.
+    #[error("no cgroup v2 path in the probe scope's /proc/self/cgroup: {0}")]
+    NoCgroup(String),
+    /// The slice the scope lands in could not be read.
+    #[error("reading {path}: {source}")]
+    Read {
+        /// The file.
+        path: PathBuf,
+        /// The cause.
+        source: std::io::Error,
+    },
+    /// The memory controller does not reach the scope.
+    #[error("the memory controller is not enabled in {0}")]
+    NoMemoryController(PathBuf),
+    /// `$` came back neither escaped nor unchanged.
+    #[error("systemd-run passed `a$$b` on as `{0}`")]
+    Escaping(String),
+}
+
+async fn probe_inner() -> Result<Scopes, ProbeError> {
     let unit = format!("dovetail-probe-{}", std::process::id());
     let out = run_scoped(&unit, &["cat", "/proc/self/cgroup"]).await?;
-    let cgroup = parse_proc_cgroup(&out).ok_or_else(|| {
-        format!("no cgroup v2 path in the probe scope's /proc/self/cgroup: {out}")
-    })?;
+    let cgroup = parse_proc_cgroup(&out).ok_or_else(|| ProbeError::NoCgroup(out.clone()))?;
     let scope_dir = Path::new(CGROUP_ROOT).join(cgroup.trim_start_matches('/'));
     let slice_dir = scope_dir
         .parent()
-        .ok_or("the probe scope has no parent cgroup")?
+        .ok_or_else(|| ProbeError::NoCgroup(out.clone()))?
         .to_path_buf();
-    let controllers = std::fs::read_to_string(slice_dir.join("cgroup.subtree_control"))
-        .map_err(|e| format!("reading {}: {e}", slice_dir.display()))?;
+    let control = slice_dir.join("cgroup.subtree_control");
+    let controllers = std::fs::read_to_string(&control).map_err(|source| ProbeError::Read {
+        path: control,
+        source,
+    })?;
     if !controllers.split_whitespace().any(|c| c == "memory") {
-        return Err(format!(
-            "the memory controller is not enabled in {}",
-            slice_dir.display()
-        ));
+        return Err(ProbeError::NoMemoryController(slice_dir));
     }
     let echoed = run_scoped(&format!("{unit}-escape"), &["printf", "%s", "a$$b"]).await?;
-    let escape_dollars =
-        parse_escape(&echoed).ok_or_else(|| format!("systemd-run passed `a$$b` as `{echoed}`"))?;
+    let escape_dollars = parse_escape(&echoed).ok_or(ProbeError::Escaping(echoed))?;
     Ok(Scopes::Available {
         slice_dir,
         escape_dollars,
@@ -118,7 +151,7 @@ async fn probe_inner() -> Result<Scopes, String> {
 }
 
 /// Runs `command` in a short capped scope and returns its stdout.
-async fn run_scoped(unit: &str, command: &[&str]) -> Result<String, String> {
+async fn run_scoped(unit: &str, command: &[&str]) -> Result<String, ProbeError> {
     let scope = SystemdScope::capped(unit, 64 * MIB, false);
     let run = tokio::process::Command::new("systemd-run")
         .args(scope.args())
@@ -127,17 +160,15 @@ async fn run_scoped(unit: &str, command: &[&str]) -> Result<String, String> {
         .kill_on_drop(true)
         .output();
     let out = match tokio::time::timeout(PROBE_TIMEOUT, run).await {
-        Err(_) => return Err("systemd-run --user --scope did not finish in 5 s".into()),
-        Ok(Err(e)) => return Err(format!("running systemd-run: {e}")),
+        Err(_) => return Err(ProbeError::Timeout),
+        Ok(Err(e)) => return Err(ProbeError::Spawn(e)),
         Ok(Ok(out)) => out,
     };
     if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "systemd-run --user --scope failed ({}): {}",
-            out.status,
-            stderr.trim()
-        ));
+        return Err(ProbeError::Failed {
+            status: out.status,
+            stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+        });
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
