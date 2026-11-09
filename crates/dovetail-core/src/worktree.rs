@@ -251,6 +251,16 @@ where
         .unwrap_or(false)
 }
 
+/// The worktrees `git worktree list` names for the repository at `repo`, main checkout first.
+pub fn listed_worktrees(repo: &Path) -> Result<Vec<PathBuf>, WorktreeError> {
+    let out = git(repo, ["worktree", "list", "--porcelain"])?;
+    Ok(out
+        .lines()
+        .filter_map(|l| l.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .collect())
+}
+
 /// The main checkout of the repository that contains `dir` (which may be one of its worktrees).
 /// The same rule as project identity: this is [`crate::projects::identify`].
 pub fn main_checkout(dir: &Path) -> Result<PathBuf, WorktreeError> {
