@@ -111,16 +111,21 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
 
     let mut out = Transcript::default();
     let last = groups.len().saturating_sub(1);
+    // Every entry ends with a blank row, so only the very first message needs one of its own.
+    let mut speaker: Option<Speaker> = None;
     for (index, group) in groups.iter().enumerate() {
         let Some(first) = group.first() else { continue };
+        if out.lines.is_empty() {
+            out.lines.push(Line::default());
+        }
         out.turns.push(Turn {
-            start_line: out.lines.len(),
+            start_line: out.lines.len() - 1,
             key: first.id,
             entries: group.iter().map(|e| e.id).collect(),
         });
         let folded = p.folded.contains(&first.id);
         let older = index < last;
-        for entry in group {
+        for (at, entry) in group.iter().enumerate() {
             if folded && entry.kind != EntryKind::User {
                 let hidden = group.iter().filter(|e| e.kind != EntryKind::User).count();
                 if hidden > 0 {
@@ -132,7 +137,18 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
                 }
                 break;
             }
-            let mut lines = entry_lines(entry, p, cache);
+            let who = Speaker::of(entry.kind);
+            let mut lines = Vec::new();
+            if speaker != Some(who) {
+                speaker = Some(who);
+                // The marker shows while any entry of this message is still being written.
+                let streaming = group[at..]
+                    .iter()
+                    .take_while(|e| Speaker::of(e.kind) == who)
+                    .any(|e| p.streaming == Some(e.id));
+                lines.push(header(who, entry, p, streaming));
+            }
+            lines.append(&mut entry_lines(entry, p, cache));
             if older {
                 dim(&mut lines, p.theme);
             }
@@ -141,6 +157,47 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
         }
     }
     out
+}
+
+/// Who a message is from. Tool summaries and notices belong to the agent's message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Speaker {
+    You,
+    Agent,
+}
+
+impl Speaker {
+    fn of(kind: EntryKind) -> Self {
+        match kind {
+            EntryKind::User => Self::You,
+            _ => Self::Agent,
+        }
+    }
+}
+
+/// The rule that opens a message, `── You · 10:14 ────…`, as wide as the reading column.
+fn header(who: Speaker, entry: &ConversationEntry, p: &Params, streaming: bool) -> Line<'static> {
+    let theme = p.theme;
+    let (name, colour) = match who {
+        Speaker::You => ("You", theme.speaker_you),
+        Speaker::Agent => (p.agent, theme.speaker_agent),
+    };
+    let rule = theme.fg(theme.rule);
+    let mut spans = vec![
+        Span::styled("── ", rule),
+        Span::styled(
+            name.to_string(),
+            theme.fg(colour).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!(" · {}", fmt::hhmm(entry.at_ms, p.tz)), theme.dim()),
+    ];
+    if streaming {
+        spans.push(Span::styled(" ◐", theme.fg(theme.working)));
+    }
+    let used: usize = spans.iter().map(Span::width).sum();
+    let fill = p.width.saturating_sub(used + 1).max(2);
+    spans.push(Span::styled(format!(" {}", "─".repeat(fill)), rule));
+    Line::from(spans)
 }
 
 /// Attachment chips laid out two spaces apart, a chip never split across rows.
@@ -169,7 +226,7 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
     let width = p.width;
     match entry.kind {
         EntryKind::User => {
-            let mut lines = vec![label("you", entry, p, false)];
+            let mut lines = Vec::new();
             if !entry.attachments.is_empty() {
                 let chips = entry
                     .attachments
@@ -192,7 +249,6 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
         }
         EntryKind::Assistant => {
             let streaming = p.streaming == Some(entry.id);
-            let mut lines = vec![label(p.agent, entry, p, streaming)];
             let mut body: Vec<Line<'static>> = cache.markdown(entry, width, theme).to_vec();
             if !streaming && body.len() > MAX_ENTRY_LINES && !p.expanded.contains(&entry.id) {
                 let more = body.len() - KEEP_LINES;
@@ -209,8 +265,7 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
                     None => body.push(Line::from(cursor)),
                 }
             }
-            lines.append(&mut body);
-            lines
+            body
         }
         EntryKind::ToolSummary => {
             let spans = [Span::styled(format!("▸ {}", entry.text), theme.dim())];
@@ -228,17 +283,6 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
                 .collect()
         }
     }
-}
-
-fn label(name: &str, entry: &ConversationEntry, p: &Params, streaming: bool) -> Line<'static> {
-    let mut spans = vec![Span::styled(
-        format!("{name} · {}", fmt::hhmm(entry.at_ms, p.tz)),
-        p.theme.accent(),
-    )];
-    if streaming {
-        spans.push(Span::styled(" ◐", p.theme.fg(p.theme.working)));
-    }
-    Line::from(spans)
 }
 
 /// Older turns recede: every span loses its colour for the dim one but keeps bold and italic.
@@ -302,15 +346,72 @@ mod tests {
         assert_eq!(
             texts(&t),
             vec![
-                "you · 10:14",
-                "What is blocking slice-7?",
-                "",
-                "coordinator · 10:14",
-                "It needs a key.",
-                "",
-                "▸ read 2 files · 4 s",
-                "",
+                "".to_string(),
+                rule("── You · 10:14", 60),
+                "What is blocking slice-7?".into(),
+                "".into(),
+                rule("── coordinator · 10:14", 60),
+                "It needs a key.".into(),
+                "".into(),
+                "▸ read 2 files · 4 s".into(),
+                "".into(),
             ]
+        );
+    }
+
+    /// `head` and a rule filling the rest of `width`.
+    fn rule(head: &str, width: usize) -> String {
+        let fill = width - head.chars().count() - 1;
+        format!("{head} {}", "─".repeat(fill))
+    }
+
+    #[test]
+    fn a_header_rule_spans_the_reading_column() {
+        let entries = [entry(1, EntryKind::User, "hi")];
+        let t = run(&entries, |p| p.width = 40);
+        assert_eq!(t.lines[1].width(), 40);
+    }
+
+    #[test]
+    fn consecutive_agent_entries_share_one_header() {
+        let entries = [
+            entry(1, EntryKind::User, "go"),
+            entry(2, EntryKind::Assistant, "first chunk"),
+            entry(3, EntryKind::ToolSummary, "ran tests"),
+            entry(4, EntryKind::Assistant, "second chunk"),
+            entry(5, EntryKind::Notice, "turn finished"),
+            entry(6, EntryKind::User, "again"),
+        ];
+        let t = texts(&run(&entries, |_| {}));
+        let headers: Vec<&String> = t.iter().filter(|l| l.starts_with("── ")).collect();
+        assert_eq!(
+            headers,
+            vec![
+                &rule("── You · 10:14", 60),
+                &rule("── coordinator · 10:14", 60),
+                &rule("── You · 10:14", 60),
+            ]
+        );
+    }
+
+    #[test]
+    fn speakers_get_their_theme_colours_and_the_rule_its_own() {
+        let theme = Theme::dusk();
+        let entries = [
+            entry(1, EntryKind::User, "a"),
+            entry(2, EntryKind::Assistant, "b"),
+        ];
+        let t = run(&entries, |_| {});
+        let you = &t.lines[1].spans;
+        assert_eq!(you[0].style.fg, Some(theme.rule));
+        assert_eq!(you[1].style.fg, Some(theme.speaker_you));
+        let agent = &t.lines[4].spans;
+        assert_eq!(agent[1].style.fg, Some(theme.speaker_agent));
+        assert!(
+            t.lines
+                .iter()
+                .flat_map(|l| &l.spans)
+                .all(|s| s.style.bg.is_none())
         );
     }
 
@@ -327,7 +428,12 @@ mod tests {
         assert_eq!(t.turns[0].start_line, 0);
         assert_eq!(t.turns[1].key, EntryId(3));
         assert_eq!(t.turns[1].entries, vec![EntryId(3), EntryId(4)]);
-        assert_eq!(texts(&t)[t.turns[1].start_line], "you · 10:14");
+        // A turn starts at the blank row above its first header.
+        assert_eq!(texts(&t)[t.turns[1].start_line], "");
+        assert_eq!(
+            texts(&t)[t.turns[1].start_line + 1],
+            rule("── You · 10:14", 60)
+        );
     }
 
     #[test]
@@ -348,10 +454,10 @@ mod tests {
         ];
         let t = run(&entries, |_| {});
         let theme = Theme::dusk();
-        let old_label = &t.lines[0].spans[0];
-        assert_eq!(old_label.style.fg, Some(theme.dim));
-        let new_label = &t.lines[t.turns[1].start_line].spans[0];
-        assert_eq!(new_label.style.fg, Some(theme.bold));
+        let old_name = &t.lines[1].spans[1];
+        assert_eq!(old_name.style.fg, Some(theme.dim));
+        let new_name = &t.lines[t.turns[1].start_line + 1].spans[1];
+        assert_eq!(new_name.style.fg, Some(theme.speaker_you));
     }
 
     #[test]
@@ -378,11 +484,12 @@ mod tests {
         assert_eq!(
             texts(&t),
             vec![
-                "you · 10:14",
-                "do it",
-                "",
-                "▸ 2 entries folded · zo to unfold",
-                ""
+                "".to_string(),
+                rule("── You · 10:14", 60),
+                "do it".into(),
+                "".into(),
+                "▸ 2 entries folded · zo to unfold".into(),
+                "".into(),
             ]
         );
     }
@@ -392,8 +499,8 @@ mod tests {
         let entries = [entry(1, EntryKind::Assistant, "typing")];
         let t = run(&entries, |p| p.streaming = Some(EntryId(1)));
         let t = texts(&t);
-        assert_eq!(t[0], "coordinator · 10:14 ◐");
-        assert_eq!(t[1], "typing▌");
+        assert_eq!(t[1], rule("── coordinator · 10:14 ◐", 60));
+        assert_eq!(t[2], "typing▌");
     }
 
     #[test]
@@ -431,7 +538,7 @@ mod tests {
             "first\nsecond line that is rather long indeed and wraps around",
         )];
         let t = texts(&run(&entries, |p| p.width = 20));
-        assert_eq!(t[1], "first");
+        assert_eq!(t[2], "first");
         assert!(t.len() > 4);
     }
 

@@ -5,7 +5,7 @@ expression: "render(&mut app, 120, 34)"
  folder /src/business
 ┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ tasks · business ─────────────────────────┐
 │                                                                         ││ ◐ ◆ coordinator        working 1.2G $3.10 │
-│   you · 10:08                                                           ││ ▾ Now (2)                                 │
+│                                                                         ││ ▾ Now (2)                                 │
 │ ┌ Switch ──────────────────────────────────────────┐┌ Preview ─────────────────────────────────────────────────────┐ │
 │ │›                                              5/5││ ◐ slice-4                                                    │ │
 │ │                                                  ││ slice · dovetail/slice-4 · 412M · working                    │ │

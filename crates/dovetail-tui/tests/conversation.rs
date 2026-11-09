@@ -63,8 +63,8 @@ fn a_wide_pane_centres_the_reading_column_at_120_columns() {
 fn rendering_shows_labels_blank_rows_and_folded_tool_lines() {
     let mut app = reading_app();
     let screen = render(&mut app, 120, 50);
-    assert!(screen.contains("you · 10:06"));
-    assert!(screen.contains("coordinator · 10:14"));
+    assert!(screen.contains("── You · 10:06 ─"));
+    assert!(screen.contains("── coordinator · 10:14 ─"));
     assert!(screen.contains("▸ read 2 files · checked slice-7's stream · 4 s"));
     assert!(screen.contains("• the handler in"));
     assert!(screen.contains("│ Merge order: #1231 first, then the 500 fix."));
@@ -204,8 +204,11 @@ fn double_bracket_jumps_between_turns() {
     render(&mut app, 100, 30);
     type_keys(&mut app, "]]");
     let screen = render(&mut app, 100, 30);
-    let first_row = screen.lines().nth(3).expect("first pane row");
-    assert!(first_row.contains("you · "), "{first_row}");
+    let first_row = screen
+        .lines()
+        .nth(4)
+        .expect("header row below the turn's blank row");
+    assert!(first_row.contains("── You · "), "{first_row}");
     assert!(screen.contains("question 1"), "{screen}");
     type_keys(&mut app, "[[");
     assert!(render(&mut app, 100, 30).contains("question 0"));
