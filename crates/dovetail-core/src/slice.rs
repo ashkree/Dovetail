@@ -11,8 +11,10 @@
 //! work is removed at once (our symlinks, `git worktree remove`, the `dovetail/*` branch);
 //! otherwise the user is asked through a Permission item before anything is lost.
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
+use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::{
     ActivityKind, AgentId, AgentKind, AgentStatus, Bucket, Event, InboxKind, TaskChange, TaskId,
     TaskStatus, WorktreeRef,
@@ -47,6 +49,26 @@ pub(crate) enum SliceStart {
     Started(String),
     /// Over the cap; it starts when a slice is archived.
     Queued(String),
+}
+
+/// An `archive_slice` or `archive_task` call whose answer waits for its slices' outcomes
+/// (task #9): each slice ends archived, waiting for the user, or failed.
+pub(crate) struct ArchiveCall {
+    /// Slices with no outcome yet.
+    pub(crate) pending: BTreeSet<AgentId>,
+    pub(crate) archived: Vec<String>,
+    pub(crate) waiting: Vec<String>,
+    pub(crate) failed: Vec<String>,
+    /// The task, for `archive_task`.
+    pub(crate) task: Option<TaskId>,
+    pub(crate) reply: oneshot::Sender<SocketResponseBody>,
+}
+
+/// What became of one slice of an [`ArchiveCall`].
+enum ArchiveOutcome {
+    Archived,
+    Waiting,
+    Failed(String),
 }
 
 /// A slice's agent id.
@@ -448,6 +470,8 @@ impl Core {
                     },
                     Waiter::RemoveWorktree,
                 );
+                let name = self.name_of(&agent);
+                self.archive_outcome(&agent, &name, ArchiveOutcome::Waiting);
             }
             Err(e) => {
                 let name = self.name_of(&agent);
@@ -459,6 +483,7 @@ impl Core {
                     Waiter::None,
                 );
                 self.refresh_status(&agent);
+                self.archive_outcome(&agent, &name, ArchiveOutcome::Failed(e.to_string()));
             }
         }
     }
@@ -467,6 +492,103 @@ impl Core {
     pub(crate) fn keep_slice(&mut self, agent: &AgentId) {
         self.notice(agent, "Kept: the worktree has unsaved work");
         self.refresh_status(agent);
+        if self.archive_told.remove(agent) {
+            let name = self.name_of(agent);
+            self.tell_coordinator(format!(
+                "slice {name} kept: the user chose to keep its unsaved work, so it was not \
+                 archived"
+            ));
+        }
+    }
+
+    /// Finds the slice an `archive_slice` call names, refusing the coordinator.
+    pub(crate) fn slice_named(&self, name: &str) -> Result<AgentId, SliceError> {
+        let name = name.trim();
+        if name == COORDINATOR {
+            return Err(SliceError::ArchiveCoordinator);
+        }
+        self.agents
+            .values()
+            .find(|r| r.agent.kind == AgentKind::Slice && r.agent.name == name)
+            .map(|r| r.agent.id.clone())
+            .ok_or_else(|| SliceError::NoSlice(name.to_owned()))
+    }
+
+    /// Whether the user is already asked about the slice's unsaved work.
+    pub(crate) fn asking_to_remove(&self, agent: &AgentId) -> bool {
+        self.inbox
+            .values()
+            .any(|e| &e.item.agent == agent && matches!(e.waiter, Waiter::RemoveWorktree))
+    }
+
+    /// Archives `slices` for a tool call and answers it once each has an outcome. A slice the
+    /// user is already asked about counts as waiting at once. `archive` runs after the call is
+    /// registered, so outcomes it settles synchronously are not missed.
+    pub(crate) async fn archive_for_tool(
+        &mut self,
+        slices: Vec<AgentId>,
+        task: Option<TaskId>,
+        reply: oneshot::Sender<SocketResponseBody>,
+    ) {
+        let mut call = ArchiveCall {
+            pending: BTreeSet::new(),
+            archived: Vec::new(),
+            waiting: Vec::new(),
+            failed: Vec::new(),
+            task,
+            reply,
+        };
+        let mut to_close = Vec::new();
+        for slice in slices {
+            if self.asking_to_remove(&slice) {
+                self.archive_told.insert(slice.clone());
+                call.waiting.push(self.name_of(&slice));
+            } else {
+                call.pending.insert(slice.clone());
+                to_close.push(slice);
+            }
+        }
+        self.archive_calls.push(call);
+        match task {
+            // The task path closes its own slices (and drops its queued starts).
+            Some(id) => self.archive_task(id, &to_close).await,
+            None => {
+                for slice in to_close {
+                    self.close_slice(&slice, false);
+                }
+            }
+        }
+        self.answer_settled_archives();
+    }
+
+    /// Records a slice's outcome in the calls waiting on it. `name` is passed in because a
+    /// closed slice is no longer in `agents`.
+    fn archive_outcome(&mut self, agent: &AgentId, name: &str, outcome: ArchiveOutcome) {
+        let name = name.to_owned();
+        for call in &mut self.archive_calls {
+            if !call.pending.remove(agent) {
+                continue;
+            }
+            match &outcome {
+                ArchiveOutcome::Archived => call.archived.push(name.clone()),
+                ArchiveOutcome::Waiting => {
+                    self.archive_told.insert(agent.clone());
+                    call.waiting.push(name.clone());
+                }
+                ArchiveOutcome::Failed(e) => call.failed.push(format!("{name}: {e}")),
+            }
+        }
+        self.answer_settled_archives();
+    }
+
+    fn answer_settled_archives(&mut self) {
+        let (done, open) = std::mem::take(&mut self.archive_calls)
+            .into_iter()
+            .partition(|c| c.pending.is_empty());
+        self.archive_calls = open;
+        for call in done {
+            crate::tools::answer_archive(call);
+        }
     }
 
     /// The slice is gone for good: forget it and make room for a queued one.
@@ -494,5 +616,11 @@ impl Core {
             None,
             format!("slice {} archived", row.agent.name),
         );
+        // A call still waiting gets its answer; one that already returned `waiting_for_user`
+        // learns the user's yes as a message.
+        self.archive_outcome(agent, &row.agent.name, ArchiveOutcome::Archived);
+        if self.archive_told.remove(agent) {
+            self.tell_coordinator(format!("slice {} archived", row.agent.name));
+        }
     }
 }
