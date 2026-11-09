@@ -199,16 +199,9 @@ pub(crate) fn row_title(snap: &Snapshot, item: &InboxItem) -> String {
                 format!("{tool} · {summary}")
             }
         }
-        InboxKind::Question { text, blocking } => {
-            let sentence = first_sentence(text);
-            if *blocking {
-                format!("blocked · {sentence}")
-            } else {
-                sentence
-            }
-        }
-        InboxKind::FinishedTurn { preview } => first_sentence(preview),
-        InboxKind::Error { text } => first_sentence(text),
+        InboxKind::Question { text }
+        | InboxKind::FinishedTurn { preview: text }
+        | InboxKind::Error { text } => first_sentence(text),
     }
 }
 

@@ -280,7 +280,6 @@ fn long_items() -> dovetail_api::Snapshot {
                    - /api keeps the gateway config as it is\n\n\
                    I'd go with /v2 and add the redirect in the same PR."
                 .into(),
-            blocking: true,
         },
     ));
     snap.inbox.push(item(
@@ -328,7 +327,7 @@ fn long_inbox_items_take_one_line_each() {
         .collect();
     for (row, needle) in rows
         .iter()
-        .zip(["slice-4", "slice-7", "slice-7", "slice-4"])
+        .zip(["slice-7", "slice-4", "slice-7", "slice-4"])
     {
         assert!(row.contains(needle) && row.contains('…'), "{row}");
     }
@@ -347,7 +346,8 @@ fn long_inbox_items_take_one_line_each() {
 #[test]
 fn enter_shows_a_long_item_in_full_with_its_keys() {
     let mut app = app_with(long_items());
-    type_keys(&mut app, " n");
+    // Permission requests sort first; the question is the second row.
+    type_keys(&mut app, " nj");
     app.on_key(enter(), 0);
     assert_eq!(app.focus(), RegionId::Main);
     let screen = render(&mut app, 120, 32);
@@ -369,7 +369,7 @@ fn enter_shows_a_long_item_in_full_with_its_keys() {
 #[test]
 fn y_in_a_permission_items_detail_allows_it() {
     let mut app = app_with(long_items());
-    type_keys(&mut app, " nj");
+    type_keys(&mut app, " n");
     app.on_key(enter(), 0);
     let screen = render(&mut app, 120, 32);
     assert!(screen.contains("--test-threads=1"), "{screen}");

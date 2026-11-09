@@ -22,8 +22,8 @@ expression: screen
 │                                                                         ││ ⏎ open · o fold · dd archive              │
 │                                                                         │└───────────────────────────────────────────┘
 │                                                                         │┌ inbox · needs you (4) ────────────────────┐
-│                                                                         ││ ▸ ? slice-4  blocked · Should the … 10:14 │
-│                                                                         ││   ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:13 │
+│                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:13 │
+│                                                                         ││   ? slice-4  Should the new route … 10:14 │
 │                                                                         ││   ✗ slice-7  Claude Code exited wi… 10:12 │
 │                                                                         ││   ✓ slice-4  Handler wired to the … 10:11 │
 │                                                                         ││                                           │
