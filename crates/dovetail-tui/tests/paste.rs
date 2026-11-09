@@ -200,6 +200,24 @@ fn esc_keeps_the_chips_with_the_draft() {
 }
 
 #[test]
+fn backspace_with_text_typed_deletes_text_and_keeps_the_chip() {
+    let mut app = app_with(world());
+    press(&mut app, "i");
+    paste(&mut app, 1, image(1));
+    type_keys(&mut app, "ab");
+    app.on_key(backspace(), 2);
+    app.on_key(enter(), 3);
+    let commands = app.take_commands();
+    assert!(
+        matches!(
+            commands.as_slice(),
+            [Command::Prompt { text, attachments, .. }] if text == "a" && attachments.len() == 1
+        ),
+        "{commands:?}"
+    );
+}
+
+#[test]
 fn an_answer_that_arrives_after_esc_lands_in_the_draft() {
     let mut app = app_with(world());
     press(&mut app, "i");

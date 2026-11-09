@@ -411,14 +411,22 @@ impl App {
                 self.mode = Mode::Normal;
                 return;
             }
-            let chord = self.keymap.chord(
+            let chord = self.keymap.text_chord(
                 Mode::Insert,
-                Scope::Buffer(BufferKind::Conversation),
+                BufferKind::Conversation,
                 Key::from_event(event),
             );
-            if chord == Some(Action::PasteClipboard) {
-                self.paste_clipboard();
-                return;
+            match chord {
+                Some(Action::PasteClipboard) => {
+                    self.paste_clipboard();
+                    return;
+                }
+                Some(Action::DropLastAttachment)
+                    if self.buffers.conversation.drop_last_attachment() =>
+                {
+                    return;
+                }
+                _ => {}
             }
             if let Some((agent, text, attachments)) = self.buffers.conversation.chat_key(event) {
                 self.outbox.push(Command::Prompt {

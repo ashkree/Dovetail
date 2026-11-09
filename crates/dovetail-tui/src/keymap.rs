@@ -192,7 +192,7 @@ const INBOX: Scope = Scope::Buffer(BufferKind::Inbox);
 const ACTIVITY: Scope = Scope::Buffer(BufferKind::Activity);
 const MESSAGES: Scope = Scope::Buffer(BufferKind::Messages);
 const DETAIL: Scope = Scope::Buffer(BufferKind::TaskDetail);
-const ITEM: Scope = Scope::Buffer(BufferKind::InboxDetail);
+const INBOX_DETAIL: Scope = Scope::Buffer(BufferKind::InboxDetail);
 const CONVERSATION: Scope = Scope::Buffer(BufferKind::Conversation);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
@@ -252,6 +252,13 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, CONVERSATION, "zo", Action::UnfoldTurn),
     // The chat bar only: not quick capture, task notes or inbox answers (task #1).
     bind(Mode::Insert, CONVERSATION, "<C-v>", Action::PasteClipboard),
+    // Backspace on an empty chat input drops the last image chip; otherwise it deletes text.
+    bind(
+        Mode::Insert,
+        CONVERSATION,
+        "<BS>",
+        Action::DropLastAttachment,
+    ),
     // Task tree (Decision 24).
     bind(N, TREE, "<CR>", Action::TreeOpen),
     bind(N, TREE, "o", Action::TreeToggleFold),
@@ -263,24 +270,31 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, TREE, "J", Action::TreeMoveDown),
     bind(N, TREE, "K", Action::TreeMoveUp),
     bind(N, TREE, "dd", Action::TaskArchive),
-    // Inbox (Decision 17).
-    bind(N, INBOX, "y", Action::InboxAllow),
-    bind(N, INBOX, "A", Action::InboxAllowAlways),
-    bind(N, INBOX, "d", Action::InboxDeny),
-    bind(N, INBOX, "D", Action::InboxDenyWithReason),
-    bind(N, INBOX, "r", Action::InboxReply),
-    bind(N, INBOX, "x", Action::InboxDismiss),
-    bind(N, INBOX, "<CR>", Action::InboxOpen),
-    // An inbox item in full takes the same answer keys; Enter opens its agent.
-    bind(N, ITEM, "<Esc>", Action::BackToConversation),
-    bind(N, ITEM, "y", Action::InboxAllow),
-    bind(N, ITEM, "A", Action::InboxAllowAlways),
-    bind(N, ITEM, "d", Action::InboxDeny),
-    bind(N, ITEM, "D", Action::InboxDenyWithReason),
-    bind(N, ITEM, "r", Action::InboxReply),
-    bind(N, ITEM, "x", Action::InboxDismiss),
-    bind(N, ITEM, "<CR>", Action::InboxOpen),
+    // An inbox item in full goes back with Esc; the answer keys are in `INBOX_ANSWERS`.
+    bind(N, INBOX_DETAIL, "<Esc>", Action::BackToConversation),
 ];
+
+/// The inbox answer keys (Decision 17), bound in both the inbox list and an inbox item in full
+/// (Normal mode). Enter opens the item from the list, and its agent from the item.
+pub const INBOX_ANSWERS: &[(&str, Action)] = &[
+    ("y", Action::InboxAllow),
+    ("A", Action::InboxAllowAlways),
+    ("d", Action::InboxDeny),
+    ("D", Action::InboxDenyWithReason),
+    ("r", Action::InboxReply),
+    ("x", Action::InboxDismiss),
+    ("<CR>", Action::InboxOpen),
+];
+
+/// The whole built-in table: [`BINDINGS`] plus [`INBOX_ANSWERS`] in each inbox scope.
+pub fn default_bindings() -> Vec<Binding> {
+    let answers = [INBOX, INBOX_DETAIL].into_iter().flat_map(|scope| {
+        INBOX_ANSWERS
+            .iter()
+            .map(move |&(keys, action)| bind(N, scope, keys, action))
+    });
+    BINDINGS.iter().copied().chain(answers).collect()
+}
 
 #[derive(Debug, Clone)]
 struct Entry {
@@ -318,8 +332,8 @@ impl Keymap {
 
     /// The built-in keymap.
     pub fn default_map() -> Self {
-        // The table is a constant checked by a test, so parsing cannot fail.
-        Self::new(BINDINGS).unwrap_or(Self {
+        // The table is constant and checked by a test, so parsing cannot fail.
+        Self::new(&default_bindings()).unwrap_or(Self {
             entries: Vec::new(),
         })
     }
@@ -330,9 +344,15 @@ impl Keymap {
         self.chord(mode, Scope::Global, key)
     }
 
-    /// The single-key binding for `key` in `mode` and exactly `scope`, if any. Used for chords
-    /// that only one text input takes, such as Ctrl-V in a chat bar.
-    pub fn chord(&self, mode: Mode, scope: Scope, key: Key) -> Option<Action> {
+    /// The chord typed into `buffer`'s text input in `mode`: its own binding first (Ctrl-V and
+    /// Backspace in a chat bar), then a global one.
+    pub fn text_chord(&self, mode: Mode, buffer: BufferKind, key: Key) -> Option<Action> {
+        self.chord(mode, Scope::Buffer(buffer), key)
+            .or_else(|| self.global_chord(mode, key))
+    }
+
+    /// The single-key binding for `key` in `mode` and exactly `scope`, if any.
+    fn chord(&self, mode: Mode, scope: Scope, key: Key) -> Option<Action> {
         self.entries
             .iter()
             .find(|e| e.mode == mode && e.scope == scope && e.keys == [key])
@@ -476,7 +496,7 @@ mod tests {
 
     #[test]
     fn the_builtin_table_parses() {
-        assert!(Keymap::new(BINDINGS).is_ok());
+        assert!(Keymap::new(&default_bindings()).is_ok());
         assert!(!Keymap::default_map().entries.is_empty());
     }
 

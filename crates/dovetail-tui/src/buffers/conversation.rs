@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use dovetail_api::{
     AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS, Paste,
 };
@@ -183,15 +183,18 @@ impl ConversationBuffer {
         self.chat.is_some()
     }
 
+    /// Drops the last image chip when the chat input is open and empty
+    /// ([`Action::DropLastAttachment`]). Returns whether one was dropped.
+    pub fn drop_last_attachment(&mut self) -> bool {
+        let empty = self.chat.as_ref().is_some_and(|c| c.text().is_empty());
+        empty && self.images.pop().is_some()
+    }
+
     /// Applies a key to the chat input. `Enter` returns the prompt and its images to send;
-    /// `Esc` keeps both as the agent's draft. Backspace on an empty input removes the last image.
+    /// `Esc` keeps both as the agent's draft.
     pub fn chat_key(&mut self, key: KeyEvent) -> Option<(AgentId, String, Vec<Attachment>)> {
         let chat = self.chat.as_mut()?;
         let agent = self.agent.clone()?;
-        if key.code == KeyCode::Backspace && chat.text().is_empty() && !self.images.is_empty() {
-            self.images.pop();
-            return None;
-        }
         match chat.handle(key) {
             InputOutcome::Submit => {
                 let text = chat.text().trim().to_string();

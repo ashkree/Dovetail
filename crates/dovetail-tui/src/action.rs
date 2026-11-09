@@ -55,6 +55,9 @@ pub enum Action {
     UnfoldTurn,
     /// Ctrl-V in a chat bar: attach the clipboard's image, or paste its text at the cursor.
     PasteClipboard,
+    /// Backspace on an empty chat input: drop the last image chip. With text typed, or no chip,
+    /// the key edits text as usual.
+    DropLastAttachment,
     /// Give the reading column a solid background, or take it away.
     ToggleSolidBackground,
     /// Open quick capture.
