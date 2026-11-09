@@ -282,6 +282,11 @@ pub(crate) struct Core {
     flush_at: Option<tokio::time::Instant>,
     /// Slice starts over the `max_slices` cap, oldest first (ADR 0004).
     pub(crate) queue: VecDeque<crate::db::QueuedSlice>,
+    /// `archive_slice` / `archive_task` calls waiting for their slices' outcomes (task #9).
+    pub(crate) archive_calls: Vec<crate::slice::ArchiveCall>,
+    /// Slices whose archive call returned `waiting_for_user`: the coordinator is told how the
+    /// user decided.
+    pub(crate) archive_told: std::collections::HashSet<AgentId>,
     /// `msg_id`s already on the message timeline, so sender and receiver don't both add one.
     pub(crate) seen_messages: std::collections::HashSet<String>,
     /// Signals for a coordinator that may not be woken (it crashed, or the app is quitting);
@@ -337,6 +342,8 @@ impl Core {
             deltas: BTreeMap::new(),
             flush_at: None,
             queue: VecDeque::new(),
+            archive_calls: Vec::new(),
+            archive_told: Default::default(),
             seen_messages: Default::default(),
             coordinator_notes: Vec::new(),
             notes_wait_for_user: false,
@@ -931,7 +938,10 @@ impl Core {
                 }
             }
             Command::UpdateTask { id, patch } => self.update_task(id, patch).await,
-            Command::ArchiveTask { id } => self.archive_task(id).await,
+            Command::ArchiveTask { id } => {
+                let slices = self.task_slices(id);
+                self.archive_task(id, &slices).await;
+            }
             Command::ReorderTask { id, delta } => match self.db.reorder_task(id, delta).await {
                 Ok(tasks) => self.emit_tasks(tasks),
                 Err(e) => self.fail(e.to_string()),
@@ -981,18 +991,23 @@ impl Core {
         }
     }
 
-    async fn archive_task(&mut self, id: TaskId) {
-        self.update_task(id, vec![TaskChange::Status(TaskStatus::Archived)])
-            .await;
-        let slices: Vec<AgentId> = self
-            .agents
+    /// The open slices working on task `id`.
+    pub(crate) fn task_slices(&self, id: TaskId) -> Vec<AgentId> {
+        self.agents
             .values()
             .filter(|r| r.agent.kind == AgentKind::Slice && r.agent.task == Some(id))
             .map(|r| r.agent.id.clone())
-            .collect();
+            .collect()
+    }
+
+    /// Archives task `id`: its `slices` first (normally [`Core::task_slices`]), with the
+    /// usual unsaved-work rule, then the task, then its queued slice starts.
+    pub(crate) async fn archive_task(&mut self, id: TaskId, slices: &[AgentId]) {
         for slice in slices {
-            self.close_slice(&slice, false);
+            self.close_slice(slice, false);
         }
+        self.update_task(id, vec![TaskChange::Status(TaskStatus::Archived)])
+            .await;
         let dropped: Vec<i64> = self
             .queue
             .iter()

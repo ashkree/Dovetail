@@ -4,8 +4,10 @@
 
 use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::tools::Tool;
+use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
 use dovetail_api::{
-    DecisionAuthor, EntryKind, Event, InboxKind, NewDecision, NewTask, PermissionMode,
+    DecisionAuthor, EntryKind, Event, InboxKind, NewDecision, NewTask, PermissionMode, TaskId,
+    TaskStatus,
 };
 use serde_json::json;
 use tokio::sync::oneshot;
@@ -13,7 +15,7 @@ use tokio::sync::oneshot;
 use crate::error::SliceError;
 use crate::inbox::Waiter;
 use crate::service::Core;
-use crate::slice::{SliceRequest, SliceStart};
+use crate::slice::{ArchiveCall, SliceRequest, SliceStart};
 use crate::socket::ToolCall;
 
 /// Most characters of a status line (B17).
@@ -45,6 +47,64 @@ pub(crate) fn slice_reply(result: Result<SliceStart, SliceError>) -> SocketRespo
              archived, and you will get \"slice {name} ready\" then."
         )),
         Err(reason) => error(format!("denied: {reason}")),
+    }
+}
+
+/// Answers a settled `archive_slice` / `archive_task` call: `archived` or `waiting_for_user`
+/// first, or an error.
+pub(crate) fn answer_archive(call: ArchiveCall) {
+    let _ = call.reply.send(archive_reply(
+        call.task,
+        &call.archived,
+        &call.waiting,
+        &call.failed,
+    ));
+}
+
+fn archive_reply(
+    task: Option<TaskId>,
+    archived: &[String],
+    waiting: &[String],
+    failed: &[String],
+) -> SocketResponseBody {
+    let names = |list: &[String]| list.join(", ");
+    let waiting_text = |list: &[String]| {
+        format!(
+            "{WAITING_FOR_USER}: slice {} has uncommitted or unpushed work. The user is asked \
+             whether it may go; the answer arrives as a message, \"slice <name> archived\" or \
+             \"slice <name> kept\".",
+            names(list)
+        )
+    };
+    match task {
+        None => {
+            if !failed.is_empty() {
+                error(format!("could not archive slice {}", names(failed)))
+            } else if !waiting.is_empty() {
+                ok(waiting_text(waiting))
+            } else {
+                ok(format!(
+                    "{ARCHIVED}: slice {} is gone: session stopped, worktree and branch \
+                     removed, its place freed.",
+                    names(archived)
+                ))
+            }
+        }
+        Some(id) => {
+            let mut text = if !waiting.is_empty() {
+                format!("{} Task #{} is archived.", waiting_text(waiting), id.0)
+            } else {
+                format!("{ARCHIVED}: task #{}.", id.0)
+            };
+            if !archived.is_empty() {
+                text.push_str(&format!(" Archived slice {}.", names(archived)));
+            }
+            if failed.is_empty() {
+                ok(text)
+            } else {
+                error(format!("{text} Could not archive slice {}.", names(failed)))
+            }
+        }
     }
 }
 
@@ -225,6 +285,48 @@ impl Core {
                     Err(e) => error(format!("could not add the project: {e}")),
                 }
             }
+            Tool::ArchiveSlice(archive) => {
+                let name = archive.name.trim().to_owned();
+                if let Some(at) = self.queue.iter().position(|q| q.name == name) {
+                    // Not started yet: dropping the queued start is all there is to archive.
+                    if let Some(queued) = self.queue.remove(at) {
+                        self.persist("the slice queue", self.db.dequeue_slice(queued.id));
+                    }
+                    ok(format!(
+                        "{ARCHIVED}: slice {name} was still queued; its start is dropped."
+                    ))
+                } else {
+                    match self.slice_named(&name) {
+                        Err(reason) => error(reason.to_string()),
+                        Ok(slice) => {
+                            self.archive_for_tool(vec![slice], None, reply).await;
+                            return;
+                        }
+                    }
+                }
+            }
+            Tool::ArchiveTask(archive) => {
+                let id = archive.id;
+                let own = self.agents.get(&agent).and_then(|r| r.agent.task);
+                if own == Some(id) {
+                    error(format!(
+                        "task #{} is this conversation's own task; it cannot be archived from here",
+                        id.0
+                    ))
+                } else {
+                    match self.task(id).await {
+                        None => error(format!("there is no task #{}", id.0)),
+                        Some(t) if t.status == TaskStatus::Archived => {
+                            error(format!("task #{} is already archived", id.0))
+                        }
+                        Some(_) => {
+                            let slices = self.task_slices(id);
+                            self.archive_for_tool(slices, Some(id), reply).await;
+                            return;
+                        }
+                    }
+                }
+            }
         };
         let _ = reply.send(answer);
     }
@@ -250,6 +352,9 @@ mod tests {
     fn roles_are_checked_with_the_shared_rule() {
         assert!(!Tool::allowed("start_slice", Role::Slice));
         assert!(!Tool::allowed("add_project", Role::Slice));
+        assert!(!Tool::allowed("archive_slice", Role::Slice));
+        assert!(!Tool::allowed("archive_task", Role::Slice));
+        assert!(Tool::allowed("archive_slice", Role::Coordinator));
         assert!(Tool::allowed("ask_user", Role::Slice));
     }
 }

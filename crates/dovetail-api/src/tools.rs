@@ -35,7 +35,7 @@ pub mod env {
 pub enum Role {
     /// The coordinator: every tool.
     Coordinator,
-    /// A slice: no `create_task`, `start_slice` or `add_project`.
+    /// A slice: none of the [`COORDINATOR_ONLY`] tools.
     Slice,
 }
 
@@ -74,17 +74,40 @@ pub enum Tool {
     StartSlice(StartSlice),
     /// `add_project`, coordinator only (ADR 0005).
     AddProject(AddProject),
+    /// `archive_slice`, coordinator only (task #9).
+    ArchiveSlice(ArchiveSlice),
+    /// `archive_task`, coordinator only (task #9).
+    ArchiveTask(ArchiveTask),
 }
 
 /// Every tool name, in the order `tools/list` shows them.
-pub const TOOL_NAMES: [&str; 6] = [
+pub const TOOL_NAMES: [&str; 8] = [
     "ask_user",
     "report_status",
     "create_task",
     "log_decision",
     "start_slice",
     "add_project",
+    "archive_slice",
+    "archive_task",
 ];
+
+/// The tools a slice may not call.
+pub const COORDINATOR_ONLY: [&str; 5] = [
+    "create_task",
+    "start_slice",
+    "add_project",
+    "archive_slice",
+    "archive_task",
+];
+
+/// The first word of an `archive_slice` / `archive_task` answer that did not fail.
+pub mod archive_result {
+    /// The slice is gone: session stopped, worktree and branch removed, its place freed.
+    pub const ARCHIVED: &str = "archived";
+    /// The worktree has uncommitted or unpushed work: the user is asked before it goes.
+    pub const WAITING_FOR_USER: &str = "waiting_for_user";
+}
 
 /// Why a tool call is refused before it reaches a handler. `Display` is the message for the
 /// agent.
@@ -154,13 +177,15 @@ impl Tool {
             Tool::LogDecision(_) => "log_decision",
             Tool::StartSlice(_) => "start_slice",
             Tool::AddProject(_) => "add_project",
+            Tool::ArchiveSlice(_) => "archive_slice",
+            Tool::ArchiveTask(_) => "archive_task",
         }
     }
 
     /// Whether a session with `role` may call the tool named `name`.
     pub fn allowed(name: &str, role: Role) -> bool {
         match name {
-            "create_task" | "start_slice" | "add_project" => role == Role::Coordinator,
+            name if COORDINATOR_ONLY.contains(&name) => role == Role::Coordinator,
             other => TOOL_NAMES.contains(&other),
         }
     }
@@ -206,6 +231,8 @@ impl Tool {
                 text("brief", &s.brief)
             }
             Tool::AddProject(_) => Ok(()),
+            Tool::ArchiveSlice(a) => text("name", &a.name),
+            Tool::ArchiveTask(a) => id("id", a.id),
         }
     }
 }
@@ -275,3 +302,18 @@ pub struct StartSlice {
 /// Takes no arguments.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddProject {}
+
+/// `archive_slice`: archive a slice by name (task #9). Clean, pushed work goes at once; unsaved
+/// work waits for the user's yes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchiveSlice {
+    /// The slice's name, as given to `start_slice`.
+    pub name: String,
+}
+
+/// `archive_task`: archive a task, and first its live slices, with `archive_slice`'s rules.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchiveTask {
+    /// The task.
+    pub id: TaskId,
+}

@@ -9,7 +9,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
-use dovetail_api::tools::{AskUser, ReportStatus, StartSlice, Tool};
+use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
+use dovetail_api::tools::{ArchiveSlice, ArchiveTask, AskUser, ReportStatus, StartSlice, Tool};
 use dovetail_api::{
     AgentId, AgentKind, AgentStatus, Attachment, Bucket, Command, CoreLink, EntryKind, ImageType,
     InboxId, InboxKind, NewTask, PermissionAnswer, PermissionMode, ServerMsg, Snapshot, TaskId,
@@ -376,6 +377,15 @@ impl Harness {
 
     /// A second app on earlier state, in `repo` (a git repo) or a fresh folder.
     fn start_in(driver: FakeDriver, paths: Paths, repo: Option<PathBuf>) -> Harness {
+        Self::start_with(driver, paths, repo, Config::default())
+    }
+
+    fn start_with(
+        driver: FakeDriver,
+        paths: Paths,
+        repo: Option<PathBuf>,
+        config: Config,
+    ) -> Harness {
         let dir = tempfile::tempdir().expect("tempdir");
         let run = tempfile::Builder::new()
             .prefix("dvt.")
@@ -399,8 +409,7 @@ impl Harness {
             exe: PathBuf::from("/usr/bin/dovetail"),
         };
         let (link, core) =
-            dovetail_core::spawn(resolution, paths.clone(), Config::default(), options)
-                .expect("core");
+            dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
         let mut h = Harness {
             link,
             core: Some(core),
@@ -1671,5 +1680,253 @@ fn a_turn_that_ends_normally_during_quit_is_not_reported_as_cut_off() {
     let mut h = Harness::start_on(fixture("plain_turn"), paths);
     h.drain(Duration::from_millis(300));
     assert!(cut_off_text(&h.snap).is_none(), "{:#?}", h.snap.inbox);
+    h.quit();
+}
+
+/// A git repo with slices `names` already open (idle, restored on start), each in a real
+/// worktree on its `dovetail/<name>` branch at the main checkout's HEAD.
+fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), "hi").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    std::fs::create_dir_all(paths.worktrees("p")).unwrap();
+    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+    for name in names {
+        let wt = paths.worktrees("p").join(name);
+        let branch = format!("dovetail/{name}");
+        git(
+            &repo,
+            &["worktree", "add", "-q", "-b", &branch, wt.to_str().unwrap()],
+        );
+        let agent = dovetail_api::Agent {
+            id: AgentId(format!("slice-{name}")),
+            name: (*name).into(),
+            kind: AgentKind::Slice,
+            parent: None,
+            task: None,
+            worktree: Some(dovetail_api::WorktreeRef { path: wt, branch }),
+            status: dovetail_api::AgentStatus::Idle,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: None,
+            last_activity_ms: 0,
+            lock: dovetail_api::SessionLock::Headless,
+        };
+        db.upsert_agent(dovetail_core::db::AgentRow {
+            agent,
+            session_id: None,
+            transcript_path: None,
+            task_list_id: None,
+            created_ms: 0,
+        })
+        .wait()
+        .expect("agent");
+    }
+    drop(db);
+    (dir, repo, paths)
+}
+
+fn archive_slice(name: &str) -> Tool {
+    Tool::ArchiveSlice(ArchiveSlice { name: name.into() })
+}
+
+fn branch_exists(repo: &Path, branch: &str) -> bool {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "--verify", "--quiet", branch])
+        .stdout(std::process::Stdio::null())
+        .status()
+        .expect("git")
+        .success()
+}
+
+#[test]
+fn archive_slice_removes_a_clean_worktree_and_branch_and_frees_the_queue() {
+    let (_dir, repo, paths) = repo_with_slices(&["done"]);
+    let config = Config {
+        max_slices: 1,
+        ..Config::default()
+    };
+    let mut h = Harness::start_with(
+        fixture("plain_turn"),
+        paths.clone(),
+        Some(repo.clone()),
+        config,
+    );
+    h.wait_for("the restored slice", |s| {
+        s.agents.iter().any(|a| a.name == "done")
+    });
+    h.send(Command::NewSlice {
+        task: None,
+        name: "next".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the queued start", |s| {
+        s.activity.iter().any(|a| a.text.contains("next queued"))
+    });
+    let socket = h.socket();
+
+    // A slice may not archive, not even itself.
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool("slice-done", archive_slice("done")),
+    ));
+    assert!(is_error && text.contains("coordinator only"), "{text}");
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, archive_slice("coordinator")),
+    ));
+    assert!(is_error && text.contains("coordinator cannot"), "{text}");
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, archive_slice("nope")),
+    ));
+    assert!(is_error && text.contains("no slice named nope"), "{text}");
+
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, archive_slice("done")),
+    ));
+    assert!(!is_error && text.starts_with(ARCHIVED), "{text}");
+    assert!(
+        !paths.worktrees("p").join("done").exists(),
+        "worktree removed"
+    );
+    assert!(!branch_exists(&repo, "dovetail/done"), "branch removed");
+    h.wait_for("the queued slice started in the freed place", |s| {
+        s.agents.iter().any(|a| a.name == "next") && !s.agents.iter().any(|a| a.name == "done")
+    });
+
+    // Archived already: it is unknown now.
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, archive_slice("done")),
+    ));
+    assert!(is_error && text.contains("already archived"), "{text}");
+    h.quit();
+}
+
+#[test]
+fn archive_slice_with_unpushed_work_asks_the_user_and_keeps_it() {
+    let (_dir, repo, paths) = repo_with_slices(&["wip"]);
+    let wt = paths.worktrees("p").join("wip");
+    std::fs::write(wt.join("new.txt"), "x").unwrap();
+    git(&wt, &["add", "."]);
+    git(&wt, &["commit", "-qm", "unpushed"]);
+    let mut h = Harness::start_in(fixture("plain_turn"), paths.clone(), Some(repo.clone()));
+    h.wait_for("the restored slice", |s| {
+        s.agents.iter().any(|a| a.name == "wip")
+    });
+    let socket = h.socket();
+
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, archive_slice("wip")),
+    ));
+    assert!(!is_error && text.starts_with(WAITING_FOR_USER), "{text}");
+    let asked = |s: &Snapshot| {
+        s.inbox
+            .iter()
+            .find(|i| {
+                matches!(&i.kind, InboxKind::Permission { tool, .. }
+                if tool == dovetail_api::REMOVE_WORKTREE_PERMISSION)
+            })
+            .map(|i| i.id)
+    };
+    h.wait_for("the Permission item", |s| asked(s).is_some());
+    assert!(
+        wt.exists(),
+        "unsaved work is not removed without the user's yes"
+    );
+    assert!(branch_exists(&repo, "dovetail/wip"));
+    assert!(h.snap.agents.iter().any(|a| a.name == "wip"));
+
+    // Asking again does not raise a second item.
+    let (text, _) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, archive_slice("wip")),
+    ));
+    assert!(text.starts_with(WAITING_FOR_USER), "{text}");
+    h.drain(Duration::from_millis(300));
+    let items = h
+        .snap
+        .inbox
+        .iter()
+        .filter(|i| matches!(&i.kind, InboxKind::Permission { .. }))
+        .count();
+    assert_eq!(items, 1);
+
+    // The user says no: the slice stays and the coordinator is told.
+    let item = asked(&h.snap).expect("item");
+    h.send(Command::AnswerPermission {
+        item,
+        answer: PermissionAnswer::Deny { message: None },
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !sent_users(&h.fake)
+        .iter()
+        .any(|t| t.contains("slice wip kept"))
+    {
+        assert!(Instant::now() < deadline, "{:?}", sent_users(&h.fake));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(wt.exists());
+    h.quit();
+}
+
+#[test]
+fn archive_task_archives_the_task_and_its_live_slice() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    h.send(Command::CreateTask(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+    }));
+    h.wait_for("the task", |s| !s.tasks.is_empty());
+    let id = h.snap.tasks[0].id;
+    h.send(Command::NewSlice {
+        task: Some(id),
+        name: "work".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "work"));
+    let socket = h.socket();
+    let archive = Tool::ArchiveTask(ArchiveTask { id });
+
+    let (text, is_error) = result_text(socket_call(&socket, tool("slice-work", archive.clone())));
+    assert!(is_error && text.contains("coordinator only"), "{text}");
+
+    let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, archive.clone())));
+    assert!(
+        !is_error && text.starts_with(ARCHIVED) && text.contains("work"),
+        "{text}"
+    );
+    h.wait_for("the task archived and the slice gone", |s| {
+        s.tasks
+            .iter()
+            .any(|t| t.id == id && t.status == TaskStatus::Archived)
+            && !s.agents.iter().any(|a| a.name == "work")
+    });
+
+    let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, archive)));
+    assert!(is_error && text.contains("already archived"), "{text}");
     h.quit();
 }
