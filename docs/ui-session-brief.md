@@ -71,7 +71,7 @@ The sketch shows the tree over the inbox on the left; the app mirrors it (conver
 - **Right, top (40 %):** the inbox ("Needs you"). One line per item: kind glyph, source, a short title cut with `…` to fit, and the time. The title is what a permission request is for, or the first sentence of a question, finished turn or error. The full item opens with `Enter` (see the inbox keys below; task #5, 2026-11-09).
 - **Right, bottom (60 %):** the task tree (ADR 0008). Project, then tasks, then each task's agents (with the branch under each slice), then each agent's to-do items. A background subagent shows as one node with a progress indicator.
 - **Left:** a conversation buffer, full height. It shows the **coordinator** by default and switches when I open another agent.
-- **Header row:** one row above the regions naming what is open: `worktree <path> on <branch>` inside a slice's worktree, `folder <path>` otherwise (home shown as `~`). While the open folder is not a Dovetail project yet (ADR 0005), its right end carries the warning `⚠ not a Dovetail project yet: :project add keeps it` (cut to `⚠ not a project yet` when narrow) in the needs-you colour; that warning shows here, not in the status bar.
+- **Header row:** one row above the regions naming what is open: `worktree <path> on <branch>` inside a slice's worktree, `folder <path>` otherwise (home shown as `~`). While the open folder is not a Dovetail project yet (ADR 0005), its right end carries the warning `⚠ not a Dovetail project yet: :project add keeps it` (cut to `⚠ not a project yet` when narrow) in the needs-you colour; that warning shows here, not in the status bar. The right end also carries the usage indicator (decision #25, task #16): `opus-5-5 · 5h 34% (resets 14:20) · week 18% (resets Thu)`. The model is the one of the conversation in view, shown short (`claude-opus-5-5` → `opus-5-5`, a trailing date dropped). The limits are the account's, from the latest `rate_limit_event` of any session; a reset within 24 hours shows as `hh:mm`, a later one as the weekday. Each figure is dim below 70 %, orange from 70 % and red from 90 %. A window whose reset time has passed shows `—` (`5h —`) until the next report. As the row narrows the reset times go first, then the model, then the week, and the 5-hour figure goes last; next to the warning, the usage shortens before the warning does.
 - **Status bar:** mode, project, task count, live agent count, "needs you" count, total memory, and the coordinator's context fill (e.g. `ctx 62%`).
 - **Context fill colors** (status bar for the coordinator, next to each slice session in the tree; not for subagents): normal up to 60%, amber 60–80%, red above 80%.
 - **Task tree grouping:** the tree groups tasks into `Unsorted` (when not empty), `Now`, `Next`, `Later` as described in the data model; the coordinator row stays at the top.
@@ -118,7 +118,7 @@ Visual mode comes later; leave room for it.
 | `i` | Insert mode for the focused agent. From the tree or inbox it targets the **coordinator**, unless an agent is selected in the tree |
 | `Esc` | Back to Normal |
 | `:` | Command mode (`:q` quits; add a few mock commands, e.g. `:spawn <name>`) |
-| `Ctrl-C` `Ctrl-C` | Quit in two steps, in every mode: the first press shows "Press Ctrl-C again to exit" for 2 s, and any other key cancels it. The second press quits like `:q`: if a turn is running it asks "A turn is running. Quit anyway?" (`y` quits). Interrupting a turn stays on `<leader>sx`. SIGINT also quits like `:q` (a second SIGINT answers yes); SIGTERM and SIGHUP quit at once (task #13, 2026-11-09) |
+| `Ctrl-C` `Ctrl-C` | Quit in two steps, in every mode: the first press shows "Press Ctrl-C again to exit" for 2 s, and any other key cancels it. The second press quits like `:q`: if a turn is running it asks "A turn is running. Quit anyway?" (`y` quits). Interrupting a turn stays on `<leader>sx`. SIGINT also quits like `:q` (a second SIGINT answers yes); SIGTERM and SIGHUP quit at once: SIGHUP (a closed terminal) is treated like SIGTERM, since nothing is left to answer a prompt (decision #23; task #13, 2026-11-09) |
 | `/` `n` `N` | Search in the current buffer |
 | `Space` | Leader key (Normal mode only) |
 | `<leader><leader>` | Picker over tasks, agents, inbox items |
@@ -152,7 +152,7 @@ Visual mode comes later; leave room for it.
 - A floating overlay: search prompt and results list on the left, preview on the right.
 - Rows: status glyph, agent name or task title, worktree branch, time since last activity. Subagents indented under their parent.
 - Empty search: agents that need me first, then most recently active. Typing switches to fuzzy ranking with `nucleo`.
-- Preview: the agent's last few turns, rendered like the main pane. For a background subagent, its description, progress and summary.
+- Preview: the agent's last few turns, rendered like the main pane. For a background subagent, its description, progress and summary. A session whose subagents used tokens adds `N tokens in subagents` to its facts line, summed from their task events (M11, task #17).
 - Keys: type to filter; `Ctrl-j` / `Ctrl-k` or arrows to move; `Enter` opens the agent in the main pane; `Esc` closes.
 - Lists Dovetail's agents only.
 - `<leader><leader>` is the same overlay over everything (tasks, agents, inbox items), so build one picker component and reuse it.
