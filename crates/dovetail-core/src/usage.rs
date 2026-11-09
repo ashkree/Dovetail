@@ -70,7 +70,12 @@ mod tests {
 
     /// The first `rate_limit_event` of a recorded fixture, through the driver's parser.
     fn fixture_info() -> RateLimitInfo {
-        let text = include_str!("../../dovetail-driver/tests/fixtures/flags.ndjson");
+        first_rate_limit(include_str!(
+            "../../dovetail-driver/tests/fixtures/flags.ndjson"
+        ))
+    }
+
+    fn first_rate_limit(text: &str) -> RateLimitInfo {
         text.lines()
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
             .filter_map(|l| l.get("msg").cloned())
@@ -132,5 +137,20 @@ mod tests {
         let m = merged(&full, only_5h);
         assert_eq!(m.five_hour.map(|w| w.utilization), Some(0.5));
         assert_eq!(m.seven_day, full.seven_day);
+    }
+
+    /// Task #26: Claude Code 2.1.319's week-only event updates the week and keeps the last 5h.
+    #[test]
+    fn a_week_only_event_keeps_the_earlier_5h_window() {
+        let week_only = first_rate_limit(include_str!(
+            "../../dovetail-driver/tests/fixtures/rate_limit_week_only.ndjson"
+        ));
+        let next = from_rate_limit(&week_only).unwrap_or_default();
+        assert_eq!(next.five_hour, None);
+        assert_eq!(next.seven_day.as_ref().map(|w| w.utilization), Some(0.06));
+        let full = from_rate_limit(&fixture_info()).unwrap_or_default();
+        let m = merged(&full, next);
+        assert_eq!(m.five_hour, full.five_hour);
+        assert_eq!(m.seven_day.map(|w| w.utilization), Some(0.06));
     }
 }

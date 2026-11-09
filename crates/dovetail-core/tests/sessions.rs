@@ -338,46 +338,20 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     h.quit();
 }
 
-/// The header's first row, drawn by the real TUI from the core's snapshot, an hour before the
-/// recorded 5-hour window resets.
-fn header_row(snap: &Snapshot) -> String {
-    let now_ms = 1_793_584_200_000 - 3_600_000;
-    let mut app = dovetail_tui::App::new(jiff::tz::TimeZone::UTC);
-    app.set_now(now_ms);
-    app.on_server(ServerMsg::Hello {
-        protocol: dovetail_api::PROTOCOL_VERSION,
-    });
-    app.on_server(ServerMsg::Snapshot(Snapshot {
-        now_ms,
-        ..snap.clone()
-    }));
-    let backend = ratatui::backend::TestBackend::new(120, 12);
-    let mut terminal = ratatui::Terminal::new(backend).expect("test terminal");
-    terminal.draw(|f| app.draw(f)).expect("draw");
-    let buffer = terminal.backend().buffer();
-    (0..buffer.area.width)
-        .map(|x| buffer[(x, 0)].symbol().to_string())
-        .collect()
-}
-
 /// Task #26: Claude Code 2.1.319 can send a `rate_limit_event` with only the weekly window
-/// (`rate_limit_week_only` holds the live line). Driver, core and header together show the 5-hour
-/// figure when it is reported and `5h —` when it is not, never nothing.
+/// (`rate_limit_week_only` holds the live line). The core reports the weekly window and no 5-hour
+/// one; the header turns that into `5h —` (dovetail-tui `usage_header` tests).
 #[test]
-fn the_header_shows_the_5h_window_or_a_dash_when_the_event_leaves_it_out() {
-    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
-    prompt(&h, "Reply with exactly the word: alpha");
-    h.wait_for("the usage limits", |s| s.usage.five_hour.is_some());
-    let row = header_row(&h.snap);
-    assert!(row.contains("5h 11%") && row.contains("week 17%"), "{row}");
-    h.quit();
-
+fn a_rate_limit_event_with_only_the_weekly_window_reaches_the_ui_as_such() {
     let mut h = Harness::start(fixture("rate_limit_week_only"), true, Config::default());
     prompt(&h, "Reply with exactly the word: alpha");
     h.wait_for("the usage limits", |s| s.usage.seven_day.is_some());
+    assert_eq!(s_util(&h.snap.usage.seven_day), Some(0.06));
+    assert_eq!(
+        h.snap.usage.seven_day.as_ref().and_then(|w| w.resets_at_ms),
+        Some(1_794_754_800_000)
+    );
     assert_eq!(h.snap.usage.five_hour, None);
-    let row = header_row(&h.snap);
-    assert!(row.contains("5h — · week 6%"), "{row}");
     h.quit();
 }
 

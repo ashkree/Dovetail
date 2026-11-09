@@ -87,3 +87,24 @@ fn a_reset_passing_redraws_once_and_shows_a_dash() {
     let row = header(&mut app, 120);
     assert!(row.contains("5h 2%"), "{row}");
 }
+
+/// Task #26: Claude Code 2.1.319 can report only the weekly window. The usage the core makes of
+/// that line (dovetail-core `a_rate_limit_event_with_only_the_weekly_window_reaches_the_ui_as_such`)
+/// shows the 5-hour window as a dash, never as nothing, and the dash is the last part to drop.
+#[test]
+fn a_report_without_the_5h_window_shows_a_dash() {
+    let mut snap = world();
+    snap.usage = UsageLimits {
+        five_hour: None,
+        seven_day: Some(UsageWindow {
+            utilization: 0.06,
+            resets_at_ms: Some(NOW_MS + 3 * 86_400_000),
+            status: UsageStatus::Allowed,
+        }),
+    };
+    let mut app = app_with(snap);
+    let row = header(&mut app, 120);
+    assert!(row.contains("5h — · week 6% (resets Wed)"), "{row}");
+    let narrow = header(&mut app, 44);
+    assert!(narrow.contains("5h —"), "{narrow}");
+}
