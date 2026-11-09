@@ -140,16 +140,15 @@ fn the_selected_row_is_highlighted_only_when_its_region_has_focus() {
     let mut app = app_with(world());
     let mut terminal = Terminal::new(TestBackend::new(120, 32)).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw");
-    // Row 2 (row 1 inside the tree) (coordinator) is selected and focused: it has a background.
-    let side_x = dovetail_tui::region::layout(terminal.backend().buffer().area, false)
-        .side_top
-        .x;
-    let cell = &terminal.backend().buffer()[(side_x + 3, 2)];
+    // Row 1 inside the tree (coordinator) is selected and focused: it has a background.
+    let tree = dovetail_tui::region::layout(terminal.backend().buffer().area, false).side_bottom;
+    let (side_x, row) = (tree.x, tree.y + 1);
+    let cell = &terminal.backend().buffer()[(side_x + 3, row)];
     assert_ne!(cell.bg, ratatui::style::Color::Reset);
     // Focus the main region: the tree selection loses its background.
     app.on_key(key('h'), 0);
     terminal.draw(|f| app.draw(f)).expect("draw");
-    let cell = &terminal.backend().buffer()[(side_x + 3, 2)];
+    let cell = &terminal.backend().buffer()[(side_x + 3, row)];
     assert_eq!(cell.bg, ratatui::style::Color::Reset);
 }
 
@@ -242,11 +241,7 @@ fn dovetail_permission_items_read_as_plain_lines() {
         app.on_key(enter(), 0);
         views.push(main(&render(&mut app, 120, 40)));
         app.on_key(esc(), 0);
-        assert_eq!(
-            app.focus(),
-            RegionId::SideBottom,
-            "Esc goes back to the inbox"
-        );
+        assert_eq!(app.focus(), RegionId::SideTop, "Esc goes back to the inbox");
         type_keys(&mut app, "j");
     }
     let all = views.join("\n----\n");

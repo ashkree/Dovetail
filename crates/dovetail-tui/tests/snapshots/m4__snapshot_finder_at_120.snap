@@ -3,11 +3,11 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 120, 38)"
 ---
  folder /src/business
-┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ tasks · business ─────────────────────────┐
-│                                                                         ││ ◐ ◆ coordinator        working 1.2G $3.10 │
-│                                                                         ││ ▾ Now (2)                                 │
-│   ── You · 10:08 ────────────────────────────────────────────────────   ││ ▾ ⚠ business surface P1          PR #1231 │
-│   Make sure slice-4 doesn't touch the 500 path.                         ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
+│                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
+│                                                                         ││   ? slice-4  Which route prefix sh… 10:12 │
+│   ── You · 10:08 ────────────────────────────────────────────────────   ││   ✓ slice-4  Handler wired; tests … 10:09 │
+│   Make sure slice-4 doesn't touch the 500 path.                         ││                                           │
 │ ┌ Find ────────────────────────────────────────────┐┌ Task ────────────────────────────────────────────────────────┐ │
 │ │›                                            13/13││ business surface                                             │ │
 │ │                                                  ││ P1 · Now · in progress · PR #1231                            │ │
@@ -16,16 +16,16 @@ expression: "render(&mut app, 120, 38)"
 │ │ ◐ get_decision 500                         Now P0││                                                              │ │
 │ │ ○ idea: eval key flow                     Next P2││ (no notes)                                                   │ │
 │ │ ○ docs sweep                             Later P0││                                                              │ │
-│ │ ✓ release notes                            Now P2││ Agents                                                       │ │
-│ │Agents                                            ││                                                              │ │
+│ │ ✓ release notes                            Now P2││ Agents                                                       │─┘
+│ │Agents                                            ││                                                              │─┐
 │ │ ◐ slice-4                   dovetail/slice-4  now││ ◐ ◆ slice-4  working  ⎇ dovetail/slice-4                     │ │
 │ │ ✓   └ rebase                dovetail/slice-4  now││ ✓ ◇ rebase  done                                             │ │
 │ │ ◐   └ explore callers       dovetail/slice-4  now││ ◐ ◇ explore callers  working                                 │ │
 │ │ ⚠ slice-7                   dovetail/slice-7  now││                                                              │ │
 │ │ ◐ coordinator                                 now││ Decisions                                                    │ │
 │ │Inbox                                             ││                                                              │ │
-│ │ ⚠ slice-7 Bash                                now││ (none yet · a to add one)                                    │─┘
-│ │ ? slice-4 Question                             3m││                                                              │─┐
+│ │ ⚠ slice-7 Bash                                now││ (none yet · a to add one)                                    │ │
+│ │ ? slice-4 Question                             3m││                                                              │ │
 │ │ ✓ slice-4 Finished turn                        6m││                                                              │ │
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
@@ -34,9 +34,9 @@ expression: "render(&mut app, 120, 38)"
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
 │ └──────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────┘ │
-│                                                                         ││                                           │
+│                                                                         ││ ▸ Done (1)                                │
 │   ───────────────────────────────────────────────────────────────────   ││                                           │
 │   › i to chat · ]] [[ turns · zc zo fold · gg G                         ││                                           │
-│                                                                         ││ y allow · d deny · r reply · x dismiss    │
+│                                                                         ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

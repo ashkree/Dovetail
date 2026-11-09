@@ -3,42 +3,42 @@ source: crates/dovetail-tui/tests/conversation.rs
 expression: "render(&mut reading_app(), 80, 40)"
 ---
  folder /src/business
-┌ coordinator · ○ idle · 1.2G · $3.10 ─┐┌ tasks · business ────────────────────┐
-│                                      ││ ○ ◆ coordinator      idle 1.2G $3.10 │
-│                                      ││ ▾ Now (2)                            │
-│   ── coordinator · 10:14 ─────────   ││ ▾ ⚠ business surface P1     PR #1231 │
-│   ▸ read 2 files · checked           ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│   slice-7's stream · 4 s             ││         ⎇ dovetail/slice-4           │
-│                                      ││         ✓ write route tests          │
-│   It needs a key. slice-7 can only   ││         ◐ wire handler to registry   │
-│   reach the eval path with           ││         ○ update OpenAPI spec ⊘ blo… │
-│   FS_EVAL_VIRTUAL_KEY set, and the   ││       ✓ ◇ rebase          done $0.21 │
-│   file src/decision.rs reads it      ││       ◐ ◇ explore c… 12 tools · Grep │
-│   once at start-up.                  ││ ▾ ⚠ get_decision 500 P0              │
-│                                      ││   ▾ ⚠ ◆ slice-7  manual    needs you │
-│   What I checked                     ││         ⎇ dovetail/slice-7           │
-│                                      ││ ▾ Next (1)                           │
-│   • the handler in                   ││   ○ idea: eval key flow P2           │
-│     crates/api/src/routes.rs         ││ ▸ Later (1)                          │
-│                                      ││ ▸ Done (1)                           │
-│   • the eval path, which fails       ││                                      │
-│     before it logs                   ││                                      │
-│                                      ││                                      │
-│   • the CI config                    ││ ⏎ open · o fold · dd archive         │
-│                                      │└──────────────────────────────────────┘
-│   rust                               │┌ inbox · needs you (3) ───────────────┐
-│     let key = std::env::var("FS_EV   ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
+┌ coordinator · ○ idle · 1.2G · $3.10 ─┐┌ inbox · needs you (3) ───────────────┐
+│                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │                                      ││   ? slice-4  Which route pref… 10:12 │
-│   Slice   │ State                    ││   ✓ slice-4  Handler wired; t… 10:09 │
-│   ────────┼────────                  ││                                      │
-│   slice-4 │ editing                  ││                                      │
-│   slice-7 │ blocked                  ││                                      │
+│   ── coordinator · 10:14 ─────────   ││   ✓ slice-4  Handler wired; t… 10:09 │
+│   ▸ read 2 files · checked           ││                                      │
+│   slice-7's stream · 4 s             ││                                      │
 │                                      ││                                      │
-│   │ Merge order: #1231 first, then   ││                                      │
-│   │ the 500 fix.                     ││                                      │
+│   It needs a key. slice-7 can only   ││                                      │
+│   reach the eval path with           ││                                      │
+│   FS_EVAL_VIRTUAL_KEY set, and the   ││                                      │
+│   file src/decision.rs reads it      ││                                      │
+│   once at start-up.                  ││                                      │
+│                                      ││                                      │
+│   What I checked                     ││ y allow · d deny · r reply · x dism… │
+│                                      │└──────────────────────────────────────┘
+│   • the handler in                   │┌ tasks · business ────────────────────┐
+│     crates/api/src/routes.rs         ││ ○ ◆ coordinator      idle 1.2G $3.10 │
+│                                      ││ ▾ Now (2)                            │
+│   • the eval path, which fails       ││ ▾ ⚠ business surface P1     PR #1231 │
+│     before it logs                   ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│                                      ││         ⎇ dovetail/slice-4           │
+│   • the CI config                    ││         ✓ write route tests          │
+│                                      ││         ◐ wire handler to registry   │
+│   rust                               ││         ○ update OpenAPI spec ⊘ blo… │
+│     let key = std::env::var("FS_EV   ││       ✓ ◇ rebase          done $0.21 │
+│                                      ││       ◐ ◇ explore c… 12 tools · Grep │
+│   Slice   │ State                    ││ ▾ ⚠ get_decision 500 P0              │
+│   ────────┼────────                  ││   ▾ ⚠ ◆ slice-7  manual    needs you │
+│   slice-4 │ editing                  ││         ⎇ dovetail/slice-7           │
+│   slice-7 │ blocked                  ││ ▾ Next (1)                           │
+│                                      ││   ○ idea: eval key flow P2           │
+│   │ Merge order: #1231 first, then   ││ ▸ Later (1)                          │
+│   │ the 500 fix.                     ││ ▸ Done (1)                           │
 │                                      ││                                      │
 │   ────────────────────────────────   ││                                      │
 │   › i to chat · ]] [[ turns · zc …   ││                                      │
-│                                      ││ y allow · d deny · r reply · x dism… │
+│                                      ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ ·… i chat · ␣ss switch · : command

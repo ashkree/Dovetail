@@ -26,6 +26,15 @@ fn mode_name(mode: PermissionMode) -> &'static str {
 }
 
 impl App {
+    /// Focuses the side region showing the inbox (the top one by default, ADR 0008).
+    pub(super) fn focus_inbox(&mut self) {
+        let region = self
+            .regions
+            .side_showing(BufferKind::Inbox)
+            .unwrap_or(RegionId::SideTop);
+        self.regions.set_focus(region);
+    }
+
     pub(super) fn coordinator(&self) -> Option<AgentId> {
         self.snap
             .agents

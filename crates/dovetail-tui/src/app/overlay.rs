@@ -8,7 +8,6 @@ use super::App;
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
 use crate::mode::Mode;
 use crate::picker::{Picker, PickerKey, PickerOutcome};
-use crate::region::RegionId;
 use crate::switcher;
 
 /// What choosing a picker row does.
@@ -134,7 +133,7 @@ impl App {
             PickerKey::Agent(id) => self.open_agent_in_main(id),
             PickerKey::Task(id) => self.open_task(id),
             PickerKey::Inbox(id) => {
-                self.regions.set_focus(RegionId::SideBottom);
+                self.focus_inbox();
                 self.buffers.inbox.select_item(&self.snap, id);
             }
         }
