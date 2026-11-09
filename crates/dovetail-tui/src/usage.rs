@@ -2,7 +2,7 @@
 //! `opus-5-5 · 5h 34% (resets 14:20) · week 18% (resets Thu)`.
 //!
 //! Parts drop as the row narrows: the reset times, then the model, then the week; the 5-hour
-//! figure goes last. A window whose reset time has passed shows `—` until the next report.
+//! figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
 
 use dovetail_api::{UsageLimits, UsageWindow};
 use jiff::{Timestamp, tz::TimeZone};
@@ -46,7 +46,7 @@ pub fn next_change_ms(usage: &UsageLimits, now_ms: i64) -> Option<i64> {
         .min()
 }
 
-/// One window as shown, or `None` when unknown.
+/// One window as shown.
 struct Part {
     /// `5h 34%` or `5h —`.
     figure: String,
@@ -55,25 +55,30 @@ struct Part {
     pct: Option<u32>,
 }
 
-fn part(label: &str, window: Option<&UsageWindow>, now_ms: i64, tz: &TimeZone) -> Option<Part> {
-    let w = window?;
+/// One window as shown. A window not reported, or whose reset has passed, is a dash (`5h —`):
+/// Claude Code 2.1.319 can send a `rate_limit_event` with only the weekly window (task #26).
+fn part(label: &str, window: Option<&UsageWindow>, now_ms: i64, tz: &TimeZone) -> Part {
+    let dash = || Part {
+        figure: format!("{label} —"),
+        resets: String::new(),
+        pct: None,
+    };
+    let Some(w) = window else {
+        return dash();
+    };
     if w.resets_at_ms.is_some_and(|t| t <= now_ms) {
-        return Some(Part {
-            figure: format!("{label} —"),
-            resets: String::new(),
-            pct: None,
-        });
+        return dash();
     }
     // Rounded, and never negative: the colour thresholds work on whole percent.
     let pct = (w.utilization * 100.0).round().max(0.0) as u32;
-    Some(Part {
+    Part {
         figure: format!("{label} {pct}%"),
         resets: w
             .resets_at_ms
             .map(|t| format!(" (resets {})", reset_label(t, now_ms, tz)))
             .unwrap_or_default(),
         pct: Some(pct),
-    })
+    }
 }
 
 /// Versions of the indicator, fullest first and each ending in a space, for
@@ -85,8 +90,10 @@ pub fn variants(
     tz: &TimeZone,
     theme: &Theme,
 ) -> Vec<Vec<Span<'static>>> {
-    let five = part("5h", usage.five_hour.as_ref(), now_ms, tz);
-    let week = part("week", usage.seven_day.as_ref(), now_ms, tz);
+    // Nothing shows until a first report; after it, both windows always do.
+    let known = usage.five_hour.is_some() || usage.seven_day.is_some();
+    let five = known.then(|| part("5h", usage.five_hour.as_ref(), now_ms, tz));
+    let week = known.then(|| part("week", usage.seven_day.as_ref(), now_ms, tz));
     let model = model.map(short_model);
     let build = |model: Option<&str>, with_week: bool, resets: bool| {
         let mut items: Vec<Span<'static>> = Vec::new();
@@ -236,6 +243,19 @@ mod tests {
         );
         assert_eq!(model_only.len(), 1);
         assert_eq!(text(&model_only[0]), "opus-5-5 ");
+    }
+
+    #[test]
+    fn a_window_left_out_of_the_report_shows_a_dash_and_drops_last() {
+        let theme = Theme::dusk();
+        let mut u = usage(0.34, 0.06, NOW_S);
+        u.five_hour = None;
+        let v = variants(&u, None, NOW_S * 1_000, &TimeZone::UTC, &theme);
+        let texts: Vec<String> = v.iter().map(|s| text(s)).collect();
+        assert_eq!(
+            texts,
+            vec!["5h — · week 6% (resets Thu) ", "5h — · week 6% ", "5h — "]
+        );
     }
 
     #[test]

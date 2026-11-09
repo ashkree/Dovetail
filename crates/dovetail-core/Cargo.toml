@@ -21,6 +21,11 @@ uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Test only, no new external crates: the usage regression test (task #26) renders the real
+# header from the core's snapshot.
+dovetail-tui.workspace = true
+jiff.workspace = true
+ratatui.workspace = true
 
 [lints]
 workspace = true

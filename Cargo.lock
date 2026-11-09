@@ -424,7 +424,10 @@ version = "0.0.0"
 dependencies = [
  "dovetail-api",
  "dovetail-driver",
+ "dovetail-tui",
+ "jiff",
  "notify",
+ "ratatui",
  "rusqlite",
  "serde",
  "serde_json",

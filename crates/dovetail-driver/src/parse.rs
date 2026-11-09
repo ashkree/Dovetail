@@ -294,16 +294,21 @@ fn map_usage(obj: &Value) -> Vec<ModelUsage> {
         .collect()
 }
 
-/// `rate_limit_info.unifiedWindows` of a `rate_limit_event`; a window without `utilization` is
-/// left out.
+/// `rate_limit_info.unifiedWindows` of a `rate_limit_event`. Either window may be missing:
+/// Claude Code 2.1.319 sends only `seven_day` at times (task #26). A window without a numeric
+/// `utilization` is left out, with a warning.
 fn map_rate_limit(v: &Value) -> RateLimitInfo {
     let windows = v
         .get("rate_limit_info")
         .and_then(|i| i.get("unifiedWindows"));
     let window = |key: &str| {
         let w = windows?.get(key)?;
+        let Some(utilization) = w.get("utilization").and_then(Value::as_f64) else {
+            tracing::warn!("rate_limit_event window {key} has no numeric utilization: {w}");
+            return None;
+        };
         Some(RateLimitWindow {
-            utilization: w.get("utilization")?.as_f64()?,
+            utilization,
             resets_at_s: w.get("resetsAt").and_then(Value::as_i64),
             status: str_of(w, "status").unwrap_or_default(),
         })
