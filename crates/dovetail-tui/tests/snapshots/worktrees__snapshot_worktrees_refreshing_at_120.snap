@@ -3,7 +3,7 @@ source: crates/dovetail-tui/tests/worktrees.rs
 assertion_line: 296
 expression: "render(&mut app, 120, 34)"
 ---
- folder /home/you/src/dovetail                                 opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+ folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
 ┌ worktrees · Dovetail · 3 · refreshing… ─────────────────────────────────┐┌ inbox · needs you (2) ────────────────────┐
 │ slice         branch               sync  changes  unpushed  PR  setup   ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
 │ ⚠ inbox-keys  dovetail/inbox-keys  —     —        —         —   —       ││   ✓ coordinator  M2 splits into th… 08:58 │
