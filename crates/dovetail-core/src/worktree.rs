@@ -370,7 +370,7 @@ fn write_state(path: &Path, state: &SetupState) -> Result<(), WorktreeError> {
     fs::rename(&tmp, path).map_err(io(format!("writing {}", path.display())))
 }
 
-fn pid_alive(pid: u32) -> bool {
+pub(crate) fn pid_alive(pid: u32) -> bool {
     pid != std::process::id() && Path::new("/proc").join(pid.to_string()).exists()
 }
 
@@ -574,42 +574,72 @@ pub fn inspect(
         ..Inspection::default()
     };
     if out.exists {
-        let ours = recorded_links(&state_paths(paths, project, name).links);
-        let status = git(&wt, ["status", "--porcelain", "-z"])?;
-        let mut entries = status.split('\0').filter(|e| !e.is_empty());
-        while let Some(e) = entries.next() {
-            let path = e.get(3..).unwrap_or("");
-            if e.starts_with('R') || e.starts_with('C') {
-                entries.next(); // rename source
-            }
-            let is_ours = e.starts_with("??")
-                && ours
-                    .iter()
-                    .any(|l| Path::new(path.trim_end_matches('/')) == l);
-            if !is_ours {
-                out.uncommitted.push(e.to_owned());
-            }
-        }
+        let ours = our_links(paths, project, name);
+        let status = git(&wt, STATUS_ARGS)?;
+        out.uncommitted = uncommitted_entries(&status, &ours);
     }
     if out.branch_exists {
-        let upstream = format!("{branch}@{{upstream}}");
-        out.has_upstream = git_ok(repo, ["rev-parse", "--verify", "--quiet", &upstream]);
-        let count = if out.has_upstream {
-            git(
-                repo,
-                ["rev-list", "--count", &format!("{upstream}..{branch}")],
-            )?
-        } else {
-            // Only commits after the branch point count: on no remote, and not in the main
-            // checkout's HEAD either (work merged there is safe).
-            git(
-                repo,
-                ["rev-list", "--count", &branch, "--not", "--remotes", "HEAD"],
-            )?
-        };
+        out.has_upstream = git_ok(repo, upstream_check_args(&branch));
+        let count = git(repo, unpushed_args(&branch, out.has_upstream))?;
         out.unpushed_commits = parse_count(&count)?;
     }
     Ok(out)
+}
+
+/// Arguments of the `git status` whose output [`uncommitted_entries`] reads.
+pub(crate) const STATUS_ARGS: [&str; 3] = ["status", "--porcelain", "-z"];
+
+/// The symlinks Dovetail made in worktree `name`, relative to it.
+pub(crate) fn our_links(paths: &Paths, project: &str, name: &str) -> Vec<PathBuf> {
+    recorded_links(&state_paths(paths, project, name).links)
+}
+
+/// The entries of `git status --porcelain -z` output (`XY path`), without the untracked ones
+/// that are our own symlinks (`ours`) and without rename sources.
+pub(crate) fn uncommitted_entries(status: &str, ours: &[PathBuf]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut entries = status.split('\0').filter(|e| !e.is_empty());
+    while let Some(e) = entries.next() {
+        let path = e.get(3..).unwrap_or("");
+        if e.starts_with('R') || e.starts_with('C') {
+            entries.next(); // rename source
+        }
+        let is_ours = e.starts_with("??")
+            && ours
+                .iter()
+                .any(|l| Path::new(path.trim_end_matches('/')) == l);
+        if !is_ours {
+            out.push(e.to_owned());
+        }
+    }
+    out
+}
+
+/// Arguments that succeed when `branch` has an upstream.
+pub(crate) fn upstream_check_args(branch: &str) -> Vec<String> {
+    vec![
+        "rev-parse".into(),
+        "--verify".into(),
+        "--quiet".into(),
+        format!("{branch}@{{upstream}}"),
+    ]
+}
+
+/// Arguments of the `git rev-list --count` that counts `branch`'s unpushed commits.
+pub(crate) fn unpushed_args(branch: &str, has_upstream: bool) -> Vec<String> {
+    if has_upstream {
+        vec![
+            "rev-list".into(),
+            "--count".into(),
+            format!("{branch}@{{upstream}}..{branch}"),
+        ]
+    } else {
+        // Only commits after the branch point count: on no remote, and not in the main
+        // checkout's HEAD either (work merged there is safe).
+        ["rev-list", "--count", branch, "--not", "--remotes", "HEAD"]
+            .map(String::from)
+            .to_vec()
+    }
 }
 
 /// Remove a worktree: our symlinks and setup state, `git worktree remove`, then the

@@ -173,6 +173,59 @@ fn decision() -> Decision {
     }
 }
 
+/// Worktree-view entries covering every PR and setup case.
+fn worktree_infos() -> Vec<WorktreeInfo> {
+    let base = WorktreeInfo {
+        agent: id("slice-a"),
+        path: "/data/worktrees/a".into(),
+        branch: "dovetail/a".into(),
+        base: "main".into(),
+        sync: Some(SyncState {
+            ahead: 2,
+            behind: 1,
+            behind_origin: Some(3),
+        }),
+        changes: Some(Changes {
+            staged: 1,
+            unstaged: 2,
+            untracked: 3,
+            conflicted: 0,
+        }),
+        unpushed: Some(2),
+        pr: PrLookup::Found(PullRequest {
+            number: 7,
+            state: PrState::Merged,
+            url: "https://github.com/o/r/pull/7".into(),
+        }),
+        setup: WorktreeSetup::Done,
+        checked_ms: 1_700_000_000_000,
+    };
+    vec![
+        base.clone(),
+        WorktreeInfo {
+            sync: None,
+            changes: None,
+            unpushed: None,
+            pr: PrLookup::Unknown {
+                reason: "gh is not installed".into(),
+            },
+            setup: WorktreeSetup::Failed {
+                error: Some("exit 1".into()),
+            },
+            ..base.clone()
+        },
+        WorktreeInfo {
+            pr: PrLookup::None,
+            setup: WorktreeSetup::Running,
+            ..base.clone()
+        },
+        WorktreeInfo {
+            setup: WorktreeSetup::None,
+            ..base
+        },
+    ]
+}
+
 #[test]
 fn hello_and_a_full_snapshot_roundtrip() {
     let project = ProjectSummary {
@@ -215,6 +268,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
         )]),
         totals: totals(),
         warnings: vec![warning()],
+        worktrees: worktree_infos(),
     };
     roundtrip(&ServerMsg::Hello {
         protocol: PROTOCOL_VERSION,
@@ -260,7 +314,8 @@ fn every_event_roundtrips() {
         },
     ]
     .into_iter()
-    .chain(inbox_items().into_iter().map(Event::InboxUpserted));
+    .chain(inbox_items().into_iter().map(Event::InboxUpserted))
+    .chain(worktree_infos().into_iter().map(Event::WorktreeUpserted));
     for (n, event) in events.enumerate() {
         roundtrip(&ServerMsg::Event {
             seq: n as u64,
@@ -379,6 +434,7 @@ fn every_command_roundtrips() {
             agent: id("slice-a"),
             before: None,
         },
+        Command::RefreshWorktrees,
         Command::Resync,
         Command::Quit {
             end_sessions: false,

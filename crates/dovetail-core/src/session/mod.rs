@@ -720,6 +720,8 @@ impl Core {
         // no item yet).
         if background == 0 && !more_queued {
             self.finished_turn(agent, preview);
+            // The turn may have committed, pushed or opened a PR (worktree view, M12b).
+            self.refresh_worktree(agent);
         }
         self.refresh_status(agent);
     }

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
     Decision, DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, Snapshot, Task, TaskId,
-    TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId,
+    TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId, WorktreeInfo,
 };
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
@@ -60,6 +60,9 @@ pub enum Event {
         /// The item.
         id: InboxId,
     },
+    /// A slice's worktree state was gathered afresh. A worktree's entry goes with its agent
+    /// ([`Event::AgentRemoved`]).
+    WorktreeUpserted(WorktreeInfo),
     /// Something happened in the Activity feed.
     ActivityAdded(ActivityItem),
     /// Agents messaged each other.
@@ -226,6 +229,10 @@ pub enum Command {
         /// The user has confirmed losing unpushed work.
         confirmed: bool,
     },
+    /// Gather every slice worktree's git and PR state again (sent when the worktree view
+    /// opens): `git fetch origin <base>` first, then local git and `gh pr list`. The core
+    /// answers with one [`Event::WorktreeUpserted`] per worktree.
+    RefreshWorktrees,
     /// Switch to another project.
     OpenProject {
         /// The project.

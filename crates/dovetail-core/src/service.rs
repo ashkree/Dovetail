@@ -218,6 +218,8 @@ pub(crate) enum Input {
     TodosChanged {
         list: dovetail_api::TodoListId,
     },
+    /// A slice worktree's state for the worktree view was gathered.
+    WorktreeGathered(crate::worktree_info::Gathered),
     /// A clipboard read for an agent's chat bar finished.
     Pasted {
         agent: AgentId,
@@ -315,6 +317,8 @@ pub(crate) struct Core {
     pub(crate) todos: crate::todos::Todos,
     /// Where Claude Code keeps them.
     pub(crate) tasks_dir: PathBuf,
+    /// The worktree view's data, per slice (M12b, `worktree_info`).
+    pub(crate) worktrees: BTreeMap<AgentId, dovetail_api::WorktreeInfo>,
 }
 
 /// The streaming coalescing window (≤ ~30 fps).
@@ -374,6 +378,7 @@ impl Core {
             killed: false,
             todos: Default::default(),
             tasks_dir,
+            worktrees: BTreeMap::new(),
         }
     }
 
@@ -454,6 +459,7 @@ impl Core {
                 Input::OrphanInspected { found, result } => self.on_orphan(found, result),
                 Input::OrphanRemoved { name, result } => self.on_orphan_removed(name, result),
                 Input::TodosChanged { list } => self.mark_todos(list),
+                Input::WorktreeGathered(info) => self.on_worktree_gathered(info),
                 Input::Pasted { agent, paste } => {
                     self.emit(Event::ClipboardPasted { agent, paste });
                 }
@@ -617,6 +623,7 @@ impl Core {
             warnings: self.warnings.clone(),
             todos: self.todos.items(),
             usage: self.usage.clone(),
+            worktrees: self.worktrees.values().cloned().collect(),
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1021,6 +1028,7 @@ impl Core {
                     Err(e) => self.fail(e.to_string()),
                 }
             }
+            Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
             Command::TakeOver { .. } => self.fail("take-over arrives in M14"),
             Command::OpenProject { .. } => {

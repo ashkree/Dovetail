@@ -368,7 +368,7 @@ impl Core {
 
     /// The key a slice's worktree files live under: a worktree made before registration stays
     /// under `new-<pid>`, so read it from the recorded path; else the current key.
-    fn worktree_key(&self, agent: &dovetail_api::Agent) -> String {
+    pub(crate) fn worktree_key(&self, agent: &dovetail_api::Agent) -> String {
         agent
             .worktree
             .as_ref()
@@ -473,6 +473,8 @@ impl Core {
                 );
                 let name = self.name_of(&agent);
                 self.archive_outcome(&agent, &name, ArchiveOutcome::Waiting);
+                // The worktree view shows the unsaved work the user is asked about.
+                self.refresh_worktree(&agent);
             }
             Err(e) => {
                 let name = self.name_of(&agent);
@@ -493,6 +495,7 @@ impl Core {
     pub(crate) fn keep_slice(&mut self, agent: &AgentId) {
         self.notice(agent, "Kept: the worktree has unsaved work");
         self.refresh_status(agent);
+        self.refresh_worktree(agent);
         if self.archive_told.remove(agent) {
             let name = self.name_of(agent);
             self.tell_coordinator(format!(
@@ -606,6 +609,8 @@ impl Core {
         }
         self.live.remove(agent);
         self.tails.remove(agent);
+        // The client drops its copy with `AgentRemoved`.
+        self.worktrees.remove(agent);
         let items: Vec<_> = self
             .inbox
             .values()
