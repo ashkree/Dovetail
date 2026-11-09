@@ -20,6 +20,7 @@ use dovetail_api::{
     PermissionMode, ServerMsg, Snapshot, TaskId, TaskStatus, apply,
 };
 use dovetail_core::config::Config;
+use dovetail_core::memory::Scopes;
 use dovetail_core::paths::Paths;
 use dovetail_core::projects::{Candidate, Project, Resolution};
 use dovetail_core::{CoreHandle, CoreOptions};
@@ -48,6 +49,16 @@ const COORDINATOR: &str = "coordinator";
 
 impl Harness {
     fn start(driver: FakeDriver, registered: bool, config: Config) -> Harness {
+        Self::start_scoped(driver, registered, config, None)
+    }
+
+    /// With `scopes` in place of the probe (a temp dir standing in for the cgroup slice).
+    fn start_scoped(
+        driver: FakeDriver,
+        registered: bool,
+        config: Config,
+        scopes: Option<Scopes>,
+    ) -> Harness {
         let dir = tempfile::tempdir().expect("tempdir");
         // Unix socket paths are limited to about 108 bytes: keep the runtime dir short.
         let run = tempfile::Builder::new()
@@ -83,6 +94,7 @@ impl Harness {
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
             memory_caps: false,
+            scopes,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
@@ -454,6 +466,7 @@ impl Harness {
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
             memory_caps: false,
+            scopes: None,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
@@ -736,6 +749,132 @@ fn a_subagent_cut_off_by_a_restart_reopens_as_stopped() {
             .iter()
             .all(|i| i.agent == AgentId(COORDINATOR.into()))
     );
+    h.quit();
+}
+
+/// `memory.events` text with `oom_kill` at `kills`, as the kernel writes it.
+fn memory_events(kills: u64) -> String {
+    format!("low 0\nhigh 0\nmax {kills}\noom {kills}\noom_kill {kills}\noom_group_kill 0\n")
+}
+
+/// The text of the coordinator's out-of-memory items.
+fn oom_items(s: &Snapshot) -> Vec<String> {
+    s.inbox
+        .iter()
+        .filter_map(|i| match &i.kind {
+            InboxKind::Error { text } if text.starts_with("Out of memory") => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Waits until the restarted session was told, in one line, that it was OOM-killed and
+/// restarted, followed by the in-flight subagent `work`.
+fn wait_restart_note(fake: &FakeDriver, work: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let is_note = |s: &Sent| {
+        matches!(s, Sent::User(t) if t.lines().next().is_some_and(|l| {
+            l.starts_with("You were killed for running out of memory")
+                && l.ends_with("and have been restarted.")
+        }) && t.contains(work))
+    };
+    while !fake.sent().iter().any(is_note) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn a_session_killed_for_memory_is_resumed_with_its_subagent_work_listed() {
+    // A temp dir stands in for the cgroup slice; the coordinator's scope is in it.
+    let slice = tempfile::tempdir().expect("tempdir");
+    let cgroup = slice.path().join("dovetail-p-coordinator.scope");
+    std::fs::create_dir(&cgroup).expect("scope dir");
+    std::fs::write(cgroup.join("memory.events"), memory_events(0)).expect("events");
+    // Hold before the background subagent's first progress, then die by SIGKILL there.
+    let fake = fixture("subagent_background").with_options(ReplayOptions {
+        pause_before: vec![9],
+        kill_first_before: Some((9, 9)),
+        ..ReplayOptions::default()
+    });
+    let scopes = Scopes::Available {
+        slice_dir: slice.path().to_path_buf(),
+        escape_dollars: false,
+    };
+    let mut h = Harness::start_scoped(fake.clone(), true, Config::default(), Some(scopes));
+    prompt(&h, "start a background subagent");
+    h.wait_for("the subagent node", |s| subagent(s).is_some());
+    let description = subagent(&h.snap)
+        .and_then(|a| a.progress.as_ref())
+        .map(|p| p.description.clone())
+        .expect("its description");
+    // The kernel counts the kill (seen through the watch), then the scope goes with the
+    // session, as `--collect` makes it.
+    std::fs::write(cgroup.join("memory.events"), memory_events(1)).expect("events");
+    h.drain(Duration::from_millis(300));
+    std::fs::remove_dir_all(&cgroup).expect("remove scope");
+    fake.resume();
+    h.wait_for("the out-of-memory item", |s| !oom_items(s).is_empty());
+    let text = oom_items(&h.snap).remove(0);
+    assert!(text.contains("restarted from its session"), "{text}");
+    assert!(text.contains(&description), "{text}");
+    // Resumed from its session id, and told what was in flight.
+    let specs = fake.started_specs();
+    assert_eq!(specs.len(), 2);
+    assert!(specs[1].resume);
+    assert_eq!(specs[1].session_id, specs[0].session_id);
+    wait_restart_note(&fake, &description);
+    h.wait_for("the coordinator running again", |s| {
+        coordinator_of(s).status != AgentStatus::Error
+    });
+    // Only one kill was seen: no item about a tool.
+    assert_eq!(oom_items(&h.snap).len(), 1);
+    fake.resume();
+    h.quit();
+}
+
+#[test]
+fn an_oom_count_that_arrives_after_the_exit_still_restarts_the_session() {
+    let slice = tempfile::tempdir().expect("tempdir");
+    let cgroup = slice.path().join("dovetail-p-coordinator.scope");
+    std::fs::create_dir(&cgroup).expect("scope dir");
+    std::fs::write(cgroup.join("memory.events"), memory_events(0)).expect("events");
+    let fake = fixture("subagent_background").with_options(ReplayOptions {
+        pause_before: vec![9],
+        kill_first_before: Some((9, 9)),
+        ..ReplayOptions::default()
+    });
+    let scopes = Scopes::Available {
+        slice_dir: slice.path().to_path_buf(),
+        escape_dollars: false,
+    };
+    let mut h = Harness::start_scoped(fake.clone(), true, Config::default(), Some(scopes));
+    prompt(&h, "start a background subagent");
+    h.wait_for("the subagent node", |s| subagent(s).is_some());
+    let description = subagent(&h.snap)
+        .and_then(|a| a.progress.as_ref())
+        .map(|p| p.description.clone())
+        .expect("its description");
+    // The exit is handled first, with no kill counted yet: it reads as a crash.
+    fake.resume();
+    let crashed = |s: &Snapshot| {
+        s.inbox.iter().any(|i| {
+            matches!(&i.kind, InboxKind::Error { text } if text.starts_with("session ended unexpectedly"))
+        })
+    };
+    h.wait_for("the crash item", crashed);
+    // Then the watcher's count arrives.
+    std::fs::write(cgroup.join("memory.events"), memory_events(1)).expect("events");
+    h.wait_for("the out-of-memory item", |s| !oom_items(s).is_empty());
+    assert!(!crashed(&h.snap), "the crash item is replaced");
+    let text = oom_items(&h.snap).remove(0);
+    assert!(text.contains("restarted from its session"), "{text}");
+    assert!(text.contains(&description), "{text}");
+    let specs = fake.started_specs();
+    assert_eq!(specs.len(), 2);
+    assert!(specs[1].resume);
+    wait_restart_note(&fake, &description);
+    fake.resume();
     h.quit();
 }
 

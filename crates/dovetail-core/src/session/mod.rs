@@ -75,6 +75,14 @@ pub(crate) struct Live {
     /// The cgroup of the session's capped scope (`None`: it runs uncapped). Its `memory.current`
     /// is the session's memory, and its `memory.events` counts OOM kills (M13).
     pub(crate) cgroup: Option<PathBuf>,
+    /// The session process; when it runs uncapped, its memory is read from `/proc`.
+    pub(crate) pid: Option<u32>,
+    /// The scope's `oom_kill` count as last seen (a new scope starts at 0).
+    pub(crate) oom_kills: u64,
+    /// When a rise in `oom_kills` was seen that has no verdict yet (`oom`).
+    pub(crate) oom_seen: Option<std::time::Instant>,
+    /// The scope's `memory.events` is watched.
+    pub(crate) oom_watched: bool,
     /// Tokens the context held after the latest main-thread API call (decision #22).
     pub(crate) context_tokens: Option<u64>,
 }
@@ -172,14 +180,9 @@ impl Core {
             claude_config_dir: home.explicit.then(|| home.dir.clone()),
         };
         let mut spec = launch::spec(&self.paths, &launch).map_err(SessionError::LaunchFiles)?;
-        // B8: the coordinator gets the higher cap.
-        let cap_gb = if row.agent.kind == AgentKind::Coordinator {
-            self.config.memory.coordinator_gb
-        } else {
-            self.config.memory.slice_gb
-        };
         let unit = crate::memory::unit_name(self.project.key(), &id.0);
-        spec.systemd_scope = self.scopes.scope(&unit, crate::memory::cap_bytes(cap_gb));
+        let cap = crate::memory::cap_bytes(self.cap_gb(id));
+        spec.systemd_scope = self.scopes.scope(&unit, cap);
         let cgroup = self.scopes.cgroup(&unit);
         if let Some(cgroup) = &cgroup
             && !self.live.contains_key(id)
@@ -196,6 +199,7 @@ impl Core {
                     source,
                 })?;
         let mut events = session.take_events();
+        let pid = session.pid();
         self.generation += 1;
         let generation = self.generation;
         let inputs = self.inputs.clone();
@@ -229,12 +233,29 @@ impl Core {
                 subagent_tasks: HashMap::new(),
                 subagent_keys: HashMap::new(),
                 cgroup,
+                pid,
+                oom_kills: 0,
+                oom_seen: None,
+                oom_watched: false,
                 context_tokens: None,
             },
         );
         self.save_agent(id);
         self.watch_todos(id);
         Ok(())
+    }
+
+    /// The memory cap of agent `id`'s session in GB (B8: the coordinator gets the higher cap).
+    pub(crate) fn cap_gb(&self, id: &AgentId) -> u32 {
+        let coordinator = self
+            .agents
+            .get(id)
+            .is_some_and(|r| r.agent.kind == AgentKind::Coordinator);
+        if coordinator {
+            self.config.memory.coordinator_gb
+        } else {
+            self.config.memory.slice_gb
+        }
     }
 
     /// Makes sure agent `id` has a running session, resuming it if needed.
@@ -581,6 +602,8 @@ impl Core {
         let setting_up = live.setting_up;
         self.set_model(agent, init.model.as_deref());
         if first {
+            // The process runs, so its scope exists.
+            self.watch_oom(agent);
             let cwd = init
                 .cwd
                 .as_deref()
@@ -781,6 +804,27 @@ impl Core {
         let Some(live) = self.live.remove(agent) else {
             return;
         };
+        // Before the subagents are marked stopped: an OOM kill lists the ones in flight.
+        let oom = self.oom_at_exit(agent, &live, info.signal);
+        let in_flight = if oom == Some(crate::memory::OomKill::Session) {
+            Some(self.in_flight(agent))
+        } else {
+            None
+        };
+        // A capped session killed by SIGKILL with no OOM kill seen yet: the watcher's count may
+        // still be on its way, after the scope is gone. Its scope stays watched for it.
+        let unexplained = live.cgroup.clone().filter(|_| {
+            oom.is_none()
+                && !live.stopping
+                && !live.setting_up
+                && info.signal == Some(crate::memory::SIGKILL)
+        });
+        let unexplained_work = unexplained.as_ref().map(|_| self.in_flight(agent));
+        if let Some(cgroup) = live.cgroup.as_deref()
+            && unexplained.is_none()
+        {
+            self.unwatch_oom(cgroup);
+        }
         self.subagents_stopped(agent);
         self.unwatch_todos(agent);
         self.set_memory(agent, None);
@@ -795,19 +839,33 @@ impl Core {
                 .cloned()
                 .unwrap_or_else(|| exit_text(&info));
             self.setup_failed(agent, format!("the session exited during setup: {detail}"));
+        } else if let Some(work) = in_flight {
+            let restartable = self.quitting.is_none() && live.close_after.is_none();
+            self.session_oom(agent, work, restartable);
         } else if !live.stopping && !info.success {
             let mut text = format!("session ended unexpectedly ({})", exit_text(&info));
             if !info.stderr_tail.is_empty() {
                 text.push_str(":\n");
                 text.push_str(&info.stderr_tail.join("\n"));
             }
-            self.raise(agent, InboxKind::Error { text }, crate::inbox::Waiter::None);
+            let item = self.raise(agent, InboxKind::Error { text }, crate::inbox::Waiter::None);
             self.update_agent(agent, |row| row.agent.status = AgentStatus::Error);
             self.activity(
                 ActivityKind::Lifecycle,
                 Some(agent),
                 format!("{} crashed", agent.0),
             );
+            if let (Some(cgroup), Some(work)) = (unexplained, unexplained_work) {
+                let exit = crate::oom::UnexplainedExit {
+                    agent: agent.clone(),
+                    at: std::time::Instant::now(),
+                    kills: live.oom_kills,
+                    work,
+                    restartable: self.quitting.is_none() && live.close_after.is_none(),
+                    item,
+                };
+                self.remember_exit(cgroup, exit);
+            }
         }
         if let Some(confirmed) = live.close_after {
             self.finish_close(agent, confirmed);

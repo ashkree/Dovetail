@@ -10,6 +10,7 @@ pub mod editor;
 pub mod error;
 mod inbox;
 pub mod memory;
+mod oom;
 pub mod paths;
 pub mod profile;
 pub mod projects;

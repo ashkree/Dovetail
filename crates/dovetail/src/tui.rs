@@ -50,6 +50,7 @@ pub fn run_real() -> Result<()> {
         tasks_dir: None,
         editor: None,
         memory_caps: true,
+        scopes: None,
     };
     let (link, core) =
         dovetail_core::spawn(resolution, paths, config, options).context("starting the core")?;

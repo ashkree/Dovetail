@@ -71,6 +71,9 @@ pub struct CoreOptions {
     /// Probe `systemd-run --user --scope` at start and run sessions under memory caps (M13).
     /// Tests leave it off: sessions run uncapped and no warning is raised.
     pub memory_caps: bool,
+    /// Tests: take these scopes instead of probing (a temp dir stands in for the cgroup slice;
+    /// nothing is launched under `systemd-run` by the fake driver).
+    pub scopes: Option<crate::memory::Scopes>,
 }
 
 /// Starts the core on its own thread for the folder `resolution` names, and returns the UI's end
@@ -235,6 +238,11 @@ pub(crate) enum Input {
     CopyFailed(crate::clipboard::CopyError),
     /// The editor run in the UI's terminal exited; the message says why it failed, if it did.
     EditorExited(Option<String>),
+    /// A capped session's `memory.events` changed: its scope's `oom_kill` count (M13b).
+    OomKills {
+        cgroup: PathBuf,
+        count: u64,
+    },
 }
 
 /// Hands socket requests to the loop.
@@ -338,6 +346,8 @@ pub(crate) struct Core {
     pub(crate) scopes: crate::memory::Scopes,
     /// When running sessions' memory is next read.
     next_sample: tokio::time::Instant,
+    /// OOM kills: the `memory.events` watcher and automatic restarts (M13b, `oom`).
+    pub(crate) oom: crate::oom::Oom,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -419,6 +429,7 @@ impl Core {
             worktrees: BTreeMap::new(),
             scopes: crate::memory::Scopes::Off,
             next_sample: tokio::time::Instant::now(),
+            oom: Default::default(),
         }
     }
 
@@ -437,7 +448,9 @@ impl Core {
         // After the first snapshot, so a slow user systemd never holds up the UI; before
         // anything can start a session (restore, the queue, commands), so every session gets
         // the probe's answer.
-        if self.options.memory_caps {
+        if let Some(scopes) = self.options.scopes.clone() {
+            self.scopes = scopes;
+        } else if self.options.memory_caps {
             self.scopes = crate::memory::probe().await;
             if let crate::memory::Scopes::Unavailable(reason) = &self.scopes {
                 let warning = Warning {
@@ -457,12 +470,9 @@ impl Core {
             let flush_at = self.flush_at;
             let quit_at = self.quitting;
             let todos_at = self.todos.flush_at;
-            // No idle ticks: memory is read only while a capped session runs.
-            let sample_at = self
-                .live
-                .values()
-                .any(|l| l.cgroup.is_some())
-                .then_some(self.next_sample);
+            // No idle ticks: memory is read only while a session it can be read for runs.
+            let sample_at = self.sampled().then_some(self.next_sample);
+            let oom_at = self.oom.check_at;
             let input = tokio::select! {
                 input = inputs.recv() => input,
                 _ = sleep_until(flush_at), if flush_at.is_some() => {
@@ -475,6 +485,11 @@ impl Core {
                 }
                 _ = sleep_until(sample_at), if sample_at.is_some() => {
                     self.sample_memory();
+                    continue;
+                }
+                _ = sleep_until(oom_at), if oom_at.is_some() => {
+                    self.check_oom();
+                    self.refresh_totals();
                     continue;
                 }
                 _ = sleep_until(quit_at), if quit_at.is_some() => {
@@ -532,6 +547,7 @@ impl Core {
                     self.editor_open = false;
                     self.emit(Event::TerminalReturned { error });
                 }
+                Input::OomKills { cgroup, count } => self.on_oom_kills(cgroup, count),
             }
             if self.quitting.is_none() {
                 self.start_queued().await;
@@ -752,23 +768,50 @@ impl Core {
         }
     }
 
-    /// Reads each capped session's memory from its scope and tells the UI about figures that
-    /// changed as shown (see [`crate::memory::shown_mb`]).
+    /// Memory is read from `/proc` (decision #47): the probe found caps unavailable, so
+    /// sessions have no scope to read.
+    fn proc_fallback(&self) -> bool {
+        matches!(self.scopes, crate::memory::Scopes::Unavailable(_))
+    }
+
+    /// Whether a running session's memory can be read: from its scope, or from `/proc`.
+    fn sampled(&self) -> bool {
+        let fallback = self.proc_fallback();
+        self.live
+            .values()
+            .any(|l| l.cgroup.is_some() || (fallback && l.pid.is_some()))
+    }
+
+    /// Reads each session's memory, from its scope or (uncapped) from `/proc`, and tells the UI
+    /// about figures that changed as shown (see [`crate::memory::shown_mb`]). Capped scopes'
+    /// OOM counts are read too, in case the watcher missed a change.
     fn sample_memory(&mut self) {
-        self.next_sample = tokio::time::Instant::now() + crate::memory::SAMPLE_INTERVAL;
-        let readings: Vec<(AgentId, Option<u32>)> = self
-            .live
-            .iter()
-            .filter_map(|(id, live)| {
-                let cgroup = live.cgroup.as_deref()?;
-                Some((
-                    id.clone(),
-                    crate::memory::read_current(cgroup).map(crate::memory::shown_mb),
-                ))
-            })
-            .collect();
-        for (id, mb) in readings {
-            self.set_memory(&id, mb);
+        use crate::memory;
+        self.next_sample = tokio::time::Instant::now() + memory::SAMPLE_INTERVAL;
+        let fallback = self.proc_fallback();
+        let parents = if fallback && self.live.values().any(|l| l.pid.is_some()) {
+            memory::read_parents()
+        } else {
+            Vec::new()
+        };
+        let mut readings = Vec::new();
+        let mut ooms = Vec::new();
+        for (id, live) in &self.live {
+            if let Some(cgroup) = live.cgroup.as_deref() {
+                readings.push((id.clone(), memory::read_current(cgroup)));
+                if let Some(count) = memory::read_oom_kills(cgroup) {
+                    ooms.push((id.clone(), count));
+                }
+            } else if let Some(pid) = live.pid.filter(|_| fallback) {
+                readings.push((id.clone(), memory::read_tree_rss(pid, &parents)));
+            }
+        }
+        for (id, bytes) in readings {
+            self.set_memory(&id, bytes.map(memory::shown_mb));
+            self.watch_oom(&id);
+        }
+        for (id, count) in ooms {
+            self.oom_count(&id, count);
         }
         self.refresh_totals();
     }
