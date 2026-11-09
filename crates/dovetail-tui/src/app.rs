@@ -29,7 +29,6 @@ use jiff::tz::TimeZone;
 
 use crate::action::Action;
 use crate::buffers::{Buffers, Effect, InputTarget, ViewCx};
-use crate::clipboard::{self, Clip, ClipError};
 use crate::command;
 use crate::input::{InputOutcome, TextInput};
 use crate::keymap::{Key, Keymap, Resolved, Resolver, Scope};
@@ -45,8 +44,14 @@ pub const EXIT_CONFIRM_MS: u64 = 2000;
 const HINTS: &str = "i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command";
 const HINTS_SHORT: &str = "i chat · ␣ss switch · : command";
 
-/// Reads the system clipboard; swapped out in tests.
-pub type ClipboardReader = Box<dyn FnMut() -> Result<Clip, ClipError>>;
+/// A signal the event loop caught.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signal {
+    /// SIGINT (`kill -INT`; in raw mode Ctrl-C arrives as a key instead).
+    Interrupt,
+    /// SIGTERM or SIGHUP: nobody is there to answer a question.
+    Terminate,
+}
 
 /// An open prompt row.
 struct Input {
@@ -97,10 +102,10 @@ pub struct App {
     quit: bool,
     /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
     exit_armed_until: Option<u64>,
-    /// Where pasted images are saved (`attachments/` under Dovetail's data dir); `None` turns
-    /// image paste off.
-    attachments_dir: Option<std::path::PathBuf>,
-    clipboard: ClipboardReader,
+    /// The key being handled is a second Ctrl-C inside the hint's window.
+    exit_armed: bool,
+    /// The loop clock at the key being handled, for actions that arm a timeout.
+    mono_ms: u64,
     dirty: bool,
 }
 
@@ -128,20 +133,10 @@ impl App {
             reading: None,
             quit: false,
             exit_armed_until: None,
-            attachments_dir: None,
-            clipboard: Box::new(clipboard::read),
+            exit_armed: false,
+            mono_ms: 0,
             dirty: true,
         }
-    }
-
-    /// Sets the folder pasted images are saved in. Without one, Ctrl-V pastes text only.
-    pub fn set_attachments_dir(&mut self, dir: std::path::PathBuf) {
-        self.attachments_dir = Some(dir);
-    }
-
-    /// Replaces the clipboard reader (tests).
-    pub fn set_clipboard(&mut self, reader: ClipboardReader) {
-        self.clipboard = reader;
     }
 
     /// The UI's copy of the core's state.
@@ -224,10 +219,20 @@ impl App {
         }
     }
 
-    /// SIGINT or SIGTERM arrived as a signal: leave through the same path as a confirmed quit.
-    pub fn on_signal(&mut self) {
-        self.quit = true;
+    /// A signal arrived. SIGINT takes the same path as `:q` ([`Action::Quit`]): it asks first
+    /// when a turn is running, and a second SIGINT while that question is open answers yes.
+    /// SIGTERM and SIGHUP come from something that cannot answer (a closed terminal, the end of
+    /// the login session), so they quit as a confirmed quit does ([`Action::ForceQuit`]).
+    pub fn on_signal(&mut self, signal: Signal) {
         self.dirty = true;
+        match signal {
+            Signal::Interrupt if self.confirm.is_some() => {
+                self.confirm = None;
+                self.run(Action::ForceQuit);
+            }
+            Signal::Interrupt => self.run(Action::Quit),
+            Signal::Terminate => self.run(Action::ForceQuit),
+        }
     }
 
     /// The terminal was resized.
@@ -259,6 +264,14 @@ impl App {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
                 };
+                if let Event::ClipboardPasted { agent, paste } = &event
+                    && let Some(notice) = self
+                        .buffers
+                        .conversation
+                        .receive_paste(agent, paste.clone())
+                {
+                    self.note = Some(notice);
+                }
                 let created = match &event {
                     Event::TaskUpserted(task)
                         if self.open_after_create.as_deref() == Some(task.title.as_str())
@@ -349,18 +362,8 @@ impl App {
     pub fn on_key(&mut self, event: KeyEvent, mono_ms: u64) {
         self.dirty = true;
         self.note = None;
-        let armed = self.exit_armed_until.take().is_some_and(|d| d > mono_ms);
-        let mode_key = Key::from_event(event);
-        if self.keymap.global_chord(self.mode, mode_key) == Some(Action::QuitOnRepeat) {
-            self.resolver.reset();
-            if armed {
-                self.quit = true;
-            } else {
-                self.exit_armed_until = Some(mono_ms + EXIT_CONFIRM_MS);
-                self.note = Some("Press Ctrl-C again to exit".into());
-            }
-            return;
-        }
+        self.mono_ms = mono_ms;
+        self.exit_armed = self.exit_armed_until.take().is_some_and(|d| d > mono_ms);
         if let Some(confirm) = self.confirm.take() {
             if matches!(event.code, crossterm::event::KeyCode::Char('y' | 'Y')) {
                 match confirm.then {
@@ -368,6 +371,14 @@ impl App {
                     Then::Commands(commands) => self.outbox.extend(commands),
                 }
             }
+            return;
+        }
+        // Ctrl-C works in every mode and over pickers, mid-sequence too, so it is looked up
+        // before them; it runs through `run` like any other action.
+        if self.keymap.global_chord(self.mode, Key::from_event(event)) == Some(Action::QuitOnRepeat)
+        {
+            self.resolver.reset();
+            self.run(Action::QuitOnRepeat);
             return;
         }
         if self.overlay.is_some() {
@@ -400,14 +411,22 @@ impl App {
                 self.mode = Mode::Normal;
                 return;
             }
-            let chord = self.keymap.chord(
+            let chord = self.keymap.text_chord(
                 Mode::Insert,
-                Scope::Buffer(BufferKind::Conversation),
+                BufferKind::Conversation,
                 Key::from_event(event),
             );
-            if chord == Some(Action::PasteClipboard) {
-                self.paste_clipboard();
-                return;
+            match chord {
+                Some(Action::PasteClipboard) => {
+                    self.paste_clipboard();
+                    return;
+                }
+                Some(Action::DropLastAttachment)
+                    if self.buffers.conversation.drop_last_attachment() =>
+                {
+                    return;
+                }
+                _ => {}
             }
             if let Some((agent, text, attachments)) = self.buffers.conversation.chat_key(event) {
                 self.outbox.push(Command::Prompt {
@@ -439,36 +458,14 @@ impl App {
         }
     }
 
-    /// Ctrl-V in the chat bar: attach the clipboard's image, or paste its text.
+    /// Ctrl-V in the chat bar: ask the core to read the clipboard. It answers with
+    /// [`Event::ClipboardPasted`]: an image saved as an attachment, text, or a refusal.
     fn paste_clipboard(&mut self) {
         if !self.buffers.conversation.is_chatting() {
             return;
         }
-        let full = self.buffers.conversation.attachment_count() >= dovetail_api::MAX_ATTACHMENTS;
-        match (self.clipboard)() {
-            Ok(Clip::Text(text)) => self.buffers.conversation.paste_text(&text),
-            Ok(Clip::Image { .. }) if full => {
-                self.note = Some(format!(
-                    "at most {} images per message",
-                    dovetail_api::MAX_ATTACHMENTS
-                ));
-            }
-            Ok(Clip::Image { media_type, bytes }) => {
-                let Some(dir) = self.attachments_dir.clone() else {
-                    self.note = Some("image paste is off: no attachments folder".into());
-                    return;
-                };
-                match clipboard::save(&dir, media_type, &bytes) {
-                    Ok(attachment) => {
-                        self.buffers.conversation.attach(attachment);
-                    }
-                    Err(e) => {
-                        tracing::warn!("saving a pasted image failed: {e}");
-                        self.note = Some(format!("could not save the image: {e}"));
-                    }
-                }
-            }
-            Err(e) => self.note = Some(e.to_string()),
+        if let Some(agent) = self.buffers.conversation.agent().cloned() {
+            self.outbox.push(Command::PasteClipboard { agent });
         }
     }
 
@@ -613,9 +610,15 @@ impl App {
                 }
             }
             Action::ForceQuit => self.quit = true,
-            // Handled in `on_key` (it needs the loop clock); reached here only from a table row
-            // in another scope, where a press just arms the hint.
-            Action::QuitOnRepeat => {}
+            Action::QuitOnRepeat => {
+                if std::mem::take(&mut self.exit_armed) {
+                    // The second press quits the way `:q` does, asking first if a turn runs.
+                    self.run(Action::Quit);
+                } else {
+                    self.exit_armed_until = Some(self.mono_ms + EXIT_CONFIRM_MS);
+                    self.note = Some("Press Ctrl-C again to exit".into());
+                }
+            }
             #[cfg(debug_assertions)]
             Action::DebugPanic => panic!("deliberate panic from :panic"),
             _ => {

@@ -28,7 +28,6 @@ pub fn run_mock(seed: u64, speed: f64) -> Result<()> {
     let clock: Clock =
         Box::new(move || start_ms + (began.elapsed().as_secs_f64() * 1_000.0 * speed) as i64);
     let mut app = App::new(TimeZone::system());
-    app.set_attachments_dir(Paths::from_env().attachments());
     dovetail_tui::run(&mut app, link, clock).context("terminal UI failed")
 }
 
@@ -36,7 +35,6 @@ pub fn run_mock(seed: u64, speed: f64) -> Result<()> {
 /// (ADR 0005): a folder that is not a project yet runs from memory until `:project add`.
 pub fn run_real() -> Result<()> {
     let paths = Paths::from_env();
-    let attachments = paths.attachments();
     let config = Config::load(&paths).context("reading config.toml")?;
     let cwd = std::env::current_dir().context("finding the current directory")?;
     let registry = Db::open(&paths, None).context("opening the project registry")?;
@@ -59,7 +57,6 @@ pub fn run_real() -> Result<()> {
             .map_or(0, |d| d.as_millis() as i64)
     });
     let mut app = App::new(TimeZone::system());
-    app.set_attachments_dir(attachments);
     let result = dovetail_tui::run(&mut app, link, clock).context("terminal UI failed");
     // Sessions end with the app (B23): wait until they have exited and been reaped.
     if !core.wait(Duration::from_secs(10)) {

@@ -21,8 +21,8 @@ unicode-width.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
-# Already a workspace dev-dependency: temp folders for saved paste images in tests.
-tempfile.workspace = true
+# Same API, no new external crates: the paste round trip test drives the UI against MockCore.
+dovetail-mock.workspace = true
 
 [lints]
 workspace = true

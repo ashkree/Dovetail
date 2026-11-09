@@ -14,7 +14,7 @@ From M10 on, the rest of the build runs inside Dovetail: the installed release d
 - Plan with the coordinator. It files tasks (`create_task`) and starts slices (`start_slice`). Outside auto mode each start asks you first, in Needs you.
 - Slices push a branch and open a PR. On your yes, the coordinator merges it and pulls `main`.
 - Archive a slice with `dd` on its row, or archive its task. Dovetail asks before removing a worktree with uncommitted or unpushed work.
-- Quit with `:q`. Every session ends with the app, and nothing runs in the background.
+- Quit with `:q`, or `Ctrl-C` twice. Either asks first if a turn is running. Every session ends with the app, and nothing runs in the background.
 
 ## After a restart
 

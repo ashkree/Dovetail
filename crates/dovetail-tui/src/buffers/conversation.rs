@@ -3,9 +3,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use dovetail_api::{
-    AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS,
+    AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS, Paste,
 };
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
@@ -141,19 +141,40 @@ impl ConversationBuffer {
         self.images.len()
     }
 
-    /// Attaches an image to the message being typed. Refused past [`MAX_ATTACHMENTS`].
-    pub fn attach(&mut self, image: Attachment) -> bool {
-        if self.chat.is_none() || self.images.len() >= MAX_ATTACHMENTS {
-            return false;
-        }
-        self.images.push(image);
-        true
-    }
-
-    /// Pastes text at the chat cursor.
-    pub fn paste_text(&mut self, text: &str) {
-        if let Some(chat) = self.chat.as_mut() {
-            chat.insert_str(text);
+    /// Puts the core's answer to a Ctrl-V into `agent`'s message: at the cursor while its chat
+    /// bar is open, else at the end of its draft (the user may have pressed Esc while the
+    /// clipboard was read). Returns a notice for the status bar, if any.
+    pub fn receive_paste(&mut self, agent: &AgentId, paste: Paste) -> Option<String> {
+        let live = self.chat.is_some() && self.agent.as_ref() == Some(agent);
+        let full = format!("at most {MAX_ATTACHMENTS} images per message");
+        match paste {
+            Paste::Refused(notice) => Some(notice),
+            Paste::Text(text) if live => {
+                if let Some(chat) = self.chat.as_mut() {
+                    chat.insert_str(&text);
+                }
+                None
+            }
+            Paste::Text(text) => {
+                self.views
+                    .entry(agent.clone())
+                    .or_default()
+                    .draft
+                    .push_str(&text);
+                None
+            }
+            Paste::Image(image) => {
+                let images = if live {
+                    &mut self.images
+                } else {
+                    &mut self.views.entry(agent.clone()).or_default().draft_images
+                };
+                if images.len() >= MAX_ATTACHMENTS {
+                    return Some(full);
+                }
+                images.push(image);
+                None
+            }
         }
     }
 
@@ -162,15 +183,18 @@ impl ConversationBuffer {
         self.chat.is_some()
     }
 
+    /// Drops the last image chip when the chat input is open and empty
+    /// ([`Action::DropLastAttachment`]). Returns whether one was dropped.
+    pub fn drop_last_attachment(&mut self) -> bool {
+        let empty = self.chat.as_ref().is_some_and(|c| c.text().is_empty());
+        empty && self.images.pop().is_some()
+    }
+
     /// Applies a key to the chat input. `Enter` returns the prompt and its images to send;
-    /// `Esc` keeps both as the agent's draft. Backspace on an empty input removes the last image.
+    /// `Esc` keeps both as the agent's draft.
     pub fn chat_key(&mut self, key: KeyEvent) -> Option<(AgentId, String, Vec<Attachment>)> {
         let chat = self.chat.as_mut()?;
         let agent = self.agent.clone()?;
-        if key.code == KeyCode::Backspace && chat.text().is_empty() && !self.images.is_empty() {
-            self.images.pop();
-            return None;
-        }
         match chat.handle(key) {
             InputOutcome::Submit => {
                 let text = chat.text().trim().to_string();

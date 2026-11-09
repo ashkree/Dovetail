@@ -118,10 +118,8 @@ enum GoneCheck {
     NoParent,
     #[error("{0}: {1}")]
     Unreadable(std::path::PathBuf, #[source] std::io::Error),
-    #[error("running git: {0}")]
-    Git(#[source] std::io::Error),
-    #[error("git worktree list failed: {0}")]
-    GitFailed(String),
+    #[error(transparent)]
+    Git(#[from] crate::worktree::WorktreeError),
 }
 
 /// Whether a slice's worktree is really gone: its parent directory reads fine, it is not
@@ -132,23 +130,8 @@ fn worktree_gone(repo: &std::path::Path, path: &std::path::Path) -> Result<bool,
     if path.exists() {
         return Ok(false);
     }
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(["worktree", "list", "--porcelain"])
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(GoneCheck::Git)?;
-    if !out.status.success() {
-        return Err(GoneCheck::GitFailed(
-            String::from_utf8_lossy(&out.stderr).trim().to_owned(),
-        ));
-    }
-    let listed = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| l.strip_prefix("worktree "))
-        .any(|p| std::path::Path::new(p) == path);
-    Ok(!listed)
+    let listed = crate::worktree::listed_worktrees(repo)?;
+    Ok(!listed.iter().any(|p| p == path))
 }
 
 /// Longest command shown in an Activity note.

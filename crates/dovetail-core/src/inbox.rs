@@ -338,13 +338,8 @@ impl Core {
         };
         let agent = entry.item.agent;
         match entry.waiter {
-            Waiter::Question { question } => {
-                let message = format!("The user answered your question \"{question}\":\n\n{text}");
-                if let Err(e) = self.send_text_as_user(&agent, &message, text) {
-                    self.fail(e);
-                }
-            }
-            Waiter::RestoredQuestion { question } => {
+            // Live and restored questions get the same text (M10 decision).
+            Waiter::Question { question } | Waiter::RestoredQuestion { question } => {
                 let message = format!("Answer to your question '{question}': {text}");
                 if let Err(e) = self.send_text_as_user(&agent, &message, text) {
                     self.fail(e);
@@ -387,6 +382,10 @@ impl Core {
     /// The user wrote to `agent` in the chat: its open questions count as answered by that
     /// message, which goes to the session as it is (ADR 0007).
     pub(crate) fn chat_answers_questions(&mut self, agent: &AgentId, text: &str) {
+        // An image-only message says nothing to answer with: the questions stay open.
+        if text.trim().is_empty() {
+            return;
+        }
         let open: Vec<InboxId> = self
             .inbox
             .values()
