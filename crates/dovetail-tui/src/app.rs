@@ -29,7 +29,6 @@ use jiff::tz::TimeZone;
 
 use crate::action::Action;
 use crate::buffers::{Buffers, Effect, InputTarget, ViewCx};
-use crate::clipboard::{self, Clip, ClipError};
 use crate::command;
 use crate::input::{InputOutcome, TextInput};
 use crate::keymap::{Key, Keymap, Resolved, Resolver, Scope};
@@ -44,9 +43,6 @@ pub const EXIT_CONFIRM_MS: u64 = 2000;
 /// Hints on the right of the status bar.
 const HINTS: &str = "i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command";
 const HINTS_SHORT: &str = "i chat · ␣ss switch · : command";
-
-/// Reads the system clipboard; swapped out in tests.
-pub type ClipboardReader = Box<dyn FnMut() -> Result<Clip, ClipError>>;
 
 /// A signal the event loop caught.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,10 +106,6 @@ pub struct App {
     exit_armed: bool,
     /// The loop clock at the key being handled, for actions that arm a timeout.
     mono_ms: u64,
-    /// Where pasted images are saved (`attachments/` under Dovetail's data dir); `None` turns
-    /// image paste off.
-    attachments_dir: Option<std::path::PathBuf>,
-    clipboard: ClipboardReader,
     dirty: bool,
 }
 
@@ -143,20 +135,8 @@ impl App {
             exit_armed_until: None,
             exit_armed: false,
             mono_ms: 0,
-            attachments_dir: None,
-            clipboard: Box::new(clipboard::read),
             dirty: true,
         }
-    }
-
-    /// Sets the folder pasted images are saved in. Without one, Ctrl-V pastes text only.
-    pub fn set_attachments_dir(&mut self, dir: std::path::PathBuf) {
-        self.attachments_dir = Some(dir);
-    }
-
-    /// Replaces the clipboard reader (tests).
-    pub fn set_clipboard(&mut self, reader: ClipboardReader) {
-        self.clipboard = reader;
     }
 
     /// The UI's copy of the core's state.
@@ -284,6 +264,14 @@ impl App {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
                 };
+                if let Event::ClipboardPasted { agent, paste } = &event
+                    && let Some(notice) = self
+                        .buffers
+                        .conversation
+                        .receive_paste(agent, paste.clone())
+                {
+                    self.note = Some(notice);
+                }
                 let created = match &event {
                     Event::TaskUpserted(task)
                         if self.open_after_create.as_deref() == Some(task.title.as_str())
@@ -462,36 +450,14 @@ impl App {
         }
     }
 
-    /// Ctrl-V in the chat bar: attach the clipboard's image, or paste its text.
+    /// Ctrl-V in the chat bar: ask the core to read the clipboard. It answers with
+    /// [`Event::ClipboardPasted`]: an image saved as an attachment, text, or a refusal.
     fn paste_clipboard(&mut self) {
         if !self.buffers.conversation.is_chatting() {
             return;
         }
-        let full = self.buffers.conversation.attachment_count() >= dovetail_api::MAX_ATTACHMENTS;
-        match (self.clipboard)() {
-            Ok(Clip::Text(text)) => self.buffers.conversation.paste_text(&text),
-            Ok(Clip::Image { .. }) if full => {
-                self.note = Some(format!(
-                    "at most {} images per message",
-                    dovetail_api::MAX_ATTACHMENTS
-                ));
-            }
-            Ok(Clip::Image { media_type, bytes }) => {
-                let Some(dir) = self.attachments_dir.clone() else {
-                    self.note = Some("image paste is off: no attachments folder".into());
-                    return;
-                };
-                match clipboard::save(&dir, media_type, &bytes) {
-                    Ok(attachment) => {
-                        self.buffers.conversation.attach(attachment);
-                    }
-                    Err(e) => {
-                        tracing::warn!("saving a pasted image failed: {e}");
-                        self.note = Some(format!("could not save the image: {e}"));
-                    }
-                }
-            }
-            Err(e) => self.note = Some(e.to_string()),
+        if let Some(agent) = self.buffers.conversation.agent().cloned() {
+            self.outbox.push(Command::PasteClipboard { agent });
         }
     }
 

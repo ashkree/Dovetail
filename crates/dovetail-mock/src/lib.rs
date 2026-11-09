@@ -73,6 +73,8 @@ pub struct MockCore {
     next_subagent: u64,
     next_task: i64,
     reply_count: u64,
+    /// What [`Command::PasteClipboard`] answers, in turn; see [`MockCore::queue_clipboard`].
+    clipboard: VecDeque<Paste>,
     quit: bool,
 }
 
@@ -93,6 +95,7 @@ impl MockCore {
             next_entry: 100,
             next_subagent: 1,
             reply_count: 0,
+            clipboard: VecDeque::new(),
             quit: false,
         };
         core.after(3_000, |core| core.finish_setup(&agent_id("picker")));
@@ -112,6 +115,12 @@ impl MockCore {
     /// The core's own copy of the state.
     pub fn state(&self) -> &Snapshot {
         &self.state
+    }
+
+    /// Queues what the next [`Command::PasteClipboard`] answers. The mock reads no real
+    /// clipboard: with nothing queued it refuses, as the core does with no clipboard tool.
+    pub fn queue_clipboard(&mut self, paste: Paste) {
+        self.clipboard.push_back(paste);
     }
 
     /// Whether a [`Command::Quit`] has been handled.
@@ -190,6 +199,13 @@ impl MockCore {
                 }
                 self.update_agent(&agent, |a| a.status = AgentStatus::Working);
                 self.schedule_reply(agent, true);
+            }
+            Command::PasteClipboard { agent } => {
+                let paste = self
+                    .clipboard
+                    .pop_front()
+                    .unwrap_or_else(|| Paste::Refused("the mock core has no clipboard".into()));
+                self.emit(Event::ClipboardPasted { agent, paste });
             }
             Command::Interrupt { agent } => {
                 if !self.replying.remove(&agent) {

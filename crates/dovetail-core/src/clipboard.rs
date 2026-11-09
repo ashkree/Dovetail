@@ -1,9 +1,12 @@
-//! The system clipboard, for Ctrl-V in a chat bar. Terminals cannot carry an image through a
-//! paste, so Dovetail asks the clipboard itself: `wl-paste` on Wayland, `xclip` on X11. Both run
-//! as short-lived child processes that are always reaped; no clipboard crate is used.
+//! The system clipboard, for Ctrl-V in a chat bar ([`dovetail_api::Command::PasteClipboard`]).
+//! Terminals cannot carry an image through a paste, so the core asks the clipboard itself:
+//! `wl-paste` on Wayland, `xclip` on X11. Both run as short-lived child processes that are always
+//! reaped; no clipboard crate is used. The service calls [`paste`] on a blocking thread, off its
+//! main loop.
 //!
-//! An image (PNG, JPEG, GIF or WebP up to 5 MB) becomes an attachment; anything else that is
-//! text is pasted at the cursor. Nothing is resized or converted.
+//! An image (PNG, JPEG, GIF or WebP up to 5 MB) is saved under `attachments/` and becomes an
+//! attachment; anything else that is text is pasted at the cursor. Nothing is resized or
+//! converted.
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -11,7 +14,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use dovetail_api::{Attachment, ImageType, MAX_ATTACHMENT_BYTES};
+use dovetail_api::{Attachment, ImageType, MAX_ATTACHMENT_BYTES, Paste};
 
 /// How long one clipboard tool may take before it is killed.
 const TIMEOUT: Duration = Duration::from_secs(3);
@@ -21,7 +24,7 @@ const TIMEOUT: Duration = Duration::from_secs(3);
 pub enum Clip {
     /// An accepted image.
     Image {
-        /// Its format, from its first bytes (or the offered type when they say nothing).
+        /// Its format, from its first bytes.
         media_type: ImageType,
         /// The file bytes.
         bytes: Vec<u8>,
@@ -31,43 +34,50 @@ pub enum Clip {
 }
 
 /// Why nothing could be pasted. `Display` is the short notice shown in the status bar.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ClipError {
     /// Neither `wl-paste` nor `xclip` is installed.
+    #[error("can't read the clipboard: install wl-clipboard or xclip")]
     NoTool,
     /// The clipboard holds nothing.
+    #[error("the clipboard is empty")]
     Empty,
     /// The clipboard holds an image in a format Claude does not take.
+    #[error("can't attach {0}: only PNG, JPEG, GIF or WebP")]
     Unsupported(String),
     /// The image is over 5 MB.
+    #[error("image is {}: the limit is 5 MB", megabytes(*.0))]
     TooLarge(u64),
     /// The tool failed or timed out.
+    #[error("clipboard read failed: {0}")]
     Failed(String),
 }
 
-impl std::fmt::Display for ClipError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClipError::NoTool => {
-                f.write_str("can't read the clipboard: install wl-clipboard or xclip")
-            }
-            ClipError::Empty => f.write_str("the clipboard is empty"),
-            ClipError::Unsupported(mime) => {
-                write!(f, "can't attach {mime}: only PNG, JPEG, GIF or WebP")
-            }
-            ClipError::TooLarge(size) => {
-                write!(
-                    f,
-                    "image is {}: the limit is 5 MB",
-                    crate::fmt::bytes(*size)
-                )
-            }
-            ClipError::Failed(why) => write!(f, "clipboard read failed: {why}"),
-        }
-    }
+/// A size over the limit, as the chat bar shows sizes: `5.2 MB`.
+fn megabytes(size: u64) -> String {
+    format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
 }
 
-impl std::error::Error for ClipError {}
+/// Reads the clipboard and, for an image, saves it under `dir`. Blocks for up to a few seconds;
+/// call it off the core's loop.
+pub fn paste(dir: &Path) -> Paste {
+    paste_from(read(), dir)
+}
+
+/// Turns a clipboard read into the answer for the UI, saving an image under `dir`.
+pub fn paste_from(clip: Result<Clip, ClipError>, dir: &Path) -> Paste {
+    match clip {
+        Ok(Clip::Text(text)) => Paste::Text(text),
+        Ok(Clip::Image { media_type, bytes }) => match save(dir, media_type, &bytes) {
+            Ok(attachment) => Paste::Image(attachment),
+            Err(e) => {
+                tracing::warn!("saving a pasted image failed: {e}");
+                Paste::Refused(format!("could not save the image: {e}"))
+            }
+        },
+        Err(e) => Paste::Refused(e.to_string()),
+    }
+}
 
 /// What to fetch, given the MIME types the clipboard offers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,7 +199,7 @@ pub fn read() -> Result<Clip, ClipError> {
         let listed = match run(tool.program(), &tool.list_args()) {
             Ok(out) => out,
             Err(RunError::NotFound) => continue,
-            Err(e) => return Err(e.into_clip()),
+            Err(e) => return Err(e.into()),
         };
         // An empty or failed listing means nothing is copied (wl-paste exits 1 then).
         let Some(listed) = listed else {
@@ -198,16 +208,13 @@ pub fn read() -> Result<Clip, ClipError> {
         let listing = String::from_utf8_lossy(&listed);
         return match choose(listing.lines()) {
             Offer::Image(kind, mime) => {
-                let bytes = run(tool.program(), &tool.fetch_args(&mime))
-                    .map_err(RunError::into_clip)?
-                    .ok_or(ClipError::Empty)?;
+                let bytes =
+                    run(tool.program(), &tool.fetch_args(&mime))?.ok_or(ClipError::Empty)?;
                 check_image(kind, bytes)
             }
             Offer::OtherImage(mime) => Err(ClipError::Unsupported(mime)),
             Offer::Text => {
-                let bytes = run(tool.program(), &tool.text_args())
-                    .map_err(RunError::into_clip)?
-                    .ok_or(ClipError::Empty)?;
+                let bytes = run(tool.program(), &tool.text_args())?.ok_or(ClipError::Empty)?;
                 let text = String::from_utf8_lossy(&bytes).replace("\r\n", "\n");
                 if text.is_empty() {
                     Err(ClipError::Empty)
@@ -220,16 +227,20 @@ pub fn read() -> Result<Clip, ClipError> {
     Err(ClipError::NoTool)
 }
 
-#[derive(Debug)]
+/// Why running one clipboard tool failed.
+#[derive(Debug, thiserror::Error)]
 enum RunError {
+    #[error("not installed")]
     NotFound,
+    #[error("output over the limit ({0} bytes)")]
     TooLarge(u64),
+    #[error("{0}")]
     Failed(String),
 }
 
-impl RunError {
-    fn into_clip(self) -> ClipError {
-        match self {
+impl From<RunError> for ClipError {
+    fn from(e: RunError) -> Self {
+        match e {
             RunError::NotFound => ClipError::NoTool,
             RunError::TooLarge(size) => ClipError::TooLarge(size),
             RunError::Failed(why) => ClipError::Failed(why),
@@ -357,6 +368,10 @@ mod tests {
             ClipError::Unsupported("image/bmp".into()).to_string(),
             "can't attach image/bmp: only PNG, JPEG, GIF or WebP"
         );
+        assert_eq!(
+            ClipError::NoTool.to_string(),
+            "can't read the clipboard: install wl-clipboard or xclip"
+        );
     }
 
     #[test]
@@ -398,17 +413,13 @@ mod tests {
     }
 
     /// Manual check against the real clipboard tool: copy an image or some text, then run
-    /// `cargo test -p dovetail-tui real_clipboard -- --ignored --nocapture`.
+    /// `cargo test -p dovetail-core real_clipboard -- --ignored --nocapture`.
     #[test]
     #[ignore = "reads the system clipboard"]
     fn real_clipboard() {
         match read() {
             Ok(Clip::Image { media_type, bytes }) => {
-                println!(
-                    "image {} · {}",
-                    media_type.mime(),
-                    crate::fmt::bytes(bytes.len() as u64)
-                );
+                println!("image {} · {} bytes", media_type.mime(), bytes.len());
             }
             Ok(Clip::Text(text)) => println!("text, {} chars", text.chars().count()),
             Err(e) => println!("refused: {e}"),
@@ -417,11 +428,33 @@ mod tests {
 
     #[test]
     fn a_saved_image_lands_in_the_folder_with_its_extension() {
-        let dir = std::env::temp_dir().join(format!("dovetail-clip-test-{}", std::process::id()));
-        let saved = save(&dir, ImageType::Png, PNG).expect("save");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let saved = save(dir.path(), ImageType::Png, PNG).expect("save");
         assert_eq!(saved.size, PNG.len() as u64);
         assert_eq!(saved.path.extension().and_then(|e| e.to_str()), Some("png"));
         assert_eq!(std::fs::read(&saved.path).expect("read back"), PNG);
-        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_paste_saves_images_and_passes_text_and_refusals_through() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let attachments = dir.path().join("attachments");
+        let image = Ok(Clip::Image {
+            media_type: ImageType::Png,
+            bytes: PNG.to_vec(),
+        });
+        let Paste::Image(saved) = paste_from(image, &attachments) else {
+            panic!("an image");
+        };
+        assert!(saved.path.starts_with(&attachments));
+        assert_eq!(std::fs::read(&saved.path).expect("saved"), PNG);
+        assert_eq!(
+            paste_from(Ok(Clip::Text("hi".into())), &attachments),
+            Paste::Text("hi".into())
+        );
+        assert_eq!(
+            paste_from(Err(ClipError::Empty), &attachments),
+            Paste::Refused("the clipboard is empty".into())
+        );
     }
 }

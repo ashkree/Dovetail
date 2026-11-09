@@ -102,6 +102,27 @@ pub enum Event {
         /// What went wrong.
         message: String,
     },
+    /// The clipboard was read, in answer to [`Command::PasteClipboard`]. Changes nothing in the
+    /// snapshot; the UI puts the result in that agent's chat bar if it is still open.
+    ClipboardPasted {
+        /// The agent whose chat bar asked.
+        agent: AgentId,
+        /// What the clipboard gave.
+        paste: Paste,
+    },
+}
+
+/// What the core found on the system clipboard.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Paste {
+    /// An accepted image (PNG, JPEG, GIF or WebP, at most [`crate::MAX_ATTACHMENT_BYTES`]),
+    /// already saved under Dovetail's `attachments/` folder: the UI adds it as a chip.
+    Image(Attachment),
+    /// Text, to insert at the cursor.
+    Text(String),
+    /// Nothing could be pasted; a short notice for the status bar saying why.
+    Refused(String),
 }
 
 /// Something the UI asks the core to do.
@@ -114,9 +135,16 @@ pub enum Command {
         agent: AgentId,
         /// Prompt text; may be empty when images are attached.
         text: String,
-        /// Images to send with it, saved by the UI; the core reads the files.
+        /// Images to send with it, saved by the core on [`Command::PasteClipboard`]; the core
+        /// reads the files.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         attachments: Vec<Attachment>,
+    },
+    /// Read the system clipboard for an agent's chat bar (Ctrl-V). The core answers with
+    /// [`Event::ClipboardPasted`]: an image saved as an attachment, text, or a refusal.
+    PasteClipboard {
+        /// The agent whose chat bar is pasting.
+        agent: AgentId,
     },
     /// Stop an agent's current turn.
     Interrupt {

@@ -462,6 +462,7 @@ version = "0.0.0"
 dependencies = [
  "crossterm",
  "dovetail-api",
+ "dovetail-mock",
  "insta",
  "jiff",
  "nucleo",
@@ -469,7 +470,6 @@ dependencies = [
  "ratatui",
  "serde_json",
  "signal-hook",
- "tempfile",
  "tracing",
  "unicode-width",
 ]

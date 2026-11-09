@@ -212,6 +212,11 @@ pub(crate) enum Input {
     TodosChanged {
         list: dovetail_api::TodoListId,
     },
+    /// A clipboard read for an agent's chat bar finished.
+    Pasted {
+        agent: AgentId,
+        paste: dovetail_api::Paste,
+    },
 }
 
 /// Hands socket requests to the loop.
@@ -435,6 +440,9 @@ impl Core {
                 Input::OrphanInspected { found, result } => self.on_orphan(found, result),
                 Input::OrphanRemoved { name, result } => self.on_orphan_removed(name, result),
                 Input::TodosChanged { list } => self.mark_todos(list),
+                Input::Pasted { agent, paste } => {
+                    self.emit(Event::ClipboardPasted { agent, paste });
+                }
             }
             if self.quitting.is_none() {
                 self.start_queued().await;
@@ -906,6 +914,7 @@ impl Core {
                 text,
                 attachments,
             } => self.prompt(&agent, text, attachments).await,
+            Command::PasteClipboard { agent } => self.paste_clipboard(agent),
             Command::Interrupt { agent } => self.interrupt(&agent),
             Command::AnswerPermission { item, answer } => {
                 self.answer_permission(item, answer).await
@@ -985,6 +994,17 @@ impl Core {
             // Quit is handled by the loop.
             Command::Quit { .. } => {}
         }
+    }
+
+    /// Reads the clipboard on a blocking thread (the tools may take seconds) and answers with
+    /// [`Event::ClipboardPasted`] when done. Images are saved under `attachments/`.
+    fn paste_clipboard(&mut self, agent: AgentId) {
+        let dir = self.paths.attachments();
+        let inputs = self.inputs.clone();
+        tokio::task::spawn_blocking(move || {
+            let paste = crate::clipboard::paste(&dir);
+            let _ = inputs.send(Input::Pasted { agent, paste });
+        });
     }
 
     /// The open slices working on task `id`.

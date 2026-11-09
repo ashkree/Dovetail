@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use dovetail_api::{
-    AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS,
+    AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS, Paste,
 };
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
@@ -141,19 +141,40 @@ impl ConversationBuffer {
         self.images.len()
     }
 
-    /// Attaches an image to the message being typed. Refused past [`MAX_ATTACHMENTS`].
-    pub fn attach(&mut self, image: Attachment) -> bool {
-        if self.chat.is_none() || self.images.len() >= MAX_ATTACHMENTS {
-            return false;
-        }
-        self.images.push(image);
-        true
-    }
-
-    /// Pastes text at the chat cursor.
-    pub fn paste_text(&mut self, text: &str) {
-        if let Some(chat) = self.chat.as_mut() {
-            chat.insert_str(text);
+    /// Puts the core's answer to a Ctrl-V into `agent`'s message: at the cursor while its chat
+    /// bar is open, else at the end of its draft (the user may have pressed Esc while the
+    /// clipboard was read). Returns a notice for the status bar, if any.
+    pub fn receive_paste(&mut self, agent: &AgentId, paste: Paste) -> Option<String> {
+        let live = self.chat.is_some() && self.agent.as_ref() == Some(agent);
+        let full = format!("at most {MAX_ATTACHMENTS} images per message");
+        match paste {
+            Paste::Refused(notice) => Some(notice),
+            Paste::Text(text) if live => {
+                if let Some(chat) = self.chat.as_mut() {
+                    chat.insert_str(&text);
+                }
+                None
+            }
+            Paste::Text(text) => {
+                self.views
+                    .entry(agent.clone())
+                    .or_default()
+                    .draft
+                    .push_str(&text);
+                None
+            }
+            Paste::Image(image) => {
+                let images = if live {
+                    &mut self.images
+                } else {
+                    &mut self.views.entry(agent.clone()).or_default().draft_images
+                };
+                if images.len() >= MAX_ATTACHMENTS {
+                    return Some(full);
+                }
+                images.push(image);
+                None
+            }
         }
     }
 
