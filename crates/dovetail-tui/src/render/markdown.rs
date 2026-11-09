@@ -1,7 +1,7 @@
 //! Markdown to styled lines, tuned for reading (Decision 16): a blank row between paragraphs,
 //! list items, headings and code blocks; bold, italic and code each keep their style and get
-//! their own colour; off-white body text. Code blocks and tables are not wrapped, so they may
-//! use the full pane.
+//! their own colour; off-white body text. Code blocks are not wrapped, so they may use the full
+//! pane; a table too wide for the width narrows its widest columns and wraps text inside cells.
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Modifier, Style};
@@ -13,7 +13,7 @@ use crate::theme::Theme;
 /// Narrowest width a paragraph is wrapped to, however deep it is nested.
 const MIN_TEXT_WIDTH: usize = 12;
 
-/// Renders `text` to lines at most `width` cells wide (code blocks and tables excepted).
+/// Renders `text` to lines at most `width` cells wide (code blocks excepted).
 pub fn render(text: &str, width: usize, theme: &Theme) -> Vec<Line<'static>> {
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
@@ -138,15 +138,7 @@ impl<'t> Renderer<'t> {
             return;
         }
         let spans = std::mem::take(&mut self.spans);
-        let indent: usize = self
-            .containers
-            .iter()
-            .map(|c| match c {
-                Container::Quote => 2,
-                Container::Item { marker, .. } => marker.chars().count(),
-            })
-            .sum();
-        let room = self.width.saturating_sub(indent).max(MIN_TEXT_WIDTH);
+        let room = self.width.saturating_sub(self.indent()).max(MIN_TEXT_WIDTH);
         let lines = wrap_spans(&spans, room);
         self.emit(lines);
     }
@@ -353,7 +345,7 @@ impl<'t> Renderer<'t> {
     fn render_table(&mut self, table: Table) {
         let theme = self.theme;
         let columns = table.rows.iter().map(Vec::len).max().unwrap_or(0);
-        let widths: Vec<usize> = (0..columns)
+        let natural: Vec<usize> = (0..columns)
             .map(|c| {
                 table
                     .rows
@@ -364,28 +356,46 @@ impl<'t> Renderer<'t> {
                     .unwrap_or(0)
             })
             .collect();
+        let room = self.width.saturating_sub(self.indent());
+        let widths = fit_columns(&natural, room.saturating_sub(3 * columns.saturating_sub(1)));
         let mut lines = Vec::new();
         for (i, row) in table.rows.iter().enumerate() {
             let header = i < table.header_rows;
-            let mut line: Vec<Span<'static>> = Vec::new();
-            for (c, width) in widths.iter().enumerate() {
-                if c > 0 {
-                    line.push(Span::styled(" │ ", theme.dim()));
-                }
-                let cell = row.get(c).cloned().unwrap_or_default();
-                let used = line_width(&cell);
-                for span in cell {
-                    line.push(if header {
-                        Span::styled(span.content, span.style.patch(theme.accent()))
+            let cells: Vec<Vec<Vec<Span<'static>>>> = widths
+                .iter()
+                .enumerate()
+                .map(|(c, width)| {
+                    let cell = row.get(c).cloned().unwrap_or_default();
+                    let cell = if header {
+                        cell.into_iter()
+                            .map(|s| Span::styled(s.content, s.style.patch(theme.accent())))
+                            .collect()
                     } else {
-                        span
-                    });
+                        cell
+                    };
+                    if line_width(&cell) <= *width {
+                        vec![cell]
+                    } else {
+                        wrap_spans(&cell, *width)
+                    }
+                })
+                .collect();
+            let height = cells.iter().map(Vec::len).max().unwrap_or(1);
+            for r in 0..height {
+                let mut line: Vec<Span<'static>> = Vec::new();
+                for (c, width) in widths.iter().enumerate() {
+                    if c > 0 {
+                        line.push(Span::styled(" │ ", theme.dim()));
+                    }
+                    let part = cells[c].get(r).cloned().unwrap_or_default();
+                    let used = line_width(&part);
+                    line.extend(part);
+                    if c + 1 < columns {
+                        line.push(Span::raw(" ".repeat(width.saturating_sub(used))));
+                    }
                 }
-                if c + 1 < columns {
-                    line.push(Span::raw(" ".repeat(width - used)));
-                }
+                lines.push(line);
             }
-            lines.push(line);
             if header && i + 1 == table.header_rows {
                 let rule: Vec<String> = widths.iter().map(|w| "─".repeat(*w)).collect();
                 lines.push(vec![Span::styled(rule.join("─┼─"), theme.dim())]);
@@ -393,6 +403,63 @@ impl<'t> Renderer<'t> {
         }
         self.emit(lines);
     }
+
+    /// Cells taken by the open containers' prefixes.
+    fn indent(&self) -> usize {
+        self.containers
+            .iter()
+            .map(|c| match c {
+                Container::Quote => 2,
+                Container::Item { marker, .. } => marker.chars().count(),
+            })
+            .sum()
+    }
+}
+
+/// Narrowest a table column is squeezed to.
+const MIN_COLUMN_WIDTH: usize = 6;
+
+/// Column widths that fit `room` cells: columns narrower than an even share keep their width,
+/// the rest split what is left evenly. Never below [`MIN_COLUMN_WIDTH`] (or the column's own
+/// width), so a very narrow pane still clips rather than wrapping a letter per row.
+fn fit_columns(natural: &[usize], room: usize) -> Vec<usize> {
+    if natural.iter().sum::<usize>() <= room {
+        return natural.to_vec();
+    }
+    let mut fixed = vec![false; natural.len()];
+    let mut left = room;
+    loop {
+        let open = fixed.iter().filter(|f| !**f).count();
+        if open == 0 {
+            break;
+        }
+        let share = left / open;
+        let mut changed = false;
+        for (c, w) in natural.iter().enumerate() {
+            if !fixed[c] && *w <= share {
+                fixed[c] = true;
+                left -= w;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let open = fixed.iter().filter(|f| !**f).count().max(1);
+    let (share, mut extra) = (left / open, left % open);
+    natural
+        .iter()
+        .zip(&fixed)
+        .map(|(w, fixed)| {
+            if *fixed {
+                return *w;
+            }
+            let bonus = usize::from(extra > 0);
+            extra = extra.saturating_sub(1);
+            (share + bonus).max(MIN_COLUMN_WIDTH.min(*w))
+        })
+        .collect()
 }
 
 fn is_blank(line: &Line) -> bool {
@@ -539,6 +606,18 @@ mod tests {
         assert_eq!(t[0], "a  │ long head");
         assert!(t[1].contains("─┼─"));
         assert_eq!(t[2], "xx │ y");
+    }
+
+    #[test]
+    fn a_table_too_wide_wraps_inside_its_cells() {
+        let md =
+            "| stage | who |\n| - | - |\n| discovery email to firms | five rental firms nearby |";
+        let lines = render(md, 30, &theme());
+        let t = texts(&lines);
+        assert!(t.iter().all(|l| l.chars().count() <= 30), "{t:?}");
+        assert!(t.len() > 3, "{t:?}");
+        assert!(t[2].contains(" │ "));
+        assert!(t[3].contains(" │ ") || t[3].starts_with(' '));
     }
 
     #[test]
