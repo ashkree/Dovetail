@@ -1,0 +1,10 @@
+---
+source: crates/dovetail-tui/tests/usage_header.rs
+expression: "rows.join(\"\\n\")"
+---
+120 | folder /src/business                                          opus-5-5 · 5h 34% (resets 12:35) · week 18% (resets Wed)
+ 80 | folder /src/business  opus-5-5 · 5h 34% (resets 12:35) · week 18% (resets Wed)
+ 60 | folder /src/business          opus-5-5 · 5h 34% · week 18%
+ 44 | folder /src/business     5h 34% · week 18%
+ 34 | folder /src/business      5h 34%
+ 24 | folder /src/bu… 5h 34%

@@ -2,7 +2,8 @@
 //!
 //! A thread reads terminal input and another forwards the core's messages; the UI thread
 //! blocks on one channel. It wakes only for a message, the 30 fps draw window after a change,
-//! or the timeout of a half-typed key sequence. With nothing changing it sleeps forever.
+//! the timeout of a half-typed key sequence, or a usage-limit reset passing. With nothing
+//! changing it sleeps forever.
 
 use std::io;
 use std::sync::mpsc;
@@ -146,6 +147,14 @@ fn drive<B: ratatui::backend::Backend>(
         let key_in = app
             .next_deadline_ms()
             .map(|d| Duration::from_millis(d.saturating_sub(mono_ms(Instant::now()))));
+        // A usage-limit reset passing redraws the header, on the wall clock.
+        let clock_in = app
+            .next_clock_change_ms()
+            .map(|d| Duration::from_millis(u64::try_from(d - clock()).unwrap_or(0)));
+        let key_in = match (key_in, clock_in) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         let first = match next_wake(app.is_dirty(), since, key_in) {
             // Every sender gone: nothing can wake the loop again.
             None => match rx.recv() {

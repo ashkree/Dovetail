@@ -117,6 +117,15 @@ impl Theme {
         }
     }
 
+    /// A usage limit (task #16): dim below 70 %, orange from 70 %, red from 90 %.
+    pub fn usage(&self, pct: u32) -> Style {
+        match pct {
+            0..=69 => self.dim(),
+            70..=89 => Style::new().fg(self.needs_you),
+            _ => Style::new().fg(self.error),
+        }
+    }
+
     /// The selected row.
     pub fn selected(&self) -> Style {
         Style::new().bg(self.selection)
@@ -168,5 +177,16 @@ mod tests {
         assert_eq!(t.context(80).fg, Some(t.needs_you));
         assert_eq!(t.context(81).fg, Some(t.error));
         assert_eq!(t.context(100).fg, Some(t.error));
+    }
+
+    #[test]
+    fn usage_turns_orange_at_70_and_red_at_90() {
+        let t = Theme::dusk();
+        assert_eq!(t.usage(0).fg, Some(t.dim));
+        assert_eq!(t.usage(69).fg, Some(t.dim));
+        assert_eq!(t.usage(70).fg, Some(t.needs_you));
+        assert_eq!(t.usage(89).fg, Some(t.needs_you));
+        assert_eq!(t.usage(90).fg, Some(t.error));
+        assert_eq!(t.usage(120).fg, Some(t.error));
     }
 }

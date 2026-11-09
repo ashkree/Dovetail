@@ -171,7 +171,17 @@ impl App {
 
     /// Sets the UI's clock (Unix milliseconds). The UI owns "now"; the core's clock is not used.
     pub fn set_now(&mut self, now_ms: i64) {
+        // A reset time passing changes the header with no event from the core.
+        if self.next_clock_change_ms().is_some_and(|d| d <= now_ms) {
+            self.dirty = true;
+        }
         self.now_ms = now_ms;
+    }
+
+    /// When the screen next changes with the wall clock alone (a usage-limit reset passing),
+    /// in Unix ms. `None` when nothing is pending, so an idle UI sleeps.
+    pub fn next_clock_change_ms(&self) -> Option<i64> {
+        crate::usage::next_change_ms(&self.snap.usage, self.now_ms)
     }
 
     /// Whether the screen needs drawing.

@@ -19,6 +19,7 @@ pub mod region;
 pub mod render;
 pub mod switcher;
 pub mod theme;
+pub mod usage;
 
 pub use app::App;
 pub use event_loop::{Clock, run};
