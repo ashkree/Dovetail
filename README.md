@@ -61,6 +61,8 @@ Modal, neovim-style, no mouse required (the mouse works in map mode).
 | `<leader>t` | Quick capture a task |
 | `<leader>/` | Search everything (v1.1) |
 | `<leader>v` | Enter map mode (full-screen map, mouse on) |
+| `<leader>r` | Reading mode: library, report and Ask side by side (v1.1) |
+| `]s` / `[s` · `gd` · `gx` | In reading mode: next / previous citation · open the cited finding or source · open the source in a browser (v1.1) |
 | `<leader>?` / `<leader>y` | Toggle the grilling side chat / send its last answer into your reply (v1.1) |
 | Inbox: `y` `A` `d` `D` `r` `x` | Allow once, always allow (Shift-a), deny, deny with reason, reply, dismiss |
 
@@ -97,7 +99,7 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 ## Roadmap
 
 - **v1:** task tracker with a kanban board, P-levels, Now / Next / Later buckets and quick capture; agent tree with subagent progress; to-do items from Claude's native task list; headless sessions in auto mode with a per-agent mode switch; one worktree per slice with a worktree view; fixed layout and focus mode; Telescope-style session switcher; inbox with inline approvals; take-over; project persistence; memory caps and context fill per agent; readability theme; visual maps (`draw_map`, image canvas in kitty, outline fallback, map mode, guided flows); `ask_user` and `report_status`; role prompts for coordinator and slices
-- **v1.1:** daily review cycle, fresh starts with handoffs, side-chat helper for grilling, task notes and decision log, search across everything, map comments and Mermaid import, PR ownership tools, configurable keymap and theme, Dovetail plugin with skills for procedures
+- **v1.1:** **research first** (automatic capture of every research subagent's full output and the sources it read, rounds with a `brief.md`, cited reports, ideas and decisions as inbox proposals with evidence, reading mode, tangents, and tool suites; see `docs/research.md`), then daily review cycle, fresh starts with handoffs, side-chat helper for grilling, task notes and decision log, search across everything, map comments and Mermaid import, PR ownership tools, configurable keymap and theme, Dovetail plugin with skills for procedures
 - **v2:** automation rules, map versions and export, window splits, Visual mode
 - **Later:** daemon and remote attach, Lua configuration, idle reaping of slice sessions, checklists for background subagents, a neovim-based editor and file tree for reviewing agent work, automatic code maps
 - **Backlog (after v1):** cost and budget caps, long-running jobs view, PR panel, task templates, summary cards, desktop notifications, read aloud, PR stack view, quiet hours, broadcast to slices

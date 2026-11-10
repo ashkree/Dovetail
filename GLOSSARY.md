@@ -112,6 +112,40 @@ _Avoid_: completed, done, result
 An inbox item reporting a driver error, a crash or a memory kill.
 _Avoid_: crash, failure
 
+### Research
+
+**Round**:
+One fan-out of research subagents on a research task, with the user's criteria kept as its `brief.md`. A task has many rounds across days (ADR 0015).
+_Avoid_: run, iteration, session
+
+**Finding**:
+One research subagent's full raw report, saved automatically; never fed back into the coordinator's context.
+_Avoid_: result, output, summary
+
+**Source**:
+A page or file an agent actually fetched or read, known from its tool calls rather than from links in its prose, with a cached copy of what the tool returned.
+_Avoid_: link, reference, citation (the marker, not the thing)
+
+**Report**:
+The coordinator's curated synthesis for one research task, `report.md`, rewritten each round and citing findings and sources by id.
+_Avoid_: summary, write-up
+
+**Tangent**:
+A question that does not belong to the current project, answered in the global Tangents space with sources and kept until filed, started as a task or dropped (ADR 0017).
+_Avoid_: side chat (which is project-scoped), aside
+
+**Suite**:
+A named group of MCP tools; a role's config lists the suites it gets, and each tool name carries its suite as a prefix (ADR 0016).
+_Avoid_: toolset, plugin, namespace
+
+**Altitude**:
+Whether research is macro (business, economics, direction) or micro (implementation). It decides where the research lives; size decides how it runs.
+_Avoid_: scope, level, depth
+
+**Research-only project**:
+A project that exists for macro research and has no repo and no worktrees (ADR 0015).
+_Avoid_: notes project, non-code project
+
 ### Maps
 
 **Map shelf**:
