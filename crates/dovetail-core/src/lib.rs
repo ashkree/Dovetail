@@ -8,6 +8,7 @@ mod context;
 pub mod db;
 pub mod editor;
 pub mod error;
+mod foreground;
 mod inbox;
 pub mod memory;
 mod oom;
