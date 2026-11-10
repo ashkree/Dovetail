@@ -106,6 +106,26 @@ _Avoid_: crash, failure
 The folding list of a project's maps at the bottom of the task tree.
 _Avoid_: maps section, maps panel
 
+**Structure map**:
+A map of what exists and how it connects: nodes nested in groups, joined by labelled connections.
+_Avoid_: architecture diagram, flowchart
+
+**Swimlane map**:
+A map of what happens in order: one guided flow drawn as steps across horizontal lanes, time running left to right.
+_Avoid_: flow map, sequence diagram
+
+**Guided flow**:
+A named, ordered walk through a map's nodes with a note per step, moved through one step at a time.
+_Avoid_: tour, walkthrough, path
+
+**Lane**:
+One participant's horizontal band on a swimlane map, optionally linked to that participant's node on a structure map.
+_Avoid_: swimlane (the whole map), row, track
+
+**Map node kind**:
+One of the nine fixed kinds a map node can be (Part, File, Endpoint, Data, External, Actor, Outcome, Logic, Concept); it sets the node's shape and colour.
+_Avoid_: node type, category
+
 ### Build
 
 **Worktree recipe**:
