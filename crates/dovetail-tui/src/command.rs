@@ -56,6 +56,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "messages" => Action::ShowMessages,
         "board" => Action::ShowBoard,
         "worktrees" => Action::ShowWorktrees,
+        "maps" => Action::ShowMaps,
         "switch" => Action::PickAgent,
         "skills" | "commands" => Action::PickCommand,
         "find" => Action::PickAny,

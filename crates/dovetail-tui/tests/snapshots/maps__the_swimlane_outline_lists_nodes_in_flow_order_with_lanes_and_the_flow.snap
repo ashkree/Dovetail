@@ -1,0 +1,44 @@
+---
+source: crates/dovetail-tui/tests/maps.rs
+expression: "render(&mut app, 120, 40)"
+---
+ folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+┌ Answering a permission request · swimlane · v1 ─────────────────────────┐┌ inbox · needs you (2) ────────────────────┐
+│    1 ◇ can_use_tool  external · Claude Code                             ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
+│    2 ƒ raise  logic · Core                                              ││   ✓ coordinator  M2 splits into th… 08:58 │
+│    3 ◈ Needs you  endpoint · TUI                                        ││                                           │
+│    4 ◉ You  actor · You                                                 ││                                           │
+│    5 ✓ Allowed  outcome · Claude Code                                   ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││ y allow · d deny · r reply · x dismiss    │
+│                                                                         │└───────────────────────────────────────────┘
+│                                                                         │┌ tasks · Dovetail ─────────────────────────┐
+│                                                                         ││ ○ ◆ coordinator  plannin… idle 245M $0.84 │
+│                                                                         ││ ▾ Unsorted (1)                            │
+│ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││   ○ Check the kitty graphics fallback ✦ … │
+│                                                                         ││ ▾ Now (3)                                 │
+│ ◇ can_use_tool  external                                                ││ ▾ ◐ Task tree with bucket group… PR #1231 │
+│                                                                         ││   ▾ ◐ ◆ tree-view  working 232M 34% $0.41 │
+│ The session asks to run Bash.                                           ││         ⎇ dovetail/tree-view              │
+│                                                                         ││         ✓ Group tasks by bucket           │
+│ flow Allow once                                                         ││         ◐ Sort by P-level within a bucket │
+│                                                                         ││         ○ Mark P-level and bucket mismat… │
+│ ▸ 1 can_use_tool — Claude Code sends a control request.                 ││         ○ Fold Done into one row          │
+│                                                                         ││       ◐ ◇ explore-keymap    working $0.05 │
+│   2 (control request) raise — Filed as an inbox item.                   ││ ▾ ⚠ Inbox keys and preview P0 ↔ 1         │
+│                                                                         ││   ▾ ⚠ ◆ inbox-keys  edits   needs you 52% │
+│   3 (InboxUpserted) Needs you — Shown under Needs you.                  ││         ⎇ dovetail/inbox-keys             │
+│                                                                         ││ ▾ ◐ Fuzzy picker P3 ≠                     │
+│   4 (shows) You — You press y.                                          ││   ▾ ◌ ◆ picker         setting up 190M 0% │
+│                                                                         ││         ⎇ dovetail/picker                 │
+│   5 (allow) Allowed — The answer goes back.                             ││ ▾ Next (2)                                │
+│                                                                         ││   ○ Quick capture parser P1               │
+│ f next flow · ]] [[ walk the flow · / search · Esc shelf                ││ ⏎ open · o fold · dd archive              │
+└─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
+ NORMAL   Dovetail · 8 tasks · 4 agents · 2 ⚠ · 885M · ctx 18%                           i chat · ␣ss switch · : command

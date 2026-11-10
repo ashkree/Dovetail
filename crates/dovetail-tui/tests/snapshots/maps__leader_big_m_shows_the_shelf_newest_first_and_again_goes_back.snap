@@ -1,0 +1,28 @@
+---
+source: crates/dovetail-tui/tests/maps.rs
+expression: "render(&mut app, 120, 24)"
+---
+ folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+┌ maps · 2 ───────────────────────────────────────────────────────────────┐┌ inbox · needs you (2) ────────────────────┐
+│ Answering a permission request      swimlane · v1 · #1 · tree-view · 1h ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
+│                                                                         ││   ✓ coordinator  M2 splits into th… 08:58 │
+│ Dovetail at a glance                  structure · v2 · coordinator · 1h ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││                                           │
+│                                                                         ││ y allow · d deny · r reply · x dismiss    │
+│                                                                         │└───────────────────────────────────────────┘
+│                                                                         │┌ tasks · Dovetail ─────────────────────────┐
+│                                                                         ││ ○ ◆ coordinator  plannin… idle 245M $0.84 │
+│                                                                         ││ ▾ Unsorted (1)                            │
+│                                                                         ││   ○ Check the kitty graphics fallback ✦ … │
+│                                                                         ││ ▾ Now (3)                                 │
+│                                                                         ││ ▾ ◐ Task tree with bucket group… PR #1231 │
+│                                                                         ││   ▾ ◐ ◆ tree-view  working 232M 34% $0.41 │
+│                                                                         ││         ⎇ dovetail/tree-view              │
+│                                                                         ││         ✓ Group tasks by bucket           │
+│                                                                         ││         ◐ Sort by P-level within a bucket │
+│                                                                         ││         ○ Mark P-level and bucket mismat… │
+│ ⏎ open in the outline · / search · Esc back                             ││ ⏎ open · o fold · dd archive              │
+└─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
+ NORMAL   Dovetail · 8 tasks · 4 agents · 2 ⚠ · 885M · ctx 18%                           i chat · ␣ss switch · : command

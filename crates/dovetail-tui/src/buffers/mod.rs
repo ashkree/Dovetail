@@ -6,10 +6,13 @@ mod conversation;
 mod feed;
 mod inbox;
 mod inbox_detail;
+mod map_outline;
+mod map_shelf;
 pub mod task_detail;
 mod tree;
 mod worktrees;
 
+use dovetail_api::map::MapId;
 use dovetail_api::{
     AgentId, AgentStatus, Bucket, Command, InboxId, PLevel, Snapshot, TaskId, TaskStatus,
 };
@@ -27,6 +30,8 @@ pub use feed::{ActivityBuffer, MessagesBuffer};
 pub(crate) use inbox::input_summary;
 pub use inbox::{InboxBuffer, ordered as inbox_order};
 pub use inbox_detail::InboxDetailBuffer;
+pub use map_outline::{MapOutlineBuffer, Reaction as MapReaction};
+pub use map_shelf::MapShelfBuffer;
 pub use task_detail::TaskDetailBuffer;
 pub use tree::{TreeBuffer, p_label};
 pub use worktrees::WorktreesBuffer;
@@ -83,6 +88,8 @@ pub enum Effect {
     OpenTask(TaskId),
     /// Show an inbox item in full.
     OpenInboxItem(InboxId),
+    /// Fetch a map and show it in the outline.
+    OpenMap(MapId),
     /// Open the prompt row.
     StartInput {
         /// What the text is for.
@@ -146,6 +153,10 @@ pub struct Buffers {
     pub board: BoardBuffer,
     /// The worktree view.
     pub worktrees: WorktreesBuffer,
+    /// The map shelf.
+    pub map_shelf: MapShelfBuffer,
+    /// One map as an outline.
+    pub map_outline: MapOutlineBuffer,
 }
 
 impl Buffers {
@@ -161,6 +172,8 @@ impl Buffers {
             messages: MessagesBuffer::default(),
             board: BoardBuffer::default(),
             worktrees: WorktreesBuffer::default(),
+            map_shelf: MapShelfBuffer::default(),
+            map_outline: MapOutlineBuffer::default(),
         }
     }
 
@@ -176,6 +189,8 @@ impl Buffers {
             BufferKind::Messages => &mut self.messages,
             BufferKind::Board => &mut self.board,
             BufferKind::Worktrees => &mut self.worktrees,
+            BufferKind::MapShelf => &mut self.map_shelf,
+            BufferKind::MapOutline => &mut self.map_outline,
         }
     }
 }

@@ -1,0 +1,28 @@
+---
+source: crates/dovetail-tui/tests/maps.rs
+expression: "render(&mut app, 70, 24)"
+---
+ folder /home/you/src/dovetail maveron · opus-5-5 · 5h 34% · week 18%
+┌ Dovetail at a glance · structure┐┌ inbox · needs you (2) ──────────┐
+│   ◉ You  actor                  ││ ▸ ⚠ inbox-keys  Bash · c… 08:59 │
+│ ▾ ▣ dovetail-tui  part          ││   ✓ coordinator  M2 spli… 08:58 │
+│     ▤ keymap.rs  file           ││                                 │
+│ ▾ ▣ dovetail-api  part          ││                                 │
+│     ƒ apply()  logic            ││                                 │
+│   ▣ dovetail-core  part         ││                                 │
+│   ▥ state.db  data              ││ y allow · d deny · r reply · x… │
+│   ▣ dovetail-driver  part       │└─────────────────────────────────┘
+│                                 │┌ tasks · Dovetail ───────────────┐
+│ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││ ○ ◆ coordinator idle 245M $0.84 │
+│                                 ││ ▾ Unsorted (1)                  │
+│ ◉ You  actor                    ││   ○ Check the kitty graphics f… │
+│                                 ││ ▾ Now (3)                       │
+│ Works with the coordinator.     ││ ▾ ◐ Task tree with bu… PR #1231 │
+│                                 ││   ▾ ◐ ◆ tree-view   working 34% │
+│ → dovetail-tui  types keys      ││         ⎇ dovetail/tree-view    │
+│                                 ││         ✓ Group tasks by bucket │
+│ flow A prompt's trip            ││         ◐ Sort by P-level with… │
+│                                 ││         ○ Mark P-level and buc… │
+│ o f ]] [[                       ││ ⏎ open · o fold · dd archive    │
+└─────────────────────────────────┘└─────────────────────────────────┘
+ NORMAL   Dovetail · 8 tasks · 4 agen… i chat · ␣ss switch · : command

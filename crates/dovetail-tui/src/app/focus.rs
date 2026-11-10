@@ -114,7 +114,10 @@ impl App {
                 .worktrees
                 .selected_agent(&self.snap)
                 .and_then(|id| task_of(&id)),
-            BufferKind::Activity | BufferKind::Messages => None,
+            BufferKind::Activity
+            | BufferKind::Messages
+            | BufferKind::MapShelf
+            | BufferKind::MapOutline => None,
         }
     }
 

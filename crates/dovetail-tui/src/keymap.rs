@@ -201,6 +201,8 @@ const INBOX_DETAIL: Scope = Scope::Buffer(BufferKind::InboxDetail);
 const CONVERSATION: Scope = Scope::Buffer(BufferKind::Conversation);
 const BOARD: Scope = Scope::Buffer(BufferKind::Board);
 const WORKTREES: Scope = Scope::Buffer(BufferKind::Worktrees);
+const MAP_SHELF: Scope = Scope::Buffer(BufferKind::MapShelf);
+const MAP_OUTLINE: Scope = Scope::Buffer(BufferKind::MapOutline);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
 pub const BINDINGS: &[Binding] = &[
@@ -239,6 +241,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>m", Action::ShowMessages),
     bind(N, G, "<leader>b", Action::ShowBoard),
     bind(N, G, "<leader>g", Action::ShowWorktrees),
+    bind(N, G, "<leader>M", Action::ShowMaps),
     bind(N, G, "<leader>sn", Action::NewSlice),
     bind(N, G, "<leader>sq", Action::NewSideChat),
     bind(N, G, "<leader>y", Action::YankToCoordinator),
@@ -311,6 +314,15 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, WORKTREES, "e", Action::WorktreeEdit),
     bind(N, WORKTREES, "c", Action::WorktreeCopyPath),
     bind(N, WORKTREES, "X", Action::WorktreeRemove),
+    // Maps (M15e): the shelf opens a map in the outline; `o` folds a group, `f` switches the
+    // flow, `]]`/`[[` walk its steps. Esc goes outline -> shelf -> conversation.
+    bind(N, MAP_SHELF, "<Esc>", Action::BackToConversation),
+    bind(N, MAP_SHELF, "<CR>", Action::MapOpen),
+    bind(N, MAP_OUTLINE, "<Esc>", Action::BackToConversation),
+    bind(N, MAP_OUTLINE, "o", Action::MapToggleFold),
+    bind(N, MAP_OUTLINE, "f", Action::MapNextFlow),
+    bind(N, MAP_OUTLINE, "]]", Action::MapNextStep),
+    bind(N, MAP_OUTLINE, "[[", Action::MapPrevStep),
     // An inbox item in full goes back with Esc; the answer keys are in `INBOX_ANSWERS`.
     bind(N, INBOX_DETAIL, "<Esc>", Action::BackToConversation),
 ];
@@ -701,6 +713,45 @@ mod tests {
             feed_all(&mut r, &map, &[G], "]]", 10),
             Resolved::Action(Action::GoBottom)
         );
+    }
+
+    #[test]
+    fn map_keys_resolve_in_their_own_buffers_only() {
+        let map = Keymap::default_map();
+        let shelf = [MAP_SHELF, G];
+        let outline = [MAP_OUTLINE, G];
+        let resolve = |scopes: &[Scope], text: &str| {
+            let mut r = Resolver::default();
+            feed_all(&mut r, &map, scopes, text, 0)
+        };
+        assert_eq!(
+            resolve(&[G], "<leader>M"),
+            Resolved::Action(Action::ShowMaps)
+        );
+        assert_eq!(resolve(&shelf, "<CR>"), Resolved::Action(Action::MapOpen));
+        assert_eq!(
+            resolve(&outline, "o"),
+            Resolved::Action(Action::MapToggleFold)
+        );
+        assert_eq!(
+            resolve(&outline, "f"),
+            Resolved::Action(Action::MapNextFlow)
+        );
+        assert_eq!(
+            resolve(&outline, "]]"),
+            Resolved::Action(Action::MapNextStep)
+        );
+        assert_eq!(
+            resolve(&outline, "[["),
+            Resolved::Action(Action::MapPrevStep)
+        );
+        assert_eq!(
+            resolve(&outline, "<Esc>"),
+            Resolved::Action(Action::BackToConversation)
+        );
+        // Not leaked into other buffers.
+        assert_eq!(resolve(&shelf, "o"), Resolved::Unmatched);
+        assert_eq!(resolve(&TREE_SCOPES, "]]"), Resolved::Unmatched);
     }
 
     #[test]
