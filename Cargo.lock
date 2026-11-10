@@ -428,6 +428,7 @@ dependencies = [
  "dovetail-maps",
  "notify",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",

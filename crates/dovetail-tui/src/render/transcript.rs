@@ -111,13 +111,13 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
 
     let mut out = Transcript::default();
     let last = groups.len().saturating_sub(1);
-    // Every entry ends with a blank row, so only the very first message needs one of its own.
+    // Every entry ends with a blank row; each message adds one more, so two blank rows come
+    // above each header (one at the very top) and a change of speaker stands apart from the
+    // rows between one speaker's entries.
     let mut speaker: Option<Speaker> = None;
     for (index, group) in groups.iter().enumerate() {
         let Some(first) = group.first() else { continue };
-        if out.lines.is_empty() {
-            out.lines.push(Line::default());
-        }
+        out.lines.push(Line::default());
         out.turns.push(Turn {
             start_line: out.lines.len() - 1,
             key: first.id,
@@ -140,6 +140,10 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
             let who = Speaker::of(entry.kind);
             let mut lines = Vec::new();
             if speaker != Some(who) {
+                // The first entry's extra blank row came with its turn.
+                if at > 0 {
+                    out.lines.push(Line::default());
+                }
                 speaker = Some(who);
                 // The marker shows while any entry of this message is still being written.
                 let streaming = group[at..]
@@ -147,6 +151,8 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
                     .take_while(|e| Speaker::of(e.kind) == who)
                     .any(|e| p.streaming == Some(e.id));
                 lines.push(header(who, entry, p, streaming));
+                // A blank row parts the header from the text under it.
+                lines.push(Line::default());
             }
             lines.append(&mut entry_lines(entry, p, cache));
             if older {
@@ -178,18 +184,18 @@ impl Speaker {
 /// The rule that opens a message, `── You · 10:14 ────…`, as wide as the reading column.
 fn header(who: Speaker, entry: &ConversationEntry, p: &Params, streaming: bool) -> Line<'static> {
     let theme = p.theme;
-    let (name, colour) = match who {
-        Speaker::You => ("You", theme.speaker_you),
-        Speaker::Agent => (p.agent, theme.speaker_agent),
+    let (name, colour, rule) = match who {
+        Speaker::You => ("You", theme.speaker_you, theme.speaker_you_rule),
+        Speaker::Agent => (p.agent, theme.speaker_agent, theme.speaker_agent_rule),
     };
-    let rule = theme.fg(theme.rule);
+    let rule = theme.fg(rule);
     let mut spans = vec![
         Span::styled("── ", rule),
         Span::styled(
             name.to_string(),
             theme.fg(colour).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!(" · {}", fmt::hhmm(entry.at_ms, p.tz)), theme.dim()),
+        Span::styled(format!(" · {}", fmt::hhmm(entry.at_ms, p.tz)), rule),
     ];
     if streaming {
         spans.push(Span::styled(" ◐", theme.fg(theme.working)));
@@ -237,7 +243,7 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
                 lines.extend(chip_lines(chips, width));
             }
             // An image-only message has no text lines.
-            if !(entry.text.is_empty() && !entry.attachments.is_empty()) {
+            if !entry.text.is_empty() || entry.attachments.is_empty() {
                 for text in entry.text.split('\n') {
                     let spans = [Span::styled(text.to_string(), theme.body())];
                     for line in wrap_spans(&spans, width) {
@@ -348,9 +354,12 @@ mod tests {
             vec![
                 "".to_string(),
                 rule("── You · 10:14", 60),
+                "".into(),
                 "What is blocking slice-7?".into(),
                 "".into(),
+                "".into(),
                 rule("── coordinator · 10:14", 60),
+                "".into(),
                 "It needs a key.".into(),
                 "".into(),
                 "▸ read 2 files · 4 s".into(),
@@ -395,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn speakers_get_their_theme_colours_and_the_rule_its_own() {
+    fn speakers_get_their_theme_colours_and_the_rule_a_dimmed_one() {
         let theme = Theme::dusk();
         let entries = [
             entry(1, EntryKind::User, "a"),
@@ -403,9 +412,11 @@ mod tests {
         ];
         let t = run(&entries, |_| {});
         let you = &t.lines[1].spans;
-        assert_eq!(you[0].style.fg, Some(theme.rule));
+        assert_eq!(you[0].style.fg, Some(theme.speaker_you_rule));
+        assert_eq!(you[2].style.fg, Some(theme.speaker_you_rule));
         assert_eq!(you[1].style.fg, Some(theme.speaker_you));
-        let agent = &t.lines[4].spans;
+        let agent = &t.lines[6].spans;
+        assert_eq!(agent[0].style.fg, Some(theme.speaker_agent_rule));
         assert_eq!(agent[1].style.fg, Some(theme.speaker_agent));
         assert!(
             t.lines
@@ -486,6 +497,7 @@ mod tests {
             vec![
                 "".to_string(),
                 rule("── You · 10:14", 60),
+                "".into(),
                 "do it".into(),
                 "".into(),
                 "▸ 2 entries folded · zo to unfold".into(),
@@ -500,7 +512,7 @@ mod tests {
         let t = run(&entries, |p| p.streaming = Some(EntryId(1)));
         let t = texts(&t);
         assert_eq!(t[1], rule("── coordinator · 10:14 ◐", 60));
-        assert_eq!(t[2], "typing▌");
+        assert_eq!(t[3], "typing▌");
     }
 
     #[test]
@@ -538,7 +550,7 @@ mod tests {
             "first\nsecond line that is rather long indeed and wraps around",
         )];
         let t = texts(&run(&entries, |p| p.width = 20));
-        assert_eq!(t[2], "first");
+        assert_eq!(t[3], "first");
         assert!(t.len() > 4);
     }
 

@@ -40,6 +40,9 @@ pub(crate) enum Waiter {
     /// A worktree no agent owns, found by the sweep on open (M10): `y` removes it, `d` keeps
     /// it for good.
     RemoveOrphan { found: crate::restore::Orphan },
+    /// A take-over lock left by a crash whose native run cannot be checked (M14): `y` releases
+    /// it, `d` keeps it.
+    ReleaseLock,
 }
 
 impl Waiter {
@@ -318,6 +321,11 @@ impl Core {
                 PermissionAnswer::Deny { .. } => self.keep_orphan(found),
                 _ => self.remove_orphan(found),
             },
+            Waiter::ReleaseLock => match answer {
+                // Kept: it is checked again before the next start.
+                PermissionAnswer::Deny { .. } => {}
+                _ => self.release_lock(&agent),
+            },
             _ => {}
         }
         self.refresh_status(&agent);
@@ -331,6 +339,13 @@ impl Core {
         };
         if matches!(entry.item.kind, InboxKind::Permission { .. }) {
             self.fail("that item is a permission request: y or d");
+            return;
+        }
+        // The answer goes to the session, which cannot take it while native has it (M14):
+        // refused before the item leaves Needs you, so it can be answered later.
+        let agent = entry.item.agent.clone();
+        if self.locked(&agent) {
+            self.fail(SessionError::TakenOver(self.name_of(&agent)));
             return;
         }
         let Some(entry) = self.resolve(id, Some(text.clone())) else {
@@ -375,6 +390,7 @@ impl Core {
             }
             Waiter::RemoveWorktree => self.keep_slice(&agent),
             Waiter::RemoveOrphan { found } => self.keep_orphan(found),
+            Waiter::ReleaseLock => {}
             Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }
     }

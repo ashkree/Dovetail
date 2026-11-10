@@ -37,6 +37,30 @@ pub fn map_line(line: &str) -> Vec<DriverEvent> {
     }
 }
 
+/// Request id of the `initialize` control request the driver sends when a session starts, to
+/// learn its slash commands.
+pub const INITIALIZE_ID: &str = "dt_initialize";
+
+/// `[{name, description, argumentHint}]`, first of each name kept (Claude Code lists a skill
+/// once per alias).
+fn commands_of(list: &Value) -> Vec<CommandInfo> {
+    let mut out: Vec<CommandInfo> = Vec::new();
+    for c in list.as_array().into_iter().flatten() {
+        let Some(name) = str_of(c, "name") else {
+            continue;
+        };
+        if out.iter().any(|o| o.name == name) {
+            continue;
+        }
+        out.push(CommandInfo {
+            name,
+            description: str_of(c, "description").unwrap_or_default(),
+            argument_hint: str_of(c, "argumentHint").unwrap_or_default(),
+        });
+    }
+    out
+}
+
 /// Map one parsed stdout line. One line can yield several events (a `user` line with several
 /// tool results) or none (ignored kinds).
 pub fn map_value(v: Value) -> Vec<DriverEvent> {
@@ -55,6 +79,14 @@ pub fn map_value(v: Value) -> Vec<DriverEvent> {
         "control_request" => vec![map_control_request(v)],
         "control_response" => {
             let r = v.get("response").cloned().unwrap_or(Value::Null);
+            if str_of(&r, "request_id").as_deref() == Some(INITIALIZE_ID) {
+                // The command list is all Dovetail wants from it; a refusal only costs `/`
+                // completion, so it is not an error for the user.
+                return match r.pointer("/response/commands") {
+                    Some(list) => vec![DriverEvent::Commands(commands_of(list))],
+                    None => vec![DriverEvent::Unknown(v)],
+                };
+            }
             vec![DriverEvent::ControlResponse {
                 request_id: str_of(&r, "request_id").unwrap_or_default(),
                 success: r.get("subtype").and_then(Value::as_str) == Some("success"),
@@ -109,6 +141,10 @@ fn map_system(v: Value) -> Vec<DriverEvent> {
             version: str_of(&v, "claude_code_version"),
             raw: v,
         }),
+        "commands_changed" => match v.get("commands") {
+            Some(list) => DriverEvent::Commands(commands_of(list)),
+            None => DriverEvent::Unknown(v),
+        },
         "status" => DriverEvent::Status {
             status: str_of(&v, "status"),
             permission_mode: str_of(&v, "permissionMode"),
@@ -394,4 +430,36 @@ fn map_control_request(v: Value) -> DriverEvent {
         agent_id: str_of(&req, "agent_id"),
         raw: v,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_initialize_answer_and_commands_changed_give_one_deduplicated_list() {
+        let list = json!([
+            {"name": "compact", "description": "Summarise", "argumentHint": "<instructions>"},
+            {"name": "grilling", "description": "Grill me", "argumentHint": ""},
+            {"name": "grilling", "description": "Grill me", "argumentHint": "", "aliases": ["g"]},
+        ]);
+        let want = vec![
+            CommandInfo {
+                name: "compact".into(),
+                description: "Summarise".into(),
+                argument_hint: "<instructions>".into(),
+            },
+            CommandInfo {
+                name: "grilling".into(),
+                description: "Grill me".into(),
+                argument_hint: String::new(),
+            },
+        ];
+        let answer = json!({"type": "control_response", "response": {
+            "subtype": "success", "request_id": INITIALIZE_ID, "response": {"commands": list},
+        }});
+        assert_eq!(map_value(answer), vec![DriverEvent::Commands(want.clone())]);
+        let changed = json!({"type": "system", "subtype": "commands_changed", "commands": list});
+        assert_eq!(map_value(changed), vec![DriverEvent::Commands(want)]);
+    }
 }

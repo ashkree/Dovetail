@@ -22,8 +22,8 @@ mod search;
 
 use crossterm::event::KeyEvent;
 use dovetail_api::{
-    AgentId, AgentKind, AgentStatus, ApplyResult, Command, Event, InboxKind, PROTOCOL_VERSION,
-    PermissionAnswer, ServerMsg, Snapshot, TaskChange, apply,
+    AgentId, AgentKind, AgentStatus, ApplyResult, Command, EntryKind, Event, InboxKind,
+    PROTOCOL_VERSION, PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
 };
 use jiff::tz::TimeZone;
 
@@ -65,6 +65,8 @@ enum Then {
     Action(Action),
     /// Send commands to the core.
     Commands(Vec<Command>),
+    /// Lend the terminal for a command ([`App::take_handoff`]).
+    Handoff(Command),
 }
 
 /// A yes/no question waiting for `y` or `n`.
@@ -96,8 +98,8 @@ pub struct App {
     open_after_create: Option<String>,
     note: Option<String>,
     outbox: Vec<Command>,
-    /// A command that needs the terminal ([`Command::OpenEditor`]), for the loop to send once
-    /// it has let go of the terminal.
+    /// A command that needs the terminal ([`Command::OpenEditor`], [`Command::TakeOver`]), for
+    /// the loop to send once it has let go of the terminal.
     handoff: Option<Command>,
     /// The terminal is lent out until the core sends [`Event::TerminalReturned`].
     terminal_away: bool,
@@ -109,6 +111,10 @@ pub struct App {
     quit: bool,
     /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
     exit_armed_until: Option<u64>,
+    /// A side chat was asked for: open it when it appears.
+    open_side_chat: bool,
+    /// Focus mode (`<leader>z`): the side column is hidden.
+    focus_mode: bool,
     /// The key being handled is a second Ctrl-C inside the hint's window.
     exit_armed: bool,
     /// The loop clock at the key being handled, for actions that arm a timeout.
@@ -143,6 +149,8 @@ impl App {
             reading: None,
             quit: false,
             exit_armed_until: None,
+            open_side_chat: false,
+            focus_mode: false,
             exit_armed: false,
             mono_ms: 0,
             dirty: true,
@@ -217,7 +225,8 @@ impl App {
         std::mem::take(&mut self.outbox)
     }
 
-    /// A command that must run with the terminal lent out (`e` in the worktree view). The loop
+    /// A command that must run with the terminal lent out (`e` in the worktree view,
+    /// `<leader>st`). The loop
     /// lets go of the terminal (alternate screen, raw mode, key reading) and then sends it; from
     /// here until [`Event::TerminalReturned`] arrives, [`App::terminal_away`] is true.
     pub fn take_handoff(&mut self) -> Option<Command> {
@@ -321,6 +330,18 @@ impl App {
                         self.note = Some(error.clone());
                     }
                 }
+                if let Event::PathsListed { agent, dir, paths } = &event {
+                    let commands = commands_for(&self.snap, agent);
+                    self.buffers.conversation.receive_paths(
+                        agent,
+                        dir.clone(),
+                        paths.clone(),
+                        commands,
+                    );
+                    if let Some((agent, dir)) = self.buffers.conversation.take_path_request() {
+                        self.outbox.push(Command::ListPaths { agent, dir });
+                    }
+                }
                 if let Event::ClipboardPasted { agent, paste } = &event
                     && let Some(notice) = self
                         .buffers
@@ -329,6 +350,16 @@ impl App {
                 {
                     self.note = Some(notice);
                 }
+                let side_chat = match &event {
+                    Event::AgentUpserted(agent)
+                        if self.open_side_chat
+                            && agent.kind == AgentKind::SideChat
+                            && !self.snap.agents.iter().any(|a| a.id == agent.id) =>
+                    {
+                        Some(agent.id.clone())
+                    }
+                    _ => None,
+                };
                 let created = match &event {
                     Event::TaskUpserted(task)
                         if self.open_after_create.as_deref() == Some(task.title.as_str())
@@ -346,10 +377,15 @@ impl App {
                             // A failed save must not leave a later task of the same title to
                             // steal the screen.
                             self.open_after_create = None;
+                            self.open_side_chat = false;
                         }
                         if let Some(id) = created {
                             self.open_after_create = None;
                             self.open_task(id, false);
+                        }
+                        if let Some(id) = side_chat {
+                            self.open_side_chat = false;
+                            self.open_agent_in_main(id);
                         }
                     }
                     ApplyResult::Gap { expected, got } => {
@@ -426,6 +462,7 @@ impl App {
                 match confirm.then {
                     Then::Action(action) => self.run(action),
                     Then::Commands(commands) => self.outbox.extend(commands),
+                    Then::Handoff(command) => self.handoff = Some(command),
                 }
             }
             return;
@@ -483,14 +520,33 @@ impl App {
                 {
                     return;
                 }
+                Some(Action::LeaveChatBar) => {
+                    self.buffers.conversation.park_chat();
+                    self.mode = Mode::Normal;
+                    return;
+                }
+                Some(action @ (Action::PageDown | Action::PageUp)) => {
+                    self.run(action);
+                    return;
+                }
                 _ => {}
             }
-            if let Some((agent, text, attachments)) = self.buffers.conversation.chat_key(event) {
+            let commands = self
+                .buffers
+                .conversation
+                .agent()
+                .map_or(&[][..], |a| commands_for(&self.snap, a));
+            if let Some((agent, text, attachments)) =
+                self.buffers.conversation.chat_key(event, commands)
+            {
                 self.outbox.push(Command::Prompt {
                     agent,
                     text,
                     attachments,
                 });
+            }
+            if let Some((agent, dir)) = self.buffers.conversation.take_path_request() {
+                self.outbox.push(Command::ListPaths { agent, dir });
             }
             if !self.buffers.conversation.is_chatting() {
                 self.mode = Mode::Normal;
@@ -570,6 +626,7 @@ impl App {
                 self.start_input(InputTarget::SliceBrief(text), "");
             }
             InputTarget::SliceBrief(name) => self.new_slice(name, text),
+            InputTarget::SideChatQuestion if !text.is_empty() => self.new_side_chat(text),
             InputTarget::Search => self.start_search(text),
             InputTarget::Decision(task) if !text.is_empty() => self.log_decision(task, text),
             _ => {}
@@ -587,14 +644,80 @@ impl App {
             }));
     }
 
+    /// Asks the core for a side chat; the first one to appear afterwards opens in the main
+    /// region.
+    fn new_side_chat(&mut self, question: String) {
+        self.open_side_chat = true;
+        self.outbox.push(Command::NewSideChat { question });
+    }
+
+    /// `<leader>y`: the shown agent's last answer goes into the coordinator's chat bar, after
+    /// anything already typed there (Decision 18).
+    fn yank_to_coordinator(&mut self) {
+        let (Some(shown), Some(coordinator)) = (
+            self.buffers.conversation.agent().cloned(),
+            self.coordinator(),
+        ) else {
+            return;
+        };
+        if shown == coordinator {
+            self.note = Some("<leader>y copies another agent's answer to the coordinator".into());
+            return;
+        }
+        let answer = self
+            .snap
+            .conversations
+            .get(&shown)
+            .and_then(|t| {
+                t.entries
+                    .iter()
+                    .rev()
+                    .find(|e| e.kind == EntryKind::Assistant)
+            })
+            .map(|e| e.text.trim().to_string());
+        let Some(answer) = answer.filter(|a| !a.is_empty()) else {
+            self.note = Some("no answer to copy yet".into());
+            return;
+        };
+        self.start_chat(coordinator);
+        self.buffers.conversation.insert_text(&answer);
+    }
+
     fn new_slice(&mut self, name: String, brief: String) {
         let task = self.focused_task();
         self.outbox.push(Command::NewSlice { task, name, brief });
     }
 
+    /// Focus mode on or off (A1, Decision 16): the conversation alone, full width; the status
+    /// bar keeps the Needs you count. The background stays as it is (ADR 0013). It shows the
+    /// agent already in view, so a side chat or slice can be read the same way.
+    pub(super) fn toggle_focus_mode(&mut self) {
+        self.focus_mode = !self.focus_mode;
+        if self.focus_mode {
+            if self.regions.buffer(RegionId::Main) != BufferKind::Conversation {
+                self.regions.show(RegionId::Main, BufferKind::Conversation);
+            }
+            self.regions.set_focus(RegionId::Main);
+        }
+    }
+
+    /// Whether focus mode hides the side column.
+    pub fn focus_mode(&self) -> bool {
+        self.focus_mode
+    }
+
     /// Runs an action: global ones here, the rest in the focused buffer.
     pub fn run(&mut self, action: Action) {
         self.dirty = true;
+        // Going to the side column leaves focus mode, so focus never lands on a hidden region.
+        if self.focus_mode
+            && matches!(
+                action,
+                Action::FocusRight | Action::FocusInbox | Action::FocusUp | Action::FocusDown
+            )
+        {
+            self.toggle_focus_mode();
+        }
         match action {
             Action::FocusLeft => self.regions.focus_left(),
             Action::FocusRight => self.regions.focus_right(),
@@ -617,9 +740,11 @@ impl App {
                 None => self.note = Some("no previous agent".into()),
             },
             Action::ToggleSolidBackground => self.buffers.conversation.toggle_solid(),
+            Action::ToggleFocusMode => self.toggle_focus_mode(),
             Action::PasteClipboard => self.paste_clipboard(),
             Action::QuickCapture => self.open_capture(),
             Action::PickAgent => self.open_switcher(),
+            Action::PickCommand => self.open_command_picker(),
             Action::PickAny => self.open_finder(),
             Action::Search => self.start_input(InputTarget::Search, ""),
             Action::SearchNext => self.search_jump(true),
@@ -650,9 +775,11 @@ impl App {
                 self.regions.show(RegionId::Main, back);
             }
             Action::NewSlice => self.run_with_arg(Action::NewSlice, ""),
+            Action::NewSideChat => self.run_with_arg(Action::NewSideChat, ""),
+            Action::YankToCoordinator => self.yank_to_coordinator(),
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
-            Action::TakeOver => self.note = Some("take-over arrives in M14".into()),
+            Action::TakeOver => self.take_over(),
             Action::RegisterProject => {
                 // The open folder (ADR 0005); the core refuses any other.
                 let path = self
@@ -744,4 +871,13 @@ impl App {
         self.show_agent(id);
         self.regions.set_focus(RegionId::Main);
     }
+}
+
+/// The slash commands `agent` offers: its own list, else another session's (one project's
+/// sessions share a profile, so a slice not yet started borrows the coordinator's).
+pub(crate) fn commands_for<'a>(snap: &'a Snapshot, agent: &AgentId) -> &'a [SlashCommand] {
+    snap.commands
+        .get(agent)
+        .or_else(|| snap.commands.values().find(|c| !c.is_empty()))
+        .map_or(&[], Vec::as_slice)
 }

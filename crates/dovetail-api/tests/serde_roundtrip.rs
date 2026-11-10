@@ -327,6 +327,14 @@ fn hello_and_a_full_snapshot_roundtrip() {
         totals: totals(),
         warnings: vec![warning()],
         worktrees: worktree_infos(),
+        commands: BTreeMap::from([(
+            AgentId("coordinator".into()),
+            vec![SlashCommand {
+                name: "compact".into(),
+                description: "Summarise".into(),
+                argument_hint: "<instructions>".into(),
+            }],
+        )]),
         profile: Some("maveron".into()),
         maps: vec![map_summary()],
     };

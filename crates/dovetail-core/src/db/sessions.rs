@@ -31,12 +31,16 @@ pub struct AgentRow {
     /// The Claude Code config directory (profile) its session runs under, set at each launch;
     /// `None` for the default home of before profiles (ADR 0009). Subagents copy their parent's.
     pub claude_home: Option<PathBuf>,
+    /// Its take-over lock while the user works in native `claude` (M14); `agent.lock` says
+    /// `TakenOver` exactly when this is set.
+    pub takeover: Option<crate::takeover::TakeoverLock>,
 }
 
 fn kind_to_text(kind: AgentKind) -> &'static str {
     match kind {
         AgentKind::Coordinator => "coordinator",
         AgentKind::Slice => "slice",
+        AgentKind::SideChat => "side_chat",
         AgentKind::Subagent { background: false } => "subagent",
         AgentKind::Subagent { background: true } => "background_subagent",
     }
@@ -46,6 +50,7 @@ fn kind_from_text(text: &str) -> Result<AgentKind, DbError> {
     Ok(match text {
         "coordinator" => AgentKind::Coordinator,
         "slice" => AgentKind::Slice,
+        "side_chat" => AgentKind::SideChat,
         "subagent" => AgentKind::Subagent { background: false },
         "background_subagent" => AgentKind::Subagent { background: true },
         other => return Err(DbError::Corrupt(format!("agent kind {other:?}"))),
@@ -85,6 +90,14 @@ fn progress_text(progress: &Option<SubagentProgress>) -> Result<Option<String>, 
         .map_err(|e| DbError::Corrupt(format!("progress that does not serialise: {e}")))
 }
 
+/// A take-over lock as stored: JSON, or NULL when the session runs headless.
+fn takeover_text(lock: &Option<crate::takeover::TakeoverLock>) -> Result<Option<String>, DbError> {
+    lock.as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| DbError::Corrupt(format!("a take-over lock that does not serialise: {e}")))
+}
+
 fn path_text(path: &Option<PathBuf>) -> Option<String> {
     path.as_ref().map(|p| p.to_string_lossy().into_owned())
 }
@@ -95,14 +108,14 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
         "INSERT INTO agents (id, kind, name, parent_id, task_id, session_id, transcript_path, \
          task_list_id, worktree_path, branch, status, status_line, permission_mode, cost_usd, \
          created_ms, last_activity_ms, tool_use_id, output_file, progress, subagent_tokens, \
-         claude_home) \
+         claude_home, takeover) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21) \
+         ?18, ?19, ?20, ?21, ?22) \
          ON CONFLICT(id) DO UPDATE SET kind = ?2, name = ?3, parent_id = ?4, task_id = ?5, \
          session_id = ?6, transcript_path = ?7, task_list_id = ?8, worktree_path = ?9, \
          branch = ?10, status = ?11, status_line = ?12, permission_mode = ?13, cost_usd = ?14, \
          last_activity_ms = ?16, tool_use_id = ?17, output_file = ?18, progress = ?19, \
-         subagent_tokens = ?20, claude_home = ?21, closed_ms = NULL",
+         subagent_tokens = ?20, claude_home = ?21, takeover = ?22, closed_ms = NULL",
         params![
             a.id.0,
             kind_to_text(a.kind),
@@ -130,6 +143,7 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
             progress_text(&a.progress)?,
             i64::try_from(a.subagent_tokens).unwrap_or(i64::MAX),
             path_text(&row.claude_home),
+            takeover_text(&row.takeover)?,
         ],
     )?;
     Ok(())
@@ -139,7 +153,8 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
     let mut stmt = conn.prepare(
         "SELECT id, kind, name, parent_id, task_id, session_id, transcript_path, task_list_id, \
          worktree_path, branch, status, status_line, permission_mode, cost_usd, created_ms, \
-         last_activity_ms, tool_use_id, progress, subagent_tokens, claude_home FROM agents WHERE closed_ms IS NULL \
+         last_activity_ms, tool_use_id, progress, subagent_tokens, claude_home, takeover FROM agents \
+         WHERE closed_ms IS NULL \
          ORDER BY created_ms, id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -167,6 +182,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 r.get::<_, Option<String>>(17)?,
                 r.get::<_, i64>(18)?,
                 r.get::<_, Option<String>>(19)?,
+                r.get::<_, Option<String>>(20)?,
             ),
         ))
     })?;
@@ -188,8 +204,14 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             cost,
             created,
             last,
-            (tool_use_id, progress, subagent_tokens, claude_home),
+            (tool_use_id, progress, subagent_tokens, claude_home, takeover),
         ) = row?;
+        let takeover = takeover
+            .map(|t| {
+                serde_json::from_str::<crate::takeover::TakeoverLock>(&t)
+                    .map_err(|e| DbError::Corrupt(format!("take-over lock: {e}")))
+            })
+            .transpose()?;
         let progress = progress
             .map(|p| {
                 serde_json::from_str::<SubagentProgress>(&p)
@@ -219,7 +241,11 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 context_pct: None,
                 progress,
                 last_activity_ms: last.unwrap_or(0),
-                lock: SessionLock::Headless,
+                lock: if takeover.is_some() {
+                    SessionLock::TakenOver
+                } else {
+                    SessionLock::Headless
+                },
                 model: None,
                 subagent_tokens: u64::try_from(subagent_tokens).unwrap_or(0),
             },
@@ -229,6 +255,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             created_ms: created.unwrap_or(0),
             tool_use_id,
             claude_home: claude_home.map(PathBuf::from),
+            takeover,
         });
     }
     Ok(out)

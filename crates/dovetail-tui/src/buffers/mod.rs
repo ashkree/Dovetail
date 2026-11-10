@@ -64,6 +64,8 @@ pub enum InputTarget {
     SliceName,
     /// The brief of the slice named here (the second prompt).
     SliceBrief(String),
+    /// The question that opens a side chat.
+    SideChatQuestion,
     /// An in-buffer search term.
     Search,
     /// A decision for this task's log.

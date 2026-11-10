@@ -99,6 +99,24 @@ pub struct Snapshot {
     /// fetched with [`crate::Command::LoadMap`].
     #[serde(default)]
     pub maps: Vec<MapSummary>,
+    /// The slash commands and skills each session offers, as Claude Code last listed them.
+    /// Sessions of one project share a profile, so one agent's list stands in for another's
+    /// until that one reports.
+    #[serde(default)]
+    pub commands: BTreeMap<AgentId, Vec<SlashCommand>>,
+}
+
+/// A slash command or skill a session offers (`/compact`, `/code-review`), typed as `/name` in
+/// a chat bar and sent to the session as it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlashCommand {
+    /// Name without the slash.
+    pub name: String,
+    /// What it does, as its author wrote it.
+    pub description: String,
+    /// What it takes after the name, e.g. `<pr-number>`; empty when nothing.
+    #[serde(default)]
+    pub argument_hint: String,
 }
 
 impl Snapshot {
@@ -261,6 +279,9 @@ pub enum AgentKind {
     Coordinator,
     /// A long-lived session with its own worktree.
     Slice,
+    /// A read-only session the user opens for a question or research: no worktree, no task
+    /// (ADR 0011).
+    SideChat,
     /// Spawned by a session for self-contained work.
     Subagent {
         /// Runs in the background with no to-do items.
@@ -342,7 +363,8 @@ pub struct SubagentProgress {
 pub enum SessionLock {
     /// Dovetail drives it headless.
     Headless,
-    /// The user has taken it over in a native terminal.
+    /// The user has taken it over in a native terminal (`<leader>st`): headless never starts
+    /// until the native run ends. The lock is stored, so it outlives a crash of Dovetail.
     TakenOver,
 }
 
@@ -427,6 +449,11 @@ pub const START_SLICE_PERMISSION: &str = "start_slice";
 /// The `tool` of the Permission item that asks before removing a slice worktree with unsaved
 /// work. Its input is `{worktree, branch, uncommitted: [..], unpushed_commits}`.
 pub const REMOVE_WORKTREE_PERMISSION: &str = "Remove worktree";
+
+/// The `tool` of the Permission item raised at open when a session's take-over lock was left by
+/// a crash and Dovetail cannot tell whether its native `claude` still runs (M14). `y` releases
+/// the lock, `d` keeps it. Its input is `{session, reason}`.
+pub const RELEASE_TAKEOVER_PERMISSION: &str = "Release take-over lock";
 
 /// A permission rule Claude Code offers for "always allow".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -376,3 +376,17 @@ fn y_in_a_permission_items_detail_allows_it() {
         }]
     );
 }
+
+#[test]
+fn focus_mode_hides_the_side_column_and_l_brings_it_back() {
+    let mut app = app_with(world());
+    press(&mut app, " z");
+    assert!(app.focus_mode());
+    let screen = render(&mut app, 100, 30);
+    assert!(!screen.contains("inbox ·"), "{screen}");
+    assert!(screen.contains("3 ⚠"), "{screen}");
+    press(&mut app, "l");
+    assert!(!app.focus_mode());
+    let screen = render(&mut app, 100, 30);
+    assert!(screen.contains("inbox ·"), "{screen}");
+}

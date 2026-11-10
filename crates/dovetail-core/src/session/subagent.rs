@@ -136,6 +136,7 @@ impl Core {
             created_ms: now_ms(),
             tool_use_id: Some(tool_use_id.to_owned()),
             claude_home: parent_row.claude_home.clone(),
+            takeover: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);

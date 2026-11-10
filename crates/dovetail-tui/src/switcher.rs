@@ -5,7 +5,8 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, AgentStatus, InboxItem, InboxKind, Snapshot, TaskStatus,
+    Agent, AgentId, AgentKind, AgentStatus, InboxItem, InboxKind, SlashCommand, Snapshot,
+    TaskStatus,
 };
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
@@ -96,6 +97,23 @@ pub fn agent_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerIte
                 depth,
                 section: "Agents",
             }
+        })
+        .collect()
+}
+
+/// Slash command and skill rows, in the session's order.
+pub fn command_items(commands: &[SlashCommand], theme: &Theme) -> Vec<PickerItem> {
+    commands
+        .iter()
+        .map(|c| PickerItem {
+            key: PickerKey::Command(c.name.clone()),
+            label: format!("/{}", c.name),
+            haystack: format!("{} {}", c.name, c.description),
+            detail: c.argument_hint.clone(),
+            glyph: "/",
+            color: theme.dim,
+            depth: 0,
+            section: "Commands and skills",
         })
         .collect()
 }
@@ -221,6 +239,15 @@ pub fn preview(
                 .map(|t| task_detail::lines(snap, t, width, theme, tz))
                 .unwrap_or_default(),
         ),
+        PickerKey::Command(name) => (
+            "Command",
+            snap.commands
+                .values()
+                .flatten()
+                .find(|c| &c.name == name)
+                .map(|c| command_preview(c, width, theme))
+                .unwrap_or_default(),
+        ),
         PickerKey::Inbox(id) => (
             "Inbox item",
             snap.inbox
@@ -251,6 +278,7 @@ fn agent_preview(
     let kind = match agent.kind {
         AgentKind::Coordinator => "coordinator",
         AgentKind::Slice => "slice",
+        AgentKind::SideChat => "side chat",
         AgentKind::Subagent { background: true } => "background subagent",
         AgentKind::Subagent { background: false } => "subagent",
     };
@@ -315,6 +343,21 @@ fn agent_preview(
             expanded: &expanded,
         };
         out.extend(transcript::build(&tail.entries[from..], &params, &mut Cache::default()).lines);
+    }
+    out
+}
+
+fn command_preview(command: &SlashCommand, width: usize, theme: &Theme) -> Vec<Line<'static>> {
+    let mut head = format!("/{}", command.name);
+    if !command.argument_hint.is_empty() {
+        head = format!("{head} {}", command.argument_hint);
+    }
+    let mut out = vec![
+        Line::from(Span::styled(head, theme.accent())),
+        Line::default(),
+    ];
+    for line in fmt::wrap(&command.description, width) {
+        out.push(Line::from(Span::styled(line, theme.body())));
     }
     out
 }

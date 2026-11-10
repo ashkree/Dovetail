@@ -37,6 +37,8 @@ pub enum Role {
     Coordinator,
     /// A slice: none of the [`Access::CoordinatorOnly`] tools.
     Slice,
+    /// A side chat: the tools a slice gets (ADR 0011).
+    SideChat,
 }
 
 impl Role {
@@ -45,15 +47,16 @@ impl Role {
         match self {
             Role::Coordinator => "coordinator",
             Role::Slice => "slice",
+            Role::SideChat => "side-chat",
         }
     }
 
-    /// Parses [`env::ROLE`]; anything but `coordinator` is a slice, the safer default.
+    /// Parses [`env::ROLE`]; anything unknown is a slice, the safer default.
     pub fn from_env_value(value: &str) -> Role {
-        if value == "coordinator" {
-            Role::Coordinator
-        } else {
-            Role::Slice
+        match value {
+            "coordinator" => Role::Coordinator,
+            "side-chat" => Role::SideChat,
+            _ => Role::Slice,
         }
     }
 }
@@ -258,7 +261,10 @@ impl Tool {
             }
             Tool::LogDecision(d) => {
                 match (role, d.task) {
-                    (Role::Coordinator, None) => return Err(ToolError::DecisionNeedsTask),
+                    // A side chat has no task to default to, like the coordinator.
+                    (Role::Coordinator | Role::SideChat, None) => {
+                        return Err(ToolError::DecisionNeedsTask);
+                    }
                     (_, Some(task)) => id("task", task)?,
                     (Role::Slice, None) => {}
                 }

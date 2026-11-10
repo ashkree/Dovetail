@@ -7,30 +7,30 @@ expression: screen
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:13 │
 │                                                                         ││   ? slice-4  Should the new route … 10:14 │
 │   ── You · 10:08 ────────────────────────────────────────────────────   ││   ✗ slice-7  Claude Code exited wi… 10:12 │
-│   Make sure slice-4 doesn't touch the 500 path.                         ││   ✓ slice-4  Handler wired to the … 10:11 │
+│                                                                         ││   ✓ slice-4  Handler wired to the … 10:11 │
+│   Make sure slice-4 doesn't touch the 500 path.                         ││                                           │
+│                                                                         ││                                           │
 │                                                                         ││                                           │
 │   ── coordinator · 10:08 ────────────────────────────────────────────   ││                                           │
-│   Told slice-4 to stay out of src/decision.rs until slice-7 hands it    ││                                           │
-│   back.                                                                 ││                                           │
 │                                                                         ││                                           │
-│   ── You · 10:14 ────────────────────────────────────────────────────   ││ y allow · d deny · r reply · x dismiss    │
-│   What's blocking slice-7?                                              │└───────────────────────────────────────────┘
+│   Told slice-4 to stay out of src/decision.rs until slice-7 hands it    ││ y allow · d deny · r reply · x dismiss    │
+│   back.                                                                 │└───────────────────────────────────────────┘
 │                                                                         │┌ tasks · business ─────────────────────────┐
-│   ── coordinator · 10:14 ◐ ──────────────────────────────────────────   ││ ◐ ◆ coordinator        working 1.2G $3.10 │
-│   It needs a key. slice-7 can only reach the eval path with             ││ ▾ Now (2)                                 │
-│   FS_EVAL_VIRTUAL_KEY set.▌                                             ││ ▾ ⚠ business surface P1          PR #1231 │
-│                                                                         ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+│                                                                         ││ ◐ ◆ coordinator        working 1.2G $3.10 │
+│   ── You · 10:14 ────────────────────────────────────────────────────   ││ ▾ Now (2)                                 │
+│                                                                         ││ ▾ ⚠ business surface P1          PR #1231 │
+│   What's blocking slice-7?                                              ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
 │                                                                         ││         ⎇ dovetail/slice-4                │
 │                                                                         ││         ✓ write route tests               │
-│                                                                         ││         ◐ wire handler to registry        │
+│   ── coordinator · 10:14 ◐ ──────────────────────────────────────────   ││         ◐ wire handler to registry        │
 │                                                                         ││         ○ update OpenAPI spec ⊘ blocked   │
-│                                                                         ││       ✓ ◇ rebase               done $0.21 │
-│                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
+│   It needs a key. slice-7 can only reach the eval path with             ││       ✓ ◇ rebase               done $0.21 │
+│   FS_EVAL_VIRTUAL_KEY set.▌                                             ││       ◐ ◇ explore callers 12 tools · Grep │
 │                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
 │                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                         ││         ⎇ dovetail/slice-7                │
-│   ───────────────────────────────────────────────────────────────────   ││ ▾ Next (1)                                │
-│   › i to chat · ]] [[ turns · zc zo fold · gg G                         ││   ○ idea: eval key flow P2                │
-│                                                                         ││ ⏎ open · o fold · dd archive              │
+└─────────────────────────────────────────────────────────────────────────┘│ ▾ Next (1)                                │
+┌ chat › coordinator ─────────────────────────────────────────────────────┐│   ○ idea: eval key flow P2                │
+│   › i or ^j to type · ]] [[ turns · zc zo fold · gg G                   ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 4 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

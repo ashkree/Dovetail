@@ -1,6 +1,8 @@
 //! What "this agent" and "this task" mean right now, and the actions that act on them.
 
-use dovetail_api::{AgentId, AgentKind, Command, InboxId, PermissionMode, TaskId};
+use dovetail_api::{
+    AgentId, AgentKind, AgentStatus, Command, InboxId, PermissionMode, SessionLock, TaskId,
+};
 
 use super::{App, Confirm, Then};
 use crate::action::Action;
@@ -160,6 +162,10 @@ impl App {
         let arg = arg.trim();
         match action {
             Action::NewSlice if arg.is_empty() => self.start_input(InputTarget::SliceName, ""),
+            Action::NewSideChat if arg.is_empty() => {
+                self.start_input(InputTarget::SideChatQuestion, "")
+            }
+            Action::NewSideChat => self.new_side_chat(arg.to_string()),
             Action::NewSlice => {
                 let (name, brief) = arg
                     .split_once(char::is_whitespace)
@@ -253,5 +259,41 @@ impl App {
         self.note = Some(note);
         self.outbox
             .push(Command::CyclePermissionMode { agent: session });
+    }
+
+    /// `<leader>st`: lends the terminal to native `claude` on the focused session (a
+    /// subagent's: its session's). Asks first when a turn runs, as it is cut off.
+    pub(super) fn take_over(&mut self) {
+        let Some((session, redirected)) = self.focused_agent().and_then(|id| self.session_of(&id))
+        else {
+            self.note = Some("no session to take over".into());
+            return;
+        };
+        let Some(agent) = self.snap.agents.iter().find(|a| a.id == session) else {
+            return;
+        };
+        let name = agent.name.clone();
+        if agent.lock == SessionLock::TakenOver {
+            self.note = Some(format!("{name} is already taken over in a native terminal"));
+            return;
+        }
+        if agent.status == AgentStatus::SettingUp {
+            self.note = Some(format!("{name} is still setting up"));
+            return;
+        }
+        let command = Command::TakeOver { agent: session };
+        if agent.status == AgentStatus::Working {
+            let whose = if redirected {
+                format!("{name} (the session this subagent runs in)")
+            } else {
+                name
+            };
+            self.confirm = Some(Confirm {
+                prompt: format!("{whose} is mid-turn. Take it over anyway? The turn is cut off."),
+                then: Then::Handoff(command),
+            });
+            return;
+        }
+        self.handoff = Some(command);
     }
 }

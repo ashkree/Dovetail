@@ -216,6 +216,10 @@ impl MockCore {
                 self.update_agent(&agent, |a| a.status = AgentStatus::Working);
                 self.schedule_reply(agent, true);
             }
+            Command::ListPaths { agent, dir } => {
+                let paths = world::paths(dir.as_deref());
+                self.emit(Event::PathsListed { agent, dir, paths });
+            }
             Command::PasteClipboard { agent } => {
                 let paste = self
                     .clipboard
@@ -223,11 +227,14 @@ impl MockCore {
                     .unwrap_or_else(|| Paste::Refused("the mock core has no clipboard".into()));
                 self.emit(Event::ClipboardPasted { agent, paste });
             }
-            // The mock touches nothing outside itself: no clipboard and no editor. The editor
-            // answer still comes, so the UI takes its terminal back.
+            // The mock touches nothing outside itself: no clipboard, no editor and no native
+            // claude. The answer still comes, so the UI takes its terminal back.
             Command::CopyToClipboard { .. } => {}
             Command::OpenEditor { .. } => self.emit(Event::TerminalReturned {
                 error: Some("the mock core opens no editor".into()),
+            }),
+            Command::TakeOver { .. } => self.emit(Event::TerminalReturned {
+                error: Some("the mock core runs no native claude".into()),
             }),
             Command::Interrupt { agent } => {
                 if !self.replying.remove(&agent) {
@@ -324,6 +331,23 @@ impl MockCore {
                 self.refresh_totals();
                 let id = agent_id(&name);
                 self.after(2_500, move |core| core.finish_setup(&id));
+            }
+            Command::NewSideChat { question } => {
+                let n = (1..)
+                    .find(|n| self.agent(&agent_id(&format!("side-{n}"))).is_none())
+                    .unwrap_or(1);
+                let name = format!("side-{n}");
+                let chat = world::session(
+                    &name,
+                    AgentKind::SideChat,
+                    AgentStatus::Working,
+                    self.state.now_ms,
+                );
+                self.emit(Event::AgentUpserted(chat));
+                let id = agent_id(&name);
+                self.append(&id, EntryKind::User, question);
+                self.refresh_totals();
+                self.schedule_reply(id, true);
             }
             Command::CloseSlice { agent } => {
                 let Some(found) = self.agent(&agent) else {
@@ -454,8 +478,7 @@ impl MockCore {
                 .ready
                 .push_back(ServerMsg::Snapshot(self.state.trimmed())),
             Command::Quit { .. } => self.quit = true,
-            Command::TakeOver { .. }
-            | Command::RemoveWorktree { .. }
+            Command::RemoveWorktree { .. }
             | Command::OpenProject { .. }
             | Command::RegisterProject { .. } => self.fail("not available in the mock".into()),
         }

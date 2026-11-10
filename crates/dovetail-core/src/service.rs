@@ -68,6 +68,12 @@ pub struct CoreOptions {
     /// The editor command line for [`Command::OpenEditor`]; `None` for `$EDITOR`, else `nvim`.
     /// Tests give a fake one.
     pub editor: Option<std::ffi::OsString>,
+    /// The `claude` program run for take-over (M14); `None` for `claude` on `PATH`. Tests give
+    /// a fake one.
+    pub claude: Option<std::ffi::OsString>,
+    /// How a stored take-over lock's native process is checked; `None` reads `/proc`. Tests
+    /// give one that cannot tell.
+    pub processes: Option<Arc<dyn crate::takeover::Processes + Send + Sync>>,
     /// Probe `systemd-run --user --scope` at start and run sessions under memory caps (M13).
     /// Tests leave it off: sessions run uncapped and no warning is raised.
     pub memory_caps: bool,
@@ -234,10 +240,26 @@ pub(crate) enum Input {
         agent: AgentId,
         paste: dovetail_api::Paste,
     },
+    /// Paths for an agent's `@` completion were listed.
+    PathsListed {
+        agent: AgentId,
+        dir: Option<String>,
+        paths: Vec<String>,
+    },
     /// Copying text to the clipboard failed.
     CopyFailed(crate::clipboard::CopyError),
     /// The editor run in the UI's terminal exited; the message says why it failed, if it did.
     EditorExited(Option<String>),
+    /// Native `claude` started for a take-over (M14).
+    NativeStarted {
+        agent: AgentId,
+        pid: u32,
+    },
+    /// Native `claude` exited, or could not start.
+    NativeExited {
+        agent: AgentId,
+        end: crate::takeover::NativeEnd,
+    },
     /// A capped session's `memory.events` changed: its scope's `oom_kill` count (M13b).
     OomKills {
         cgroup: PathBuf,
@@ -297,7 +319,11 @@ pub(crate) struct Core {
     seq: u64,
     ui_alive: bool,
     /// An editor runs in the UI's terminal ([`Command::OpenEditor`]).
-    editor_open: bool,
+    pub(crate) editor_open: bool,
+    /// A take-over this app runs: the terminal is lent to native `claude` (M14, `takeover`).
+    pub(crate) takeover: Option<crate::takeover::Active>,
+    /// Dovetail's notes for sessions taken over, sent once headless is back.
+    pub(crate) held_for_takeover: HashMap<AgentId, Vec<String>>,
     pub(crate) agents: BTreeMap<AgentId, AgentRow>,
     pub(crate) live: HashMap<AgentId, Live>,
     pub(crate) generation: u64,
@@ -342,6 +368,9 @@ pub(crate) struct Core {
     pub(crate) claude: Result<crate::profile::ClaudeHome, crate::profile::ProfileError>,
     /// The worktree view's data, per slice (M12b, `worktree_info`).
     pub(crate) worktrees: BTreeMap<AgentId, dovetail_api::WorktreeInfo>,
+    /// Each session's slash commands and skills, as it last listed them; kept after the process
+    /// stops so `/` completion still works for a dormant slice.
+    pub(crate) commands: BTreeMap<AgentId, Vec<dovetail_api::SlashCommand>>,
     /// Whether sessions run under capped scopes (M13, `memory`).
     pub(crate) scopes: crate::memory::Scopes,
     /// When running sessions' memory is next read.
@@ -399,6 +428,8 @@ impl Core {
             seq: 0,
             ui_alive: true,
             editor_open: false,
+            takeover: None,
+            held_for_takeover: HashMap::new(),
             agents: BTreeMap::new(),
             live: HashMap::new(),
             generation: 0,
@@ -427,6 +458,7 @@ impl Core {
             todos: Default::default(),
             claude,
             worktrees: BTreeMap::new(),
+            commands: BTreeMap::new(),
             scopes: crate::memory::Scopes::Off,
             next_sample: tokio::time::Instant::now(),
             oom: Default::default(),
@@ -542,12 +574,17 @@ impl Core {
                 Input::Pasted { agent, paste } => {
                     self.emit(Event::ClipboardPasted { agent, paste });
                 }
+                Input::PathsListed { agent, dir, paths } => {
+                    self.emit(Event::PathsListed { agent, dir, paths });
+                }
                 Input::CopyFailed(e) => self.fail(e.to_string()),
                 Input::EditorExited(error) => {
                     self.editor_open = false;
                     self.emit(Event::TerminalReturned { error });
                 }
                 Input::OomKills { cgroup, count } => self.on_oom_kills(cgroup, count),
+                Input::NativeStarted { agent, pid } => self.native_started(&agent, pid),
+                Input::NativeExited { agent, end } => self.native_exited(&agent, end),
             }
             if self.quitting.is_none() {
                 self.start_queued().await;
@@ -618,6 +655,7 @@ impl Core {
                 created_ms: now_ms(),
                 tool_use_id: None,
                 claude_home: None,
+                takeover: None,
             };
             self.db.upsert_agent(row.clone()).await?;
             self.agents.insert(coordinator, row);
@@ -713,6 +751,7 @@ impl Core {
             usage: self.current_usage(),
             profile: self.profile_name(),
             worktrees: self.worktrees.values().cloned().collect(),
+            commands: self.commands.clone(),
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1107,6 +1146,7 @@ impl Core {
                 attachments,
             } => self.prompt(&agent, text, attachments).await,
             Command::PasteClipboard { agent } => self.paste_clipboard(agent),
+            Command::ListPaths { agent, dir } => self.list_paths(agent, dir),
             Command::CopyToClipboard { text } => self.copy_to_clipboard(text),
             Command::OpenEditor { path } => self.open_editor(path),
             Command::Interrupt { agent } => self.interrupt(&agent),
@@ -1116,6 +1156,7 @@ impl Core {
             Command::AnswerQuestion { item, text } => self.answer_question(item, text).await,
             Command::DismissInbox { item } => self.dismiss(item).await,
             Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
+            Command::NewSideChat { question } => self.start_side_chat(question),
             Command::NewSlice { task, name, brief } => {
                 let request = SliceRequest {
                     task,
@@ -1190,7 +1231,7 @@ impl Core {
             },
             Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
-            Command::TakeOver { .. } => self.fail("take-over arrives in M14"),
+            Command::TakeOver { agent } => self.take_over(agent).await,
             Command::OpenProject { .. } => {
                 self.fail("switching projects: quit and open dovetail in the other folder");
             }
@@ -1210,6 +1251,25 @@ impl Core {
         });
     }
 
+    /// Lists paths for `@` completion on a blocking thread (git can take a moment on a big
+    /// tree), relative to the agent's folder: its worktree, else the main checkout.
+    fn list_paths(&mut self, agent: AgentId, dir: Option<String>) {
+        let root = self
+            .agents
+            .get(&agent)
+            .and_then(|r| r.agent.worktree.as_ref())
+            .map(|w| w.path.clone())
+            .unwrap_or_else(|| self.project.repo_path().to_path_buf());
+        let inputs = self.inputs.clone();
+        tokio::task::spawn_blocking(move || {
+            let paths = match dir.as_deref() {
+                None => crate::completion::tree(&root),
+                Some(d) => crate::completion::dir(&root, d),
+            };
+            let _ = inputs.send(Input::PathsListed { agent, dir, paths });
+        });
+    }
+
     /// Copies text to the clipboard on a blocking thread; only a failure is reported.
     fn copy_to_clipboard(&mut self, text: String) {
         let inputs = self.inputs.clone();
@@ -1225,9 +1285,9 @@ impl Core {
     /// once, so the UI never waits for nothing; it cannot normally happen, as the UI sends no
     /// commands while the editor has the terminal.
     fn open_editor(&mut self, path: PathBuf) {
-        if self.editor_open {
+        if self.editor_open || self.takeover.is_some() {
             self.emit(Event::TerminalReturned {
-                error: Some("an editor is already open".into()),
+                error: Some("the terminal is already lent out".into()),
             });
             return;
         }

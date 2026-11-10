@@ -37,6 +37,7 @@ mod event;
 mod fake;
 pub mod parse;
 mod spec;
+pub mod transcript;
 
 pub use claude::ClaudeDriver;
 pub use event::*;
