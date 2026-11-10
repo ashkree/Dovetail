@@ -11,6 +11,16 @@ dovetail-api.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+# Decision 23c / S5: the renderer for structure maps. Flowchart + ELK layout + PNG only; no other
+# diagram families. Heavy (105 new crates, ~14 MB of binary; merman-elk-layered is EPL-2.0, so its
+# notice must ship) but contained here: dovetail-tui never depends on this crate. Pinned because
+# merman is pre-1.0 and 0.10 is in alpha.
+merman = { version = "=0.9.3", default-features = false, features = ["diagram-flowchart", "layout-elk", "png"] }
+
+[dev-dependencies]
+insta.workspace = true
+# Tests decode the PNG to count highlight pixels.
+png = "0.18"
 
 [lints]
 workspace = true
