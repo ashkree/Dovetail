@@ -4,7 +4,7 @@
 use dovetail_api::{
     AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, KEEP_COORDINATOR_PERMISSION,
     PermissionAnswer, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
-    START_SLICE_PERMISSION, Snapshot,
+    START_SLICE_PERMISSION, Snapshot, UPGRADE_READY_PERMISSION,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -99,6 +99,7 @@ pub(crate) fn input_summary(snap: &Snapshot, tool: &str, input: &serde_json::Val
                 "a fresh one started from the {date} handoff · y: go back · d: keep the fresh one"
             ))
         }
+        UPGRADE_READY_PERMISSION => Some(upgrade_summary(input)),
         // `slice-4 · could not list processes: …`
         RELEASE_TAKEOVER_PERMISSION => field("session").map(|s| match field("reason") {
             Some(why) => format!("{s} · {why}"),
@@ -107,6 +108,40 @@ pub(crate) fn input_summary(snap: &Snapshot, tool: &str, input: &serde_json::Val
         _ => None,
     }
     .unwrap_or_else(|| input.to_string())
+}
+
+/// `abc1234 · y: restart once every agent is idle · d: install at the next quit`, plus the
+/// agents `y` waits for and the role prompts the upgrade will not overwrite (ADR 0014).
+fn upgrade_summary(input: &serde_json::Value) -> String {
+    let names = |key: &str| -> Vec<&str> {
+        input
+            .get(key)
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default()
+    };
+    let source = input.get("source").and_then(|v| v.as_str()).unwrap_or("?");
+    let waiting = names("waiting");
+    let mut text = if input.get("restarting").and_then(|v| v.as_bool()) == Some(true) {
+        if waiting.is_empty() {
+            format!("{source} · restarting")
+        } else {
+            format!(
+                "{source} · restarts once these are idle: {} · d: stop waiting",
+                waiting.join(", ")
+            )
+        }
+    } else {
+        format!("{source} · y: restart once every agent is idle · d: install at the next quit")
+    };
+    let differing = names("differing");
+    if !differing.is_empty() {
+        text.push_str(&format!(
+            " · installed copies differ and are kept: {} (scripts/bootstrap.sh --force takes the new ones)",
+            differing.join(", ")
+        ));
+    }
+    text
 }
 
 /// `start slice demo-1 on #1 demo`.

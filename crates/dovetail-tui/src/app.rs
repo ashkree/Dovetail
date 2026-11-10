@@ -383,6 +383,11 @@ impl App {
                     _ => None,
                 };
                 let journal = matches!(event, Event::JournalChanged(_));
+                // Every agent is idle and the user said so (ADR 0014): quit without asking, so
+                // the binary can swap the new build in and start it.
+                if matches!(event, Event::UpgradeRestarting) {
+                    self.quit = true;
+                }
                 match apply(&mut self.snap, seq, event) {
                     ApplyResult::Applied => {
                         if let Some(message) = failure {
@@ -918,6 +923,7 @@ impl App {
             }
             Action::Quit => self.quit_asking(true),
             Action::EndOfDay => self.close_day(false),
+            Action::Upgrade => self.run_with_arg(Action::Upgrade, ""),
             Action::ForceQuit => self.quit = true,
             Action::QuitOnRepeat => {
                 if std::mem::take(&mut self.exit_armed) {

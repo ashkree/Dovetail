@@ -150,6 +150,10 @@ pub enum Event {
     /// The end-of-day journal changed: `:eod` started waiting for the handoff, or a day's file
     /// was written (ADR 0012).
     JournalChanged(JournalState),
+    /// Every agent is idle and the user said `y` on "Upgrade ready" (ADR 0014): the core is
+    /// quitting, and the UI quits too, without asking. The binary then swaps the staged build in
+    /// and starts it in the same terminal. Changes nothing in the snapshot.
+    UpgradeRestarting,
 }
 
 /// What the core found on the system clipboard.
@@ -270,6 +274,13 @@ pub enum Command {
     TakeOver {
         /// The session.
         agent: AgentId,
+    },
+    /// `:upgrade` (ADR 0014): build the next binary in the background. An "Upgrade ready" item
+    /// appears in Needs you when it is done, an Error item when the build fails; a refusal comes
+    /// back as [`Event::CommandFailed`].
+    Upgrade {
+        /// Build the project's checkout instead of `origin/main` (`:upgrade --local`).
+        local: bool,
     },
     /// Create a task.
     CreateTask(NewTask),

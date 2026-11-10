@@ -166,6 +166,18 @@ impl App {
                 self.start_input(InputTarget::SideChatQuestion, "")
             }
             Action::NewSideChat => self.new_side_chat(arg.to_string()),
+            Action::Upgrade if arg.is_empty() || arg == "--local" => {
+                self.outbox.push(Command::Upgrade {
+                    local: arg == "--local",
+                });
+                self.note = Some(if arg.is_empty() {
+                    "building the upgrade from origin/main; \"Upgrade ready\" appears in Needs you"
+                        .into()
+                } else {
+                    "building the upgrade from this checkout; \"Upgrade ready\" appears in Needs you".into()
+                });
+            }
+            Action::Upgrade => self.note = Some("usage: :upgrade [--local]".into()),
             Action::NewSlice => {
                 let (name, brief) = arg
                     .split_once(char::is_whitespace)

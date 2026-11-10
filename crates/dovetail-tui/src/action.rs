@@ -41,6 +41,9 @@ pub enum Action {
     /// Close the day (`:eod`, ADR 0012): the coordinator writes its handoff and Dovetail the
     /// day's journal file.
     EndOfDay,
+    /// Build the next Dovetail in the background (`:upgrade`, ADR 0014); `:upgrade --local` builds
+    /// the checkout instead of `origin/main`.
+    Upgrade,
     /// Panic on purpose, to check that the terminal is restored. Debug builds only.
     #[cfg(debug_assertions)]
     DebugPanic,

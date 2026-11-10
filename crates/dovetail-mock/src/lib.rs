@@ -507,7 +507,8 @@ impl MockCore {
                 .ready
                 .push_back(ServerMsg::Snapshot(self.state.trimmed())),
             Command::Quit { .. } => self.quit = true,
-            Command::RemoveWorktree { .. }
+            Command::Upgrade { .. }
+            | Command::RemoveWorktree { .. }
             | Command::OpenProject { .. }
             | Command::RegisterProject { .. } => self.fail("not available in the mock".into()),
         }

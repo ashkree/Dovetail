@@ -48,12 +48,17 @@ pub enum HandlerError {
     /// Storage failed.
     #[error(transparent)]
     Db(#[from] crate::db::DbError),
+    /// The app cannot take the staged upgrade; the text says why.
+    #[error("{0}")]
+    Refused(String),
 }
 
 /// What the socket server asks of the core.
 pub trait SocketHandler: Send + Sync + 'static {
     /// Creates a task from `dovetail add`.
     fn add_task(&self, task: NewTask) -> BoxFuture<Result<TaskId, HandlerError>>;
+    /// Takes the build `dovetail upgrade` staged: raises "Upgrade ready" (ADR 0014).
+    fn staged_upgrade(&self) -> BoxFuture<Result<(), HandlerError>>;
     /// Answers a forwarded tool call.
     fn tool_call(&self, call: ToolCall) -> BoxFuture<SocketResponseBody>;
 }
@@ -159,6 +164,12 @@ async fn connection(stream: UnixStream, handler: Arc<dyn SocketHandler>) {
                         message: e.to_string(),
                     },
                 },
+                SocketRequestBody::StagedUpgrade => match handler.staged_upgrade().await {
+                    Ok(()) => SocketResponseBody::UpgradeStaged,
+                    Err(e) => SocketResponseBody::Error {
+                        message: e.to_string(),
+                    },
+                },
                 SocketRequestBody::ToolCall {
                     agent,
                     tool_use_id,
@@ -182,9 +193,9 @@ async fn connection(stream: UnixStream, handler: Arc<dyn SocketHandler>) {
     }
 }
 
-/// Sends `dovetail add`'s task to a running app. `Ok(None)` means no app listens on `path`.
-/// Blocking; for the binary's short-lived subcommands.
-pub fn try_add_task(path: &Path, task: NewTask) -> std::io::Result<Option<TaskId>> {
+/// Sends one request to a running app and returns its reply. `Ok(None)` means no app listens on
+/// `path`; an `Error` reply becomes an `Err`. Blocking; for the binary's short-lived subcommands.
+fn round_trip(path: &Path, body: SocketRequestBody) -> std::io::Result<Option<SocketResponseBody>> {
     use std::io::ErrorKind;
     let stream = match StdStream::connect(path) {
         Ok(stream) => stream,
@@ -194,10 +205,7 @@ pub fn try_add_task(path: &Path, task: NewTask) -> std::io::Result<Option<TaskId
         Err(e) => return Err(e),
     };
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let request = SocketRequest {
-        id: 1,
-        body: SocketRequestBody::AddTask { task },
-    };
+    let request = SocketRequest { id: 1, body };
     let mut line = serde_json::to_string(&request).map_err(std::io::Error::other)?;
     line.push('\n');
     (&stream).write_all(line.as_bytes())?;
@@ -205,9 +213,30 @@ pub fn try_add_task(path: &Path, task: NewTask) -> std::io::Result<Option<TaskId
     BufReader::new(&stream).read_line(&mut reply)?;
     let response: SocketResponse = serde_json::from_str(&reply).map_err(std::io::Error::other)?;
     match response.body {
-        SocketResponseBody::TaskAdded { id } => Ok(Some(id)),
         SocketResponseBody::Error { message } => Err(std::io::Error::other(message)),
-        other => Err(std::io::Error::other(format!(
+        body => Ok(Some(body)),
+    }
+}
+
+/// Sends `dovetail add`'s task to a running app. `Ok(None)` means no app listens on `path`.
+/// Blocking; for the binary's short-lived subcommands.
+pub fn try_add_task(path: &Path, task: NewTask) -> std::io::Result<Option<TaskId>> {
+    match round_trip(path, SocketRequestBody::AddTask { task })? {
+        None => Ok(None),
+        Some(SocketResponseBody::TaskAdded { id }) => Ok(Some(id)),
+        Some(other) => Err(std::io::Error::other(format!(
+            "unexpected reply: {other:?}"
+        ))),
+    }
+}
+
+/// Hands the build `dovetail upgrade` staged to a running app. `Ok(false)` means no app listens
+/// on `path`; an app that refuses (it is a dev build, say) is an error with its reason.
+pub fn try_staged_upgrade(path: &Path) -> std::io::Result<bool> {
+    match round_trip(path, SocketRequestBody::StagedUpgrade)? {
+        None => Ok(false),
+        Some(SocketResponseBody::UpgradeStaged) => Ok(true),
+        Some(other) => Err(std::io::Error::other(format!(
             "unexpected reply: {other:?}"
         ))),
     }

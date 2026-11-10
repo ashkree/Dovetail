@@ -90,6 +90,11 @@ impl Paths {
         self.data.join("profiles")
     }
 
+    /// `upgrade/`: where `:upgrade` builds and stages the next binary (ADR 0014).
+    pub fn upgrade(&self) -> PathBuf {
+        self.data.join("upgrade")
+    }
+
     /// A project's worktree recipe.
     pub fn recipe(&self, project: &str) -> PathBuf {
         self.config.join("projects").join(format!("{project}.toml"))

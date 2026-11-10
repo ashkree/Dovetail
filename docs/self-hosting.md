@@ -31,10 +31,19 @@ Whatever was running when the app quit, was killed or crashed is reported on the
 
 ## Upgrading
 
-1. Quit Dovetail (`:q`). Running sessions use the installed binary for their hooks and MCP bridge, so `scripts/install.sh` refuses while an app runs ("close Dovetail first").
-2. Pull and run `scripts/install.sh`.
-3. If the role prompts or the recipe changed, run `scripts/bootstrap.sh --force`.
-4. Open `dovetail` again. The conversations resume.
+From inside the app (ADR 0014):
+
+1. Type `:upgrade`. Dovetail fetches `origin/main` into a throwaway worktree and builds it in the background into `~/.local/share/dovetail/upgrade/`. It never builds over `~/.local/bin/dovetail`, and never in your checkout. `:upgrade --local` builds the checkout instead.
+2. When the build is done, **Upgrade ready** appears in Needs you. A failed build is an Error item with the end of cargo's output; nothing is replaced.
+3. `y` restarts once every agent is idle (no turn is cut off; the item lists the agents it waits for). `d` leaves the build staged: it is installed when you next quit with `:q`.
+4. The restart is the normal quit, then the staged binary is renamed over the installed one, then Dovetail starts again in the same terminal, folder and arguments. Sessions resume as after any restart.
+5. If the item says role prompts or the recipe differ, they are not overwritten; run `scripts/bootstrap.sh --force` to take the new ones.
+
+`dovetail upgrade [--local]` does the same from the shell: with no app running it builds and installs at once; with an app running in the project's folder it hands the build to that app, which offers **Upgrade ready**. If another project's app runs, it refuses ("close Dovetail first"). Only the installed `dovetail` upgrades; a dev build refuses. Needs `cargo` and `git`.
+
+The installed binary is only replaced while no app and no helper of it runs. If one still does at the swap (another project's app), the build stays staged and Dovetail says so after it shuts down.
+
+The old way still works: quit Dovetail (`:q`), pull, run `scripts/install.sh` (it refuses while an app runs, "close Dovetail first"), run `scripts/bootstrap.sh --force` if the role prompts or the recipe changed, and open `dovetail` again.
 
 Hook and MCP paths always come from the running binary, so the installed app never points at `target/`, and rebuilding `target/` cannot break running sessions.
 

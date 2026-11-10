@@ -49,6 +49,9 @@ pub(crate) enum Waiter {
     /// A take-over lock left by a crash whose native run cannot be checked (M14): `y` releases
     /// it, `d` keeps it.
     ReleaseLock,
+    /// A staged upgrade (ADR 0014): `y` restarts once every agent is idle, `d` keeps the build
+    /// for the next ordinary quit.
+    UpgradeReady,
 }
 
 impl Waiter {
@@ -240,6 +243,11 @@ impl Core {
             self.fail("that item is not a permission request");
             return;
         }
+        // `y` on an upgrade keeps the item while it waits for the agents to go idle.
+        if matches!(entry.waiter, Waiter::UpgradeReady) {
+            self.answer_upgrade(id, answer);
+            return;
+        }
         let label = match &answer {
             PermissionAnswer::Allow => "allowed".to_owned(),
             PermissionAnswer::AllowAlways => "always allowed".to_owned(),
@@ -405,6 +413,7 @@ impl Core {
             Waiter::RemoveOrphan { found } => self.keep_orphan(found),
             Waiter::KeepCoordinator { .. } => self.kept_fresh_coordinator(),
             Waiter::ReleaseLock => {}
+            Waiter::UpgradeReady => self.upgrade_item_gone(),
             Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }
     }

@@ -191,7 +191,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `merman` | maps | PNG/SVG only | Decision 23c, pending S5 |
 | `ratatui-image` (latest stable) | tui, M15 only | `crossterm` | kitty graphics |
 | `rustix` 1 | core | `std`, `process` only | `waitpid` with `WUNTRACED` and `SIGCONT`, so an editor or native `claude` that stops itself (Ctrl-Z) is continued instead of hanging the terminal (task #32); no unsafe of ours, and already in the tree through `crossterm` and `tempfile` |
-| `signal-hook` | tui | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; no unsafe of ours |
+| `signal-hook` | tui, binary | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; the binary's `dovetail upgrade` sets a flag on SIGINT/SIGTERM so a Ctrl-C stops and reaps cargo (ADR 0014); no unsafe of ours |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
 
 **Deliberately not added**
@@ -743,7 +743,7 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | R2 | **The undocumented protocol** can change between Claude Code releases | Driver isolated, unknown events tolerated, fixtures re-captured on upgrade, supported version noted |
 | R3 | **A young driver crate** may lag behind | The trait isolates it; the hand-written fallback is small |
 | R4 | **Self-hosting can break its own tool** | Stable install, upgrades only when idle, separate dev state, forward-only migrations, plain `claude` as the way back |
-| R5 | **A replaced binary:** a rebuild under a running app breaks hook and MCP paths | Fixed install path; upgrades via restart (M10 test) |
+| R5 | **A replaced binary:** a rebuild under a running app breaks hook and MCP paths | Fixed install path; upgrades via restart (M10 test). `:upgrade` and `dovetail upgrade` (ADR 0014) build into a staging folder and rename over the install only while no app and no helper runs |
 | R6 | **Shell writes aren't blocked** from slices into the main checkout (Spike 4) | Role prompt only in v1, as designed. Accepted risk, and it matters more while self-hosting |
 | R7 | **Untested auto-mode behaviour:** classifier denials and escalations | Handled generically via the inbox; fixtures added when first seen |
 | R8 | **Upgrades interrupt running turns**, since there's no daemon | Upgrade when idle; M10's restart recovery covers the rest |

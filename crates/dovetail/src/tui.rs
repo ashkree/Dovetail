@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use dovetail_core::config::Config;
 use dovetail_core::db::Db;
 use dovetail_core::paths::Paths;
+use dovetail_core::service::UpgradeOptions;
+use dovetail_core::upgrade;
 use dovetail_core::{CoreOptions, projects};
 use dovetail_driver::ClaudeDriver;
 use dovetail_mock::{MockConfig, spawn};
@@ -54,9 +56,14 @@ pub fn run_real() -> Result<()> {
         processes: None,
         memory_caps: true,
         scopes: None,
+        // `:upgrade` (ADR 0014); without a HOME there is no install path to replace.
+        upgrade: upgrade::install_path().ok().map(|install| UpgradeOptions {
+            exec: Arc::new(upgrade::SystemExec),
+            install,
+        }),
     };
-    let (link, core) =
-        dovetail_core::spawn(resolution, paths, config, options).context("starting the core")?;
+    let (link, core) = dovetail_core::spawn(resolution, paths.clone(), config, options)
+        .context("starting the core")?;
     let clock: Clock = Box::new(|| {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -64,9 +71,61 @@ pub fn run_real() -> Result<()> {
     });
     let mut app = App::new(TimeZone::system());
     let result = dovetail_tui::run(&mut app, link, clock).context("terminal UI failed");
+    let restart = core.restart_requested();
     // Sessions end with the app (B23): wait until they have exited and been reaped.
     if !core.wait(Duration::from_secs(10)) {
         tracing::warn!("the core did not stop within 10 s");
     }
+    // The terminal is ours again (and nothing runs): a staged upgrade goes in now (ADR 0014).
+    finish_upgrade(&paths, restart);
     result
+}
+
+/// After the app has shut down: swap a staged build over the installed binary, and when the user
+/// asked for the restart, `exec` it in this terminal with the same arguments (the folder is the
+/// same too, so sessions resume as after any restart). A failure leaves the old binary in place
+/// and the build staged, and says so on the restored terminal.
+fn finish_upgrade(paths: &Paths, restart: bool) {
+    let Ok(install) = upgrade::install_path() else {
+        return;
+    };
+    let staging = upgrade::Staging::new(paths);
+    if staging.ready().is_none() {
+        return;
+    }
+    // A dev build never replaces the installed binary.
+    let is_installed =
+        std::env::current_exe().is_ok_and(|exe| upgrade::is_installed_binary(&exe, &install));
+    if !is_installed {
+        return;
+    }
+    let guard = upgrade::SwapGuard {
+        runtime: paths.runtime.clone(),
+        proc_root: "/proc".into(),
+        own_pid: std::process::id(),
+        wait: upgrade::HELPER_EXIT_WAIT,
+    };
+    match upgrade::install_staged(&staging, &install, &guard) {
+        Ok(upgrade::Swap::Installed(ready)) if restart => {
+            use std::os::unix::process::CommandExt;
+            let error = std::process::Command::new(&install)
+                .args(std::env::args_os().skip(1))
+                .exec();
+            eprintln!(
+                "upgraded to {}, but could not start it: {error}",
+                ready.source
+            );
+        }
+        Ok(upgrade::Swap::Installed(ready)) => {
+            eprintln!(
+                "upgraded to {}; the next dovetail you open runs it",
+                ready.source
+            );
+        }
+        Ok(upgrade::Swap::NothingStaged) => {}
+        Err(error) => {
+            tracing::warn!("upgrade not installed: {error}");
+            eprintln!("upgrade not installed, the build stays staged: {error}");
+        }
+    }
 }

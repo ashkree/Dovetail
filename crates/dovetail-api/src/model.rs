@@ -473,6 +473,13 @@ pub const KEEP_COORDINATOR_PERMISSION: &str = "Keep yesterday's coordinator";
 /// the lock, `d` keeps it. Its input is `{session, reason}`.
 pub const RELEASE_TAKEOVER_PERMISSION: &str = "Release take-over lock";
 
+/// The `tool` of the Permission item raised when an upgrade build is staged (ADR 0014): `y`
+/// restarts once every agent is idle, `d` leaves the build for the next ordinary quit. Its input
+/// is `{source, differing: [..], waiting: [..], restarting}`: where the build came from, the role
+/// prompts and recipe whose installed copy differs (never overwritten), the agents `y` still
+/// waits for, and whether `y` was pressed.
+pub const UPGRADE_READY_PERMISSION: &str = "Upgrade ready";
+
 /// A permission rule Claude Code offers for "always allow".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuleSuggestion {

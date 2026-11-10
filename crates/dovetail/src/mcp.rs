@@ -217,7 +217,7 @@ impl Bridge {
                 &format!("Dovetail could not handle this call: {message}"),
                 true,
             ),
-            Ok(SocketResponseBody::TaskAdded { .. }) => {
+            Ok(SocketResponseBody::TaskAdded { .. } | SocketResponseBody::UpgradeStaged) => {
                 text_result("Dovetail sent an unexpected reply to this call.", true)
             }
             Err(e) => text_result(&e, true),

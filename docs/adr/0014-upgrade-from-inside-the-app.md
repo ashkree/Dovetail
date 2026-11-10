@@ -20,3 +20,11 @@ Upgrading meant quitting Dovetail, running `scripts/install.sh`, waiting for the
 - Upgrade never overwrites the installed role prompts or recipe. When the new build's copies differ from the installed ones, the "Upgrade ready" item says so, and `scripts/bootstrap.sh --force` stays the way to take them.
 - The build needs `cargo` and `git` on the machine running the app; bootstrap already checks both.
 - Where an agent never goes idle, `y` waits; the item says which agents it is waiting for, and quitting with `:q` still swaps the staged build in once the app has shut down, so the next open runs it.
+
+**Refinements (task #3, approved by the user 2026-11-10):**
+
+- The installed binary is `~/.local/bin/dovetail`. `:upgrade` and `dovetail upgrade` refuse when the running executable is any other path, so a dev build in a slice cannot replace the one the user works in.
+- Staging is `<data>/upgrade/` (`src/` the throwaway worktree, `target/` kept for incremental builds, `staged/` the binary and its note, `build.log`). `--local` works on both entry points. The source is the open project's checkout, which must be a Dovetail checkout.
+- `dovetail upgrade` talks to the app of the project in the current folder. With no app of it running but another project's app running, it refuses with "close Dovetail first: ...".
+- `y` waits for other projects' apps as well as for busy agents, and the item names both. If something that runs the installed binary appears after the wait ended, the swap is skipped, the build stays staged, and a note is printed once the terminal is restored. A staged build left over (the user chose `d` and the app crashed) is offered again on the next open.
+- Restarting by `y` skips the "Close the day?" question: every agent is idle and the app comes straight back.
