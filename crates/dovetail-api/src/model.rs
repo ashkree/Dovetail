@@ -98,6 +98,20 @@ pub struct Snapshot {
     /// until that one reports.
     #[serde(default)]
     pub commands: BTreeMap<AgentId, Vec<SlashCommand>>,
+    /// The project's end-of-day journal (ADR 0012); `None` when the open folder is not a
+    /// registered project, so it has no journal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub journal: Option<JournalState>,
+}
+
+/// Where the project's end-of-day journal stands (ADR 0012).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JournalState {
+    /// The date of the newest journal file, `YYYY-MM-DD` (local time); `None` when there is
+    /// none yet.
+    pub latest: Option<String>,
+    /// `:eod` is waiting for the coordinator's handoff before it writes the day's file.
+    pub closing: bool,
 }
 
 /// A slash command or skill a session offers (`/compact`, `/code-review`), typed as `/name` in
@@ -442,6 +456,11 @@ pub const START_SLICE_PERMISSION: &str = "start_slice";
 /// The `tool` of the Permission item that asks before removing a slice worktree with unsaved
 /// work. Its input is `{worktree, branch, uncommitted: [..], unpushed_commits}`.
 pub const REMOVE_WORKTREE_PERMISSION: &str = "Remove worktree";
+
+/// The `tool` of the Permission item raised when a fresh coordinator started on the first open
+/// of a day (ADR 0012): `y` goes back to yesterday's session, `d` keeps the fresh one. Its input
+/// is `{journal, session_id, transcript_path}`: the handoff's date and the old session.
+pub const KEEP_COORDINATOR_PERMISSION: &str = "Keep yesterday's coordinator";
 
 /// A permission rule Claude Code offers for "always allow".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

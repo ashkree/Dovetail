@@ -278,6 +278,10 @@ fn hello_and_a_full_snapshot_roundtrip() {
             }],
         )]),
         profile: Some("maveron".into()),
+        journal: Some(JournalState {
+            latest: Some("2026-11-10".into()),
+            closing: false,
+        }),
     };
     roundtrip(&ServerMsg::Hello {
         protocol: PROTOCOL_VERSION,
@@ -325,6 +329,10 @@ fn every_event_roundtrips() {
         Event::TerminalReturned {
             error: Some("nvim exited with status 1".into()),
         },
+        Event::JournalChanged(JournalState {
+            latest: None,
+            closing: true,
+        }),
     ]
     .into_iter()
     .chain(inbox_items().into_iter().map(Event::InboxUpserted))
@@ -340,6 +348,7 @@ fn every_event_roundtrips() {
 #[test]
 fn every_command_roundtrips() {
     let commands = vec![
+        Command::EndOfDay,
         Command::Prompt {
             agent: id("coordinator"),
             text: "plan M2".into(),

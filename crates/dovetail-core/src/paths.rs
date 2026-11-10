@@ -110,6 +110,11 @@ impl Paths {
         self.data.join("projects").join(project).join("worktrees")
     }
 
+    /// A project's end-of-day journal: one `YYYY-MM-DD.md` per closed day (ADR 0012).
+    pub fn journal(&self, project: &str) -> PathBuf {
+        self.data.join("projects").join(project).join("journal")
+    }
+
     /// Generated launch files for one session (`settings.json`, `mcp.json`), never in a repo.
     /// `project` is the project id, or the app's key for a folder not registered yet.
     pub fn run_dir(&self, project: &str, agent: &str) -> PathBuf {

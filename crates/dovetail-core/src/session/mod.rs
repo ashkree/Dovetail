@@ -784,6 +784,7 @@ impl Core {
             return;
         };
         let interrupted = live.turn.interrupting || result.subtype == "error_during_execution";
+        let reply = result.result.clone();
         let base = live.base_cost;
         let preview: String = live.turn.last_text.chars().take(200).collect();
         live.turn.end();
@@ -811,7 +812,11 @@ impl Core {
         }
         // Rule 2: with background work or a queued input left, this is not the end (ADR 0001:
         // no item yet).
-        if background == 0 && !more_queued {
+        let last = background == 0 && !more_queued;
+        if agent.0 == COORDINATOR {
+            self.closing_result(reply, interrupted, last);
+        }
+        if last {
             self.finished_turn(agent, preview);
             // The turn may have committed, pushed or opened a PR (worktree view, M12b).
             self.refresh_worktree(agent);
@@ -888,6 +893,10 @@ impl Core {
         }
         if let Some(confirmed) = live.close_after {
             self.finish_close(agent, confirmed);
+        }
+        if agent.0 == COORDINATOR {
+            self.closing_exit();
+            self.coordinator_exited();
         }
         self.refresh_status(agent);
     }

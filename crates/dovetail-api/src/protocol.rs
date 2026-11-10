@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
-    Decision, DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, SlashCommand, Snapshot,
-    Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId,
-    WorktreeInfo,
+    Decision, DecisionId, EntryId, InboxId, InboxItem, JournalState, PLevel, ProjectId,
+    SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals, UsageLimits,
+    Warning, WarningId, WorktreeInfo,
 };
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
@@ -141,6 +141,9 @@ pub enum Event {
         /// cleanly.
         error: Option<String>,
     },
+    /// The end-of-day journal changed: `:eod` started waiting for the handoff, or a day's file
+    /// was written (ADR 0012).
+    JournalChanged(JournalState),
 }
 
 /// What the core found on the system clipboard.
@@ -245,6 +248,10 @@ pub enum Command {
         /// The slice or side chat.
         agent: AgentId,
     },
+    /// Close the day (`:eod`, ADR 0012): ask the coordinator for its handoff, then write today's
+    /// journal file with it and Dovetail's facts. The core answers with
+    /// [`Event::JournalChanged`]: `closing` while it waits, then the new `latest`.
+    EndOfDay,
     /// Open a side chat with `question` as its first prompt (ADR 0011).
     NewSideChat {
         /// The first prompt.

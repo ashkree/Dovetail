@@ -38,6 +38,9 @@ pub enum Action {
     /// [`crate::app::EXIT_CONFIRM_MS`] runs [`Action::Quit`] (which asks first when a turn is
     /// running). Any other key or the timeout disarms it.
     QuitOnRepeat,
+    /// Close the day (`:eod`, ADR 0012): the coordinator writes its handoff and Dovetail the
+    /// day's journal file.
+    EndOfDay,
     /// Panic on purpose, to check that the terminal is restored. Debug builds only.
     #[cfg(debug_assertions)]
     DebugPanic,

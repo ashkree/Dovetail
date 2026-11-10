@@ -41,6 +41,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "" => return Err(CommandError::Empty),
         "q" | "quit" => Action::Quit,
         "q!" | "quit!" => Action::ForceQuit,
+        "eod" => Action::EndOfDay,
         "spawn" => Action::NewSlice,
         "ask" => Action::NewSideChat,
         "interrupt" => Action::Interrupt,
@@ -83,6 +84,7 @@ mod tests {
         assert_eq!(parse("q").map(|p| p.action), Ok(Action::Quit));
         assert_eq!(parse(" quit ").map(|p| p.action), Ok(Action::Quit));
         assert_eq!(parse("q!").map(|p| p.action), Ok(Action::ForceQuit));
+        assert_eq!(parse("eod").map(|p| p.action), Ok(Action::EndOfDay));
     }
 
     #[test]

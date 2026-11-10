@@ -59,18 +59,24 @@ struct Input {
     line: TextInput,
 }
 
-/// What `y` does in a confirmation.
+/// What `y` (or `n`) does in a confirmation.
 enum Then {
     /// Run an action.
     Action(Action),
     /// Send commands to the core.
     Commands(Vec<Command>),
+    /// Close the day ([`Command::EndOfDay`]), then quit once the journal is written.
+    CloseDayThenQuit,
+    /// Quit without closing the day, still asking first when a turn is running.
+    QuitDayOpen,
 }
 
-/// A yes/no question waiting for `y` or `n`.
+/// A yes/no question waiting for `y` or `n`. Any other key cancels it.
 struct Confirm {
     prompt: String,
     then: Then,
+    /// What `n` does; `None` when `n` only cancels.
+    otherwise: Option<Then>,
 }
 
 /// The whole UI state.
@@ -114,6 +120,11 @@ pub struct App {
     /// Focus mode (`<leader>z`): the side column is hidden. Holds whether the reading column
     /// was solid before, to put it back on leaving.
     focus_mode: Option<bool>,
+    /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
+    /// newest journal date from before, so a write that failed is told from one that worked.
+    quit_after_close: Option<Option<String>>,
+    /// A command failure seen while that quit waits, to show if the journal is not written.
+    close_failure: Option<String>,
     /// The key being handled is a second Ctrl-C inside the hint's window.
     exit_armed: bool,
     /// The loop clock at the key being handled, for actions that arm a timeout.
@@ -150,6 +161,8 @@ impl App {
             exit_armed_until: None,
             open_side_chat: false,
             focus_mode: None,
+            quit_after_close: None,
+            close_failure: None,
             exit_armed: false,
             mono_ms: 0,
             dirty: true,
@@ -367,10 +380,14 @@ impl App {
                     }
                     _ => None,
                 };
+                let journal = matches!(event, Event::JournalChanged(_));
                 match apply(&mut self.snap, seq, event) {
                     ApplyResult::Applied => {
                         if let Some(message) = failure {
                             tracing::info!(%message, "command failed");
+                            if self.quit_after_close.is_some() {
+                                self.close_failure = Some(message.clone());
+                            }
                             self.note = Some(message);
                             // A failed save must not leave a later task of the same title to
                             // steal the screen.
@@ -384,6 +401,9 @@ impl App {
                         if let Some(id) = side_chat {
                             self.open_side_chat = false;
                             self.open_agent_in_main(id);
+                        }
+                        if journal {
+                            self.on_journal();
                         }
                     }
                     ApplyResult::Gap { expected, got } => {
@@ -456,11 +476,18 @@ impl App {
         self.mono_ms = mono_ms;
         self.exit_armed = self.exit_armed_until.take().is_some_and(|d| d > mono_ms);
         if let Some(confirm) = self.confirm.take() {
-            if matches!(event.code, crossterm::event::KeyCode::Char('y' | 'Y')) {
-                match confirm.then {
-                    Then::Action(action) => self.run(action),
-                    Then::Commands(commands) => self.outbox.extend(commands),
-                }
+            use crossterm::event::KeyCode::Char;
+            let then = match event.code {
+                Char('y' | 'Y') => Some(confirm.then),
+                Char('n' | 'N') => confirm.otherwise,
+                _ => None,
+            };
+            match then {
+                Some(Then::Action(action)) => self.run(action),
+                Some(Then::Commands(commands)) => self.outbox.extend(commands),
+                Some(Then::CloseDayThenQuit) => self.close_day(true),
+                Some(Then::QuitDayOpen) => self.quit_asking(false),
+                None => {}
             }
             return;
         }
@@ -688,6 +715,101 @@ impl App {
     /// Focus mode on or off (A1, Decision 16): the conversation alone, full width, with the
     /// reading column solid; the status bar keeps the Needs you count. It shows the agent
     /// already in view, so a side chat or slice can be read the same way.
+    /// Today's date on the UI's clock, `YYYY-MM-DD`, as journal files are named.
+    fn today(&self) -> Option<String> {
+        let now = jiff::Timestamp::from_millisecond(self.now_ms).ok()?;
+        Some(now.to_zoned(self.tz.clone()).date().to_string())
+    }
+
+    /// Whether today has no journal file yet, and none is being written (ADR 0012). A folder
+    /// with no journal (not a registered project) never counts as open.
+    fn day_open(&self) -> bool {
+        let Some(journal) = &self.snap.journal else {
+            return false;
+        };
+        match self.today() {
+            Some(today) => !journal.closing && journal.latest.as_deref() != Some(today.as_str()),
+            None => false,
+        }
+    }
+
+    /// `:q`: asks "Close the day?" first when `ask_day` and today has no journal yet; then, as
+    /// before, asks when a turn is running (plan B23).
+    fn quit_asking(&mut self, ask_day: bool) {
+        if ask_day && self.day_open() {
+            self.confirm = Some(Confirm {
+                prompt: "Close the day? y: handoff and journal, then quit · n: quit now · \
+                         Esc: later"
+                    .into(),
+                then: Then::CloseDayThenQuit,
+                otherwise: Some(Then::QuitDayOpen),
+            });
+            return;
+        }
+        let running = self
+            .snap
+            .agents
+            .iter()
+            .any(|a| a.kind.is_session() && a.status == AgentStatus::Working);
+        if running {
+            self.confirm = Some(Confirm {
+                prompt: "A turn is running. Quit anyway?".into(),
+                then: Then::Action(Action::ForceQuit),
+                otherwise: None,
+            });
+        } else {
+            self.quit = true;
+        }
+    }
+
+    /// `:eod`, or `y` on "Close the day?" (`quit`: quit once the journal is written).
+    fn close_day(&mut self, quit: bool) {
+        let Some(journal) = &self.snap.journal else {
+            self.note = Some("not a Dovetail project yet, so it has no journal".into());
+            return;
+        };
+        if journal.closing {
+            self.note = Some("already closing the day".into());
+            if quit {
+                self.quit_after_close = Some(journal.latest.clone());
+            }
+            return;
+        }
+        if quit {
+            self.quit_after_close = Some(journal.latest.clone());
+            self.close_failure = None;
+        }
+        self.outbox.push(Command::EndOfDay);
+        self.note = Some(if quit {
+            "closing the day: Dovetail quits once the coordinator's handoff is saved".into()
+        } else {
+            "closing the day: the journal is written when the coordinator's handoff arrives".into()
+        });
+    }
+
+    /// The journal changed: if a quit waits on it and the day's file is written, quit.
+    fn on_journal(&mut self) {
+        let Some(journal) = &self.snap.journal else {
+            return;
+        };
+        if journal.closing {
+            return;
+        }
+        let Some(before) = self.quit_after_close.take() else {
+            return;
+        };
+        if journal.latest.is_some() && journal.latest != before {
+            self.quit = true;
+        } else {
+            // The core's reason (a failed write), when it gave one.
+            let why = self
+                .close_failure
+                .take()
+                .unwrap_or_else(|| "the journal was not written".into());
+            self.note = Some(format!("{why}; :q to quit anyway"));
+        }
+    }
+
     pub(super) fn toggle_focus_mode(&mut self) {
         let conversation = &mut self.buffers.conversation;
         match self.focus_mode.take() {
@@ -802,21 +924,8 @@ impl App {
                 self.note =
                     Some("to switch projects, quit and open dovetail in the other folder".into());
             }
-            Action::Quit => {
-                let running = self
-                    .snap
-                    .agents
-                    .iter()
-                    .any(|a| a.kind.is_session() && a.status == AgentStatus::Working);
-                if running {
-                    self.confirm = Some(Confirm {
-                        prompt: "A turn is running. Quit anyway?".into(),
-                        then: Then::Action(Action::ForceQuit),
-                    });
-                } else {
-                    self.quit = true;
-                }
-            }
+            Action::Quit => self.quit_asking(true),
+            Action::EndOfDay => self.close_day(false),
             Action::ForceQuit => self.quit = true,
             Action::QuitOnRepeat => {
                 if std::mem::take(&mut self.exit_armed) {

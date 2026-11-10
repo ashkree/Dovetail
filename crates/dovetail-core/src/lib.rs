@@ -10,6 +10,7 @@ pub mod db;
 pub mod editor;
 pub mod error;
 mod inbox;
+mod journal;
 pub mod memory;
 mod oom;
 pub mod paths;

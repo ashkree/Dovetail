@@ -118,6 +118,8 @@ Visual mode comes later; leave room for it.
 | `i` | Insert mode for the focused agent. From the tree or inbox it targets the **coordinator**, unless an agent is selected in the tree |
 | `Esc` | Back to Normal |
 | `:` | Command mode (`:q` quits; add a few mock commands, e.g. `:spawn <name>`) |
+| `:eod` | Close the day: the coordinator writes its handoff, Dovetail adds the facts, into `journal/YYYY-MM-DD.md` (ADR 0012) |
+| `:q` on a day with no journal | "Close the day? y: handoff and journal, then quit · n: quit now · Esc: later". `y` runs `:eod` and quits once the file is written; `n` quits as `:q` does (asking if a turn runs); `Esc` cancels. Asked only in a registered project (ADR 0012) |
 | `Ctrl-C` `Ctrl-C` | Quit in two steps, in every mode: the first press shows "Press Ctrl-C again to exit" for 2 s, and any other key cancels it. The second press quits like `:q`: if a turn is running it asks "A turn is running. Quit anyway?" (`y` quits). Interrupting a turn stays on `<leader>sx`. SIGINT also quits like `:q` (a second SIGINT answers yes); SIGTERM and SIGHUP quit at once: SIGHUP (a closed terminal) is treated like SIGTERM, since nothing is left to answer a prompt (decision #23; task #13, 2026-11-09) |
 | `/` `n` `N` | Search in the current buffer |
 | `Space` | Leader key (Normal mode only) |

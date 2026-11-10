@@ -346,7 +346,15 @@ impl App {
         if let Some(confirm) = &self.confirm {
             let line = Line::from(vec![
                 Span::styled(confirm.prompt.clone(), theme.fg(theme.needs_you)),
-                Span::styled(" (y/n)", theme.dim()),
+                // A three-way question names its keys in the prompt itself.
+                Span::styled(
+                    if confirm.otherwise.is_some() {
+                        ""
+                    } else {
+                        " (y/n)"
+                    },
+                    theme.dim(),
+                ),
             ]);
             frame.render_widget(Paragraph::new(line), area);
             return;

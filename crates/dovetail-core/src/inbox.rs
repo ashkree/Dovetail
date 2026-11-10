@@ -40,6 +40,12 @@ pub(crate) enum Waiter {
     /// A worktree no agent owns, found by the sweep on open (M10): `y` removes it, `d` keeps
     /// it for good.
     RemoveOrphan { found: crate::restore::Orphan },
+    /// A fresh coordinator started on a new day (ADR 0012): `y` goes back to yesterday's
+    /// session, `d` keeps the fresh one.
+    KeepCoordinator {
+        session_id: Option<String>,
+        transcript_path: Option<std::path::PathBuf>,
+    },
 }
 
 impl Waiter {
@@ -318,6 +324,13 @@ impl Core {
                 PermissionAnswer::Deny { .. } => self.keep_orphan(found),
                 _ => self.remove_orphan(found),
             },
+            Waiter::KeepCoordinator {
+                session_id,
+                transcript_path,
+            } => match answer {
+                PermissionAnswer::Deny { .. } => self.kept_fresh_coordinator(),
+                _ => self.keep_previous_coordinator(session_id, transcript_path),
+            },
             _ => {}
         }
         self.refresh_status(&agent);
@@ -375,6 +388,7 @@ impl Core {
             }
             Waiter::RemoveWorktree => self.keep_slice(&agent),
             Waiter::RemoveOrphan { found } => self.keep_orphan(found),
+            Waiter::KeepCoordinator { .. } => self.kept_fresh_coordinator(),
             Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }
     }

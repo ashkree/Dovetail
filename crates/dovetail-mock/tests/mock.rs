@@ -442,3 +442,30 @@ fn refreshing_worktrees_fills_one_entry_per_slice_worktree() {
         );
     }
 }
+
+#[test]
+fn eod_closes_the_day_with_the_mock_clocks_date() {
+    let mut core = MockCore::new(config(1));
+    core.handle(Command::EndOfDay);
+    assert_eq!(
+        core.state().journal,
+        Some(JournalState {
+            latest: None,
+            closing: true
+        })
+    );
+    // Until the journal is written: 2026-11-01, as the virtual clock reads.
+    for _ in 0..200 {
+        if core.state().journal.as_ref().is_some_and(|j| !j.closing) {
+            break;
+        }
+        core.next_message().expect("the mock runs until quit");
+    }
+    assert_eq!(
+        core.state().journal,
+        Some(JournalState {
+            latest: Some("2026-11-01".into()),
+            closing: false
+        })
+    );
+}

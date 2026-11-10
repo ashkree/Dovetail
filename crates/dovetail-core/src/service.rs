@@ -249,6 +249,8 @@ pub(crate) enum Input {
         cgroup: PathBuf,
         count: u64,
     },
+    /// `:eod` has its handoff, or knows none is coming: write the day's journal file.
+    CloseDay,
 }
 
 /// Hands socket requests to the loop.
@@ -357,6 +359,11 @@ pub(crate) struct Core {
     next_sample: tokio::time::Instant,
     /// OOM kills: the `memory.events` watcher and automatic restarts (M13b, `oom`).
     pub(crate) oom: crate::oom::Oom,
+    /// An `:eod` waiting for the coordinator's handoff (ADR 0012, `journal`).
+    pub(crate) closing: Option<crate::journal::Closing>,
+    /// Yesterday's coordinator session (id, transcript), asked back with `y`: it resumes once
+    /// the fresh session has exited (ADR 0012).
+    pub(crate) revert_coordinator: Option<(Option<String>, Option<PathBuf>)>,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -440,6 +447,8 @@ impl Core {
             scopes: crate::memory::Scopes::Off,
             next_sample: tokio::time::Instant::now(),
             oom: Default::default(),
+            closing: None,
+            revert_coordinator: None,
         }
     }
 
@@ -561,6 +570,7 @@ impl Core {
                     self.emit(Event::TerminalReturned { error });
                 }
                 Input::OomKills { cgroup, count } => self.on_oom_kills(cgroup, count),
+                Input::CloseDay => self.write_journal().await,
             }
             if self.quitting.is_none() {
                 self.start_queued().await;
@@ -726,6 +736,7 @@ impl Core {
             profile: self.profile_name(),
             worktrees: self.worktrees.values().cloned().collect(),
             commands: self.commands.clone(),
+            journal: self.journal_state(),
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1131,6 +1142,7 @@ impl Core {
             Command::DismissInbox { item } => self.dismiss(item).await,
             Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
             Command::NewSideChat { question } => self.start_side_chat(question),
+            Command::EndOfDay => self.end_of_day(),
             Command::NewSlice { task, name, brief } => {
                 let request = SliceRequest {
                     task,
