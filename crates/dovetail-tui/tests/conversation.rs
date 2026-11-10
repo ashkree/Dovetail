@@ -62,7 +62,7 @@ fn a_wide_pane_centres_the_reading_column_at_120_columns() {
 #[test]
 fn rendering_shows_labels_blank_rows_and_folded_tool_lines() {
     let mut app = reading_app();
-    let screen = render(&mut app, 120, 50);
+    let screen = render(&mut app, 120, 60);
     assert!(screen.contains("── You · 10:06 ─"));
     assert!(screen.contains("── coordinator · 10:14 ─"));
     assert!(screen.contains("▸ read 2 files · checked slice-7's stream · 4 s"));
@@ -75,7 +75,7 @@ fn rendering_shows_labels_blank_rows_and_folded_tool_lines() {
 #[test]
 fn bold_italic_and_code_get_their_own_colours_on_screen() {
     let mut app = reading_app();
-    let mut terminal = Terminal::new(TestBackend::new(120, 50)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(120, 60)).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw");
     let theme = dovetail_tui::Theme::dusk();
     let buffer = terminal.backend().buffer();
@@ -350,11 +350,11 @@ fn i_in_the_main_region_targets_the_agent_it_shows() {
 }
 
 #[test]
-fn the_chat_input_takes_enter_ctrl_j_alt_enter_ctrl_w_and_ctrl_u() {
+fn the_chat_input_takes_enter_shift_enter_alt_enter_ctrl_w_and_ctrl_u() {
     let mut app = app_with(world());
     press(&mut app, "i");
     type_keys(&mut app, "first line");
-    app.on_key(ctrl('j'), 100);
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT), 100);
     type_keys(&mut app, "second");
     app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT), 101);
     type_keys(&mut app, "third of four");
@@ -375,6 +375,33 @@ fn the_chat_input_takes_enter_ctrl_j_alt_enter_ctrl_w_and_ctrl_u() {
         }]
     );
     assert_eq!(app.mode(), Mode::Normal);
+}
+
+#[test]
+fn ctrl_k_leaves_the_chat_bar_and_ctrl_j_comes_back_to_the_cursor() {
+    let mut app = app_with(world());
+    press(&mut app, "i");
+    type_keys(&mut app, "ac");
+    app.on_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), 100);
+    app.on_key(ctrl('k'), 101);
+    assert_eq!(app.mode(), Mode::Normal);
+    let screen = render(&mut app, 100, 30);
+    assert!(
+        screen.contains("› ac · i or ^j to go on typing"),
+        "{screen}"
+    );
+    app.on_key(ctrl('j'), 102);
+    assert_eq!(app.mode(), Mode::Insert);
+    type_keys(&mut app, "b");
+    app.on_key(enter(), 103);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::Prompt {
+            agent: agent_id("coordinator"),
+            text: "abc".into(),
+            attachments: Vec::new()
+        }]
+    );
 }
 
 #[test]
@@ -555,4 +582,72 @@ fn i_from_the_tree_moves_focus_to_the_pane_that_holds_the_input() {
     let mut app = app_with(world());
     press(&mut app, "i");
     assert_eq!(app.focus(), RegionId::Main);
+}
+
+#[test]
+fn slash_completes_a_command_and_at_asks_the_core_for_paths() {
+    let mut snap = world();
+    snap.commands.insert(
+        agent_id("coordinator"),
+        ["compact", "grilling"]
+            .map(|name| SlashCommand {
+                name: name.into(),
+                description: format!("{name} things"),
+                argument_hint: String::new(),
+            })
+            .to_vec(),
+    );
+    let mut app = app_with(snap);
+    press(&mut app, "i");
+    type_keys(&mut app, "/gr");
+    let screen = render(&mut app, 100, 30);
+    assert!(screen.contains("/grilling  grilling things"), "{screen}");
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), 100);
+    type_keys(&mut app, "the plan @READ");
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::ListPaths {
+            agent: agent_id("coordinator"),
+            dir: None
+        }]
+    );
+    app.on_server(ServerMsg::Event {
+        seq: 1,
+        event: Event::PathsListed {
+            agent: agent_id("coordinator"),
+            dir: None,
+            paths: vec!["README.md".into(), "src/main.rs".into()],
+        },
+    });
+    app.on_key(enter(), 101);
+    app.on_key(enter(), 102);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::Prompt {
+            agent: agent_id("coordinator"),
+            text: "/grilling the plan @README.md".into(),
+            attachments: Vec::new()
+        }]
+    );
+}
+
+#[test]
+fn a_side_chat_asked_for_opens_when_it_appears() {
+    let mut app = app_with(world());
+    press(&mut app, " sq");
+    type_keys(&mut app, "why is the build slow?");
+    app.on_key(enter(), 100);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::NewSideChat {
+            question: "why is the build slow?".into()
+        }]
+    );
+    let chat = agent("side-1", AgentKind::SideChat, AgentStatus::Working, None);
+    app.on_server(ServerMsg::Event {
+        seq: 1,
+        event: Event::AgentUpserted(chat),
+    });
+    let screen = render(&mut app, 100, 30);
+    assert!(screen.contains("┌ side-1 ·"), "{screen}");
 }

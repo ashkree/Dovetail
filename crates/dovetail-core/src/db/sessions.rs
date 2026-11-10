@@ -40,6 +40,7 @@ fn kind_to_text(kind: AgentKind) -> &'static str {
     match kind {
         AgentKind::Coordinator => "coordinator",
         AgentKind::Slice => "slice",
+        AgentKind::SideChat => "side_chat",
         AgentKind::Subagent { background: false } => "subagent",
         AgentKind::Subagent { background: true } => "background_subagent",
     }
@@ -49,6 +50,7 @@ fn kind_from_text(text: &str) -> Result<AgentKind, DbError> {
     Ok(match text {
         "coordinator" => AgentKind::Coordinator,
         "slice" => AgentKind::Slice,
+        "side_chat" => AgentKind::SideChat,
         "subagent" => AgentKind::Subagent { background: false },
         "background_subagent" => AgentKind::Subagent { background: true },
         other => return Err(DbError::Corrupt(format!("agent kind {other:?}"))),

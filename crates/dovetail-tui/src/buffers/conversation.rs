@@ -6,15 +6,17 @@ use std::collections::{HashMap, HashSet};
 use crossterm::event::KeyEvent;
 use dovetail_api::{
     AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS, Paste,
+    SlashCommand,
 };
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Clear, Paragraph};
 
 use super::{Buffer, Effect, ViewCx, pane, status_glyph, status_word, title};
 use crate::action::Action;
+use crate::complete::{self, Completion, KeyResult};
 use crate::fmt;
 use crate::input::{InputOutcome, TextInput};
 use crate::region::BufferKind;
@@ -34,6 +36,8 @@ struct AgentView {
     expanded: HashSet<EntryId>,
     cache: transcript::Cache,
     draft: String,
+    /// Where the cursor was in the draft when the chat bar was left.
+    draft_cursor: usize,
     /// Images attached to the unsent draft.
     draft_images: Vec<Attachment>,
     /// The oldest entry when older history was last asked for, to ask once.
@@ -53,6 +57,7 @@ impl Default for AgentView {
             expanded: HashSet::new(),
             cache: transcript::Cache::default(),
             draft: String::new(),
+            draft_cursor: 0,
             draft_images: Vec::new(),
             loading: None,
             drawn: None,
@@ -67,6 +72,8 @@ struct Layout {
     lines: Vec<Line<'static>>,
     turns: Vec<Turn>,
     max_top: usize,
+    /// Rows of text in view, for paging.
+    page: usize,
     /// Older history exists; its oldest known entry.
     older: Option<EntryId>,
 }
@@ -79,6 +86,10 @@ pub struct ConversationBuffer {
     chat: Option<TextInput>,
     /// Images attached to the message being typed, shown as chips above the input.
     images: Vec<Attachment>,
+    /// The `/` and `@` popup over the chat input.
+    completion: Completion,
+    /// A path listing the popup needs, for the app to ask the core for.
+    wants_paths: Option<Option<String>>,
     reading_width: u16,
     solid: bool,
     layout: Layout,
@@ -92,6 +103,8 @@ impl Default for ConversationBuffer {
             views: HashMap::new(),
             chat: None,
             images: Vec::new(),
+            completion: Completion::default(),
+            wants_paths: None,
             reading_width: DEFAULT_WIDTH,
             solid: false,
             layout: Layout::default(),
@@ -132,8 +145,12 @@ impl ConversationBuffer {
     pub fn begin_chat(&mut self, agent: AgentId) {
         self.show(agent.clone());
         let view = self.views.entry(agent).or_default();
-        self.chat = Some(TextInput::multiline(&view.draft));
+        let mut chat = TextInput::multiline(&view.draft);
+        chat.set_cursor(view.draft_cursor.min(view.draft.len()));
+        self.chat = Some(chat);
         self.images = view.draft_images.clone();
+        // Paths are listed afresh each time: files come and go between chats.
+        self.completion.reset();
     }
 
     /// How many images the message being typed carries.
@@ -191,11 +208,31 @@ impl ConversationBuffer {
     }
 
     /// Applies a key to the chat input. `Enter` returns the prompt and its images to send;
-    /// `Esc` keeps both as the agent's draft.
-    pub fn chat_key(&mut self, key: KeyEvent) -> Option<(AgentId, String, Vec<Attachment>)> {
+    /// `Esc` keeps both as the agent's draft. While the `/` or `@` popup is open it takes its
+    /// keys first; `commands` are the session's, for `/`.
+    pub fn chat_key(
+        &mut self,
+        key: KeyEvent,
+        commands: &[SlashCommand],
+    ) -> Option<(AgentId, String, Vec<Attachment>)> {
         let chat = self.chat.as_mut()?;
         let agent = self.agent.clone()?;
-        match chat.handle(key) {
+        let outcome = match self.completion.key(key) {
+            KeyResult::Handled => return None,
+            KeyResult::Accept(accept) => {
+                chat.replace(accept.range, &accept.text);
+                InputOutcome::Edited
+            }
+            KeyResult::Pass => chat.handle(key),
+        };
+        if outcome == InputOutcome::Edited {
+            let (text, cursor) = (chat.text().to_string(), chat.cursor());
+            if let Some(dir) = self.completion.update(&text, cursor, commands) {
+                self.wants_paths = Some(dir);
+            }
+        }
+        let chat = self.chat.as_mut()?;
+        match outcome {
             InputOutcome::Submit => {
                 let text = chat.text().trim().to_string();
                 self.chat = None;
@@ -210,15 +247,54 @@ impl ConversationBuffer {
                 Some((agent, text, images))
             }
             InputOutcome::Cancel => {
-                let text = chat.text().to_string();
-                self.chat = None;
-                let view = self.views.entry(agent).or_default();
-                view.draft = text;
-                view.draft_images = std::mem::take(&mut self.images);
+                self.park_chat();
                 None
             }
             InputOutcome::Edited | InputOutcome::Ignored => None,
         }
+    }
+
+    /// Types `text` at the chat input's cursor (a command picked with `:skills`).
+    pub fn insert_text(&mut self, text: &str) {
+        if let Some(chat) = self.chat.as_mut() {
+            chat.insert_str(text);
+        }
+    }
+
+    /// A path listing the `@` popup is waiting for: the agent and directory to ask about.
+    pub fn take_path_request(&mut self) -> Option<(AgentId, Option<String>)> {
+        let dir = self.wants_paths.take()?;
+        Some((self.agent.clone()?, dir))
+    }
+
+    /// Takes a path listing from the core, if it is for the chat bar now open.
+    pub fn receive_paths(
+        &mut self,
+        agent: &AgentId,
+        dir: Option<String>,
+        paths: Vec<String>,
+        commands: &[SlashCommand],
+    ) {
+        if self.agent.as_ref() != Some(agent) {
+            return;
+        }
+        let Some(chat) = &self.chat else { return };
+        let (text, cursor) = (chat.text().to_string(), chat.cursor());
+        self.completion.receive(dir, paths);
+        if let Some(dir) = self.completion.update(&text, cursor, commands) {
+            self.wants_paths = Some(dir);
+        }
+    }
+
+    /// Closes the chat input, keeping its text, cursor and images as the agent's draft.
+    pub fn park_chat(&mut self) {
+        let (Some(chat), Some(agent)) = (self.chat.take(), self.agent.clone()) else {
+            return;
+        };
+        let view = self.views.entry(agent).or_default();
+        view.draft = chat.text().to_string();
+        view.draft_cursor = chat.cursor();
+        view.draft_images = std::mem::take(&mut self.images);
     }
 
     fn view(&mut self) -> Option<&mut AgentView> {
@@ -258,6 +334,65 @@ impl ConversationBuffer {
             return turns.len().checked_sub(1);
         }
         turns.iter().rposition(|t| t.start_line <= top)
+    }
+
+    /// The `/` or `@` popup, along the bottom of `body`, just over the chat bar's rule.
+    fn render_popup(&self, frame: &mut Frame, body: Rect, cx: &ViewCx) {
+        if !self.completion.is_open() {
+            return;
+        }
+        let theme = cx.theme;
+        let (rows, selected) = self.completion.rows();
+        let width = usize::from(body.width);
+        let lines: Vec<Line<'static>> = if rows.is_empty() {
+            let note = if self.completion.waiting() {
+                "  listing files…"
+            } else {
+                "  nothing matches · Esc closes"
+            };
+            vec![Line::from(Span::styled(note, theme.dim()))]
+        } else {
+            // Keep the selected row in view within the window of rows shown.
+            let first = (selected + 1).saturating_sub(complete::MAX_ROWS);
+            rows.iter()
+                .enumerate()
+                .skip(first)
+                .take(complete::MAX_ROWS)
+                .map(|(i, row)| {
+                    let label = format!("  {}", row.label);
+                    let room = width.saturating_sub(label.chars().count() + 2);
+                    let detail = if row.detail.is_empty() || room < 8 {
+                        String::new()
+                    } else {
+                        format!("  {}", fmt::truncate(&row.detail, room))
+                    };
+                    let line = Line::from(vec![
+                        Span::styled(label, theme.accent()),
+                        Span::styled(detail, theme.dim()),
+                    ]);
+                    if i == selected {
+                        line.style(theme.selected())
+                    } else {
+                        line
+                    }
+                })
+                .collect()
+        };
+        let height = (lines.len() as u16).min(body.height);
+        let area = Rect {
+            y: body.y + body.height - height,
+            height,
+            ..body
+        };
+        frame.render_widget(Clear, area);
+        for (n, line) in lines.into_iter().take(usize::from(height)).enumerate() {
+            let rect = Rect {
+                y: area.y + n as u16,
+                height: 1,
+                ..area
+            };
+            frame.render_widget(Paragraph::new(line), rect);
+        }
     }
 
     fn render_input(&self, frame: &mut Frame, area: Rect, cx: &ViewCx) {
@@ -335,44 +470,70 @@ impl Buffer for ConversationBuffer {
             }
             None => "no agent".into(),
         };
-        let inner = pane(frame, area, title(&heading, focused, theme), focused, theme);
-        let inner = crate::theme::CHAT_PADDING.shrink(inner);
-
-        // Bottom: a rule, then the chat input or a hint.
+        // The chat bar is a pane of its own under the conversation, like the inbox and the
+        // tree: bordered, titled, and the one in the focus colour while you type (ADR 0010).
+        let chatting = self.chat.is_some();
+        let pad = crate::theme::CHAT_PADDING.x;
+        // Border and the pane's own padding column on each side, then the chat padding.
+        let chat_width = area.width.saturating_sub(4 + 2 * pad);
+        let text_width = usize::from(chat_width.saturating_sub(2));
         let input_rows = self.chat.as_mut().map_or(1, |c| {
-            let width = usize::from(inner.width.saturating_sub(2));
-            c.set_wrap_width(width);
-            c.rows(width).len().clamp(1, MAX_INPUT_ROWS)
+            c.set_wrap_width(text_width);
+            c.rows(text_width).len().clamp(1, MAX_INPUT_ROWS)
         });
-        let chips = if self.chat.is_some() && !self.images.is_empty() {
-            chip_rows(
-                &self.images,
-                usize::from(inner.width.saturating_sub(2)),
-                theme,
-            )
+        let chips = if chatting && !self.images.is_empty() {
+            chip_rows(&self.images, text_width, theme)
         } else {
             Vec::new()
         };
-        let bottom =
-            (1 + chips.len() as u16 + input_rows as u16).min(inner.height.saturating_sub(1));
-        let body = Rect {
-            height: inner.height - bottom,
-            ..inner
+        let chat_height = (2 + chips.len() as u16 + input_rows as u16).min(area.height / 2);
+        let conversation_area = Rect {
+            height: area.height - chat_height,
+            ..area
         };
-        let rule = Rect {
-            y: body.y + body.height,
-            height: 1.min(bottom),
-            ..inner
+        let chat_area = Rect {
+            y: area.y + conversation_area.height,
+            height: chat_height,
+            ..area
+        };
+
+        let reading = focused && !chatting;
+        let inner = pane(
+            frame,
+            conversation_area,
+            title(&heading, reading, theme),
+            reading,
+            theme,
+        );
+        let body = crate::theme::CHAT_PADDING.shrink(inner);
+
+        let typing = focused && chatting;
+        let name = agent.map_or("no agent", |a| a.name.as_str());
+        let chat_title = if chatting {
+            format!("chat › {name} · ⏎ send · ^k read")
+        } else {
+            format!("chat › {name}")
+        };
+        let chat_inner = pane(
+            frame,
+            chat_area,
+            title(&chat_title, typing, theme),
+            typing,
+            theme,
+        );
+        let chat_inner = Rect {
+            x: chat_inner.x + pad.min(chat_inner.width / 2),
+            width: chat_inner.width.saturating_sub(2 * pad),
+            ..chat_inner
         };
         let chip_area = Rect {
-            y: rule.y + rule.height,
-            height: (chips.len() as u16).min(bottom - rule.height),
-            ..inner
+            height: (chips.len() as u16).min(chat_inner.height),
+            ..chat_inner
         };
         let input_area = Rect {
             y: chip_area.y + chip_area.height,
-            height: bottom - rule.height - chip_area.height,
-            ..inner
+            height: chat_inner.height - chip_area.height,
+            ..chat_inner
         };
         for (n, line) in chips
             .into_iter()
@@ -386,26 +547,26 @@ impl Buffer for ConversationBuffer {
             };
             frame.render_widget(Paragraph::new(line), rect);
         }
-        if rule.height > 0 {
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    "─".repeat(usize::from(rule.width)),
-                    theme.dim(),
-                )),
-                rule,
-            );
-        }
-        if self.chat.is_some() {
+        if chatting {
             self.render_input(frame, input_area, cx);
         } else if input_area.height > 0 {
             let hint = Rect {
                 height: 1,
                 ..input_area
             };
-            let text = fmt::truncate(
-                "› i to chat · ]] [[ turns · zc zo fold · gg G",
-                usize::from(hint.width),
-            );
+            // A draft left with Ctrl-k or Esc stays in view, so it is clear what `i` goes back to.
+            let draft = self
+                .agent
+                .as_ref()
+                .and_then(|a| self.views.get(a))
+                .map(|v| v.draft.lines().next().unwrap_or("").trim())
+                .unwrap_or("");
+            let text = if draft.is_empty() {
+                "› i or ^j to type · ]] [[ turns · zc zo fold · gg G".to_string()
+            } else {
+                format!("› {draft} · i or ^j to go on typing")
+            };
+            let text = fmt::truncate(&text, usize::from(hint.width));
             frame.render_widget(Paragraph::new(Span::styled(text, theme.dim())), hint);
         }
 
@@ -481,10 +642,14 @@ impl Buffer for ConversationBuffer {
                 Style::new().bg(theme.reading_bg),
             );
         }
+        if self.chat.is_some() {
+            self.render_popup(frame, body, cx);
+        }
         self.layout = Layout {
             lines: built.lines,
             turns: built.turns,
             max_top,
+            page: height,
             older,
         };
     }
@@ -504,6 +669,12 @@ impl Buffer for ConversationBuffer {
                 self.maybe_load_older(effects);
             }
             Action::GoBottom => self.scroll_to(self.layout.max_top),
+            // A page keeps two rows of the last one in view, to read on from.
+            Action::PageDown => self.scroll_to(top + self.layout.page.saturating_sub(2).max(1)),
+            Action::PageUp => {
+                self.scroll_to(top.saturating_sub(self.layout.page.saturating_sub(2).max(1)));
+                self.maybe_load_older(effects);
+            }
             Action::NextTurn => {
                 let next = self
                     .layout

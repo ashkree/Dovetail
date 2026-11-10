@@ -384,10 +384,12 @@ impl Core {
             .map_or_else(|| agent.0.clone(), |r| r.agent.name.clone())
     }
 
-    /// Archives a slice: stop its session, then clean up its worktree.
+    /// Archives a slice: stop its session, then clean up its worktree. A side chat has no
+    /// worktree, so it is just stopped and forgotten (ADR 0011).
     /// `confirmed`: the user has already agreed to lose unsaved work.
     pub(crate) fn close_slice(&mut self, agent: &AgentId, confirmed: bool) {
-        if self.agents.get(agent).map(|r| r.agent.kind) != Some(AgentKind::Slice) {
+        let kind = self.agents.get(agent).map(|r| r.agent.kind);
+        if !matches!(kind, Some(AgentKind::Slice | AgentKind::SideChat)) {
             self.fail(format!("{} is not a slice", agent.0));
             return;
         }
@@ -640,18 +642,24 @@ impl Core {
             .filter(|p| &p.item.agent == agent)
             .map(|p| p.item.id)
             .collect();
+        let what = if row.agent.kind == AgentKind::SideChat {
+            "side chat"
+        } else {
+            "slice"
+        };
         for id in items {
-            self.resolve(id, Some("slice archived".into()));
+            self.resolve(id, Some(format!("{what} archived")));
         }
         self.close_subagents_of(agent);
         let key = self.worktree_key(&row.agent);
         worktree::clear_hook_outcome(&self.paths, &key, &row.agent.name);
         self.persist("a closed agent", self.db.close_agent(agent.clone()));
+        self.commands.remove(agent);
         self.emit(Event::AgentRemoved(agent.clone()));
         self.activity(
             ActivityKind::Lifecycle,
             None,
-            format!("slice {} archived", row.agent.name),
+            format!("{what} {} archived", row.agent.name),
         );
         // A call still waiting gets its answer; one that already returned `waiting_for_user`
         // learns the user's yes as a message.

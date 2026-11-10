@@ -208,6 +208,10 @@ impl MockCore {
                 self.update_agent(&agent, |a| a.status = AgentStatus::Working);
                 self.schedule_reply(agent, true);
             }
+            Command::ListPaths { agent, dir } => {
+                let paths = world::paths(dir.as_deref());
+                self.emit(Event::PathsListed { agent, dir, paths });
+            }
             Command::PasteClipboard { agent } => {
                 let paste = self
                     .clipboard
@@ -319,6 +323,23 @@ impl MockCore {
                 self.refresh_totals();
                 let id = agent_id(&name);
                 self.after(2_500, move |core| core.finish_setup(&id));
+            }
+            Command::NewSideChat { question } => {
+                let n = (1..)
+                    .find(|n| self.agent(&agent_id(&format!("side-{n}"))).is_none())
+                    .unwrap_or(1);
+                let name = format!("side-{n}");
+                let chat = world::session(
+                    &name,
+                    AgentKind::SideChat,
+                    AgentStatus::Working,
+                    self.state.now_ms,
+                );
+                self.emit(Event::AgentUpserted(chat));
+                let id = agent_id(&name);
+                self.append(&id, EntryKind::User, question);
+                self.refresh_totals();
+                self.schedule_reply(id, true);
             }
             Command::CloseSlice { agent } => {
                 let Some(found) = self.agent(&agent) else {

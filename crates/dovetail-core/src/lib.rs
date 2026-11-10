@@ -3,6 +3,7 @@
 //! The core hands the UI the same [`dovetail_api::CoreLink`] that `MockCore` does.
 
 mod clipboard;
+mod completion;
 pub mod config;
 mod context;
 pub mod db;
@@ -21,6 +22,7 @@ mod restore;
 pub mod service;
 pub mod session;
 mod shutdown;
+mod side_chat;
 mod slice;
 pub mod socket;
 pub mod takeover;

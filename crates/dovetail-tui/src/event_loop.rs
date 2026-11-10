@@ -13,13 +13,21 @@
 //! hand-off command, and holds the go back: the editor or native `claude` the core starts gets
 //! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::Event::TerminalReturned`] the loop takes the
 //! terminal back ([`Lend::reclaim`]), redraws it in full and lets the input thread read again.
+//!
+//! **Shift-Enter.** Where the terminal speaks the kitty keyboard protocol, the loop asks it to
+//! disambiguate keys, so Shift-Enter arrives as itself and starts a new line in the chat bar.
+//! Nothing depends on it: other terminals keep Alt-Enter. The flags are pushed on the alternate
+//! screen and popped before leaving it.
 
 use std::io;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{self, Event as TermEvent, KeyEventKind};
+use crossterm::event::{
+    self, Event as TermEvent, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
+};
 use dovetail_api::{Command, CoreLink, ServerMsg};
 
 use crate::app::{App, Signal};
@@ -62,11 +70,33 @@ pub trait Lend {
     fn reclaim(&mut self) -> io::Result<()>;
 }
 
-/// The real terminal, through crossterm.
-struct Crossterm;
+/// The real terminal, through crossterm. `enhanced`: the keyboard flags were pushed.
+struct Crossterm {
+    enhanced: bool,
+}
+
+/// Asks the terminal to report Shift-Enter and friends, if it can. Returns whether it did.
+/// Must run before the input thread starts: the support query reads the terminal's answer.
+fn push_keyboard_flags() -> bool {
+    matches!(
+        crossterm::terminal::supports_keyboard_enhancement(),
+        Ok(true)
+    ) && crossterm::execute!(
+        io::stdout(),
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )
+    .is_ok()
+}
+
+fn pop_keyboard_flags() {
+    let _ = crossterm::execute!(io::stdout(), PopKeyboardEnhancementFlags);
+}
 
 impl Lend for Crossterm {
     fn release(&mut self) -> io::Result<()> {
+        if self.enhanced {
+            pop_keyboard_flags();
+        }
         crossterm::terminal::disable_raw_mode()?;
         crossterm::execute!(
             io::stdout(),
@@ -77,15 +107,29 @@ impl Lend for Crossterm {
 
     fn reclaim(&mut self) -> io::Result<()> {
         crossterm::terminal::enable_raw_mode()?;
-        crossterm::execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)
+        crossterm::execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
+        if self.enhanced {
+            crossterm::execute!(
+                io::stdout(),
+                PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+            )?;
+        }
+        Ok(())
     }
 }
 
 /// Restores the terminal when dropped, including on an early return or panic unwind.
-struct TerminalGuard;
+struct TerminalGuard {
+    enhanced: bool,
+}
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
+        // On a panic ratatui's hook has already left the alternate screen, whose flags went with
+        // it; popping now would pop the shell's.
+        if self.enhanced && !thread::panicking() {
+            pop_keyboard_flags();
+        }
         ratatui::restore();
     }
 }
@@ -93,7 +137,8 @@ impl Drop for TerminalGuard {
 /// Runs the UI until the user quits. Sets up the terminal and a panic hook that restores it.
 pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
     let mut terminal = ratatui::try_init()?;
-    let _guard = TerminalGuard;
+    let enhanced = push_keyboard_flags();
+    let _guard = TerminalGuard { enhanced };
     let CoreLink { commands, messages } = link;
     let (tx, rx) = mpsc::channel::<Msg>();
     // One go per key: the input thread reads the next key only once the loop has handled the
@@ -152,7 +197,7 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
     let mut io = LoopIo {
         commands: &commands,
         go: &go_tx,
-        lend: &mut Crossterm,
+        lend: &mut Crossterm { enhanced },
     };
     drive(&mut terminal, app, &rx, &mut io, &clock)
 }
