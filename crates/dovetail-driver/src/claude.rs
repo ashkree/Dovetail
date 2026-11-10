@@ -54,20 +54,7 @@ impl ClaudeDriver {
     /// The full command line for a spec, `systemd-run` prefix included. Public so the core can
     /// log it and tests can assert it.
     pub fn command_line(&self, spec: &SessionSpec) -> (OsString, Vec<OsString>) {
-        let claude_args = spec.claude_args();
-        match &spec.systemd_scope {
-            None => (
-                self.program.clone(),
-                claude_args.into_iter().map(OsString::from).collect(),
-            ),
-            Some(scope) => {
-                let mut args: Vec<OsString> =
-                    scope.args().into_iter().map(OsString::from).collect();
-                args.push(scope.escape(&self.program.to_string_lossy()).into());
-                args.extend(claude_args.iter().map(|a| OsString::from(scope.escape(a))));
-                ("systemd-run".into(), args)
-            }
-        }
+        spec.wrap(&self.program, spec.claude_args())
     }
 }
 
@@ -466,5 +453,58 @@ mod tests {
         let (program, args) = ClaudeDriver::new().command_line(&spec);
         assert_eq!(program, "claude");
         assert_eq!(strings(&args), spec.claude_args());
+    }
+
+    /// Take-over: native `claude` gets everything headless gets but the stream flags, always
+    /// resumes, and never asks for a worktree; under caps it runs in the same scope unit.
+    #[test]
+    fn native_runs_resume_with_the_same_flags_and_no_stream_ones() {
+        let mut spec = SessionSpec::new("s1", "/tmp");
+        spec.name = Some("slice-4".into());
+        spec.model = Some("opus".into());
+        spec.settings_path = Some("/run/settings.json".into());
+        spec.mcp_config_path = Some("/run/mcp.json".into());
+        spec.append_system_prompt_file = Some("/roles/slice.md".into());
+        spec.allowed_tools = vec!["mcp__dovetail__ask_user".into()];
+        spec.worktree = Some("slice-4".into());
+        spec.permission_mode = PermissionMode::AcceptEdits;
+        let native = spec.native_args();
+        assert_eq!(
+            native,
+            [
+                "--permission-mode",
+                "acceptEdits",
+                "--resume",
+                "s1",
+                "--name",
+                "slice-4",
+                "--model",
+                "opus",
+                "--settings",
+                "/run/settings.json",
+                "--mcp-config",
+                "/run/mcp.json",
+                "--append-system-prompt-file",
+                "/roles/slice.md",
+                "--allowedTools",
+                "mcp__dovetail__ask_user",
+            ]
+        );
+        // Every native flag is one headless passes too (bar the resume and worktree).
+        let headless = spec.claude_args();
+        for flag in native.iter().filter(|a| a.starts_with("--")) {
+            assert!(
+                flag == "--resume" || headless.contains(flag),
+                "{flag} is not a headless flag"
+            );
+        }
+        spec.systemd_scope = Some(SystemdScope::capped("dovetail-p-slice-4", 1, true));
+        let (program, args) = spec.wrap(std::ffi::OsStr::new("claude"), spec.native_args());
+        assert_eq!(program, "systemd-run");
+        let args = strings(&args);
+        assert!(args.contains(&"--unit=dovetail-p-slice-4".to_string()));
+        let end = args.iter().position(|a| a == "--").expect("scope args end");
+        assert_eq!(args[end + 1], "claude");
+        assert!(!args[end + 2..].contains(&"-p".to_string()), "{args:?}");
     }
 }
