@@ -2,8 +2,9 @@
 //! opens an item's full text in the inbox detail.
 
 use dovetail_api::{
-    AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, PermissionAnswer,
-    RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, Snapshot,
+    AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, KEEP_COORDINATOR_PERMISSION,
+    PermissionAnswer, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
+    START_SLICE_PERMISSION, Snapshot,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -92,6 +93,12 @@ pub(crate) fn input_summary(snap: &Snapshot, tool: &str, input: &serde_json::Val
         "Edit" | "Write" | "Read" | "MultiEdit" => field("file_path").map(str::to_string),
         START_SLICE_PERMISSION => Some(start_slice_summary(snap, input)),
         REMOVE_WORKTREE_PERMISSION => Some(remove_worktree_summary(input)),
+        KEEP_COORDINATOR_PERMISSION => {
+            let date = field("journal").unwrap_or("the last");
+            Some(format!(
+                "a fresh one started from the {date} handoff · y: go back · d: keep the fresh one"
+            ))
+        }
         // `slice-4 · could not list processes: …`
         RELEASE_TAKEOVER_PERMISSION => field("session").map(|s| match field("reason") {
             Some(why) => format!("{s} · {why}"),

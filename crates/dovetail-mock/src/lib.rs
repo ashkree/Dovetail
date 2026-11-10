@@ -332,6 +332,35 @@ impl MockCore {
                 let id = agent_id(&name);
                 self.after(2_500, move |core| core.finish_setup(&id));
             }
+            Command::EndOfDay => {
+                if self.state.journal.as_ref().is_some_and(|j| j.closing) {
+                    return self.fail("already closing the day".into());
+                }
+                let latest = self.state.journal.as_ref().and_then(|j| j.latest.clone());
+                self.emit(Event::JournalChanged(JournalState {
+                    latest,
+                    closing: true,
+                }));
+                let coordinator = agent_id(COORDINATOR);
+                self.append(
+                    &coordinator,
+                    EntryKind::Notice,
+                    "Dovetail: the user is closing the day. Write your handoff.".into(),
+                );
+                self.after(1_500, move |core| {
+                    core.append(
+                        &coordinator,
+                        EntryKind::Assistant,
+                        "Handoff: the tree view is close to done; the picker waits on review."
+                            .into(),
+                    );
+                    let date = world::civil_date(core.state.now_ms);
+                    core.emit(Event::JournalChanged(JournalState {
+                        latest: Some(date),
+                        closing: false,
+                    }));
+                });
+            }
             Command::NewSideChat { question } => {
                 let n = (1..)
                     .find(|n| self.agent(&agent_id(&format!("side-{n}"))).is_none())

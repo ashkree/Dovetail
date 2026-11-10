@@ -108,6 +108,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::CommandsChanged { agent, commands } => {
             state.commands.insert(agent, commands);
         }
+        Event::JournalChanged(journal) => state.journal = Some(journal),
         // Nothing to store: the UI shows the message as the event passes through.
         Event::CommandFailed { .. }
         | Event::MapLoaded(_)

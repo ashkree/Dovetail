@@ -3640,3 +3640,205 @@ fn draw_map_checks_lane_links_against_structure_maps() {
     assert_eq!(h.snap.maps[0].kind, MapKind::Swimlane);
     h.quit();
 }
+
+/// The local date of `days_ago` days back, as journal files are named (ADR 0012).
+fn local_date(days_ago: i64) -> String {
+    let now = jiff::Zoned::now();
+    now.date()
+        .checked_sub(jiff::Span::new().days(days_ago))
+        .expect("a date")
+        .to_string()
+}
+
+fn journal(s: &Snapshot) -> dovetail_api::JournalState {
+    s.journal
+        .clone()
+        .expect("a registered project has a journal")
+}
+
+#[test]
+fn eod_asks_the_coordinator_and_writes_its_reply_and_the_facts() {
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"first"},"parent_tool_use_id":null,"isReplay":true}"#,
+        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"one"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"one","total_cost_usd":0.01}"#,
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"eod"},"parent_tool_use_id":null,"isReplay":true}"#,
+        r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"Open: PR 20 waits on review."}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"Open: PR 20 waits on review.","total_cost_usd":0.02}"#,
+    ];
+    let fake = FakeDriver::from_ndjson(&lines.join("\n"))
+        .expect("fixture")
+        .with_options(ReplayOptions {
+            pause_before: vec![4],
+            ..ReplayOptions::default()
+        });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    assert_eq!(journal(&h.snap).latest, None);
+    h.send(Command::CreateTask(NewTask {
+        title: "ship the journal".into(),
+        p_level: None,
+        bucket: Some(Bucket::Now),
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: Vec::new(),
+    }));
+    prompt(&h, "first");
+    h.wait_for("the first reply", |s| finished_turns(s) == 1);
+
+    h.send(Command::EndOfDay);
+    h.wait_for("the handoff request", |s| {
+        journal(s).closing
+            && s.conversations[&AgentId(COORDINATOR.into())]
+                .entries
+                .iter()
+                .any(|e| e.kind == EntryKind::Notice && e.text.contains("closing the day"))
+    });
+    fake.resume();
+    let today = local_date(0);
+    h.wait_for("the journal", |s| {
+        let j = journal(s);
+        !j.closing && j.latest.as_deref() == Some(today.as_str())
+    });
+    let path = h
+        .paths
+        .data
+        .join("projects/p/journal")
+        .join(format!("{today}.md"));
+    let text = std::fs::read_to_string(&path).expect("the journal file");
+    assert!(text.starts_with(&format!("# {today}\n")), "{text}");
+    assert!(
+        text.contains("## Handoff\n\nOpen: PR 20 waits on review.\n"),
+        "{text}"
+    );
+    assert!(text.contains("## Facts"), "{text}");
+    assert!(text.contains("**Now**\n\n- #1 ship the journal"), "{text}");
+    h.quit();
+}
+
+#[test]
+fn eod_with_a_coordinator_that_never_ran_writes_the_facts_alone() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    h.send(Command::EndOfDay);
+    let today = local_date(0);
+    h.wait_for("the journal", |s| {
+        journal(s).latest.as_deref() == Some(today.as_str())
+    });
+    let path = h
+        .paths
+        .data
+        .join("projects/p/journal")
+        .join(format!("{today}.md"));
+    let text = std::fs::read_to_string(&path).expect("the journal file");
+    assert!(
+        text.contains("_No handoff from the coordinator: the coordinator has not run yet._"),
+        "{text}"
+    );
+    assert!(h.fake.started_specs().is_empty(), "no session was started");
+    h.quit();
+}
+
+#[test]
+fn an_unregistered_folder_has_no_journal() {
+    let mut h = Harness::start(fixture("plain_turn"), false, Config::default());
+    assert_eq!(h.snap.journal, None);
+    h.send(Command::EndOfDay);
+    h.drain(Duration::from_millis(200));
+    assert_eq!(h.snap.journal, None);
+    h.quit();
+}
+
+#[test]
+fn the_first_open_of_a_new_day_starts_a_fresh_coordinator_and_y_goes_back() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "hello");
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+    let old = fake.started_specs()[0].session_id.clone();
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    // Yesterday: the conversation happened then, and the coordinator wrote its handoff by hand.
+    let db = rusqlite::Connection::open(paths.state_db("p")).expect("state db");
+    db.execute(
+        "UPDATE conversation_entries SET at_ms = at_ms - 86400000 * 2",
+        [],
+    )
+    .expect("backdate");
+    drop(db);
+    let dir = paths.data.join("projects/p/journal");
+    std::fs::create_dir_all(&dir).expect("journal dir");
+    let yesterday = local_date(1);
+    std::fs::write(
+        dir.join(format!("{yesterday}.md")),
+        "# Handoff\n\nFirst thing: merge PR 20.\n",
+    )
+    .expect("handoff");
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths.clone());
+    let keep_item = |s: &Snapshot| {
+        s.inbox.iter().find_map(|i| match &i.kind {
+            InboxKind::Permission { tool, input, .. }
+                if tool == dovetail_api::KEEP_COORDINATOR_PERMISSION =>
+            {
+                Some((i.id, input.clone()))
+            }
+            _ => None,
+        })
+    };
+    h.wait_for("the keep-yesterday item", |s| keep_item(s).is_some());
+    let specs = fake.started_specs();
+    assert_eq!(specs.len(), 1);
+    assert!(!specs[0].resume, "a new session, not --resume");
+    assert_ne!(specs[0].session_id, old);
+    let (item, input) = keep_item(&h.snap).expect("item");
+    assert_eq!(input["journal"], yesterday.as_str());
+    assert_eq!(input["session_id"], old.as_str());
+    let seed = fake
+        .sent()
+        .into_iter()
+        .find_map(|s| match s {
+            Sent::User(text) => Some(text),
+            _ => None,
+        })
+        .expect("the seed prompt");
+    assert!(seed.contains("First thing: merge PR 20."), "{seed}");
+    assert!(seed.contains("# Open tasks"), "{seed}");
+
+    // `y`: the fresh session stops and yesterday's resumes.
+    h.send(Command::AnswerPermission {
+        item,
+        answer: PermissionAnswer::Allow,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < 2 {
+        assert!(
+            Instant::now() < deadline,
+            "yesterday's session never resumed"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let back = &fake.started_specs()[1];
+    assert!(back.resume);
+    assert_eq!(back.session_id, old);
+    h.wait_for("the notice", |s| {
+        s.conversations[&AgentId(COORDINATOR.into())]
+            .entries
+            .iter()
+            .any(|e| e.text == "Back on yesterday's coordinator session")
+    });
+    h.quit();
+
+    // The day is not new any more: the next open resumes as before, with no item.
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.drain(Duration::from_millis(300));
+    assert!(keep_item(&h.snap).is_none());
+    let specs = fake.started_specs();
+    assert_eq!(specs.len(), 1);
+    assert!(specs[0].resume);
+    h.quit();
+}

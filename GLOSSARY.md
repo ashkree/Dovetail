@@ -64,6 +64,14 @@ _Avoid_: priority, severity
 When the user will do a task: Now, Next or Later. A task with no bucket sits in Unsorted.
 _Avoid_: priority, status, column
 
+**Journal**:
+The project's end-of-day record, one markdown file per closed day: the coordinator's handoff and Dovetail's facts (ADR 0012).
+_Avoid_: log, diary, daily notes
+
+**Handoff**:
+What an outgoing coordinator writes for the fresh one that replaces it: open threads, what it was about to do, decisions in flight, what matters first.
+_Avoid_: summary, briefing
+
 ### Conversation
 
 **Prompt**:

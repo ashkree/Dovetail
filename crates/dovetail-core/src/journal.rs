@@ -1,0 +1,718 @@
+//! The end-of-day journal and the fresh coordinator of a new day (ADR 0012, the minimal slice of
+//! decisions 17 and 22 pulled into v1).
+//!
+//! - **The file.** `<data>/projects/<id>/journal/YYYY-MM-DD.md`, local date. Free-form markdown:
+//!   a file the coordinator wrote by hand counts as a handoff as it is. A block Dovetail writes
+//!   starts with [`MARKER`] and holds a "Handoff" section (the coordinator's reply) and a "Facts"
+//!   section (Dovetail's own data). Writing never replaces a file: a second `:eod` the same day
+//!   appends its block below the first.
+//! - **`:eod`.** The coordinator is asked for its handoff; when its turn ends, its reply becomes
+//!   the Handoff section. If it cannot answer, the file still gets the facts and says why.
+//! - **A new day.** On open, when the newest journal file is from an earlier day and the
+//!   coordinator was last used before today, the coordinator gets a new Claude Code session
+//!   seeded with that file's handoff and the open tasks. Yesterday's session is kept: one
+//!   Needs-you item (`y`) goes back to it.
+
+use std::path::{Path, PathBuf};
+
+use dovetail_api::{
+    Agent, AgentId, AgentKind, AgentStatus, Bucket, EntryKind, InboxItem, InboxKind, JournalState,
+    KEEP_COORDINATOR_PERMISSION, Task, TaskStatus,
+};
+use jiff::civil::Date;
+use serde_json::json;
+
+use crate::inbox::Waiter;
+use crate::service::{COORDINATOR, Core, Input};
+
+/// The first line of every block Dovetail writes into a journal file. A file without it was
+/// written by hand, and all of it is the handoff.
+pub(crate) const MARKER: &str = "<!-- dovetail: end of day -->";
+
+/// The heading of the coordinator's part of a block.
+const HANDOFF_HEADING: &str = "## Handoff";
+
+/// Today's date in the system's time zone.
+pub(crate) fn today() -> Date {
+    jiff::Zoned::now().date()
+}
+
+/// The local date of a Unix time in milliseconds.
+pub(crate) fn date_of(ms: i64) -> Option<Date> {
+    let at = jiff::Timestamp::from_millisecond(ms).ok()?;
+    Some(at.to_zoned(jiff::tz::TimeZone::system()).date())
+}
+
+/// The file for `date` in the journal directory `dir`.
+pub(crate) fn file(dir: &Path, date: Date) -> PathBuf {
+    dir.join(format!("{date}.md"))
+}
+
+/// The newest dated file in `dir` (`YYYY-MM-DD.md`); other files are ignored. `None` when the
+/// directory is missing or holds none.
+pub(crate) fn latest(dir: &Path) -> Option<Date> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            name.strip_suffix(".md")?.parse::<Date>().ok()
+        })
+        .max()
+}
+
+/// Whether the first open of `today` starts a fresh coordinator: there is a journal file from
+/// an earlier day, and the coordinator was used, but not yet today.
+pub(crate) fn fresh_day(latest: Option<Date>, last_used: Option<Date>, today: Date) -> bool {
+    match (latest, last_used) {
+        (Some(latest), Some(used)) => latest < today && used < today,
+        _ => false,
+    }
+}
+
+/// The handoff in a journal file: the Handoff section of the last block Dovetail wrote, or the
+/// whole file when Dovetail wrote none (the coordinator wrote it by hand).
+pub(crate) fn handoff(text: &str) -> &str {
+    let Some(at) = text.rfind(MARKER) else {
+        return text.trim();
+    };
+    let block = &text[at + MARKER.len()..];
+    let Some(start) = find_line(block, HANDOFF_HEADING) else {
+        return block.trim();
+    };
+    let body = &block[start + HANDOFF_HEADING.len()..];
+    let end = body
+        .match_indices("\n## ")
+        .map(|(i, _)| i)
+        .next()
+        .unwrap_or(body.len());
+    body[..end].trim()
+}
+
+/// The byte offset of the first line of `text` that is exactly `line` (trailing spaces aside).
+fn find_line(text: &str, line: &str) -> Option<usize> {
+    let mut offset = 0;
+    for l in text.split_inclusive('\n') {
+        if l.trim_end() == line {
+            return Some(offset);
+        }
+        offset += l.len();
+    }
+    None
+}
+
+/// Why a closed day has no handoff from the coordinator.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum NoHandoff {
+    #[error("the coordinator has not run yet")]
+    NeverRan,
+    #[error("it could not be asked: {0}")]
+    NotSent(String),
+    #[error("its turn was interrupted")]
+    Interrupted,
+    #[error("its turn ended with no reply")]
+    NoReply,
+    #[error("its session ended before it answered")]
+    SessionEnded,
+}
+
+/// The block Dovetail writes for a closed day. `handoff` is the coordinator's reply, or why it
+/// has none.
+pub(crate) fn block(handoff: Result<&str, &NoHandoff>, facts: &str) -> String {
+    let handoff = match handoff {
+        Ok(text) => text.trim().to_owned(),
+        Err(why) => format!("_No handoff from the coordinator: {why}._"),
+    };
+    format!(
+        "{MARKER}\n\n{HANDOFF_HEADING}\n\n{handoff}\n\n## Facts\n\n{}\n",
+        facts.trim()
+    )
+}
+
+/// Writes `block` as the journal file for `date`, or appends it to the file already there: a
+/// journal file is never replaced. The new content goes to a temporary file first and is renamed
+/// over the old one, so a failed write leaves the old file as it was.
+pub(crate) fn write(dir: &Path, date: Date, block: &str) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let path = file(dir, date);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(old) => format!("{}\n\n---\n\n{block}", old.trim_end()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => format!("# {date}\n\n{block}"),
+        Err(e) => return Err(e),
+    };
+    let tmp = dir.join(format!(".{date}.md.tmp"));
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(path)
+}
+
+/// Open tasks by bucket, Now first, in board order.
+pub(crate) fn open_tasks(tasks: &[Task]) -> String {
+    let mut open: Vec<&Task> = tasks
+        .iter()
+        .filter(|t| matches!(t.status, TaskStatus::Todo | TaskStatus::InProgress))
+        .collect();
+    if open.is_empty() {
+        return "No open tasks.".into();
+    }
+    // `None` (Unsorted) sorts after Later.
+    open.sort_by_key(|t| (t.bucket.is_none(), t.bucket, t.order, t.id.0));
+    let mut out = String::new();
+    let mut current: Option<Option<Bucket>> = None;
+    for task in open {
+        if current != Some(task.bucket) {
+            current = Some(task.bucket);
+            let name = match task.bucket {
+                Some(Bucket::Now) => "Now",
+                Some(Bucket::Next) => "Next",
+                Some(Bucket::Later) => "Later",
+                None => "Unsorted",
+            };
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&format!("**{name}**\n\n"));
+        }
+        let mut tags = Vec::new();
+        if let Some(p) = task.p_level {
+            tags.push(format!("{p:?}"));
+        }
+        if task.status == TaskStatus::InProgress {
+            tags.push("in progress".into());
+        }
+        if let Some(pr) = task.pr {
+            tags.push(format!("PR #{pr}"));
+        }
+        let tags = if tags.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", tags.join(", "))
+        };
+        out.push_str(&format!("- #{} {}{tags}\n", task.id.0, task.title));
+    }
+    out.trim_end().to_owned()
+}
+
+/// Dovetail's facts for the day's block: open tasks by bucket, slices and their status, and
+/// what is left in Needs you.
+pub(crate) fn facts(tasks: &[Task], agents: &[&Agent], inbox: &[&InboxItem]) -> String {
+    let mut out = format!("### Open tasks\n\n{}\n\n### Slices\n\n", open_tasks(tasks));
+    let slices: Vec<&&Agent> = agents
+        .iter()
+        .filter(|a| a.kind == AgentKind::Slice)
+        .collect();
+    if slices.is_empty() {
+        out.push_str("No slices.\n");
+    }
+    for slice in slices {
+        let task = slice
+            .task
+            .map(|t| format!(" on #{}", t.0))
+            .unwrap_or_default();
+        let line = if slice.status_line.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", slice.status_line)
+        };
+        out.push_str(&format!(
+            "- {}{task}, {}{line}\n",
+            slice.name,
+            status_word(slice.status)
+        ));
+    }
+    out.push_str("\n### Needs you\n\n");
+    if inbox.is_empty() {
+        out.push_str("Nothing left.\n");
+    }
+    let name = |id: &AgentId| {
+        agents
+            .iter()
+            .find(|a| &a.id == id)
+            .map_or_else(|| id.0.clone(), |a| a.name.clone())
+    };
+    for item in inbox {
+        let what = match &item.kind {
+            InboxKind::Permission { tool, .. } => format!("permission: {tool}"),
+            InboxKind::Question { text } => format!("question: {}", first_line(text)),
+            InboxKind::FinishedTurn { preview } => {
+                format!("finished turn: {}", first_line(preview))
+            }
+            InboxKind::Error { text } => format!("error: {}", first_line(text)),
+        };
+        out.push_str(&format!("- {}, {what}\n", name(&item.agent)));
+    }
+    out.trim_end().to_owned()
+}
+
+fn status_word(status: AgentStatus) -> &'static str {
+    match status {
+        AgentStatus::SettingUp => "setting up",
+        AgentStatus::Working => "working",
+        AgentStatus::Idle => "idle",
+        AgentStatus::NeedsYou => "needs you",
+        AgentStatus::Done => "done",
+        AgentStatus::Error => "failed",
+    }
+}
+
+/// Longest line quoted in the facts.
+const LINE_MAX: usize = 100;
+
+fn first_line(text: &str) -> String {
+    let line = text.trim().lines().next().unwrap_or("").trim();
+    if line.chars().count() > LINE_MAX {
+        let cut: String = line.chars().take(LINE_MAX - 1).collect();
+        format!("{}…", cut.trim_end())
+    } else {
+        line.to_owned()
+    }
+}
+
+/// What `:eod` asks the coordinator.
+fn eod_prompt(date: Date) -> String {
+    format!(
+        "The user is closing the day. Write your handoff for tomorrow's fresh coordinator, \
+         under a page of markdown: the open threads; what you were about to do; decisions in \
+         flight and why; anything the user asked you to remember; what matters first tomorrow. \
+         Reply with the handoff only: Dovetail saves your reply as the Handoff section of \
+         journal/{date}.md, next to its own facts (tasks, slices, Needs you). Do not write the \
+         file yourself, and start no other work."
+    )
+}
+
+/// The first prompt of a new day's coordinator.
+fn seed_prompt(today: Date, date: Date, handoff: &str, tasks: &str) -> String {
+    format!(
+        "This is a fresh coordinator session for {today}. Yesterday's coordinator left the \
+         handoff below in journal/{date}.md; its conversation is kept but not continued.\n\n\
+         # Handoff from {date}\n\n{handoff}\n\n# Open tasks\n\n{tasks}\n\n\
+         Read this, check anything you need to, then tell the user in a few lines what you \
+         would pick up first. Start no work until they answer."
+    )
+}
+
+/// An `:eod` waiting for the coordinator's handoff.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Closing {
+    /// The day being closed.
+    pub(crate) date: Date,
+    /// The coordinator's reply so far: the text of its latest `result`.
+    pub(crate) reply: Option<String>,
+    /// Set when no more is coming: the reply is final, or why there is none.
+    pub(crate) done: Option<Result<String, NoHandoff>>,
+}
+
+impl Core {
+    /// The project's journal directory; `None` for a folder not registered yet.
+    fn journal_dir(&self) -> Option<PathBuf> {
+        let project = self.project.registered()?;
+        Some(self.paths.journal(&project.id))
+    }
+
+    /// The journal as the UI sees it.
+    pub(crate) fn journal_state(&self) -> Option<JournalState> {
+        let dir = self.journal_dir()?;
+        Some(JournalState {
+            latest: latest(&dir).map(|d| d.to_string()),
+            closing: self.closing.is_some(),
+        })
+    }
+
+    fn emit_journal(&mut self) {
+        if let Some(state) = self.journal_state() {
+            self.emit(dovetail_api::Event::JournalChanged(state));
+        }
+    }
+
+    /// `:eod`: asks the coordinator for its handoff. The file is written once its turn ends
+    /// ([`Core::closing_turn_ended`]), or at once with the facts alone if it cannot answer.
+    pub(crate) fn end_of_day(&mut self) {
+        if self.journal_dir().is_none() {
+            self.fail("not a Dovetail project yet, so it has no journal: :project add keeps it");
+            return;
+        }
+        if self.closing.is_some() {
+            self.fail("already closing the day: waiting for the coordinator's handoff");
+            return;
+        }
+        let date = today();
+        self.closing = Some(Closing {
+            date,
+            reply: None,
+            done: None,
+        });
+        self.emit_journal();
+        let id = AgentId(COORDINATOR.into());
+        let has_run = self
+            .agents
+            .get(&id)
+            .is_some_and(|r| r.transcript_path.is_some());
+        let sent = if !has_run {
+            Err(NoHandoff::NeverRan)
+        } else {
+            let prompt = eod_prompt(date);
+            self.send_text(
+                &id,
+                &prompt,
+                EntryKind::Notice,
+                format!("Dovetail: {prompt}"),
+            )
+            .map_err(|e| NoHandoff::NotSent(e.to_string()))
+        };
+        if let Err(why) = sent {
+            self.closing_done(Err(why));
+        }
+    }
+
+    /// A `result` from the coordinator while the day closes: its text is the handoff so far.
+    /// `last` is true when the session has nothing left to do, so the reply is final.
+    pub(crate) fn closing_result(&mut self, text: Option<String>, interrupted: bool, last: bool) {
+        let Some(closing) = &mut self.closing else {
+            return;
+        };
+        if let Some(text) = text.filter(|t| !t.trim().is_empty()) {
+            closing.reply = Some(text);
+        }
+        if !last {
+            return;
+        }
+        let reply = match closing.reply.take() {
+            Some(text) if !interrupted => Ok(text),
+            _ if interrupted => Err(NoHandoff::Interrupted),
+            _ => Err(NoHandoff::NoReply),
+        };
+        self.closing_done(reply);
+    }
+
+    /// The coordinator's session ended while the day closes.
+    pub(crate) fn closing_exit(&mut self) {
+        if self.closing.as_ref().is_some_and(|c| c.done.is_none()) {
+            self.closing_done(Err(NoHandoff::SessionEnded));
+        }
+    }
+
+    /// No more is coming for the handoff: the file is written from the loop
+    /// ([`Input::CloseDay`]), which can read the tasks.
+    fn closing_done(&mut self, reply: Result<String, NoHandoff>) {
+        if let Some(closing) = &mut self.closing {
+            closing.done = Some(reply);
+            let _ = self.inputs.send(Input::CloseDay);
+        }
+    }
+
+    /// Writes the day's block and tells the UI.
+    pub(crate) async fn write_journal(&mut self) {
+        let Some(Closing {
+            date,
+            done: Some(reply),
+            ..
+        }) = self.closing.take()
+        else {
+            return;
+        };
+        let Some(dir) = self.journal_dir() else {
+            return;
+        };
+        let tasks = match self.db.load_tasks().await {
+            Ok(tasks) => tasks,
+            Err(e) => {
+                tracing::warn!("reading tasks for the journal: {e}");
+                Vec::new()
+            }
+        };
+        let agents: Vec<&Agent> = self.agents.values().map(|r| &r.agent).collect();
+        let inbox: Vec<&InboxItem> = self.inbox.values().map(|e| &e.item).collect();
+        let facts = facts(&tasks, &agents, &inbox);
+        let text = block(reply.as_deref(), &facts);
+        match write(&dir, date, &text) {
+            Ok(path) => {
+                tracing::info!(path = %path.display(), "journal written");
+                let note = match &reply {
+                    Ok(_) => format!("day closed: journal/{date}.md written"),
+                    Err(why) => {
+                        format!("day closed without a handoff ({why}): journal/{date}.md written")
+                    }
+                };
+                self.activity(dovetail_api::ActivityKind::Lifecycle, None, note);
+            }
+            Err(e) => self.fail(format!("writing journal/{date}.md: {e}")),
+        }
+        self.emit_journal();
+    }
+
+    /// The local date of the coordinator's newest conversation entry: when it was last used.
+    pub(crate) fn coordinator_last_used(&self) -> Option<Date> {
+        let id = AgentId(COORDINATOR.into());
+        let last = self.tails.get(&id)?.entries.last()?;
+        date_of(last.at_ms)
+    }
+
+    /// Starts the coordinator for the day. On the first open of a new day (see [`fresh_day`])
+    /// it gets a new session seeded with the newest journal file; otherwise yesterday's session
+    /// resumes as before. `last_used` is read before anything was added to its conversation.
+    pub(crate) async fn start_coordinator(&mut self, last_used: Option<Date>) {
+        let id = AgentId(COORDINATOR.into());
+        let today = today();
+        let newest = self.journal_dir().and_then(|dir| {
+            let date = latest(&dir).filter(|d| fresh_day(Some(*d), last_used, today))?;
+            Some((date, file(&dir, date)))
+        });
+        let Some((date, path)) = newest else {
+            if let Err(e) = self.ensure_live(&id) {
+                self.fail(e);
+            }
+            return;
+        };
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) => {
+                // Nothing to seed it with: yesterday's session carries on.
+                self.fail(format!("reading {}: {e}", path.display()));
+                if let Err(e) = self.ensure_live(&id) {
+                    self.fail(e);
+                }
+                return;
+            }
+        };
+        let tasks = self.db.load_tasks().await.unwrap_or_default();
+        let seed = seed_prompt(today, date, handoff(&text), &open_tasks(&tasks));
+        self.fresh_coordinator(date, &seed);
+    }
+
+    /// Gives the coordinator a new session and sends it `seed`. The old session id and
+    /// transcript go in a Needs-you item whose `y` brings them back.
+    fn fresh_coordinator(&mut self, date: Date, seed: &str) {
+        let id = AgentId(COORDINATOR.into());
+        let Some(row) = self.agents.get(&id) else {
+            return;
+        };
+        let old_session = row.session_id.clone();
+        let old_transcript = row.transcript_path.clone();
+        self.update_agent(&id, |row| {
+            row.session_id = Some(uuid::Uuid::new_v4().to_string());
+            row.transcript_path = None;
+        });
+        tracing::info!(journal = %date, "fresh coordinator for a new day");
+        self.notice(
+            &id,
+            format!(
+                "New day: a fresh coordinator session, seeded with the {date} handoff. \
+                 Yesterday's session is kept; y on its Needs-you item goes back to it."
+            ),
+        );
+        if let Err(e) = self.send_text(&id, seed, EntryKind::Notice, format!("Dovetail: {seed}")) {
+            self.fail(e);
+        }
+        let input = json!({
+            "journal": date.to_string(),
+            "session_id": old_session,
+            "transcript_path": old_transcript,
+        });
+        self.raise(
+            &id,
+            InboxKind::Permission {
+                tool: KEEP_COORDINATOR_PERMISSION.into(),
+                input,
+                reason: Some(format!(
+                    "A fresh coordinator started from the {date} handoff. y goes back to \
+                     yesterday's session (the fresh one stops); d keeps the fresh one."
+                )),
+                suggestions: Vec::new(),
+            },
+            Waiter::KeepCoordinator {
+                session_id: old_session,
+                transcript_path: old_transcript,
+            },
+        );
+    }
+
+    /// `y` on the keep-yesterday item: the fresh session stops, and yesterday's resumes once it
+    /// has exited ([`Core::coordinator_exited`]).
+    pub(crate) fn keep_previous_coordinator(
+        &mut self,
+        session_id: Option<String>,
+        transcript_path: Option<PathBuf>,
+    ) {
+        let id = AgentId(COORDINATOR.into());
+        self.revert_coordinator = Some((session_id, transcript_path));
+        match self.live.get_mut(&id) {
+            Some(live) => {
+                live.stopping = true;
+                live.session.shutdown(crate::shutdown::QUIT_GRACE);
+            }
+            None => self.coordinator_exited(),
+        }
+    }
+
+    /// `d` on the keep-yesterday item: the fresh session stays.
+    pub(crate) fn kept_fresh_coordinator(&mut self) {
+        self.activity(
+            dovetail_api::ActivityKind::Lifecycle,
+            Some(&AgentId(COORDINATOR.into())),
+            "kept the fresh coordinator; yesterday's transcript stays on disk".into(),
+        );
+    }
+
+    /// The coordinator's session exited: if yesterday's was asked back, it resumes now.
+    pub(crate) fn coordinator_exited(&mut self) {
+        let Some((session_id, transcript_path)) = self.revert_coordinator.take() else {
+            return;
+        };
+        let id = AgentId(COORDINATOR.into());
+        self.update_agent(&id, |row| {
+            row.session_id = session_id;
+            row.transcript_path = transcript_path;
+        });
+        self.notice(&id, "Back on yesterday's coordinator session");
+        if self.quitting.is_none()
+            && let Err(e) = self.ensure_live(&id)
+        {
+            self.fail(e);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dovetail_api::{PLevel, TaskId};
+
+    fn d(s: &str) -> Date {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn a_new_day_needs_an_older_journal_and_a_coordinator_last_used_before_today() {
+        let today = d("2026-11-11");
+        // The morning after the hand-written handoff.
+        assert!(fresh_day(
+            Some(d("2026-11-10")),
+            Some(d("2026-11-10")),
+            today
+        ));
+        // Opened again later the same day: the fresh one carries on.
+        assert!(!fresh_day(
+            Some(d("2026-11-10")),
+            Some(d("2026-11-11")),
+            today
+        ));
+        // Closed today already (an `:eod` and a restart).
+        assert!(!fresh_day(
+            Some(d("2026-11-11")),
+            Some(d("2026-11-10")),
+            today
+        ));
+        // No journal, or a coordinator that never talked.
+        assert!(!fresh_day(None, Some(d("2026-11-09")), today));
+        assert!(!fresh_day(Some(d("2026-11-09")), None, today));
+        // Several days away: the newest journal still seeds it.
+        assert!(fresh_day(
+            Some(d("2026-11-06")),
+            Some(d("2026-11-07")),
+            today
+        ));
+    }
+
+    #[test]
+    fn a_hand_written_file_is_all_handoff() {
+        let text = "# Handoff 2026-11-10\n\n## Open threads\n\n- PR #20\n\n## Tomorrow\n\nM14\n";
+        assert_eq!(handoff(text), text.trim());
+    }
+
+    #[test]
+    fn a_dovetail_block_gives_its_handoff_section() {
+        let block = block(
+            Ok("Open: PR #20.\n\n### Detail\n\nmore"),
+            "### Open tasks\n\n- #1",
+        );
+        let text = format!("# 2026-11-10\n\n{block}");
+        assert_eq!(handoff(&text), "Open: PR #20.\n\n### Detail\n\nmore");
+    }
+
+    #[test]
+    fn the_last_block_of_a_file_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let date = d("2026-11-10");
+        std::fs::write(file(dir.path(), date), "Hand-written notes\n").unwrap();
+        write(dir.path(), date, &block(Ok("first"), "facts")).unwrap();
+        write(dir.path(), date, &block(Ok("second"), "facts")).unwrap();
+        let text = std::fs::read_to_string(file(dir.path(), date)).unwrap();
+        // Nothing replaced: the hand-written part and both blocks are there.
+        assert!(text.starts_with("Hand-written notes\n\n---\n\n"));
+        assert!(text.contains("first"));
+        assert_eq!(handoff(&text), "second");
+        // No temporary file left behind.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn a_missing_handoff_says_why() {
+        let text = block(Err(&NoHandoff::Interrupted), "facts");
+        assert_eq!(
+            handoff(&text),
+            "_No handoff from the coordinator: its turn was interrupted._"
+        );
+    }
+
+    #[test]
+    fn latest_reads_dated_files_only() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(latest(&dir.path().join("missing")), None);
+        for name in [
+            "2026-11-09.md",
+            "2026-11-10.md",
+            "notes.md",
+            "2026-13-01.md",
+        ] {
+            std::fs::write(dir.path().join(name), "x").unwrap();
+        }
+        std::fs::write(dir.path().join(".2026-11-12.md.tmp"), "x").unwrap();
+        assert_eq!(latest(dir.path()), Some(d("2026-11-10")));
+        assert_eq!(
+            file(dir.path(), d("2026-11-10")),
+            dir.path().join("2026-11-10.md")
+        );
+    }
+
+    #[test]
+    fn date_of_is_the_local_date() {
+        let ms = jiff::Timestamp::now().as_millisecond();
+        assert_eq!(date_of(ms), Some(today()));
+    }
+
+    fn task(id: i64, title: &str, bucket: Option<Bucket>, status: TaskStatus) -> Task {
+        Task {
+            id: TaskId(id),
+            title: title.into(),
+            status,
+            p_level: None,
+            bucket,
+            order: id,
+            deps: vec![],
+            notes: String::new(),
+            pr: None,
+            follow_up_of: None,
+            coordinator_created: false,
+            related: vec![],
+        }
+    }
+
+    #[test]
+    fn open_tasks_are_grouped_by_bucket_now_first() {
+        let mut urgent = task(4, "fix quit", Some(Bucket::Now), TaskStatus::InProgress);
+        urgent.p_level = Some(PLevel::P0);
+        let tasks = vec![
+            task(1, "someday", None, TaskStatus::Todo),
+            task(2, "later", Some(Bucket::Later), TaskStatus::Todo),
+            task(3, "done", Some(Bucket::Now), TaskStatus::Done),
+            urgent,
+            task(5, "next", Some(Bucket::Next), TaskStatus::Todo),
+        ];
+        assert_eq!(
+            open_tasks(&tasks),
+            "**Now**\n\n- #4 fix quit (P0, in progress)\n\n**Next**\n\n- #5 next\n\n\
+             **Later**\n\n- #2 later\n\n**Unsorted**\n\n- #1 someday"
+        );
+        assert_eq!(open_tasks(&[]), "No open tasks.");
+    }
+}

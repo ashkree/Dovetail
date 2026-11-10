@@ -1,0 +1,165 @@
+//! The end-of-day journal in the UI (ADR 0012): "Close the day?" on quit and `:eod`.
+
+mod support;
+
+use dovetail_api::*;
+use support::*;
+
+/// The b.png world with every session idle (so `:q` does not ask about a running turn), and a
+/// journal whose newest file is from `latest`. `NOW_MS` is 2026-11-01 in UTC.
+fn idle_world(latest: Option<&str>) -> Snapshot {
+    let mut snap = world();
+    for a in &mut snap.agents {
+        a.status = AgentStatus::Idle;
+    }
+    snap.journal = Some(JournalState {
+        latest: latest.map(str::to_owned),
+        closing: false,
+    });
+    snap
+}
+
+const PROMPT: &str = "Close the day? y: handoff and journal, then quit · n: quit now · Esc: later";
+
+/// Runs a `:` command line and returns the commands it produced.
+fn run(app: &mut dovetail_tui::App, line: &str) -> Vec<Command> {
+    type_keys(app, &format!(":{line}"));
+    app.on_key(enter(), 40);
+    app.take_commands()
+}
+
+fn journal_event(app: &mut dovetail_tui::App, latest: Option<&str>, closing: bool) {
+    let seq = app.snapshot().seq + 1;
+    app.on_server(ServerMsg::Event {
+        seq,
+        event: Event::JournalChanged(JournalState {
+            latest: latest.map(str::to_owned),
+            closing,
+        }),
+    });
+}
+
+#[test]
+fn quitting_on_a_day_with_no_journal_asks_to_close_it_and_n_quits_now() {
+    let mut app = app_with(idle_world(Some("2026-10-31")));
+    assert_eq!(run(&mut app, "q"), vec![]);
+    assert!(!app.should_quit());
+    assert!(render(&mut app, 120, 30).contains(PROMPT));
+    assert_eq!(press(&mut app, "n"), vec![]);
+    assert!(app.should_quit());
+}
+
+#[test]
+fn esc_on_close_the_day_is_later() {
+    let mut app = app_with(idle_world(None));
+    run(&mut app, "q");
+    app.on_key(esc(), 50);
+    assert!(!app.should_quit());
+    assert_eq!(app.take_commands(), vec![]);
+    assert!(!render(&mut app, 120, 30).contains("Close the day?"));
+}
+
+#[test]
+fn y_closes_the_day_and_quits_once_the_journal_is_written() {
+    let mut app = app_with(idle_world(Some("2026-10-31")));
+    run(&mut app, "q");
+    assert_eq!(press(&mut app, "y"), vec![Command::EndOfDay]);
+    assert!(!app.should_quit());
+    journal_event(&mut app, Some("2026-10-31"), true);
+    assert!(!app.should_quit(), "still waiting for the handoff");
+    journal_event(&mut app, Some("2026-11-01"), false);
+    assert!(app.should_quit());
+}
+
+#[test]
+fn a_journal_that_was_not_written_does_not_quit() {
+    let mut app = app_with(idle_world(Some("2026-10-31")));
+    run(&mut app, "q");
+    press(&mut app, "y");
+    journal_event(&mut app, Some("2026-10-31"), true);
+    journal_event(&mut app, Some("2026-10-31"), false);
+    assert!(!app.should_quit());
+    assert_eq!(
+        app.note(),
+        Some("the journal was not written; :q to quit anyway")
+    );
+}
+
+#[test]
+fn a_day_already_closed_quits_without_asking() {
+    let mut app = app_with(idle_world(Some("2026-11-01")));
+    run(&mut app, "q");
+    assert!(app.should_quit());
+}
+
+#[test]
+fn while_the_day_closes_quit_asks_only_about_the_running_turn() {
+    let mut app = app_with(world());
+    let seq = app.snapshot().seq + 1;
+    app.on_server(ServerMsg::Event {
+        seq,
+        event: Event::JournalChanged(JournalState {
+            latest: None,
+            closing: true,
+        }),
+    });
+    run(&mut app, "q");
+    let screen = render(&mut app, 120, 30);
+    assert!(!screen.contains("Close the day?"));
+    assert!(screen.contains("A turn is running. Quit anyway? (y/n)"));
+}
+
+#[test]
+fn n_on_close_the_day_still_asks_about_a_running_turn() {
+    let mut snap = world();
+    snap.journal = Some(JournalState::default());
+    let mut app = app_with(snap);
+    run(&mut app, "q");
+    press(&mut app, "n");
+    assert!(!app.should_quit());
+    assert!(render(&mut app, 120, 30).contains("A turn is running. Quit anyway? (y/n)"));
+    press(&mut app, "y");
+    assert!(app.should_quit());
+}
+
+#[test]
+fn colon_eod_closes_the_day_without_quitting() {
+    let mut app = app_with(idle_world(None));
+    assert_eq!(run(&mut app, "eod"), vec![Command::EndOfDay]);
+    journal_event(&mut app, Some("2026-11-01"), false);
+    assert!(!app.should_quit());
+}
+
+#[test]
+fn a_folder_with_no_journal_never_asks() {
+    let mut snap = idle_world(None);
+    snap.journal = None;
+    let mut app = app_with(snap);
+    assert_eq!(run(&mut app, "eod"), vec![]);
+    assert_eq!(
+        app.note(),
+        Some("not a Dovetail project yet, so it has no journal")
+    );
+    run(&mut app, "q");
+    assert!(app.should_quit());
+}
+
+#[test]
+fn a_failed_write_keeps_its_reason() {
+    let mut app = app_with(idle_world(Some("2026-10-31")));
+    run(&mut app, "q");
+    press(&mut app, "y");
+    let seq = app.snapshot().seq + 1;
+    app.on_server(ServerMsg::Event {
+        seq,
+        event: Event::CommandFailed {
+            message: "writing journal/2026-11-01.md: disk full".into(),
+        },
+    });
+    journal_event(&mut app, Some("2026-10-31"), false);
+    assert!(!app.should_quit());
+    assert_eq!(
+        app.note(),
+        Some("writing journal/2026-11-01.md: disk full; :q to quit anyway")
+    );
+}

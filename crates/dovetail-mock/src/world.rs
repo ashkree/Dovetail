@@ -414,6 +414,8 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
             .map(|(shelf, _)| shelf)
             .collect(),
         commands: BTreeMap::from([(agent_id(COORDINATOR), commands())]),
+        // No journal, so quitting the mock never asks to close the day; `:eod` still works.
+        journal: None,
     };
     snapshot.totals = totals_of(&snapshot);
     snapshot
@@ -692,3 +694,18 @@ pub(crate) const MESSAGES: &[&str] = &[
     "Hold off on theme.rs, I'm renaming the colours.",
     "PR is up for review.",
 ];
+
+/// The UTC date of a Unix time in milliseconds, `YYYY-MM-DD` (the mock's journal dates).
+pub(crate) fn civil_date(ms: i64) -> String {
+    // Howard Hinnant's days-to-civil algorithm.
+    let z = ms.div_euclid(86_400_000) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}

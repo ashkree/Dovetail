@@ -18,7 +18,8 @@
 
 use dovetail_api::{
     ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind,
-    RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION,
+    KEEP_COORDINATOR_PERMISSION, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
+    START_SLICE_PERMISSION,
 };
 
 use crate::inbox::Waiter;
@@ -158,6 +159,8 @@ impl Core {
     /// as an event.
     pub(crate) async fn reconcile(&mut self, restored: Restored) {
         let coordinator_id = AgentId(COORDINATOR.into());
+        // Read before anything below adds to its conversation.
+        let last_used = self.coordinator_last_used();
         if restored
             .cut_off
             .iter()
@@ -185,6 +188,16 @@ impl Core {
                     }
                     // The lock is checked afresh below, and asked about again if still unclear.
                     if tool == REMOVE_WORKTREE_PERMISSION || tool == RELEASE_TAKEOVER_PERMISSION {
+                        continue;
+                    }
+                    if tool == KEEP_COORDINATOR_PERMISSION {
+                        self.activity(
+                            ActivityKind::Lifecycle,
+                            Some(&item.agent),
+                            "the offer to keep yesterday's coordinator expired at restart; its \
+                             transcript stays on disk"
+                                .into(),
+                        );
                         continue;
                     }
                     let name = self.name_of(&item.agent);
@@ -234,19 +247,16 @@ impl Core {
         for id in &ids {
             self.refresh_status(id);
         }
-        // The coordinator comes back at once; its turn is not continued (no input is sent).
+        // The coordinator comes back at once; its turn is not continued (no input is sent). On
+        // the first open of a new day it starts fresh instead, from the journal (ADR 0012).
         let coordinator = AgentId(COORDINATOR.into());
         let has_run = self
             .agents
             .get(&coordinator)
             .is_some_and(|r| r.transcript_path.is_some());
         // One still taken over waits: Needs you says why.
-        if has_run
-            && self.claude.is_ok()
-            && !self.locked(&coordinator)
-            && let Err(e) = self.ensure_live(&coordinator)
-        {
-            self.fail(e);
+        if has_run && self.claude.is_ok() && !self.locked(&coordinator) {
+            self.start_coordinator(last_used).await;
         }
     }
 

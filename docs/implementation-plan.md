@@ -183,7 +183,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `toml` | core | default | Recipe and `config.toml` |
 | `thiserror`, `anyhow` | libraries, binary | none | Required by conventions |
 | `tracing`, `tracing-subscriber`, `tracing-appender` | core, tui, binary | `fmt`, `env-filter` | File logging only. The TUI uses only the `tracing` macros; the binary sets up the file writer (M2) |
-| `jiff` | core, tui, binary | default | Local-time display with no unsafe of ours; the binary passes the system time zone to the UI |
+| `jiff` | core, tui, binary | default | Local-time display with no unsafe of ours; the binary passes the system time zone to the UI; the core names journal files by local date (ADR 0012) |
 | `unicode-width` | tui | default | Pad, clip and wrap rows by terminal cell width (already a `ratatui` dependency) |
 | `uuid` | core | `v4` | Choose session ids |
 | `notify` (latest stable, not the 9 rc) | core | `default-features = false` | Watch native task files (M11). Its only default feature is `macos_fsevent` (FSEvents bindings through `objc2`); Linux uses inotify without it |
@@ -663,6 +663,7 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | #16 | The header shows the model and the 5-hour and weekly usage limits (decision #25) | #17 |
 | #17 | Fixes from the wave-3 code review: subagent worktree cleanup keeps the worktree when git's output does not parse; to-dos of a pruned subagent fall back to the list owner; a session's subagent tokens summed from task events and shown in the switcher; code smells | #18 |
 | — | Chat UX from daily use (2026-11-10): message headers in the speaker's dimmed colour with more space between speakers; Shift-Enter newline, `Ctrl-k`/`Ctrl-j` between chat bar and conversation, `PageUp`/`PageDown` while typing (ADR 0010); `/` and `@` completion and `:skills` (docs/spikes/slash-and-at.md); focus mode `<leader>z` (A1, from M16); side chats `<leader>sq`/`:ask` and `<leader>y` (ADR 0011) | branch `dovetail/chat-ux` |
+| — | End of day and a fresh morning coordinator (ADR 0012, pulled from v1.1's decisions 17 and 22): `journal/YYYY-MM-DD.md` with the coordinator's Handoff and Dovetail's Facts; `:eod`; "Close the day?" on quit (`y` closes then quits, `n` quits now, `Esc` later); on the first open of a new day a new coordinator session seeded with the newest journal file and the open tasks, with a Needs-you item whose `y` keeps yesterday's session instead | branch `claude/affectionate-faraday-j8074d` |
 
 **Open follow-ups:** #3 attach an image when a pasted or dropped file path points to one; #8 clean up saved paste attachments.
 

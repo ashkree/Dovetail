@@ -194,6 +194,7 @@ impl App {
                         self.confirm = Some(Confirm {
                             prompt,
                             then: Then::Commands(vec![Command::Interrupt { agent }]),
+                            otherwise: None,
                         });
                     }
                     Some((agent, false)) => self.outbox.push(Command::Interrupt { agent }),
@@ -291,6 +292,7 @@ impl App {
             self.confirm = Some(Confirm {
                 prompt: format!("{whose} is mid-turn. Take it over anyway? The turn is cut off."),
                 then: Then::Handoff(command),
+                otherwise: None,
             });
             return;
         }

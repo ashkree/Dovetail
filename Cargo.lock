@@ -426,6 +426,7 @@ dependencies = [
  "dovetail-api",
  "dovetail-driver",
  "dovetail-maps",
+ "jiff",
  "notify",
  "rusqlite",
  "rustix",
