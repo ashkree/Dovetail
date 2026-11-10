@@ -5,12 +5,13 @@
 //! the timeout of a half-typed key sequence, or a usage-limit reset passing. With nothing
 //! changing it sleeps forever.
 //!
-//! **Lending the terminal** (`e` in the worktree view, [`Command::OpenEditor`]). The input
+//! **Lending the terminal** (`e` in the worktree view, [`Command::OpenEditor`]; `<leader>st`,
+//! [`Command::TakeOver`]). The input
 //! thread reads one key, hands it over, and waits for a go before reading the next, so it is
 //! never inside a read when a key asks for the terminal. If the key leaves a hand-off in the
 //! app ([`App::take_handoff`]), the loop sends the commands already queued, leaves the
 //! alternate screen and raw mode ([`Lend::release`]), sends the hand-off command, and holds
-//! the go back: the editor the core starts gets every key. Core messages are still folded in
+//! the go back: the editor or native `claude` the core starts gets every key. Core messages are still folded in
 //! but nothing is drawn. On [`dovetail_api::Event::TerminalReturned`] the loop takes the
 //! terminal back ([`Lend::reclaim`]), redraws it in full and lets the input thread read again.
 
@@ -369,7 +370,7 @@ mod tests {
     /// `TerminalReturned` arrives.
     #[test]
     fn e_lends_the_terminal_to_the_editor_and_takes_it_back() {
-        let (log, app) = press_e_on(&std::env::temp_dir());
+        let (log, app) = press_on(&std::env::temp_dir(), &[' ', 'g', 'e']);
         assert_eq!(
             log,
             ["release", "editor", "reclaim", "next key read"],
@@ -383,7 +384,7 @@ mod tests {
     #[test]
     fn e_on_a_missing_worktree_never_lets_go_of_the_terminal() {
         let missing = std::env::temp_dir().join("dovetail-no-such-worktree-4f1c");
-        let (log, app) = press_e_on(&missing);
+        let (log, app) = press_on(&missing, &[' ', 'g', 'e']);
         assert_eq!(log, ["next key read"]);
         assert!(!app.terminal_away());
         assert_eq!(
@@ -392,11 +393,26 @@ mod tests {
         );
     }
 
-    /// Runs the loop over one slice whose worktree is at `path`, pressing `␣g` then `e`. The
-    /// fake core logs each command, answers `OpenEditor` with `TerminalReturned` and stops at
-    /// `Quit`; the fake input thread sends one key per go, as the real one does, then SIGTERM.
-    /// Returns the log of terminal, core and input steps, and the app.
-    fn press_e_on(path: &std::path::Path) -> (Vec<String>, App) {
+    /// `<leader>st` lends the terminal to native `claude` the same way: released before
+    /// `TakeOver` goes out for the focused session (the coordinator here), no key read while it
+    /// runs, reclaimed on `TerminalReturned`.
+    #[test]
+    fn leader_st_lends_the_terminal_to_native_claude_and_takes_it_back() {
+        let (log, app) = press_on(&std::env::temp_dir(), &[' ', 's', 't']);
+        assert_eq!(
+            log,
+            ["release", "native coordinator", "reclaim", "next key read"],
+            "each step causes the next"
+        );
+        assert!(!app.terminal_away());
+    }
+
+    /// Runs the loop over a coordinator and one slice whose worktree is at `path`, pressing
+    /// `keys`. The fake core logs each command, answers `OpenEditor` and `TakeOver` with
+    /// `TerminalReturned` and stops at `Quit`; the fake input thread sends one key per go, as
+    /// the real one does, then SIGTERM. Returns the log of terminal, core and input steps, and
+    /// the app.
+    fn press_on(path: &std::path::Path, keys: &'static [char]) -> (Vec<String>, App) {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         use dovetail_api::{
             Agent, AgentId, AgentKind, AgentStatus, Event, PermissionMode, SessionLock, Snapshot,
@@ -411,16 +427,13 @@ mod tests {
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("terminal");
         let mut app = App::new(jiff::tz::TimeZone::UTC);
         let mut snap = Snapshot::default();
-        snap.agents.push(Agent {
-            id: AgentId("slice-4".into()),
-            name: "slice-4".into(),
-            kind: AgentKind::Slice,
+        let session = |id: &str, kind, worktree| Agent {
+            id: AgentId(id.into()),
+            name: id.into(),
+            kind,
             parent: None,
             task: None,
-            worktree: Some(WorktreeRef {
-                path: path.to_path_buf(),
-                branch: "dovetail/slice-4".into(),
-            }),
+            worktree,
             status: AgentStatus::Idle,
             status_line: String::new(),
             memory_mb: None,
@@ -432,7 +445,17 @@ mod tests {
             lock: SessionLock::Headless,
             model: None,
             subagent_tokens: 0,
-        });
+        };
+        snap.agents
+            .push(session("coordinator", AgentKind::Coordinator, None));
+        snap.agents.push(session(
+            "slice-4",
+            AgentKind::Slice,
+            Some(WorktreeRef {
+                path: path.to_path_buf(),
+                branch: "dovetail/slice-4".into(),
+            }),
+        ));
         app.on_server(ServerMsg::Snapshot(snap));
 
         let (tx, rx) = mpsc::channel::<Msg>();
@@ -445,8 +468,12 @@ mod tests {
         let core = thread::spawn(move || {
             for command in sent {
                 match command {
-                    Command::OpenEditor { .. } => {
-                        note(&core_log, "editor");
+                    Command::OpenEditor { .. } | Command::TakeOver { .. } => {
+                        let what = match &command {
+                            Command::TakeOver { agent } => format!("native {}", agent.0),
+                            _ => "editor".into(),
+                        };
+                        note(&core_log, &what);
                         let _ = core_tx.send(Msg::Server(Box::new(ServerMsg::Event {
                             seq: 1,
                             event: Event::TerminalReturned { error: None },
@@ -460,7 +487,7 @@ mod tests {
         // The fake input thread: one key per go, as the real one; then SIGTERM ends the loop.
         let input_log = log.clone();
         let input = thread::spawn(move || {
-            for c in [' ', 'g', 'e'] {
+            for &c in keys {
                 let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
                 tx.send(Msg::Key(key)).expect("loop alive");
                 gone.recv().expect("go");
@@ -482,8 +509,10 @@ mod tests {
         let mut log = log.lock().expect("log").clone();
         // The fake core logs on its own thread, so the refresh `␣g` sent may land anywhere;
         // check it, then leave it out of the ordered steps.
-        let refresh = log.iter().position(|l| l == "RefreshWorktrees");
-        log.remove(refresh.expect("␣g asked for a refresh"));
+        if keys.contains(&'g') {
+            let refresh = log.iter().position(|l| l == "RefreshWorktrees");
+            log.remove(refresh.expect("␣g asked for a refresh"));
+        }
         (log, app)
     }
 

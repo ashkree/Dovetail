@@ -3,7 +3,7 @@
 
 use dovetail_api::{
     AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, PermissionAnswer,
-    REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, Snapshot,
+    RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, Snapshot,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -92,6 +92,11 @@ pub(crate) fn input_summary(snap: &Snapshot, tool: &str, input: &serde_json::Val
         "Edit" | "Write" | "Read" | "MultiEdit" => field("file_path").map(str::to_string),
         START_SLICE_PERMISSION => Some(start_slice_summary(snap, input)),
         REMOVE_WORKTREE_PERMISSION => Some(remove_worktree_summary(input)),
+        // `slice-4 · could not list processes: …`
+        RELEASE_TAKEOVER_PERMISSION => field("session").map(|s| match field("reason") {
+            Some(why) => format!("{s} · {why}"),
+            None => s.to_string(),
+        }),
         _ => None,
     }
     .unwrap_or_else(|| input.to_string())
