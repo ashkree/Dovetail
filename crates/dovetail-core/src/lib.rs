@@ -22,6 +22,7 @@ pub mod session;
 mod shutdown;
 mod slice;
 pub mod socket;
+pub mod takeover;
 mod todos;
 mod tools;
 mod usage;

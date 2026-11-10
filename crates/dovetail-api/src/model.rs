@@ -336,7 +336,8 @@ pub struct SubagentProgress {
 pub enum SessionLock {
     /// Dovetail drives it headless.
     Headless,
-    /// The user has taken it over in a native terminal.
+    /// The user has taken it over in a native terminal (`<leader>st`): headless never starts
+    /// until the native run ends. The lock is stored, so it outlives a crash of Dovetail.
     TakenOver,
 }
 
@@ -421,6 +422,11 @@ pub const START_SLICE_PERMISSION: &str = "start_slice";
 /// The `tool` of the Permission item that asks before removing a slice worktree with unsaved
 /// work. Its input is `{worktree, branch, uncommitted: [..], unpushed_commits}`.
 pub const REMOVE_WORKTREE_PERMISSION: &str = "Remove worktree";
+
+/// The `tool` of the Permission item raised at open when a session's take-over lock was left by
+/// a crash and Dovetail cannot tell whether its native `claude` still runs (M14). `y` releases
+/// the lock, `d` keeps it. Its input is `{session, reason}`.
+pub const RELEASE_TAKEOVER_PERMISSION: &str = "Release take-over lock";
 
 /// A permission rule Claude Code offers for "always allow".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

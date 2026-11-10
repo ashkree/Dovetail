@@ -40,6 +40,9 @@ pub(crate) enum Waiter {
     /// A worktree no agent owns, found by the sweep on open (M10): `y` removes it, `d` keeps
     /// it for good.
     RemoveOrphan { found: crate::restore::Orphan },
+    /// A take-over lock left by a crash whose native run cannot be checked (M14): `y` releases
+    /// it, `d` keeps it.
+    ReleaseLock,
 }
 
 impl Waiter {
@@ -318,6 +321,11 @@ impl Core {
                 PermissionAnswer::Deny { .. } => self.keep_orphan(found),
                 _ => self.remove_orphan(found),
             },
+            Waiter::ReleaseLock => match answer {
+                // Kept: it is checked again before the next start.
+                PermissionAnswer::Deny { .. } => {}
+                _ => self.release_lock(&agent),
+            },
             _ => {}
         }
         self.refresh_status(&agent);
@@ -375,6 +383,7 @@ impl Core {
             }
             Waiter::RemoveWorktree => self.keep_slice(&agent),
             Waiter::RemoveOrphan { found } => self.keep_orphan(found),
+            Waiter::ReleaseLock => {}
             Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }
     }

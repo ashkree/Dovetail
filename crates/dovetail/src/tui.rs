@@ -45,10 +45,12 @@ pub fn run_real() -> Result<()> {
         .clone()
         .map_or_else(|| "claude".into(), |p| p.into_os_string());
     let options = CoreOptions {
-        driver: Arc::new(ClaudeDriver::with_program(program)),
+        driver: Arc::new(ClaudeDriver::with_program(program.clone())),
         exe: std::env::current_exe().context("finding the dovetail binary")?,
         tasks_dir: None,
         editor: None,
+        // Take-over runs the same binary as headless sessions.
+        claude: Some(program),
         memory_caps: true,
         scopes: None,
     };

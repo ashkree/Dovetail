@@ -215,6 +215,7 @@ impl Core {
             created_ms: now_ms(),
             tool_use_id: None,
             claude_home: None,
+            takeover: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
@@ -390,6 +391,9 @@ impl Core {
             self.fail(format!("{} is not a slice", agent.0));
             return;
         }
+        if self.refuse_while_taken_over(agent) {
+            return;
+        }
         if let Some(live) = self.live.get_mut(agent) {
             live.stopping = true;
             live.close_after = Some(confirmed);
@@ -415,6 +419,9 @@ impl Core {
     /// Removes a slice's worktree on a blocking task. Unless `confirmed`, unsaved work stops it
     /// and the user is asked.
     pub(crate) fn remove_worktree(&mut self, agent: &AgentId, confirmed: bool) {
+        if self.refuse_while_taken_over(agent) {
+            return;
+        }
         if self.live.contains_key(agent) {
             // Stop the session first; the removal follows its exit.
             self.close_slice(agent, confirmed);
@@ -594,6 +601,21 @@ impl Core {
         for call in done {
             crate::tools::answer_archive(call);
         }
+    }
+
+    /// A slice taken over in a native terminal is never archived and its worktree never removed
+    /// (M14): native runs in it. Says so, to the user and to any `archive_slice` call waiting.
+    fn refuse_while_taken_over(&mut self, agent: &AgentId) -> bool {
+        if !self.locked(agent) {
+            return false;
+        }
+        let name = self.name_of(agent);
+        let why = format!(
+            "{name} is taken over in a native terminal; archive it once that claude has exited"
+        );
+        self.archive_outcome(agent, &name, ArchiveOutcome::Failed(why.clone()));
+        self.fail(why);
+        true
     }
 
     /// The slice is gone for good: forget it and make room for a queued one.
