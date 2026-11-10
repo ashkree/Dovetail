@@ -34,6 +34,8 @@ struct AgentView {
     expanded: HashSet<EntryId>,
     cache: transcript::Cache,
     draft: String,
+    /// Where the cursor was in the draft when the chat bar was left.
+    draft_cursor: usize,
     /// Images attached to the unsent draft.
     draft_images: Vec<Attachment>,
     /// The oldest entry when older history was last asked for, to ask once.
@@ -53,6 +55,7 @@ impl Default for AgentView {
             expanded: HashSet::new(),
             cache: transcript::Cache::default(),
             draft: String::new(),
+            draft_cursor: 0,
             draft_images: Vec::new(),
             loading: None,
             drawn: None,
@@ -67,6 +70,8 @@ struct Layout {
     lines: Vec<Line<'static>>,
     turns: Vec<Turn>,
     max_top: usize,
+    /// Rows of text in view, for paging.
+    page: usize,
     /// Older history exists; its oldest known entry.
     older: Option<EntryId>,
 }
@@ -132,7 +137,9 @@ impl ConversationBuffer {
     pub fn begin_chat(&mut self, agent: AgentId) {
         self.show(agent.clone());
         let view = self.views.entry(agent).or_default();
-        self.chat = Some(TextInput::multiline(&view.draft));
+        let mut chat = TextInput::multiline(&view.draft);
+        chat.set_cursor(view.draft_cursor.min(view.draft.len()));
+        self.chat = Some(chat);
         self.images = view.draft_images.clone();
     }
 
@@ -210,15 +217,22 @@ impl ConversationBuffer {
                 Some((agent, text, images))
             }
             InputOutcome::Cancel => {
-                let text = chat.text().to_string();
-                self.chat = None;
-                let view = self.views.entry(agent).or_default();
-                view.draft = text;
-                view.draft_images = std::mem::take(&mut self.images);
+                self.park_chat();
                 None
             }
             InputOutcome::Edited | InputOutcome::Ignored => None,
         }
+    }
+
+    /// Closes the chat input, keeping its text, cursor and images as the agent's draft.
+    pub fn park_chat(&mut self) {
+        let (Some(chat), Some(agent)) = (self.chat.take(), self.agent.clone()) else {
+            return;
+        };
+        let view = self.views.entry(agent).or_default();
+        view.draft = chat.text().to_string();
+        view.draft_cursor = chat.cursor();
+        view.draft_images = std::mem::take(&mut self.images);
     }
 
     fn view(&mut self) -> Option<&mut AgentView> {
@@ -402,10 +416,19 @@ impl Buffer for ConversationBuffer {
                 height: 1,
                 ..input_area
             };
-            let text = fmt::truncate(
-                "› i to chat · ]] [[ turns · zc zo fold · gg G",
-                usize::from(hint.width),
-            );
+            // A draft left with Ctrl-k or Esc stays in view, so it is clear what `i` goes back to.
+            let draft = self
+                .agent
+                .as_ref()
+                .and_then(|a| self.views.get(a))
+                .map(|v| v.draft.lines().next().unwrap_or("").trim())
+                .unwrap_or("");
+            let text = if draft.is_empty() {
+                "› i to chat · ]] [[ turns · zc zo fold · gg G".to_string()
+            } else {
+                format!("› {draft} · i or ^j to go on typing")
+            };
+            let text = fmt::truncate(&text, usize::from(hint.width));
             frame.render_widget(Paragraph::new(Span::styled(text, theme.dim())), hint);
         }
 
@@ -485,6 +508,7 @@ impl Buffer for ConversationBuffer {
             lines: built.lines,
             turns: built.turns,
             max_top,
+            page: height,
             older,
         };
     }
@@ -504,6 +528,12 @@ impl Buffer for ConversationBuffer {
                 self.maybe_load_older(effects);
             }
             Action::GoBottom => self.scroll_to(self.layout.max_top),
+            // A page keeps two rows of the last one in view, to read on from.
+            Action::PageDown => self.scroll_to(top + self.layout.page.saturating_sub(2).max(1)),
+            Action::PageUp => {
+                self.scroll_to(top.saturating_sub(self.layout.page.saturating_sub(2).max(1)));
+                self.maybe_load_older(effects);
+            }
             Action::NextTurn => {
                 let next = self
                     .layout

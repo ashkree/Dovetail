@@ -483,6 +483,15 @@ impl App {
                 {
                     return;
                 }
+                Some(Action::LeaveChatBar) => {
+                    self.buffers.conversation.park_chat();
+                    self.mode = Mode::Normal;
+                    return;
+                }
+                Some(action @ (Action::PageDown | Action::PageUp)) => {
+                    self.run(action);
+                    return;
+                }
                 _ => {}
             }
             if let Some((agent, text, attachments)) = self.buffers.conversation.chat_key(event) {

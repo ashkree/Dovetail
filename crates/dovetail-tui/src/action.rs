@@ -9,6 +9,10 @@ pub enum Action {
     MoveDown,
     /// Move up one row.
     MoveUp,
+    /// Scroll down a page. Also works while typing in the chat bar.
+    PageDown,
+    /// Scroll up a page. Also works while typing in the chat bar.
+    PageUp,
     /// Jump to the first row.
     GoTop,
     /// Jump to the last row.
@@ -53,6 +57,8 @@ pub enum Action {
     FoldTurn,
     /// Unfold the turn at the top of the view and show its long replies in full.
     UnfoldTurn,
+    /// Leave the chat bar for the conversation above it, keeping the draft and its cursor.
+    LeaveChatBar,
     /// Ctrl-V in a chat bar: attach the clipboard's image, or paste its text at the cursor.
     PasteClipboard,
     /// Backspace on an empty chat input: drop the last image chip. With text typed, or no chip,

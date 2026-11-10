@@ -1,5 +1,6 @@
 //! Text input for Insert mode: plain editing with no vim keys. One line for the prompt row,
-//! several for chat (`Ctrl-j` or `Alt-Enter` start a new line, `Enter` sends).
+//! several for chat (`Shift-Enter` where the terminal reports it, or `Alt-Enter` anywhere, starts
+//! a new line; `Enter` sends).
 
 use std::ops::Range;
 
@@ -62,6 +63,20 @@ impl TextInput {
         self.wrap_width = Some(width);
     }
 
+    /// Byte offset of the cursor.
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    /// Moves the cursor to byte offset `at`, or to the end if `at` is not a char boundary.
+    pub fn set_cursor(&mut self, at: usize) {
+        self.cursor = if self.text.is_char_boundary(at) {
+            at
+        } else {
+            self.text.len()
+        };
+    }
+
     /// The text before the cursor, for placing the terminal cursor on a single line.
     pub fn before_cursor(&self) -> &str {
         &self.text[..self.cursor]
@@ -83,8 +98,7 @@ impl TextInput {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         match key.code {
-            KeyCode::Enter if alt => self.newline(),
-            KeyCode::Char('j') if ctrl => self.newline(),
+            KeyCode::Enter if alt || key.modifiers.contains(KeyModifiers::SHIFT) => self.newline(),
             KeyCode::Enter => InputOutcome::Submit,
             KeyCode::Esc => InputOutcome::Cancel,
             KeyCode::Char('w') if ctrl => {
@@ -327,7 +341,7 @@ mod tests {
     fn ctrl_u_clears_only_the_current_line_of_a_multiline_input() {
         let mut input = TextInput::multiline("");
         typed(&mut input, "first");
-        input.handle(ctrl('j'));
+        input.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
         typed(&mut input, "second");
         input.handle(ctrl('u'));
         assert_eq!(input.text(), "first\n");
@@ -341,14 +355,15 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_j_and_alt_enter_insert_a_newline_only_in_multiline() {
+    fn shift_and_alt_enter_insert_a_newline_only_in_multiline() {
         let mut chat = TextInput::multiline("a");
-        chat.handle(ctrl('j'));
+        chat.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT));
         chat.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
         typed(&mut chat, "b");
         assert_eq!(chat.text(), "a\n\nb");
         let mut row = TextInput::line("a");
-        assert_eq!(row.handle(ctrl('j')), InputOutcome::Ignored);
+        let alt_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT);
+        assert_eq!(row.handle(alt_enter), InputOutcome::Ignored);
         assert_eq!(row.text(), "a");
     }
 
@@ -454,7 +469,7 @@ mod tests {
     fn the_cursor_position_follows_the_wrapped_rows() {
         let mut input = TextInput::multiline("abcdefgh");
         assert_eq!(input.cursor_position(5), (1, 4));
-        input.handle(ctrl('j'));
+        input.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
         assert_eq!(input.cursor_position(5), (2, 0));
         let empty = TextInput::multiline("");
         assert_eq!(empty.cursor_position(5), (0, 0));
