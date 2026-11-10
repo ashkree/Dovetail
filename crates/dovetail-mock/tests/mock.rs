@@ -442,3 +442,120 @@ fn refreshing_worktrees_fills_one_entry_per_slice_worktree() {
         );
     }
 }
+
+/// A stored map as the `draw_map` input that would draw it again.
+fn as_input(map: &dovetail_maps::Map) -> dovetail_maps::DrawMapInput {
+    use dovetail_maps::*;
+    let c = &map.content;
+    DrawMapInput {
+        map: MapHeaderInput {
+            id: Some(map.id.0.clone()),
+            title: c.title.clone(),
+            kind: c.kind.as_str().into(),
+        },
+        nodes: c
+            .nodes
+            .iter()
+            .map(|n| NodeInput {
+                id: n.id.0.clone(),
+                kind: n.kind.as_str().into(),
+                label: n.label.clone(),
+                description: n.description.clone(),
+                file: n.file.clone(),
+                pseudocode: n.pseudocode.clone(),
+            })
+            .collect(),
+        groups: c
+            .groups
+            .iter()
+            .map(|g| GroupInput {
+                parent: g.parent.0.clone(),
+                children: g.children.iter().map(|n| n.0.clone()).collect(),
+            })
+            .collect(),
+        connections: c
+            .connections
+            .iter()
+            .map(|x| ConnectionInput {
+                from: x.from.0.clone(),
+                to: x.to.0.clone(),
+                label: x.label.clone(),
+            })
+            .collect(),
+        flows: c
+            .flows
+            .iter()
+            .map(|f| FlowInput {
+                name: f.name.clone(),
+                steps: f
+                    .steps
+                    .iter()
+                    .map(|s| StepInput {
+                        node: s.node.0.clone(),
+                        arrow: s.arrow.clone(),
+                        note: s.note.clone(),
+                        lane: s.lane.as_ref().map(|l| l.0.clone()),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        lanes: c
+            .lanes
+            .iter()
+            .map(|l| LaneInput {
+                id: l.id.0.clone(),
+                label: l.label.clone(),
+                node: l.node.as_ref().map(|n| n.0.clone()),
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn the_seeded_maps_pass_draw_map_validation_and_load() {
+    use dovetail_maps::{MapId, MapKind, check_lane_links, validate};
+
+    let mut core = MockCore::new(config(1));
+    let shelf = core.state().maps.clone();
+    let kinds: Vec<MapKind> = shelf.iter().map(|m| m.kind).collect();
+    assert_eq!(kinds, [MapKind::Swimlane, MapKind::Structure]);
+    let mut loaded = Vec::new();
+    for entry in &shelf {
+        core.handle(Command::LoadMap {
+            id: entry.id.clone(),
+            version: None,
+        });
+        let ServerMsg::Event {
+            event: Event::MapLoaded(map),
+            ..
+        } = core.pop()
+        else {
+            panic!("MapLoaded for {}", entry.id.0);
+        };
+        assert_eq!((&map.id, map.version), (&entry.id, entry.version));
+        // Validation rebuilds exactly what is stored, connection indices included.
+        let valid = validate(&as_input(&map)).unwrap_or_else(|e| panic!("{e:#?}"));
+        assert_eq!(valid.content, map.content);
+        loaded.push(map);
+    }
+    // Every lane links a node of the structure map.
+    let structure_nodes = loaded
+        .iter()
+        .filter(|m| m.content.kind == MapKind::Structure)
+        .flat_map(|m| m.content.nodes.iter().map(|n| n.id.clone()))
+        .collect();
+    for map in &loaded {
+        assert!(check_lane_links(&map.content, &structure_nodes).is_empty());
+    }
+    core.handle(Command::LoadMap {
+        id: MapId("nope".into()),
+        version: None,
+    });
+    assert!(matches!(
+        core.pop(),
+        ServerMsg::Event {
+            event: Event::CommandFailed { .. },
+            ..
+        }
+    ));
+}

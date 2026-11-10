@@ -7,6 +7,7 @@
 
 #![warn(missing_docs)]
 
+mod maps;
 mod rng;
 mod world;
 
@@ -15,6 +16,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use dovetail_api::map::{Map, MapId};
 use dovetail_api::*;
 use rng::Rng;
 use world::{COORDINATOR, agent_id, round_cents};
@@ -77,6 +79,8 @@ pub struct MockCore {
     clipboard: VecDeque<Paste>,
     /// Tokens in each session's context, as the core counts them from the stream (M13c).
     context_tokens: BTreeMap<AgentId, u64>,
+    /// Each seeded map's content, latest version only, for [`Command::LoadMap`].
+    maps: BTreeMap<MapId, Map>,
     quit: bool,
 }
 
@@ -102,6 +106,10 @@ impl MockCore {
             reply_count: 0,
             clipboard: VecDeque::new(),
             context_tokens: BTreeMap::new(),
+            maps: maps::seeded(config.start_ms)
+                .into_iter()
+                .map(|(_, map)| (map.id.clone(), map))
+                .collect(),
             quit: false,
         };
         core.after(3_000, |core| core.finish_setup(&agent_id("picker")));
@@ -432,6 +440,16 @@ impl MockCore {
                     self.emit(Event::WorktreeUpserted(info));
                 }
             }
+            Command::LoadMap { id, version } => match self.maps.get(&id) {
+                Some(map) if version.is_none_or(|v| v == map.version) => {
+                    self.emit(Event::MapLoaded(map.clone()));
+                }
+                Some(map) => self.fail(format!(
+                    "the mock keeps only version {} of map {}",
+                    map.version, id.0
+                )),
+                None => self.fail(format!("there is no map {}", id.0)),
+            },
             Command::Resync => self
                 .ready
                 .push_back(ServerMsg::Snapshot(self.state.trimmed())),

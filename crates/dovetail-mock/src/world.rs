@@ -409,6 +409,10 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         profile: Some("maveron".into()),
         // Like the core: empty until the worktree view asks for a refresh.
         worktrees: vec![],
+        maps: crate::maps::seeded(now_ms)
+            .into_iter()
+            .map(|(shelf, _)| shelf)
+            .collect(),
     };
     snapshot.totals = totals_of(&snapshot);
     snapshot

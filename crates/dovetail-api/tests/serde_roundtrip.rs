@@ -16,6 +16,64 @@ fn id(s: &str) -> AgentId {
     AgentId(s.into())
 }
 
+fn map_summary() -> map::MapSummary {
+    map::MapSummary {
+        id: map::MapId("checkout".into()),
+        title: "Checkout".into(),
+        kind: map::MapKind::Structure,
+        task: Some(TaskId(3)),
+        drawn_by: Some(id("slice-a")),
+        version: 2,
+        created_ms: 1_700_000_000_000,
+        updated_ms: 1_700_000_100_000,
+    }
+}
+
+fn map() -> map::Map {
+    use map::*;
+    let node = |id: &str| Node {
+        id: NodeId(id.into()),
+        kind: NodeKind::Logic,
+        label: id.into(),
+        description: "d".into(),
+        file: Some("src/a.rs".into()),
+        pseudocode: Some("x = 1".into()),
+    };
+    Map {
+        id: MapId("checkout".into()),
+        version: 2,
+        content: MapContent {
+            title: "Checkout".into(),
+            kind: MapKind::Swimlane,
+            nodes: vec![node("a"), node("b")],
+            groups: vec![Group {
+                parent: NodeId("a".into()),
+                children: vec![NodeId("b".into())],
+            }],
+            connections: vec![Connection {
+                from: NodeId("a".into()),
+                to: NodeId("b".into()),
+                label: "calls".into(),
+            }],
+            flows: vec![Flow {
+                name: "f".into(),
+                steps: vec![FlowStep {
+                    node: NodeId("b".into()),
+                    connection: Some(0),
+                    arrow: Some("calls".into()),
+                    note: "n".into(),
+                    lane: Some(LaneId("l".into())),
+                }],
+            }],
+            lanes: vec![Lane {
+                id: LaneId("l".into()),
+                label: "L".into(),
+                node: Some(NodeId("api".into())),
+            }],
+        },
+    }
+}
+
 fn task() -> Task {
     Task {
         id: TaskId(3),
@@ -270,6 +328,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
         warnings: vec![warning()],
         worktrees: worktree_infos(),
         profile: Some("maveron".into()),
+        maps: vec![map_summary()],
     };
     roundtrip(&ServerMsg::Hello {
         protocol: PROTOCOL_VERSION,
@@ -306,6 +365,8 @@ fn every_event_roundtrips() {
             has_more: false,
         },
         Event::DecisionAdded(decision()),
+        Event::MapUpserted(map_summary()),
+        Event::MapLoaded(map()),
         Event::TotalsChanged(totals()),
         Event::UsageChanged(UsageLimits::default()),
         Event::WarningSet(warning()),
@@ -440,6 +501,10 @@ fn every_command_roundtrips() {
             before: None,
         },
         Command::RefreshWorktrees,
+        Command::LoadMap {
+            id: map::MapId("checkout".into()),
+            version: Some(2),
+        },
         Command::CopyToClipboard {
             text: "/tmp/wt".into(),
         },

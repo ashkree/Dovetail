@@ -400,6 +400,7 @@ dependencies = [
  "dovetail-api",
  "dovetail-core",
  "dovetail-driver",
+ "dovetail-maps",
  "dovetail-mock",
  "dovetail-tui",
  "jiff",
@@ -464,6 +465,7 @@ name = "dovetail-mock"
 version = "0.0.0"
 dependencies = [
  "dovetail-api",
+ "dovetail-maps",
  "serde_json",
 ]
 

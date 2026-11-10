@@ -10,5 +10,10 @@ publish.workspace = true
 dovetail-api.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+# The seeded maps are checked with draw_map's own validation; a test-only dependency, so the mock
+# (and the TUI tests using it) never build the map renderer.
+dovetail-maps.workspace = true
+
 [lints]
 workspace = true
