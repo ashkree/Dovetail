@@ -143,3 +143,7 @@ _Avoid_: account (for the setting), login, identity
 **Self-hosting point**:
 The earliest milestone after which the rest of Dovetail's build runs inside Dovetail.
 _Avoid_: bootstrap, dogfooding
+
+**Upgrade**:
+Replacing the installed Dovetail with a newer build by restarting it at a quiet moment; the sessions resume (ADR 0014).
+_Avoid_: update, hot reload, live edit
