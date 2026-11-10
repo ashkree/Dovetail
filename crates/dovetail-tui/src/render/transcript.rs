@@ -243,7 +243,7 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
                 lines.extend(chip_lines(chips, width));
             }
             // An image-only message has no text lines.
-            if !(entry.text.is_empty() && !entry.attachments.is_empty()) {
+            if !entry.text.is_empty() || entry.attachments.is_empty() {
                 for text in entry.text.split('\n') {
                     let spans = [Span::styled(text.to_string(), theme.body())];
                     for line in wrap_spans(&spans, width) {
