@@ -11,6 +11,8 @@ Why: reading a question and writing the answer at the same time meant leaving th
 - **The chat bar is a stop of its own below the conversation.** `Ctrl-k` in the chat bar goes up to the conversation in Normal mode, keeping the draft, its cursor and its images. `Ctrl-j` (or `i`) in the conversation comes back down to the bar where the cursor was. While the bar is left, its first line stays in view, dimmed, so it is clear what `i` goes back to. `Esc` keeps the draft and cursor the same way.
 - **PageUp / PageDown** scroll the conversation by a page (two rows overlap), in Normal mode and while typing in the chat bar.
 
-The chat bar is drawn by the conversation buffer, not a buffer in a region of its own: the two keys give it the behaviour of a region without changing Layout B.
+- **The chat bar is drawn as a pane of its own** under the conversation, in the left column: bordered and titled (`chat › <agent>`) like the inbox and the tree, at most half the column high. While you type it has the focus colour and the conversation pane does not; while you read, the other way round. (First built as a rule inside the conversation pane; changed the same day at the user's request.)
+
+It is still drawn by the conversation buffer rather than being a buffer in a region of its own, so it always sits under the conversation it writes to and Layout B's three regions stay as they are.
 
 Approved by the user in the session of 2026-11-10.

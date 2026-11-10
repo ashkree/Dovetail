@@ -470,44 +470,70 @@ impl Buffer for ConversationBuffer {
             }
             None => "no agent".into(),
         };
-        let inner = pane(frame, area, title(&heading, focused, theme), focused, theme);
-        let inner = crate::theme::CHAT_PADDING.shrink(inner);
-
-        // Bottom: a rule, then the chat input or a hint.
+        // The chat bar is a pane of its own under the conversation, like the inbox and the
+        // tree: bordered, titled, and the one in the focus colour while you type (ADR 0010).
+        let chatting = self.chat.is_some();
+        let pad = crate::theme::CHAT_PADDING.x;
+        // Border and the pane's own padding column on each side, then the chat padding.
+        let chat_width = area.width.saturating_sub(4 + 2 * pad);
+        let text_width = usize::from(chat_width.saturating_sub(2));
         let input_rows = self.chat.as_mut().map_or(1, |c| {
-            let width = usize::from(inner.width.saturating_sub(2));
-            c.set_wrap_width(width);
-            c.rows(width).len().clamp(1, MAX_INPUT_ROWS)
+            c.set_wrap_width(text_width);
+            c.rows(text_width).len().clamp(1, MAX_INPUT_ROWS)
         });
-        let chips = if self.chat.is_some() && !self.images.is_empty() {
-            chip_rows(
-                &self.images,
-                usize::from(inner.width.saturating_sub(2)),
-                theme,
-            )
+        let chips = if chatting && !self.images.is_empty() {
+            chip_rows(&self.images, text_width, theme)
         } else {
             Vec::new()
         };
-        let bottom =
-            (1 + chips.len() as u16 + input_rows as u16).min(inner.height.saturating_sub(1));
-        let body = Rect {
-            height: inner.height - bottom,
-            ..inner
+        let chat_height = (2 + chips.len() as u16 + input_rows as u16).min(area.height / 2);
+        let conversation_area = Rect {
+            height: area.height - chat_height,
+            ..area
         };
-        let rule = Rect {
-            y: body.y + body.height,
-            height: 1.min(bottom),
-            ..inner
+        let chat_area = Rect {
+            y: area.y + conversation_area.height,
+            height: chat_height,
+            ..area
+        };
+
+        let reading = focused && !chatting;
+        let inner = pane(
+            frame,
+            conversation_area,
+            title(&heading, reading, theme),
+            reading,
+            theme,
+        );
+        let body = crate::theme::CHAT_PADDING.shrink(inner);
+
+        let typing = focused && chatting;
+        let name = agent.map_or("no agent", |a| a.name.as_str());
+        let chat_title = if chatting {
+            format!("chat › {name} · ⏎ send · ^k read")
+        } else {
+            format!("chat › {name}")
+        };
+        let chat_inner = pane(
+            frame,
+            chat_area,
+            title(&chat_title, typing, theme),
+            typing,
+            theme,
+        );
+        let chat_inner = Rect {
+            x: chat_inner.x + pad.min(chat_inner.width / 2),
+            width: chat_inner.width.saturating_sub(2 * pad),
+            ..chat_inner
         };
         let chip_area = Rect {
-            y: rule.y + rule.height,
-            height: (chips.len() as u16).min(bottom - rule.height),
-            ..inner
+            height: (chips.len() as u16).min(chat_inner.height),
+            ..chat_inner
         };
         let input_area = Rect {
             y: chip_area.y + chip_area.height,
-            height: bottom - rule.height - chip_area.height,
-            ..inner
+            height: chat_inner.height - chip_area.height,
+            ..chat_inner
         };
         for (n, line) in chips
             .into_iter()
@@ -521,16 +547,7 @@ impl Buffer for ConversationBuffer {
             };
             frame.render_widget(Paragraph::new(line), rect);
         }
-        if rule.height > 0 {
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    "─".repeat(usize::from(rule.width)),
-                    theme.dim(),
-                )),
-                rule,
-            );
-        }
-        if self.chat.is_some() {
+        if chatting {
             self.render_input(frame, input_area, cx);
         } else if input_area.height > 0 {
             let hint = Rect {
@@ -545,7 +562,7 @@ impl Buffer for ConversationBuffer {
                 .map(|v| v.draft.lines().next().unwrap_or("").trim())
                 .unwrap_or("");
             let text = if draft.is_empty() {
-                "› i to chat · ]] [[ turns · zc zo fold · gg G".to_string()
+                "› i or ^j to type · ]] [[ turns · zc zo fold · gg G".to_string()
             } else {
                 format!("› {draft} · i or ^j to go on typing")
             };

@@ -25,8 +25,8 @@ expression: "render(&mut app, 100, 28)"
 │                                                          ││       ✓ ◇ rebase          done $0.21 │
 │                                                          ││       ◐ ◇ explore c… 12 tools · Grep │
 │                                                          ││ ▾ ⚠ get_decision 500 P0              │
-│   ────────────────────────────────────────────────────   ││   ▾ ⚠ ◆ slice-7  manual    needs you │
-│   › i to chat · ]] [[ turns · zc zo fold · gg G          ││         ⎇ dovetail/slice-7           │
-│                                                          ││ ⏎ open · o fold · dd archive         │
+└──────────────────────────────────────────────────────────┘│   ▾ ⚠ ◆ slice-7  manual    needs you │
+┌ chat › coordinator ──────────────────────────────────────┐│         ⎇ dovetail/slice-7           │
+│   › i or ^j to type · ]] [[ turns · zc zo fold · gg G    ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
  INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command
