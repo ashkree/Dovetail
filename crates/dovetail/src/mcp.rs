@@ -38,7 +38,7 @@
 //! With the server named `dovetail`, Claude Code sees the tools as `mcp__dovetail__<tool>`:
 //!
 //! * both roles: `mcp__dovetail__ask_user`, `mcp__dovetail__report_status`,
-//!   `mcp__dovetail__log_decision`
+//!   `mcp__dovetail__log_decision`, `mcp__dovetail__draw_map`
 //! * coordinator only: `mcp__dovetail__create_task`, `mcp__dovetail__start_slice`,
 //!   `mcp__dovetail__add_project`, `mcp__dovetail__archive_slice`, `mcp__dovetail__archive_task`,
 //!   `mcp__dovetail__list_tasks`, `mcp__dovetail__get_task`, `mcp__dovetail__update_task`
@@ -505,5 +505,40 @@ fn tool_defs() -> Vec<ToolDef> {
                 }, "required": ["id"]})
             },
         },
+        ToolDef {
+            name: "draw_map",
+            description: "Draw a map the user can explore in Dovetail, to explain structure, \
+                flow or architecture instead of drawing ASCII diagrams. A `structure` map shows \
+                what exists and how it connects: nodes of nine kinds with plain-English \
+                descriptions, groups to drill into, labelled connections, and guided flows. A \
+                `swimlane` map shows what happens in order: one lane per participant and one \
+                flow whose steps name their lane; a lane can link a node of a structure map. \
+                Send the whole map each time. Every problem comes back at once as a list to \
+                fix. On success it returns `{\"id\", \"version\"}`: call again with that `id` \
+                to redraw the map as a new version; a new subject is a new map. Maps are kept \
+                per project and linked to your task.",
+            schema: dovetail_maps::input_schema,
+        },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use dovetail_api::tools::TOOLS;
+
+    use super::*;
+
+    #[test]
+    fn every_tool_has_one_definition_with_an_object_schema() {
+        let defs = tool_defs();
+        let names: Vec<&str> = defs.iter().map(|d| d.name).collect();
+        let shared: Vec<&str> = TOOLS.iter().map(|t| t.name).collect();
+        assert_eq!(
+            names, shared,
+            "tool_defs() must follow dovetail_api::tools::TOOLS"
+        );
+        for def in defs {
+            assert_eq!((def.schema)()["type"], "object", "{}", def.name);
+        }
+    }
 }

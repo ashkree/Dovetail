@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::map::MapSummary;
+
 /// Identifies a registered project: the slug of its repo folder, numbered on collision.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -93,6 +95,10 @@ pub struct Snapshot {
     /// refresh).
     #[serde(default)]
     pub worktrees: Vec<WorktreeInfo>,
+    /// The map shelf: every map of the open project, most recently drawn first. Content is
+    /// fetched with [`crate::Command::LoadMap`].
+    #[serde(default)]
+    pub maps: Vec<MapSummary>,
     /// The slash commands and skills each session offers, as Claude Code last listed them.
     /// Sessions of one project share a profile, so one agent's list stands in for another's
     /// until that one reports.

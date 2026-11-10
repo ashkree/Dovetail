@@ -271,6 +271,30 @@ pub enum MapError {
         /// Where.
         at: String,
     },
+    /// A lane linking a node that no structure map of the project has ([`check_lane_links`]).
+    #[error(
+        "{at}: \"node\" is \"{node}\", but no structure map in this project has a node with \
+         that id; draw it on a structure map first, fix the id, or leave \"node\" out"
+    )]
+    UnknownLaneNode {
+        /// Where the lane is.
+        at: String,
+        /// The node id it names.
+        node: String,
+    },
+    /// A redraw that changes an existing map's type.
+    #[error(
+        "map: \"{id}\" is a {was} map, and a map keeps its type; to draw a {now} map, leave \
+         \"id\" out so it becomes a new map"
+    )]
+    KindChanged {
+        /// The map's id.
+        id: String,
+        /// Its stored type.
+        was: &'static str,
+        /// The type asked for.
+        now: &'static str,
+    },
 }
 
 fn kind_list() -> String {
@@ -735,6 +759,24 @@ pub fn validate(input: &DrawMapInput) -> Result<ValidMap, Vec<MapError>> {
     }
 }
 
+/// The cross-map check validation leaves out: every lane's `node` must be a node of one of the
+/// project's structure maps, `structure_nodes` (their latest versions). Empty when every link
+/// resolves, or the map has none.
+pub fn check_lane_links(content: &MapContent, structure_nodes: &HashSet<NodeId>) -> Vec<MapError> {
+    content
+        .lanes
+        .iter()
+        .enumerate()
+        .filter_map(|(i, lane)| {
+            let node = lane.node.as_ref()?;
+            (!structure_nodes.contains(node)).then(|| MapError::UnknownLaneNode {
+                at: loc("lanes", i, &lane.id.0),
+                node: node.0.clone(),
+            })
+        })
+        .collect()
+}
+
 /// Where an item is: `nodes[3] ("api")`, or `nodes[3]` when it has no id yet.
 fn loc(list: &str, i: usize, id: &str) -> String {
     if id.trim().is_empty() {
@@ -1034,6 +1076,23 @@ mod tests {
                 id: "web app".into()
             }
         );
+    }
+
+    #[test]
+    fn lane_links_are_checked_against_structure_nodes() {
+        let map = run(swimlane()).expect("valid").content;
+        let known: HashSet<NodeId> = [NodeId("web-app".into())].into();
+        assert!(check_lane_links(&map, &known).is_empty());
+        assert_eq!(
+            check_lane_links(&map, &HashSet::new()),
+            [MapError::UnknownLaneNode {
+                at: "lanes[1] (\"web\")".into(),
+                node: "web-app".into(),
+            }]
+        );
+        // A structure map has no lanes, so nothing to check.
+        let structure = run(structure()).expect("valid").content;
+        assert!(check_lane_links(&structure, &HashSet::new()).is_empty());
     }
 
     #[test]

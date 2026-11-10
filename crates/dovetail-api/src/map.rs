@@ -8,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::{AgentId, TaskId};
+
 /// A map's id, stable across versions (decision 23h).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -220,4 +222,26 @@ pub struct Lane {
     /// The node this participant is on a structure map, to jump between the two views (23e).
     /// It names a node of another map, so it is checked across maps, not by validation.
     pub node: Option<NodeId>,
+}
+
+/// A map as the shelf lists it: its latest version's header, without the content, so the
+/// snapshot stays small. The content comes with `Command::LoadMap`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MapSummary {
+    /// Stable across versions.
+    pub id: MapId,
+    /// The latest version's title.
+    pub title: String,
+    /// Structure or swimlane; never changes.
+    pub kind: MapKind,
+    /// The task of the agent that first drew it; `None` when the coordinator did.
+    pub task: Option<TaskId>,
+    /// The agent that drew the latest version.
+    pub drawn_by: Option<AgentId>,
+    /// The latest version: 1 for a new map.
+    pub version: u32,
+    /// When version 1 was drawn, in Unix milliseconds.
+    pub created_ms: i64,
+    /// When the latest version was drawn, in Unix milliseconds.
+    pub updated_ms: i64,
 }

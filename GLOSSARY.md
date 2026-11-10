@@ -130,6 +130,10 @@ _Avoid_: swimlane (the whole map), row, track
 One of the nine fixed kinds a map node can be (Part, File, Endpoint, Data, External, Actor, Outcome, Logic, Concept); it sets the node's shape and colour.
 _Avoid_: node type, category
 
+**Map version**:
+One drawing of a map. A map keeps its id and type; each `draw_map` call with that id stores a new version, and earlier versions are kept.
+_Avoid_: revision, snapshot (the core's snapshot is something else)
+
 ### Build
 
 **Worktree recipe**:

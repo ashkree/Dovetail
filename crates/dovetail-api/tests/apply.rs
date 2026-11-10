@@ -74,6 +74,57 @@ fn id(s: &str) -> AgentId {
     AgentId(s.into())
 }
 
+// Maps
+
+fn shelf_entry(id: &str, version: u32) -> map::MapSummary {
+    map::MapSummary {
+        id: map::MapId(id.into()),
+        title: id.into(),
+        kind: map::MapKind::Structure,
+        task: None,
+        drawn_by: None,
+        version,
+        created_ms: 0,
+        updated_ms: i64::from(version),
+    }
+}
+
+#[test]
+fn a_drawn_map_goes_to_the_front_of_the_shelf_and_a_redraw_replaces_it() {
+    let mut s = Snapshot::default();
+    run(
+        &mut s,
+        vec![
+            Event::MapUpserted(shelf_entry("a", 1)),
+            Event::MapUpserted(shelf_entry("b", 1)),
+            Event::MapUpserted(shelf_entry("a", 2)),
+        ],
+    );
+    let shelf: Vec<(&str, u32)> = s
+        .maps
+        .iter()
+        .map(|m| (m.id.0.as_str(), m.version))
+        .collect();
+    assert_eq!(shelf, [("a", 2), ("b", 1)]);
+    // Loaded content passes through without touching the snapshot.
+    let before = s.maps.clone();
+    let loaded = map::Map {
+        id: map::MapId("a".into()),
+        version: 2,
+        content: map::MapContent {
+            title: "a".into(),
+            kind: map::MapKind::Structure,
+            nodes: vec![],
+            groups: vec![],
+            connections: vec![],
+            flows: vec![],
+            lanes: vec![],
+        },
+    };
+    run(&mut s, vec![Event::MapLoaded(loaded)]);
+    assert_eq!(s.maps, before);
+}
+
 // Sequencing
 
 #[test]

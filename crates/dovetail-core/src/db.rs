@@ -10,18 +10,22 @@
 //! ([`Db::open_unregistered`]) until [`Db::persist_state`] writes it to the new project's file
 //! (ADR 0005).
 
+mod maps;
 mod registry;
 mod sessions;
 mod tasks;
 
+pub use maps::{Drawn, NewMapVersion};
 pub use sessions::{AgentRow, QueuedSlice};
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::mpsc;
 use std::task::{Context, Poll};
 
+use dovetail_api::map::{Map, MapId, MapSummary, NodeId};
 use dovetail_api::{
     ActivityItem, AgentId, AgentMessage, ConversationEntry, Decision, DecisionAuthor, EntryId,
     InboxId, InboxItem, NewDecision, NewTask, Task, TaskChange, TaskId,
@@ -64,6 +68,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0009_subagent_tokens.sql"),
     migration!("state", "0010_agent_claude_home.sql"),
     migration!("state", "0011_agent_takeover.sql"),
+    migration!("state", "0012_maps.sql"),
 ];
 
 /// Errors from the database layer.
@@ -307,6 +312,28 @@ impl Db {
     /// Appends to a task's decision log.
     pub fn log_decision(&self, new: NewDecision, by: DecisionAuthor) -> Pending<Decision> {
         self.run(move |c, now| tasks::log_decision(c.state()?, new, by, now))
+    }
+
+    // --- maps (M15) ---
+
+    /// Every map's shelf entry, most recently drawn first.
+    pub fn load_maps(&self) -> Pending<Vec<MapSummary>> {
+        self.run(|c, _| maps::load_maps(c.state()?))
+    }
+
+    /// One version of a map (`None`: the latest); `None` when there is no such map or version.
+    pub fn load_map(&self, id: MapId, version: Option<u32>) -> Pending<Option<Map>> {
+        self.run(move |c, _| maps::load_map(c.state()?, &id, version))
+    }
+
+    /// Ids of every node on the latest version of each structure map, which lanes may link.
+    pub fn structure_nodes(&self) -> Pending<HashSet<NodeId>> {
+        self.run(|c, _| maps::structure_nodes(c.state()?))
+    }
+
+    /// Stores a new map, or a new version of the one its id names.
+    pub fn save_map(&self, new: NewMapVersion) -> Pending<Drawn> {
+        self.run(move |c, now| maps::save_map(c.state()?, new, now))
     }
 
     // --- agents and conversations ---
@@ -578,6 +605,77 @@ mod tests {
         assert_eq!(
             reopened.load_todo_owners().wait().unwrap(),
             vec![("l1".into(), "1".into(), sub)]
+        );
+    }
+
+    #[test]
+    fn maps_migrate_up_from_the_previous_version_and_keep_versions() {
+        use dovetail_api::map::{MapContent, MapKind, Node, NodeKind};
+
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        // A state.db as the build before maps left it, with a task in it.
+        let path = paths.state_db("p");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut old = Connection::open(&path).unwrap();
+        let before_maps = STATE_MIGRATIONS.len() - 1;
+        migrate(&mut old, &path, &STATE_MIGRATIONS[..before_maps]).unwrap();
+        old.execute(
+            "INSERT INTO tasks (id, title, status) VALUES (4, 'kept', 'todo')",
+            [],
+        )
+        .unwrap();
+        drop(old);
+
+        let db = Db::open(&paths, Some("p")).unwrap();
+        assert!(db.load_maps().wait().unwrap().is_empty());
+        let content = |title: &str, node: &str| MapContent {
+            title: title.into(),
+            kind: MapKind::Structure,
+            nodes: vec![Node {
+                id: NodeId(node.into()),
+                kind: NodeKind::Part,
+                label: "l".into(),
+                description: "d".into(),
+                file: None,
+                pseudocode: None,
+            }],
+            groups: vec![],
+            connections: vec![],
+            flows: vec![],
+            lanes: vec![],
+        };
+        let draw = |title: &str, node: &str, id: Option<&str>| NewMapVersion {
+            id: id.map(|i| MapId(i.into())),
+            content: content(title, node),
+            task: Some(TaskId(4)),
+            drawn_by: AgentId("slice-a".into()),
+        };
+        let Drawn::Saved(first) = db.save_map(draw("Shop: core!", "a", None)).wait().unwrap()
+        else {
+            panic!("saved")
+        };
+        assert_eq!((first.id.0.as_str(), first.version), ("shop-core", 1));
+        assert_eq!(first.task, Some(TaskId(4)));
+        db.save_map(draw("Shop", "b", Some("shop-core")))
+            .wait()
+            .unwrap();
+        drop(db);
+
+        let reopened = Db::open(&paths, Some("p")).unwrap();
+        let shelf = reopened.load_maps().wait().unwrap();
+        assert_eq!(shelf.len(), 1);
+        assert_eq!((shelf[0].version, shelf[0].title.as_str()), (2, "Shop"));
+        let v1 = reopened
+            .load_map(MapId("shop-core".into()), Some(1))
+            .wait()
+            .unwrap()
+            .unwrap();
+        assert_eq!(v1.content, content("Shop: core!", "a"));
+        // Lanes may link only the latest version's nodes.
+        assert_eq!(
+            reopened.structure_nodes().wait().unwrap(),
+            [NodeId("b".into())].into()
         );
     }
 

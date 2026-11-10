@@ -8,15 +8,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use dovetail_api::map::{Map, MapId, MapKind};
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
 use dovetail_api::tools::{
-    ArchiveSlice, ArchiveTask, AskUser, BucketFilter, GetTask, ListTasks, LogDecision,
+    ArchiveSlice, ArchiveTask, AskUser, BucketFilter, DrawMap, GetTask, ListTasks, LogDecision,
     ReportStatus, StartSlice, Tool, UpdateTask,
 };
 use dovetail_api::{
     AgentId, AgentKind, AgentStatus, Alternative, Attachment, Bucket, Command, CoreLink,
-    DecisionId, EntryKind, ImageType, InboxId, InboxKind, NewTask, PLevel, PermissionAnswer,
+    DecisionId, EntryKind, Event, ImageType, InboxId, InboxKind, NewTask, PLevel, PermissionAnswer,
     PermissionMode, ServerMsg, Snapshot, TaskId, TaskStatus, apply,
 };
 use dovetail_core::config::Config;
@@ -3459,5 +3460,183 @@ fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() 
     });
     wait_sent(&fake, "Answer to your question 'Which branch?': main");
     h.wait_for("the question answered", |s| open_questions(s).is_empty());
+    h.quit();
+}
+
+// --- draw_map (M15) ---
+
+fn draw(h: &Harness, map: serde_json::Value) -> (String, bool) {
+    result_text(socket_call(
+        &h.socket(),
+        tool(COORDINATOR, Tool::DrawMap(DrawMap(map))),
+    ))
+}
+
+fn checkout_map(title: &str) -> serde_json::Value {
+    serde_json::json!({
+        "map": { "title": title, "type": "structure" },
+        "nodes": [
+            { "id": "api", "kind": "endpoint", "label": "POST /checkout", "description": "Takes the order." },
+            { "id": "orders", "kind": "data", "label": "orders", "description": "Orders table." }
+        ],
+        "connections": [ { "from": "api", "to": "orders", "label": "writes" } ]
+    })
+}
+
+fn login_lanes(lane_node: &str) -> serde_json::Value {
+    serde_json::json!({
+        "map": { "title": "Logging in", "type": "swimlane" },
+        "nodes": [
+            { "id": "user", "kind": "actor", "label": "User", "description": "Signs in." },
+            { "id": "check", "kind": "endpoint", "label": "/login", "description": "Checks it." }
+        ],
+        "lanes": [
+            { "id": "you", "label": "User" },
+            { "id": "web", "label": "Web", "node": lane_node }
+        ],
+        "flows": [ { "name": "Log in", "steps": [
+            { "node": "user", "lane": "you", "note": "Types a password." },
+            { "node": "check", "lane": "web", "arrow": "submits", "note": "Checks it." }
+        ] } ]
+    })
+}
+
+/// Sends `LoadMap` and waits for its answer, folding events in on the way.
+fn load_map(h: &mut Harness, id: &str, version: Option<u32>) -> Result<Map, String> {
+    h.send(Command::LoadMap {
+        id: MapId(id.into()),
+        version,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let left = deadline
+            .checked_duration_since(Instant::now())
+            .expect("timed out waiting for the map");
+        match h.link.messages.recv_timeout(left).expect("a message") {
+            ServerMsg::Event { seq, event } => {
+                let answer = match &event {
+                    Event::MapLoaded(map) => Some(Ok(map.clone())),
+                    Event::CommandFailed { message } => Some(Err(message.clone())),
+                    _ => None,
+                };
+                apply(&mut h.snap, seq, event);
+                if let Some(answer) = answer {
+                    return answer;
+                }
+            }
+            ServerMsg::Snapshot(s) => h.snap = s,
+            ServerMsg::Hello { .. } => {}
+        }
+    }
+}
+
+#[test]
+fn draw_map_stores_a_map_on_the_shelf_and_loads_it() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let (text, is_error) = draw(&h, checkout_map("Checkout"));
+    assert!(!is_error, "{text}");
+    assert!(
+        text.starts_with(r#"{"id":"checkout","version":1}"#),
+        "{text}"
+    );
+    h.wait_for("the shelf entry", |s| s.maps.len() == 1);
+    let shelf = &h.snap.maps[0];
+    assert_eq!(shelf.kind, MapKind::Structure);
+    assert_eq!(shelf.drawn_by, Some(AgentId(COORDINATOR.into())));
+    assert_eq!(shelf.task, None, "the coordinator has no task");
+    let map = load_map(&mut h, "checkout", None).expect("loads");
+    assert_eq!((map.version, map.content.nodes.len()), (1, 2));
+    assert!(load_map(&mut h, "nope", None).is_err());
+    // A second map with the same title gets its own id.
+    let (text, _) = draw(&h, checkout_map("Checkout"));
+    assert!(
+        text.starts_with(r#"{"id":"checkout-2","version":1}"#),
+        "{text}"
+    );
+    h.wait_for("both maps", |s| s.maps.len() == 2);
+
+    // The shelf survives a restart.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let h = Harness::start_on(fixture("plain_turn"), paths);
+    assert_eq!(h.snap.maps.len(), 2);
+    h.quit();
+}
+
+#[test]
+fn draw_map_refuses_an_invalid_map_with_every_problem() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let mut map = checkout_map("Checkout");
+    map["nodes"][1]["kind"] = serde_json::json!("table");
+    map["connections"][0]["to"] = serde_json::json!("ordrs");
+    let (text, is_error) = draw(&h, map);
+    assert!(is_error);
+    assert!(
+        text.starts_with("The map was not saved: 2 problems"),
+        "{text}"
+    );
+    assert!(
+        text.contains(r#"kind "table" is not a node kind"#),
+        "{text}"
+    );
+    assert!(text.contains(r#"no node has id "ordrs""#), "{text}");
+    // A misspelt field is a schema error, not silently dropped.
+    let mut map = checkout_map("Checkout");
+    map["nodez"] = serde_json::json!([]);
+    let (text, is_error) = draw(&h, map);
+    assert!(is_error && text.contains("nodez"), "{text}");
+    h.drain(Duration::from_millis(100));
+    assert!(h.snap.maps.is_empty());
+    h.quit();
+}
+
+#[test]
+fn draw_map_with_an_existing_id_adds_a_version() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    draw(&h, checkout_map("Checkout"));
+    let mut redraw = checkout_map("Checkout, with Stripe");
+    redraw["map"]["id"] = serde_json::json!("checkout");
+    let (text, is_error) = draw(&h, redraw);
+    assert!(!is_error, "{text}");
+    assert!(
+        text.starts_with(r#"{"id":"checkout","version":2}"#),
+        "{text}"
+    );
+    h.wait_for("version 2", |s| {
+        s.maps.first().is_some_and(|m| m.version == 2)
+    });
+    assert_eq!(h.snap.maps.len(), 1);
+    assert_eq!(h.snap.maps[0].title, "Checkout, with Stripe");
+    // The earlier version is kept.
+    let first = load_map(&mut h, "checkout", Some(1)).expect("version 1");
+    assert_eq!(first.content.title, "Checkout");
+    assert_eq!(
+        load_map(&mut h, "checkout", None).expect("latest").version,
+        2
+    );
+    assert!(load_map(&mut h, "checkout", Some(3)).is_err());
+    // A map keeps its type.
+    let mut lanes = login_lanes("api");
+    lanes["map"]["id"] = serde_json::json!("checkout");
+    let (text, is_error) = draw(&h, lanes);
+    assert!(is_error && text.contains("a map keeps its type"), "{text}");
+    h.quit();
+}
+
+#[test]
+fn draw_map_checks_lane_links_against_structure_maps() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let (text, is_error) = draw(&h, login_lanes("api"));
+    assert!(is_error, "{text}");
+    assert!(
+        text.contains(r#"lanes[1] ("web"): "node" is "api", but no structure map"#),
+        "{text}"
+    );
+    draw(&h, checkout_map("Checkout"));
+    let (text, is_error) = draw(&h, login_lanes("api"));
+    assert!(!is_error, "{text}");
+    h.wait_for("both maps", |s| s.maps.len() == 2);
+    // Most recently drawn first.
+    assert_eq!(h.snap.maps[0].kind, MapKind::Swimlane);
     h.quit();
 }

@@ -10,6 +10,7 @@ publish.workspace = true
 dovetail-api.workspace = true
 dovetail-core.workspace = true
 dovetail-driver.workspace = true
+dovetail-maps.workspace = true
 dovetail-mock.workspace = true
 dovetail-tui.workspace = true
 jiff.workspace = true

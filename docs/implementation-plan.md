@@ -166,13 +166,13 @@ crates/
 └── dovetail/          # binary: TUI (default), add, mcp, hook
 ```
 
-Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, `api ← maps`, and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary. The plain map model sits in `dovetail_api::map` for the same reason: map content can travel in the snapshot while merman stays in `dovetail-maps`, out of the TUI.
+Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, `api ← maps ← core` (the core validates and stores `draw_map` input; the mock only tests against maps), and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary. The plain map model sits in `dovetail_api::map` for the same reason: map content can travel in the snapshot while merman stays in `dovetail-maps`, out of the TUI.
 
 Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, since nested packages otherwise fail, and add `spikes/*/target` to `.gitignore`.
 
 | Dependency | Used in | Features | Reason |
 | --- | --- | --- | --- |
-| `serde`, `serde_json` | api, driver, core, mock, tui, maps (`serde_json` in tests only), binary | `derive` | Plain-data API, NDJSON, MCP; the mock builds tool inputs and `--dump` prints JSON lines; the TUI reads a permission request's tool input (`command`, `file_path`) for the inbox preview |
+| `serde`, `serde_json` | api, driver, core, mock, tui, maps, binary | `derive` | Plain-data API, NDJSON, MCP; maps builds the `draw_map` JSON schema; the mock builds tool inputs and `--dump` prints JSON lines; the TUI reads a permission request's tool input (`command`, `file_path`) for the inbox preview |
 | `ratatui` 0.30 | tui | default | Required |
 | `crossterm` 0.29 | tui | default | Required; no kitty keyboard protocol |
 | `nucleo` 0.5 | tui | default | Fuzzy picker (required) |
@@ -225,6 +225,7 @@ pub struct Snapshot {
     pub conversations: HashMap<AgentId, ConversationTail>, // tails only
     pub totals: Totals,              // memory, needs-you count
     pub warnings: Vec<Warning>,      // status-bar warnings
+    pub maps: Vec<MapSummary>,       // M15: the map shelf, newest first; content via LoadMap
 }
 
 pub struct Task {
@@ -267,6 +268,7 @@ pub enum Event {
     AssistantDelta { agent: AgentId, entry: EntryId, text: String },
     ConversationPage { agent: AgentId, entries: Vec<ConversationEntry>, has_more: bool },
     TotalsChanged(Totals), WarningSet(Warning), WarningCleared(WarningId),
+    MapUpserted(MapSummary), MapLoaded(Map), // M15
     CommandFailed { message: String },
 }
 
@@ -285,6 +287,7 @@ pub enum Command {
     RemoveWorktree { agent: AgentId, confirmed: bool },
     OpenProject { id: ProjectId }, RegisterProject { path: PathBuf },
     LoadConversation { agent: AgentId, before: Option<EntryId> },
+    LoadMap { id: MapId, version: Option<u32> }, // M15: answered by Event::MapLoaded(Map)
     Resync, Quit { end_sessions: bool },
 }
 
@@ -404,10 +407,13 @@ CREATE TABLE decisions (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFEREN
   text TEXT NOT NULL, why TEXT, alternatives TEXT NOT NULL DEFAULT '[]', -- JSON [{option, why_not}]
   supersedes INTEGER REFERENCES decisions(id));
 
--- Added at M15
-CREATE TABLE maps (id TEXT PRIMARY KEY, task_id INTEGER, title TEXT, type TEXT, current_version INTEGER);
-CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms INTEGER,
-  PRIMARY KEY(map_id, version));
+-- Added at M15 (task #35): the shelf row describes the latest version; `model` is the
+-- validated `MapContent` as JSON. A map keeps its id and type across versions.
+CREATE TABLE maps (id TEXT PRIMARY KEY, task_id INTEGER REFERENCES tasks(id), title TEXT NOT NULL,
+  type TEXT NOT NULL, current_version INTEGER NOT NULL, drawn_by TEXT,
+  created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL);
+CREATE TABLE map_versions (map_id TEXT NOT NULL REFERENCES maps(id), version INTEGER NOT NULL,
+  model TEXT NOT NULL, drawn_by TEXT, created_ms INTEGER NOT NULL, PRIMARY KEY(map_id, version));
 ```
 
 **Migrations**
@@ -421,7 +427,8 @@ CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms 
 - M11 `0008_subagent_progress` (`agents.progress`, a subagent's progress as JSON)
 - M11 `0009_subagent_tokens` (`agents.subagent_tokens`, a session's total summed from task events, task #17)
 - Task #27 `0010_agent_claude_home` (`agents.claude_home`, the Claude config folder a session ran under; ADR 0009)
-- M15 `0011_maps`
+- M14 `0011_agent_takeover` (`agents.takeover`, a session's take-over lock as JSON, task #32)
+- M15 `0012_maps`
 
 Tables arrive with the milestone that uses them, so no unused tables sit around.
 
@@ -621,6 +628,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Spikes needed:** S5
 - **Scope:** `dovetail-maps`: model, nine kinds, `draw_map` validation with specific errors, `MapRenderer`, Mermaid conversion, swimlane grid layout. kitty canvas with node selection, flows, pan and zoom. Outline beside it and as the fallback. Map shelf. MAP mode with mouse only there. Restore the `draw_map` line in the coordinator prompt.
 - **Slices:** (a) model and validation; (b) tool and storage, after (a); (c) merman renderer, after (a); (d) swimlane layout, after (a); (e) outline, after (b); (f) canvas and MAP mode, after (c) and (e).
+- **Progress:** (a) merged, PR #32 (task #34). (b) task #35: `draw_map` for both roles, schema from `dovetail_maps::input_schema`; reusing an id stores a new version and a map keeps its type; a new map's id is its title's slug; lane `node` links are checked against the latest structure maps; the shelf is `Snapshot::maps` with `Event::MapUpserted`, content through `Command::LoadMap` → `Event::MapLoaded`; the mock seeds one structure and one swimlane map; the coordinator prompt's `draw_map` line is back.
 - **Done when:**
   - [ ] A real agent draws both map types
   - [ ] Works in kitty; outline works elsewhere
