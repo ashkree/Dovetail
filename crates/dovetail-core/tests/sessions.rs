@@ -8,15 +8,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use dovetail_api::map::{Map, MapId, MapKind};
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
 use dovetail_api::tools::{
-    ArchiveSlice, ArchiveTask, AskUser, BucketFilter, GetTask, ListTasks, LogDecision,
+    ArchiveSlice, ArchiveTask, AskUser, BucketFilter, DrawMap, GetTask, ListTasks, LogDecision,
     ReportStatus, StartSlice, Tool, UpdateTask,
 };
 use dovetail_api::{
     AgentId, AgentKind, AgentStatus, Alternative, Attachment, Bucket, Command, CoreLink,
-    DecisionId, EntryKind, ImageType, InboxId, InboxKind, NewTask, PLevel, PermissionAnswer,
+    DecisionId, EntryKind, Event, ImageType, InboxId, InboxKind, NewTask, PLevel, PermissionAnswer,
     PermissionMode, ServerMsg, Snapshot, TaskId, TaskStatus, apply,
 };
 use dovetail_core::config::Config;
@@ -41,6 +42,10 @@ struct Harness {
     snap: Snapshot,
     paths: Paths,
     repo: PathBuf,
+    /// `TerminalReturned` events, in order: the error each carried.
+    returned: Vec<Option<String>>,
+    /// `CommandFailed` messages, in order.
+    failures: Vec<String>,
     _dir: TempDir,
     _run: TempDir,
 }
@@ -93,6 +98,8 @@ impl Harness {
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
+            claude: None,
+            processes: None,
             memory_caps: false,
             scopes,
         };
@@ -105,6 +112,8 @@ impl Harness {
             snap: Snapshot::default(),
             paths,
             repo,
+            returned: Vec::new(),
+            failures: Vec::new(),
             _dir: dir,
             _run: run,
         };
@@ -126,12 +135,20 @@ impl Harness {
             match self.link.messages.recv_timeout(left) {
                 Ok(ServerMsg::Hello { .. }) => {}
                 Ok(ServerMsg::Snapshot(s)) => self.snap = s,
-                Ok(ServerMsg::Event { seq, event }) => {
-                    apply(&mut self.snap, seq, event);
-                }
+                Ok(ServerMsg::Event { seq, event }) => self.fold(seq, event),
                 Err(_) => panic!("timed out waiting for {what}: {:#?}", self.snap),
             }
         }
+    }
+
+    /// Applies an event, noting the ones that change nothing in the snapshot.
+    fn fold(&mut self, seq: u64, event: dovetail_api::Event) {
+        match &event {
+            dovetail_api::Event::TerminalReturned { error } => self.returned.push(error.clone()),
+            dovetail_api::Event::CommandFailed { message } => self.failures.push(message.clone()),
+            _ => {}
+        }
+        apply(&mut self.snap, seq, event);
     }
 
     /// Applies whatever arrives within `window`, for checking that something did not happen.
@@ -140,9 +157,7 @@ impl Harness {
         while let Some(left) = until.checked_duration_since(Instant::now()) {
             match self.link.messages.recv_timeout(left) {
                 Ok(ServerMsg::Snapshot(s)) => self.snap = s,
-                Ok(ServerMsg::Event { seq, event }) => {
-                    apply(&mut self.snap, seq, event);
-                }
+                Ok(ServerMsg::Event { seq, event }) => self.fold(seq, event),
                 Ok(ServerMsg::Hello { .. }) => {}
                 Err(_) => return,
             }
@@ -442,6 +457,29 @@ impl Harness {
         repo: Option<PathBuf>,
         config: Config,
     ) -> Harness {
+        Self::start_native(driver, paths, repo, config, None)
+    }
+
+    /// [`Harness::start_with`], running `claude` (a fake) for take-over.
+    fn start_native(
+        driver: FakeDriver,
+        paths: Paths,
+        repo: Option<PathBuf>,
+        config: Config,
+        claude: Option<std::ffi::OsString>,
+    ) -> Harness {
+        Self::start_full(driver, paths, repo, config, claude, None)
+    }
+
+    /// [`Harness::start_native`], checking take-over locks with `processes` instead of `/proc`.
+    fn start_full(
+        driver: FakeDriver,
+        paths: Paths,
+        repo: Option<PathBuf>,
+        config: Config,
+        claude: Option<std::ffi::OsString>,
+        processes: Option<Arc<dyn dovetail_core::takeover::Processes + Send + Sync>>,
+    ) -> Harness {
         let dir = tempfile::tempdir().expect("tempdir");
         let run = tempfile::Builder::new()
             .prefix("dvt.")
@@ -465,6 +503,8 @@ impl Harness {
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
+            claude,
+            processes,
             memory_caps: false,
             scopes: None,
         };
@@ -477,6 +517,8 @@ impl Harness {
             snap: Snapshot::default(),
             paths,
             repo,
+            returned: Vec::new(),
+            failures: Vec::new(),
             _dir: dir,
             _run: run,
         };
@@ -1583,6 +1625,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             created_ms: 0,
             tool_use_id: None,
             claude_home: None,
+            takeover: None,
         })
         .wait()
         .expect("agent");
@@ -1962,6 +2005,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             created_ms: 0,
             tool_use_id: None,
             claude_home: None,
+            takeover: None,
         })
         .wait()
         .expect("agent");
@@ -2812,6 +2856,789 @@ fn write_recipe_for(paths: &Paths, project: &str, text: &str) {
     let file = paths.recipe(project);
     std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
     std::fs::write(file, text).expect("recipe");
+}
+
+// --- Take-over (M14) ---
+
+/// `plain_turn` records its session in this folder; its transcript is filed under it.
+const FIXTURE_CWD: &str = "/tmp/dovetail-spikes/driver/repo";
+
+/// The transcript folder name Claude Code uses for `cwd`.
+fn encoded(cwd: &Path) -> String {
+    cwd.to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// A fake native `claude`: records its arguments, folder and Claude home in `out`, appends one
+/// native turn to the session's transcript (under `$CLAUDE_CONFIG_DIR/projects/<folder>`), and
+/// exits once `wait` exists (at once without one).
+fn fake_claude(out: &Path, folder: &str, wait: Option<&Path>) -> std::ffi::OsString {
+    use std::os::unix::fs::PermissionsExt;
+    let wait = wait.map(|w| w.display().to_string()).unwrap_or_default();
+    let script = out.join("fake-claude");
+    let body = format!(
+        r#"#!/bin/sh
+out='{out}'
+printf '%s\n' "$@" > "$out/argv"
+pwd -P > "$out/cwd"
+printf '%s' "$CLAUDE_CONFIG_DIR" > "$out/config_dir"
+printf '%s' "$DOVETAIL_AGENT_ID" > "$out/agent"
+prev=
+for a in "$@"; do [ "$prev" = --resume ] && id=$a; prev=$a; done
+t="$CLAUDE_CONFIG_DIR/projects/{folder}/$id.jsonl"
+mkdir -p "$(dirname "$t")"
+cat >> "$t" <<'LINES'
+{{"type":"user","message":{{"role":"user","content":"native hello"}}}}
+{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"native reply"}},{{"type":"tool_use","id":"t1","name":"Bash","input":{{}}}}]}}}}
+LINES
+touch "$out/started"
+while [ -n '{wait}' ] && [ ! -e '{wait}' ]; do sleep 0.05; done
+exit 0
+"#,
+        out = out.display(),
+    );
+    std::fs::write(&script, body).expect("fake claude");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("runnable");
+    script.into_os_string()
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn lock_of(s: &Snapshot, id: &str) -> dovetail_api::SessionLock {
+    s.agents
+        .iter()
+        .find(|a| a.id.0 == id)
+        .map(|a| a.lock)
+        .unwrap_or_else(|| panic!("no agent {id}"))
+}
+
+fn wait_file(path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "{} never appeared",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn wait_sent_shutdown(fake: &FakeDriver) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fake.sent().iter().any(|s| matches!(s, Sent::Shutdown(_))) {
+        assert!(Instant::now() < deadline, "headless was not stopped");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The hand-off with a live headless coordinator: the lock is taken, headless stops, native
+/// `claude` runs with headless's flags, Claude home and folder, and on exit the terminal comes
+/// back, the native turn shows in the conversation and headless resumes the same session.
+#[test]
+fn take_over_stops_headless_runs_native_with_its_flags_and_resumes_headless() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    write_recipe(&paths, "profile = \"mine\"\n");
+    let out = dir.path().join("native");
+    std::fs::create_dir_all(&out).expect("out");
+    let claude = fake_claude(&out, &encoded(Path::new(FIXTURE_CWD)), None);
+    // Held before its `result`: the session is still running when it is taken over.
+    let fake = fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![4],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start_native(fake.clone(), paths, None, config, Some(claude));
+    prompt(&h, "hello");
+    h.wait_for("the reply", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.kind == EntryKind::Assistant))
+    });
+
+    h.send(Command::TakeOver {
+        agent: AgentId(COORDINATOR.into()),
+    });
+    h.wait_for("the lock", |s| {
+        lock_of(s, COORDINATOR) == dovetail_api::SessionLock::TakenOver
+    });
+    wait_sent_shutdown(&fake);
+    // Native waits for headless to exit.
+    h.drain(Duration::from_millis(100));
+    assert!(!out.join("argv").exists(), "native ran beside headless");
+    fake.resume();
+
+    // The note, then the turn; its tool summary comes last.
+    h.wait_for("the native turn", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| {
+                t.entries
+                    .iter()
+                    .any(|e| e.kind == EntryKind::ToolSummary && e.text == "Bash")
+            })
+    });
+    assert_eq!(
+        h.returned,
+        vec![None],
+        "the terminal came back once, cleanly"
+    );
+    let entries = h.entries(COORDINATOR);
+    let at = entries
+        .iter()
+        .position(|(_, t)| t.contains("1 native turn"))
+        .expect("note");
+    assert_eq!(
+        entries[at..at + 4].to_vec(),
+        vec![
+            (
+                EntryKind::Notice,
+                "Back from the native terminal: 1 native turn, shown below.".into()
+            ),
+            (EntryKind::User, "native hello".into()),
+            (EntryKind::Assistant, "native reply".into()),
+            (EntryKind::ToolSummary, "Bash".into()),
+        ]
+    );
+
+    // The same flags as headless, minus the stream ones, on the same session.
+    let headless = fake.started_specs()[0].clone();
+    let argv: Vec<String> = read(&out.join("argv")).lines().map(String::from).collect();
+    assert_eq!(argv, headless.native_args());
+    let resume = argv.iter().position(|a| a == "--resume").expect("--resume");
+    assert_eq!(argv[resume + 1], headless.session_id);
+    for flag in [
+        "--settings",
+        "--mcp-config",
+        "--allowedTools",
+        "--permission-mode",
+    ] {
+        assert!(argv.contains(&flag.to_string()), "{flag} missing: {argv:?}");
+    }
+    assert!(!argv.contains(&"-p".to_string()));
+    assert_eq!(read(&out.join("config_dir")), mine.to_string_lossy());
+    assert_eq!(read(&out.join("agent")), COORDINATOR);
+    assert_eq!(
+        read(&out.join("cwd")).trim(),
+        h.repo.canonicalize().expect("repo").to_string_lossy()
+    );
+
+    // Headless again, resuming the same session.
+    wait_started(&fake, 2);
+    let again = fake.started_specs()[1].clone();
+    assert!(again.resume);
+    assert_eq!(again.session_id, headless.session_id);
+    h.wait_for("the lock released", |s| {
+        lock_of(s, COORDINATOR) == dovetail_api::SessionLock::Headless
+    });
+    fake.resume();
+    h.quit();
+}
+
+/// Stores an agent row before the core opens.
+fn seed(paths: &Paths, row: dovetail_core::db::AgentRow) {
+    let db = dovetail_core::db::Db::open(paths, Some("p")).expect("db");
+    db.upsert_agent(row).wait().expect("agent");
+}
+
+fn session_row(
+    id: &str,
+    kind: AgentKind,
+    worktree: Option<PathBuf>,
+    home: &Path,
+    transcript: PathBuf,
+    takeover: Option<dovetail_core::takeover::TakeoverLock>,
+) -> dovetail_core::db::AgentRow {
+    dovetail_core::db::AgentRow {
+        agent: dovetail_api::Agent {
+            id: AgentId(id.into()),
+            name: id.trim_start_matches("slice-").into(),
+            kind,
+            parent: None,
+            task: None,
+            worktree: worktree.map(|path| dovetail_api::WorktreeRef {
+                path,
+                branch: "dovetail/s4".into(),
+            }),
+            status: dovetail_api::AgentStatus::Idle,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: None,
+            last_activity_ms: 0,
+            lock: dovetail_api::SessionLock::Headless,
+            model: None,
+            subagent_tokens: 0,
+        },
+        session_id: Some(format!("{id}-session")),
+        transcript_path: Some(transcript),
+        task_list_id: None,
+        created_ms: 0,
+        tool_use_id: None,
+        claude_home: Some(home.to_path_buf()),
+        takeover,
+    }
+}
+
+/// While a slice is taken over nothing starts it headless, archives it or removes its
+/// worktree; native runs in the worktree, and exiting it leaves the worktree and the slice
+/// alone and resumes headless there.
+#[test]
+fn while_taken_over_headless_never_starts_and_exiting_native_keeps_the_worktree() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    write_recipe(&paths, "profile = \"mine\"\n");
+    let worktree = paths.worktrees("p").join("s4");
+    std::fs::create_dir_all(&worktree).expect("worktree");
+    let worktree = worktree.canonicalize().expect("canonical");
+    let folder = encoded(&worktree);
+    let transcript = mine
+        .join("projects")
+        .join(&folder)
+        .join("slice-s4-session.jsonl");
+    seed(
+        &paths,
+        session_row(
+            "slice-s4",
+            AgentKind::Slice,
+            Some(worktree.clone()),
+            &mine,
+            transcript,
+            None,
+        ),
+    );
+    let out = dir.path().join("native");
+    std::fs::create_dir_all(&out).expect("out");
+    let release = out.join("exit-now");
+    let claude = fake_claude(&out, &folder, Some(&release));
+    let fake = fixture("plain_turn");
+    let slice = AgentId("slice-s4".into());
+    let mut h = Harness::start_native(fake.clone(), paths, None, config, Some(claude));
+
+    h.send(Command::TakeOver {
+        agent: slice.clone(),
+    });
+    wait_file(&out.join("started"));
+    h.wait_for("the lock", |s| {
+        lock_of(s, "slice-s4") == dovetail_api::SessionLock::TakenOver
+    });
+    assert_eq!(read(&out.join("cwd")).trim(), worktree.to_string_lossy());
+
+    // Every way in is refused while native runs.
+    h.send(Command::Prompt {
+        agent: slice.clone(),
+        text: "are you there?".into(),
+        attachments: Vec::new(),
+    });
+    h.send(Command::CloseSlice {
+        agent: slice.clone(),
+    });
+    h.send(Command::RemoveWorktree {
+        agent: slice.clone(),
+        confirmed: true,
+    });
+    h.send(Command::TakeOver {
+        agent: slice.clone(),
+    });
+    h.drain(Duration::from_millis(300));
+    assert!(fake.started_specs().is_empty(), "headless started");
+    assert_eq!(h.failures.len(), 3, "{:?}", h.failures);
+    assert!(h.failures[0].contains("taken over in a native terminal: write to it there"));
+    assert!(h.failures[1].contains("archive it once that claude has exited"));
+    assert!(h.failures[2].contains("archive it once that claude has exited"));
+    assert_eq!(
+        h.returned,
+        vec![Some("the terminal is already lent out".into())]
+    );
+    assert!(worktree.exists());
+
+    std::fs::write(&release, "").expect("let native exit");
+    wait_started(&fake, 1);
+    let resumed = fake.started_specs()[0].clone();
+    assert!(resumed.resume);
+    assert_eq!(resumed.cwd, worktree);
+    assert_eq!(resumed.session_id, "slice-s4-session");
+    h.wait_for("the lock released", |s| {
+        lock_of(s, "slice-s4") == dovetail_api::SessionLock::Headless
+    });
+    h.drain(Duration::from_millis(200));
+    assert!(worktree.exists(), "exiting native removed the worktree");
+    assert!(
+        h.snap.agents.iter().any(|a| a.id == slice),
+        "slice archived"
+    );
+    h.quit();
+}
+
+/// Opens a project whose coordinator was taken over when Dovetail stopped: its transcript has
+/// one line from before the take-over and one native turn after, and its lock names `pid`.
+fn open_after_crash(pid: u32, ticks: Option<u64>) -> (Harness, FakeDriver, TempDir) {
+    use dovetail_core::takeover::TakeoverLock;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    write_recipe(&paths, "profile = \"mine\"\n");
+    let transcript = mine
+        .join("projects/x")
+        .join(format!("{COORDINATOR}-session.jsonl"));
+    std::fs::create_dir_all(transcript.parent().expect("parent")).expect("dir");
+    std::fs::write(&transcript, "{\"type\":\"summary\"}\n").expect("transcript");
+    let offset = std::fs::metadata(&transcript).expect("len").len();
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&transcript)
+        .expect("open");
+    writeln!(
+        file,
+        "{{\"type\":\"user\",\"message\":{{\"content\":\"typed while Dovetail was down\"}}}}"
+    )
+    .expect("append");
+    let lock = TakeoverLock {
+        since_ms: 1,
+        pid: Some(pid),
+        start_ticks: ticks,
+        transcript_offset: Some(offset),
+    };
+    seed(
+        &paths,
+        session_row(
+            COORDINATOR,
+            AgentKind::Coordinator,
+            None,
+            &mine,
+            transcript,
+            Some(lock),
+        ),
+    );
+    let fake = fixture("plain_turn");
+    let h = Harness::start_with(fake.clone(), paths, None, config);
+    (h, fake, dir)
+}
+
+/// A lock left by a crash whose native run is gone is released at open, with the native turn
+/// shown, and the coordinator resumes as usual.
+#[test]
+fn a_crash_lock_whose_native_is_gone_is_released_at_open() {
+    let mut child = std::process::Command::new("true").spawn().expect("true");
+    let dead = child.id();
+    child.wait().expect("reaped");
+    let (mut h, fake, _dir) = open_after_crash(dead, Some(1));
+    h.wait_for("the release", |s| {
+        lock_of(s, COORDINATOR) == dovetail_api::SessionLock::Headless
+    });
+    wait_started(&fake, 1);
+    assert!(fake.started_specs()[0].resume);
+    h.wait_for("the native turn", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| {
+                t.entries
+                    .iter()
+                    .any(|e| e.kind == EntryKind::User && e.text == "typed while Dovetail was down")
+            })
+    });
+    let entries = h.entries(COORDINATOR);
+    assert!(
+        entries
+            .iter()
+            .any(|(k, t)| *k == EntryKind::Notice && t.contains("lock is released: 1 native turn")),
+        "{entries:?}"
+    );
+    h.quit();
+}
+
+/// A lock left by a crash whose native run still runs is kept: Needs you says so and nothing
+/// starts headless, a message included; once native exits, the next message releases it.
+#[test]
+fn a_crash_lock_whose_native_still_runs_holds_until_it_exits() {
+    use dovetail_core::takeover::{Proc, Processes};
+    let mut native = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("sleep");
+    let pid = native.id();
+    let ticks = Proc.start_ticks(pid).expect("stat");
+    let (mut h, fake, _dir) = open_after_crash(pid, ticks);
+    h.wait_for("the still-taken-over item", |s| {
+        error_texts(s)
+            .iter()
+            .any(|t| t.contains("is still taken over") && t.contains(&pid.to_string()))
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(
+        lock_of(&h.snap, COORDINATOR),
+        dovetail_api::SessionLock::TakenOver
+    );
+    assert!(fake.started_specs().is_empty(), "headless beside native");
+    prompt(&h, "hello");
+    h.drain(Duration::from_millis(200));
+    assert!(fake.started_specs().is_empty(), "a prompt started headless");
+    assert!(
+        h.failures.iter().any(|f| f.contains("taken over")),
+        "{:?}",
+        h.failures
+    );
+
+    native.kill().expect("kill");
+    native.wait().expect("reaped");
+    prompt(&h, "hello again");
+    wait_started(&fake, 1);
+    h.wait_for("the release", |s| {
+        lock_of(s, COORDINATOR) == dovetail_api::SessionLock::Headless
+    });
+    h.quit();
+}
+
+/// Processes that cannot be checked, as when `/proc` is unreadable.
+struct Blind;
+
+impl dovetail_core::takeover::Processes for Blind {
+    fn start_ticks(&self, _: u32) -> std::io::Result<Option<u64>> {
+        Err(std::io::Error::other("no /proc here"))
+    }
+    fn find_native(&self, _: &str) -> std::io::Result<Option<u32>> {
+        Err(std::io::Error::other("no /proc here"))
+    }
+}
+
+/// A crash lock that cannot be checked asks the user; `y` goes through the same release as
+/// every other path: the lock goes, the coordinator resumes, and the note held for it while it
+/// was locked is delivered.
+#[test]
+fn y_on_an_undecidable_crash_lock_releases_it_and_delivers_the_held_notes() {
+    use dovetail_api::RELEASE_TAKEOVER_PERMISSION;
+    use dovetail_core::takeover::TakeoverLock;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    write_recipe(&paths, "profile = \"mine\"\n");
+    let lock = TakeoverLock {
+        since_ms: 1,
+        pid: None,
+        start_ticks: None,
+        transcript_offset: None,
+    };
+    seed(
+        &paths,
+        session_row(
+            COORDINATOR,
+            AgentKind::Coordinator,
+            None,
+            &mine,
+            mine.join("projects/x/coordinator-session.jsonl"),
+            Some(lock),
+        ),
+    );
+    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+    db.add_note("slice tryit ready".into())
+        .wait()
+        .expect("note");
+    drop(db);
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_full(
+        fake.clone(),
+        paths,
+        None,
+        config,
+        None,
+        Some(Arc::new(Blind)),
+    );
+    h.wait_for("the release question", |s| {
+        s.inbox.iter().any(|i| {
+            matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == RELEASE_TAKEOVER_PERMISSION)
+        })
+    });
+    h.drain(Duration::from_millis(200));
+    assert!(fake.started_specs().is_empty(), "started while undecided");
+    let item = h
+        .snap
+        .inbox
+        .iter()
+        .find(|i| matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == RELEASE_TAKEOVER_PERMISSION))
+        .map(|i| i.id)
+        .expect("item");
+    h.send(Command::AnswerPermission {
+        item,
+        answer: PermissionAnswer::Allow,
+    });
+    wait_started(&fake, 1);
+    wait_sent(&fake, "slice tryit ready");
+    h.wait_for("the lock released", |s| {
+        lock_of(s, COORDINATOR) == dovetail_api::SessionLock::Headless
+    });
+    h.quit();
+}
+
+/// `ask_user` from native returns at once and leaves its question in Needs you. Answering it
+/// while native still has the session is refused and the question stays; once headless is
+/// back the answer reaches the session.
+#[test]
+fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    write_recipe(&paths, "profile = \"mine\"\n");
+    let worktree = paths.worktrees("p").join("s4");
+    std::fs::create_dir_all(&worktree).expect("worktree");
+    let worktree = worktree.canonicalize().expect("canonical");
+    let folder = encoded(&worktree);
+    seed(
+        &paths,
+        session_row(
+            "slice-s4",
+            AgentKind::Slice,
+            Some(worktree.clone()),
+            &mine,
+            mine.join("projects")
+                .join(&folder)
+                .join("slice-s4-session.jsonl"),
+            None,
+        ),
+    );
+    let out = dir.path().join("native");
+    std::fs::create_dir_all(&out).expect("out");
+    let release = out.join("exit-now");
+    let claude = fake_claude(&out, &folder, Some(&release));
+    let fake = fixture("plain_turn");
+    let slice = AgentId("slice-s4".into());
+    let mut h = Harness::start_native(fake.clone(), paths, None, config, Some(claude));
+    h.send(Command::TakeOver {
+        agent: slice.clone(),
+    });
+    wait_file(&out.join("started"));
+
+    // What native's MCP bridge would send: it returns at once.
+    let asked = Instant::now();
+    let (text, is_error) = result_text(socket_call(
+        &h.socket(),
+        tool(
+            "slice-s4",
+            Tool::AskUser(AskUser {
+                question: "Which branch?".into(),
+            }),
+        ),
+    ));
+    assert!(!is_error, "{text}");
+    assert!(asked.elapsed() < Duration::from_secs(2), "ask_user waited");
+    h.wait_for("the question", |s| !open_questions(s).is_empty());
+    let question = open_questions(&h.snap)[0];
+
+    h.send(Command::AnswerQuestion {
+        item: question,
+        text: "main".into(),
+    });
+    h.drain(Duration::from_millis(200));
+    assert!(
+        h.failures.iter().any(|f| f.contains("taken over")),
+        "{:?}",
+        h.failures
+    );
+    assert_eq!(
+        open_questions(&h.snap),
+        vec![question],
+        "the question was lost"
+    );
+
+    std::fs::write(&release, "").expect("let native exit");
+    wait_started(&fake, 1);
+    h.send(Command::AnswerQuestion {
+        item: question,
+        text: "main".into(),
+    });
+    wait_sent(&fake, "Answer to your question 'Which branch?': main");
+    h.wait_for("the question answered", |s| open_questions(s).is_empty());
+    h.quit();
+}
+
+// --- draw_map (M15) ---
+
+fn draw(h: &Harness, map: serde_json::Value) -> (String, bool) {
+    result_text(socket_call(
+        &h.socket(),
+        tool(COORDINATOR, Tool::DrawMap(DrawMap(map))),
+    ))
+}
+
+fn checkout_map(title: &str) -> serde_json::Value {
+    serde_json::json!({
+        "map": { "title": title, "type": "structure" },
+        "nodes": [
+            { "id": "api", "kind": "endpoint", "label": "POST /checkout", "description": "Takes the order." },
+            { "id": "orders", "kind": "data", "label": "orders", "description": "Orders table." }
+        ],
+        "connections": [ { "from": "api", "to": "orders", "label": "writes" } ]
+    })
+}
+
+fn login_lanes(lane_node: &str) -> serde_json::Value {
+    serde_json::json!({
+        "map": { "title": "Logging in", "type": "swimlane" },
+        "nodes": [
+            { "id": "user", "kind": "actor", "label": "User", "description": "Signs in." },
+            { "id": "check", "kind": "endpoint", "label": "/login", "description": "Checks it." }
+        ],
+        "lanes": [
+            { "id": "you", "label": "User" },
+            { "id": "web", "label": "Web", "node": lane_node }
+        ],
+        "flows": [ { "name": "Log in", "steps": [
+            { "node": "user", "lane": "you", "note": "Types a password." },
+            { "node": "check", "lane": "web", "arrow": "submits", "note": "Checks it." }
+        ] } ]
+    })
+}
+
+/// Sends `LoadMap` and waits for its answer, folding events in on the way.
+fn load_map(h: &mut Harness, id: &str, version: Option<u32>) -> Result<Map, String> {
+    h.send(Command::LoadMap {
+        id: MapId(id.into()),
+        version,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let left = deadline
+            .checked_duration_since(Instant::now())
+            .expect("timed out waiting for the map");
+        match h.link.messages.recv_timeout(left).expect("a message") {
+            ServerMsg::Event { seq, event } => {
+                let answer = match &event {
+                    Event::MapLoaded(map) => Some(Ok(map.clone())),
+                    Event::CommandFailed { message } => Some(Err(message.clone())),
+                    _ => None,
+                };
+                apply(&mut h.snap, seq, event);
+                if let Some(answer) = answer {
+                    return answer;
+                }
+            }
+            ServerMsg::Snapshot(s) => h.snap = s,
+            ServerMsg::Hello { .. } => {}
+        }
+    }
+}
+
+#[test]
+fn draw_map_stores_a_map_on_the_shelf_and_loads_it() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let (text, is_error) = draw(&h, checkout_map("Checkout"));
+    assert!(!is_error, "{text}");
+    assert!(
+        text.starts_with(r#"{"id":"checkout","version":1}"#),
+        "{text}"
+    );
+    h.wait_for("the shelf entry", |s| s.maps.len() == 1);
+    let shelf = &h.snap.maps[0];
+    assert_eq!(shelf.kind, MapKind::Structure);
+    assert_eq!(shelf.drawn_by, Some(AgentId(COORDINATOR.into())));
+    assert_eq!(shelf.task, None, "the coordinator has no task");
+    let map = load_map(&mut h, "checkout", None).expect("loads");
+    assert_eq!((map.version, map.content.nodes.len()), (1, 2));
+    assert!(load_map(&mut h, "nope", None).is_err());
+    // A second map with the same title gets its own id.
+    let (text, _) = draw(&h, checkout_map("Checkout"));
+    assert!(
+        text.starts_with(r#"{"id":"checkout-2","version":1}"#),
+        "{text}"
+    );
+    h.wait_for("both maps", |s| s.maps.len() == 2);
+
+    // The shelf survives a restart.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let h = Harness::start_on(fixture("plain_turn"), paths);
+    assert_eq!(h.snap.maps.len(), 2);
+    h.quit();
+}
+
+#[test]
+fn draw_map_refuses_an_invalid_map_with_every_problem() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let mut map = checkout_map("Checkout");
+    map["nodes"][1]["kind"] = serde_json::json!("table");
+    map["connections"][0]["to"] = serde_json::json!("ordrs");
+    let (text, is_error) = draw(&h, map);
+    assert!(is_error);
+    assert!(
+        text.starts_with("The map was not saved: 2 problems"),
+        "{text}"
+    );
+    assert!(
+        text.contains(r#"kind "table" is not a node kind"#),
+        "{text}"
+    );
+    assert!(text.contains(r#"no node has id "ordrs""#), "{text}");
+    // A misspelt field is a schema error, not silently dropped.
+    let mut map = checkout_map("Checkout");
+    map["nodez"] = serde_json::json!([]);
+    let (text, is_error) = draw(&h, map);
+    assert!(is_error && text.contains("nodez"), "{text}");
+    h.drain(Duration::from_millis(100));
+    assert!(h.snap.maps.is_empty());
+    h.quit();
+}
+
+#[test]
+fn draw_map_with_an_existing_id_adds_a_version() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    draw(&h, checkout_map("Checkout"));
+    let mut redraw = checkout_map("Checkout, with Stripe");
+    redraw["map"]["id"] = serde_json::json!("checkout");
+    let (text, is_error) = draw(&h, redraw);
+    assert!(!is_error, "{text}");
+    assert!(
+        text.starts_with(r#"{"id":"checkout","version":2}"#),
+        "{text}"
+    );
+    h.wait_for("version 2", |s| {
+        s.maps.first().is_some_and(|m| m.version == 2)
+    });
+    assert_eq!(h.snap.maps.len(), 1);
+    assert_eq!(h.snap.maps[0].title, "Checkout, with Stripe");
+    // The earlier version is kept.
+    let first = load_map(&mut h, "checkout", Some(1)).expect("version 1");
+    assert_eq!(first.content.title, "Checkout");
+    assert_eq!(
+        load_map(&mut h, "checkout", None).expect("latest").version,
+        2
+    );
+    assert!(load_map(&mut h, "checkout", Some(3)).is_err());
+    // A map keeps its type.
+    let mut lanes = login_lanes("api");
+    lanes["map"]["id"] = serde_json::json!("checkout");
+    let (text, is_error) = draw(&h, lanes);
+    assert!(is_error && text.contains("a map keeps its type"), "{text}");
+    h.quit();
+}
+
+#[test]
+fn draw_map_checks_lane_links_against_structure_maps() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let (text, is_error) = draw(&h, login_lanes("api"));
+    assert!(is_error, "{text}");
+    assert!(
+        text.contains(r#"lanes[1] ("web"): "node" is "api", but no structure map"#),
+        "{text}"
+    );
+    draw(&h, checkout_map("Checkout"));
+    let (text, is_error) = draw(&h, login_lanes("api"));
+    assert!(!is_error, "{text}");
+    h.wait_for("both maps", |s| s.maps.len() == 2);
+    // Most recently drawn first.
+    assert_eq!(h.snap.maps[0].kind, MapKind::Swimlane);
+    h.quit();
 }
 
 /// The local date of `days_ago` days back, as journal files are named (ADR 0012).

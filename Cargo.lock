@@ -400,6 +400,7 @@ dependencies = [
  "dovetail-api",
  "dovetail-core",
  "dovetail-driver",
+ "dovetail-maps",
  "dovetail-mock",
  "dovetail-tui",
  "jiff",
@@ -424,9 +425,11 @@ version = "0.0.0"
 dependencies = [
  "dovetail-api",
  "dovetail-driver",
+ "dovetail-maps",
  "jiff",
  "notify",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",
@@ -464,6 +467,7 @@ name = "dovetail-mock"
 version = "0.0.0"
 dependencies = [
  "dovetail-api",
+ "dovetail-maps",
  "serde_json",
 ]
 

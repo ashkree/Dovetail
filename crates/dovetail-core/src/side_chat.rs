@@ -28,6 +28,7 @@ impl Core {
             created_ms: now_ms(),
             tool_use_id: None,
             claude_home: None,
+            takeover: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);

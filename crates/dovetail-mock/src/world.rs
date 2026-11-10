@@ -409,6 +409,10 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         profile: Some("maveron".into()),
         // Like the core: empty until the worktree view asks for a refresh.
         worktrees: vec![],
+        maps: crate::maps::seeded(now_ms)
+            .into_iter()
+            .map(|(shelf, _)| shelf)
+            .collect(),
         commands: BTreeMap::from([(agent_id(COORDINATOR), commands())]),
         // No journal, so quitting the mock never asks to close the day; `:eod` still works.
         journal: None,

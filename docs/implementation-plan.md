@@ -145,6 +145,8 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 
 **Fallback:** elkjs in QuickJS behind `MapRenderer`. Swimlanes aren't affected, since Dovetail lays those out itself.
 
+**Result (2026-11-10, see `docs/spikes/merman.md`):** four machine checks pass with merman 0.9.3. Full render took 233 ms cold and 182 ms warm. Re-render with a new selection took 184 ms at 2039×4096 px and 56–71 ms at pane size. Peak added RSS was 86 MiB at 8.4 MP and 24 MiB at pane size. All 30 positions came from the layout JSON, with the worst error 1.4 px. **The look in kitty is still yours to judge.** M15 must give the selected node one combined class: merman's PNG uses only a node's first class. Weight: 105 new crates, ≈ 14 MB binary, one EPL-2.0 crate.
+
 ### S6. `ask_user` role prompt (agent runs, you review)
 
 **Procedure.** During M9, run three trials each of two slices in a scratch repo: one with tool descriptions only, one with the role prompt. Give a task that can't finish without a missing value. **Pass:** the role-prompt slice calls `ask_user` in 3 of 3 runs instead of ending its turn with a question. **Fallback:** stronger wording, or a skill.
@@ -164,13 +166,13 @@ crates/
 └── dovetail/          # binary: TUI (default), add, mcp, hook
 ```
 
-Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, `api ← maps`, and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary. The plain map model sits in `dovetail_api::map` for the same reason: map content can travel in the snapshot while merman stays in `dovetail-maps`, out of the TUI.
+Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, `api ← maps ← core` (the core validates and stores `draw_map` input; the mock only tests against maps), and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary. The plain map model sits in `dovetail_api::map` for the same reason: map content can travel in the snapshot while merman stays in `dovetail-maps`, out of the TUI.
 
 Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, since nested packages otherwise fail, and add `spikes/*/target` to `.gitignore`.
 
 | Dependency | Used in | Features | Reason |
 | --- | --- | --- | --- |
-| `serde`, `serde_json` | api, driver, core, mock, tui, maps (`serde_json` in tests only), binary | `derive` | Plain-data API, NDJSON, MCP; the mock builds tool inputs and `--dump` prints JSON lines; the TUI reads a permission request's tool input (`command`, `file_path`) for the inbox preview |
+| `serde`, `serde_json` | api, driver, core, mock, tui, maps, binary | `derive` | Plain-data API, NDJSON, MCP; maps builds the `draw_map` JSON schema; the mock builds tool inputs and `--dump` prints JSON lines; the TUI reads a permission request's tool input (`command`, `file_path`) for the inbox preview |
 | `ratatui` 0.30 | tui | default | Required |
 | `crossterm` 0.29 | tui | default | Required; no kitty keyboard protocol |
 | `nucleo` 0.5 | tui | default | Fuzzy picker (required) |
@@ -188,6 +190,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | *none:* hand-written NDJSON layer on `tokio` + `serde_json` | driver | n/a | Decision 4a fallback. S1 (2026-11-02): `claude-agent-sdk-rs` and `rusty_claw` both fail C (concurrent permissions) and H (tolerance); the hand-written layer passed A–H (18 crates, +1.39 MB, 4.3 MB RSS) |
 | `merman` | maps | PNG/SVG only | Decision 23c, pending S5 |
 | `ratatui-image` (latest stable) | tui, M15 only | `crossterm` | kitty graphics |
+| `rustix` 1 | core | `std`, `process` only | `waitpid` with `WUNTRACED` and `SIGCONT`, so an editor or native `claude` that stops itself (Ctrl-Z) is continued instead of hanging the terminal (task #32); no unsafe of ours, and already in the tree through `crossterm` and `tempfile` |
 | `signal-hook` | tui | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; no unsafe of ours |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
 
@@ -222,6 +225,7 @@ pub struct Snapshot {
     pub conversations: HashMap<AgentId, ConversationTail>, // tails only
     pub totals: Totals,              // memory, needs-you count
     pub warnings: Vec<Warning>,      // status-bar warnings
+    pub maps: Vec<MapSummary>,       // M15: the map shelf, newest first; content via LoadMap
 }
 
 pub struct Task {
@@ -264,6 +268,7 @@ pub enum Event {
     AssistantDelta { agent: AgentId, entry: EntryId, text: String },
     ConversationPage { agent: AgentId, entries: Vec<ConversationEntry>, has_more: bool },
     TotalsChanged(Totals), WarningSet(Warning), WarningCleared(WarningId),
+    MapUpserted(MapSummary), MapLoaded(Map), // M15
     CommandFailed { message: String },
 }
 
@@ -282,6 +287,7 @@ pub enum Command {
     RemoveWorktree { agent: AgentId, confirmed: bool },
     OpenProject { id: ProjectId }, RegisterProject { path: PathBuf },
     LoadConversation { agent: AgentId, before: Option<EntryId> },
+    LoadMap { id: MapId, version: Option<u32> }, // M15: answered by Event::MapLoaded(Map)
     Resync, Quit { end_sessions: bool },
 }
 
@@ -401,10 +407,13 @@ CREATE TABLE decisions (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFEREN
   text TEXT NOT NULL, why TEXT, alternatives TEXT NOT NULL DEFAULT '[]', -- JSON [{option, why_not}]
   supersedes INTEGER REFERENCES decisions(id));
 
--- Added at M15
-CREATE TABLE maps (id TEXT PRIMARY KEY, task_id INTEGER, title TEXT, type TEXT, current_version INTEGER);
-CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms INTEGER,
-  PRIMARY KEY(map_id, version));
+-- Added at M15 (task #35): the shelf row describes the latest version; `model` is the
+-- validated `MapContent` as JSON. A map keeps its id and type across versions.
+CREATE TABLE maps (id TEXT PRIMARY KEY, task_id INTEGER REFERENCES tasks(id), title TEXT NOT NULL,
+  type TEXT NOT NULL, current_version INTEGER NOT NULL, drawn_by TEXT,
+  created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL);
+CREATE TABLE map_versions (map_id TEXT NOT NULL REFERENCES maps(id), version INTEGER NOT NULL,
+  model TEXT NOT NULL, drawn_by TEXT, created_ms INTEGER NOT NULL, PRIMARY KEY(map_id, version));
 ```
 
 **Migrations**
@@ -418,7 +427,8 @@ CREATE TABLE map_versions (map_id TEXT, version INTEGER, model TEXT, created_ms 
 - M11 `0008_subagent_progress` (`agents.progress`, a subagent's progress as JSON)
 - M11 `0009_subagent_tokens` (`agents.subagent_tokens`, a session's total summed from task events, task #17)
 - Task #27 `0010_agent_claude_home` (`agents.claude_home`, the Claude config folder a session ran under; ADR 0009)
-- M15 `0011_maps`
+- M14 `0011_agent_takeover` (`agents.takeover`, a session's take-over lock as JSON, task #32)
+- M15 `0012_maps`
 
 Tables arrive with the milestone that uses them, so no unused tables sit around.
 
@@ -600,7 +610,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Slices:** (a) caps and memory display; (b) OOM recovery, after (a); (c) context fill.
 - **Done when:**
   - [x] A forced OOM kills one session only and recovers (kill: `a_forced_oom_kills_one_scope_only` with `DOVETAIL_CGROUP_TESTS=1` on the user's machine, 2026-11-09: a memory eater under a 64 MiB cap dies by SIGKILL, the `memory.events` watch sees `oom_kill` before the scope goes, and a second capped scope runs on. Recovery: fake-driver test, a session dying by SIGKILL after an `oom_kill` rise is resumed from its session id with its running subagent listed. Not yet checked with a real Claude session)
-  - [ ] Status bar shows total memory and coordinator `ctx` (needs a look in the running app)
+  - [x] Status bar shows total memory and coordinator `ctx` (confirmed by the user in the running app, 2026-11-10)
   - [x] Peak memory of this repo's build and test runs is recorded against the B8 caps (docs/spikes/cgroup.md: worst cold run 2735 MiB peak, 1.5 GiB anon, under the 3 GiB slice cap)
   - [x] Missing cgroup support gives a warning, not a failure (startup probe; failure path not yet tried on a machine without user systemd)
 - **Tests:** `memory.events` parsing with fixtures, context calculation
@@ -609,15 +619,16 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Scope:** `<leader>st` stops the headless process, suspends the TUI, runs native `claude --resume <id>` in the same terminal with the same settings and MCP config, then resumes headless on exit. Session lock. Note in the conversation that native turns happened.
 - **Slices:** one slice; touches session lifecycle.
 - **Done when:**
-  - [ ] Round trip works from a real slice in its worktree
-  - [ ] Headless can't start while locked, including after a crash
-  - [ ] Exiting native never removes a worktree
+  - [ ] Round trip works from a real slice in its worktree (for the user to try; the steps are in PR for task #32)
+  - [x] Headless can't start while locked, including after a crash (fake core and fake `claude`: a prompt, a second take-over, archive and worktree removal are refused while native runs; a stored lock whose native process still runs keeps headless down after reopen, one whose process is gone is released. Not yet checked with a real session)
+  - [x] Exiting native never removes a worktree (fake `claude` in a slice's worktree: the worktree and the slice are still there after it exits, and headless resumes in it. Not yet checked with a real session)
 - **Tests:** lock state machine, crash recovery of the lock
 
 ### M15. Maps stage 1
 - **Spikes needed:** S5
 - **Scope:** `dovetail-maps`: model, nine kinds, `draw_map` validation with specific errors, `MapRenderer`, Mermaid conversion, swimlane grid layout. kitty canvas with node selection, flows, pan and zoom. Outline beside it and as the fallback. Map shelf. MAP mode with mouse only there. Restore the `draw_map` line in the coordinator prompt.
 - **Slices:** (a) model and validation; (b) tool and storage, after (a); (c) merman renderer, after (a); (d) swimlane layout, after (a); (e) outline, after (b); (f) canvas and MAP mode, after (c) and (e).
+- **Progress:** (a) merged, PR #32 (task #34). (b) task #35: `draw_map` for both roles, schema from `dovetail_maps::input_schema`; reusing an id stores a new version and a map keeps its type; a new map's id is its title's slug; lane `node` links are checked against the latest structure maps; the shelf is `Snapshot::maps` with `Event::MapUpserted`, content through `Command::LoadMap` → `Event::MapLoaded`; the mock seeds one structure and one swimlane map; the coordinator prompt's `draw_map` line is back.
 - **Done when:**
   - [ ] A real agent draws both map types
   - [ ] Works in kitty; outline works elsewhere

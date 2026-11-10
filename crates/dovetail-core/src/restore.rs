@@ -18,7 +18,8 @@
 
 use dovetail_api::{
     ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind,
-    KEEP_COORDINATOR_PERMISSION, REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION,
+    KEEP_COORDINATOR_PERMISSION, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
+    START_SLICE_PERMISSION,
 };
 
 use crate::inbox::Waiter;
@@ -185,7 +186,8 @@ impl Core {
                         ));
                         continue;
                     }
-                    if tool == REMOVE_WORKTREE_PERMISSION {
+                    // The lock is checked afresh below, and asked about again if still unclear.
+                    if tool == REMOVE_WORKTREE_PERMISSION || tool == RELEASE_TAKEOVER_PERMISSION {
                         continue;
                     }
                     if tool == KEEP_COORDINATOR_PERMISSION {
@@ -237,6 +239,8 @@ impl Core {
             };
             self.raise(&agent, InboxKind::Error { text }, Waiter::None);
         }
+        // Locks left by a crash, before anything can start a session (M14).
+        self.reconcile_locks();
         self.sweep().await;
         self.profile_notices();
         let ids: Vec<AgentId> = self.agents.keys().cloned().collect();
@@ -250,7 +254,8 @@ impl Core {
             .agents
             .get(&coordinator)
             .is_some_and(|r| r.transcript_path.is_some());
-        if has_run && self.claude.is_ok() {
+        // One still taken over waits: Needs you says why.
+        if has_run && self.claude.is_ok() && !self.locked(&coordinator) {
             self.start_coordinator(last_used).await;
         }
     }

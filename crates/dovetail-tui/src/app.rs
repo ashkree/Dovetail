@@ -69,6 +69,8 @@ enum Then {
     CloseDayThenQuit,
     /// Quit without closing the day, still asking first when a turn is running.
     QuitDayOpen,
+    /// Lend the terminal for a command ([`App::take_handoff`]).
+    Handoff(Command),
 }
 
 /// A yes/no question waiting for `y` or `n`. Any other key cancels it.
@@ -102,8 +104,8 @@ pub struct App {
     open_after_create: Option<String>,
     note: Option<String>,
     outbox: Vec<Command>,
-    /// A command that needs the terminal ([`Command::OpenEditor`]), for the loop to send once
-    /// it has let go of the terminal.
+    /// A command that needs the terminal ([`Command::OpenEditor`], [`Command::TakeOver`]), for
+    /// the loop to send once it has let go of the terminal.
     handoff: Option<Command>,
     /// The terminal is lent out until the core sends [`Event::TerminalReturned`].
     terminal_away: bool,
@@ -117,9 +119,8 @@ pub struct App {
     exit_armed_until: Option<u64>,
     /// A side chat was asked for: open it when it appears.
     open_side_chat: bool,
-    /// Focus mode (`<leader>z`): the side column is hidden. Holds whether the reading column
-    /// was solid before, to put it back on leaving.
-    focus_mode: Option<bool>,
+    /// Focus mode (`<leader>z`): the side column is hidden.
+    focus_mode: bool,
     /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
     /// newest journal date from before, so a write that failed is told from one that worked.
     quit_after_close: Option<Option<String>>,
@@ -160,7 +161,7 @@ impl App {
             quit: false,
             exit_armed_until: None,
             open_side_chat: false,
-            focus_mode: None,
+            focus_mode: false,
             quit_after_close: None,
             close_failure: None,
             exit_armed: false,
@@ -237,7 +238,8 @@ impl App {
         std::mem::take(&mut self.outbox)
     }
 
-    /// A command that must run with the terminal lent out (`e` in the worktree view). The loop
+    /// A command that must run with the terminal lent out (`e` in the worktree view,
+    /// `<leader>st`). The loop
     /// lets go of the terminal (alternate screen, raw mode, key reading) and then sends it; from
     /// here until [`Event::TerminalReturned`] arrives, [`App::terminal_away`] is true.
     pub fn take_handoff(&mut self) -> Option<Command> {
@@ -485,6 +487,7 @@ impl App {
             match then {
                 Some(Then::Action(action)) => self.run(action),
                 Some(Then::Commands(commands)) => self.outbox.extend(commands),
+                Some(Then::Handoff(command)) => self.handoff = Some(command),
                 Some(Then::CloseDayThenQuit) => self.close_day(true),
                 Some(Then::QuitDayOpen) => self.quit_asking(false),
                 None => {}
@@ -712,9 +715,6 @@ impl App {
         self.outbox.push(Command::NewSlice { task, name, brief });
     }
 
-    /// Focus mode on or off (A1, Decision 16): the conversation alone, full width, with the
-    /// reading column solid; the status bar keeps the Needs you count. It shows the agent
-    /// already in view, so a side chat or slice can be read the same way.
     /// Today's date on the UI's clock, `YYYY-MM-DD`, as journal files are named.
     fn today(&self) -> Option<String> {
         let now = jiff::Timestamp::from_millisecond(self.now_ms).ok()?;
@@ -810,37 +810,29 @@ impl App {
         }
     }
 
+    /// Focus mode on or off (A1, Decision 16): the conversation alone, full width; the status
+    /// bar keeps the Needs you count. The background stays as it is (ADR 0013). It shows the
+    /// agent already in view, so a side chat or slice can be read the same way.
     pub(super) fn toggle_focus_mode(&mut self) {
-        let conversation = &mut self.buffers.conversation;
-        match self.focus_mode.take() {
-            Some(was_solid) => {
-                if conversation.solid() != was_solid {
-                    conversation.toggle_solid();
-                }
+        self.focus_mode = !self.focus_mode;
+        if self.focus_mode {
+            if self.regions.buffer(RegionId::Main) != BufferKind::Conversation {
+                self.regions.show(RegionId::Main, BufferKind::Conversation);
             }
-            None => {
-                self.focus_mode = Some(conversation.solid());
-                if !conversation.solid() {
-                    conversation.toggle_solid();
-                }
-                if self.regions.buffer(RegionId::Main) != BufferKind::Conversation {
-                    self.regions.show(RegionId::Main, BufferKind::Conversation);
-                }
-                self.regions.set_focus(RegionId::Main);
-            }
+            self.regions.set_focus(RegionId::Main);
         }
     }
 
     /// Whether focus mode hides the side column.
     pub fn focus_mode(&self) -> bool {
-        self.focus_mode.is_some()
+        self.focus_mode
     }
 
     /// Runs an action: global ones here, the rest in the focused buffer.
     pub fn run(&mut self, action: Action) {
         self.dirty = true;
         // Going to the side column leaves focus mode, so focus never lands on a hidden region.
-        if self.focus_mode.is_some()
+        if self.focus_mode
             && matches!(
                 action,
                 Action::FocusRight | Action::FocusInbox | Action::FocusUp | Action::FocusDown
@@ -909,7 +901,7 @@ impl App {
             Action::YankToCoordinator => self.yank_to_coordinator(),
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
-            Action::TakeOver => self.note = Some("take-over arrives in M14".into()),
+            Action::TakeOver => self.take_over(),
             Action::RegisterProject => {
                 // The open folder (ADR 0005); the core refuses any other.
                 let path = self

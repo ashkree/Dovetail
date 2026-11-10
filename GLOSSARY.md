@@ -138,6 +138,10 @@ _Avoid_: swimlane (the whole map), row, track
 One of the nine fixed kinds a map node can be (Part, File, Endpoint, Data, External, Actor, Outcome, Logic, Concept); it sets the node's shape and colour.
 _Avoid_: node type, category
 
+**Map version**:
+One drawing of a map. A map keeps its id and type; each `draw_map` call with that id stores a new version, and earlier versions are kept.
+_Avoid_: revision, snapshot (the core's snapshot is something else)
+
 ### Build
 
 **Worktree recipe**:
@@ -151,3 +155,7 @@ _Avoid_: account (for the setting), login, identity
 **Self-hosting point**:
 The earliest milestone after which the rest of Dovetail's build runs inside Dovetail.
 _Avoid_: bootstrap, dogfooding
+
+**Upgrade**:
+Replacing the installed Dovetail with a newer build by restarting it at a quiet moment; the sessions resume (ADR 0014).
+_Avoid_: update, hot reload, live edit

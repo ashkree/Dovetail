@@ -787,11 +787,74 @@ fn leader_tab_and_leader_c_still_work_after_an_overlay_closes() {
     assert_eq!(app.open_agent(), Some(&agent_id("coordinator")));
 }
 
+// --- take-over (M14) ---
+
+#[test]
+fn leader_s_t_lends_the_terminal_for_the_session_under_the_cursor() {
+    let mut app = app_with(world());
+    select(&mut app, "slice-7");
+    leader(&mut app, "st");
+    assert!(
+        app.take_commands().is_empty(),
+        "TakeOver waits for the hand-off"
+    );
+    assert_eq!(
+        app.take_handoff(),
+        Some(Command::TakeOver {
+            agent: agent_id("slice-7")
+        })
+    );
+    assert!(app.terminal_away());
+}
+
+#[test]
+fn taking_over_a_session_mid_turn_asks_first_and_a_subagent_means_its_session() {
+    let mut app = app_with(world());
+    // `rebase` runs inside slice-4, which is mid-turn.
+    select(&mut app, "rebase");
+    leader(&mut app, "st");
+    assert_eq!(app.take_handoff(), None, "asked first");
+    let screen = render(&mut app, 120, 40);
+    assert!(
+        screen.contains("slice-4 (the session this subagent runs in) is mid-turn"),
+        "{screen}"
+    );
+    app.on_key(key('y'), 20);
+    assert_eq!(
+        app.take_handoff(),
+        Some(Command::TakeOver {
+            agent: agent_id("slice-4")
+        })
+    );
+}
+
+#[test]
+fn a_session_already_taken_over_says_so_and_shows_a_native_badge() {
+    let mut snap = world();
+    for agent in &mut snap.agents {
+        if agent.name == "slice-7" {
+            agent.lock = SessionLock::TakenOver;
+        }
+    }
+    let mut app = app_with(snap);
+    select(&mut app, "slice-7");
+    // The side pane is narrow: the badge may be cut short there.
+    assert!(
+        row_text(&mut app).contains(" nati"),
+        "{}",
+        row_text(&mut app)
+    );
+    leader(&mut app, "st");
+    assert_eq!(app.take_handoff(), None);
+    assert_eq!(
+        app.note(),
+        Some("slice-7 is already taken over in a native terminal")
+    );
+}
+
 #[test]
 fn stubs_say_when_they_arrive() {
     let mut app = app_with(world());
-    leader(&mut app, "st");
-    assert_eq!(app.note(), Some("take-over arrives in M14"));
     leader(&mut app, "pp");
     assert_eq!(
         app.note(),

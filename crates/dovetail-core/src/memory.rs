@@ -336,10 +336,9 @@ pub struct RestartGuard {
 impl RestartGuard {
     /// Whether `agent` may be restarted automatically at `now`.
     pub fn allowed(&self, agent: &dovetail_api::AgentId, now: std::time::Instant) -> bool {
-        !self
-            .last
+        self.last
             .get(agent)
-            .is_some_and(|at| now.saturating_duration_since(*at) < RESTART_WINDOW)
+            .is_none_or(|at| now.saturating_duration_since(*at) >= RESTART_WINDOW)
     }
 
     /// Counts an automatic restart of `agent` at `now`. Only restarts that happened count.

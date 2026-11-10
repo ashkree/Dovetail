@@ -105,16 +105,74 @@ impl Core {
             .map_or_else(|| AgentId(name.to_owned()), |r| r.agent.id.clone())
     }
 
-    /// Starts (or resumes, if it has run before) the session of agent `id` in `cwd`.
+    /// The launch spec of agent `id`'s session in `cwd`: settings, MCP config, role prompt,
+    /// tools, recipe and profile environment, and its capped scope. Headless starts and native
+    /// take-over (M14) both use it, so native gets exactly what headless gets.
+    pub(crate) fn session_spec(
+        &self,
+        id: &AgentId,
+        cwd: PathBuf,
+        worktree: Option<String>,
+        session_id: String,
+        resume: bool,
+    ) -> Result<dovetail_driver::SessionSpec, SessionError> {
+        let role = self
+            .role_of(id)
+            .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
+        let home = self.claude.clone()?;
+        let row = self
+            .agents
+            .get(id)
+            .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
+        let env = if row.agent.kind == AgentKind::Slice {
+            let place = self.session_cwd(&row.agent);
+            Recipe::load(&self.paths.recipe(self.project.key()))
+                .map(|r| r.env_for(&place).into_iter().collect())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let launch = launch::Launch {
+            project_key: self.project.key().to_owned(),
+            agent_id: id.0.clone(),
+            name: row.agent.name.clone(),
+            role,
+            session_id,
+            resume,
+            cwd,
+            worktree,
+            mode: state::to_cli(row.agent.permission_mode),
+            task_list_id: row
+                .task_list_id
+                .clone()
+                .unwrap_or_else(|| self.task_list_id(row.agent.task, &row.agent.name)),
+            socket: self.socket.clone(),
+            exe: self.options.exe.clone(),
+            model: if row.agent.kind == AgentKind::SideChat {
+                self.config.side_chat_model.clone()
+            } else {
+                self.config.default_model.clone()
+            },
+            env,
+            claude_config_dir: home.explicit.then(|| home.dir.clone()),
+        };
+        let mut spec = launch::spec(&self.paths, &launch).map_err(SessionError::LaunchFiles)?;
+        let unit = crate::memory::unit_name(self.project.key(), &id.0);
+        spec.systemd_scope = self
+            .scopes
+            .scope(&unit, crate::memory::cap_bytes(self.cap_gb(id)));
+        Ok(spec)
+    }
+
+    /// Starts (or resumes, if it has run before) the session of agent `id` in `cwd`. Every
+    /// headless start comes through here, so a session taken over (M14) never starts.
     pub(crate) fn launch(
         &mut self,
         id: &AgentId,
         cwd: PathBuf,
         worktree: Option<String>,
     ) -> Result<(), SessionError> {
-        let role = self
-            .role_of(id)
-            .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
+        self.check_lock(id)?;
         let home = self.claude.clone()?;
         let Some(row) = self.agents.get_mut(id) else {
             return Err(SessionError::NoAgent(id.0.clone()));
@@ -149,45 +207,8 @@ impl Core {
                 ),
             );
         }
-        let env = if row.agent.kind == AgentKind::Slice {
-            let place = row.agent.worktree.as_ref().map_or_else(
-                || self.project.repo_path().to_path_buf(),
-                |w| w.path.clone(),
-            );
-            Recipe::load(&self.paths.recipe(self.project.key()))
-                .map(|r| r.env_for(&place).into_iter().collect())
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        let launch = launch::Launch {
-            project_key: self.project.key().to_owned(),
-            agent_id: id.0.clone(),
-            name: row.agent.name.clone(),
-            role,
-            session_id,
-            resume,
-            cwd,
-            worktree,
-            mode: state::to_cli(row.agent.permission_mode),
-            task_list_id: row
-                .task_list_id
-                .clone()
-                .unwrap_or_else(|| self.task_list_id(row.agent.task, &row.agent.name)),
-            socket: self.socket.clone(),
-            exe: self.options.exe.clone(),
-            model: if row.agent.kind == AgentKind::SideChat {
-                self.config.side_chat_model.clone()
-            } else {
-                self.config.default_model.clone()
-            },
-            env,
-            claude_config_dir: home.explicit.then(|| home.dir.clone()),
-        };
-        let mut spec = launch::spec(&self.paths, &launch).map_err(SessionError::LaunchFiles)?;
+        let spec = self.session_spec(id, cwd, worktree, session_id, resume)?;
         let unit = crate::memory::unit_name(self.project.key(), &id.0);
-        let cap = crate::memory::cap_bytes(self.cap_gb(id));
-        spec.systemd_scope = self.scopes.scope(&unit, cap);
         let cgroup = self.scopes.cgroup(&unit);
         if let Some(cgroup) = &cgroup
             && !self.live.contains_key(id)
@@ -247,6 +268,8 @@ impl Core {
         );
         self.save_agent(id);
         self.watch_todos(id);
+        // Dovetail's notes held while it was taken over (M14), now that it runs.
+        self.send_held(id);
         Ok(())
     }
 
@@ -289,10 +312,7 @@ impl Core {
                     return Err(SessionError::NeverStarted(row.agent.name));
                 }
                 // Resume where it ran: its worktree, or the shared folder (ADR 0005).
-                let cwd = row.agent.worktree.as_ref().map_or_else(
-                    || self.project.repo_path().to_path_buf(),
-                    |w| w.path.clone(),
-                );
+                let cwd = self.session_cwd(&row.agent);
                 self.launch(id, cwd, None)
             }
             AgentKind::Subagent { .. } => Err(SessionError::Subagent),
@@ -415,6 +435,11 @@ impl Core {
     /// A message from Dovetail itself (a slice's ready signal, an answer that arrives later),
     /// shown as a notice.
     pub(crate) fn send_note(&mut self, id: &AgentId, text: &str) {
+        // A session taken over gets it once headless is back (M14).
+        if self.locked(id) {
+            self.hold_for_takeover(id, text);
+            return;
+        }
         if let Err(message) =
             self.send_text(id, text, EntryKind::Notice, format!("Dovetail: {text}"))
         {
@@ -431,11 +456,14 @@ impl Core {
     /// its session next starts.
     pub(crate) fn tell_coordinator(&mut self, text: String) {
         let id = AgentId(COORDINATOR.into());
-        let wakeable = self.live.contains_key(&id)
-            || self
-                .agents
-                .get(&id)
-                .is_some_and(|r| r.agent.status == AgentStatus::Idle);
+        // A coordinator taken over (M14) is not woken: the note is held like any other and goes
+        // when headless resumes.
+        let wakeable = !self.locked(&id)
+            && (self.live.contains_key(&id)
+                || self
+                    .agents
+                    .get(&id)
+                    .is_some_and(|r| r.agent.status == AgentStatus::Idle));
         if self.quitting.is_none() && wakeable && !self.notes_wait_for_user {
             self.send_note(&id, &text);
         } else {
@@ -898,6 +926,8 @@ impl Core {
             self.closing_exit();
             self.coordinator_exited();
         }
+        // Stopped for a take-over: native starts now (M14).
+        self.takeover_headless_exited(agent);
         self.refresh_status(agent);
     }
 }

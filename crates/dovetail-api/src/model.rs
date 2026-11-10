@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::map::MapSummary;
+
 /// Identifies a registered project: the slug of its repo folder, numbered on collision.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -93,6 +95,10 @@ pub struct Snapshot {
     /// refresh).
     #[serde(default)]
     pub worktrees: Vec<WorktreeInfo>,
+    /// The map shelf: every map of the open project, most recently drawn first. Content is
+    /// fetched with [`crate::Command::LoadMap`].
+    #[serde(default)]
+    pub maps: Vec<MapSummary>,
     /// The slash commands and skills each session offers, as Claude Code last listed them.
     /// Sessions of one project share a profile, so one agent's list stands in for another's
     /// until that one reports.
@@ -371,7 +377,8 @@ pub struct SubagentProgress {
 pub enum SessionLock {
     /// Dovetail drives it headless.
     Headless,
-    /// The user has taken it over in a native terminal.
+    /// The user has taken it over in a native terminal (`<leader>st`): headless never starts
+    /// until the native run ends. The lock is stored, so it outlives a crash of Dovetail.
     TakenOver,
 }
 
@@ -461,6 +468,10 @@ pub const REMOVE_WORKTREE_PERMISSION: &str = "Remove worktree";
 /// of a day (ADR 0012): `y` goes back to yesterday's session, `d` keeps the fresh one. Its input
 /// is `{journal, session_id, transcript_path}`: the handoff's date and the old session.
 pub const KEEP_COORDINATOR_PERMISSION: &str = "Keep yesterday's coordinator";
+/// The `tool` of the Permission item raised at open when a session's take-over lock was left by
+/// a crash and Dovetail cannot tell whether its native `claude` still runs (M14). `y` releases
+/// the lock, `d` keeps it. Its input is `{session, reason}`.
+pub const RELEASE_TAKEOVER_PERMISSION: &str = "Release take-over lock";
 
 /// A permission rule Claude Code offers for "always allow".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

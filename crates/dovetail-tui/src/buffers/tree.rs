@@ -4,8 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, AgentStatus, Bucket, Command, PLevel, PermissionMode, Snapshot,
-    Task, TaskChange, TaskId, TaskStatus, TodoStatus,
+    Agent, AgentId, AgentKind, AgentStatus, Bucket, Command, PLevel, PermissionMode, SessionLock,
+    Snapshot, Task, TaskChange, TaskId, TaskStatus, TodoStatus,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -513,6 +513,11 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
             left.push(Span::raw(" "));
             left.push(Span::styled(" manual ", theme.badge(theme.needs_you)));
         }
+    }
+    // Taken over (M14): native claude drives it, not Dovetail.
+    if agent.lock == SessionLock::TakenOver {
+        left.push(Span::raw(" "));
+        left.push(Span::styled(" native ", theme.badge(theme.needs_you)));
     }
     let word_style = if agent.status == AgentStatus::NeedsYou {
         theme.fg(theme.needs_you)

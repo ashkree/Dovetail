@@ -5,6 +5,7 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use serde::{Deserialize, Serialize};
 
+use crate::map::{Map, MapId, MapSummary};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
     Decision, DecisionId, EntryId, InboxId, InboxItem, JournalState, PLevel, ProjectId,
@@ -103,6 +104,11 @@ pub enum Event {
     WarningCleared(WarningId),
     /// An entry was added to a task's decision log.
     DecisionAdded(Decision),
+    /// A map was drawn (version 1) or redrawn (a later version): its shelf entry now.
+    MapUpserted(MapSummary),
+    /// A map version's content, in answer to [`Command::LoadMap`]. Changes nothing in the
+    /// snapshot; the UI keeps what it shows.
+    MapLoaded(Map),
     /// A command could not be carried out; the UI shows the message.
     CommandFailed {
         /// What went wrong.
@@ -134,8 +140,8 @@ pub enum Event {
         /// trailing `/` on directories. Empty when nothing could be listed.
         paths: Vec<String>,
     },
-    /// The program run in the user's terminal ([`Command::OpenEditor`]) has exited, so the UI
-    /// takes the terminal back. Changes nothing in the snapshot.
+    /// The program run in the user's terminal ([`Command::OpenEditor`], [`Command::TakeOver`])
+    /// has exited, so the UI takes the terminal back. Changes nothing in the snapshot.
     TerminalReturned {
         /// Why the program could not run or failed, for the status bar; `None` when it exited
         /// cleanly.
@@ -257,7 +263,10 @@ pub enum Command {
         /// The first prompt.
         question: String,
     },
-    /// Hand a session to a native terminal.
+    /// Hand a session to native `claude` in the UI's terminal (`<leader>st`, M14). Like
+    /// [`Command::OpenEditor`], the UI sends it only after it has let go of the terminal, and
+    /// takes the terminal back on [`Event::TerminalReturned`], which the core always sends: at
+    /// once when it refuses, else when native exits. Headless resumes after.
     TakeOver {
         /// The session.
         agent: AgentId,
@@ -312,6 +321,14 @@ pub enum Command {
         agent: AgentId,
         /// Fetch entries before this one; `None` means before the tail.
         before: Option<EntryId>,
+    },
+    /// Fetch a map's content. The core answers with [`Event::MapLoaded`], or
+    /// [`Event::CommandFailed`] for an unknown map or version.
+    LoadMap {
+        /// The map.
+        id: MapId,
+        /// The version; `None` means the latest.
+        version: Option<u32>,
     },
     /// Send a fresh snapshot (after a [`crate::ApplyResult::Gap`]).
     Resync,

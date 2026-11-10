@@ -3,7 +3,8 @@
 
 use dovetail_api::{
     AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, KEEP_COORDINATOR_PERMISSION,
-    PermissionAnswer, REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, Snapshot,
+    PermissionAnswer, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
+    START_SLICE_PERMISSION, Snapshot,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -98,6 +99,11 @@ pub(crate) fn input_summary(snap: &Snapshot, tool: &str, input: &serde_json::Val
                 "a fresh one started from the {date} handoff · y: go back · d: keep the fresh one"
             ))
         }
+        // `slice-4 · could not list processes: …`
+        RELEASE_TAKEOVER_PERMISSION => field("session").map(|s| match field("reason") {
+            Some(why) => format!("{s} · {why}"),
+            None => s.to_string(),
+        }),
         _ => None,
     }
     .unwrap_or_else(|| input.to_string())

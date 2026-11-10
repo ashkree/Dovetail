@@ -41,6 +41,12 @@ pub enum SessionError {
     /// A saved image is over [`dovetail_api::MAX_ATTACHMENT_BYTES`].
     #[error("image {} is over {}", .0.display(), dovetail_api::attachment_limit_text())]
     ImageTooLarge(std::path::PathBuf),
+    /// The session is taken over in a native terminal (M14): headless does not start.
+    #[error(
+        "{0} is taken over in a native terminal: write to it there; Dovetail resumes it \
+         headless when that claude exits"
+    )]
+    TakenOver(String),
     /// The driver failed.
     #[error("{name}: {source}")]
     Driver {

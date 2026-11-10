@@ -109,7 +109,8 @@ pub enum Action {
     Interrupt,
     /// Cycle the focused session's permission mode: auto, acceptEdits, manual.
     CyclePermissionMode,
-    /// Take the focused session over in a native terminal (a stub until M14).
+    /// Take the focused session over: native `claude` on it in this terminal, headless again
+    /// when it exits (a subagent's goes to its session).
     TakeOver,
     /// Switch project (a stub until M5).
     SwitchProject,
