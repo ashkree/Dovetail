@@ -190,6 +190,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | *none:* hand-written NDJSON layer on `tokio` + `serde_json` | driver | n/a | Decision 4a fallback. S1 (2026-11-02): `claude-agent-sdk-rs` and `rusty_claw` both fail C (concurrent permissions) and H (tolerance); the hand-written layer passed A–H (18 crates, +1.39 MB, 4.3 MB RSS) |
 | `merman` | maps | PNG/SVG only | Decision 23c, pending S5 |
 | `ratatui-image` (latest stable) | tui, M15 only | `crossterm` | kitty graphics |
+| `rustix` 1 | core | `std`, `process` only | `waitpid` with `WUNTRACED` and `SIGCONT`, so an editor or native `claude` that stops itself (Ctrl-Z) is continued instead of hanging the terminal (task #32); no unsafe of ours, and already in the tree through `crossterm` and `tempfile` |
 | `signal-hook` | tui | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; no unsafe of ours |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
 
@@ -602,7 +603,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Slices:** (a) caps and memory display; (b) OOM recovery, after (a); (c) context fill.
 - **Done when:**
   - [x] A forced OOM kills one session only and recovers (kill: `a_forced_oom_kills_one_scope_only` with `DOVETAIL_CGROUP_TESTS=1` on the user's machine, 2026-11-09: a memory eater under a 64 MiB cap dies by SIGKILL, the `memory.events` watch sees `oom_kill` before the scope goes, and a second capped scope runs on. Recovery: fake-driver test, a session dying by SIGKILL after an `oom_kill` rise is resumed from its session id with its running subagent listed. Not yet checked with a real Claude session)
-  - [ ] Status bar shows total memory and coordinator `ctx` (needs a look in the running app)
+  - [x] Status bar shows total memory and coordinator `ctx` (confirmed by the user in the running app, 2026-11-10)
   - [x] Peak memory of this repo's build and test runs is recorded against the B8 caps (docs/spikes/cgroup.md: worst cold run 2735 MiB peak, 1.5 GiB anon, under the 3 GiB slice cap)
   - [x] Missing cgroup support gives a warning, not a failure (startup probe; failure path not yet tried on a machine without user systemd)
 - **Tests:** `memory.events` parsing with fixtures, context calculation
@@ -611,9 +612,9 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Scope:** `<leader>st` stops the headless process, suspends the TUI, runs native `claude --resume <id>` in the same terminal with the same settings and MCP config, then resumes headless on exit. Session lock. Note in the conversation that native turns happened.
 - **Slices:** one slice; touches session lifecycle.
 - **Done when:**
-  - [ ] Round trip works from a real slice in its worktree
-  - [ ] Headless can't start while locked, including after a crash
-  - [ ] Exiting native never removes a worktree
+  - [ ] Round trip works from a real slice in its worktree (for the user to try; the steps are in PR for task #32)
+  - [x] Headless can't start while locked, including after a crash (fake core and fake `claude`: a prompt, a second take-over, archive and worktree removal are refused while native runs; a stored lock whose native process still runs keeps headless down after reopen, one whose process is gone is released. Not yet checked with a real session)
+  - [x] Exiting native never removes a worktree (fake `claude` in a slice's worktree: the worktree and the slice are still there after it exits, and headless resumes in it. Not yet checked with a real session)
 - **Tests:** lock state machine, crash recovery of the lock
 
 ### M15. Maps stage 1

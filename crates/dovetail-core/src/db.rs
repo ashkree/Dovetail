@@ -63,6 +63,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0008_subagent_progress.sql"),
     migration!("state", "0009_subagent_tokens.sql"),
     migration!("state", "0010_agent_claude_home.sql"),
+    migration!("state", "0011_agent_takeover.sql"),
 ];
 
 /// Errors from the database layer.

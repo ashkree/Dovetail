@@ -170,15 +170,36 @@ impl SessionSpec {
             "--include-partial-messages",
             "--permission-prompt-tool",
             "stdio",
-            "--permission-mode",
         ]
         .iter()
         .map(|s| s.to_string())
         .collect();
-        a.push(self.permission_mode.as_cli().into());
         if self.replay_user_messages {
             a.push("--replay-user-messages".into());
         }
+        a.extend(self.session_args());
+        a
+    }
+
+    /// Arguments for native, interactive `claude` on the same session (take-over, M14): the
+    /// same permission mode, settings, MCP config, role prompt, tools, name and model as
+    /// [`SessionSpec::claude_args`], with none of the stream flags. It always resumes, and
+    /// never passes `--worktree`: the session already runs in its worktree.
+    pub fn native_args(&self) -> Vec<String> {
+        let resuming = Self {
+            resume: true,
+            worktree: None,
+            ..self.clone()
+        };
+        resuming.session_args()
+    }
+
+    /// The arguments headless and native runs share.
+    fn session_args(&self) -> Vec<String> {
+        let mut a = vec![
+            "--permission-mode".to_string(),
+            self.permission_mode.as_cli().into(),
+        ];
         // Guess: a resume names the session with --resume only (the spike resumed this way).
         a.push(
             if self.resume {
@@ -212,5 +233,28 @@ impl SessionSpec {
         }
         a.extend(self.extra_args.iter().cloned());
         a
+    }
+
+    /// `program` with `claude_args` as one command line: wrapped in `systemd-run` when the spec
+    /// has a scope, else run directly.
+    pub fn wrap(
+        &self,
+        program: &std::ffi::OsStr,
+        claude_args: Vec<String>,
+    ) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+        use std::ffi::OsString;
+        match &self.systemd_scope {
+            None => (
+                program.to_os_string(),
+                claude_args.into_iter().map(OsString::from).collect(),
+            ),
+            Some(scope) => {
+                let mut args: Vec<OsString> =
+                    scope.args().into_iter().map(OsString::from).collect();
+                args.push(scope.escape(&program.to_string_lossy()).into());
+                args.extend(claude_args.iter().map(|a| OsString::from(scope.escape(a))));
+                ("systemd-run".into(), args)
+            }
+        }
     }
 }

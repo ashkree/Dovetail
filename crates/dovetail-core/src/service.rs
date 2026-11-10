@@ -68,6 +68,12 @@ pub struct CoreOptions {
     /// The editor command line for [`Command::OpenEditor`]; `None` for `$EDITOR`, else `nvim`.
     /// Tests give a fake one.
     pub editor: Option<std::ffi::OsString>,
+    /// The `claude` program run for take-over (M14); `None` for `claude` on `PATH`. Tests give
+    /// a fake one.
+    pub claude: Option<std::ffi::OsString>,
+    /// How a stored take-over lock's native process is checked; `None` reads `/proc`. Tests
+    /// give one that cannot tell.
+    pub processes: Option<Arc<dyn crate::takeover::Processes + Send + Sync>>,
     /// Probe `systemd-run --user --scope` at start and run sessions under memory caps (M13).
     /// Tests leave it off: sessions run uncapped and no warning is raised.
     pub memory_caps: bool,
@@ -244,6 +250,16 @@ pub(crate) enum Input {
     CopyFailed(crate::clipboard::CopyError),
     /// The editor run in the UI's terminal exited; the message says why it failed, if it did.
     EditorExited(Option<String>),
+    /// Native `claude` started for a take-over (M14).
+    NativeStarted {
+        agent: AgentId,
+        pid: u32,
+    },
+    /// Native `claude` exited, or could not start.
+    NativeExited {
+        agent: AgentId,
+        end: crate::takeover::NativeEnd,
+    },
     /// A capped session's `memory.events` changed: its scope's `oom_kill` count (M13b).
     OomKills {
         cgroup: PathBuf,
@@ -303,7 +319,11 @@ pub(crate) struct Core {
     seq: u64,
     ui_alive: bool,
     /// An editor runs in the UI's terminal ([`Command::OpenEditor`]).
-    editor_open: bool,
+    pub(crate) editor_open: bool,
+    /// A take-over this app runs: the terminal is lent to native `claude` (M14, `takeover`).
+    pub(crate) takeover: Option<crate::takeover::Active>,
+    /// Dovetail's notes for sessions taken over, sent once headless is back.
+    pub(crate) held_for_takeover: HashMap<AgentId, Vec<String>>,
     pub(crate) agents: BTreeMap<AgentId, AgentRow>,
     pub(crate) live: HashMap<AgentId, Live>,
     pub(crate) generation: u64,
@@ -408,6 +428,8 @@ impl Core {
             seq: 0,
             ui_alive: true,
             editor_open: false,
+            takeover: None,
+            held_for_takeover: HashMap::new(),
             agents: BTreeMap::new(),
             live: HashMap::new(),
             generation: 0,
@@ -561,6 +583,8 @@ impl Core {
                     self.emit(Event::TerminalReturned { error });
                 }
                 Input::OomKills { cgroup, count } => self.on_oom_kills(cgroup, count),
+                Input::NativeStarted { agent, pid } => self.native_started(&agent, pid),
+                Input::NativeExited { agent, end } => self.native_exited(&agent, end),
             }
             if self.quitting.is_none() {
                 self.start_queued().await;
@@ -631,6 +655,7 @@ impl Core {
                 created_ms: now_ms(),
                 tool_use_id: None,
                 claude_home: None,
+                takeover: None,
             };
             self.db.upsert_agent(row.clone()).await?;
             self.agents.insert(coordinator, row);
@@ -1197,7 +1222,7 @@ impl Core {
             }
             Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
-            Command::TakeOver { .. } => self.fail("take-over arrives in M14"),
+            Command::TakeOver { agent } => self.take_over(agent).await,
             Command::OpenProject { .. } => {
                 self.fail("switching projects: quit and open dovetail in the other folder");
             }
@@ -1251,9 +1276,9 @@ impl Core {
     /// once, so the UI never waits for nothing; it cannot normally happen, as the UI sends no
     /// commands while the editor has the terminal.
     fn open_editor(&mut self, path: PathBuf) {
-        if self.editor_open {
+        if self.editor_open || self.takeover.is_some() {
             self.emit(Event::TerminalReturned {
-                error: Some("an editor is already open".into()),
+                error: Some("the terminal is already lent out".into()),
             });
             return;
         }

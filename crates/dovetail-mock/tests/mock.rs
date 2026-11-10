@@ -222,6 +222,21 @@ fn opening_an_editor_hands_the_terminal_straight_back() {
 }
 
 #[test]
+fn taking_over_hands_the_terminal_straight_back() {
+    let mut core = MockCore::new(config(1));
+    core.handle(Command::TakeOver {
+        agent: AgentId("coordinator".into()),
+    });
+    assert!(matches!(
+        core.next_message().expect("runs").msg,
+        ServerMsg::Event {
+            event: Event::TerminalReturned { error: Some(_) },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn a_command_on_a_missing_agent_fails_visibly() {
     let mut core = MockCore::new(config(1));
     core.handle(Command::Interrupt {

@@ -77,7 +77,12 @@ pub fn run(editor: &OsStr, path: &Path) -> Result<(), EditorError> {
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
-    let status = command.status().map_err(|source| EditorError::Spawn {
+    let child = command.spawn().map_err(|source| EditorError::Spawn {
+        editor: shown.clone(),
+        source,
+    })?;
+    // A Ctrl-Z in the editor must not leave the terminal hanging (`foreground`).
+    let status = crate::foreground::wait(child).map_err(|source| EditorError::Spawn {
         editor: shown.clone(),
         source,
     })?;

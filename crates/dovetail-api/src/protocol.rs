@@ -134,8 +134,8 @@ pub enum Event {
         /// trailing `/` on directories. Empty when nothing could be listed.
         paths: Vec<String>,
     },
-    /// The program run in the user's terminal ([`Command::OpenEditor`]) has exited, so the UI
-    /// takes the terminal back. Changes nothing in the snapshot.
+    /// The program run in the user's terminal ([`Command::OpenEditor`], [`Command::TakeOver`])
+    /// has exited, so the UI takes the terminal back. Changes nothing in the snapshot.
     TerminalReturned {
         /// Why the program could not run or failed, for the status bar; `None` when it exited
         /// cleanly.
@@ -250,7 +250,10 @@ pub enum Command {
         /// The first prompt.
         question: String,
     },
-    /// Hand a session to a native terminal.
+    /// Hand a session to native `claude` in the UI's terminal (`<leader>st`, M14). Like
+    /// [`Command::OpenEditor`], the UI sends it only after it has let go of the terminal, and
+    /// takes the terminal back on [`Event::TerminalReturned`], which the core always sends: at
+    /// once when it refuses, else when native exits. Headless resumes after.
     TakeOver {
         /// The session.
         agent: AgentId,

@@ -65,6 +65,8 @@ enum Then {
     Action(Action),
     /// Send commands to the core.
     Commands(Vec<Command>),
+    /// Lend the terminal for a command ([`App::take_handoff`]).
+    Handoff(Command),
 }
 
 /// A yes/no question waiting for `y` or `n`.
@@ -96,8 +98,8 @@ pub struct App {
     open_after_create: Option<String>,
     note: Option<String>,
     outbox: Vec<Command>,
-    /// A command that needs the terminal ([`Command::OpenEditor`]), for the loop to send once
-    /// it has let go of the terminal.
+    /// A command that needs the terminal ([`Command::OpenEditor`], [`Command::TakeOver`]), for
+    /// the loop to send once it has let go of the terminal.
     handoff: Option<Command>,
     /// The terminal is lent out until the core sends [`Event::TerminalReturned`].
     terminal_away: bool,
@@ -223,7 +225,8 @@ impl App {
         std::mem::take(&mut self.outbox)
     }
 
-    /// A command that must run with the terminal lent out (`e` in the worktree view). The loop
+    /// A command that must run with the terminal lent out (`e` in the worktree view,
+    /// `<leader>st`). The loop
     /// lets go of the terminal (alternate screen, raw mode, key reading) and then sends it; from
     /// here until [`Event::TerminalReturned`] arrives, [`App::terminal_away`] is true.
     pub fn take_handoff(&mut self) -> Option<Command> {
@@ -459,6 +462,7 @@ impl App {
                 match confirm.then {
                     Then::Action(action) => self.run(action),
                     Then::Commands(commands) => self.outbox.extend(commands),
+                    Then::Handoff(command) => self.handoff = Some(command),
                 }
             }
             return;
@@ -775,7 +779,7 @@ impl App {
             Action::YankToCoordinator => self.yank_to_coordinator(),
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
-            Action::TakeOver => self.note = Some("take-over arrives in M14".into()),
+            Action::TakeOver => self.take_over(),
             Action::RegisterProject => {
                 // The open folder (ADR 0005); the core refuses any other.
                 let path = self
