@@ -14,6 +14,7 @@ publish = false
 dovetail-api = { path = "crates/dovetail-api" }
 dovetail-core = { path = "crates/dovetail-core" }
 dovetail-driver = { path = "crates/dovetail-driver" }
+dovetail-maps = { path = "crates/dovetail-maps" }
 dovetail-mock = { path = "crates/dovetail-mock" }
 dovetail-tui = { path = "crates/dovetail-tui" }
 anyhow = "1"

@@ -12,7 +12,7 @@ cargo test --workspace
 # (dovetail-core `db::tests::migrations_are_contiguous_and_listed_in_order`).
 
 # CODING_STANDARDS.md "Code": typed (thiserror) errors in libraries; String errors only in the binary.
-libs=(crates/dovetail-api crates/dovetail-core crates/dovetail-driver crates/dovetail-mock crates/dovetail-tui)
+libs=(crates/dovetail-api crates/dovetail-core crates/dovetail-driver crates/dovetail-maps crates/dovetail-mock crates/dovetail-tui)
 if hits=$(grep -rnE 'Result<[^;{]*,[[:space:]]*String>' "${libs[@]/%//src}"); then
     echo "check.sh: library code returns String errors; use a thiserror type:" >&2
     echo "$hits" >&2
