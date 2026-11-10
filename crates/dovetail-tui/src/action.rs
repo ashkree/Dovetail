@@ -99,6 +99,8 @@ pub enum Action {
     /// Show the worktree view in the main region and refresh its data (or go back if it is
     /// showing).
     ShowWorktrees,
+    /// Show the map shelf in the main region (or go back if it is showing).
+    ShowMaps,
     /// Return the main region to the conversation.
     BackToConversation,
     /// Open the Activity or message item's agent.
@@ -165,6 +167,17 @@ pub enum Action {
     WorktreeCopyPath,
     /// Remove the selected worktree by archiving its slice; asks first if work is unsaved.
     WorktreeRemove,
+    // --- maps ---
+    /// Open the selected shelf map in the outline.
+    MapOpen,
+    /// Fold or unfold the selected group in the outline.
+    MapToggleFold,
+    /// Show the map's next flow.
+    MapNextFlow,
+    /// Select the node of the flow's next step.
+    MapNextStep,
+    /// Select the node of the flow's previous step.
+    MapPrevStep,
     // --- inbox ---
     /// Allow a permission request once.
     InboxAllow,

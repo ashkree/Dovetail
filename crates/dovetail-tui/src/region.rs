@@ -24,6 +24,10 @@ pub enum BufferKind {
     Board,
     /// Slice worktrees with their sync, PR and setup state.
     Worktrees,
+    /// The shelf of maps, newest first.
+    MapShelf,
+    /// One map as an outline.
+    MapOutline,
 }
 
 /// A slot in the layout.

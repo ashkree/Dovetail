@@ -28,7 +28,7 @@ use dovetail_api::{
 use jiff::tz::TimeZone;
 
 use crate::action::Action;
-use crate::buffers::{Buffers, Effect, InputTarget, ViewCx};
+use crate::buffers::{Buffers, Effect, InputTarget, MapReaction, ViewCx};
 use crate::command;
 use crate::input::{InputOutcome, TextInput};
 use crate::keymap::{Key, Keymap, Resolved, Resolver, Scope};
@@ -334,6 +334,15 @@ impl App {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
                 };
+                match self.buffers.map_outline.on_event(&event) {
+                    Some(MapReaction::Show) => {
+                        self.regions.show(RegionId::Main, BufferKind::MapOutline);
+                        self.regions.set_focus(RegionId::Main);
+                        self.note = None;
+                    }
+                    Some(MapReaction::Request(command)) => self.outbox.push(command),
+                    None => {}
+                }
                 if let Some(note) = self.buffers.worktrees.on_event(&event) {
                     self.note = Some(note);
                 }
@@ -874,6 +883,7 @@ impl App {
             Action::ShowActivity => self.toggle_main(BufferKind::Activity),
             Action::ShowMessages => self.toggle_main(BufferKind::Messages),
             Action::ShowBoard => self.toggle_main(BufferKind::Board),
+            Action::ShowMaps => self.toggle_main(BufferKind::MapShelf),
             Action::ShowWorktrees => {
                 let opening = self.regions.buffer(RegionId::Main) != BufferKind::Worktrees;
                 self.toggle_main(BufferKind::Worktrees);
@@ -891,6 +901,9 @@ impl App {
                 // A task opened from the board goes back to the board.
                 let back = if main == BufferKind::TaskDetail && self.detail_from_board {
                     BufferKind::Board
+                } else if main == BufferKind::MapOutline {
+                    // A map opened from the shelf goes back to the shelf.
+                    BufferKind::MapShelf
                 } else {
                     BufferKind::Conversation
                 };
@@ -961,6 +974,11 @@ impl App {
                 self.open_task(id, from_board);
             }
             Effect::OpenInboxItem(id) => self.open_inbox_item(id),
+            Effect::OpenMap(id) => {
+                self.buffers.map_outline.expect(id.clone());
+                self.outbox.push(Command::LoadMap { id, version: None });
+                self.note = Some("loading map…".into());
+            }
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
             Effect::PickRelated(task) => self.open_relate_picker(task),
             Effect::Note(text) => self.note = Some(text),
