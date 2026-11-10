@@ -19,7 +19,7 @@
 use dovetail_api::{
     ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind,
     KEEP_COORDINATOR_PERMISSION, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
-    START_SLICE_PERMISSION,
+    START_SLICE_PERMISSION, UPGRADE_READY_PERMISSION,
 };
 
 use crate::inbox::Waiter;
@@ -188,6 +188,10 @@ impl Core {
                     }
                     // The lock is checked afresh below, and asked about again if still unclear.
                     if tool == REMOVE_WORKTREE_PERMISSION || tool == RELEASE_TAKEOVER_PERMISSION {
+                        continue;
+                    }
+                    // A staged build is offered again by `resume_upgrade` (ADR 0014).
+                    if tool == UPGRADE_READY_PERMISSION {
                         continue;
                     }
                     if tool == KEEP_COORDINATOR_PERMISSION {

@@ -506,6 +506,7 @@ dependencies = [
  "jiff",
  "serde",
  "serde_json",
+ "signal-hook",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

@@ -8,6 +8,7 @@ mod logging;
 mod login;
 mod mcp;
 mod tui;
+mod upgrade;
 
 use std::io::{self, BufWriter, Write};
 
@@ -17,6 +18,7 @@ use dovetail_mock::{MockConfig, MockCore};
 const USAGE: &str = "usage: dovetail                     open the TUI for the repo you're in
        dovetail add \"title !p1 @now\"  capture a task
        dovetail login <profile>     sign a Claude profile in (--list: show profiles)
+       dovetail upgrade [--local]   build origin/main (or this checkout) and install it
        dovetail --mock [--seed N] [--speed X]
        dovetail --mock --dump [--seed N] [--count N]
 
@@ -109,6 +111,7 @@ fn main() -> Result<()> {
         Some("mcp") => return mcp::run(raw.split_off(1)),
         Some("hook") => return hook::run(raw.split_off(1)),
         Some("login") => return login::run(raw.split_off(1)),
+        Some("upgrade") => return upgrade::run(raw.split_off(1)),
         _ => {}
     }
     let args = parse_args(raw)?;

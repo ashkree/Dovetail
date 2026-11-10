@@ -28,6 +28,9 @@ pub enum SocketRequestBody {
         /// The task.
         task: NewTask,
     },
+    /// `dovetail upgrade` built a new binary into the staging folder: raise "Upgrade ready"
+    /// (ADR 0014).
+    StagedUpgrade,
     /// An MCP `tools/call` forwarded by a session's bridge.
     ToolCall {
         /// The calling session, from the bridge's `DOVETAIL_AGENT_ID`.
@@ -58,6 +61,8 @@ pub enum SocketResponseBody {
         /// Its id.
         id: TaskId,
     },
+    /// The app took the staged upgrade and shows "Upgrade ready" in Needs you.
+    UpgradeStaged,
     /// A tool call finished; the bridge turns this into an MCP `CallToolResult`.
     ToolResult {
         /// Text content returned to the agent.

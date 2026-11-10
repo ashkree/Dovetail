@@ -12,9 +12,17 @@ pub(crate) const QUIT_GRACE: Duration = Duration::from_secs(3);
 #[derive(Debug)]
 pub struct CoreHandle {
     pub(crate) thread: std::thread::JoinHandle<()>,
+    /// Set by the core when the user said `y` on "Upgrade ready" and the app is quitting to
+    /// restart into the new build (ADR 0014).
+    pub(crate) restart: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl CoreHandle {
+    /// Whether the app quit to restart into an upgrade. Read it before [`CoreHandle::wait`].
+    pub fn restart_requested(&self) -> bool {
+        self.restart.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// Blocks until the core has stopped or `timeout` passed. `true` if it stopped.
     pub fn wait(self, timeout: Duration) -> bool {
         let deadline = std::time::Instant::now() + timeout;
@@ -36,6 +44,7 @@ impl Core {
         if self.quitting.is_some() {
             return;
         }
+        self.cancel_upgrade_build();
         for live in self.live.values_mut() {
             live.stopping = true;
             live.session.shutdown(QUIT_GRACE);

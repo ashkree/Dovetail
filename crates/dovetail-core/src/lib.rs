@@ -29,6 +29,7 @@ pub mod socket;
 pub mod takeover;
 mod todos;
 mod tools;
+pub mod upgrade;
 mod usage;
 pub mod worktree;
 mod worktree_info;

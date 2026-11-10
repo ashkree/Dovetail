@@ -80,6 +80,25 @@ pub struct CoreOptions {
     /// Tests: take these scopes instead of probing (a temp dir stands in for the cgroup slice;
     /// nothing is launched under `systemd-run` by the fake driver).
     pub scopes: Option<crate::memory::Scopes>,
+    /// What `:upgrade` needs (ADR 0014); `None` turns it off, as in tests that are not about it.
+    pub upgrade: Option<UpgradeOptions>,
+}
+
+/// What `:upgrade` runs its build with and installs over.
+#[derive(Clone)]
+pub struct UpgradeOptions {
+    /// Runs git and cargo: `SystemExec` in the app, a fake in tests.
+    pub exec: Arc<dyn crate::upgrade::Exec>,
+    /// The installed binary, `~/.local/bin/dovetail`. `:upgrade` is refused unless `exe` is it.
+    pub install: PathBuf,
+}
+
+impl std::fmt::Debug for UpgradeOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpgradeOptions")
+            .field("install", &self.install)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Starts the core on its own thread for the folder `resolution` names, and returns the UI's end
@@ -126,6 +145,8 @@ pub fn spawn(
         })
         .map_err(CoreError::Thread)?;
 
+    let restart = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let restart_flag = restart.clone();
     let thread = std::thread::Builder::new()
         .name("dovetail-core".into())
         .spawn(move || {
@@ -145,7 +166,7 @@ pub fn spawn(
                     inputs: input_tx.clone(),
                 });
                 tokio::spawn(serve(listener, handler));
-                let core = Core::new(
+                let mut core = Core::new(
                     db,
                     paths,
                     config,
@@ -155,6 +176,7 @@ pub fn spawn(
                     message_tx,
                     input_tx,
                 );
+                core.upgrade.restart = restart_flag;
                 core.run(input_rx).await
             });
             sockets.extend(more);
@@ -169,7 +191,7 @@ pub fn spawn(
             commands: command_tx,
             messages: message_rx,
         },
-        CoreHandle { thread },
+        CoreHandle { thread, restart },
     ))
 }
 
@@ -190,6 +212,12 @@ pub(crate) enum Input {
         task: NewTask,
         reply: oneshot::Sender<Result<TaskId, HandlerError>>,
     },
+    /// `dovetail upgrade` staged a build and hands it to this app over the socket.
+    StagedUpgrade {
+        reply: oneshot::Sender<Result<(), HandlerError>>,
+    },
+    /// The background build of `:upgrade` finished.
+    UpgradeBuilt(Result<crate::upgrade::Ready, crate::upgrade::BuildError>),
     /// A tool call from a session's MCP bridge.
     Tool {
         call: ToolCall,
@@ -278,6 +306,15 @@ impl SocketHandler for CoreHandler {
     fn add_task(&self, task: NewTask) -> BoxFuture<Result<TaskId, HandlerError>> {
         let (reply, answer) = oneshot::channel();
         let sent = self.inputs.send(Input::AddTask { task, reply });
+        Box::pin(async move {
+            sent.map_err(|_| HandlerError::ShuttingDown)?;
+            answer.await.map_err(|_| HandlerError::ShuttingDown)?
+        })
+    }
+
+    fn staged_upgrade(&self) -> BoxFuture<Result<(), HandlerError>> {
+        let (reply, answer) = oneshot::channel();
+        let sent = self.inputs.send(Input::StagedUpgrade { reply });
         Box::pin(async move {
             sent.map_err(|_| HandlerError::ShuttingDown)?;
             answer.await.map_err(|_| HandlerError::ShuttingDown)?
@@ -384,6 +421,8 @@ pub(crate) struct Core {
     /// Yesterday's coordinator session (id, transcript), asked back with `y`: it resumes once
     /// the fresh session has exited (ADR 0012).
     pub(crate) revert_coordinator: Option<(Option<String>, Option<PathBuf>)>,
+    /// `:upgrade`: the background build, the "Upgrade ready" item, the wait for idle (ADR 0014).
+    pub(crate) upgrade: crate::upgrade::flow::UpgradeState,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -471,6 +510,7 @@ impl Core {
             oom: Default::default(),
             closing: None,
             revert_coordinator: None,
+            upgrade: Default::default(),
         }
     }
 
@@ -503,6 +543,7 @@ impl Core {
             }
         }
         self.reconcile(restored).await;
+        self.resume_upgrade();
         self.start_queued().await;
         loop {
             if self.quitting.is_some() && self.live.is_empty() {
@@ -514,6 +555,7 @@ impl Core {
             // No idle ticks: memory is read only while a session it can be read for runs.
             let sample_at = self.sampled().then_some(self.next_sample);
             let oom_at = self.oom.check_at;
+            let upgrade_at = self.upgrade.recheck_at();
             let input = tokio::select! {
                 input = inputs.recv() => input,
                 _ = sleep_until(flush_at), if flush_at.is_some() => {
@@ -526,6 +568,11 @@ impl Core {
                 }
                 _ = sleep_until(sample_at), if sample_at.is_some() => {
                     self.sample_memory();
+                    continue;
+                }
+                // `y` on "Upgrade ready" waits for other projects' apps, which send no input here.
+                _ = sleep_until(upgrade_at), if upgrade_at.is_some() => {
+                    self.upgrade_check();
                     continue;
                 }
                 _ = sleep_until(oom_at), if oom_at.is_some() => {
@@ -555,6 +602,10 @@ impl Core {
                     };
                     let _ = reply.send(result);
                 }
+                Input::StagedUpgrade { reply } => {
+                    let _ = reply.send(self.take_staged_upgrade());
+                }
+                Input::UpgradeBuilt(result) => self.on_upgrade_built(result),
                 Input::Tool { call, reply } => self.tool(call, reply).await,
                 Input::Driver {
                     agent,
@@ -600,6 +651,7 @@ impl Core {
                 self.start_queued().await;
             }
             self.refresh_totals();
+            self.upgrade_check();
             if !self.ui_alive && self.quitting.is_none() {
                 self.begin_quit();
             }
@@ -1169,6 +1221,7 @@ impl Core {
             Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
             Command::NewSideChat { question } => self.start_side_chat(question),
             Command::EndOfDay => self.end_of_day(),
+            Command::Upgrade { local } => self.start_upgrade(local),
             Command::NewSlice { task, name, brief } => {
                 let request = SliceRequest {
                     task,
