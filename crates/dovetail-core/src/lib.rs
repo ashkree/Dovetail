@@ -21,6 +21,7 @@ mod restore;
 pub mod service;
 pub mod session;
 mod shutdown;
+mod side_chat;
 mod slice;
 pub mod socket;
 mod todos;

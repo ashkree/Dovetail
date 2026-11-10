@@ -1,0 +1,21 @@
+# Side chats: a light session for questions and research
+
+Refines Decision 18 (side-chat helper, v1.1) and the glossary's list of agents. Decision 18 planned a lightweight read-only session that starts on its own during a grill. This brings the general form forward into v1: a session the user starts for a question or some research, apart from the coordinator's work, without the worktree and branch a slice costs.
+
+Why: the user wants to ask about something else now and then and talk to that session directly, and slices are too heavy for it (2026-11-10).
+
+**Decision:**
+
+- **A fourth agent kind, `SideChat`** (glossary: *Side chat*). A Claude Code session like the coordinator and slices, shown in the tree with the other agents that have no task, in the switcher and the finder.
+- **Started by the user:** `<leader>sq` or `:ask [question]`. The question is its first prompt; the conversation opens in the main region. It is named `side-N`.
+- **No worktree, no task.** It runs in the main checkout (the project folder) and does not count towards `max_slices`.
+- **Read-only.** `Edit`, `Write` and `NotebookEdit` are disallowed (`--disallowedTools`). `WebSearch` and `WebFetch` are allowed without asking. Bash follows the session's permission mode like any other session: in manual mode each command asks.
+- **Its own role prompt**, `config/roles/side-chat.md`, and Dovetail's tools as a slice gets them (`ask_user`, `report_status`, messaging); `log_decision` needs a task, so a side chat must name one, as the coordinator does.
+- **A faster model by default:** `side_chat_model` in `config.toml`, default `sonnet`.
+- **Fresh by default:** it does not see the coordinator's conversation.
+- **Closed with `dd`** on its tree row: the session stops and the agent is forgotten. It is resumed on restart like a slice until then.
+- **`<leader>y`** copies the side chat's last answer into the coordinator's chat bar (as Decision 18 planned).
+
+Decision 18's automatic start on a `grill*` Skill call, and `<leader>?` swapping the side chat into the inbox region, stay v1.1 and reuse this kind.
+
+Approved by the user in the session of 2026-11-10 (name "Side chat", fresh context by default).

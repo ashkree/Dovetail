@@ -1130,6 +1130,7 @@ impl Core {
             Command::AnswerQuestion { item, text } => self.answer_question(item, text).await,
             Command::DismissInbox { item } => self.dismiss(item).await,
             Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
+            Command::NewSideChat { question } => self.start_side_chat(question),
             Command::NewSlice { task, name, brief } => {
                 let request = SliceRequest {
                     task,

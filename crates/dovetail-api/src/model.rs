@@ -273,6 +273,9 @@ pub enum AgentKind {
     Coordinator,
     /// A long-lived session with its own worktree.
     Slice,
+    /// A read-only session the user opens for a question or research: no worktree, no task
+    /// (ADR 0011).
+    SideChat,
     /// Spawned by a session for self-contained work.
     Subagent {
         /// Runs in the background with no to-do items.

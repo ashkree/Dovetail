@@ -703,13 +703,16 @@ impl Buffer for TreeBuffer {
                 });
             }
             Action::TaskArchive => {
-                // On a slice's row, `dd` archives that slice; elsewhere, the task with its slices.
+                // On a slice's or side chat's row, `dd` archives it; elsewhere, the task with its
+                // slices.
                 let slice = match self.selected_key(cx) {
                     Some(RowKey::Agent(id)) => cx
                         .snap
                         .agents
                         .iter()
-                        .find(|a| a.id == id && a.kind == AgentKind::Slice)
+                        .find(|a| {
+                            a.id == id && matches!(a.kind, AgentKind::Slice | AgentKind::SideChat)
+                        })
                         .map(|a| a.id.clone()),
                     _ => None,
                 };

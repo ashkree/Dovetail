@@ -129,7 +129,9 @@ Visual mode comes later; leave room for it.
 | `<leader>a` | Activity feed buffer |
 | `<leader>b` | Board: tasks as a kanban in the main region |
 | `<leader>g` | Worktree view |
-| `<leader>z` | Focus mode: coordinator only |
+| `<leader>z` | Focus mode: the conversation alone |
+| `<leader>sq` / `:ask` | Open a side chat (ADR 0011) |
+| `<leader>y` | Copy the shown agent's last answer into the coordinator's chat bar |
 | `<leader>ss` / `sn` / `st` / `sx` | Pick agent / new slice / take over (stub) / interrupt |
 | `<leader>pp` / `pr` | Switch project / register project (stubs) |
 | `<leader>sm` | Cycle the focused agent's permission mode: `auto` → `acceptEdits` → `manual`. Show a small badge in the tree for any agent not in `auto` |

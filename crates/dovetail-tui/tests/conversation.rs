@@ -630,3 +630,24 @@ fn slash_completes_a_command_and_at_asks_the_core_for_paths() {
         }]
     );
 }
+
+#[test]
+fn a_side_chat_asked_for_opens_when_it_appears() {
+    let mut app = app_with(world());
+    press(&mut app, " sq");
+    type_keys(&mut app, "why is the build slow?");
+    app.on_key(enter(), 100);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::NewSideChat {
+            question: "why is the build slow?".into()
+        }]
+    );
+    let chat = agent("side-1", AgentKind::SideChat, AgentStatus::Working, None);
+    app.on_server(ServerMsg::Event {
+        seq: 1,
+        event: Event::AgentUpserted(chat),
+    });
+    let screen = render(&mut app, 100, 30);
+    assert!(screen.contains("┌ side-1 ·"), "{screen}");
+}

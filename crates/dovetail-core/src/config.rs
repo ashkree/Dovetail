@@ -4,6 +4,7 @@
 //! reading_width = 120        # columns of the conversation reading column
 //! claude = "/usr/bin/claude" # default: `claude` on PATH
 //! default_model = "opus"     # default: whatever Claude Code picks
+//! side_chat_model = "sonnet" # model of side chats (ADR 0011); default: sonnet
 //! max_slices = 3             # running slices at once
 //! [memory]
 //! coordinator_gb = 4         # cgroup cap for the coordinator session
@@ -32,6 +33,8 @@ pub struct Config {
     pub claude: Option<PathBuf>,
     /// Model passed to new sessions; `None` leaves the choice to Claude Code.
     pub default_model: Option<String>,
+    /// Model passed to side chats, faster than the coordinator's (ADR 0011).
+    pub side_chat_model: Option<String>,
     /// Most slice sessions running at once.
     pub max_slices: u32,
     /// Memory caps.
@@ -56,6 +59,7 @@ impl Default for Config {
             reading_width: 120,
             claude: None,
             default_model: None,
+            side_chat_model: Some("sonnet".into()),
             max_slices: 3,
             memory: MemoryCaps::default(),
             profiles: BTreeMap::new(),

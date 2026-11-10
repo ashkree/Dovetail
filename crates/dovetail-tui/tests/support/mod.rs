@@ -18,7 +18,7 @@ pub fn agent_id(s: &str) -> AgentId {
     AgentId(s.into())
 }
 
-fn agent(id: &str, kind: AgentKind, status: AgentStatus, task: Option<i64>) -> Agent {
+pub fn agent(id: &str, kind: AgentKind, status: AgentStatus, task: Option<i64>) -> Agent {
     Agent {
         id: agent_id(id),
         name: id.into(),

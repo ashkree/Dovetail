@@ -14,6 +14,10 @@ _Avoid_: lead, main agent, orchestrator
 A long-lived session that owns one piece of work and has exactly one worktree of its own.
 _Avoid_: worker, worker session
 
+**Side chat**:
+A session the user opens for a question or some research: read-only, in the main checkout, with no worktree or task (ADR 0011).
+_Avoid_: scratch session, helper
+
 **Subagent**:
 An agent a session spawns, at Claude's choice, for quick self-contained work. It shares its parent's worktree unless Claude isolates it.
 _Avoid_: agent (which also covers sessions), worker

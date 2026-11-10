@@ -160,6 +160,10 @@ impl App {
         let arg = arg.trim();
         match action {
             Action::NewSlice if arg.is_empty() => self.start_input(InputTarget::SliceName, ""),
+            Action::NewSideChat if arg.is_empty() => {
+                self.start_input(InputTarget::SideChatQuestion, "")
+            }
+            Action::NewSideChat => self.new_side_chat(arg.to_string()),
             Action::NewSlice => {
                 let (name, brief) = arg
                     .split_once(char::is_whitespace)

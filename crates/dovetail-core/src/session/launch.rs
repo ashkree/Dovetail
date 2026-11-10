@@ -119,6 +119,13 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     spec.mcp_config_path = Some(mcp_path);
     spec.append_system_prompt_file = role_prompt.exists().then_some(role_prompt);
     spec.allowed_tools = allowed_tools(launch.role);
+    // A side chat reads and searches; it never edits (ADR 0011).
+    if launch.role == Role::SideChat {
+        spec.allowed_tools
+            .extend(["WebSearch", "WebFetch"].map(String::from));
+        spec.extra_args
+            .extend(["--disallowedTools", "Edit,Write,NotebookEdit"].map(String::from));
+    }
     spec.worktree = launch.worktree.clone();
     spec.env = vec![
         ("CLAUDE_CODE_ENABLE_TODO_TOOLS".into(), "1".into()),
