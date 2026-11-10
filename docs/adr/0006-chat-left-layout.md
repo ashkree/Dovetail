@@ -9,4 +9,6 @@ Refines Decision 15 (default layout, Layout B). Only the left/right placement ch
 - Region names are now `SideTop`, `SideBottom` and `Main`. Buffers are still not tied to regions.
 - `docs/screens/` shows the old placement; the screens are reference only and are not redrawn.
 
+Note: the vertical split of the side column was later changed to inbox over tree by ADR 0008.
+
 Approved by the user in the session of 2026-11-06.

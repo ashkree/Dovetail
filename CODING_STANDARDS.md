@@ -19,7 +19,7 @@ The rules a review checks code against. The hard constraints in `AGENTS.md` appl
 - Cargo workspace under `crates/`; shared lints in the root `Cargo.toml` (`unsafe_code = "forbid"`; any exception needs the user's OK).
 - Errors: typed (`thiserror`) in libraries, `anyhow` at the binary edge.
 - **Destructive paths fail loudly.** A parse or IO failure on a path that deletes or overwrites returns a typed error, never a default value.
-- `unwrap()`/`expect()` only in tests and genuinely impossible states, with a comment saying why.
+- `unwrap()`/`expect()` only in tests and genuinely impossible states, with a comment saying why. One deliberate exception: `Action::DebugPanic` (`:panic`, debug builds only) panics on purpose to exercise the panic hook.
 - Child processes are always reaped; the terminal is restored on exit and on panic (panic hook).
 - While the TUI runs, all output goes through `tracing` to `~/.local/state/dovetail/` (or the project's `logs/`); stdout and stderr stay silent.
 - Doc comments on every public type in the API crate.
