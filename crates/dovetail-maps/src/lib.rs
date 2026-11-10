@@ -8,18 +8,24 @@
 //!
 //! The model types themselves are plain data in `dovetail_api::map`, re-exported here, so the UI
 //! can hold map content without depending on this crate (and the renderer it will carry).
-//! [`swimlane`] lays a swimlane map out on a grid as plain geometry.
-//! No IO, no async here; the `MapRenderer` and Mermaid conversion arrive in later M15 slices.
+//! [`MapRenderer`] turns a structure map into a PNG and the node rectangles in it (merman, S5).
+//! [`swimlane`] lays a swimlane map out on a grid as plain geometry. No async here.
 
 mod input;
+mod mermaid;
+mod render;
 mod schema;
 pub mod swimlane;
 mod validate;
+
+#[cfg(test)]
+mod render_tests;
 
 pub use dovetail_api::map::*;
 pub use input::{
     ConnectionInput, DrawMapInput, FlowInput, GroupInput, LaneInput, MapHeaderInput, NodeInput,
     StepInput,
 };
+pub use render::{MapRenderer, NodePlacement, PixelRect, RenderError, RenderOptions, RenderedMap};
 pub use schema::input_schema;
 pub use validate::{MapError, ValidMap, check_lane_links, limits, report, validate};
