@@ -145,6 +145,8 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 
 **Fallback:** elkjs in QuickJS behind `MapRenderer`. Swimlanes aren't affected, since Dovetail lays those out itself.
 
+**Result (2026-11-10, see `docs/spikes/merman.md`):** four machine checks pass with merman 0.9.3. Full render took 233 ms cold and 182 ms warm. Re-render with a new selection took 184 ms at 2039×4096 px and 56–71 ms at pane size. Peak added RSS was 86 MiB at 8.4 MP and 24 MiB at pane size. All 30 positions came from the layout JSON, with the worst error 1.4 px. **The look in kitty is still yours to judge.** M15 must give the selected node one combined class: merman's PNG uses only a node's first class. Weight: 105 new crates, ≈ 14 MB binary, one EPL-2.0 crate.
+
 ### S6. `ask_user` role prompt (agent runs, you review)
 
 **Procedure.** During M9, run three trials each of two slices in a scratch repo: one with tool descriptions only, one with the role prompt. Give a task that can't finish without a missing value. **Pass:** the role-prompt slice calls `ask_user` in 3 of 3 runs instead of ending its turn with a question. **Fallback:** stronger wording, or a skill.

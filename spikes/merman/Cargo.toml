@@ -1,0 +1,20 @@
+[package]
+name = "merman-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Throwaway spike (S5). Not a workspace member: the root workspace excludes `spikes`,
+# and this empty table keeps cargo from looking upward.
+[workspace]
+
+[dependencies]
+# Flowchart only, SVG + PNG, ELK layout. No other diagram families, no math, no Cytoscape.
+merman = { version = "=0.9.3", default-features = false, features = ["diagram-flowchart", "layout-elk", "png"] }
+# Decode the PNG to check node positions against its pixels.
+png = "0.18"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

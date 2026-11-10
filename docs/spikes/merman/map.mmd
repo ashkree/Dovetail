@@ -1,0 +1,103 @@
+---
+config:
+  layout: elk
+  theme: dark
+  look: classic
+---
+flowchart TB
+  subgraph g_ui["Terminal UI"]
+    tui[["dovetail-tui"]]
+    apprs["app.rs"]
+    coalesce["ƒ coalesce(frames)<br/>redraw ≤ 30 fps"]
+    dirty["dirty flag"]
+    subgraph g_input["Input"]
+      keymaprs["keymap.rs"]
+      inbox["one inbox"]
+    end
+  end
+  subgraph g_core["Core"]
+    core[["dovetail-core"]]
+    applyfn["ƒ apply(delta)<br/>for d in deltas:<br/>  snapshot.merge(d)"]
+    snapshot["Snapshot"]
+    ready["session ready"]
+    oom["OOM killed"]
+    subgraph g_store["Storage"]
+      dbrs["db.rs"]
+      statedb[("state.db")]
+      fts[("FTS5 index")]
+    end
+    subgraph g_mcp["MCP bridge"]
+      mcprs["mcp.rs"]
+      mcpcmd("dovetail mcp")
+      askuser("ask_user")
+      reportstatus("report_status")
+    end
+  end
+  subgraph g_drv["Driver"]
+    driver[["dovetail-driver"]]
+    routefn["ƒ route(permission)<br/>inbox.push(req)"]
+    hook("WorktreeCreate hook")
+  end
+  user(["☺ You"])
+  coordagent(["☺ Coordinator agent"])
+  api[["dovetail-api"]]
+  mainrs["src/main.rs"]
+  socket("control socket")
+  recipe[("project recipe")]
+  claude["Claude Code"]
+  git["git worktree"]
+  systemd["systemd-run"]
+  user -->|types| tui
+  tui --> apprs
+  apprs -->|resolves keys| keymaprs
+  keymaprs --> inbox
+  apprs --> coalesce
+  coalesce -->|checks| dirty
+  tui -->|commands| socket
+  socket --> core
+  core --> applyfn
+  applyfn -->|updates| snapshot
+  snapshot -->|deltas| tui
+  core --> dbrs
+  dbrs -->|writes| statedb
+  dbrs -->|indexes| fts
+  core -->|spawns| driver
+  driver -->|NDJSON| claude
+  driver -->|caps| systemd
+  driver --> routefn
+  routefn -->|asks| inbox
+  driver --> hook
+  hook -->|creates| git
+  hook -->|reads| recipe
+  claude -->|calls tools| mcpcmd
+  mcpcmd --> mcprs
+  mcprs --> askuser
+  mcprs --> reportstatus
+  askuser --> inbox
+  coordagent -->|runs in| claude
+  core --> ready
+  systemd -->|on cap| oom
+  mainrs -->|starts| core
+  mainrs -->|starts| tui
+  api --> core
+  api --> tui
+  classDef part fill:#c9785d,stroke:#f2c2a8,stroke-width:3px,color:#1b1b1b
+  classDef file fill:#f3efe6,stroke:#9a958c,stroke-width:1px,color:#1b1b1b
+  classDef endpoint fill:#4cc3d9,stroke:#1d7f91,stroke-width:2px,color:#0b2a30
+  classDef data fill:#e8a93a,stroke:#9b6a12,stroke-width:2px,color:#2a1b00
+  classDef external fill:#5c5f66,stroke:#c3c6cc,stroke-width:2px,stroke-dasharray:6 4,color:#eceff4
+  classDef actor fill:#f2a1b6,stroke:#b5546f,stroke-width:2px,color:#3a0f1c
+  classDef outcome fill:#5fbf6a,stroke:#1f6b2a,stroke-width:5px,color:#0d2a11
+  classDef logic fill:#8f9be8,stroke:#4c58a8,stroke-width:1px,color:#101433,font-family:monospace
+  classDef concept fill:none,stroke:none,color:#c8b6f0,font-style:italic
+  classDef outcomeFail fill:#e06666,stroke:#7a1414,stroke-width:5px,color:#2a0606
+  class user,coordagent actor
+  class tui,core,driver,api part
+  class mainrs,apprs,keymaprs,dbrs,mcprs file
+  class mcpcmd,socket,askuser,reportstatus,hook endpoint
+  class statedb,fts,recipe data
+  class claude,git,systemd external
+  class applyfn,routefn,coalesce logic
+  class ready outcome
+  class oom outcomeFail
+  class snapshot,inbox,dirty concept
