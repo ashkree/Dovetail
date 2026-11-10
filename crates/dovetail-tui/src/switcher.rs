@@ -278,6 +278,7 @@ fn agent_preview(
     let kind = match agent.kind {
         AgentKind::Coordinator => "coordinator",
         AgentKind::Slice => "slice",
+        AgentKind::SideChat => "side chat",
         AgentKind::Subagent { background: true } => "background subagent",
         AgentKind::Subagent { background: false } => "subagent",
     };

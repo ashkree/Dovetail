@@ -78,6 +78,10 @@ pub enum Action {
     SearchPrev,
     /// Open the agent switcher.
     PickAgent,
+    /// Open a side chat: ask for its question, or take it from `:ask <question>` (ADR 0011).
+    NewSideChat,
+    /// Copy the shown agent's last answer into the coordinator's chat bar (`<leader>y`).
+    YankToCoordinator,
     /// Pick one of the session's slash commands or skills (`:skills`); it goes into the chat
     /// bar as `/name `.
     PickCommand,

@@ -240,6 +240,8 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>b", Action::ShowBoard),
     bind(N, G, "<leader>g", Action::ShowWorktrees),
     bind(N, G, "<leader>sn", Action::NewSlice),
+    bind(N, G, "<leader>sq", Action::NewSideChat),
+    bind(N, G, "<leader>y", Action::YankToCoordinator),
     bind(N, G, "<leader>sx", Action::Interrupt),
     bind(N, G, "<leader>sm", Action::CyclePermissionMode),
     bind(N, G, "<leader>st", Action::TakeOver),

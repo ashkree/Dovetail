@@ -240,10 +240,15 @@ pub enum Command {
         /// First prompt.
         brief: String,
     },
-    /// End a slice session.
+    /// End a slice session, or a side chat.
     CloseSlice {
-        /// The slice.
+        /// The slice or side chat.
         agent: AgentId,
+    },
+    /// Open a side chat with `question` as its first prompt (ADR 0011).
+    NewSideChat {
+        /// The first prompt.
+        question: String,
     },
     /// Hand a session to a native terminal.
     TakeOver {

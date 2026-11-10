@@ -92,6 +92,7 @@ impl Core {
     pub(crate) fn role_of(&self, id: &AgentId) -> Option<Role> {
         self.agents.get(id).map(|r| match r.agent.kind {
             AgentKind::Coordinator => Role::Coordinator,
+            AgentKind::SideChat => Role::SideChat,
             _ => Role::Slice,
         })
     }
@@ -175,7 +176,11 @@ impl Core {
                 .unwrap_or_else(|| self.task_list_id(row.agent.task, &row.agent.name)),
             socket: self.socket.clone(),
             exe: self.options.exe.clone(),
-            model: self.config.default_model.clone(),
+            model: if row.agent.kind == AgentKind::SideChat {
+                self.config.side_chat_model.clone()
+            } else {
+                self.config.default_model.clone()
+            },
             env,
             claude_config_dir: home.explicit.then(|| home.dir.clone()),
         };
@@ -279,7 +284,7 @@ impl Core {
                 }
                 Ok(())
             }
-            AgentKind::Slice => {
+            AgentKind::Slice | AgentKind::SideChat => {
                 if row.transcript_path.is_none() {
                     return Err(SessionError::NeverStarted(row.agent.name));
                 }

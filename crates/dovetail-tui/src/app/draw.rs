@@ -359,6 +359,7 @@ impl App {
             InputTarget::Reply(_) => "reply › ".into(),
             InputTarget::Title(_) => "title › ".into(),
             InputTarget::SliceName => "slice name › ".into(),
+            InputTarget::SideChatQuestion => "side chat › ".into(),
             InputTarget::SliceBrief(name) => format!("brief for {name} › "),
             InputTarget::Search => "/".into(),
             InputTarget::Decision(_) => "decision › ".into(),

@@ -651,7 +651,7 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | #15 | Text colours softened ~13 % for dark translucent terminals | #15 |
 | #16 | The header shows the model and the 5-hour and weekly usage limits (decision #25) | #17 |
 | #17 | Fixes from the wave-3 code review: subagent worktree cleanup keeps the worktree when git's output does not parse; to-dos of a pruned subagent fall back to the list owner; a session's subagent tokens summed from task events and shown in the switcher; code smells | #18 |
-| — | Chat UX from daily use (2026-11-10): message headers in the speaker's dimmed colour with more space between speakers; Shift-Enter newline, `Ctrl-k`/`Ctrl-j` between chat bar and conversation, `PageUp`/`PageDown` while typing (ADR 0010); `/` and `@` completion and `:skills` (docs/spikes/slash-and-at.md); focus mode `<leader>z` (A1, from M16) | branch `dovetail/chat-ux` |
+| — | Chat UX from daily use (2026-11-10): message headers in the speaker's dimmed colour with more space between speakers; Shift-Enter newline, `Ctrl-k`/`Ctrl-j` between chat bar and conversation, `PageUp`/`PageDown` while typing (ADR 0010); `/` and `@` completion and `:skills` (docs/spikes/slash-and-at.md); focus mode `<leader>z` (A1, from M16); side chats `<leader>sq`/`:ask` and `<leader>y` (ADR 0011) | branch `dovetail/chat-ux` |
 
 **Open follow-ups:** #3 attach an image when a pasted or dropped file path points to one; #8 clean up saved paste attachments.
 

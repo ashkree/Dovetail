@@ -42,6 +42,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "q" | "quit" => Action::Quit,
         "q!" | "quit!" => Action::ForceQuit,
         "spawn" => Action::NewSlice,
+        "ask" => Action::NewSideChat,
         "interrupt" => Action::Interrupt,
         "decide" => Action::TaskAddDecision,
         // Aliases: every action a key reaches can be named here too.

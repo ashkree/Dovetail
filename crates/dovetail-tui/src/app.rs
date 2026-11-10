@@ -22,8 +22,8 @@ mod search;
 
 use crossterm::event::KeyEvent;
 use dovetail_api::{
-    AgentId, AgentKind, AgentStatus, ApplyResult, Command, Event, InboxKind, PROTOCOL_VERSION,
-    PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
+    AgentId, AgentKind, AgentStatus, ApplyResult, Command, EntryKind, Event, InboxKind,
+    PROTOCOL_VERSION, PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
 };
 use jiff::tz::TimeZone;
 
@@ -109,6 +109,8 @@ pub struct App {
     quit: bool,
     /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
     exit_armed_until: Option<u64>,
+    /// A side chat was asked for: open it when it appears.
+    open_side_chat: bool,
     /// Focus mode (`<leader>z`): the side column is hidden. Holds whether the reading column
     /// was solid before, to put it back on leaving.
     focus_mode: Option<bool>,
@@ -146,6 +148,7 @@ impl App {
             reading: None,
             quit: false,
             exit_armed_until: None,
+            open_side_chat: false,
             focus_mode: None,
             exit_armed: false,
             mono_ms: 0,
@@ -345,6 +348,16 @@ impl App {
                 {
                     self.note = Some(notice);
                 }
+                let side_chat = match &event {
+                    Event::AgentUpserted(agent)
+                        if self.open_side_chat
+                            && agent.kind == AgentKind::SideChat
+                            && !self.snap.agents.iter().any(|a| a.id == agent.id) =>
+                    {
+                        Some(agent.id.clone())
+                    }
+                    _ => None,
+                };
                 let created = match &event {
                     Event::TaskUpserted(task)
                         if self.open_after_create.as_deref() == Some(task.title.as_str())
@@ -362,10 +375,15 @@ impl App {
                             // A failed save must not leave a later task of the same title to
                             // steal the screen.
                             self.open_after_create = None;
+                            self.open_side_chat = false;
                         }
                         if let Some(id) = created {
                             self.open_after_create = None;
                             self.open_task(id, false);
+                        }
+                        if let Some(id) = side_chat {
+                            self.open_side_chat = false;
+                            self.open_agent_in_main(id);
                         }
                     }
                     ApplyResult::Gap { expected, got } => {
@@ -605,6 +623,7 @@ impl App {
                 self.start_input(InputTarget::SliceBrief(text), "");
             }
             InputTarget::SliceBrief(name) => self.new_slice(name, text),
+            InputTarget::SideChatQuestion if !text.is_empty() => self.new_side_chat(text),
             InputTarget::Search => self.start_search(text),
             InputTarget::Decision(task) if !text.is_empty() => self.log_decision(task, text),
             _ => {}
@@ -620,6 +639,45 @@ impl App {
                 alternatives: Vec::new(),
                 supersedes: None,
             }));
+    }
+
+    /// Asks the core for a side chat; the first one to appear afterwards opens in the main
+    /// region.
+    fn new_side_chat(&mut self, question: String) {
+        self.open_side_chat = true;
+        self.outbox.push(Command::NewSideChat { question });
+    }
+
+    /// `<leader>y`: the shown agent's last answer goes into the coordinator's chat bar, after
+    /// anything already typed there (Decision 18).
+    fn yank_to_coordinator(&mut self) {
+        let (Some(shown), Some(coordinator)) = (
+            self.buffers.conversation.agent().cloned(),
+            self.coordinator(),
+        ) else {
+            return;
+        };
+        if shown == coordinator {
+            self.note = Some("<leader>y copies another agent's answer to the coordinator".into());
+            return;
+        }
+        let answer = self
+            .snap
+            .conversations
+            .get(&shown)
+            .and_then(|t| {
+                t.entries
+                    .iter()
+                    .rev()
+                    .find(|e| e.kind == EntryKind::Assistant)
+            })
+            .map(|e| e.text.trim().to_string());
+        let Some(answer) = answer.filter(|a| !a.is_empty()) else {
+            self.note = Some("no answer to copy yet".into());
+            return;
+        };
+        self.start_chat(coordinator);
+        self.buffers.conversation.insert_text(&answer);
     }
 
     fn new_slice(&mut self, name: String, brief: String) {
@@ -725,6 +783,8 @@ impl App {
                 self.regions.show(RegionId::Main, back);
             }
             Action::NewSlice => self.run_with_arg(Action::NewSlice, ""),
+            Action::NewSideChat => self.run_with_arg(Action::NewSideChat, ""),
+            Action::YankToCoordinator => self.yank_to_coordinator(),
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
             Action::TakeOver => self.note = Some("take-over arrives in M14".into()),
