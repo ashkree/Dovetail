@@ -35,7 +35,7 @@ Run in this order. Each writes `docs/spikes/<name>.md`. Code lives in `spikes/<n
 | S2 | Inbound messaging | Agent, after S0 | **Self-hosting** (M8), message timeline | Before M1 |
 | S3 | MCP behaviour | Agent, after S0 | M9 `ask_user`, subagent tools | Before M1 |
 | S4 | cgroup enforcement | **You** (script supplied) | M13 | Before M13; safe to run any time |
-| S5 | merman | Agent measures; **you judge the look in kitty** | M15 | Before M15 |
+| S5 | merman | Agent measures; **you judge the look in kitty** | M15 | Before M15; machine checks passed (PR #33), look in kitty still yours |
 | S6 | `ask_user` role prompt | Agent runs; **you review the result** | Role wording | During M9 |
 
 ### S0. Terms of use (you)
@@ -145,7 +145,7 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 
 **Fallback:** elkjs in QuickJS behind `MapRenderer`. Swimlanes aren't affected, since Dovetail lays those out itself.
 
-**Result (2026-11-10, see `docs/spikes/merman.md`):** four machine checks pass with merman 0.9.3. Full render took 233 ms cold and 182 ms warm. Re-render with a new selection took 184 ms at 2039×4096 px and 56–71 ms at pane size. Peak added RSS was 86 MiB at 8.4 MP and 24 MiB at pane size. All 30 positions came from the layout JSON, with the worst error 1.4 px. **The look in kitty is still yours to judge.** M15 must give the selected node one combined class: merman's PNG uses only a node's first class. Weight: 105 new crates, ≈ 14 MB binary, one EPL-2.0 crate.
+**Result (2026-11-10, PR #33, see `docs/spikes/merman.md`):** four machine checks pass with merman 0.9.3. Full render took 233 ms cold and 182 ms warm. Re-render with a new selection took 184 ms at 2039×4096 px and 56–71 ms at pane size. Peak added RSS was 86 MiB at 8.4 MP and 24 MiB at pane size. All 30 positions came from the layout JSON, with the worst error 1.4 px. **The look in kitty is still yours to judge.** M15 must give the selected node one combined class: merman's PNG uses only a node's first class. Weight: 105 new crates, ≈ 14 MB binary, one EPL-2.0 crate.
 
 ### S6. `ask_user` role prompt (agent runs, you review)
 
@@ -616,10 +616,11 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Tests:** `memory.events` parsing with fixtures, context calculation
 
 ### M14. Take-over
+- **Merged:** PR #34 (task #32); migration `0011_agent_takeover`.
 - **Scope:** `<leader>st` stops the headless process, suspends the TUI, runs native `claude --resume <id>` in the same terminal with the same settings and MCP config, then resumes headless on exit. Session lock. Note in the conversation that native turns happened.
 - **Slices:** one slice; touches session lifecycle.
 - **Done when:**
-  - [ ] Round trip works from a real slice in its worktree (for the user to try; the steps are in PR for task #32)
+  - [ ] Round trip works from a real slice in its worktree (for the user to try; the steps are in PR for task #32; left unticked because the real-session round trip is not yet confirmed)
   - [x] Headless can't start while locked, including after a crash (fake core and fake `claude`: a prompt, a second take-over, archive and worktree removal are refused while native runs; a stored lock whose native process still runs keeps headless down after reopen, one whose process is gone is released. Not yet checked with a real session)
   - [x] Exiting native never removes a worktree (fake `claude` in a slice's worktree: the worktree and the slice are still there after it exits, and headless resumes in it. Not yet checked with a real session)
 - **Tests:** lock state machine, crash recovery of the lock
@@ -628,7 +629,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Spikes needed:** S5
 - **Scope:** `dovetail-maps`: model, nine kinds, `draw_map` validation with specific errors, `MapRenderer`, Mermaid conversion, swimlane grid layout. kitty canvas with node selection, flows, pan and zoom. Outline beside it and as the fallback. Map shelf. MAP mode with mouse only there. Restore the `draw_map` line in the coordinator prompt.
 - **Slices:** (a) model and validation; (b) tool and storage, after (a); (c) merman renderer, after (a); (d) swimlane layout, after (a); (e) outline, after (b); (f) canvas and MAP mode, after (c) and (e).
-- **Progress:** (a) merged, PR #32 (task #34). (b) task #35: `draw_map` for both roles, schema from `dovetail_maps::input_schema`; reusing an id stores a new version and a map keeps its type; a new map's id is its title's slug; lane `node` links are checked against the latest structure maps; the shelf is `Snapshot::maps` with `Event::MapUpserted`, content through `Command::LoadMap` → `Event::MapLoaded`; the mock seeds one structure and one swimlane map; the coordinator prompt's `draw_map` line is back.
+- **Progress:** (a) merged, PR #32 (task #34). (b) merged, PR #35 (task #35); its maps migration is `0012_maps`, after `0011_agent_takeover`. Next: (c), (d) and (e) are unblocked; (f) waits for (c) and (e). (b): `draw_map` for both roles, schema from `dovetail_maps::input_schema`; reusing an id stores a new version and a map keeps its type; a new map's id is its title's slug; lane `node` links are checked against the latest structure maps; the shelf is `Snapshot::maps` with `Event::MapUpserted`, content through `Command::LoadMap` → `Event::MapLoaded`; the mock seeds one structure and one swimlane map; the coordinator prompt's `draw_map` line is back.
 - **Done when:**
   - [ ] A real agent draws both map types
   - [ ] Works in kitty; outline works elsewhere
@@ -662,10 +663,10 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | #15 | Text colours softened ~13 % for dark translucent terminals | #15 |
 | #16 | The header shows the model and the 5-hour and weekly usage limits (decision #25) | #17 |
 | #17 | Fixes from the wave-3 code review: subagent worktree cleanup keeps the worktree when git's output does not parse; to-dos of a pruned subagent fall back to the list owner; a session's subagent tokens summed from task events and shown in the switcher; code smells | #18 |
-| — | Chat UX from daily use (2026-11-10): message headers in the speaker's dimmed colour with more space between speakers; Shift-Enter newline, `Ctrl-k`/`Ctrl-j` between chat bar and conversation, `PageUp`/`PageDown` while typing (ADR 0010); `/` and `@` completion and `:skills` (docs/spikes/slash-and-at.md); focus mode `<leader>z` (A1, from M16); side chats `<leader>sq`/`:ask` and `<leader>y` (ADR 0011) | branch `dovetail/chat-ux` |
-| — | End of day and a fresh morning coordinator (ADR 0012, pulled from v1.1's decisions 17 and 22): `journal/YYYY-MM-DD.md` with the coordinator's Handoff and Dovetail's Facts; `:eod`; "Close the day?" on quit (`y` closes then quits, `n` quits now, `Esc` later); on the first open of a new day a new coordinator session seeded with the newest journal file and the open tasks, with a Needs-you item whose `y` keeps yesterday's session instead | branch `claude/affectionate-faraday-j8074d` |
+| — | Chat UX from daily use (2026-11-10): message headers in the speaker's dimmed colour with more space between speakers; Shift-Enter newline, `Ctrl-k`/`Ctrl-j` between chat bar and conversation, `PageUp`/`PageDown` while typing (ADR 0010); `/` and `@` completion and `:skills` (docs/spikes/slash-and-at.md); focus mode `<leader>z` (A1, from M16); side chats `<leader>sq`/`:ask` and `<leader>y` (ADR 0011) | merged directly, no numbered PR: 1a36dc1 (`dovetail/chat-ux`: chat bar keys, completion, focus mode, message headers), 5f1abb7 (`dovetail/chat-ux`: side chats), 007af85 (`dovetail/chat-pane`: chat bar as its own pane, ADR 0010), 6b009ab (`dovetail/focus-spacing`: focus mode keeps the background, ADR 0013) |
+| — | End of day and a fresh morning coordinator (ADR 0012, pulled from v1.1's decisions 17 and 22): `journal/YYYY-MM-DD.md` with the coordinator's Handoff and Dovetail's Facts; `:eod`; "Close the day?" on quit (`y` closes then quits, `n` quits now, `Esc` later); on the first open of a new day a new coordinator session seeded with the newest journal file and the open tasks, with a Needs-you item whose `y` keeps yesterday's session instead | #36 (merge bf64d2b) |
 
-**Open follow-ups:** #3 attach an image when a pasted or dropped file path points to one; #8 clean up saved paste attachments.
+**Open follow-ups:** #3 attach an image when a pasted or dropped file path points to one; #8 clean up saved paste attachments; task 3 builds ADR 0014 (upgrade from inside the app: `:upgrade` and `dovetail upgrade`, on main).
 
 ---
 
