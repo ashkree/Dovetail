@@ -6,11 +6,11 @@ expression: screen
 ┌ coordinator · ◐ working · 1.2G · $3.1┐┌ inbox · needs you (3) ───────────────┐
 │                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │                                      ││   ? slice-4  Which route pref… 10:12 │
-│   ── You · 10:14 ─────────────────   ││   ✓ slice-4  Handler wired; t… 10:09 │
-│   What's blocking slice-7?           ││                                      │
+│   What's blocking slice-7?           ││   ✓ slice-4  Handler wired; t… 10:09 │
 │                                      ││                                      │
 │                                      ││                                      │
-│   ── coordinator · 10:14 ◐ ───────   ││ y allow · d deny · r reply · x dism… │
+│   ── coordinator · 10:14 ◐ ───────   ││                                      │
+│                                      ││ y allow · d deny · r reply · x dism… │
 │   It needs a key. slice-7 can only   │└──────────────────────────────────────┘
 │   reach the eval path with           │┌ tasks · business ────────────────────┐
 │   FS_EVAL_VIRTUAL_KEY set.▌          ││ ◐ ◆ coordinator   working 1.2G $3.10 │
