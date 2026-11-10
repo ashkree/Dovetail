@@ -496,6 +496,20 @@ impl Core {
         }
         match event {
             DriverEvent::Init(init) => self.on_init(&agent, init),
+            DriverEvent::Commands(list) => {
+                let commands: Vec<_> = list
+                    .into_iter()
+                    .map(|c| dovetail_api::SlashCommand {
+                        name: c.name,
+                        description: c.description,
+                        argument_hint: c.argument_hint,
+                    })
+                    .collect();
+                if self.commands.get(&agent) != Some(&commands) {
+                    self.commands.insert(agent.clone(), commands.clone());
+                    self.emit(dovetail_api::Event::CommandsChanged { agent, commands });
+                }
+            }
             DriverEvent::Status {
                 permission_mode: Some(mode),
                 ..

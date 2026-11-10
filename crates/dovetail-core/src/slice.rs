@@ -625,6 +625,7 @@ impl Core {
         let key = self.worktree_key(&row.agent);
         worktree::clear_hook_outcome(&self.paths, &key, &row.agent.name);
         self.persist("a closed agent", self.db.close_agent(agent.clone()));
+        self.commands.remove(agent);
         self.emit(Event::AgentRemoved(agent.clone()));
         self.activity(
             ActivityKind::Lifecycle,

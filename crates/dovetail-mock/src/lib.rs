@@ -208,6 +208,10 @@ impl MockCore {
                 self.update_agent(&agent, |a| a.status = AgentStatus::Working);
                 self.schedule_reply(agent, true);
             }
+            Command::ListPaths { agent, dir } => {
+                let paths = world::paths(dir.as_deref());
+                self.emit(Event::PathsListed { agent, dir, paths });
+            }
             Command::PasteClipboard { agent } => {
                 let paste = self
                     .clipboard

@@ -409,9 +409,37 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         profile: Some("maveron".into()),
         // Like the core: empty until the worktree view asks for a refresh.
         worktrees: vec![],
+        commands: BTreeMap::from([(agent_id(COORDINATOR), commands())]),
     };
     snapshot.totals = totals_of(&snapshot);
     snapshot
+}
+
+/// What the coordinator lists for `/` completion: a few built-ins and skills.
+fn commands() -> Vec<SlashCommand> {
+    [
+        ("compact", "Clear conversation history but keep a summary in context", "<instructions>"),
+        ("code-review", "Review the changes since a fixed point along two axes", ""),
+        ("context", "Show what fills the context window", ""),
+        ("grilling", "Grill the user relentlessly about a plan", ""),
+    ]
+    .into_iter()
+    .map(|(name, description, hint)| SlashCommand {
+        name: name.into(),
+        description: description.into(),
+        argument_hint: hint.into(),
+    })
+    .collect()
+}
+
+/// Files the mock lists for `@` completion: the session's tree (`dir: None`) or one directory.
+pub(crate) fn paths(dir: Option<&str>) -> Vec<String> {
+    match dir {
+        None => ["Cargo.toml", "README.md", "crates/dovetail-tui/src/app.rs", "docs/design.md"]
+            .map(String::from)
+            .to_vec(),
+        Some(_) => ["notes.md", "projects/"].map(String::from).to_vec(),
+    }
 }
 
 /// Plausible worktree-view data for slice `agent` with worktree `wt`: the seeded slices each

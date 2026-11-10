@@ -32,6 +32,18 @@ pub struct McpServerInfo {
     pub status: String,
 }
 
+/// A slash command or skill the session offers, from the `initialize` answer or
+/// `system/commands_changed`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandInfo {
+    /// Name without the slash.
+    pub name: String,
+    /// What it does.
+    pub description: String,
+    /// What it takes after the name; empty when nothing.
+    pub argument_hint: String,
+}
+
 /// `system/init`. There is a fresh one before every `result` of a background-subagent turn.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InitInfo {
@@ -388,6 +400,9 @@ pub struct RateLimitWindow {
 pub enum DriverEvent {
     /// `system/init`.
     Init(InitInfo),
+    /// The session's slash commands and skills: the answer to the `initialize` request the
+    /// driver sends at start, and `system/commands_changed` after it.
+    Commands(Vec<CommandInfo>),
     /// `system/status`: request status and/or permission mode (also emitted after a
     /// `set_permission_mode`).
     Status {
