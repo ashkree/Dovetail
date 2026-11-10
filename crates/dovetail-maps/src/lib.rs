@@ -8,11 +8,12 @@
 //!
 //! The model types themselves are plain data in `dovetail_api::map`, re-exported here, so the UI
 //! can hold map content without depending on this crate (and the renderer it will carry).
-//! No IO, no async here; the `MapRenderer`, Mermaid conversion and swimlane layout arrive in
-//! later M15 slices.
+//! [`swimlane`] lays a swimlane map out on a grid as plain geometry.
+//! No IO, no async here; the `MapRenderer` and Mermaid conversion arrive in later M15 slices.
 
 mod input;
 mod schema;
+pub mod swimlane;
 mod validate;
 
 pub use dovetail_api::map::*;
