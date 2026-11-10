@@ -5,9 +5,8 @@ expression: "render(&mut reading_app(), 200, 40)"
  folder /src/business
 ┌ coordinator · ○ idle · 1.2G · $3.10 ─────────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────────────────────────────────────────┐
 │                                                                                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get… 10:15 │
-│                                                                                                                          ││   ? slice-4  Which route prefix should the handler use?            10:12 │
-│   ▸ sent 1 message · 2 s                                                                                                 ││   ✓ slice-4  Handler wired; tests next.                            10:09 │
-│                                                                                                                          ││                                                                          │
+│   ▸ sent 1 message · 2 s                                                                                                 ││   ? slice-4  Which route prefix should the handler use?            10:12 │
+│                                                                                                                          ││   ✓ slice-4  Handler wired; tests next.                            10:09 │
 │                                                                                                                          ││                                                                          │
 │   ── You · 10:14 ─────────────────────────────────────────────────────────────────────────────────────────────────────   ││                                                                          │
 │   What's blocking slice-7?                                                                                               ││                                                                          │
@@ -16,29 +15,30 @@ expression: "render(&mut reading_app(), 200, 40)"
 │   ── coordinator · 10:14 ─────────────────────────────────────────────────────────────────────────────────────────────   ││                                                                          │
 │   ▸ read 2 files · checked slice-7's stream · 4 s                                                                        ││                                                                          │
 │                                                                                                                          ││                                                                          │
-│   It needs a key. slice-7 can only reach the eval path with FS_EVAL_VIRTUAL_KEY set, and the file src/decision.rs        ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
-│   reads it once at start-up.                                                                                             │└──────────────────────────────────────────────────────────────────────────┘
-│                                                                                                                          │┌ tasks · business ────────────────────────────────────────────────────────┐
-│   What I checked                                                                                                         ││ ○ ◆ coordinator                                          idle 1.2G $3.10 │
-│                                                                                                                          ││ ▾ Now (2)                                                                │
-│   • the handler in crates/api/src/routes.rs                                                                              ││ ▾ ⚠ business surface P1                                         PR #1231 │
-│                                                                                                                          ││   ▾ ◐ ◆ slice-4  edits                            working 412M 71% $1.84 │
-│   • the eval path, which fails before it logs                                                                            ││         ⎇ dovetail/slice-4                                               │
-│                                                                                                                          ││         ✓ write route tests                                              │
-│   • the CI config                                                                                                        ││         ◐ wire handler to registry                                       │
-│                                                                                                                          ││         ○ update OpenAPI spec ⊘ blocked                                  │
-│   rust                                                                                                                   ││       ✓ ◇ rebase                                              done $0.21 │
-│     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                                                                     ││       ◐ ◇ explore callers                                12 tools · Grep │
-│                                                                                                                          ││ ▾ ⚠ get_decision 500 P0                                                  │
-│   Slice   │ State                                                                                                        ││   ▾ ⚠ ◆ slice-7  manual                         needs you 388M 85% $0.92 │
-│   ────────┼────────                                                                                                      ││         ⎇ dovetail/slice-7                                               │
-│   slice-4 │ editing                                                                                                      ││ ▾ Next (1)                                                               │
-│   slice-7 │ blocked                                                                                                      ││   ○ idea: eval key flow P2                                               │
-│                                                                                                                          ││ ▸ Later (1)                                                              │
-│   │ Merge order: #1231 first, then the 500 fix.                                                                          ││ ▸ Done (1)                                                               │
+│   It needs a key. slice-7 can only reach the eval path with FS_EVAL_VIRTUAL_KEY set, and the file src/decision.rs        ││                                                                          │
+│   reads it once at start-up.                                                                                             ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
+│                                                                                                                          │└──────────────────────────────────────────────────────────────────────────┘
+│   What I checked                                                                                                         │┌ tasks · business ────────────────────────────────────────────────────────┐
+│                                                                                                                          ││ ○ ◆ coordinator                                          idle 1.2G $3.10 │
+│   • the handler in crates/api/src/routes.rs                                                                              ││ ▾ Now (2)                                                                │
+│                                                                                                                          ││ ▾ ⚠ business surface P1                                         PR #1231 │
+│   • the eval path, which fails before it logs                                                                            ││   ▾ ◐ ◆ slice-4  edits                            working 412M 71% $1.84 │
+│                                                                                                                          ││         ⎇ dovetail/slice-4                                               │
+│   • the CI config                                                                                                        ││         ✓ write route tests                                              │
+│                                                                                                                          ││         ◐ wire handler to registry                                       │
+│   rust                                                                                                                   ││         ○ update OpenAPI spec ⊘ blocked                                  │
+│     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                                                                     ││       ✓ ◇ rebase                                              done $0.21 │
+│                                                                                                                          ││       ◐ ◇ explore callers                                12 tools · Grep │
+│   Slice   │ State                                                                                                        ││ ▾ ⚠ get_decision 500 P0                                                  │
+│   ────────┼────────                                                                                                      ││   ▾ ⚠ ◆ slice-7  manual                         needs you 388M 85% $0.92 │
+│   slice-4 │ editing                                                                                                      ││         ⎇ dovetail/slice-7                                               │
+│   slice-7 │ blocked                                                                                                      ││ ▾ Next (1)                                                               │
+│                                                                                                                          ││   ○ idea: eval key flow P2                                               │
+│   │ Merge order: #1231 first, then the 500 fix.                                                                          ││ ▸ Later (1)                                                              │
+│                                                                                                                          ││ ▸ Done (1)                                                               │
 │                                                                                                                          ││                                                                          │
-│   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────   ││                                                                          │
-│   › i to chat · ]] [[ turns · zc zo fold · gg G                                                                          ││                                                                          │
-│                                                                                                                          ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘│                                                                          │
+┌ chat › coordinator ──────────────────────────────────────────────────────────────────────────────────────────────────────┐│                                                                          │
+│   › i or ^j to type · ]] [[ turns · zc zo fold · gg G                                                                    ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command
