@@ -1,0 +1,17 @@
+[package]
+name = "dovetail-maps"
+description = "Dovetail's visual maps: the map model and draw_map input validation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true
