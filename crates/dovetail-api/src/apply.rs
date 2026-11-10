@@ -95,12 +95,18 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
             tail.has_more = has_more;
         }
         Event::DecisionAdded(decision) => upsert(&mut state.decisions, decision, |d| d.id),
+        Event::MapUpserted(map) => {
+            // Most recently drawn first: a redrawn map moves to the front.
+            state.maps.retain(|m| m.id != map.id);
+            state.maps.insert(0, map);
+        }
         Event::TotalsChanged(totals) => state.totals = totals,
         Event::UsageChanged(usage) => state.usage = usage,
         Event::WarningSet(warning) => upsert(&mut state.warnings, warning, |w| w.id.clone()),
         Event::WarningCleared(id) => state.warnings.retain(|w| w.id != id),
         // Nothing to store: the UI shows the message as the event passes through.
         Event::CommandFailed { .. }
+        | Event::MapLoaded(_)
         | Event::ClipboardPasted { .. }
         | Event::TerminalReturned { .. } => {}
     }

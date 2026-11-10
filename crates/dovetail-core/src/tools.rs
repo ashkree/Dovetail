@@ -18,6 +18,7 @@ use crate::service::Core;
 use crate::slice::{ArchiveCall, SliceRequest, SliceStart};
 use crate::socket::ToolCall;
 
+mod map;
 mod read;
 
 /// Most characters of a status line (B17).
@@ -345,6 +346,7 @@ impl Core {
                 },
             },
             Tool::UpdateTask(update) => self.update_task_tool(update).await,
+            Tool::DrawMap(draw) => self.draw_map(&agent, draw.0).await,
         };
         let _ = reply.send(answer);
     }

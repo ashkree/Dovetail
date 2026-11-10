@@ -127,6 +127,8 @@ tools! {
     GetTask(GetTask) = "get_task", CoordinatorOnly;
     /// `update_task`, coordinator only (task #25).
     UpdateTask(UpdateTask) = "update_task", CoordinatorOnly;
+    /// `draw_map`, for the coordinator and slices (decision 25, M15).
+    DrawMap(DrawMap) = "draw_map", Everyone;
 }
 
 /// The row of [`TOOLS`] named `name`.
@@ -272,6 +274,9 @@ impl Tool {
             Tool::ArchiveTask(a) => id("id", a.id),
             Tool::ListTasks(_) => Ok(()),
             Tool::GetTask(g) => id("id", g.id),
+            // Checked whole by `dovetail_maps::validate` in the core, so every problem comes
+            // back in one report.
+            Tool::DrawMap(_) => Ok(()),
             Tool::UpdateTask(u) => {
                 id("id", u.id)?;
                 if let Some(title) = &u.title {
@@ -462,6 +467,13 @@ impl UpdateTask {
         })
     }
 }
+
+/// `draw_map`: a structure or swimlane map (design 23i). The arguments stay raw JSON here:
+/// their shape is `dovetail_maps::DrawMapInput`, which lives with the validation (decision on
+/// task #34), and the core parses and validates them there so every problem comes back at once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DrawMap(pub serde_json::Value);
 
 /// Deserializes a field that is present, so `null` becomes `Some(None)`; only an absent field
 /// (through `#[serde(default)]`) stays `None`.

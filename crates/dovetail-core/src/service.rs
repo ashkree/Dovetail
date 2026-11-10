@@ -702,6 +702,7 @@ impl Core {
             projects: projects.iter().map(Project::summary).collect(),
             tasks: self.db.load_tasks().await?,
             decisions: self.db.load_decisions().await?,
+            maps: self.db.load_maps().await?,
             agents: self.agents.values().map(|r| r.agent.clone()).collect(),
             inbox: self.inbox.values().map(|p| p.item.clone()).collect(),
             activity: self.activity.iter().cloned().collect(),
@@ -1179,6 +1180,14 @@ impl Core {
                     Err(e) => self.fail(e.to_string()),
                 }
             }
+            Command::LoadMap { id, version } => match self.db.load_map(id.clone(), version).await {
+                Ok(Some(map)) => self.emit(Event::MapLoaded(map)),
+                Ok(None) => self.fail(match version {
+                    Some(v) => format!("map {} has no version {v}", id.0),
+                    None => format!("there is no map {}", id.0),
+                }),
+                Err(e) => self.fail(e.to_string()),
+            },
             Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
             Command::TakeOver { .. } => self.fail("take-over arrives in M14"),
