@@ -62,7 +62,7 @@ fn a_wide_pane_centres_the_reading_column_at_120_columns() {
 #[test]
 fn rendering_shows_labels_blank_rows_and_folded_tool_lines() {
     let mut app = reading_app();
-    let screen = render(&mut app, 120, 50);
+    let screen = render(&mut app, 120, 60);
     assert!(screen.contains("── You · 10:06 ─"));
     assert!(screen.contains("── coordinator · 10:14 ─"));
     assert!(screen.contains("▸ read 2 files · checked slice-7's stream · 4 s"));
@@ -75,7 +75,7 @@ fn rendering_shows_labels_blank_rows_and_folded_tool_lines() {
 #[test]
 fn bold_italic_and_code_get_their_own_colours_on_screen() {
     let mut app = reading_app();
-    let mut terminal = Terminal::new(TestBackend::new(120, 50)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(120, 60)).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw");
     let theme = dovetail_tui::Theme::dusk();
     let buffer = terminal.backend().buffer();

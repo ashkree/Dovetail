@@ -111,9 +111,8 @@ pub struct App {
     exit_armed_until: Option<u64>,
     /// A side chat was asked for: open it when it appears.
     open_side_chat: bool,
-    /// Focus mode (`<leader>z`): the side column is hidden. Holds whether the reading column
-    /// was solid before, to put it back on leaving.
-    focus_mode: Option<bool>,
+    /// Focus mode (`<leader>z`): the side column is hidden.
+    focus_mode: bool,
     /// The key being handled is a second Ctrl-C inside the hint's window.
     exit_armed: bool,
     /// The loop clock at the key being handled, for actions that arm a timeout.
@@ -149,7 +148,7 @@ impl App {
             quit: false,
             exit_armed_until: None,
             open_side_chat: false,
-            focus_mode: None,
+            focus_mode: false,
             exit_armed: false,
             mono_ms: 0,
             dirty: true,
@@ -685,40 +684,29 @@ impl App {
         self.outbox.push(Command::NewSlice { task, name, brief });
     }
 
-    /// Focus mode on or off (A1, Decision 16): the conversation alone, full width, with the
-    /// reading column solid; the status bar keeps the Needs you count. It shows the agent
-    /// already in view, so a side chat or slice can be read the same way.
+    /// Focus mode on or off (A1, Decision 16): the conversation alone, full width; the status
+    /// bar keeps the Needs you count. The background stays as it is (ADR 0013). It shows the
+    /// agent already in view, so a side chat or slice can be read the same way.
     pub(super) fn toggle_focus_mode(&mut self) {
-        let conversation = &mut self.buffers.conversation;
-        match self.focus_mode.take() {
-            Some(was_solid) => {
-                if conversation.solid() != was_solid {
-                    conversation.toggle_solid();
-                }
+        self.focus_mode = !self.focus_mode;
+        if self.focus_mode {
+            if self.regions.buffer(RegionId::Main) != BufferKind::Conversation {
+                self.regions.show(RegionId::Main, BufferKind::Conversation);
             }
-            None => {
-                self.focus_mode = Some(conversation.solid());
-                if !conversation.solid() {
-                    conversation.toggle_solid();
-                }
-                if self.regions.buffer(RegionId::Main) != BufferKind::Conversation {
-                    self.regions.show(RegionId::Main, BufferKind::Conversation);
-                }
-                self.regions.set_focus(RegionId::Main);
-            }
+            self.regions.set_focus(RegionId::Main);
         }
     }
 
     /// Whether focus mode hides the side column.
     pub fn focus_mode(&self) -> bool {
-        self.focus_mode.is_some()
+        self.focus_mode
     }
 
     /// Runs an action: global ones here, the rest in the focused buffer.
     pub fn run(&mut self, action: Action) {
         self.dirty = true;
         // Going to the side column leaves focus mode, so focus never lands on a hidden region.
-        if self.focus_mode.is_some()
+        if self.focus_mode
             && matches!(
                 action,
                 Action::FocusRight | Action::FocusInbox | Action::FocusUp | Action::FocusDown

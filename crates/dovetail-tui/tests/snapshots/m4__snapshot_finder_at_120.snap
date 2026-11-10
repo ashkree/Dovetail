@@ -7,7 +7,7 @@ expression: "render(&mut app, 120, 38)"
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
 │                                                                         ││   ? slice-4  Which route prefix sh… 10:12 │
 │   ── You · 10:08 ────────────────────────────────────────────────────   ││   ✓ slice-4  Handler wired; tests … 10:09 │
-│   Make sure slice-4 doesn't touch the 500 path.                         ││                                           │
+│                                                                         ││                                           │
 │ ┌ Find ────────────────────────────────────────────┐┌ Task ────────────────────────────────────────────────────────┐ │
 │ │›                                            13/13││ business surface                                             │ │
 │ │                                                  ││ P1 · Now · in progress · PR #1231                            │ │
