@@ -217,14 +217,11 @@ impl Completion {
         let plain = !key
             .modifiers
             .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT);
-        let last = self.rows.len().saturating_sub(1);
         match key.code {
-            KeyCode::Down if !self.rows.is_empty() => self.selected = (self.selected + 1).min(last),
-            KeyCode::Char('n') if ctrl && !self.rows.is_empty() => {
-                self.selected = (self.selected + 1).min(last)
-            }
-            KeyCode::Up if !self.rows.is_empty() => self.selected = self.selected.saturating_sub(1),
-            KeyCode::Char('p') if ctrl => self.selected = self.selected.saturating_sub(1),
+            KeyCode::Down if !self.rows.is_empty() => self.move_selection(true),
+            KeyCode::Char('n') if ctrl && !self.rows.is_empty() => self.move_selection(true),
+            KeyCode::Up if !self.rows.is_empty() => self.move_selection(false),
+            KeyCode::Char('p') if ctrl => self.move_selection(false),
             KeyCode::Esc => self.dismissed = self.token.as_ref().map(|t| t.range.start),
             KeyCode::Tab | KeyCode::Enter if plain => {
                 return self.accept(key.code == KeyCode::Enter);
@@ -232,6 +229,16 @@ impl Completion {
             _ => return KeyResult::Pass,
         }
         KeyResult::Handled
+    }
+
+    /// Moves the selected row one step, stopping at either end.
+    fn move_selection(&mut self, down: bool) {
+        let last = self.rows.len().saturating_sub(1);
+        self.selected = if down {
+            (self.selected + 1).min(last)
+        } else {
+            self.selected.saturating_sub(1)
+        };
     }
 
     fn accept(&mut self, by_enter: bool) -> KeyResult {

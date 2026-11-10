@@ -928,6 +928,7 @@ impl App {
                     self.note = Some("Press Ctrl-C again to exit".into());
                 }
             }
+            // Deliberate debug-build exception to "no panic outside tests": `:panic` exercises the panic hook.
             #[cfg(debug_assertions)]
             Action::DebugPanic => panic!("deliberate panic from :panic"),
             _ => {
