@@ -123,6 +123,13 @@ impl SessionDriver for ClaudeDriver {
             events_tx,
         ));
 
+        // Asks for the slash command list before any prompt; the answer comes back as
+        // `DriverEvent::Commands`. No model call is made for it.
+        let _ = writer_tx.send(WriterMsg::Line(json!({
+            "type": "control_request",
+            "request_id": crate::parse::INITIALIZE_ID,
+            "request": {"subtype": "initialize"},
+        })));
         Ok(Box::new(ClaudeSession {
             session_id: spec.session_id,
             pid,

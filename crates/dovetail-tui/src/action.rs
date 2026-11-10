@@ -9,6 +9,10 @@ pub enum Action {
     MoveDown,
     /// Move up one row.
     MoveUp,
+    /// Scroll down a page. Also works while typing in the chat bar.
+    PageDown,
+    /// Scroll up a page. Also works while typing in the chat bar.
+    PageUp,
     /// Jump to the first row.
     GoTop,
     /// Jump to the last row.
@@ -53,6 +57,8 @@ pub enum Action {
     FoldTurn,
     /// Unfold the turn at the top of the view and show its long replies in full.
     UnfoldTurn,
+    /// Leave the chat bar for the conversation above it, keeping the draft and its cursor.
+    LeaveChatBar,
     /// Ctrl-V in a chat bar: attach the clipboard's image, or paste its text at the cursor.
     PasteClipboard,
     /// Backspace on an empty chat input: drop the last image chip. With text typed, or no chip,
@@ -60,6 +66,8 @@ pub enum Action {
     DropLastAttachment,
     /// Give the reading column a solid background, or take it away.
     ToggleSolidBackground,
+    /// Focus mode: hide the side column and read the conversation alone (`<leader>z`).
+    ToggleFocusMode,
     /// Open quick capture.
     QuickCapture,
     /// Start an in-buffer search.
@@ -70,6 +78,9 @@ pub enum Action {
     SearchPrev,
     /// Open the agent switcher.
     PickAgent,
+    /// Pick one of the session's slash commands or skills (`:skills`); it goes into the chat
+    /// bar as `/name `.
+    PickCommand,
     /// Open the picker over tasks, agents and inbox items.
     PickAny,
     /// Show the Activity feed in the main region (or go back if it is showing).

@@ -5,13 +5,13 @@ expression: "render(&mut reading_app(), 200, 40)"
  folder /src/business
 ┌ coordinator · ○ idle · 1.2G · $3.10 ─────────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────────────────────────────────────────┐
 │                                                                                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get… 10:15 │
-│   ── coordinator · 10:06 ─────────────────────────────────────────────────────────────────────────────────────────────   ││   ? slice-4  Which route prefix should the handler use?            10:12 │
-│   Told slice-4 to stay out of src/decision.rs until slice-7 hands it back.                                               ││   ✓ slice-4  Handler wired; tests next.                            10:09 │
+│                                                                                                                          ││   ? slice-4  Which route prefix should the handler use?            10:12 │
+│   ▸ sent 1 message · 2 s                                                                                                 ││   ✓ slice-4  Handler wired; tests next.                            10:09 │
 │                                                                                                                          ││                                                                          │
-│   ▸ sent 1 message · 2 s                                                                                                 ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │   ── You · 10:14 ─────────────────────────────────────────────────────────────────────────────────────────────────────   ││                                                                          │
 │   What's blocking slice-7?                                                                                               ││                                                                          │
+│                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │   ── coordinator · 10:14 ─────────────────────────────────────────────────────────────────────────────────────────────   ││                                                                          │
 │   ▸ read 2 files · checked slice-7's stream · 4 s                                                                        ││                                                                          │

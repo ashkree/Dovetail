@@ -234,6 +234,12 @@ pub(crate) enum Input {
         agent: AgentId,
         paste: dovetail_api::Paste,
     },
+    /// Paths for an agent's `@` completion were listed.
+    PathsListed {
+        agent: AgentId,
+        dir: Option<String>,
+        paths: Vec<String>,
+    },
     /// Copying text to the clipboard failed.
     CopyFailed(crate::clipboard::CopyError),
     /// The editor run in the UI's terminal exited; the message says why it failed, if it did.
@@ -342,6 +348,9 @@ pub(crate) struct Core {
     pub(crate) claude: Result<crate::profile::ClaudeHome, crate::profile::ProfileError>,
     /// The worktree view's data, per slice (M12b, `worktree_info`).
     pub(crate) worktrees: BTreeMap<AgentId, dovetail_api::WorktreeInfo>,
+    /// Each session's slash commands and skills, as it last listed them; kept after the process
+    /// stops so `/` completion still works for a dormant slice.
+    pub(crate) commands: BTreeMap<AgentId, Vec<dovetail_api::SlashCommand>>,
     /// Whether sessions run under capped scopes (M13, `memory`).
     pub(crate) scopes: crate::memory::Scopes,
     /// When running sessions' memory is next read.
@@ -427,6 +436,7 @@ impl Core {
             todos: Default::default(),
             claude,
             worktrees: BTreeMap::new(),
+            commands: BTreeMap::new(),
             scopes: crate::memory::Scopes::Off,
             next_sample: tokio::time::Instant::now(),
             oom: Default::default(),
@@ -541,6 +551,9 @@ impl Core {
                 Input::WorktreeGathered(info) => self.on_worktree_gathered(info),
                 Input::Pasted { agent, paste } => {
                     self.emit(Event::ClipboardPasted { agent, paste });
+                }
+                Input::PathsListed { agent, dir, paths } => {
+                    self.emit(Event::PathsListed { agent, dir, paths });
                 }
                 Input::CopyFailed(e) => self.fail(e.to_string()),
                 Input::EditorExited(error) => {
@@ -712,6 +725,7 @@ impl Core {
             usage: self.current_usage(),
             profile: self.profile_name(),
             worktrees: self.worktrees.values().cloned().collect(),
+            commands: self.commands.clone(),
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1106,6 +1120,7 @@ impl Core {
                 attachments,
             } => self.prompt(&agent, text, attachments).await,
             Command::PasteClipboard { agent } => self.paste_clipboard(agent),
+            Command::ListPaths { agent, dir } => self.list_paths(agent, dir),
             Command::CopyToClipboard { text } => self.copy_to_clipboard(text),
             Command::OpenEditor { path } => self.open_editor(path),
             Command::Interrupt { agent } => self.interrupt(&agent),
@@ -1198,6 +1213,25 @@ impl Core {
         tokio::task::spawn_blocking(move || {
             let paste = crate::clipboard::paste(&dir);
             let _ = inputs.send(Input::Pasted { agent, paste });
+        });
+    }
+
+    /// Lists paths for `@` completion on a blocking thread (git can take a moment on a big
+    /// tree), relative to the agent's folder: its worktree, else the main checkout.
+    fn list_paths(&mut self, agent: AgentId, dir: Option<String>) {
+        let root = self
+            .agents
+            .get(&agent)
+            .and_then(|r| r.agent.worktree.as_ref())
+            .map(|w| w.path.clone())
+            .unwrap_or_else(|| self.project.repo_path().to_path_buf());
+        let inputs = self.inputs.clone();
+        tokio::task::spawn_blocking(move || {
+            let paths = match dir.as_deref() {
+                None => crate::completion::tree(&root),
+                Some(d) => crate::completion::dir(&root, d),
+            };
+            let _ = inputs.send(Input::PathsListed { agent, dir, paths });
         });
     }
 

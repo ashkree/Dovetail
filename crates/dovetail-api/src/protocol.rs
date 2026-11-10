@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
-    Decision, DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, Snapshot, Task, TaskId,
-    TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId, WorktreeInfo,
+    Decision, DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, SlashCommand, Snapshot,
+    Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId,
+    WorktreeInfo,
 };
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
@@ -115,6 +116,24 @@ pub enum Event {
         /// What the clipboard gave.
         paste: Paste,
     },
+    /// A session listed its slash commands and skills (at start, and when they change).
+    CommandsChanged {
+        /// The session.
+        agent: AgentId,
+        /// Everything it offers, in its own order.
+        commands: Vec<SlashCommand>,
+    },
+    /// Paths for `@` completion in a chat bar, in answer to [`Command::ListPaths`]. Changes
+    /// nothing in the snapshot.
+    PathsListed {
+        /// The agent whose chat bar asked.
+        agent: AgentId,
+        /// The directory asked about, as typed; `None` for the session's whole tree.
+        dir: Option<String>,
+        /// Paths relative to the session's folder (whole tree), or names in `dir` with a
+        /// trailing `/` on directories. Empty when nothing could be listed.
+        paths: Vec<String>,
+    },
     /// The program run in the user's terminal ([`Command::OpenEditor`]) has exited, so the UI
     /// takes the terminal back. Changes nothing in the snapshot.
     TerminalReturned {
@@ -157,6 +176,16 @@ pub enum Command {
     PasteClipboard {
         /// The agent whose chat bar is pasting.
         agent: AgentId,
+    },
+    /// List paths for `@` completion in an agent's chat bar. `dir: None` lists the files of the
+    /// agent's folder (the main checkout or its worktree) that git does not ignore; `Some` lists
+    /// one directory, `~/`, absolute, or relative to that folder. The core answers with
+    /// [`Event::PathsListed`].
+    ListPaths {
+        /// The agent whose chat bar is completing.
+        agent: AgentId,
+        /// The directory, as typed after `@`, ending in `/`.
+        dir: Option<String>,
     },
     /// Put text on the system clipboard (`c` in the worktree view copies a path). A failure
     /// comes back as [`Event::CommandFailed`]; success sends nothing.

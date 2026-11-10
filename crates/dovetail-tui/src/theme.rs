@@ -46,8 +46,10 @@ pub struct Theme {
     pub speaker_you: Color,
     /// An agent's name in a message header rule.
     pub speaker_agent: Color,
-    /// The rule glyphs of a message header.
-    pub rule: Color,
+    /// The rule and time of your message headers: your name colour, dimmed.
+    pub speaker_you_rule: Color,
+    /// The rule and time of an agent's message headers: its name colour, dimmed.
+    pub speaker_agent_rule: Color,
 }
 
 impl Theme {
@@ -77,7 +79,8 @@ impl Theme {
             chip: Color::Rgb(0x88, 0xab, 0xca),
             speaker_you: Color::Rgb(0x5e, 0x9e, 0xde),
             speaker_agent: Color::Rgb(0xc7, 0x9d, 0x5a),
-            rule: Color::Rgb(0x5c, 0x65, 0x72),
+            speaker_you_rule: Color::Rgb(0x41, 0x6c, 0x98),
+            speaker_agent_rule: Color::Rgb(0x8a, 0x6d, 0x40),
         }
     }
 

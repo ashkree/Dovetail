@@ -106,6 +106,8 @@ impl Key {
             "down" => KeyCode::Down,
             "left" => KeyCode::Left,
             "right" => KeyCode::Right,
+            "pageup" => KeyCode::PageUp,
+            "pagedown" => KeyCode::PageDown,
             "lt" => KeyCode::Char('<'),
             s if s.chars().count() == 1 => KeyCode::Char(s.chars().next().unwrap_or(' ')),
             _ => return Err(KeyError::Unknown(name.to_owned())),
@@ -207,6 +209,8 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "k", Action::MoveUp),
     bind(N, G, "<Down>", Action::MoveDown),
     bind(N, G, "<Up>", Action::MoveUp),
+    bind(N, G, "<PageDown>", Action::PageDown),
+    bind(N, G, "<PageUp>", Action::PageUp),
     bind(N, G, "gg", Action::GoTop),
     bind(N, G, "G", Action::GoBottom),
     bind(N, G, "h", Action::FocusLeft),
@@ -224,6 +228,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>c", Action::FocusCoordinator),
     bind(N, G, "<leader><Tab>", Action::AlternateAgent),
     bind(N, G, "<leader>B", Action::ToggleSolidBackground),
+    bind(N, G, "<leader>z", Action::ToggleFocusMode),
     bind(N, G, "<leader>t", Action::QuickCapture),
     bind(N, G, "/", Action::Search),
     bind(N, G, "n", Action::SearchNext),
@@ -257,6 +262,13 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, CONVERSATION, "[[", Action::PrevTurn),
     bind(N, CONVERSATION, "zc", Action::FoldTurn),
     bind(N, CONVERSATION, "zo", Action::UnfoldTurn),
+    // The chat bar and the conversation above it are two stops: `Ctrl-k` goes up to read with
+    // the draft kept, `Ctrl-j` (or `i`) comes back down to it. `PageUp`/`PageDown` scroll
+    // without leaving the chat bar.
+    bind(N, CONVERSATION, "<C-j>", Action::EnterInsert),
+    bind(Mode::Insert, CONVERSATION, "<C-k>", Action::LeaveChatBar),
+    bind(Mode::Insert, CONVERSATION, "<PageDown>", Action::PageDown),
+    bind(Mode::Insert, CONVERSATION, "<PageUp>", Action::PageUp),
     // The chat bar only: not quick capture, task notes or inbox answers (task #1).
     bind(Mode::Insert, CONVERSATION, "<C-v>", Action::PasteClipboard),
     // Backspace on an empty chat input drops the last image chip; otherwise it deletes text.

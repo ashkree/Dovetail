@@ -9,6 +9,7 @@ pub mod app;
 pub mod buffers;
 pub mod capture;
 pub mod command;
+pub mod complete;
 pub mod event_loop;
 pub mod fmt;
 pub mod input;

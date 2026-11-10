@@ -3,6 +3,7 @@
 //! The core hands the UI the same [`dovetail_api::CoreLink`] that `MockCore` does.
 
 mod clipboard;
+mod completion;
 pub mod config;
 mod context;
 pub mod db;

@@ -44,6 +44,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
             state.agents.retain(|a| a.id != id);
             state.conversations.remove(&id);
             state.worktrees.retain(|w| w.agent != id);
+            state.commands.remove(&id);
         }
         Event::WorktreeUpserted(info) => upsert(&mut state.worktrees, info, |w| w.agent.clone()),
         Event::TodosReplaced { list, items } => {
@@ -99,9 +100,13 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::UsageChanged(usage) => state.usage = usage,
         Event::WarningSet(warning) => upsert(&mut state.warnings, warning, |w| w.id.clone()),
         Event::WarningCleared(id) => state.warnings.retain(|w| w.id != id),
+        Event::CommandsChanged { agent, commands } => {
+            state.commands.insert(agent, commands);
+        }
         // Nothing to store: the UI shows the message as the event passes through.
         Event::CommandFailed { .. }
         | Event::ClipboardPasted { .. }
+        | Event::PathsListed { .. }
         | Event::TerminalReturned { .. } => {}
     }
     ApplyResult::Applied

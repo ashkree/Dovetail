@@ -23,7 +23,7 @@ mod search;
 use crossterm::event::KeyEvent;
 use dovetail_api::{
     AgentId, AgentKind, AgentStatus, ApplyResult, Command, Event, InboxKind, PROTOCOL_VERSION,
-    PermissionAnswer, ServerMsg, Snapshot, TaskChange, apply,
+    PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
 };
 use jiff::tz::TimeZone;
 
@@ -109,6 +109,9 @@ pub struct App {
     quit: bool,
     /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
     exit_armed_until: Option<u64>,
+    /// Focus mode (`<leader>z`): the side column is hidden. Holds whether the reading column
+    /// was solid before, to put it back on leaving.
+    focus_mode: Option<bool>,
     /// The key being handled is a second Ctrl-C inside the hint's window.
     exit_armed: bool,
     /// The loop clock at the key being handled, for actions that arm a timeout.
@@ -143,6 +146,7 @@ impl App {
             reading: None,
             quit: false,
             exit_armed_until: None,
+            focus_mode: None,
             exit_armed: false,
             mono_ms: 0,
             dirty: true,
@@ -321,6 +325,18 @@ impl App {
                         self.note = Some(error.clone());
                     }
                 }
+                if let Event::PathsListed { agent, dir, paths } = &event {
+                    let commands = commands_for(&self.snap, agent);
+                    self.buffers.conversation.receive_paths(
+                        agent,
+                        dir.clone(),
+                        paths.clone(),
+                        commands,
+                    );
+                    if let Some((agent, dir)) = self.buffers.conversation.take_path_request() {
+                        self.outbox.push(Command::ListPaths { agent, dir });
+                    }
+                }
                 if let Event::ClipboardPasted { agent, paste } = &event
                     && let Some(notice) = self
                         .buffers
@@ -483,14 +499,33 @@ impl App {
                 {
                     return;
                 }
+                Some(Action::LeaveChatBar) => {
+                    self.buffers.conversation.park_chat();
+                    self.mode = Mode::Normal;
+                    return;
+                }
+                Some(action @ (Action::PageDown | Action::PageUp)) => {
+                    self.run(action);
+                    return;
+                }
                 _ => {}
             }
-            if let Some((agent, text, attachments)) = self.buffers.conversation.chat_key(event) {
+            let commands = self
+                .buffers
+                .conversation
+                .agent()
+                .map_or(&[][..], |a| commands_for(&self.snap, a));
+            if let Some((agent, text, attachments)) =
+                self.buffers.conversation.chat_key(event, commands)
+            {
                 self.outbox.push(Command::Prompt {
                     agent,
                     text,
                     attachments,
                 });
+            }
+            if let Some((agent, dir)) = self.buffers.conversation.take_path_request() {
+                self.outbox.push(Command::ListPaths { agent, dir });
             }
             if !self.buffers.conversation.is_chatting() {
                 self.mode = Mode::Normal;
@@ -592,9 +627,47 @@ impl App {
         self.outbox.push(Command::NewSlice { task, name, brief });
     }
 
+    /// Focus mode on or off (A1, Decision 16): the conversation alone, full width, with the
+    /// reading column solid; the status bar keeps the Needs you count. It shows the agent
+    /// already in view, so a side chat or slice can be read the same way.
+    pub(super) fn toggle_focus_mode(&mut self) {
+        let conversation = &mut self.buffers.conversation;
+        match self.focus_mode.take() {
+            Some(was_solid) => {
+                if conversation.solid() != was_solid {
+                    conversation.toggle_solid();
+                }
+            }
+            None => {
+                self.focus_mode = Some(conversation.solid());
+                if !conversation.solid() {
+                    conversation.toggle_solid();
+                }
+                if self.regions.buffer(RegionId::Main) != BufferKind::Conversation {
+                    self.regions.show(RegionId::Main, BufferKind::Conversation);
+                }
+                self.regions.set_focus(RegionId::Main);
+            }
+        }
+    }
+
+    /// Whether focus mode hides the side column.
+    pub fn focus_mode(&self) -> bool {
+        self.focus_mode.is_some()
+    }
+
     /// Runs an action: global ones here, the rest in the focused buffer.
     pub fn run(&mut self, action: Action) {
         self.dirty = true;
+        // Going to the side column leaves focus mode, so focus never lands on a hidden region.
+        if self.focus_mode.is_some()
+            && matches!(
+                action,
+                Action::FocusRight | Action::FocusInbox | Action::FocusUp | Action::FocusDown
+            )
+        {
+            self.toggle_focus_mode();
+        }
         match action {
             Action::FocusLeft => self.regions.focus_left(),
             Action::FocusRight => self.regions.focus_right(),
@@ -617,9 +690,11 @@ impl App {
                 None => self.note = Some("no previous agent".into()),
             },
             Action::ToggleSolidBackground => self.buffers.conversation.toggle_solid(),
+            Action::ToggleFocusMode => self.toggle_focus_mode(),
             Action::PasteClipboard => self.paste_clipboard(),
             Action::QuickCapture => self.open_capture(),
             Action::PickAgent => self.open_switcher(),
+            Action::PickCommand => self.open_command_picker(),
             Action::PickAny => self.open_finder(),
             Action::Search => self.start_input(InputTarget::Search, ""),
             Action::SearchNext => self.search_jump(true),
@@ -744,4 +819,13 @@ impl App {
         self.show_agent(id);
         self.regions.set_focus(RegionId::Main);
     }
+}
+
+/// The slash commands `agent` offers: its own list, else another session's (one project's
+/// sessions share a profile, so a slice not yet started borrows the coordinator's).
+pub(crate) fn commands_for<'a>(snap: &'a Snapshot, agent: &AgentId) -> &'a [SlashCommand] {
+    snap.commands
+        .get(agent)
+        .or_else(|| snap.commands.values().find(|c| !c.is_empty()))
+        .map_or(&[], Vec::as_slice)
 }

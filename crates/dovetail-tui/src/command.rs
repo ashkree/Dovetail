@@ -46,6 +46,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "decide" => Action::TaskAddDecision,
         // Aliases: every action a key reaches can be named here too.
         "solid" => Action::ToggleSolidBackground,
+        "focus" => Action::ToggleFocusMode,
         "inbox" => Action::FocusInbox,
         "coordinator" => Action::FocusCoordinator,
         "alternate" => Action::AlternateAgent,
@@ -54,6 +55,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "board" => Action::ShowBoard,
         "worktrees" => Action::ShowWorktrees,
         "switch" => Action::PickAgent,
+        "skills" | "commands" => Action::PickCommand,
         "find" => Action::PickAny,
         "add" | "capture" => Action::QuickCapture,
         "mode" | "perm" => Action::CyclePermissionMode,

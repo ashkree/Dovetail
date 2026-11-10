@@ -9,19 +9,19 @@ expression: "render(&mut app, 100, 28)"
 │   ── You · 10:08 ─────────────────────────────────────   ││   ✓ slice-4  Handler wired; t… 10:09 │
 │   Make sure slice-4 doesn't touch the 500 path.          ││                                      │
 │                                                          ││                                      │
+│                                                          ││                                      │
 │   ── coordinator · 10:08 ─────────────────────────────   ││                                      │
-│   Told slice-4 to stay out of src/decision.rs until      ││                                      │
-│   slice-7 hands it back.                                 ││ y allow · d deny · r reply · x dism… │
-│                                                          │└──────────────────────────────────────┘
-│   ─┌ new task ──────────────────────────────────────────────────────────────────────────────┐────┐
-│   W│ › check the eval key flow !p1 @next #1240                                              │.10 │
-│    │ P1 · Next · PR #1240                                                                   │    │
-│   ─│ linked to: get_decision 500   Ctrl-l unlink                                            │231 │
-│   I│ ⏎ save · Tab save and open · esc cancel                                                │71% │
-│   w└────────────────────────────────────────────────────────────────────────────────────────┘    │
-│                                                          ││         ✓ write route tests          │
-│                                                          ││         ◐ wire handler to registry   │
-│                                                          ││         ○ update OpenAPI spec ⊘ blo… │
+│   Told slice-4 to stay out of src/decision.rs until      ││ y allow · d deny · r reply · x dism… │
+│   slice-7 hands it back.                                 │└──────────────────────────────────────┘
+│    ┌ new task ──────────────────────────────────────────────────────────────────────────────┐────┐
+│    │ › check the eval key flow !p1 @next #1240                                              │.10 │
+│   ─│ P1 · Next · PR #1240                                                                   │    │
+│   W│ linked to: get_decision 500   Ctrl-l unlink                                            │231 │
+│    │ ⏎ save · Tab save and open · esc cancel                                                │71% │
+│    └────────────────────────────────────────────────────────────────────────────────────────┘    │
+│   ── coordinator · 10:14 ◐ ───────────────────────────   ││         ✓ write route tests          │
+│   It needs a key. slice-7 can only reach the eval path   ││         ◐ wire handler to registry   │
+│   with FS_EVAL_VIRTUAL_KEY set.▌                         ││         ○ update OpenAPI spec ⊘ blo… │
 │                                                          ││       ✓ ◇ rebase          done $0.21 │
 │                                                          ││       ◐ ◇ explore c… 12 tools · Grep │
 │                                                          ││ ▾ ⚠ get_decision 500 P0              │

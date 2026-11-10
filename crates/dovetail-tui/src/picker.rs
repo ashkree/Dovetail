@@ -25,6 +25,8 @@ pub enum PickerKey {
     Task(TaskId),
     /// An inbox item.
     Inbox(InboxId),
+    /// A slash command or skill, by name.
+    Command(String),
 }
 
 /// One row.

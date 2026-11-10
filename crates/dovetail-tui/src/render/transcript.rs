@@ -111,13 +111,12 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
 
     let mut out = Transcript::default();
     let last = groups.len().saturating_sub(1);
-    // Every entry ends with a blank row, so only the very first message needs one of its own.
+    // Every entry ends with a blank row; each message adds one more, so a change of speaker
+    // stands apart from the rows between one speaker's entries.
     let mut speaker: Option<Speaker> = None;
     for (index, group) in groups.iter().enumerate() {
         let Some(first) = group.first() else { continue };
-        if out.lines.is_empty() {
-            out.lines.push(Line::default());
-        }
+        out.lines.push(Line::default());
         out.turns.push(Turn {
             start_line: out.lines.len() - 1,
             key: first.id,
@@ -140,6 +139,10 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
             let who = Speaker::of(entry.kind);
             let mut lines = Vec::new();
             if speaker != Some(who) {
+                // The first entry's extra blank row came with its turn.
+                if at > 0 {
+                    out.lines.push(Line::default());
+                }
                 speaker = Some(who);
                 // The marker shows while any entry of this message is still being written.
                 let streaming = group[at..]
@@ -178,18 +181,18 @@ impl Speaker {
 /// The rule that opens a message, `── You · 10:14 ────…`, as wide as the reading column.
 fn header(who: Speaker, entry: &ConversationEntry, p: &Params, streaming: bool) -> Line<'static> {
     let theme = p.theme;
-    let (name, colour) = match who {
-        Speaker::You => ("You", theme.speaker_you),
-        Speaker::Agent => (p.agent, theme.speaker_agent),
+    let (name, colour, rule) = match who {
+        Speaker::You => ("You", theme.speaker_you, theme.speaker_you_rule),
+        Speaker::Agent => (p.agent, theme.speaker_agent, theme.speaker_agent_rule),
     };
-    let rule = theme.fg(theme.rule);
+    let rule = theme.fg(rule);
     let mut spans = vec![
         Span::styled("── ", rule),
         Span::styled(
             name.to_string(),
             theme.fg(colour).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!(" · {}", fmt::hhmm(entry.at_ms, p.tz)), theme.dim()),
+        Span::styled(format!(" · {}", fmt::hhmm(entry.at_ms, p.tz)), rule),
     ];
     if streaming {
         spans.push(Span::styled(" ◐", theme.fg(theme.working)));
@@ -350,6 +353,7 @@ mod tests {
                 rule("── You · 10:14", 60),
                 "What is blocking slice-7?".into(),
                 "".into(),
+                "".into(),
                 rule("── coordinator · 10:14", 60),
                 "It needs a key.".into(),
                 "".into(),
@@ -395,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn speakers_get_their_theme_colours_and_the_rule_its_own() {
+    fn speakers_get_their_theme_colours_and_the_rule_a_dimmed_one() {
         let theme = Theme::dusk();
         let entries = [
             entry(1, EntryKind::User, "a"),
@@ -403,9 +407,11 @@ mod tests {
         ];
         let t = run(&entries, |_| {});
         let you = &t.lines[1].spans;
-        assert_eq!(you[0].style.fg, Some(theme.rule));
+        assert_eq!(you[0].style.fg, Some(theme.speaker_you_rule));
+        assert_eq!(you[2].style.fg, Some(theme.speaker_you_rule));
         assert_eq!(you[1].style.fg, Some(theme.speaker_you));
-        let agent = &t.lines[4].spans;
+        let agent = &t.lines[5].spans;
+        assert_eq!(agent[0].style.fg, Some(theme.speaker_agent_rule));
         assert_eq!(agent[1].style.fg, Some(theme.speaker_agent));
         assert!(
             t.lines
