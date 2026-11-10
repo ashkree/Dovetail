@@ -66,6 +66,8 @@ pub enum Action {
     DropLastAttachment,
     /// Give the reading column a solid background, or take it away.
     ToggleSolidBackground,
+    /// Focus mode: hide the side column and read the conversation alone (`<leader>z`).
+    ToggleFocusMode,
     /// Open quick capture.
     QuickCapture,
     /// Start an in-buffer search.

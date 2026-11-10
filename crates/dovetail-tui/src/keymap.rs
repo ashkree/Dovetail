@@ -228,6 +228,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>c", Action::FocusCoordinator),
     bind(N, G, "<leader><Tab>", Action::AlternateAgent),
     bind(N, G, "<leader>B", Action::ToggleSolidBackground),
+    bind(N, G, "<leader>z", Action::ToggleFocusMode),
     bind(N, G, "<leader>t", Action::QuickCapture),
     bind(N, G, "/", Action::Search),
     bind(N, G, "n", Action::SearchNext),

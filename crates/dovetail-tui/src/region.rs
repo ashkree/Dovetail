@@ -164,6 +164,27 @@ pub struct Areas {
     pub prompt: Option<Rect>,
 }
 
+impl Areas {
+    /// Focus mode: the conversation takes the side column's width too, and the side regions
+    /// get none.
+    pub fn focused(self) -> Areas {
+        let side_right = self.side_top.x + self.side_top.width;
+        let none = Rect {
+            width: 0,
+            ..self.side_top
+        };
+        Areas {
+            main: Rect {
+                width: side_right.max(self.main.x + self.main.width) - self.main.x,
+                ..self.main
+            },
+            side_top: none,
+            side_bottom: none,
+            ..self
+        }
+    }
+}
+
 /// Splits the screen. The side column (right) is about 38 % wide but never narrower than 40
 /// columns (when the screen allows) so tree rows stay readable; the top region (inbox) takes
 /// 40 % of it and the bottom region (tree) the rest (ADR 0008). The conversation takes the rest, on the left.

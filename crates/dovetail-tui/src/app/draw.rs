@@ -25,7 +25,15 @@ impl App {
     /// Draws the whole screen.
     pub fn draw(&mut self, frame: &mut Frame) {
         let prompting = self.input.is_some() || self.confirm.is_some();
-        let areas = layout(frame.area(), prompting);
+        // Whatever moved focus to the side column (a picker choice, Esc from an inbox item)
+        // ends focus mode, so the focused region is always on screen.
+        if self.focus_mode.is_some() && self.regions.focus().is_side() {
+            self.toggle_focus_mode();
+        }
+        let mut areas = layout(frame.area(), prompting);
+        if self.focus_mode.is_some() {
+            areas = areas.focused();
+        }
         self.draw_header(frame, areas.header);
         let cx = ViewCx {
             snap: &self.snap,
@@ -38,6 +46,9 @@ impl App {
             (RegionId::SideBottom, areas.side_bottom),
             (RegionId::Main, areas.main),
         ] {
+            if area.width == 0 {
+                continue;
+            }
             let focused = self.regions.focus() == region;
             self.buffers
                 .get_mut(self.regions.buffer(region))
