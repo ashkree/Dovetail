@@ -1,5 +1,10 @@
-//! The validated map model (design 23a). Only [`crate::validate`] builds a [`MapContent`] from
-//! agent input, so every reference in one points at something that exists.
+//! The map model (design 23a): plain data, so map content can travel in the snapshot to the UI.
+//!
+//! `dovetail-maps` builds a [`MapContent`] from agent input with its `validate`, so every
+//! reference in one points at something on the same map. Rendering lives there too.
+//!
+//! Ids use ASCII letters, digits, `_` and `-` only. That is not enough to make them safe as
+//! Mermaid ids (`end`, or ids starting with `o` or `x`), so a renderer maps them to its own.
 
 use serde::{Deserialize, Serialize};
 
@@ -122,26 +127,6 @@ pub struct Map {
     pub content: MapContent,
 }
 
-/// A map that passed validation but has no id or version yet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ValidMap {
-    /// The id the agent asked to update, if any; storage chooses one for a new map.
-    pub requested_id: Option<MapId>,
-    /// The map itself.
-    pub content: MapContent,
-}
-
-impl ValidMap {
-    /// Stamps the id and version storage gave it.
-    pub fn into_map(self, id: MapId, version: u32) -> Map {
-        Map {
-            id,
-            version,
-            content: self.content,
-        }
-    }
-}
-
 /// Everything drawn on a map; what a stored version holds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MapContent {
@@ -212,7 +197,12 @@ pub struct Flow {
 pub struct FlowStep {
     /// Where the step is.
     pub node: NodeId,
-    /// Label of the arrow into it from the step before.
+    /// Structure maps: index in [`MapContent::connections`] of the connection from the previous
+    /// step's node into this one, which the canvas highlights. `None` on the first step and on
+    /// swimlane maps.
+    pub connection: Option<usize>,
+    /// Swimlane maps: label of the arrow into this step from the one before. Always `None` on
+    /// structure maps, whose arrows are their connections.
     pub arrow: Option<String>,
     /// What happens here.
     pub note: String,
@@ -227,4 +217,7 @@ pub struct Lane {
     pub id: LaneId,
     /// Shown at the left of the band.
     pub label: String,
+    /// The node this participant is on a structure map, to jump between the two views (23e).
+    /// It names a node of another map, so it is checked across maps, not by validation.
+    pub node: Option<NodeId>,
 }

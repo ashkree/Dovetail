@@ -2,11 +2,32 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::input::DrawMapInput;
-use crate::model::{
-    Connection, Flow, FlowStep, Group, Lane, LaneId, MapContent, MapId, MapKind, Node, NodeId,
-    NodeKind, ValidMap,
+use dovetail_api::map::{
+    Connection, Flow, FlowStep, Group, Lane, LaneId, Map, MapContent, MapId, MapKind, Node, NodeId,
+    NodeKind,
 };
+
+use crate::input::DrawMapInput;
+
+/// A map that passed validation but has no id or version yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidMap {
+    /// The id the agent asked to update, if any; storage chooses one for a new map.
+    pub requested_id: Option<MapId>,
+    /// The map itself.
+    pub content: MapContent,
+}
+
+impl ValidMap {
+    /// Stamps the id and version storage gave it.
+    pub fn into_map(self, id: MapId, version: u32) -> Map {
+        Map {
+            id,
+            version,
+            content: self.content,
+        }
+    }
+}
 
 /// Size limits on one map. They keep a map readable on one screen and its stored JSON small;
 /// past them the agent is told to split the map. Text lengths count characters.
@@ -159,6 +180,30 @@ pub enum MapError {
         node: String,
         /// The group it is in first.
         first_parent: String,
+    },
+    /// A node listed twice in the same group.
+    #[error("{at}: node \"{node}\" is listed twice in group \"{parent}\"; list it once")]
+    ListedTwice {
+        /// Where the second listing is.
+        at: String,
+        /// The node.
+        node: String,
+        /// The group's parent node.
+        parent: String,
+    },
+    /// A structure-map flow step with no connection into it from the previous step.
+    #[error(
+        "{at}: the step goes from \"{from}\" to \"{to}\", but no connection does; add one under \
+         \"connections\" ({{\"from\": \"{from}\", \"to\": \"{to}\", \"label\": ...}}), or \
+         change the step"
+    )]
+    MissingConnection {
+        /// Where the step is.
+        at: String,
+        /// The previous step's node.
+        from: String,
+        /// This step's node.
+        to: String,
     },
     /// Groups that contain each other.
     #[error(
@@ -448,10 +493,17 @@ pub fn validate(input: &DrawMapInput) -> Result<ValidMap, Vec<MapError>> {
                     parent: g.parent.clone(),
                 });
             }
+            let mut listed: HashSet<&str> = HashSet::new();
             for (j, child) in g.children.iter().enumerate() {
                 let child_at = format!("{at}.children[{j}]");
                 v.node_ref(&known_nodes, &child_at, "child", child);
-                if let Some(first_parent) = parent_of.get(child.as_str()) {
+                if !listed.insert(child) {
+                    v.push(MapError::ListedTwice {
+                        at: child_at,
+                        node: child.clone(),
+                        parent: g.parent.clone(),
+                    });
+                } else if let Some(first_parent) = parent_of.get(child.as_str()) {
                     v.push(MapError::InTwoGroups {
                         at: child_at,
                         node: child.clone(),
@@ -532,9 +584,14 @@ pub fn validate(input: &DrawMapInput) -> Result<ValidMap, Vec<MapError>> {
                 }
             }
             let label = v.text(&at, "label", &l.label, MAX_LABEL, "name the participant");
+            // A node of a structure map: only its shape can be checked here.
+            if let Some(node) = &l.node {
+                v.id_field(&at, "node", node);
+            }
             lanes.push(Lane {
                 id: LaneId(l.id.clone()),
                 label,
+                node: l.node.as_ref().map(|n| NodeId(n.clone())),
             });
         }
     }
@@ -555,6 +612,7 @@ pub fn validate(input: &DrawMapInput) -> Result<ValidMap, Vec<MapError>> {
     let mut flows = Vec::with_capacity(input.flows.len());
     let mut flow_at: HashMap<&str, String> = HashMap::new();
     let mut lane_on_structure_reported = false;
+    let mut arrow_on_structure_reported = false;
     for (i, f) in input.flows.iter().enumerate() {
         let at = loc("flows", i, &f.name);
         let name = v.text(&at, "name", &f.name, MAX_LABEL, "name the flow");
@@ -585,11 +643,43 @@ pub fn validate(input: &DrawMapInput) -> Result<ValidMap, Vec<MapError>> {
                 MAX_NOTE,
                 "say what happens at this step",
             );
-            let arrow = s
+            let mut arrow = s
                 .arrow
                 .as_deref()
                 .filter(|a| !a.trim().is_empty())
                 .map(|a| v.text(&step_at, "arrow", a, MAX_LABEL, ""));
+            // On structure maps the arrow into a step is the connection from the previous one.
+            let mut connection = None;
+            if kind == Some(MapKind::Structure) {
+                if arrow.take().is_some() && !arrow_on_structure_reported {
+                    arrow_on_structure_reported = true;
+                    v.push(MapError::WrongMapType {
+                        at: step_at.clone(),
+                        what: "step arrows",
+                        belongs: MapKind::Swimlane.as_str(),
+                        kind: MapKind::Structure.as_str(),
+                        hint: "remove \"arrow\" from every step; on a structure map a step's \
+                               arrow is the connection from the previous step's node",
+                    });
+                }
+                let prev = j.checked_sub(1).map(|p| f.steps[p].node.as_str());
+                if let Some(prev) = prev
+                    && known_nodes.contains(prev)
+                    && known_nodes.contains(s.node.as_str())
+                {
+                    connection = input
+                        .connections
+                        .iter()
+                        .position(|c| c.from == prev && c.to == s.node);
+                    if connection.is_none() {
+                        v.push(MapError::MissingConnection {
+                            at: step_at.clone(),
+                            from: prev.to_owned(),
+                            to: s.node.clone(),
+                        });
+                    }
+                }
+            }
             match (kind, s.lane.as_deref()) {
                 (Some(MapKind::Structure), Some(_)) if !lane_on_structure_reported => {
                     lane_on_structure_reported = true;
@@ -618,6 +708,7 @@ pub fn validate(input: &DrawMapInput) -> Result<ValidMap, Vec<MapError>> {
             }
             steps.push(FlowStep {
                 node: NodeId(s.node.clone()),
+                connection,
                 arrow,
                 note,
                 lane: s.lane.as_ref().map(|l| LaneId(l.clone())),
@@ -736,20 +827,25 @@ impl Validator {
         value.to_owned()
     }
 
-    /// Checks an id; true when it is well formed.
+    /// Checks an `id` field; true when it is well formed.
     fn id(&mut self, at: &str, id: &str) -> bool {
+        self.id_field(at, "id", id)
+    }
+
+    /// Checks a field holding an id; true when it is well formed.
+    fn id_field(&mut self, at: &str, field: &'static str, id: &str) -> bool {
         let len = id.chars().count();
         if id.is_empty() {
             self.push(MapError::Missing {
                 at: at.to_owned(),
-                field: "id",
+                field,
                 hint: "give it a short id such as \"api\" or \"user-db\"",
             });
             false
         } else if len > MAX_ID {
             self.push(MapError::TooLong {
                 at: at.to_owned(),
-                field: "id",
+                field,
                 len,
                 limit: MAX_ID,
             });
@@ -792,7 +888,6 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::model::Map;
 
     fn run(input: Value) -> Result<ValidMap, Vec<MapError>> {
         // The fixtures are hand-written to match the input shape.
@@ -832,12 +927,14 @@ mod tests {
             ],
             "connections": [
                 { "from": "handler", "to": "orders", "label": "writes" },
-                { "from": "handler", "to": "stripe", "label": "charges" }
+                { "from": "handler", "to": "stripe", "label": "charges" },
+                { "from": "api", "to": "handler", "label": "calls" }
             ],
             "flows": [
                 { "name": "Place an order", "steps": [
                     { "node": "api", "note": "The page posts the cart." },
-                    { "node": "orders", "arrow": "writes", "note": "The order is saved." }
+                    { "node": "handler", "note": "The handler checks it." },
+                    { "node": "orders", "note": "The order is saved." }
                 ] }
             ]
         })
@@ -854,7 +951,7 @@ mod tests {
             ],
             "lanes": [
                 { "id": "you", "label": "User" },
-                { "id": "web", "label": "Web" },
+                { "id": "web", "label": "Web", "node": "web-app" },
                 { "id": "store", "label": "Database" }
             ],
             "flows": [
@@ -891,8 +988,66 @@ mod tests {
         assert_eq!(c.nodes[2].file.as_deref(), Some("src/checkout.rs"));
         assert_eq!(c.groups[1].parent, NodeId("api".into()));
         assert_eq!(c.connections[1].label, "charges");
-        assert_eq!(c.flows[0].steps[1].arrow.as_deref(), Some("writes"));
+        // Each step after the first follows the connection from the step before.
+        let followed: Vec<_> = c.flows[0].steps.iter().map(|s| s.connection).collect();
+        assert_eq!(followed, [None, Some(2), Some(0)]);
+        assert!(c.flows[0].steps.iter().all(|s| s.arrow.is_none()));
         assert!(c.lanes.is_empty());
+    }
+
+    #[test]
+    fn structure_step_without_a_connection_into_it() {
+        let mut input = structure();
+        // api → handler exists; handler → rules doesn't.
+        input["flows"][0]["steps"][2]["node"] = json!("rules");
+        assert_eq!(
+            only_error(input),
+            MapError::MissingConnection {
+                at: "flows[0].steps[2]".into(),
+                from: "handler".into(),
+                to: "rules".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn step_arrows_on_a_structure_map() {
+        let mut input = structure();
+        input["flows"][0]["steps"][1]["arrow"] = json!("calls");
+        input["flows"][0]["steps"][2]["arrow"] = json!("writes");
+        let errors = errors(input);
+        // Reported once, not per step.
+        assert_eq!(wrong_type_fields(&errors, "swimlane"), ["step arrows"]);
+        assert_eq!(errors.len(), 1, "{errors:#?}");
+    }
+
+    #[test]
+    fn lane_node_links_are_kept_and_shape_checked() {
+        let map = run(swimlane()).expect("valid");
+        assert_eq!(map.content.lanes[1].node, Some(NodeId("web-app".into())));
+        let mut input = swimlane();
+        input["lanes"][1]["node"] = json!("web app");
+        assert_eq!(
+            only_error(input),
+            MapError::BadId {
+                at: "lanes[1] (\"web\")".into(),
+                id: "web app".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_child_listed_twice_in_one_group() {
+        let mut input = structure();
+        input["groups"][1]["children"] = json!(["handler", "rules", "handler"]);
+        assert_eq!(
+            only_error(input),
+            MapError::ListedTwice {
+                at: "groups[1] (\"api\").children[2]".into(),
+                node: "handler".into(),
+                parent: "api".into(),
+            }
+        );
     }
 
     #[test]
@@ -1033,12 +1188,12 @@ mod tests {
     #[test]
     fn connection_to_a_missing_node() {
         let mut input = structure();
-        input["connections"][0]["to"] = json!("order");
+        input["connections"][1]["to"] = json!("strip");
         assert_eq!(
             only_error(input),
             MapError::UnknownNode {
-                at: "connections[0].to".into(),
-                id: "order".into()
+                at: "connections[1].to".into(),
+                id: "strip".into()
             }
         );
     }

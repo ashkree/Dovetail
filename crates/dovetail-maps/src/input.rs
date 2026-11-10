@@ -116,7 +116,9 @@ pub struct StepInput {
     /// The node this step is at.
     #[serde(default)]
     pub node: String,
-    /// Label of the arrow into this step from the one before ("submits", "returns 200").
+    /// Swimlane maps only: label of the arrow into this step from the one before ("submits",
+    /// "returns 200"). On structure maps the arrow is the connection from the previous step's
+    /// node, found by validation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arrow: Option<String>,
     /// What happens at this step, shown in the side panel.
@@ -137,4 +139,7 @@ pub struct LaneInput {
     /// Shown at the left of the band.
     #[serde(default)]
     pub label: String,
+    /// Id of this participant's node on a structure map, to jump between the two views.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
 }

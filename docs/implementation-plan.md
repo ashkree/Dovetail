@@ -155,16 +155,16 @@ Also re-confirm on 2.1.316, since the spikes ran on 2.1.312:
 
 ```
 crates/
-├── dovetail-api/      # plain data: Snapshot, Event, Command, apply(); serde only
+├── dovetail-api/      # plain data: Snapshot, Event, Command, apply(), the map model (map module); serde only
 ├── dovetail-driver/   # SessionDriver, ClaudeDriver, FakeDriver, fixtures
 ├── dovetail-core/     # sessions, storage, worktrees, socket server, MCP tool handlers
 ├── dovetail-mock/     # MockCore: same API, seeded, time-free in tests
 ├── dovetail-tui/      # buffers, regions, keymap, theme, render; depends only on dovetail-api
-├── dovetail-maps/     # map model, validation, MapRenderer (added at M15)
+├── dovetail-maps/     # draw_map input, validation and limits, MapRenderer (added at M15); re-exports dovetail_api::map
 └── dovetail/          # binary: TUI (default), add, mcp, hook
 ```
 
-Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary.
+Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, `api ← maps`, and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary. The plain map model sits in `dovetail_api::map` for the same reason: map content can travel in the snapshot while merman stays in `dovetail-maps`, out of the TUI.
 
 Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, since nested packages otherwise fail, and add `spikes/*/target` to `.gitignore`.
 
