@@ -51,6 +51,7 @@ pub fn run_real() -> Result<()> {
         editor: None,
         // Take-over runs the same binary as headless sessions.
         claude: Some(program),
+        processes: None,
         memory_caps: true,
         scopes: None,
     };

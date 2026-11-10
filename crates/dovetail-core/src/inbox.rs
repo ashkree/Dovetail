@@ -341,6 +341,13 @@ impl Core {
             self.fail("that item is a permission request: y or d");
             return;
         }
+        // The answer goes to the session, which cannot take it while native has it (M14):
+        // refused before the item leaves Needs you, so it can be answered later.
+        let agent = entry.item.agent.clone();
+        if self.locked(&agent) {
+            self.fail(SessionError::TakenOver(self.name_of(&agent)));
+            return;
+        }
         let Some(entry) = self.resolve(id, Some(text.clone())) else {
             return;
         };

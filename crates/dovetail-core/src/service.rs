@@ -71,6 +71,9 @@ pub struct CoreOptions {
     /// The `claude` program run for take-over (M14); `None` for `claude` on `PATH`. Tests give
     /// a fake one.
     pub claude: Option<std::ffi::OsString>,
+    /// How a stored take-over lock's native process is checked; `None` reads `/proc`. Tests
+    /// give one that cannot tell.
+    pub processes: Option<Arc<dyn crate::takeover::Processes + Send + Sync>>,
     /// Probe `systemd-run --user --scope` at start and run sessions under memory caps (M13).
     /// Tests leave it off: sessions run uncapped and no warning is raised.
     pub memory_caps: bool,
@@ -568,7 +571,7 @@ impl Core {
                 }
                 Input::OomKills { cgroup, count } => self.on_oom_kills(cgroup, count),
                 Input::NativeStarted { agent, pid } => self.native_started(&agent, pid),
-                Input::NativeExited { agent, end } => self.native_exited(&agent, end).await,
+                Input::NativeExited { agent, end } => self.native_exited(&agent, end),
             }
             if self.quitting.is_none() {
                 self.start_queued().await;

@@ -22,6 +22,17 @@
 //! shown); native still runs → it stays, with an error in Needs you saying so; `/proc` cannot
 //! tell → Needs you asks whether to release it ([`RELEASE_TAKEOVER_PERMISSION`]).
 //!
+//! **Quitting during a take-over** cannot come from the UI, which reads no keys while native has
+//! the terminal; a signal can end Dovetail then. Native is left running in the terminal, the
+//! lock stays stored, and the next open checks it as after a crash.
+//!
+//! **Tools from native.** Native gets the same MCP config, so its tool calls reach this core
+//! under the session's agent id. None waits on the UI: `ask_user` raises its question and
+//! returns at once (ADR 0007), and the answer goes to the session as a message once headless
+//! is back (answering while the lock holds is refused and the question stays open);
+//! `start_slice` starts or queues the slice, or raises its approval and returns `pending`; the
+//! coordinator's signals (slice ready, approvals) are held and sent when headless resumes.
+//!
 //! **Memory caps.** Native runs in the agent's own scope unit, so its cap holds there too. The
 //! OOM watcher only follows headless processes, and an automatic restart goes through
 //! [`Core::launch`], so it cannot start headless beside native.
@@ -259,12 +270,13 @@ fn run_native(run: NativeRun, inputs: &tokio::sync::mpsc::UnboundedSender<Input>
     }
     let error = match command.spawn() {
         Err(e) => Some(format!("could not start {shown}: {e}")),
-        Ok(mut child) => {
+        Ok(child) => {
             let _ = inputs.send(Input::NativeStarted {
                 agent: run.agent.clone(),
                 pid: child.id(),
             });
-            match child.wait() {
+            // A Ctrl-Z in native claude must not leave the terminal hanging (`foreground`).
+            match crate::foreground::wait(child) {
                 Ok(status) if status.success() => None,
                 Ok(status) => Some(match status.code() {
                     Some(127) => format!("{shown} exited with 127 (not found)"),
@@ -314,9 +326,10 @@ impl Core {
             return Err(SessionError::TakenOver(name));
         }
         let session = row.session_id.clone().unwrap_or_default();
-        match verdict(&lock, &session, &Proc) {
+        match verdict(&lock, &session, self.processes()) {
+            // `launch` goes on to start headless, and sends the held notes once it runs.
             Verdict::Stale => {
-                self.release_stale(id, &lock);
+                self.release_stale(id, &lock, false);
                 Ok(())
             }
             Verdict::Held { .. } | Verdict::Unknown(_) => Err(SessionError::TakenOver(name)),
@@ -393,7 +406,7 @@ impl Core {
         row.agent.lock = SessionLock::TakenOver;
         let row = row.clone();
         // On disk before anything stops: a crash from here on leaves the lock for the next open.
-        if let Err(e) = self.db.upsert_agent(row).await {
+        if let Err(e) = self.db.upsert_agent(row.clone()).await {
             self.update_agent(&id, |row| {
                 row.takeover = None;
                 row.agent.lock = SessionLock::Headless;
@@ -403,7 +416,8 @@ impl Core {
             });
             return;
         }
-        self.save_agent(&id);
+        // Stored above; the UI only needs to hear of it.
+        self.emit(Event::AgentUpserted(row.agent));
         self.takeover = Some(Active {
             agent: id.clone(),
             phase,
@@ -519,21 +533,9 @@ impl Core {
         });
     }
 
-    /// Native has exited (or never started): release the lock, give the terminal back, show
-    /// what happened in native, and resume headless.
-    pub(crate) async fn native_exited(&mut self, id: &AgentId, end: NativeEnd) {
-        if self.takeover.as_ref().is_some_and(|t| &t.agent == id) {
-            self.takeover = None;
-        }
-        if let Some(row) = self.agents.get_mut(id) {
-            row.takeover = None;
-            row.agent.lock = SessionLock::Headless;
-            let row = row.clone();
-            if let Err(e) = self.db.upsert_agent(row).await {
-                tracing::warn!(agent = %id.0, "clearing the take-over lock: {e}");
-            }
-        }
-        self.save_agent(id);
+    /// Native has exited (or never started): give the terminal back, then release the lock,
+    /// showing what happened in native, and resume headless.
+    pub(crate) fn native_exited(&mut self, id: &AgentId, end: NativeEnd) {
         self.emit(Event::TerminalReturned {
             error: end.error.clone(),
         });
@@ -547,18 +549,53 @@ impl Core {
         if let Some(error) = &end.error {
             note.push_str(&format!(" ({error})"));
         }
-        self.show_native_turns(id, note, &end.entries);
         // Headless again, from the same session id.
-        match self.ensure_live(id) {
-            Ok(()) => {
-                let held = self.held_for_takeover.remove(id).unwrap_or_default();
-                for text in held {
-                    self.send_note(id, &text);
-                }
-            }
-            Err(e) => self.fail(e),
+        self.release(id, note, &end.entries, true);
+    }
+
+    /// The one way a lock ends, whichever way it was found to be over (native exited here, a
+    /// crash lock whose native is gone, the user's `y`): the lock is cleared and stored, the
+    /// note and native turns go in the conversation, and with `resume` headless starts again.
+    /// Notes held for the session ([`Core::hold_for_takeover`]) are sent by `launch` once
+    /// headless runs, so no path loses them; without `resume` they wait for the next start
+    /// (`launch` is already on its way when a start finds the lock stale).
+    fn release(&mut self, id: &AgentId, note: String, entries: &[NativeEntry], resume: bool) {
+        if self.takeover.as_ref().is_some_and(|t| &t.agent == id) {
+            self.takeover = None;
+        }
+        self.update_agent(id, |row| {
+            row.takeover = None;
+            row.agent.lock = SessionLock::Headless;
+        });
+        self.show_native_turns(id, note, entries);
+        if resume && let Err(e) = self.ensure_live(id) {
+            self.fail(e);
         }
         self.refresh_status(id);
+    }
+
+    /// Sends the notes held while `id` was taken over; `launch` calls it once headless runs.
+    pub(crate) fn send_held(&mut self, id: &AgentId) {
+        for text in self.held_for_takeover.remove(id).unwrap_or_default() {
+            self.send_note(id, &text);
+        }
+    }
+
+    /// Whether anything waits for `id`'s headless session: held notes, or for the coordinator
+    /// its stored notes.
+    fn notes_waiting(&self, id: &AgentId) -> bool {
+        self.held_for_takeover
+            .get(id)
+            .is_some_and(|n| !n.is_empty())
+            || (id.0 == crate::service::COORDINATOR && !self.coordinator_notes.is_empty())
+    }
+
+    /// How processes are checked: `/proc`, or what a test gave.
+    fn processes(&self) -> &dyn Processes {
+        match &self.options.processes {
+            Some(p) => p.as_ref(),
+            None => &Proc,
+        }
     }
 
     /// The note that native turns happened, and the turns themselves when the transcript had
@@ -608,7 +645,7 @@ impl Core {
 
     /// A lock whose native run is gone (Dovetail stopped while it ran): release it and show
     /// what native added.
-    fn release_stale(&mut self, id: &AgentId, lock: &TakeoverLock) {
+    fn release_stale(&mut self, id: &AgentId, lock: &TakeoverLock, resume: bool) {
         let entries = match (
             self.agents.get(id).and_then(|r| r.transcript_path.clone()),
             lock.transcript_offset,
@@ -616,22 +653,15 @@ impl Core {
             (Some(path), Some(offset)) => transcript::read_since(&path, offset).unwrap_or_default(),
             _ => Vec::new(),
         };
-        self.clear_lock(id);
         tracing::info!(agent = %id.0, "released a take-over lock left by a crash");
-        self.show_native_turns(
+        self.release(
             id,
             "Dovetail stopped while this session was taken over; the native terminal has \
              exited since and the lock is released"
                 .into(),
             &entries,
+            resume,
         );
-    }
-
-    fn clear_lock(&mut self, id: &AgentId) {
-        self.update_agent(id, |row| {
-            row.takeover = None;
-            row.agent.lock = SessionLock::Headless;
-        });
     }
 
     /// At open: checks each lock left from before. Runs before anything can start a session.
@@ -649,8 +679,9 @@ impl Core {
             })
             .collect();
         for (id, lock, session, name) in locked {
-            match verdict(&lock, &session, &Proc) {
-                Verdict::Stale => self.release_stale(&id, &lock),
+            match verdict(&lock, &session, self.processes()) {
+                // Nothing is held this early; the coordinator resumes with the rest of the open.
+                Verdict::Stale => self.release_stale(&id, &lock, false),
                 Verdict::Held { pid } => {
                     self.update_agent(&id, |row| {
                         if let Some(l) = row.takeover.as_mut() {
@@ -685,14 +716,20 @@ impl Core {
         }
     }
 
-    /// `y` on a release item: the user says the native run is gone.
+    /// `y` on a release item: the user says the native run is gone. Headless comes back at
+    /// once when something waits for it (held notes), and for the coordinator, which runs
+    /// whenever Dovetail is open; a slice otherwise resumes on first touch, as at open.
     pub(crate) fn release_lock(&mut self, id: &AgentId) {
         if !self.locked(id) || self.takeover.as_ref().is_some_and(|t| &t.agent == id) {
             return;
         }
-        self.clear_lock(id);
-        self.notice(id, "Take-over lock released by the user");
-        self.refresh_status(id);
+        let resume = self.notes_waiting(id) || id.0 == crate::service::COORDINATOR;
+        self.release(
+            id,
+            "Take-over lock released by the user".into(),
+            &[],
+            resume,
+        );
     }
 
     /// A note from Dovetail for a locked session: kept, and sent once headless is back.

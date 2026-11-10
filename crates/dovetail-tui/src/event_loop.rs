@@ -6,13 +6,12 @@
 //! changing it sleeps forever.
 //!
 //! **Lending the terminal** (`e` in the worktree view, [`Command::OpenEditor`]; `<leader>st`,
-//! [`Command::TakeOver`]). The input
-//! thread reads one key, hands it over, and waits for a go before reading the next, so it is
-//! never inside a read when a key asks for the terminal. If the key leaves a hand-off in the
-//! app ([`App::take_handoff`]), the loop sends the commands already queued, leaves the
-//! alternate screen and raw mode ([`Lend::release`]), sends the hand-off command, and holds
-//! the go back: the editor or native `claude` the core starts gets every key. Core messages are still folded in
-//! but nothing is drawn. On [`dovetail_api::Event::TerminalReturned`] the loop takes the
+//! [`Command::TakeOver`]). The input thread reads one key, hands it over, and waits for a go
+//! before reading the next, so it is never inside a read when a key asks for the terminal. If
+//! the key leaves a hand-off in the app ([`App::take_handoff`]), the loop sends the commands
+//! already queued, leaves the alternate screen and raw mode ([`Lend::release`]), sends the
+//! hand-off command, and holds the go back: the editor or native `claude` the core starts gets
+//! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::Event::TerminalReturned`] the loop takes the
 //! terminal back ([`Lend::reclaim`]), redraws it in full and lets the input thread read again.
 
 use std::io;

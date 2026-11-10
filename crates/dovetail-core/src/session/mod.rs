@@ -263,6 +263,8 @@ impl Core {
         );
         self.save_agent(id);
         self.watch_todos(id);
+        // Dovetail's notes held while it was taken over (M14), now that it runs.
+        self.send_held(id);
         Ok(())
     }
 

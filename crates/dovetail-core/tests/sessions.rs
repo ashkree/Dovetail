@@ -98,6 +98,7 @@ impl Harness {
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
             claude: None,
+            processes: None,
             memory_caps: false,
             scopes,
         };
@@ -466,6 +467,18 @@ impl Harness {
         config: Config,
         claude: Option<std::ffi::OsString>,
     ) -> Harness {
+        Self::start_full(driver, paths, repo, config, claude, None)
+    }
+
+    /// [`Harness::start_native`], checking take-over locks with `processes` instead of `/proc`.
+    fn start_full(
+        driver: FakeDriver,
+        paths: Paths,
+        repo: Option<PathBuf>,
+        config: Config,
+        claude: Option<std::ffi::OsString>,
+        processes: Option<Arc<dyn dovetail_core::takeover::Processes + Send + Sync>>,
+    ) -> Harness {
         let dir = tempfile::tempdir().expect("tempdir");
         let run = tempfile::Builder::new()
             .prefix("dvt.")
@@ -490,6 +503,7 @@ impl Harness {
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
             claude,
+            processes,
             memory_caps: false,
             scopes: None,
         };
@@ -3282,5 +3296,168 @@ fn a_crash_lock_whose_native_still_runs_holds_until_it_exits() {
     h.wait_for("the release", |s| {
         lock_of(s, COORDINATOR) == dovetail_api::SessionLock::Headless
     });
+    h.quit();
+}
+
+/// Processes that cannot be checked, as when `/proc` is unreadable.
+struct Blind;
+
+impl dovetail_core::takeover::Processes for Blind {
+    fn start_ticks(&self, _: u32) -> std::io::Result<Option<u64>> {
+        Err(std::io::Error::other("no /proc here"))
+    }
+    fn find_native(&self, _: &str) -> std::io::Result<Option<u32>> {
+        Err(std::io::Error::other("no /proc here"))
+    }
+}
+
+/// A crash lock that cannot be checked asks the user; `y` goes through the same release as
+/// every other path: the lock goes, the coordinator resumes, and the note held for it while it
+/// was locked is delivered.
+#[test]
+fn y_on_an_undecidable_crash_lock_releases_it_and_delivers_the_held_notes() {
+    use dovetail_api::RELEASE_TAKEOVER_PERMISSION;
+    use dovetail_core::takeover::TakeoverLock;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    write_recipe(&paths, "profile = \"mine\"\n");
+    let lock = TakeoverLock {
+        since_ms: 1,
+        pid: None,
+        start_ticks: None,
+        transcript_offset: None,
+    };
+    seed(
+        &paths,
+        session_row(
+            COORDINATOR,
+            AgentKind::Coordinator,
+            None,
+            &mine,
+            mine.join("projects/x/coordinator-session.jsonl"),
+            Some(lock),
+        ),
+    );
+    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+    db.add_note("slice tryit ready".into())
+        .wait()
+        .expect("note");
+    drop(db);
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_full(
+        fake.clone(),
+        paths,
+        None,
+        config,
+        None,
+        Some(Arc::new(Blind)),
+    );
+    h.wait_for("the release question", |s| {
+        s.inbox.iter().any(|i| {
+            matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == RELEASE_TAKEOVER_PERMISSION)
+        })
+    });
+    h.drain(Duration::from_millis(200));
+    assert!(fake.started_specs().is_empty(), "started while undecided");
+    let item = h
+        .snap
+        .inbox
+        .iter()
+        .find(|i| matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == RELEASE_TAKEOVER_PERMISSION))
+        .map(|i| i.id)
+        .expect("item");
+    h.send(Command::AnswerPermission {
+        item,
+        answer: PermissionAnswer::Allow,
+    });
+    wait_started(&fake, 1);
+    wait_sent(&fake, "slice tryit ready");
+    h.wait_for("the lock released", |s| {
+        lock_of(s, COORDINATOR) == dovetail_api::SessionLock::Headless
+    });
+    h.quit();
+}
+
+/// `ask_user` from native returns at once and leaves its question in Needs you. Answering it
+/// while native still has the session is refused and the question stays; once headless is
+/// back the answer reaches the session.
+#[test]
+fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    write_recipe(&paths, "profile = \"mine\"\n");
+    let worktree = paths.worktrees("p").join("s4");
+    std::fs::create_dir_all(&worktree).expect("worktree");
+    let worktree = worktree.canonicalize().expect("canonical");
+    let folder = encoded(&worktree);
+    seed(
+        &paths,
+        session_row(
+            "slice-s4",
+            AgentKind::Slice,
+            Some(worktree.clone()),
+            &mine,
+            mine.join("projects")
+                .join(&folder)
+                .join("slice-s4-session.jsonl"),
+            None,
+        ),
+    );
+    let out = dir.path().join("native");
+    std::fs::create_dir_all(&out).expect("out");
+    let release = out.join("exit-now");
+    let claude = fake_claude(&out, &folder, Some(&release));
+    let fake = fixture("plain_turn");
+    let slice = AgentId("slice-s4".into());
+    let mut h = Harness::start_native(fake.clone(), paths, None, config, Some(claude));
+    h.send(Command::TakeOver {
+        agent: slice.clone(),
+    });
+    wait_file(&out.join("started"));
+
+    // What native's MCP bridge would send: it returns at once.
+    let asked = Instant::now();
+    let (text, is_error) = result_text(socket_call(
+        &h.socket(),
+        tool(
+            "slice-s4",
+            Tool::AskUser(AskUser {
+                question: "Which branch?".into(),
+            }),
+        ),
+    ));
+    assert!(!is_error, "{text}");
+    assert!(asked.elapsed() < Duration::from_secs(2), "ask_user waited");
+    h.wait_for("the question", |s| !open_questions(s).is_empty());
+    let question = open_questions(&h.snap)[0];
+
+    h.send(Command::AnswerQuestion {
+        item: question,
+        text: "main".into(),
+    });
+    h.drain(Duration::from_millis(200));
+    assert!(
+        h.failures.iter().any(|f| f.contains("taken over")),
+        "{:?}",
+        h.failures
+    );
+    assert_eq!(
+        open_questions(&h.snap),
+        vec![question],
+        "the question was lost"
+    );
+
+    std::fs::write(&release, "").expect("let native exit");
+    wait_started(&fake, 1);
+    h.send(Command::AnswerQuestion {
+        item: question,
+        text: "main".into(),
+    });
+    wait_sent(&fake, "Answer to your question 'Which branch?': main");
+    h.wait_for("the question answered", |s| open_questions(s).is_empty());
     h.quit();
 }
