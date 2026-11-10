@@ -45,6 +45,20 @@ impl App {
         self.open_overlay(Overlay::Picker(Picker::new("Switch", items), Purpose::Open));
     }
 
+    /// `:skills`: the slash commands and skills of the agent `i` would talk to.
+    pub(super) fn open_command_picker(&mut self) {
+        let Some(agent) = self.chat_target() else {
+            return;
+        };
+        let commands = super::commands_for(&self.snap, &agent);
+        if commands.is_empty() {
+            self.note = Some("no commands yet: they arrive when a session starts".into());
+            return;
+        }
+        let items = switcher::command_items(commands, &self.theme);
+        self.open_overlay(Overlay::Picker(Picker::new("Skills", items), Purpose::Open));
+    }
+
     /// `<leader><leader>`: tasks, agents and inbox items.
     pub(super) fn open_finder(&mut self) {
         let items = switcher::all_items(&self.snap, self.now_ms, &self.theme);
@@ -135,6 +149,12 @@ impl App {
             PickerKey::Inbox(id) => {
                 self.focus_inbox();
                 self.buffers.inbox.select_item(&self.snap, id);
+            }
+            PickerKey::Command(name) => {
+                if let Some(agent) = self.chat_target() {
+                    self.start_chat(agent);
+                    self.buffers.conversation.insert_text(&format!("/{name} "));
+                }
             }
         }
     }

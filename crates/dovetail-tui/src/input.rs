@@ -82,6 +82,19 @@ impl TextInput {
         &self.text[..self.cursor]
     }
 
+    /// Replaces the bytes in `range` with `text` and puts the cursor after it (a completion).
+    /// A range off char boundaries or past the end changes nothing.
+    pub fn replace(&mut self, range: Range<usize>, text: &str) {
+        if range.end > self.text.len()
+            || !self.text.is_char_boundary(range.start)
+            || !self.text.is_char_boundary(range.end)
+        {
+            return;
+        }
+        self.text.replace_range(range.clone(), text);
+        self.cursor = range.start + text.len();
+    }
+
     /// Inserts pasted text at the cursor. A single-line input takes only the first line.
     pub fn insert_str(&mut self, text: &str) {
         let text = if self.multiline {

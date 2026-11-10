@@ -76,6 +76,9 @@ pub enum Action {
     SearchPrev,
     /// Open the agent switcher.
     PickAgent,
+    /// Pick one of the session's slash commands or skills (`:skills`); it goes into the chat
+    /// bar as `/name `.
+    PickCommand,
     /// Open the picker over tasks, agents and inbox items.
     PickAny,
     /// Show the Activity feed in the main region (or go back if it is showing).

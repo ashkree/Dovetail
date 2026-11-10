@@ -23,7 +23,7 @@ mod search;
 use crossterm::event::KeyEvent;
 use dovetail_api::{
     AgentId, AgentKind, AgentStatus, ApplyResult, Command, Event, InboxKind, PROTOCOL_VERSION,
-    PermissionAnswer, ServerMsg, Snapshot, TaskChange, apply,
+    PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
 };
 use jiff::tz::TimeZone;
 
@@ -321,6 +321,18 @@ impl App {
                         self.note = Some(error.clone());
                     }
                 }
+                if let Event::PathsListed { agent, dir, paths } = &event {
+                    let commands = commands_for(&self.snap, agent);
+                    self.buffers.conversation.receive_paths(
+                        agent,
+                        dir.clone(),
+                        paths.clone(),
+                        commands,
+                    );
+                    if let Some((agent, dir)) = self.buffers.conversation.take_path_request() {
+                        self.outbox.push(Command::ListPaths { agent, dir });
+                    }
+                }
                 if let Event::ClipboardPasted { agent, paste } = &event
                     && let Some(notice) = self
                         .buffers
@@ -494,12 +506,22 @@ impl App {
                 }
                 _ => {}
             }
-            if let Some((agent, text, attachments)) = self.buffers.conversation.chat_key(event) {
+            let commands = self
+                .buffers
+                .conversation
+                .agent()
+                .map_or(&[][..], |a| commands_for(&self.snap, a));
+            if let Some((agent, text, attachments)) =
+                self.buffers.conversation.chat_key(event, commands)
+            {
                 self.outbox.push(Command::Prompt {
                     agent,
                     text,
                     attachments,
                 });
+            }
+            if let Some((agent, dir)) = self.buffers.conversation.take_path_request() {
+                self.outbox.push(Command::ListPaths { agent, dir });
             }
             if !self.buffers.conversation.is_chatting() {
                 self.mode = Mode::Normal;
@@ -629,6 +651,7 @@ impl App {
             Action::PasteClipboard => self.paste_clipboard(),
             Action::QuickCapture => self.open_capture(),
             Action::PickAgent => self.open_switcher(),
+            Action::PickCommand => self.open_command_picker(),
             Action::PickAny => self.open_finder(),
             Action::Search => self.start_input(InputTarget::Search, ""),
             Action::SearchNext => self.search_jump(true),
@@ -753,4 +776,13 @@ impl App {
         self.show_agent(id);
         self.regions.set_focus(RegionId::Main);
     }
+}
+
+/// The slash commands `agent` offers: its own list, else another session's (one project's
+/// sessions share a profile, so a slice not yet started borrows the coordinator's).
+pub(crate) fn commands_for<'a>(snap: &'a Snapshot, agent: &AgentId) -> &'a [SlashCommand] {
+    snap.commands
+        .get(agent)
+        .or_else(|| snap.commands.values().find(|c| !c.is_empty()))
+        .map_or(&[], Vec::as_slice)
 }

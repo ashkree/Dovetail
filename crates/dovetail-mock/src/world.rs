@@ -418,8 +418,16 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
 /// What the coordinator lists for `/` completion: a few built-ins and skills.
 fn commands() -> Vec<SlashCommand> {
     [
-        ("compact", "Clear conversation history but keep a summary in context", "<instructions>"),
-        ("code-review", "Review the changes since a fixed point along two axes", ""),
+        (
+            "compact",
+            "Clear conversation history but keep a summary in context",
+            "<instructions>",
+        ),
+        (
+            "code-review",
+            "Review the changes since a fixed point along two axes",
+            "",
+        ),
         ("context", "Show what fills the context window", ""),
         ("grilling", "Grill the user relentlessly about a plan", ""),
     ]
@@ -435,9 +443,14 @@ fn commands() -> Vec<SlashCommand> {
 /// Files the mock lists for `@` completion: the session's tree (`dir: None`) or one directory.
 pub(crate) fn paths(dir: Option<&str>) -> Vec<String> {
     match dir {
-        None => ["Cargo.toml", "README.md", "crates/dovetail-tui/src/app.rs", "docs/design.md"]
-            .map(String::from)
-            .to_vec(),
+        None => [
+            "Cargo.toml",
+            "README.md",
+            "crates/dovetail-tui/src/app.rs",
+            "docs/design.md",
+        ]
+        .map(String::from)
+        .to_vec(),
         Some(_) => ["notes.md", "projects/"].map(String::from).to_vec(),
     }
 }

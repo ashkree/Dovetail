@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
-    Decision, DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, SlashCommand, Snapshot, Task, TaskId,
-    TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId, WorktreeInfo,
+    Decision, DecisionId, EntryId, InboxId, InboxItem, PLevel, ProjectId, SlashCommand, Snapshot,
+    Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId,
+    WorktreeInfo,
 };
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].

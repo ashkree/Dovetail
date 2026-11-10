@@ -15,7 +15,13 @@ pub(crate) fn tree(root: &Path) -> Vec<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output();

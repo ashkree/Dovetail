@@ -54,6 +54,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "board" => Action::ShowBoard,
         "worktrees" => Action::ShowWorktrees,
         "switch" => Action::PickAgent,
+        "skills" | "commands" => Action::PickCommand,
         "find" => Action::PickAny,
         "add" | "capture" => Action::QuickCapture,
         "mode" | "perm" => Action::CyclePermissionMode,

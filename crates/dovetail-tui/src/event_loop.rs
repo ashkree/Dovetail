@@ -25,8 +25,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{
-    self, Event as TermEvent, KeyEventKind, KeyboardEnhancementFlags,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    self, Event as TermEvent, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
 };
 use dovetail_api::{Command, CoreLink, ServerMsg};
 
@@ -78,12 +78,14 @@ struct Crossterm {
 /// Asks the terminal to report Shift-Enter and friends, if it can. Returns whether it did.
 /// Must run before the input thread starts: the support query reads the terminal's answer.
 fn push_keyboard_flags() -> bool {
-    matches!(crossterm::terminal::supports_keyboard_enhancement(), Ok(true))
-        && crossterm::execute!(
-            io::stdout(),
-            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
-        )
-        .is_ok()
+    matches!(
+        crossterm::terminal::supports_keyboard_enhancement(),
+        Ok(true)
+    ) && crossterm::execute!(
+        io::stdout(),
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )
+    .is_ok()
 }
 
 fn pop_keyboard_flags() {
