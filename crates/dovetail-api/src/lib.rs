@@ -8,6 +8,7 @@
 #![warn(missing_docs)]
 
 mod apply;
+pub mod map;
 mod model;
 mod protocol;
 pub mod socket;
