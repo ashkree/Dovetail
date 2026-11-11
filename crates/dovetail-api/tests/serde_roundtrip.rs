@@ -472,6 +472,16 @@ fn every_event_roundtrips() {
         Event::OpeningProject {
             id: ProjectId("market-sizing".into()),
         },
+        Event::DocsListed {
+            docs: vec![research::DocEntry {
+                path: "adr/0018-reading-mode-layout.md".into(),
+                title: "Reading mode".into(),
+            }],
+        },
+        Event::DocLoaded {
+            path: "research.md".into(),
+            document: research::ResearchDocument::text(None, "# Research".into()),
+        },
     ]
     .into_iter()
     .chain(inbox_items().into_iter().map(Event::InboxUpserted))
@@ -637,6 +647,14 @@ fn every_command_roundtrips() {
         Command::LoadResearch {
             task: TaskId(4),
             what: research::ResearchWhat::Report,
+        },
+        Command::OpenExternal {
+            url: "https://docs.rs/nucleo".into(),
+        },
+        Command::StartAsk { task: TaskId(4) },
+        Command::ListDocs,
+        Command::LoadDoc {
+            path: "adr/0018-reading-mode-layout.md".into(),
         },
         Command::Resync,
         Command::Quit {

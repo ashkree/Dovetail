@@ -22,6 +22,10 @@ _Avoid_: scratch session, helper
 The pane in the side column, in place of the task tree, that shows side chats (later also tangents and the grilling helper) beside the coordinator's conversation; `<leader>?` toggles it.
 _Avoid_: drawer, sidebar
 
+**Ask**:
+Reading mode's read-only session about one research task's report, in its research folder and apart from the coordinator: it answers from the report and the files it cites, citing them as `[F n]` and `[S n]`, and shows only in the Ask column (ADR 0018). One per research task; a new report closes it.
+_Avoid_: ask subagent, report chat, side chat (which is project-scoped and opened by hand)
+
 **Subagent**:
 An agent a session spawns, at Claude's choice, for quick self-contained work. It shares its parent's worktree unless Claude isolates it.
 _Avoid_: agent (which also covers sessions), worker
@@ -145,6 +149,14 @@ _Avoid_: toolset, plugin, namespace
 **Altitude**:
 Whether research is macro (business, economics, direction) or micro (implementation). It decides where the research lives; size decides how it runs.
 _Avoid_: scope, level, depth
+
+**Reading mode**:
+The second layout preset, `<leader>r`: the library on the left, the reading column in the middle, Ask on the right, in place of Layout B, which comes back as it was (ADR 0018).
+_Avoid_: reader view, focus mode (which only hides the side column)
+
+**Library**:
+Reading mode's left column: projects, the open project's research tasks with their report, rounds, findings and sources, the decision log and the repo's docs.
+_Avoid_: tree (the task tree), shelf (the map shelf)
 
 **Research-only project**:
 A project of the research kind: it exists for macro research and has no repo, no worktrees and no slices; its sessions run in Dovetail's own folder for it (ADR 0015).

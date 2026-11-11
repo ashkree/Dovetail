@@ -146,12 +146,12 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
 - **Prompt (copy-paste):**
   > Implement milestone R5 of `docs/research.md` §10 and ADR 0018. Add a layout preset `Reading` (library, reading, ask) built from the existing `Region`/`Buffer` abstractions, toggled by `<leader>r`, left by `Esc` (Normal mode only). Library: projects, research tasks, report/rounds/findings, Decisions, Tangents (empty until R6), Docs · ADRs (read-only repo docs). Reading: 120-column column, solid background on, coloured `[n]` markers; `]s`/`[s` next/previous citation, `gd` open the cited finding or source, `gx` open the source in a browser through a core `Command::OpenExternal` (the TUI never spawns processes). Ask: `i` starts a read-only subagent grounded in the open report and its sources via the core; answers carry resolving `[n]` markers. Convert HTML artifacts to markdown. Images use kitty graphics where available, outline text otherwise. Change the keymap test that uses `gx` as an unbound example. Apply the G2 decisions to the side-panel key. Snapshot tests at 100, 160, 220 columns; no idle redraws.
 - **Validation:**
-  - [ ] `<leader>r` toggles; `Esc` leaves; Layout B unchanged otherwise
-  - [ ] `]s`, `[s`, `gd`, `gx` work as specified; `gx` is core-launched
-  - [ ] Ask answers cite with markers that resolve
-  - [ ] HTML shown as converted markdown; `gx` opens the real page
-  - [ ] Works in a terminal without kitty graphics
-  - [ ] `scripts/check.sh` passes
+  - [x] `<leader>r` toggles; `Esc` leaves; Layout B unchanged otherwise — `reading_mode::leader_r_toggles_reading_mode_and_layout_b_comes_back_as_it_was` (screen identical before and after), every existing Layout B snapshot unchanged
+  - [x] `]s`, `[s`, `gd`, `gx` work as specified; `gx` is core-launched — `reading_mode::citations_step_…`, `…gx_opens_a_web_source_through_the_core…` (`Command::OpenExternal`), core `research_tools::open_external_runs_the_opener_on_web_pages_only`
+  - [x] Ask answers cite with markers that resolve — `reading_mode::ask_answers_with_citations_that_resolve_…` (mock's canned answer; `gd` on its `[S1]` loads S1), core `research_tools::ask_is_a_read_only_session_…` (index limits ids to the task's)
+  - [x] HTML shown as converted markdown; `gx` opens the real page — `reading_mode::an_html_source_reads_as_markdown_and_gx_opens_the_real_page`, `render::html` unit tests
+  - [x] Works in a terminal without kitty graphics — all reading-mode tests run without graphics; images fall back to a text line (`a_doc_opens_read_only_and_its_image_is_text_without_kitty_graphics`)
+  - [x] `scripts/check.sh` passes
 
 ### M22 — R6 Tangents and the side panel (ADR 0017)
 - **Model:** Opus — global state outside the per-project model, one panel merging three session uses
