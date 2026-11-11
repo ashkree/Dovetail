@@ -38,7 +38,7 @@ Dovetail keeps the parts that work (Claude Code itself, its native cross-session
 - **Remembers for you.** Each task keeps your notes and a log of decisions, written by you and by the agents as they decide things. One search (`<leader>/`) covers notes, decisions, the journal, inbox, messages and conversation text, and keeps history after Claude Code clears old transcripts.
 - **A helper for grilling sessions.** When the coordinator starts grilling you, a read-only side chat opens next to it in the side panel for quick lookups, so the grill keeps going and the coordinator's context stays clean.
 - **Message timeline.** See what sessions say to each other over Claude Code's native messaging.
-- **Enforced coordination.** A small set of tools the sessions call, served by the app over MCP: `ask_user`, `report_status`, then `claim` / `release` for PR ownership and rules like "rebase #1231 after #1230 merges."
+- **Enforced coordination.** A small set of tools the sessions call, served by the app over MCP and grouped in suites per role: `core_ask_user`, `core_report_status`, then `claim` / `release` for PR ownership and rules like "rebase #1231 after #1230 merges."
 - **Take over any session.** Drop into native `claude --resume` for hands-on work, then hand it back.
 - **Project persistence.** Close everything at the end of the day; reopen tomorrow and your tasks, agents, ownership and conversations are all back.
 

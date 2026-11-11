@@ -1335,7 +1335,7 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
     h.wait_for("the approval item", |s| {
         s.inbox
             .iter()
-            .any(|i| matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == "start_slice"))
+            .any(|i| matches!(&i.kind, InboxKind::Permission { tool, .. } if tool == dovetail_api::START_SLICE_PERMISSION))
     });
     let id = h.snap.inbox[0].id;
     h.send(Command::AnswerPermission {

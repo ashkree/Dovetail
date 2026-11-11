@@ -105,7 +105,7 @@ An inbox item asking the user to allow or deny a tool use.
 _Avoid_: approval (the answer, not the request), prompt
 
 **Question**:
-An inbox item from an agent's `ask_user` call. It never blocks the agent: `ask_user` returns at once, and the answer arrives later as a message (ADR 0007).
+An inbox item from an agent's `core_ask_user` call. It never blocks the agent: `core_ask_user` returns at once, and the answer arrives later as a message (ADR 0007).
 _Avoid_: blocker, prompt
 
 **Finished turn**:
@@ -139,7 +139,7 @@ A question that does not belong to the current project, answered in Tangents, a 
 _Avoid_: side chat (which is project-scoped), aside
 
 **Suite**:
-A named group of MCP tools; a role's config lists the suites it gets, and each tool name carries its suite as a prefix (ADR 0016).
+A named group of MCP tools; a role's config lists the suites it gets, and each tool name carries its suite as a prefix (ADR 0016). The suites are Core, Tasks, Project, Coordination (empty until v1.1 Claims), Research and Maps; by default the coordinator gets all of them, a slice Core, Coordination and Maps, a side chat Core. Tool names read `<suite>_<verb>`: `core_ask_user`, `tasks_create`, `project_start_slice`, `maps_draw`.
 _Avoid_: toolset, plugin, namespace
 
 **Altitude**:
@@ -177,7 +177,7 @@ One of the nine fixed kinds a map node can be (Part, File, Endpoint, Data, Exter
 _Avoid_: node type, category
 
 **Map version**:
-One drawing of a map. A map keeps its id and type; each `draw_map` call with that id stores a new version, and earlier versions are kept.
+One drawing of a map. A map keeps its id and type; each `maps_draw` call with that id stores a new version, and earlier versions are kept.
 _Avoid_: revision, snapshot (the core's snapshot is something else)
 
 ### Build
