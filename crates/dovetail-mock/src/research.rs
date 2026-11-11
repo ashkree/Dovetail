@@ -79,6 +79,8 @@ pub(crate) fn seeded(now_ms: i64) -> Research {
         dir: DIR.into(),
         rounds: vec![
             RoundSummary {
+                id: 1,
+                queued: false,
                 n: 1,
                 brief: "Which fuzzy matcher should the picker use? Weigh speed on a few \
                         thousand rows, match quality on paths, and maintenance."
@@ -89,6 +91,8 @@ pub(crate) fn seeded(now_ms: i64) -> Research {
                 findings: 2,
             },
             RoundSummary {
+                id: 2,
+                queued: false,
                 n: 2,
                 brief: "Does nucleo handle non-ASCII paths well?".into(),
                 dir: "rounds/02-2026-10-31".into(),
@@ -101,6 +105,7 @@ pub(crate) fn seeded(now_ms: i64) -> Research {
         quick_findings: 1,
         sources: 3,
         report_ms: Some(now_ms - DAY / 4),
+        kind: None,
     };
     let listing = ResearchListing {
         findings: vec![

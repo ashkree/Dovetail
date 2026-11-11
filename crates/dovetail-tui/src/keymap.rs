@@ -268,6 +268,10 @@ pub const BINDINGS: &[Binding] = &[
     // Research rows (R3): `Enter` reads the row under the cursor; in the reading view `e` hands
     // the file to the editor (`TaskEditNotes` there) and `Esc` returns to the detail.
     bind(N, DETAIL, "<CR>", Action::ResearchOpen),
+    // `j`/`k` scroll line by line; `Tab`/`Shift-Tab` jump between the research rows; `e` on a
+    // selected row edits its file, and edits the notes when no row is selected.
+    bind(N, DETAIL, "<Tab>", Action::ResearchNext),
+    bind(N, DETAIL, "<S-Tab>", Action::ResearchPrev),
     // Conversation: reading keys (the brief's "Reading keys").
     bind(N, CONVERSATION, "]]", Action::NextTurn),
     bind(N, CONVERSATION, "[[", Action::PrevTurn),

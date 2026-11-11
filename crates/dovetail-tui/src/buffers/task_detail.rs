@@ -15,7 +15,7 @@ use ratatui::widgets::Paragraph;
 use super::task_research::{self, Doc, Item, Loaded};
 use super::{
     Buffer, Effect, ViewCx, bucket_label, footer, next_bucket, next_p_level, next_status, pane,
-    scroll_to, status_glyph, status_label, status_word, step, title, tree::p_label,
+    scroll_to, status_glyph, status_label, status_word, title, tree::p_label,
 };
 use crate::action::Action;
 use crate::fmt;
@@ -273,8 +273,9 @@ pub struct TaskDetailBuffer {
     last_height: usize,
     /// The research rows of the last draw, and the one `Enter` opens.
     items: Vec<(usize, Item)>,
-    selected: usize,
-    /// Scroll to show the selected row at the next draw (after `j`/`k`).
+    /// The research row picked with `Tab`; `None` until one is, and after the task changes.
+    selected: Option<usize>,
+    /// Scroll to show the selected row at the next draw (after `Tab`).
     follow: bool,
     /// The listing the core last answered with.
     loaded: Option<Loaded>,
@@ -306,7 +307,7 @@ impl TaskDetailBuffer {
     pub fn show(&mut self, task: TaskId) {
         if self.task != Some(task) {
             self.top = 0;
-            self.selected = 0;
+            self.selected = None;
         }
         self.task = Some(task);
         self.reading = None;
@@ -436,15 +437,41 @@ impl TaskDetailBuffer {
         );
     }
 
+    fn selected_item(&self) -> Option<&Item> {
+        self.selected
+            .and_then(|i| self.items.get(i))
+            .map(|(_, item)| item)
+    }
+
     fn open_selected(&self, task: TaskId, effects: &mut Vec<Effect>) {
-        match self.items.get(self.selected) {
-            Some((_, item)) => effects.push(Effect::OpenResearch {
+        match self.selected_item() {
+            Some(item) => effects.push(Effect::OpenResearch {
                 task,
                 what: item.what.clone(),
                 title: item.title.clone(),
             }),
-            None => effects.push(Effect::Note("nothing to open here".into())),
+            None if self.items.is_empty() => {
+                effects.push(Effect::Note("no research to open here".into()));
+            }
+            None => effects.push(Effect::Note(
+                "Tab picks a research row, then ⏎ opens it".into(),
+            )),
         }
+    }
+
+    /// `Tab` / `Shift-Tab`: the next or previous research row, wrapping round.
+    fn pick(&mut self, forward: bool) {
+        let n = self.items.len();
+        if n == 0 {
+            return;
+        }
+        self.selected = Some(match (self.selected, forward) {
+            (None, true) => 0,
+            (None, false) => n - 1,
+            (Some(i), true) => (i + 1) % n,
+            (Some(i), false) => (i + n - 1) % n,
+        });
+        self.follow = true;
     }
 }
 
@@ -481,17 +508,20 @@ impl Buffer for TaskDetailBuffer {
         let built = build(cx.snap, task, width, theme, cx.tz, self.loaded.as_ref());
         let all = built.lines;
         self.items = built.items;
-        self.selected = self.selected.min(self.items.len().saturating_sub(1));
+        self.selected = self.selected.filter(|i| *i < self.items.len());
         let height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
         self.last_lines = all.len();
         self.last_height = height;
         if std::mem::take(&mut self.follow)
-            && let Some((row, _)) = self.items.get(self.selected)
+            && let Some((row, _)) = self.selected.and_then(|i| self.items.get(i))
         {
             self.top = scroll_to(self.top, *row, *row, height);
         }
         self.top = self.top.min(all.len().saturating_sub(height));
-        let selected_row = self.items.get(self.selected).map(|(row, _)| *row);
+        let selected_row = self
+            .selected
+            .and_then(|i| self.items.get(i))
+            .map(|(row, _)| *row);
         for (n, line) in all.into_iter().enumerate().skip(self.top).take(height) {
             let rect = Rect {
                 y: inner.y + (n - self.top) as u16,
@@ -511,9 +541,9 @@ impl Buffer for TaskDetailBuffer {
             inner,
             &if research {
                 [
-                    "j k pick · ⏎ read · s status · b bucket · p P-level · R relate · a decision · esc back",
-                    "j k pick · ⏎ read · s b p cycle · R relate · a decision · esc back",
-                    "⏎ read · R relate · a decision · esc back",
+                    "j k scroll · ⇥ research row · ⏎ read · e edit/notes · s b p · R relate · a decision · esc back",
+                    "j k scroll · ⇥ row · ⏎ read · e edit · R relate · a decision · esc back",
+                    "⇥ row · ⏎ read · e edit · esc back",
                 ]
             } else {
                 [
@@ -555,18 +585,10 @@ impl Buffer for TaskDetailBuffer {
                 patch: vec![c],
             })
         };
-        let last_item = self.items.len().saturating_sub(1);
         match (action, task) {
-            // With research rows, `j`/`k` pick between them (the view follows); `PageUp` and
-            // `PageDown` scroll either way.
-            (Action::MoveDown, _) if !self.items.is_empty() => {
-                self.selected = step(self.selected, self.items.len(), 1);
-                self.follow = true;
-            }
-            (Action::MoveUp, _) if !self.items.is_empty() => {
-                self.selected = step(self.selected, self.items.len(), -1);
-                self.follow = true;
-            }
+            // `j`/`k` scroll line by line; `Tab`/`Shift-Tab` pick between the research rows.
+            (Action::ResearchNext, _) => self.pick(true),
+            (Action::ResearchPrev, _) => self.pick(false),
             (Action::MoveDown, _) => {
                 self.top = (self.top + 1).min(self.last_lines.saturating_sub(1))
             }
@@ -576,14 +598,8 @@ impl Buffer for TaskDetailBuffer {
                     (self.top + self.last_height.max(1)).min(self.last_lines.saturating_sub(1))
             }
             (Action::PageUp, _) => self.top = self.top.saturating_sub(self.last_height.max(1)),
-            (Action::GoTop, _) => {
-                self.top = 0;
-                self.selected = 0;
-            }
-            (Action::GoBottom, _) => {
-                self.top = self.last_lines.saturating_sub(1);
-                self.selected = last_item;
-            }
+            (Action::GoTop, _) => self.top = 0,
+            (Action::GoBottom, _) => self.top = self.last_lines.saturating_sub(1),
             (Action::ResearchOpen, Some(t)) => self.open_selected(t.id, effects),
             (Action::TaskCycleStatus, Some(t)) => {
                 effects.push(change(TaskChange::Status(next_status(t.status)), t));
@@ -599,6 +615,15 @@ impl Buffer for TaskDetailBuffer {
                 target: super::InputTarget::Decision(t.id),
                 initial: String::new(),
             }),
+            // On a selected research row `e` edits its file; with none selected it is the notes.
+            (Action::TaskEditNotes, _) if self.selected.is_some() => {
+                match self.selected_item().and_then(|item| item.path.clone()) {
+                    Some(path) => effects.push(Effect::OpenEditor(path)),
+                    None => effects.push(Effect::Note(
+                        "this source has no file: it was listed, not cached".into(),
+                    )),
+                }
+            }
             (Action::TaskEditNotes, _) => {
                 effects.push(Effect::Note(
                     "editing notes in $EDITOR arrives with storage (M5)".into(),

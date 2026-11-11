@@ -328,6 +328,19 @@ impl Core {
         }
     }
 
+    /// Words for the research round that archiving `task` would close or drop ("an open research
+    /// round", "a queued research round"), or `None` when it has none.
+    pub(crate) async fn round_blocking_archive(&self, task: TaskId) -> Option<&'static str> {
+        if self.research.open.as_ref().is_some_and(|r| r.task == task) {
+            return Some("an open research round");
+        }
+        let queued = self.db.queued_rounds().await.ok()?;
+        queued
+            .iter()
+            .any(|r| r.task == task)
+            .then_some("a queued research round")
+    }
+
     /// `Command::SetResearchKind`.
     pub(crate) async fn set_research_kind(&mut self, task: TaskId, kind: ResearchKind) {
         let Some(t) = self.task(task).await else {

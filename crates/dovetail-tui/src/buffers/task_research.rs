@@ -7,7 +7,8 @@
 use std::path::PathBuf;
 
 use dovetail_api::research::{
-    ResearchDocument, ResearchListing, ResearchSummary, ResearchWhat, SourceKind,
+    ResearchDocument, ResearchListing, ResearchSummary, ResearchWhat, SourceKind, ordinal,
+    queue_position,
 };
 use dovetail_api::{Snapshot, Task, TaskId};
 use jiff::tz::TimeZone;
@@ -114,9 +115,14 @@ pub fn section(
     for round in &summary.rounds {
         out.lines.push(Line::default());
         let state = if round.closed_ms.is_some() {
-            "closed"
+            "closed".to_owned()
+        } else if round.queued {
+            match queue_position(&snap.research, task.id, round.n) {
+                Some(place) => format!("queued ({} in line)", ordinal(place)),
+                None => "queued".to_owned(),
+            }
         } else {
-            "open"
+            "open".to_owned()
         };
         let line = vec![
             Span::styled(format!("Round {} ", round.n), theme.body()),
@@ -236,15 +242,32 @@ impl Section {
 }
 
 fn counts(summary: &ResearchSummary) -> String {
-    format!(
-        "{} round{} · {} finding{} · {} source{}",
-        summary.rounds.len(),
-        plural(summary.rounds.len() as u32),
+    let rounds = summary.rounds.iter().filter(|r| !r.queued).count();
+    let mut out = format!(
+        "{rounds} round{} · {} finding{} · {} source{}",
+        plural(rounds as u32),
         summary.findings,
         plural(summary.findings),
         summary.sources,
         plural(summary.sources),
-    )
+    );
+    if let Some(kind) = summary.kind {
+        out.push_str(&format!(" · {}", kind.as_str()));
+    }
+    out
+}
+
+/// What would be lost by archiving `task`: its open or queued research round, in words
+/// ("an open research round"), or `None`.
+pub fn blocking_round(snap: &Snapshot, task: TaskId) -> Option<&'static str> {
+    let summary = snap.research.iter().find(|r| r.task == task)?;
+    if summary.open_round().is_some() {
+        Some("an open research round")
+    } else if summary.queued_rounds().next().is_some() {
+        Some("a queued research round")
+    } else {
+        None
+    }
 }
 
 fn plural(n: u32) -> &'static str {

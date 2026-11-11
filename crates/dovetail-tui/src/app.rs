@@ -1179,6 +1179,14 @@ impl App {
             }
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
             Effect::PickRelated(task) => self.open_relate_picker(task),
+            Effect::PickFileTarget(item) => self.open_file_picker(item),
+            Effect::Confirm { prompt, then } => {
+                self.confirm = Some(Confirm {
+                    prompt,
+                    then: Then::Commands(then),
+                    otherwise: None,
+                });
+            }
             Effect::Note(text) => self.note = Some(text),
             Effect::OpenEditor(path) => self.handoff = Some(Command::OpenEditor { path }),
         }

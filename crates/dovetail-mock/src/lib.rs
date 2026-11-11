@@ -541,7 +541,10 @@ impl MockCore {
             | Command::OpenProject { .. }
             | Command::RegisterProject { .. }
             | Command::StartRound { .. }
-            | Command::CloseRound { .. } => self.fail("not available in the mock".into()),
+            | Command::CloseRound { .. }
+            | Command::DropRound { .. }
+            | Command::SetResearchKind { .. }
+            | Command::FileUnfiled { .. } => self.fail("not available in the mock".into()),
             Command::LoadResearch { task, what } => match self.research.load(task, &what) {
                 Some(content) => self.emit(Event::ResearchLoaded {
                     task,
