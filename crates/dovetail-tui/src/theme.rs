@@ -1,4 +1,5 @@
-//! The one struct holding every colour (Decision 16). Dusk is the default (plan A19).
+//! The one struct holding every colour (Decision 16). Purple is the default (task #13); Dusk
+//! stays as the cool-slate alternative.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -58,6 +59,50 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// Purple: the AGS desktop palette (`~/.config/theme/theme.conf`) on a dark translucent
+    /// terminal. Text colours are the AGS ones lifted for contrast: every foreground is at least
+    /// 6:1 against the kitty glass `#171b23`; `dim` (chrome only) is 5.4:1.
+    pub fn purple() -> Self {
+        Self {
+            // text-bright #f0eaff softened ~13 % toward the glass: 11.7:1, never pure white.
+            body: Color::Rgb(0xd6, 0xd2, 0xe8),
+            // warning #f5c069, softened.
+            bold: Color::Rgb(0xe0, 0xb8, 0x78),
+            // accent-muted #a48fd4, lifted.
+            italic: Color::Rgb(0xb9, 0xa4, 0xe8),
+            // success #6edbb0, softened.
+            code: Color::Rgb(0x7f, 0xd6, 0xc0),
+            // text-secondary #9293aa, lifted a little.
+            dim: Color::Rgb(0x8d, 0x8e, 0xa6),
+            // info #70b8f0.
+            working: Color::Rgb(0x7c, 0xc0, 0xf2),
+            needs_you: Color::Rgb(0xf0, 0xb8, 0x62),
+            ok: Color::Rgb(0x7f, 0xdc, 0xb8),
+            // danger #c87060, lifted from 4.6:1.
+            error: Color::Rgb(0xe0, 0x80, 0x6e),
+            // accent-muted #a48fd4.
+            focus: Color::Rgb(0xa4, 0x8f, 0xd4),
+            // crust-dark #4f5066.
+            line: Color::Rgb(0x4f, 0x50, 0x66),
+            // mantle-light #2c2e3e.
+            selection: Color::Rgb(0x2c, 0x2e, 0x3e),
+            // Between core-void and core-deep; at least 8:1 on every badge colour.
+            ink: Color::Rgb(0x13, 0x14, 0x1a),
+            mode_normal: Color::Rgb(0xe0, 0xb8, 0x78),
+            mode_insert: Color::Rgb(0x7f, 0xdc, 0xb8),
+            mode_command: Color::Rgb(0xb9, 0xa4, 0xe8),
+            mode_map: Color::Rgb(0x7f, 0xd6, 0xc0),
+            map_ring: Color::Rgb(0xff, 0xd8, 0x4a),
+            cite: Color::Rgb(0xe4, 0x9c, 0xc4),
+            chip: Color::Rgb(0x9f, 0xb8, 0xe0),
+            speaker_you: Color::Rgb(0xb9, 0xa4, 0xe8),
+            speaker_agent: Color::Rgb(0xe0, 0xb8, 0x78),
+            // The name colours at ~55 %, over the glass.
+            speaker_you_rule: Color::Rgb(0x7c, 0x6a, 0xb8),
+            speaker_agent_rule: Color::Rgb(0x8a, 0x6d, 0x40),
+        }
+    }
+
     /// Dusk: cool slate with a sand accent.
     pub fn dusk() -> Self {
         Self {
@@ -151,7 +196,7 @@ impl Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::dusk()
+        Self::purple()
     }
 }
 
@@ -188,6 +233,51 @@ pub const READING_PADDING: Padding = Padding { x: 3, y: 1 };
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Contrast ratio (WCAG) of two RGB colours.
+    fn contrast(a: Color, b: [u8; 3]) -> f64 {
+        fn lum(c: [u8; 3]) -> f64 {
+            let f = |v: u8| {
+                let v = f64::from(v) / 255.0;
+                if v <= 0.03928 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2])
+        }
+        let Color::Rgb(r, g, bl) = a else {
+            panic!("not rgb")
+        };
+        let (x, y) = (lum([r, g, bl]), lum(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    #[test]
+    fn purple_text_is_readable_on_the_glass() {
+        let t = Theme::purple();
+        let glass = [0x17, 0x1b, 0x23];
+        assert!(contrast(t.body, glass) >= 10.0);
+        for c in [
+            t.bold,
+            t.italic,
+            t.code,
+            t.working,
+            t.needs_you,
+            t.ok,
+            t.error,
+            t.cite,
+            t.chip,
+        ] {
+            assert!(contrast(c, glass) >= 6.0, "{c:?}");
+        }
+        assert!(contrast(t.dim, glass) >= 5.0);
+        let ink = [0x13, 0x14, 0x1a];
+        for c in [t.mode_normal, t.mode_insert, t.mode_command, t.mode_map] {
+            assert!(contrast(c, ink) >= 7.0, "{c:?}");
+        }
+    }
 
     #[test]
     fn context_fill_is_plain_amber_then_red() {

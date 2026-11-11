@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn colours_a_marker_split_over_spans() {
-        let theme = Theme::dusk();
+        let theme = Theme::default();
         let line = Line::from(vec![Span::raw("see ["), Span::raw("F3"), Span::raw("] ok")]);
         let out = colour(vec![line], &theme).remove(0);
         let cited: String = out

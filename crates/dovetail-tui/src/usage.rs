@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn variants_drop_resets_then_model_then_week() {
-        let theme = Theme::dusk();
+        let theme = Theme::default();
         let v = variants(
             &usage(0.34, 0.18, NOW_S),
             None,
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn the_profile_leads_and_drops_with_the_model() {
-        let theme = Theme::dusk();
+        let theme = Theme::default();
         let v = variants(
             &usage(0.34, 0.18, NOW_S),
             Some("maveron"),
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn limits_are_coloured_by_threshold() {
-        let theme = Theme::dusk();
+        let theme = Theme::default();
         let v = variants(
             &usage(0.72, 0.95, NOW_S),
             None,
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn a_passed_reset_shows_a_dash_and_nothing_known_shows_nothing() {
-        let theme = Theme::dusk();
+        let theme = Theme::default();
         let later = (NOW_S + 3 * 3_600) * 1_000;
         let v = variants(
             &usage(0.34, 0.18, NOW_S),
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn a_window_left_out_of_the_report_shows_a_dash_and_drops_last() {
-        let theme = Theme::dusk();
+        let theme = Theme::default();
         let mut u = usage(0.34, 0.06, NOW_S);
         u.five_hour = None;
         let v = variants(&u, None, None, NOW_S * 1_000, &TimeZone::UTC, &theme);

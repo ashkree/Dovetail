@@ -77,7 +77,7 @@ fn bold_italic_and_code_get_their_own_colours_on_screen() {
     let mut app = reading_app();
     let mut terminal = Terminal::new(TestBackend::new(120, 60)).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw");
-    let theme = dovetail_tui::Theme::dusk();
+    let theme = dovetail_tui::Theme::default();
     let buffer = terminal.backend().buffer();
     let find = |needle: &str| {
         for y in 0..buffer.area.height {
