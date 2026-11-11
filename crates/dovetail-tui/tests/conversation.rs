@@ -215,17 +215,17 @@ fn double_bracket_jumps_between_turns() {
 }
 
 #[test]
-fn zc_folds_the_turn_and_zo_unfolds_it() {
+fn capital_zc_folds_the_whole_turn_and_capital_zo_unfolds_it() {
     let mut app = long_app();
     render(&mut app, 100, 30);
     type_keys(&mut app, "gg");
     render(&mut app, 100, 30);
-    type_keys(&mut app, "zc");
+    type_keys(&mut app, "zC");
     let folded = render(&mut app, 100, 30);
     assert!(folded.contains("question 0"));
     assert!(folded.contains("▸ 1 entries folded · zo to unfold"));
     assert!(!folded.contains("answer 0"));
-    type_keys(&mut app, "zo");
+    type_keys(&mut app, "zO");
     assert!(render(&mut app, 100, 30).contains("answer 0"));
 }
 

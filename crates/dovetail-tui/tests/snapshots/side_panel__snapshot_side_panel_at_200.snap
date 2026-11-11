@@ -26,11 +26,11 @@ expression: "render(&mut app, 200, 40)"
 │   It needs a key. slice-7 can only reach the eval path with FS_EVAL_VIRTUAL_KEY set.▌                                    ││   Why does the reducer refuse a gap in seq?                              │
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │
-│                                                                                                                          ││   ── side-1 · 10:12 ──────────────────────────────────────────────────   │
+│                                                                                                                          ││  ▎── side-1 · 10:12 ──────────────────────────────────────────────────   │
 │                                                                                                                          ││                                                                          │
-│                                                                                                                          ││   A gap means an event was lost. apply returns Gap instead of            │
-│                                                                                                                          ││   guessing, and the UI asks for a resync                                 │
-│                                                                                                                          ││   (crates/dovetail-api/src/apply.rs).                                    │
+│                                                                                                                          ││  ▎A gap means an event was lost. apply returns Gap instead of            │
+│                                                                                                                          ││  ▎guessing, and the UI asks for a resync                                 │
+│                                                                                                                          ││  ▎(crates/dovetail-api/src/apply.rs).                                    │
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │
@@ -39,6 +39,6 @@ expression: "render(&mut app, 200, 40)"
 │                                                                                                                          ││                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
 ┌ chat › coordinator ──────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ chat › side-1 ───────────────────────────────────────────────────────────┐
-│   › i or ^j to type · ]] [[ turns · zc zo fold · gg G                                                                    ││   › i or ^j to type · ⇥ next chat · dd close · ␣? hide                   │
+│   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn                                                        ││   › i or ^j to type · ⇥ next chat · dd close · ␣? hide                   │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 5 agents · 3 ⚠ · 2.1G · ctx 62%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command

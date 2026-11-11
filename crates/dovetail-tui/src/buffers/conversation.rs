@@ -22,6 +22,9 @@ use crate::region::BufferKind;
 use crate::render::reading_column::{self, DEFAULT_WIDTH};
 use crate::render::transcript::{self, Turn};
 
+/// The bar in the margin beside the entry under the cursor.
+const CURSOR_BAR: &str = "▎";
+
 /// Most rows the chat input grows to before it scrolls.
 const MAX_INPUT_ROWS: usize = 6;
 
@@ -33,6 +36,12 @@ struct AgentView {
     follow: bool,
     folded: HashSet<EntryId>,
     expanded: HashSet<EntryId>,
+    /// Entries cut by `zc`, even the newest reply.
+    collapsed: HashSet<EntryId>,
+    /// The entry `zc`/`zo` last acted on, kept as the cursor until the next movement key, so
+    /// the entry stays selected while it shrinks or grows. Otherwise the cursor is the entry
+    /// at the middle of the view.
+    pinned: Option<EntryId>,
     cache: transcript::Cache,
     draft: String,
     /// Where the cursor was in the draft when the chat bar was left.
@@ -54,6 +63,8 @@ impl Default for AgentView {
             follow: true,
             folded: HashSet::new(),
             expanded: HashSet::new(),
+            collapsed: HashSet::new(),
+            pinned: None,
             cache: transcript::Cache::default(),
             draft: String::new(),
             draft_cursor: 0,
@@ -70,6 +81,8 @@ struct Layout {
     /// The lines of the last draw, for search.
     lines: Vec<Line<'static>>,
     turns: Vec<Turn>,
+    /// The entry under the cursor.
+    cursor: Option<EntryId>,
     max_top: usize,
     /// Rows of text in view, for paging.
     page: usize,
@@ -411,13 +424,12 @@ impl ConversationBuffer {
         }
     }
 
-    /// Index of the turn at the top of the view (the last one while following the bottom).
-    fn current_turn(&self, top: usize, follow: bool) -> Option<usize> {
-        let turns = &self.layout.turns;
-        if follow {
-            return turns.len().checked_sub(1);
-        }
-        turns.iter().rposition(|t| t.start_line <= top)
+    /// The turn that holds `entry`.
+    fn turn_of(&self, entry: EntryId) -> Option<&Turn> {
+        self.layout
+            .turns
+            .iter()
+            .find(|t| t.entries.contains(&entry))
     }
 
     /// The `/` or `@` popup, along the bottom of `body`, just over the chat bar's rule.
@@ -669,7 +681,7 @@ impl Buffer for ConversationBuffer {
             } else if draft.is_empty() && self.kind == BufferKind::SidePanel {
                 "› i or ^j to type · ⇥ next chat · dd close · ␣? hide".to_string()
             } else if draft.is_empty() {
-                "› i or ^j to type · ]] [[ turns · zc zo fold · gg G".to_string()
+                "› i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn".to_string()
             } else {
                 format!("› {draft} · i or ^j to go on typing")
             };
@@ -703,6 +715,8 @@ impl Buffer for ConversationBuffer {
             streaming,
             folded: &view.folded,
             expanded: &view.expanded,
+            collapsed: &view.collapsed,
+            newest: transcript::newest_reply(entries),
         };
         let mut built = transcript::build(entries, &params, &mut view.cache);
         if self.kind == BufferKind::Ask {
@@ -739,6 +753,12 @@ impl Buffer for ConversationBuffer {
             view.top = max_top;
         }
         let top = view.top;
+        // The cursor: the entry a `zc`/`zo` just acted on, else the one at the middle of the view.
+        let cursor = view
+            .pinned
+            .filter(|id| built.spans.iter().any(|s| s.id == *id))
+            .or_else(|| transcript::entry_at(&built.spans, top + height / 2));
+        let span = cursor.and_then(|id| built.spans.iter().find(|s| s.id == id));
         for (row, line) in built.lines.iter().skip(top).take(height).enumerate() {
             let rect = Rect {
                 x: column.x,
@@ -747,6 +767,24 @@ impl Buffer for ConversationBuffer {
                 height: 1,
             };
             frame.render_widget(Paragraph::new(line.clone()), rect);
+            // A bar in the padding left of the column marks the entry under the cursor, on
+            // its text rows only (blank rows would make a bar the eye cannot attach to).
+            let at = top + row;
+            if reading
+                && column.x > inner.x
+                && span.is_some_and(|s| at >= s.start && at < s.end)
+                && !line.spans.iter().all(|s| s.content.trim().is_empty())
+            {
+                let gutter = Rect {
+                    x: column.x - 1,
+                    width: 1,
+                    ..rect
+                };
+                frame.render_widget(
+                    Paragraph::new(Span::styled(CURSOR_BAR, theme.accent())),
+                    gutter,
+                );
+            }
         }
         if working_row.height > 0
             && let Some(since) = cx.activity.working_for(&agent.id, cx.now_ms)
@@ -769,6 +807,7 @@ impl Buffer for ConversationBuffer {
         self.layout = Layout {
             lines: built.lines,
             turns: built.turns,
+            cursor,
             max_top,
             page: height,
             older,
@@ -776,9 +815,24 @@ impl Buffer for ConversationBuffer {
     }
 
     fn on_action(&mut self, action: Action, _cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
-        let Some((top, follow)) = self.view().map(|v| (v.top, v.follow)) else {
+        let Some(top) = self.view().map(|v| v.top) else {
             return false;
         };
+        // Moving puts the cursor back at the middle of the view.
+        let moves = matches!(
+            action,
+            Action::MoveDown
+                | Action::MoveUp
+                | Action::GoTop
+                | Action::GoBottom
+                | Action::PageDown
+                | Action::PageUp
+                | Action::NextTurn
+                | Action::PrevTurn
+        );
+        if moves && let Some(view) = self.view() {
+            view.pinned = None;
+        }
         match action {
             Action::MoveDown => self.scroll_to(top + 1),
             Action::MoveUp => {
@@ -815,14 +869,36 @@ impl Buffer for ConversationBuffer {
                 self.scroll_to(prev.unwrap_or(0));
                 self.maybe_load_older(effects);
             }
+            Action::FoldEntry | Action::UnfoldEntry => {
+                let Some(id) = self.layout.cursor else {
+                    return true;
+                };
+                let folded_turn = self.turn_of(id).map(|t| t.key);
+                if let Some(view) = self.view() {
+                    view.pinned = Some(id);
+                    if let Some(key) = folded_turn.filter(|k| view.folded.contains(k)) {
+                        // The entry is hidden in a folded turn: `zo` opens the turn.
+                        if action == Action::UnfoldEntry {
+                            view.folded.remove(&key);
+                            view.follow = false;
+                        }
+                    } else if action == Action::UnfoldEntry {
+                        view.collapsed.remove(&id);
+                        view.expanded.insert(id);
+                        // Stay where you are rather than following the bottom past it.
+                        view.follow = false;
+                    } else {
+                        view.expanded.remove(&id);
+                        view.collapsed.insert(id);
+                    }
+                }
+            }
             Action::FoldTurn | Action::UnfoldTurn => {
-                let Some(turn) = self
-                    .current_turn(top, follow)
-                    .map(|i| self.layout.turns[i].clone())
-                else {
+                let Some(turn) = self.layout.cursor.and_then(|id| self.turn_of(id)).cloned() else {
                     return true;
                 };
                 if let Some(view) = self.view() {
+                    view.pinned = Some(turn.key);
                     if action == Action::FoldTurn {
                         view.folded.insert(turn.key);
                         // Stay on the folded turn rather than drifting below it.
@@ -830,7 +906,11 @@ impl Buffer for ConversationBuffer {
                         view.top = turn.start_line;
                     } else {
                         view.folded.remove(&turn.key);
-                        view.expanded.extend(turn.entries.iter().copied());
+                        for id in &turn.entries {
+                            view.collapsed.remove(id);
+                            view.expanded.insert(*id);
+                        }
+                        view.follow = false;
                     }
                 }
             }

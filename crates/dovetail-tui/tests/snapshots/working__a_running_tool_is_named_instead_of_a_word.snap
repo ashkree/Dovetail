@@ -29,6 +29,6 @@ expression: screen
 │                                                          ││   ▾ ⚠ ◆ slice-7  manual    needs you │
 └──────────────────────────────────────────────────────────┘│         ⎇ dovetail/slice-7           │
 ┌ chat › coordinator ──────────────────────────────────────┐│ ▾ Next (1)                           │
-│   › i or ^j to type · ]] [[ turns · zc zo fold · gg G    ││ ⏎ open · o fold · dd archive         │
+│   › i or ^j to type · ]] [[ turns · zc zo fold entry …   ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command

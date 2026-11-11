@@ -27,6 +27,6 @@ expression: "render(&mut app, 100, 28)"
 │                                                          ││ ▾ ⚠ get_decision 500 P0              │
 └──────────────────────────────────────────────────────────┘│   ▾ ⚠ ◆ slice-7  manual    needs you │
 ┌ chat › coordinator ──────────────────────────────────────┐│         ⎇ dovetail/slice-7           │
-│   › i or ^j to type · ]] [[ turns · zc zo fold · gg G    ││ ⏎ open · o fold · dd archive         │
+│   › i or ^j to type · ]] [[ turns · zc zo fold entry …   ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
  INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command
