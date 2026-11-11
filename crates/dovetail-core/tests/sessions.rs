@@ -4129,3 +4129,69 @@ mod upgrade {
         u.h.quit();
     }
 }
+
+#[test]
+fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    h.send(Command::NewSideChat {
+        question: "what does the reducer do?".into(),
+    });
+    h.wait_for("the side chat", |s| {
+        s.agents.iter().any(|a| a.name == "side-1")
+    });
+    wait_started(&fake, 1);
+    let spec = fake
+        .started_specs()
+        .into_iter()
+        .find(|s| s.name.as_deref() == Some("side-1"))
+        .expect("side chat spec");
+    let args = spec.claude_args();
+    // Anything not allowed is denied without asking (decided 2026-11-11).
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "--permission-mode" && w[1] == "dontAsk"),
+        "{args:?}"
+    );
+    let allowed = args
+        .windows(2)
+        .find(|w| w[0] == "--allowedTools")
+        .map(|w| w[1].clone())
+        .expect("--allowedTools");
+    for rule in [
+        "Bash(git log *)",
+        "Bash(rg *)",
+        "Bash(cargo tree *)",
+        "WebFetch",
+    ] {
+        assert!(allowed.contains(rule), "{rule} in {allowed}");
+    }
+    assert!(!allowed.split(',').any(|r| r == "Bash"), "{allowed}");
+    let denied = args
+        .windows(2)
+        .find(|w| w[0] == "--disallowedTools")
+        .map(|w| w[1].clone())
+        .expect("--disallowedTools");
+    for rule in ["Edit", "Write", "NotebookEdit", "Bash(find *-exec*)"] {
+        assert!(denied.contains(rule), "{rule} in {denied}");
+    }
+
+    // Its mode never cycles: auto would let the classifier approve other commands.
+    h.send(Command::CyclePermissionMode {
+        agent: AgentId("side-1".into()),
+    });
+    h.drain(Duration::from_millis(300));
+    assert!(
+        h.failures.iter().any(|f| f.contains("read-only")),
+        "{:?}",
+        h.failures
+    );
+    let side = h
+        .snap
+        .agents
+        .iter()
+        .find(|a| a.name == "side-1")
+        .expect("side-1");
+    assert_eq!(side.permission_mode, PermissionMode::Manual);
+    h.quit();
+}
