@@ -51,7 +51,10 @@ fn check(events: &[DriverEvent]) {
         }
     }
     for want in ["WebFetch", "Read", "SubagentHandback"] {
-        assert!(names.contains(&want), "{want} tagged to {agent_call} in {names:?}");
+        assert!(
+            names.contains(&want),
+            "{want} tagged to {agent_call} in {names:?}"
+        );
     }
     assert!(events.iter().any(|e| matches!(
         e,
