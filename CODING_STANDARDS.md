@@ -27,7 +27,7 @@ The rules a review checks code against. The hard constraints in `AGENTS.md` appl
 
 ## Readability (the user has poor eyesight: a requirement, not polish)
 
-120-column reading column centred in wide panes; blank rows between paragraphs, list items, code blocks and headings; markdown keeps bold/italic/code styling and each also gets its own colour; off-white body text, never pure white; tool activity folded into one summary line per turn; thinking hidden; long output truncated with "show more"; optional solid background for the reading column. Details in `docs/ui-session-brief.md`.
+120-column reading column centred in wide panes; blank rows between paragraphs, list items, code blocks and headings; markdown keeps bold/italic/code styling and each also gets its own colour; off-white body text, never pure white; tool activity folded into one summary line per turn; thinking hidden; long output truncated with "show more"; no solid backgrounds on areas (panes, columns, views): the selection highlight and badges are the only exceptions (ADR 0018 amendment, 2026-11-11). Details in `docs/ui-session-brief.md`.
 
 ## Testing
 
