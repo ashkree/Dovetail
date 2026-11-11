@@ -7,6 +7,12 @@ name = "dovetail"
 # [profiles]. Left out: your default ~/.claude. Set up with `dovetail login <name>`.
 # profile = "maveron"
 
+# Research files (rounds, findings, cached sources; ADR 0015) go here, relative to the repo root,
+# so Dovetail's own research sits in the repo next to docs/adr/. The one opt-in exception to
+# "nothing in your repos": Dovetail writes only under this folder, and creates it only when the
+# first round or finding exists. Left out: ~/.local/share/dovetail/projects/<id>/research/.
+research_dir = "docs/research"
+
 [worktree]
 # Paths relative to the repo root, symlinked (never copied) into each new slice worktree.
 symlink = []

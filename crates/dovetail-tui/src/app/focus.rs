@@ -181,6 +181,7 @@ impl App {
                 });
             }
             Action::Upgrade => self.note = Some("usage: :upgrade [--local]".into()),
+            Action::StartRound => self.round(arg),
             Action::NewSlice => {
                 let (name, brief) = arg
                     .split_once(char::is_whitespace)
@@ -224,6 +225,45 @@ impl App {
                 None => self.note = Some("no task in focus to decide on".into()),
             },
             other => self.run(other),
+        }
+    }
+
+    /// `:round <task> <brief>` opens a research round; `:round close` closes the open one.
+    fn round(&mut self, arg: &str) {
+        const USAGE: &str = "usage: :round <task> <brief>, or :round close";
+        if arg == "close" {
+            let open = self
+                .snap
+                .research
+                .iter()
+                .find(|r| r.open_round().is_some())
+                .map(|r| r.task);
+            match open {
+                Some(task) => {
+                    self.outbox.push(Command::CloseRound { task });
+                    self.note = Some(format!("closing the research round on #{}", task.0));
+                }
+                None => self.note = Some("no research round is open".into()),
+            }
+            return;
+        }
+        let (task, brief) = arg
+            .split_once(char::is_whitespace)
+            .map_or((arg, ""), |(t, b)| (t, b.trim()));
+        let task = task.trim_start_matches('#').parse::<i64>().ok();
+        match (task, brief) {
+            (Some(task), brief) if !brief.is_empty() => {
+                let task = dovetail_api::TaskId(task);
+                self.outbox.push(Command::StartRound {
+                    task,
+                    brief: brief.to_string(),
+                });
+                self.note = Some(format!(
+                    "research round on #{}: the coordinator's subagents are filed as findings",
+                    task.0
+                ));
+            }
+            _ => self.note = Some(USAGE.into()),
         }
     }
 

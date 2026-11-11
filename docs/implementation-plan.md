@@ -431,6 +431,7 @@ CREATE TABLE map_versions (map_id TEXT NOT NULL REFERENCES maps(id), version INT
 - Task #27 `0010_agent_claude_home` (`agents.claude_home`, the Claude config folder a session ran under; ADR 0009)
 - M14 `0011_agent_takeover` (`agents.takeover`, a session's take-over lock as JSON, task #32)
 - M15 `0012_maps`
+- R1 (M17 in `docs/plan/research-sessions.md`) `0013_research`: `research_rounds`, `findings`, `sources`, `finding_sources`, `reports` (written from R2), `tasks.research_kind` and `tasks.altitude` (`docs/research.md` §3). R2's `decision_evidence` is next, `0014`.
 
 Tables arrive with the milestone that uses them, so no unused tables sit around.
 
@@ -650,6 +651,15 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] You use it for a full working week on a real project in place of tmux
   - [ ] Every item in the digest's v1 roadmap is shipped, or listed by you as cut
   - [ ] App RSS under 100 MB after a day's use (proposed target)
+
+### R1. Research capture (core) — M17 of `docs/plan/research-sessions.md`
+- **Scope:** `docs/research.md` §3–§5 and ADR 0015, following spike S7 (`docs/spikes/research-capture.md`). Rounds, findings and sources in `state.db` (migration `0013_research`); automatic capture from the stream with nothing sent to any session; files under the research root, rebuilt at start when missing; the recipe's `research_dir` opt-in. No MCP tools: a round is opened with `Command::StartRound` (`:round <task> <brief>`) and closed with `Command::CloseRound` (`:round close`).
+- **Built (branch `dovetail/m17-research-capture`):**
+  - API (`dovetail-api/src/research.rs`): `ResearchSummary` per task in `Snapshot::research`, kept current by `Event::ResearchUpserted`; content through `Command::LoadResearch { task, what: ResearchWhat }` → `Event::ResearchLoaded { task, what, content: ResearchContent }` (a `Listing` of findings and sources with absolute paths, or one markdown `Document`). Ids `FindingId`, `SourceId` are the row ids (`F<id>`, `S<id>` for R2's citations).
+  - Core (`dovetail-core/src/research/{mod,capture,files}.rs`, `db/research.rs`): at most one round is open; while it is, every subagent the coordinator launches is watched. A session working on a task gets quick findings (no round) for subagents that used `WebFetch`/`WebSearch`. Sources come from the subagent's `WebFetch`, `WebSearch` (each `Links:` URL, plus the search itself as an untrusted `search` source), `Read`, `Grep`/`Glob` (listed, not cached) calls and their results; one `sources` row per locator and content, a `finding_sources` row per tool call. The body follows S7's order (notification handback, `Agent` result handback, the `SubagentHandback` call, `Agent` result content, assistant text, a non-handback summary, the output file's `assistant` lines as a last resort). A finding is filed on `task_updated`/`task_notification` or the foreground `Agent` result, never on a `result`, and a better body later rewrites it.
+  - Files: default root `<data>/projects/<id>/research/`, or the recipe's `research_dir` (relative to the repo root, no `..`; or absolute). `config/projects/dovetail.toml` sets `docs/research`; `scripts/bootstrap.sh` reports whether the installed recipe has it.
+- **Done when:** the M17 validation list in `docs/plan/research-sessions.md`.
+- **Tests:** `dovetail-core/tests/research.rs` (both S7 recordings through `FakeDriver`, a page fetched twice, restart with files rebuilt, the opt-in folder, no round), `research::capture` unit tests (quick findings, WebSearch links, the output file), `dovetail-tui/tests/research.rs` (`:round`).
 
 ### Daily-driver fixes (after M10)
 Fixes from the first days of building Dovetail inside Dovetail, one slice and PR each, all merged on 2026-11-09. They come ahead of M11 and count towards M16's "fixing what hurts"; no milestone box is ticked by them.

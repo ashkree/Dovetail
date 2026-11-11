@@ -43,6 +43,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "q!" | "quit!" => Action::ForceQuit,
         "eod" => Action::EndOfDay,
         "upgrade" => Action::Upgrade,
+        "round" => Action::StartRound,
         "spawn" => Action::NewSlice,
         "ask" => Action::NewSideChat,
         "interrupt" => Action::Interrupt,

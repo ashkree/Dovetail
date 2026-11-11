@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::map::MapSummary;
+use crate::research::ResearchSummary;
 
 /// Identifies a registered project: the slug of its repo folder, numbered on collision.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -99,6 +100,10 @@ pub struct Snapshot {
     /// fetched with [`crate::Command::LoadMap`].
     #[serde(default)]
     pub maps: Vec<MapSummary>,
+    /// Each task's research (rounds, finding and source counts), for tasks that have any.
+    /// Content is fetched with [`crate::Command::LoadResearch`].
+    #[serde(default)]
+    pub research: Vec<ResearchSummary>,
     /// The slash commands and skills each session offers, as Claude Code last listed them.
     /// Sessions of one project share a profile, so one agent's list stands in for another's
     /// until that one reports.

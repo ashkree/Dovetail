@@ -101,6 +101,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
             state.maps.retain(|m| m.id != map.id);
             state.maps.insert(0, map);
         }
+        Event::ResearchUpserted(summary) => upsert(&mut state.research, summary, |r| r.task),
         Event::TotalsChanged(totals) => state.totals = totals,
         Event::UsageChanged(usage) => state.usage = usage,
         Event::WarningSet(warning) => upsert(&mut state.warnings, warning, |w| w.id.clone()),
@@ -112,6 +113,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         // Nothing to store: the UI shows the message as the event passes through.
         Event::CommandFailed { .. }
         | Event::MapLoaded(_)
+        | Event::ResearchLoaded { .. }
         | Event::ClipboardPasted { .. }
         | Event::PathsListed { .. }
         | Event::TerminalReturned { .. }

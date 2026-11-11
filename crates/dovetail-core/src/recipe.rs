@@ -3,6 +3,7 @@
 //! ```toml
 //! name = "dovetail"
 //! profile = "maveron"       # Claude account, from config.toml [profiles] (ADR 0009)
+//! research_dir = "docs/research"  # opt-in: research files in the repo (ADR 0015)
 //! [worktree]
 //! symlink = []              # paths relative to the repo root; symlinked, never copied (12c)
 //! setup = ["cargo fetch"]   # run in order in the new worktree; each must be safe to re-run (B5)
@@ -28,6 +29,11 @@ pub struct Recipe {
     /// The Claude profile every session of the project runs under; `None` for the default.
     #[serde(default)]
     pub profile: Option<String>,
+    /// Where research files go (ADR 0015 point 7): relative to the repo root, or absolute.
+    /// `None`: Dovetail's data folder. An explicit opt-in to write into the repo; Dovetail
+    /// writes only under this folder.
+    #[serde(default)]
+    pub research_dir: Option<PathBuf>,
     /// How slice worktrees are prepared.
     #[serde(default)]
     pub worktree: WorktreeRecipe,
@@ -122,6 +128,20 @@ mod tests {
         let recipe = Recipe::parse("name = \"d\"\nprofile = \"maveron\"\n").unwrap();
         assert_eq!(recipe.profile.as_deref(), Some("maveron"));
         assert_eq!(Recipe::parse("").unwrap().profile, None);
+    }
+
+    #[test]
+    fn a_recipe_may_name_a_research_dir() {
+        let recipe = Recipe::parse("research_dir = \"docs/research\"\n").unwrap();
+        assert_eq!(recipe.research_dir, Some(PathBuf::from("docs/research")));
+        assert_eq!(Recipe::parse("").unwrap().research_dir, None);
+    }
+
+    #[test]
+    fn the_repos_own_recipe_parses() {
+        let text = include_str!("../../../config/projects/dovetail.toml");
+        let recipe = Recipe::parse(text).unwrap();
+        assert_eq!(recipe.research_dir, Some(PathBuf::from("docs/research")));
     }
 
     #[test]

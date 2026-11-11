@@ -1098,6 +1098,7 @@ impl App {
             Action::Quit => self.quit_asking(true),
             Action::EndOfDay => self.close_day(false),
             Action::Upgrade => self.run_with_arg(Action::Upgrade, ""),
+            Action::StartRound => self.run_with_arg(Action::StartRound, ""),
             Action::ForceQuit => self.quit = true,
             Action::QuitOnRepeat => {
                 if std::mem::take(&mut self.exit_armed) {

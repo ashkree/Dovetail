@@ -12,6 +12,7 @@
 
 mod maps;
 mod registry;
+pub mod research;
 mod sessions;
 mod tasks;
 
@@ -69,6 +70,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0010_agent_claude_home.sql"),
     migration!("state", "0011_agent_takeover.sql"),
     migration!("state", "0012_maps.sql"),
+    migration!("state", "0013_research.sql"),
 ];
 
 /// Errors from the database layer.
@@ -101,6 +103,10 @@ pub enum DbError {
     /// A referenced row does not exist.
     #[error("{0}")]
     NotFound(String),
+    /// The request is not allowed in the current state (a round is already open, the task is
+    /// archived).
+    #[error("{0}")]
+    Refused(String),
     /// A project request on a `Db` opened without a project.
     #[error("no project database is open")]
     NoProject,
@@ -334,6 +340,61 @@ impl Db {
     /// Stores a new map, or a new version of the one its id names.
     pub fn save_map(&self, new: NewMapVersion) -> Pending<Drawn> {
         self.run(move |c, now| maps::save_map(c.state()?, new, now))
+    }
+
+    // --- research (R1) ---
+
+    /// The research round still open, if any.
+    pub fn open_round(&self) -> Pending<Option<research::RoundRow>> {
+        self.run(|c, _| research::open_round(c.state()?))
+    }
+
+    /// Opens the next round of `task`.
+    pub fn start_round(&self, task: TaskId, brief: String) -> Pending<research::RoundRow> {
+        self.run(move |c, now| research::start_round(c.state()?, task, &brief, now))
+    }
+
+    /// Closes the open round of `task`.
+    pub fn close_round(&self, task: TaskId) -> Pending<research::RoundRow> {
+        self.run(move |c, now| research::close_round(c.state()?, task, now))
+    }
+
+    /// Files a finding with its sources.
+    pub fn file_finding(
+        &self,
+        new: research::NewFinding,
+    ) -> Pending<(research::FindingRow, Vec<research::SourceRow>)> {
+        self.run(move |c, now| research::file_finding(c.state()?, new, now))
+    }
+
+    /// Replaces a finding's body.
+    pub fn set_finding_body(
+        &self,
+        id: dovetail_api::research::FindingId,
+        body: String,
+        from: &'static str,
+    ) -> Pending<()> {
+        self.run(move |c, _| research::set_finding_body(c.state()?, id, &body, from))
+    }
+
+    /// Summary counts of every task with research.
+    pub fn research_summaries(&self) -> Pending<Vec<research::SummaryRow>> {
+        self.run(|c, _| research::load_summaries(c.state()?))
+    }
+
+    /// Summary counts of one task.
+    pub fn research_summary(&self, task: TaskId) -> Pending<research::SummaryRow> {
+        self.run(move |c, _| research::load_summary(c.state()?, task))
+    }
+
+    /// One task's research in full.
+    pub fn task_research(&self, task: TaskId) -> Pending<research::TaskResearch> {
+        self.run(move |c, _| research::load_task(c.state()?, task))
+    }
+
+    /// Every task's research in full.
+    pub fn all_research(&self) -> Pending<Vec<(TaskId, research::TaskResearch)>> {
+        self.run(|c, _| research::load_all(c.state()?))
     }
 
     // --- agents and conversations ---

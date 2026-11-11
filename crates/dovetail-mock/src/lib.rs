@@ -535,7 +535,10 @@ impl MockCore {
             Command::Upgrade { .. }
             | Command::RemoveWorktree { .. }
             | Command::OpenProject { .. }
-            | Command::RegisterProject { .. } => self.fail("not available in the mock".into()),
+            | Command::RegisterProject { .. }
+            | Command::StartRound { .. }
+            | Command::CloseRound { .. }
+            | Command::LoadResearch { .. } => self.fail("not available in the mock".into()),
         }
     }
 
