@@ -3,7 +3,7 @@
 //! are this component with different items.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, InboxId, TaskId};
+use dovetail_api::{AgentId, InboxId, ProjectId, TaskId};
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32Str};
 use ratatui::Frame;
@@ -27,6 +27,8 @@ pub enum PickerKey {
     Inbox(InboxId),
     /// A slash command or skill, by name.
     Command(String),
+    /// A registered project (the project switcher).
+    Project(ProjectId),
 }
 
 /// One row.

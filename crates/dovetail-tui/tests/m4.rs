@@ -853,13 +853,10 @@ fn a_session_already_taken_over_says_so_and_shows_a_native_badge() {
 }
 
 #[test]
-fn stubs_say_when_they_arrive() {
+fn the_project_switcher_says_how_to_make_a_project_when_there_is_none() {
     let mut app = app_with(world());
     leader(&mut app, "pp");
-    assert_eq!(
-        app.note(),
-        Some("to switch projects, quit and open dovetail in the other folder")
-    );
+    assert!(app.note().is_some_and(|n| n.contains(":project new")));
 }
 
 // --- snapshots of the overlays and new buffers ---

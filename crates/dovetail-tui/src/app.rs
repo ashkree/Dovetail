@@ -18,6 +18,7 @@ macro_rules! cx {
 mod draw;
 mod focus;
 mod overlay;
+mod projects;
 mod search;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -412,7 +413,11 @@ impl App {
                 let journal = matches!(event, Event::JournalChanged(_));
                 // Every agent is idle and the user said so (ADR 0014): quit without asking, so
                 // the binary can swap the new build in and start it.
-                if matches!(event, Event::UpgradeRestarting) {
+                // Likewise when the user picked another project (B24) and said yes.
+                if matches!(
+                    event,
+                    Event::UpgradeRestarting | Event::OpeningProject { .. }
+                ) {
                     self.quit = true;
                 }
                 match apply(&mut self.snap, seq, event) {
@@ -1066,6 +1071,10 @@ impl App {
             Action::MapMode => self.enter_map_mode(),
             Action::LeaveMapMode => self.mode = Mode::Normal,
             Action::MapRedraw => self.ask_redraw_map(),
+            // A research project has no repo, so no worktree view: one line says why.
+            Action::ShowWorktrees if self.in_research_project() => {
+                self.note = Some("a research project has no repo, so no worktrees".into());
+            }
             Action::ShowWorktrees => {
                 let opening = self.regions.buffer(RegionId::Main) != BufferKind::Worktrees;
                 self.toggle_main(BufferKind::Worktrees);
@@ -1113,10 +1122,8 @@ impl App {
                     .unwrap_or_default();
                 self.outbox.push(Command::RegisterProject { path });
             }
-            Action::SwitchProject => {
-                self.note =
-                    Some("to switch projects, quit and open dovetail in the other folder".into());
-            }
+            Action::SwitchProject => self.open_project_picker(),
+            Action::NewProject => self.run_with_arg(Action::NewProject, ""),
             Action::Quit => self.quit_asking(true),
             Action::EndOfDay => self.close_day(false),
             Action::Upgrade => self.run_with_arg(Action::Upgrade, ""),

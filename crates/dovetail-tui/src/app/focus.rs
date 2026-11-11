@@ -193,6 +193,7 @@ impl App {
             }
             Action::Upgrade => self.note = Some("usage: :upgrade [--local]".into()),
             Action::StartRound => self.round(arg),
+            Action::NewProject => self.new_project(arg),
             Action::NewSlice => {
                 let (name, brief) = arg
                     .split_once(char::is_whitespace)

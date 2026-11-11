@@ -578,13 +578,25 @@ impl MockCore {
         }
         let taken = |p: &ProjectSummary| p.kind == ProjectKind::Research && p.name == name;
         if self.state.projects.iter().any(taken) {
-            return self.fail(format!("there is already a research project named `{name}`"));
+            return self.fail(format!(
+                "there is already a research project named `{name}`"
+            ));
         }
         let mut id: String = name
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
             .collect();
-        id = id.split('-').filter(|s| !s.is_empty()).collect::<Vec<_>>().join("-");
+        id = id
+            .split('-')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("-");
         if id.is_empty() {
             id = "project".into();
         }

@@ -109,9 +109,8 @@ fn open_project(paths: &Paths, id: &str) {
         }
     }
     args.extend(["--project".into(), id.into()]);
-    let mut command = std::process::Command::new(
-        std::env::current_exe().unwrap_or_else(|_| "dovetail".into()),
-    );
+    let mut command =
+        std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "dovetail".into()));
     command.args(args);
     // A code project opens in its folder, as if `dovetail` had been run there.
     let folder = Db::open(paths, None)

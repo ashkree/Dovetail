@@ -41,7 +41,10 @@ pub fn run(args: Vec<String>) -> Result<()> {
     drop(registry);
     // A folder never resolves to a research project, but say so rather than assume it.
     let Some(repo) = project.repo_path.clone().filter(|_| !project.is_research()) else {
-        bail!("{} is a research project: it has no repo to build from", project.id);
+        bail!(
+            "{} is a research project: it has no repo to build from",
+            project.id
+        );
     };
 
     let install = install_path()?;
