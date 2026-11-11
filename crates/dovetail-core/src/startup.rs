@@ -62,6 +62,25 @@ pub(crate) fn roles(missing: &[&str]) -> Option<Warning> {
     })
 }
 
+/// A `[suites] side_chat` list in `config.toml` that gives side chats something other than the
+/// core suite: ignored, because a side chat is read-only (decided 2026-11-11).
+pub(crate) fn side_chat_suites(
+    configured: Option<&[dovetail_api::tools::Suite]>,
+) -> Option<Warning> {
+    let configured = configured?;
+    tracing::warn!(
+        suites = %dovetail_api::tools::Suite::join(configured),
+        "config.toml [suites] side_chat ignored: side chats get only core"
+    );
+    Some(warning(
+        "config-suites",
+        format!(
+            "config.toml gives side chats the suites [{}]; ignored, side chats get only core",
+            dovetail_api::tools::Suite::join(configured)
+        ),
+    ))
+}
+
 /// A registered project without a recipe file: worktrees get the default setup.
 pub(crate) fn recipe(project: &str, exists: bool) -> Option<Warning> {
     (!exists).then(|| {
@@ -138,6 +157,15 @@ mod tests {
         assert!(old.text.contains("older than 2.1.224"), "{}", old.text);
         assert!(claude_version(Ok("hello".into())).is_some());
         assert!(claude_version(Err(VersionError("not found".into()))).is_some());
+    }
+
+    #[test]
+    fn a_side_chat_suite_list_in_the_config_is_warned_about_and_ignored() {
+        use dovetail_api::tools::Suite;
+        assert!(side_chat_suites(None).is_none());
+        let w = side_chat_suites(Some(&[Suite::Core, Suite::Tasks])).unwrap();
+        assert!(w.text.contains("core,tasks"), "{}", w.text);
+        assert!(w.text.contains("ignored"), "{}", w.text);
     }
 
     #[test]

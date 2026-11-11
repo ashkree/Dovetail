@@ -818,6 +818,7 @@ impl Core {
                     .filter(|r| !self.paths.role_prompt(r).exists())
                     .collect::<Vec<_>>(),
             ),
+            crate::startup::side_chat_suites(self.config.suites.side_chat_override()),
             // A research project has no worktrees, so no recipe to miss.
             self.project
                 .registered()

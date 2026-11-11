@@ -4492,6 +4492,38 @@ mod upgrade {
 }
 
 #[test]
+fn a_side_chat_gets_only_the_core_suite_whatever_the_config_says() {
+    let fake = fixture("plain_turn");
+    let mut config = Config::default();
+    config.suites.side_chat = dovetail_api::tools::Suite::ALL.to_vec();
+    let mut h = Harness::start(fake.clone(), true, config);
+    h.send(Command::NewSideChat {
+        question: "what does the reducer do?".into(),
+    });
+    h.wait_for("the side chat", |s| {
+        s.agents.iter().any(|a| a.name == "side-1")
+    });
+    wait_started(&fake, 1);
+    let spec = fake
+        .started_specs()
+        .into_iter()
+        .find(|s| s.name.as_deref() == Some("side-1"))
+        .expect("side chat spec");
+    let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
+    assert!(mcp.contains(r#""DOVETAIL_SUITES": "core""#), "{mcp}");
+    // The config's list is reported once, as a warning.
+    assert!(
+        h.snap
+            .warnings
+            .iter()
+            .any(|w| w.id.0 == "config-suites" && w.text.contains("ignored")),
+        "{:?}",
+        h.snap.warnings
+    );
+    h.quit();
+}
+
+#[test]
 fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
     let fake = fixture("plain_turn");
     let mut h = Harness::start(fake.clone(), true, Config::default());

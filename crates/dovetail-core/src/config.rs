@@ -15,7 +15,7 @@
 //! [suites]                   # tool suites per role (ADR 0016); a role left out keeps its default
 //! coordinator = ["core", "tasks", "project", "coordination", "research", "maps"]
 //! slice = ["core", "coordination", "maps"]
-//! side_chat = ["core"]
+//! side_chat = ["core"]       # ignored: side chats and Ask always get the core suite
 //! ```
 //!
 //! Every field is optional.
@@ -59,7 +59,8 @@ pub struct RoleSuites {
     pub coordinator: Vec<Suite>,
     /// Each slice's suites.
     pub slice: Vec<Suite>,
-    /// Each side chat's suites.
+    /// Each side chat's suites. Read, then ignored: a side chat gets the core suite whatever
+    /// this says ([`RoleSuites::side_chat_override`]).
     pub side_chat: Vec<Suite>,
 }
 
@@ -79,10 +80,16 @@ impl RoleSuites {
         match role {
             Role::Coordinator => &self.coordinator,
             Role::Slice => &self.slice,
-            Role::SideChat => &self.side_chat,
-            // Ask reads files and changes nothing in Dovetail (ADR 0018); not configurable.
-            Role::Ask => Role::Ask.default_suites(),
+            // Side chats and Ask read and change nothing in Dovetail (ADR 0011, 0018): whatever
+            // `[suites]` says, they keep their defaults (decided 2026-11-11).
+            Role::SideChat | Role::Ask => role.default_suites(),
         }
+    }
+
+    /// The `side_chat` list when `config.toml` gave one other than the default: it is ignored,
+    /// and the app warns.
+    pub fn side_chat_override(&self) -> Option<&[Suite]> {
+        (self.side_chat != Role::SideChat.default_suites()).then_some(&self.side_chat)
     }
 }
 
@@ -209,6 +216,23 @@ mod tests {
         assert_eq!(partial.for_role(Role::Slice), [Suite::Core]);
         assert_eq!(partial.for_role(Role::Coordinator), Suite::ALL);
         assert!(Config::parse("[suites]\nslice = [\"everything\"]\n").is_err());
+    }
+
+    #[test]
+    fn side_chats_hold_to_the_core_suite_whatever_the_config_says() {
+        let config = Config::parse("[suites]\nside_chat = [\"core\", \"tasks\", \"project\"]\n")
+            .unwrap()
+            .suites;
+        assert_eq!(config.for_role(Role::SideChat), [Suite::Core]);
+        assert_eq!(config.for_role(Role::Ask), []);
+        assert_eq!(
+            config.side_chat_override(),
+            Some(&[Suite::Core, Suite::Tasks, Suite::Project][..])
+        );
+        assert_eq!(RoleSuites::default().side_chat_override(), None);
+        let less = Config::parse("[suites]\nside_chat = []\n").unwrap().suites;
+        assert_eq!(less.for_role(Role::SideChat), [Suite::Core]);
+        assert!(less.side_chat_override().is_some());
     }
 
     #[test]
