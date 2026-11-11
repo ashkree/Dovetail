@@ -221,6 +221,11 @@ impl Core {
                 InboxKind::FinishedTurn { .. } | InboxKind::Error { .. } => {
                     self.restore_item(item, Waiter::None);
                 }
+                // The finding is in `state.db`; the question of where it goes is still open.
+                InboxKind::UnfiledFinding { finding, .. } => {
+                    let finding = *finding;
+                    self.restore_item(item, Waiter::UnfiledFinding { finding });
+                }
                 // The call returned `pending` and nothing was written: say so, so it is
                 // proposed again if still wanted.
                 InboxKind::Proposal { kind, text, .. } => {

@@ -324,6 +324,17 @@ impl Core {
                             error(format!("task #{} is already archived", id.0))
                         }
                         Some(_) => {
+                            // Closing a research round on the user's behalf is the user's call
+                            // (they are asked when they archive the task themselves).
+                            if let Some(round) = self.round_blocking_archive(id).await {
+                                let _ = reply.send(error(format!(
+                                    "task #{} has {round}: close it with research_write_report \
+                                     (or ask the user to drop it), or ask the user to archive \
+                                     the task, which asks them first",
+                                    id.0
+                                )));
+                                return;
+                            }
                             let slices = self.task_slices(id);
                             self.archive_for_tool(slices, Some(id), reply).await;
                             return;

@@ -24,6 +24,8 @@ fn summary(task: i64, report: bool) -> ResearchSummary {
         dir: "/data/research/1-pricing".into(),
         rounds: vec![
             RoundSummary {
+                id: 1,
+                queued: false,
                 n: 1,
                 brief: "per seat or flat?".into(),
                 dir: "rounds/01-2026-11-10".into(),
@@ -32,6 +34,8 @@ fn summary(task: i64, report: bool) -> ResearchSummary {
                 findings: 2,
             },
             RoundSummary {
+                id: 2,
+                queued: false,
                 n: 2,
                 brief: "what does churn look like?".into(),
                 dir: "rounds/02-2026-11-11".into(),
@@ -44,6 +48,7 @@ fn summary(task: i64, report: bool) -> ResearchSummary {
         quick_findings: 1,
         sources: 2,
         report_ms: report.then_some(NOW_MS - 1_800_000),
+        kind: None,
     }
 }
 
@@ -85,6 +90,20 @@ fn listing() -> ResearchListing {
             },
         ],
     }
+}
+
+fn tab() -> crossterm::event::KeyEvent {
+    crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Tab,
+        crossterm::event::KeyModifiers::NONE,
+    )
+}
+
+fn back_tab() -> crossterm::event::KeyEvent {
+    crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::BackTab,
+        crossterm::event::KeyModifiers::SHIFT,
+    )
 }
 
 fn deliver(app: &mut App, event: Event) {
@@ -142,6 +161,7 @@ fn detail(report: bool) -> App {
 
 /// Presses `Enter` on the first research row (the report) and answers with the report.
 fn open_report(app: &mut App) {
+    app.on_key(tab(), 1);
     app.on_key(enter(), 2);
     assert_eq!(
         app.take_commands(),
@@ -185,6 +205,7 @@ fn a_task_with_no_report_says_so_and_enter_has_nothing_to_open_there() {
     let screen = render(&mut app, 120, 60);
     assert!(screen.contains("no report yet"), "{screen}");
     // The first selectable row is round 1's brief, not a report.
+    app.on_key(tab(), 1);
     app.on_key(enter(), 1);
     assert_eq!(
         app.take_commands(),
@@ -218,8 +239,8 @@ fn every_row_opens_its_document_in_the_reading_view() {
     ];
     for (n, what) in expected.into_iter().enumerate() {
         let mut app = detail(true);
-        for _ in 0..n {
-            app.on_key(key('j'), 1);
+        for _ in 0..=n {
+            app.on_key(tab(), 1);
         }
         app.on_key(enter(), 2);
         assert_eq!(
@@ -304,7 +325,7 @@ fn e_hands_the_documents_file_to_the_editor_and_a_listed_source_has_none() {
     // A source that was listed but not cached has no file.
     app.on_key(esc(), 4);
     for _ in 0..7 {
-        app.on_key(key('j'), 5);
+        app.on_key(tab(), 5);
     }
     app.on_key(enter(), 6);
     app.take_commands();
@@ -323,6 +344,7 @@ fn e_hands_the_documents_file_to_the_editor_and_a_listed_source_has_none() {
 fn gg_and_capital_g_move_through_a_long_document() {
     let mut app = detail(true);
     let long: String = (0..80).map(|n| format!("line {n}\n\n")).collect();
+    app.on_key(tab(), 1);
     app.on_key(enter(), 2);
     app.take_commands();
     loaded(&mut app, ResearchWhat::Report, None, &long);
@@ -430,6 +452,8 @@ fn colon_round_close_closes_the_open_round() {
         task: TaskId(3),
         dir: "/r/3-x".into(),
         rounds: vec![RoundSummary {
+            id: 1,
+            queued: false,
             n: 1,
             brief: "b".into(),
             dir: "rounds/01-2026-11-11".into(),
@@ -441,10 +465,295 @@ fn colon_round_close_closes_the_open_round() {
         quick_findings: 0,
         sources: 0,
         report_ms: None,
+        kind: None,
     });
     let mut app = app_with(snap);
     assert_eq!(
         run(&mut app, "round close"),
         vec![Command::CloseRound { task: TaskId(3) }]
+    );
+}
+
+// --- follow-ups of 2026-11-11 --------------------------------------------------------------
+
+#[test]
+fn j_and_k_scroll_line_by_line_and_do_not_pick_rows() {
+    let mut app = detail(true);
+    // Short terminal: the detail scrolls.
+    let top = render(&mut app, 100, 14);
+    assert!(top.contains("task · #1"), "{top}");
+    for _ in 0..6 {
+        app.on_key(key('j'), 1);
+    }
+    let scrolled = render(&mut app, 100, 14);
+    assert_ne!(top, scrolled);
+    // `j` picked no row, so `Enter` has nothing to open.
+    assert_eq!(app.on_key(enter(), 2), ());
+    assert_eq!(app.take_commands(), vec![]);
+    assert!(
+        app.note().unwrap_or_default().contains("Tab picks"),
+        "{:?}",
+        app.note()
+    );
+    for _ in 0..6 {
+        app.on_key(key('k'), 3);
+    }
+    assert_eq!(render(&mut app, 100, 14), top);
+}
+
+#[test]
+fn tab_and_shift_tab_jump_between_research_rows_and_enter_opens_the_selected_one() {
+    let mut app = detail(true);
+    app.on_key(tab(), 1);
+    app.on_key(tab(), 2);
+    app.on_key(enter(), 3);
+    // Report, then round 1's brief.
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::LoadResearch {
+            task: TaskId(1),
+            what: ResearchWhat::Brief { round: 1 },
+        }]
+    );
+    let mut app = detail(true);
+    // Shift-Tab from nothing lands on the last row, the second source.
+    app.on_key(back_tab(), 1);
+    app.on_key(enter(), 2);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::LoadResearch {
+            task: TaskId(1),
+            what: ResearchWhat::Source(SourceId(2)),
+        }]
+    );
+    // And it wraps round.
+    let mut app = detail(true);
+    app.on_key(back_tab(), 1);
+    app.on_key(tab(), 2);
+    app.on_key(enter(), 3);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::LoadResearch {
+            task: TaskId(1),
+            what: ResearchWhat::Report,
+        }]
+    );
+}
+
+#[test]
+fn e_on_a_selected_research_row_opens_that_file_in_the_editor() {
+    let mut app = detail(true);
+    // Report, brief 1, F1.
+    for _ in 0..3 {
+        app.on_key(tab(), 1);
+    }
+    app.on_key(key('e'), 2);
+    assert_eq!(
+        app.take_handoff(),
+        Some(Command::OpenEditor {
+            path: "/data/research/1-pricing/findings/1-seat-plans.md".into()
+        })
+    );
+    deliver(&mut app, Event::TerminalReturned { error: None });
+}
+
+#[test]
+fn e_with_no_row_selected_is_still_the_notes_action() {
+    let mut app = detail(true);
+    app.on_key(key('e'), 1);
+    assert_eq!(app.take_handoff(), None);
+    assert!(
+        app.note().unwrap_or_default().contains("notes"),
+        "{:?}",
+        app.note()
+    );
+}
+
+fn queued_round(id: i64, n: u32) -> RoundSummary {
+    RoundSummary {
+        id,
+        queued: true,
+        n,
+        brief: "queued criteria".into(),
+        dir: format!("rounds/{n:02}-2026-11-11").into(),
+        opened_ms: NOW_MS,
+        closed_ms: None,
+        findings: 0,
+    }
+}
+
+#[test]
+fn a_queued_round_shows_its_place_in_line() {
+    let mut snap = world();
+    let mut a = summary(1, true);
+    a.rounds.push(queued_round(5, 3));
+    snap.research.push(a);
+    let mut b = summary(3, false);
+    b.rounds.clear();
+    b.rounds.push(queued_round(4, 1));
+    snap.research.push(b);
+    let mut app = app_with(snap);
+    // Task 3's round was requested first: 2nd in line (the open round is 1st); task 1's is 3rd.
+    select(&mut app, "idea: eval key flow");
+    app.on_key(enter(), 0);
+    let screen = render(&mut app, 120, 60);
+    assert!(
+        screen.contains("Round 1 · queued (2nd in line)"),
+        "{screen}"
+    );
+    assert!(
+        !screen.contains("1 round ·"),
+        "queued is not a round yet:\n{screen}"
+    );
+}
+
+#[test]
+fn archiving_a_task_with_an_open_round_asks_first() {
+    let mut snap = world();
+    snap.research.push(ResearchSummary {
+        task: TaskId(3),
+        dir: "/r/3-x".into(),
+        rounds: vec![RoundSummary {
+            id: 1,
+            queued: false,
+            n: 1,
+            brief: "b".into(),
+            dir: "rounds/01-2026-11-11".into(),
+            opened_ms: 0,
+            closed_ms: None,
+            findings: 0,
+        }],
+        findings: 0,
+        quick_findings: 0,
+        sources: 0,
+        report_ms: None,
+        kind: None,
+    });
+    let mut app = app_with(snap);
+    select(&mut app, "idea: eval key flow");
+    press(&mut app, "d");
+    assert_eq!(press(&mut app, "d"), vec![]);
+    let screen = render(&mut app, 120, 40);
+    assert!(
+        screen.contains("Task #3 has an open research round. Close it and archive? y/n"),
+        "{screen}"
+    );
+    // `n` keeps the task.
+    app.on_key(key('n'), 50);
+    assert_eq!(app.take_commands(), vec![]);
+    press(&mut app, "d");
+    press(&mut app, "d");
+    app.on_key(key('y'), 51);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::ArchiveTask { id: TaskId(3) }]
+    );
+}
+
+#[test]
+fn colon_round_drop_drops_a_queued_round_and_only_a_queued_one() {
+    let mut snap = world();
+    snap.research.push(ResearchSummary {
+        task: TaskId(3),
+        dir: "/r/3-x".into(),
+        rounds: vec![queued_round(9, 2)],
+        findings: 0,
+        quick_findings: 0,
+        sources: 0,
+        report_ms: None,
+        kind: None,
+    });
+    let mut app = app_with(snap);
+    assert_eq!(
+        run(&mut app, "round drop 3"),
+        vec![Command::DropRound {
+            task: TaskId(3),
+            round: None
+        }]
+    );
+    assert_eq!(
+        run(&mut app, "round drop #3 2"),
+        vec![Command::DropRound {
+            task: TaskId(3),
+            round: Some(2)
+        }]
+    );
+    assert_eq!(run(&mut app, "round drop 3 7"), vec![]);
+    assert!(app.note().unwrap_or_default().contains("no such queued"));
+    assert_eq!(run(&mut app, "round drop 4"), vec![]);
+}
+
+#[test]
+fn colon_research_kind_sets_the_kind_of_the_selected_task() {
+    let mut app = app_with(world());
+    select(&mut app, "idea: eval key flow");
+    assert_eq!(
+        run(&mut app, "research kind decision"),
+        vec![Command::SetResearchKind {
+            task: TaskId(3),
+            kind: dovetail_api::research::ResearchKind::Decision,
+        }]
+    );
+    assert_eq!(run(&mut app, "research kind soon"), vec![]);
+    assert!(
+        app.note()
+            .unwrap_or_default()
+            .contains("usage: :research kind")
+    );
+}
+
+fn unfiled_item(id: u64) -> InboxItem {
+    InboxItem {
+        id: InboxId(id),
+        agent: agent_id("coordinator"),
+        at_ms: NOW_MS,
+        kind: InboxKind::UnfiledFinding {
+            finding: 7,
+            label: "pricing-pages".into(),
+            sources: 3,
+        },
+    }
+}
+
+#[test]
+fn an_unfiled_finding_is_filed_from_the_inbox_through_a_task_picker() {
+    let mut snap = world();
+    snap.inbox.clear();
+    snap.inbox.push(unfiled_item(40));
+    let mut app = app_with(snap);
+    press(&mut app, " n");
+    let screen = render(&mut app, 140, 40);
+    assert!(screen.contains("Unfiled finding: 'pricing"), "{screen}");
+    // `y` opens the picker over tasks; Enter chooses the first row.
+    assert_eq!(press(&mut app, "y"), vec![]);
+    let screen = render(&mut app, 140, 40);
+    assert!(screen.contains("File finding under"), "{screen}");
+    app.on_key(enter(), 60);
+    let commands = app.take_commands();
+    assert!(
+        matches!(
+            commands.as_slice(),
+            [Command::FileUnfiled {
+                item: InboxId(40),
+                ..
+            }]
+        ),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn enter_on_an_unfiled_finding_also_picks_a_task_and_d_drops_it() {
+    let mut snap = world();
+    snap.inbox.clear();
+    snap.inbox.push(unfiled_item(40));
+    let mut app = app_with(snap);
+    press(&mut app, " n");
+    app.on_key(enter(), 1);
+    assert!(render(&mut app, 140, 40).contains("File finding under"));
+    app.on_key(esc(), 2);
+    assert_eq!(
+        press(&mut app, "d"),
+        vec![Command::DismissInbox { item: InboxId(40) }]
     );
 }

@@ -241,6 +241,9 @@ pub(crate) fn facts(tasks: &[Task], agents: &[&Agent], inbox: &[&InboxItem]) -> 
             InboxKind::Proposal { kind, text, .. } => {
                 format!("{} proposal: {}", kind.as_str(), first_line(text))
             }
+            InboxKind::UnfiledFinding { label, sources, .. } => {
+                format!("unfiled finding: {label} ({sources} sources)")
+            }
         };
         out.push_str(&format!("- {}, {what}\n", name(&item.agent)));
     }

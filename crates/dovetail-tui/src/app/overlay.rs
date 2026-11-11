@@ -2,7 +2,7 @@
 //! close.
 
 use crossterm::event::KeyEvent;
-use dovetail_api::{Command, TaskChange, TaskId};
+use dovetail_api::{Command, InboxId, TaskChange, TaskId};
 
 use super::App;
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
@@ -16,6 +16,8 @@ pub(super) enum Purpose {
     Open,
     /// Relate this task to the chosen one, or unrelate them.
     Relate(TaskId),
+    /// File this unfiled finding (an inbox item) under the chosen task.
+    FileUnfiled(InboxId),
 }
 
 /// What floats over the layout.
@@ -87,6 +89,19 @@ impl App {
         ));
     }
 
+    /// `y` or Enter on an unfiled finding: pick the task to file it under.
+    pub(super) fn open_file_picker(&mut self, item: InboxId) {
+        let items = switcher::task_items(&self.snap, &self.theme);
+        if items.is_empty() {
+            self.note = Some("there is no task to file it under: add one first (<leader>t)".into());
+            return;
+        }
+        self.open_overlay(Overlay::Picker(
+            Picker::new("File finding under", items),
+            Purpose::FileUnfiled(item),
+        ));
+    }
+
     /// `<leader>t`: one line that becomes a task, linked to the task in focus.
     pub(super) fn open_capture(&mut self) {
         let link = self.focused_task().and_then(|id| {
@@ -112,6 +127,10 @@ impl App {
                     match (purpose, key) {
                         (Purpose::Relate(task), PickerKey::Task(other)) => {
                             self.toggle_related(task, other)
+                        }
+                        (Purpose::FileUnfiled(item), PickerKey::Task(task)) => {
+                            self.outbox.push(Command::FileUnfiled { item, task });
+                            self.note = Some(format!("filing the finding under #{}", task.0));
                         }
                         (_, key) => self.choose(key),
                     }

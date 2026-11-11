@@ -9,11 +9,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dovetail_api::research::{
-    Evidence, FindingId, ProposalKind, ResearchContent, ResearchWhat, SourceId,
+    Evidence, FindingId, ProposalKind, ResearchContent, ResearchKind, ResearchWhat, SourceId,
 };
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::{
-    ResearchGet, ResearchPropose, ResearchStartRound, ResearchWriteReport, Tool,
+    ArchiveTask, ResearchGet, ResearchPropose, ResearchStartRound, ResearchWriteReport, Tool,
 };
 use dovetail_api::{
     AgentId, Alternative, Bucket, Command, CoreLink, Event, InboxKind, NewTask, PermissionAnswer,
@@ -241,6 +241,7 @@ fn start_round(app: &App, task: TaskId, brief: &str) -> (String, bool) {
     app.call(Tool::ResearchStartRound(ResearchStartRound {
         task,
         brief: brief.into(),
+        kind: None,
     }))
 }
 
@@ -450,11 +451,11 @@ fn the_specified_errors_are_returned_and_nothing_is_written() {
     assert!(!is_error, "{text}");
     assert_eq!(head(&text)["status"], "open");
     assert_eq!(head(&text)["round"], 1);
+    // A second request while a round is open is queued, not refused.
     let (text, is_error) = start_round(&app, task, "again");
-    assert!(
-        is_error && text.contains("a round is already open for task"),
-        "{text}"
-    );
+    assert!(!is_error, "{text}");
+    assert_eq!(head(&text)["status"], "queued");
+    assert_eq!(head(&text)["position"], 2);
 
     // An unresolved citation refuses the write, lists what exists, and leaves the round open.
     let (text, is_error) = write_report(&app, task, "A claim [F9].\n");
@@ -677,5 +678,412 @@ fn a_pending_proposal_expires_at_restart_and_writes_nothing() {
             .iter()
             .all(|t| t.title != "Look at the pricing page")
     );
+    app.quit();
+}
+
+// --- follow-ups of 2026-11-11: the queue, archiving, unfiled findings, kind ----------------
+
+fn brief_file(app: &App, task: TaskId, n: u32) -> PathBuf {
+    let summary = app.summary(task).expect("summary");
+    let round = summary.rounds.iter().find(|r| r.n == n).expect("round");
+    summary.dir.join(&round.dir).join("brief.md")
+}
+
+fn activity_has(app: &App, needle: &str) -> bool {
+    app.snap.activity.iter().any(|a| a.text.contains(needle))
+}
+
+#[test]
+fn a_round_requested_while_one_is_open_is_queued_and_opens_in_request_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, paths) = open_repo(dir.path());
+    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let a = new_task(&mut app, "Alpha");
+    let b = new_task(&mut app, "Beta");
+    let c = new_task(&mut app, "Gamma");
+
+    let (text, is_error) = start_round(&app, a, "alpha criteria");
+    assert!(!is_error && head(&text)["status"] == "open", "{text}");
+    // Others wait: brief.md is written at once and the call says where they stand.
+    let (text, is_error) = start_round(&app, b, "beta criteria");
+    assert!(!is_error, "{text}");
+    assert_eq!(head(&text)["status"], "queued");
+    assert_eq!(head(&text)["position"], 2);
+    let (text, _) = start_round(&app, c, "gamma criteria");
+    assert_eq!(head(&text)["position"], 3);
+    let (text, _) = start_round(&app, a, "alpha again");
+    assert_eq!(head(&text)["position"], 4);
+    assert_eq!(head(&text)["round"], 2);
+    app.wait_for("the queue in the snapshot", |s| {
+        s.research
+            .iter()
+            .filter(|r| r.queued_rounds().count() > 0)
+            .count()
+            == 3
+    });
+    assert!(read(&brief_file(&app, b, 1)).contains("beta criteria"));
+    assert!(read(&brief_file(&app, a, 2)).contains("alpha again"));
+    assert!(app.summary(b).unwrap().open_round().is_none());
+    assert_eq!(
+        dovetail_api::research::queue_position(&app.snap.research, c, 1),
+        Some(3)
+    );
+    assert!(activity_has(&app, "queued on #") && activity_has(&app, "(2nd in line)"));
+
+    // Closing the open round opens the next in request order and tells the coordinator.
+    app.send(Command::CloseRound { task: a });
+    let note = app.wait_for_note("is now open");
+    assert_eq!(
+        note,
+        format!("Round 1 for #{} is now open; send its subagents.", b.0)
+    );
+    app.wait_for("beta to open", |s| {
+        s.research
+            .iter()
+            .any(|r| r.task == b && r.open_round().is_some())
+    });
+    assert_eq!(
+        dovetail_api::research::queue_position(&app.snap.research, c, 1),
+        Some(2)
+    );
+
+    // A queued round can be dropped: its row and brief.md go, and the line moves up.
+    let gamma_brief = brief_file(&app, c, 1);
+    app.send(Command::DropRound {
+        task: c,
+        round: None,
+    });
+    app.wait_for("gamma's drop", |s| {
+        s.research
+            .iter()
+            .find(|r| r.task == c)
+            .is_none_or(|r| r.rounds.is_empty())
+    });
+    assert!(!gamma_brief.exists());
+    // An open round cannot be dropped.
+    app.send(Command::DropRound {
+        task: b,
+        round: None,
+    });
+    app.drain(Duration::from_millis(100));
+    assert!(
+        app.failures.iter().any(|f| f.contains("no queued round")),
+        "{:?}",
+        app.failures
+    );
+
+    app.send(Command::CloseRound { task: b });
+    app.wait_for_note(&format!("Round 2 for #{} is now open", a.0));
+    app.wait_for("alpha round 2 to open", |s| {
+        s.research.iter().any(|r| {
+            r.task == a
+                && r.open_round().is_some_and(|o| o.n == 2)
+                && r.queued_rounds().count() == 0
+        })
+    });
+    app.quit();
+}
+
+#[test]
+fn the_queue_survives_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, paths) = open_repo(dir.path());
+    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let a = new_task(&mut app, "Alpha");
+    let b = new_task(&mut app, "Beta");
+    let c = new_task(&mut app, "Gamma");
+    start_round(&app, a, "alpha criteria");
+    start_round(&app, b, "beta criteria");
+    start_round(&app, c, "gamma criteria");
+    app.wait_for("the queue", |s| {
+        s.research
+            .iter()
+            .map(|r| r.queued_rounds().count())
+            .sum::<usize>()
+            == 2
+    });
+    app.quit();
+
+    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    app.wait_for("the queue after the restart", |s| {
+        s.research
+            .iter()
+            .map(|r| r.queued_rounds().count())
+            .sum::<usize>()
+            == 2
+    });
+    assert!(app.summary(a).unwrap().open_round().is_some());
+    assert_eq!(
+        dovetail_api::research::queue_position(&app.snap.research, b, 1),
+        Some(2)
+    );
+    assert_eq!(
+        dovetail_api::research::queue_position(&app.snap.research, c, 1),
+        Some(3)
+    );
+    // A new request still queues behind both, and closing opens them in order.
+    let (text, _) = start_round(&app, a, "alpha again");
+    assert_eq!(head(&text)["position"], 4);
+    app.send(Command::CloseRound { task: a });
+    app.wait_for_note(&format!("Round 1 for #{} is now open", b.0));
+    app.send(Command::CloseRound { task: b });
+    app.wait_for_note(&format!("Round 1 for #{} is now open", c.0));
+    app.quit();
+}
+
+#[test]
+fn archiving_a_task_closes_its_round_drops_its_queue_and_opens_the_next_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, paths) = open_repo(dir.path());
+    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let a = new_task(&mut app, "Alpha");
+    let b = new_task(&mut app, "Beta");
+    start_round(&app, a, "alpha criteria");
+    start_round(&app, b, "beta criteria");
+    start_round(&app, a, "alpha again");
+    app.wait_for("the queue", |s| {
+        s.research
+            .iter()
+            .map(|r| r.queued_rounds().count())
+            .sum::<usize>()
+            == 2
+    });
+    let alpha_second = brief_file(&app, a, 2);
+    assert!(alpha_second.exists());
+
+    // The coordinator may not do it on the user's behalf.
+    let (text, is_error) = app.call(Tool::ArchiveTask(ArchiveTask { id: a }));
+    assert!(
+        is_error && text.contains("an open research round"),
+        "{text}"
+    );
+
+    app.send(Command::ArchiveTask { id: a });
+    app.wait_for("alpha to be archived", |s| {
+        s.tasks
+            .iter()
+            .any(|t| t.id == a && t.status == dovetail_api::TaskStatus::Archived)
+    });
+    // Beta's round opens in its place; alpha's round 1 is closed, round 2 is gone.
+    app.wait_for_note(&format!("Round 1 for #{} is now open", b.0));
+    app.wait_for("beta to open and alpha to settle", |s| {
+        let alpha = s.research.iter().find(|r| r.task == a);
+        s.research
+            .iter()
+            .any(|r| r.task == b && r.open_round().is_some())
+            && alpha.is_some_and(|r| {
+                r.rounds.len() == 1 && r.rounds[0].closed_ms.is_some() && !r.rounds[0].queued
+            })
+    });
+    assert!(!alpha_second.exists());
+    assert!(activity_has(&app, "closed because #"));
+    assert!(activity_has(&app, "dropped from the queue"));
+    app.quit();
+}
+
+/// The coordinator researches with no round open: the S7 recording's subagent fetches and reads.
+fn unfiled(dir: &Path) -> (App, PathBuf, PathBuf) {
+    let (repo, paths) = open_repo(dir);
+    let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
+    app.send(Command::Prompt {
+        agent: AgentId(COORDINATOR.into()),
+        text: "go".into(),
+        attachments: Vec::new(),
+    });
+    app.wait_for("an unfiled finding in Needs you", |s| {
+        s.inbox
+            .iter()
+            .any(|i| matches!(i.kind, InboxKind::UnfiledFinding { .. }))
+    });
+    let root = paths.data.join("projects/p/research");
+    (app, root, repo)
+}
+
+fn unfiled_item(app: &App) -> (dovetail_api::InboxId, String, u32) {
+    app.snap
+        .inbox
+        .iter()
+        .find_map(|i| match &i.kind {
+            InboxKind::UnfiledFinding { label, sources, .. } => {
+                Some((i.id, label.clone(), *sources))
+            }
+            _ => None,
+        })
+        .expect("an unfiled finding")
+}
+
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else {
+                out.push(p);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out);
+    out.sort();
+    out
+}
+
+#[test]
+fn a_coordinator_finding_with_no_round_is_unfiled_and_filing_moves_it_and_its_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let (app, root, repo) = unfiled(dir.path());
+    let (item, label, sources) = unfiled_item(&app);
+    assert_eq!(sources, 2);
+    assert!(label.len() > 2, "{label}");
+    // Stored with no task: files sit under unfiled/, and nothing is filed under any task.
+    let before = files_under(&root.join("unfiled"));
+    assert!(
+        before
+            .iter()
+            .any(|p| p.ends_with(format!("findings/{}", before_name(&before)))),
+        "{before:?}"
+    );
+    assert!(
+        before
+            .iter()
+            .any(|p| p.to_string_lossy().contains("/sources/"))
+    );
+    assert!(app.snap.research.iter().all(|r| r.findings == 0));
+    assert!(activity_has(&app, "unfiled finding"));
+
+    // It survives a restart, still waiting in Needs you.
+    app.quit();
+    let (_, paths) = open_repo(dir.path());
+    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    app.wait_for("the item after the restart", |s| {
+        s.inbox
+            .iter()
+            .any(|i| matches!(i.kind, InboxKind::UnfiledFinding { .. }))
+    });
+    assert_eq!(unfiled_item(&app).2, 2);
+    let task = new_task(&mut app, "Pricing research");
+
+    // Filing under a task moves the row and its files to the task's research folder.
+    app.send(Command::FileUnfiled { item, task });
+    app.wait_for("the item to leave Needs you", |s| {
+        !s.inbox
+            .iter()
+            .any(|i| matches!(i.kind, InboxKind::UnfiledFinding { .. }))
+    });
+    app.wait_for("the finding under the task", |s| {
+        s.research
+            .iter()
+            .any(|r| r.task == task && r.findings == 1 && r.quick_findings == 1 && r.sources == 2)
+    });
+    let task_dir = app.summary(task).unwrap().dir.clone();
+    let filed = files_under(&task_dir);
+    assert!(
+        filed
+            .iter()
+            .any(|p| p.parent().is_some_and(|d| d.ends_with("findings"))
+                && p.to_string_lossy().contains(&label)),
+        "{filed:?}"
+    );
+    assert_eq!(
+        filed
+            .iter()
+            .filter(|p| p.to_string_lossy().contains("/sources/"))
+            .count(),
+        2,
+        "{filed:?}"
+    );
+    assert_eq!(files_under(&root.join("unfiled")), Vec::<PathBuf>::new());
+    assert!(!root.join("unfiled").exists());
+    // The finding opens like any other, by the id it has now.
+    app.send(Command::LoadResearch {
+        task,
+        what: ResearchWhat::Listing,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while app.loaded.is_empty() {
+        assert!(Instant::now() < deadline, "no listing");
+        app.drain(Duration::from_millis(20));
+    }
+    let Some((_, _, ResearchContent::Listing(listing))) = app.loaded.first() else {
+        panic!("{:?}", app.loaded);
+    };
+    assert_eq!(listing.findings.len(), 1);
+    assert_eq!(listing.findings[0].round, None);
+    assert_eq!(listing.findings[0].sources.len(), 2);
+    app.quit();
+}
+
+fn before_name(files: &[PathBuf]) -> String {
+    files
+        .iter()
+        .find(|p| p.parent().is_some_and(|d| d.ends_with("findings")))
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+#[test]
+fn dropping_an_unfiled_finding_deletes_it_and_its_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut app, root, _repo) = unfiled(dir.path());
+    let (item, _, _) = unfiled_item(&app);
+    assert!(!files_under(&root.join("unfiled")).is_empty());
+    app.send(Command::DismissInbox { item });
+    app.wait_for("the item to leave Needs you", |s| {
+        !s.inbox
+            .iter()
+            .any(|i| matches!(i.kind, InboxKind::UnfiledFinding { .. }))
+    });
+    app.drain(Duration::from_millis(200));
+    assert!(files_under(&root.join("unfiled")).is_empty());
+    assert!(activity_has(&app, "unfiled finding") && activity_has(&app, "dropped"));
+    // Filing something already dropped is a visible failure, not a silent no-op.
+    let task = new_task(&mut app, "Later");
+    app.send(Command::FileUnfiled { item, task });
+    app.drain(Duration::from_millis(200));
+    assert!(!app.failures.is_empty());
+    assert!(app.summary(task).is_none_or(|r| r.findings == 0));
+    app.quit();
+}
+
+#[test]
+fn the_kind_comes_from_the_round_or_the_user_and_a_decision_is_held_to_its_template() {
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, paths) = open_repo(dir.path());
+    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let task = new_task(&mut app, "Should we?");
+    let (text, is_error) = app.call(Tool::ResearchStartRound(ResearchStartRound {
+        task,
+        brief: "criteria".into(),
+        kind: Some(ResearchKind::Decision),
+    }));
+    assert!(!is_error, "{text}");
+    app.wait_for("the kind", |s| {
+        s.research
+            .iter()
+            .any(|r| r.task == task && r.kind == Some(ResearchKind::Decision))
+    });
+    // The decision template check runs: a plain report is refused for its missing sections.
+    let (text, is_error) = write_report(&app, task, "# Should we?\n\nYes.\n");
+    assert!(
+        is_error && text.contains("Key figures") && text.contains("Options"),
+        "{text}"
+    );
+    // The user overrides it, and the same report is written.
+    app.send(Command::SetResearchKind {
+        task,
+        kind: ResearchKind::Question,
+    });
+    app.wait_for("the override", |s| {
+        s.research
+            .iter()
+            .any(|r| r.task == task && r.kind == Some(ResearchKind::Question))
+    });
+    let (text, is_error) = write_report(&app, task, "# Should we?\n\nYes.\n");
+    assert!(!is_error, "{text}");
     app.quit();
 }

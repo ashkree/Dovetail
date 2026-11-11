@@ -217,6 +217,9 @@ impl App {
             }
             Action::Upgrade => self.note = Some("usage: :upgrade [--local]".into()),
             Action::StartRound => self.round(arg),
+            Action::ListResearch if arg.split_whitespace().next() == Some("kind") => {
+                self.research_kind(arg);
+            }
             Action::NewSlice => {
                 let (name, brief) = arg
                     .split_once(char::is_whitespace)
@@ -263,9 +266,42 @@ impl App {
         }
     }
 
-    /// `:round <task> <brief>` opens a research round; `:round close` closes the open one.
+    /// `:research kind <decision|question>` sets what the task in focus (or selected) is for;
+    /// a decision is held to the decision template when its report is written.
+    fn research_kind(&mut self, arg: &str) {
+        use dovetail_api::research::ResearchKind;
+        let kind = arg.split_whitespace().nth(1).and_then(ResearchKind::parse);
+        match (kind, self.focused_task()) {
+            (Some(kind), Some(task)) => {
+                self.outbox.push(Command::SetResearchKind { task, kind });
+                self.note = Some(format!("#{} is research for a {}", task.0, kind.as_str()));
+            }
+            (None, _) => self.note = Some("usage: :research kind <decision|question>".into()),
+            (_, None) => self.note = Some("select or open a task first".into()),
+        }
+    }
+
+    /// `:round <task> <brief>` opens a research round (queued behind the open one);
+    /// `:round close` closes the open one; `:round drop <task> [n]` drops a queued one.
     fn round(&mut self, arg: &str) {
-        const USAGE: &str = "usage: :round <task> <brief>, or :round close";
+        const USAGE: &str =
+            "usage: :round <task> <brief>, :round close, or :round drop <task> [round]";
+        if let Some(rest) = arg
+            .strip_prefix("drop")
+            .filter(|r| r.is_empty() || r.starts_with(char::is_whitespace))
+        {
+            let mut words = rest.split_whitespace();
+            let task = words
+                .next()
+                .and_then(|t| t.trim_start_matches('#').parse::<i64>().ok());
+            let round = words.next().map(str::parse::<u32>);
+            match (task, round) {
+                (Some(task), None) => self.drop_round(dovetail_api::TaskId(task), None),
+                (Some(task), Some(Ok(n))) => self.drop_round(dovetail_api::TaskId(task), Some(n)),
+                _ => self.note = Some(USAGE.into()),
+            }
+            return;
+        }
         if arg == "close" {
             let open = self
                 .snap
@@ -289,16 +325,40 @@ impl App {
         match (task, brief) {
             (Some(task), brief) if !brief.is_empty() => {
                 let task = dovetail_api::TaskId(task);
+                let busy = self.snap.research.iter().any(|r| r.open_round().is_some());
                 self.outbox.push(Command::StartRound {
                     task,
                     brief: brief.to_string(),
                 });
-                self.note = Some(format!(
-                    "research round on #{}: the coordinator's subagents are filed as findings",
-                    task.0
-                ));
+                self.note = Some(if busy {
+                    format!(
+                        "research round on #{} queued behind the open round; it opens when that \
+                         closes",
+                        task.0
+                    )
+                } else {
+                    format!(
+                        "research round on #{}: the coordinator's subagents are filed as findings",
+                        task.0
+                    )
+                });
             }
             _ => self.note = Some(USAGE.into()),
+        }
+    }
+
+    fn drop_round(&mut self, task: dovetail_api::TaskId, round: Option<u32>) {
+        let queued = self
+            .snap
+            .research
+            .iter()
+            .find(|r| r.task == task)
+            .is_some_and(|r| r.queued_rounds().any(|q| round.is_none_or(|n| q.n == n)));
+        if queued {
+            self.outbox.push(Command::DropRound { task, round });
+            self.note = Some(format!("dropping the queued round on #{}", task.0));
+        } else {
+            self.note = Some(format!("task #{} has no such queued round", task.0));
         }
     }
 

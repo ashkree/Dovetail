@@ -537,6 +537,10 @@ pub struct ResearchStartRound {
     pub task: TaskId,
     /// The user's criteria for this round, verbatim where possible.
     pub brief: String,
+    /// Whether the task asks a `question` or makes a `decision`; sets the task's research kind
+    /// (a decision is held to the decision template). Omit to leave it as it is.
+    #[serde(default)]
+    pub kind: Option<crate::research::ResearchKind>,
 }
 
 /// `research_write_report`: store the report of a task, closing its open round.
