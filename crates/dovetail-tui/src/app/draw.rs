@@ -14,6 +14,9 @@ use super::overlay::Overlay;
 use super::{App, HINTS, HINTS_SHORT};
 
 /// Hints on the right of the status bar in reading mode (ADR 0018).
+/// The coordinator context fill above which the status bar hints at `:fresh`.
+const FRESH_HINT_PCT: u8 = 80;
+
 const READING_HINTS: &str = "]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave";
 const READING_HINTS_SHORT: &str = "gd open · gx browser · i ask · ⎋ leave";
 use crate::buffers::{self, InputTarget, ViewCx, spread_fit};
@@ -344,6 +347,10 @@ impl App {
             .and_then(|a| a.context_pct)
         {
             left.push(Span::styled(format!(" · ctx {pct}%"), theme.context(pct)));
+            // A manual fresh start, text only: `:fresh` is the command (ADR 0012 amendment).
+            if pct > FRESH_HINT_PCT {
+                left.push(Span::styled(" :fresh", theme.dim()));
+            }
         }
         if self.reading_mode() {
             left.push(Span::raw("  "));

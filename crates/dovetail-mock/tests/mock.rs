@@ -531,6 +531,55 @@ fn eod_closes_the_day_with_the_mock_clocks_date() {
     );
 }
 
+#[test]
+fn fresh_simulates_a_handoff_and_a_new_coordinator() {
+    let mut core = MockCore::new(config(1));
+    let coordinator = AgentId("coordinator".into());
+    let status = |core: &MockCore| {
+        core.state()
+            .agents
+            .iter()
+            .find(|a| a.id == coordinator)
+            .map(|a| a.status)
+    };
+    // Not while a turn runs.
+    if status(&core) == Some(AgentStatus::Working) {
+        core.handle(Command::FreshStart);
+        assert!(core.state().journal.as_ref().is_none_or(|j| !j.closing));
+        core.handle(Command::Interrupt {
+            agent: coordinator.clone(),
+        });
+    }
+    core.handle(Command::FreshStart);
+    let keep = |core: &MockCore| {
+        core.state().inbox.iter().find_map(|i| match &i.kind {
+            InboxKind::Permission { tool, .. } if tool == FRESH_COORDINATOR_PERMISSION => {
+                Some(i.id)
+            }
+            _ => None,
+        })
+    };
+    for _ in 0..200 {
+        if keep(&core).is_some() {
+            break;
+        }
+        core.next_message().expect("the mock runs until quit");
+    }
+    let item = keep(&core).expect("the fresh-start item");
+    assert_eq!(
+        core.state().journal,
+        Some(JournalState {
+            latest: Some("2026-11-01".into()),
+            closing: false
+        })
+    );
+    core.handle(Command::AnswerPermission {
+        item,
+        answer: PermissionAnswer::Allow,
+    });
+    assert!(keep(&core).is_none());
+}
+
 /// A stored map as the `maps_draw` input that would draw it again.
 fn as_input(map: &dovetail_maps::Map) -> dovetail_maps::DrawMapInput {
     use dovetail_maps::*;

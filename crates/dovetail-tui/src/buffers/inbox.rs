@@ -3,9 +3,9 @@
 
 use dovetail_api::research::ProposalKind;
 use dovetail_api::{
-    AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, KEEP_COORDINATOR_PERMISSION,
-    PermissionAnswer, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
-    START_SLICE_PERMISSION, Snapshot, UPGRADE_READY_PERMISSION,
+    AgentId, Command, EntryKind, FRESH_COORDINATOR_PERMISSION, InboxId, InboxItem, InboxKind,
+    KEEP_COORDINATOR_PERMISSION, PermissionAnswer, RELEASE_TAKEOVER_PERMISSION,
+    REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, Snapshot, UPGRADE_READY_PERMISSION,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -102,6 +102,11 @@ pub(crate) fn input_summary(snap: &Snapshot, tool: &str, input: &serde_json::Val
                 "a fresh one started from the {date} handoff · y: go back · d: keep the fresh one"
             ))
         }
+        FRESH_COORDINATOR_PERMISSION => Some(
+            "a fresh coordinator started from the handoff · y: go back to the previous one · \
+             d: keep the fresh one"
+                .into(),
+        ),
         UPGRADE_READY_PERMISSION => Some(upgrade_summary(input)),
         // `slice-4 · could not list processes: …`
         RELEASE_TAKEOVER_PERMISSION => field("session").map(|s| match field("reason") {

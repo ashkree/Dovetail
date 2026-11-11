@@ -163,3 +163,33 @@ fn a_failed_write_keeps_its_reason() {
         Some("writing journal/2026-11-01.md: disk full; :q to quit anyway")
     );
 }
+
+#[test]
+fn fresh_asks_the_core_for_a_mid_day_fresh_start() {
+    let mut app = app_with(idle_world(None));
+    assert_eq!(run(&mut app, "fresh"), vec![Command::FreshStart]);
+}
+
+/// The b.png world with the coordinator's context fill set.
+fn world_at_context(pct: u8) -> Snapshot {
+    let mut snap = idle_world(None);
+    let coordinator = snap
+        .agents
+        .iter_mut()
+        .find(|a| a.kind == AgentKind::Coordinator)
+        .expect("a coordinator");
+    coordinator.context_pct = Some(pct);
+    snap
+}
+
+#[test]
+fn the_status_bar_hints_at_fresh_above_80_percent_context() {
+    let mut app = app_with(world_at_context(80));
+    let at_80 = render(&mut app, 160, 30);
+    assert!(at_80.contains("ctx 80%"), "{at_80}");
+    assert!(!at_80.contains(":fresh"), "{at_80}");
+
+    let mut app = app_with(world_at_context(81));
+    let at_81 = render(&mut app, 160, 30);
+    assert!(at_81.contains("ctx 81% :fresh"), "{at_81}");
+}

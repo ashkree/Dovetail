@@ -17,9 +17,9 @@
 //! running at quit reads as cut off next time.
 
 use dovetail_api::{
-    ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind,
-    KEEP_COORDINATOR_PERMISSION, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
-    START_SLICE_PERMISSION, UPGRADE_READY_PERMISSION,
+    ActivityKind, AgentId, AgentStatus, EntryKind, Event, FRESH_COORDINATOR_PERMISSION, InboxItem,
+    InboxKind, KEEP_COORDINATOR_PERMISSION, RELEASE_TAKEOVER_PERMISSION,
+    REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, UPGRADE_READY_PERMISSION,
 };
 
 use crate::inbox::Waiter;
@@ -194,7 +194,7 @@ impl Core {
                     if tool == UPGRADE_READY_PERMISSION {
                         continue;
                     }
-                    if tool == KEEP_COORDINATOR_PERMISSION {
+                    if tool == KEEP_COORDINATOR_PERMISSION || tool == FRESH_COORDINATOR_PERMISSION {
                         self.activity(
                             ActivityKind::Lifecycle,
                             Some(&item.agent),

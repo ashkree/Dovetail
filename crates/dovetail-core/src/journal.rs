@@ -8,6 +8,9 @@
 //!   appends its block below the first.
 //! - **`:eod`.** The coordinator is asked for its handoff; when its turn ends, its reply becomes
 //!   the Handoff section. If it cannot answer, the file still gets the facts and says why.
+//! - **`:fresh`.** The manual, mid-day half of decision 22: the same handoff request, appended
+//!   as a "Handoff (fresh start HH:MM)" block, then a new coordinator session seeded as the
+//!   morning one is. The previous session stays resumable (one Needs-you item).
 //! - **A new day.** On open, when the newest journal file is from an earlier day and the
 //!   coordinator was last used before today, the coordinator gets a new Claude Code session
 //!   seeded with that file's handoff and the open tasks. Yesterday's session is kept: one
@@ -16,8 +19,8 @@
 use std::path::{Path, PathBuf};
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, AgentStatus, Bucket, EntryKind, InboxItem, InboxKind, JournalState,
-    KEEP_COORDINATOR_PERMISSION, Task, TaskStatus,
+    Agent, AgentId, AgentKind, AgentStatus, Bucket, EntryKind, FRESH_COORDINATOR_PERMISSION,
+    InboxItem, InboxKind, JournalState, KEEP_COORDINATOR_PERMISSION, Task, TaskStatus,
 };
 use jiff::civil::Date;
 use serde_json::json;
@@ -77,10 +80,10 @@ pub(crate) fn handoff(text: &str) -> &str {
         return text.trim();
     };
     let block = &text[at + MARKER.len()..];
-    let Some(start) = find_line(block, HANDOFF_HEADING) else {
+    let Some((start, len)) = find_handoff_heading(block) else {
         return block.trim();
     };
-    let body = &block[start + HANDOFF_HEADING.len()..];
+    let body = &block[start + len..];
     let end = body
         .match_indices("\n## ")
         .map(|(i, _)| i)
@@ -89,12 +92,16 @@ pub(crate) fn handoff(text: &str) -> &str {
     body[..end].trim()
 }
 
-/// The byte offset of the first line of `text` that is exactly `line` (trailing spaces aside).
-fn find_line(text: &str, line: &str) -> Option<usize> {
+/// The offset and length of the first Handoff heading line of `text`: `## Handoff`, or
+/// `## Handoff (fresh start HH:MM)` in a block `:fresh` wrote.
+fn find_handoff_heading(text: &str) -> Option<(usize, usize)> {
     let mut offset = 0;
     for l in text.split_inclusive('\n') {
-        if l.trim_end() == line {
-            return Some(offset);
+        let line = l.trim_end();
+        if line == HANDOFF_HEADING
+            || (line.starts_with("## Handoff (fresh start ") && line.ends_with(')'))
+        {
+            return Some((offset, line.len()));
         }
         offset += l.len();
     }
@@ -119,12 +126,18 @@ pub(crate) enum NoHandoff {
 /// The block Dovetail writes for a closed day. `handoff` is the coordinator's reply, or why it
 /// has none.
 pub(crate) fn block(handoff: Result<&str, &NoHandoff>, facts: &str) -> String {
+    block_titled(HANDOFF_HEADING, handoff, facts)
+}
+
+/// [`block`] with the Handoff section's heading given: `## Handoff (fresh start 14:05)` for a
+/// mid-day fresh start.
+fn block_titled(heading: &str, handoff: Result<&str, &NoHandoff>, facts: &str) -> String {
     let handoff = match handoff {
         Ok(text) => text.trim().to_owned(),
         Err(why) => format!("_No handoff from the coordinator: {why}._"),
     };
     format!(
-        "{MARKER}\n\n{HANDOFF_HEADING}\n\n{handoff}\n\n## Facts\n\n{}\n",
+        "{MARKER}\n\n{heading}\n\n{handoff}\n\n## Facts\n\n{}\n",
         facts.trim()
     )
 }
@@ -286,12 +299,49 @@ fn eod_prompt(date: Date) -> String {
     )
 }
 
-/// The first prompt of a new day's coordinator.
-fn seed_prompt(today: Date, date: Date, handoff: &str, tasks: &str) -> String {
+/// Why a coordinator gets a new session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Fresh {
+    /// The first open of a new day: the handoff is in the file of this earlier `date`.
+    NewDay { date: Date },
+    /// `:fresh` at `time` (HH:MM) today: the handoff is the last block of today's file.
+    MidDay { date: Date, time: String },
+}
+
+impl Fresh {
+    /// The date of the journal file that holds the handoff.
+    fn date(&self) -> Date {
+        match self {
+            Fresh::NewDay { date } | Fresh::MidDay { date, .. } => *date,
+        }
+    }
+}
+
+/// A `:fresh` whose handoff is written: the coordinator's old session is stopping, and the new
+/// one starts when it has exited ([`Core::coordinator_exited`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PendingFresh {
+    kind: Fresh,
+    seed: String,
+}
+
+/// The first prompt of a fresh coordinator: a new day's, or a mid-day `:fresh`'s. Both hold the
+/// handoff and the open tasks.
+fn seed_prompt(today: Date, kind: &Fresh, handoff: &str, tasks: &str) -> String {
+    let date = kind.date();
+    let intro = match kind {
+        Fresh::NewDay { .. } => format!(
+            "This is a fresh coordinator session for {today}. Yesterday's coordinator left the \
+             handoff below in journal/{date}.md; its conversation is kept but not continued."
+        ),
+        Fresh::MidDay { time, .. } => format!(
+            "This is a fresh coordinator session, started at {time} on {today}. The previous \
+             coordinator left the handoff below in journal/{date}.md; its conversation is kept \
+             but not continued."
+        ),
+    };
     format!(
-        "This is a fresh coordinator session for {today}. Yesterday's coordinator left the \
-         handoff below in journal/{date}.md; its conversation is kept but not continued.\n\n\
-         # Handoff from {date}\n\n{handoff}\n\n# Open tasks\n\n{tasks}\n\n\
+        "{intro}\n\n# Handoff from {date}\n\n{handoff}\n\n# Open tasks\n\n{tasks}\n\n\
          Read this, check anything you need to, then tell the user in a few lines what you \
          would pick up first. Start no work until they answer."
     )
@@ -306,6 +356,8 @@ pub(crate) struct Closing {
     pub(crate) reply: Option<String>,
     /// Set when no more is coming: the reply is final, or why there is none.
     pub(crate) done: Option<Result<String, NoHandoff>>,
+    /// `Some("HH:MM")` for a `:fresh`: the handoff also starts a new coordinator session.
+    pub(crate) fresh: Option<String>,
 }
 
 impl Core {
@@ -333,6 +385,30 @@ impl Core {
     /// `:eod`: asks the coordinator for its handoff. The file is written once its turn ends
     /// ([`Core::closing_turn_ended`]), or at once with the facts alone if it cannot answer.
     pub(crate) fn end_of_day(&mut self) {
+        self.ask_for_handoff(None);
+    }
+
+    /// `:fresh`: the same request, and a new coordinator once the handoff is written. Refused
+    /// while the coordinator's turn runs (it is not interrupted) or before it has run at all.
+    pub(crate) fn fresh_start(&mut self) {
+        let id = AgentId(COORDINATOR.into());
+        if self.live.get(&id).is_some_and(|l| l.turn.running) {
+            self.fail("turn running; try again when it finishes");
+            return;
+        }
+        if self
+            .agents
+            .get(&id)
+            .is_none_or(|r| r.transcript_path.is_none())
+        {
+            self.fail("the coordinator has not run yet, so there is no handoff to carry over");
+            return;
+        }
+        let time = jiff::Zoned::now().strftime("%H:%M").to_string();
+        self.ask_for_handoff(Some(time));
+    }
+
+    fn ask_for_handoff(&mut self, fresh: Option<String>) {
         if self.journal_dir().is_none() {
             self.fail("not a Dovetail project yet, so it has no journal: :project add keeps it");
             return;
@@ -341,11 +417,16 @@ impl Core {
             self.fail("already closing the day: waiting for the coordinator's handoff");
             return;
         }
+        if self.pending_fresh.is_some() {
+            self.fail("a fresh coordinator is starting");
+            return;
+        }
         let date = today();
         self.closing = Some(Closing {
             date,
             reply: None,
             done: None,
+            fresh,
         });
         self.emit_journal();
         let id = AgentId(COORDINATOR.into());
@@ -411,6 +492,7 @@ impl Core {
         let Some(Closing {
             date,
             done: Some(reply),
+            fresh,
             ..
         }) = self.closing.take()
         else {
@@ -429,21 +511,56 @@ impl Core {
         let agents: Vec<&Agent> = self.agents.values().map(|r| &r.agent).collect();
         let inbox: Vec<&InboxItem> = self.inbox.values().map(|e| &e.item).collect();
         let facts = facts(&tasks, &agents, &inbox);
-        let text = block(reply.as_deref(), &facts);
+        // A fresh start without a handoff would lose the context it exists to carry over: the
+        // old session stays, and nothing is written.
+        if let (Some(_), Err(why)) = (&fresh, &reply) {
+            self.fail(format!("fresh start cancelled, no handoff: {why}"));
+            self.emit_journal();
+            return;
+        }
+        let text = match &fresh {
+            Some(time) => block_titled(
+                &format!("{HANDOFF_HEADING} (fresh start {time})"),
+                reply.as_deref(),
+                &facts,
+            ),
+            None => block(reply.as_deref(), &facts),
+        };
         match write(&dir, date, &text) {
             Ok(path) => {
                 tracing::info!(path = %path.display(), "journal written");
-                let note = match &reply {
-                    Ok(_) => format!("day closed: journal/{date}.md written"),
-                    Err(why) => {
+                let note = match (&reply, &fresh) {
+                    (Ok(_), Some(time)) => {
+                        format!("fresh start at {time}: handoff added to journal/{date}.md")
+                    }
+                    (Ok(_), None) => format!("day closed: journal/{date}.md written"),
+                    (Err(why), _) => {
                         format!("day closed without a handoff ({why}): journal/{date}.md written")
                     }
                 };
                 self.activity(dovetail_api::ActivityKind::Lifecycle, None, note);
+                if let (Some(time), Ok(handoff)) = (fresh, &reply) {
+                    let kind = Fresh::MidDay { date, time };
+                    let seed = seed_prompt(today(), &kind, handoff.trim(), &open_tasks(&tasks));
+                    self.begin_fresh(PendingFresh { kind, seed });
+                }
             }
             Err(e) => self.fail(format!("writing journal/{date}.md: {e}")),
         }
         self.emit_journal();
+    }
+
+    /// Stops the running session; the new one starts once it has exited.
+    fn begin_fresh(&mut self, pending: PendingFresh) {
+        let id = AgentId(COORDINATOR.into());
+        self.pending_fresh = Some(pending);
+        match self.live.get_mut(&id) {
+            Some(live) => {
+                live.stopping = true;
+                live.session.shutdown(crate::shutdown::QUIT_GRACE);
+            }
+            None => self.coordinator_exited(),
+        }
     }
 
     /// The local date of the coordinator's newest conversation entry: when it was last used.
@@ -481,13 +598,15 @@ impl Core {
             }
         };
         let tasks = self.db.load_tasks().await.unwrap_or_default();
-        let seed = seed_prompt(today, date, handoff(&text), &open_tasks(&tasks));
-        self.fresh_coordinator(date, &seed);
+        let kind = Fresh::NewDay { date };
+        let seed = seed_prompt(today, &kind, handoff(&text), &open_tasks(&tasks));
+        self.fresh_coordinator(&kind, &seed);
     }
 
     /// Gives the coordinator a new session and sends it `seed`. The old session id and
     /// transcript go in a Needs-you item whose `y` brings them back.
-    fn fresh_coordinator(&mut self, date: Date, seed: &str) {
+    fn fresh_coordinator(&mut self, kind: &Fresh, seed: &str) {
+        let date = kind.date();
         let id = AgentId(COORDINATOR.into());
         let Some(row) = self.agents.get(&id) else {
             return;
@@ -498,14 +617,19 @@ impl Core {
             row.session_id = Some(uuid::Uuid::new_v4().to_string());
             row.transcript_path = None;
         });
-        tracing::info!(journal = %date, "fresh coordinator for a new day");
-        self.notice(
-            &id,
-            format!(
+        tracing::info!(journal = %date, ?kind, "fresh coordinator");
+        let notice = match kind {
+            Fresh::NewDay { .. } => format!(
                 "New day: a fresh coordinator session, seeded with the {date} handoff. \
                  Yesterday's session is kept; y on its Needs-you item goes back to it."
             ),
-        );
+            Fresh::MidDay { time, .. } => format!(
+                "Fresh start at {time}: a new coordinator session, seeded with the handoff in \
+                 journal/{date}.md. The previous session is kept; y on its Needs-you item goes \
+                 back to it."
+            ),
+        };
+        self.notice(&id, notice);
         if let Err(e) = self.send_text(&id, seed, EntryKind::Notice, format!("Dovetail: {seed}")) {
             self.fail(e);
         }
@@ -514,15 +638,27 @@ impl Core {
             "session_id": old_session,
             "transcript_path": old_transcript,
         });
+        let (tool, reason) = match kind {
+            Fresh::NewDay { .. } => (
+                KEEP_COORDINATOR_PERMISSION,
+                format!(
+                    "A fresh coordinator started from the {date} handoff. y goes back to \
+                     yesterday's session (the fresh one stops); d keeps the fresh one."
+                ),
+            ),
+            Fresh::MidDay { .. } => (
+                FRESH_COORDINATOR_PERMISSION,
+                "Fresh coordinator started. y: go back to the previous one (the fresh one \
+                 stops); d keeps the fresh one."
+                    .to_owned(),
+            ),
+        };
         self.raise(
             &id,
             InboxKind::Permission {
-                tool: KEEP_COORDINATOR_PERMISSION.into(),
+                tool: tool.into(),
                 input,
-                reason: Some(format!(
-                    "A fresh coordinator started from the {date} handoff. y goes back to \
-                     yesterday's session (the fresh one stops); d keeps the fresh one."
-                )),
+                reason: Some(reason),
                 suggestions: Vec::new(),
             },
             Waiter::KeepCoordinator {
@@ -561,6 +697,12 @@ impl Core {
 
     /// The coordinator's session exited: if yesterday's was asked back, it resumes now.
     pub(crate) fn coordinator_exited(&mut self) {
+        if let Some(PendingFresh { kind, seed }) = self.pending_fresh.take() {
+            if self.quitting.is_none() {
+                self.fresh_coordinator(&kind, &seed);
+            }
+            return;
+        }
         let Some((session_id, transcript_path)) = self.revert_coordinator.take() else {
             return;
         };
@@ -633,6 +775,18 @@ mod tests {
         );
         let text = format!("# 2026-11-10\n\n{block}");
         assert_eq!(handoff(&text), "Open: PR #20.\n\n### Detail\n\nmore");
+    }
+
+    #[test]
+    fn a_fresh_start_block_is_the_newest_handoff() {
+        let dir = tempfile::tempdir().unwrap();
+        let date = d("2026-11-10");
+        write(dir.path(), date, &block(Ok("morning"), "facts")).unwrap();
+        let fresh = block_titled("## Handoff (fresh start 14:05)", Ok("midday"), "facts");
+        write(dir.path(), date, &fresh).unwrap();
+        let text = std::fs::read_to_string(file(dir.path(), date)).unwrap();
+        assert!(text.contains("morning"));
+        assert_eq!(handoff(&text), "midday");
     }
 
     #[test]

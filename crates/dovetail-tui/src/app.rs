@@ -1148,6 +1148,10 @@ impl App {
             Action::NewProject => self.run_with_arg(Action::NewProject, ""),
             Action::Quit => self.quit_asking(true),
             Action::EndOfDay => self.close_day(false),
+            Action::FreshStart => {
+                self.outbox.push(Command::FreshStart);
+                self.note = Some("fresh start: asking the coordinator for its handoff".into());
+            }
             Action::Upgrade => self.run_with_arg(Action::Upgrade, ""),
             Action::StartRound => self.run_with_arg(Action::StartRound, ""),
             Action::ForceQuit => self.quit = true,

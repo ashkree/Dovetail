@@ -52,6 +52,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "q" | "quit" => Action::Quit,
         "q!" | "quit!" => Action::ForceQuit,
         "eod" => Action::EndOfDay,
+        "fresh" => Action::FreshStart,
         "upgrade" => Action::Upgrade,
         "round" => Action::StartRound,
         "research" => Action::ListResearch,
@@ -100,6 +101,7 @@ mod tests {
         assert_eq!(parse(" quit ").map(|p| p.action), Ok(Action::Quit));
         assert_eq!(parse("q!").map(|p| p.action), Ok(Action::ForceQuit));
         assert_eq!(parse("eod").map(|p| p.action), Ok(Action::EndOfDay));
+        assert_eq!(parse("fresh").map(|p| p.action), Ok(Action::FreshStart));
     }
 
     #[test]

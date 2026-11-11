@@ -498,6 +498,7 @@ fn every_event_roundtrips() {
 fn every_command_roundtrips() {
     let commands = vec![
         Command::EndOfDay,
+        Command::FreshStart,
         Command::Prompt {
             agent: id("coordinator"),
             text: "plan M2".into(),
