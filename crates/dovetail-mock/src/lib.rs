@@ -309,8 +309,15 @@ impl MockCore {
                 self.resolve(item);
             }
             Command::CyclePermissionMode { agent } => {
-                if self.agent(&agent).is_none() {
+                let Some(found) = self.agent(&agent) else {
                     return self.fail(format!("no agent {}", agent.0));
+                };
+                // Like the core: a side chat stays read-only.
+                if found.kind == AgentKind::SideChat {
+                    return self.fail(format!(
+                        "{} is a side chat: it stays read-only, so its mode does not change",
+                        found.name
+                    ));
                 }
                 self.update_agent(&agent, |a| {
                     a.permission_mode = match a.permission_mode {
@@ -387,12 +394,7 @@ impl MockCore {
                     .find(|n| self.agent(&agent_id(&format!("side-{n}"))).is_none())
                     .unwrap_or(1);
                 let name = format!("side-{n}");
-                let chat = world::session(
-                    &name,
-                    AgentKind::SideChat,
-                    AgentStatus::Working,
-                    self.state.now_ms,
-                );
+                let chat = world::side_chat(&name, AgentStatus::Working, self.state.now_ms);
                 self.emit(Event::AgentUpserted(chat));
                 let id = agent_id(&name);
                 self.append(&id, EntryKind::User, question);

@@ -204,6 +204,7 @@ const BOARD: Scope = Scope::Buffer(BufferKind::Board);
 const WORKTREES: Scope = Scope::Buffer(BufferKind::Worktrees);
 const MAP_SHELF: Scope = Scope::Buffer(BufferKind::MapShelf);
 const MAP_OUTLINE: Scope = Scope::Buffer(BufferKind::MapOutline);
+const SIDE_PANEL: Scope = Scope::Buffer(BufferKind::SidePanel);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
 pub const BINDINGS: &[Binding] = &[
@@ -247,7 +248,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>v", Action::MapMode),
     bind(N, G, "<leader>sn", Action::NewSlice),
     bind(N, G, "<leader>sq", Action::NewSideChat),
-    bind(N, G, "<leader>y", Action::YankToCoordinator),
+    bind(N, G, "<leader>?", Action::ToggleSidePanel),
     bind(N, G, "<leader>sx", Action::Interrupt),
     bind(N, G, "<leader>sm", Action::CyclePermissionMode),
     bind(N, G, "<leader>st", Action::TakeOver),
@@ -293,6 +294,18 @@ pub const BINDINGS: &[Binding] = &[
         "<BS>",
         Action::DropLastAttachment,
     ),
+    // The side panel: the conversation's reading keys, plus switching and closing side chats.
+    // Its chat bar takes the conversation's Insert-mode keys (`App::input_key`).
+    bind(N, SIDE_PANEL, "]]", Action::NextTurn),
+    bind(N, SIDE_PANEL, "[[", Action::PrevTurn),
+    bind(N, SIDE_PANEL, "zc", Action::FoldTurn),
+    bind(N, SIDE_PANEL, "zo", Action::UnfoldTurn),
+    bind(N, SIDE_PANEL, "<C-j>", Action::EnterInsert),
+    bind(Mode::Insert, SIDE_PANEL, "<PageDown>", Action::PageDown),
+    bind(Mode::Insert, SIDE_PANEL, "<PageUp>", Action::PageUp),
+    bind(N, SIDE_PANEL, "<Tab>", Action::NextSideChat),
+    bind(N, SIDE_PANEL, "<S-Tab>", Action::PrevSideChat),
+    bind(N, SIDE_PANEL, "dd", Action::CloseSideChat),
     // Task tree (Decision 24).
     bind(N, TREE, "<CR>", Action::TreeOpen),
     bind(N, TREE, "o", Action::TreeToggleFold),

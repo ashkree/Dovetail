@@ -36,7 +36,7 @@ Dovetail keeps the parts that work (Claude Code itself, its native cross-session
 - **Fresh context, never lost work.** Dovetail shows how full each agent's context is. A full coordinator or slice is replaced by a fresh session seeded with a written handoff, and the coordinator starts fresh every morning from the previous day's handoff.
 - **Daily review cycle.** At the end of the day Dovetail writes a record of what happened (facts, a short narrative from the coordinator, and your notes). Next morning the coordinator reviews it with your open tasks and proposes cleanup and new priorities, which you accept or reject one by one.
 - **Remembers for you.** Each task keeps your notes and a log of decisions, written by you and by the agents as they decide things. One search (`<leader>/`) covers notes, decisions, the journal, inbox, messages and conversation text, and keeps history after Claude Code clears old transcripts.
-- **A helper for grilling sessions.** When the coordinator starts grilling you, a read-only side chat opens next to it for quick lookups, so the grill keeps going and the coordinator's context stays clean. One key sends the helper's answer into your reply.
+- **A helper for grilling sessions.** When the coordinator starts grilling you, a read-only side chat opens next to it in the side panel for quick lookups, so the grill keeps going and the coordinator's context stays clean.
 - **Message timeline.** See what sessions say to each other over Claude Code's native messaging.
 - **Enforced coordination.** A small set of tools the sessions call, served by the app over MCP: `ask_user`, `report_status`, then `claim` / `release` for PR ownership and rules like "rebase #1231 after #1230 merges."
 - **Take over any session.** Drop into native `claude --resume` for hands-on work, then hand it back.
@@ -63,7 +63,7 @@ Modal, neovim-style, no mouse required (the mouse works in map mode).
 | `<leader>v` | Enter map mode (full-screen map, mouse on) |
 | `<leader>r` | Reading mode: library, report and Ask side by side (v1.1) |
 | `]s` / `[s` · `gd` · `gx` | In reading mode: next / previous citation · open the cited finding or source · open the source in a browser (v1.1) |
-| `<leader>?` / `<leader>y` | Toggle the grilling side chat / send its last answer into your reply (v1.1) |
+| `<leader>sq` / `:ask` · `<leader>?` | Ask a read-only side chat · show or hide the side panel with your side chats |
 | Inbox: `y` `A` `d` `D` `r` `x` | Allow once, always allow (Shift-a), deny, deny with reason, reply, dismiss |
 
 ## Design principles

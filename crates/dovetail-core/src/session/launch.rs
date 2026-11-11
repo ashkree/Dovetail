@@ -7,6 +7,9 @@
 //!   Never `--strict-mcp-config`, so the user's own MCP servers still load (B28).
 //! - `--append-system-prompt-file`: the installed role prompt (Decision 8c).
 //! - `--allowedTools`: Dovetail's tools for the role, plus `SendMessage` and `ListAgents` (S2).
+//! - A side chat (ADR 0011, read-only per the 2026-11-11 decision): `--permission-mode dontAsk`,
+//!   web tools and the read-only Bash commands of [`SIDE_CHAT_BASH`] allowed, and
+//!   `--disallowedTools` for the editing tools and the options of [`SIDE_CHAT_BASH_DENY`].
 //! - Environment: native to-do tools on, the to-do list id (A12), the hook's project id, and
 //!   `CLAUDE_CONFIG_DIR` when the project picks a Claude profile (ADR 0009).
 //!
@@ -23,6 +26,61 @@ use crate::paths::Paths;
 /// Records each session's stream in the fixture format next to its launch files, for capturing
 /// new fixtures in live checks. Off unless set to `1`.
 pub const RECORD_ENV: &str = "DOVETAIL_RECORD_STREAMS";
+
+/// The Bash commands a side chat may run, each with any arguments: they read and never write.
+/// In `dontAsk` mode every other command is denied without asking (decided 2026-11-11).
+pub const SIDE_CHAT_BASH: &[&str] = &[
+    "git log",
+    "git show",
+    "git diff",
+    "git status",
+    "git blame",
+    "rg",
+    "grep",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "find",
+    "cargo tree",
+    "cargo metadata",
+];
+
+/// Options of [`SIDE_CHAT_BASH`] commands that write files or run other commands, denied even
+/// though the command's prefix is allowed (deny rules win over allow rules). `*` matches any
+/// text, spaces included.
+pub const SIDE_CHAT_BASH_DENY: &[&str] = &[
+    "find *-exec*",
+    "find *-ok*",
+    "find *-delete*",
+    "find *-fprint*",
+    "find *-fls*",
+    "rg *--pre*",
+    "git *--output*",
+];
+
+/// Tools a side chat never gets: it cannot change files.
+pub const SIDE_CHAT_DENIED_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
+
+/// The `--allowedTools` a side chat adds to its role's: the web, and the read-only Bash
+/// commands as `Bash(<command> *)`, which also matches the bare command.
+pub fn side_chat_allowed() -> Vec<String> {
+    ["WebSearch", "WebFetch"]
+        .into_iter()
+        .map(String::from)
+        .chain(SIDE_CHAT_BASH.iter().map(|c| format!("Bash({c} *)")))
+        .collect()
+}
+
+/// The `--disallowedTools` of a side chat.
+pub fn side_chat_disallowed() -> Vec<String> {
+    SIDE_CHAT_DENIED_TOOLS
+        .iter()
+        .map(|t| (*t).to_string())
+        .chain(SIDE_CHAT_BASH_DENY.iter().map(|c| format!("Bash({c})")))
+        .collect()
+}
 
 /// What a launch needs to know about the session.
 #[derive(Debug, Clone)]
@@ -119,12 +177,15 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     spec.mcp_config_path = Some(mcp_path);
     spec.append_system_prompt_file = role_prompt.exists().then_some(role_prompt);
     spec.allowed_tools = allowed_tools(launch.role);
-    // A side chat reads and searches; it never edits (ADR 0011).
+    // A side chat reads and searches; it never edits, and runs only read-only commands. In
+    // `dontAsk` mode anything not allowed here is denied, never asked (decided 2026-11-11).
     if launch.role == Role::SideChat {
-        spec.allowed_tools
-            .extend(["WebSearch", "WebFetch"].map(String::from));
-        spec.extra_args
-            .extend(["--disallowedTools", "Edit,Write,NotebookEdit"].map(String::from));
+        spec.permission_mode = CliMode::DontAsk;
+        spec.allowed_tools.extend(side_chat_allowed());
+        spec.extra_args.extend([
+            "--disallowedTools".to_string(),
+            side_chat_disallowed().join(","),
+        ]);
     }
     spec.worktree = launch.worktree.clone();
     spec.env = vec![
@@ -206,6 +267,45 @@ mod tests {
             path,
             Path::new("/p/maveron/projects/-tmp-dovetail-spikes-driver-repo/abc.jsonl")
         );
+    }
+
+    #[test]
+    fn side_chats_allow_only_read_only_bash() {
+        let allowed = side_chat_allowed();
+        for rule in [
+            "Bash(git log *)",
+            "Bash(git show *)",
+            "Bash(git diff *)",
+            "Bash(git status *)",
+            "Bash(git blame *)",
+            "Bash(rg *)",
+            "Bash(grep *)",
+            "Bash(ls *)",
+            "Bash(cat *)",
+            "Bash(head *)",
+            "Bash(tail *)",
+            "Bash(wc *)",
+            "Bash(find *)",
+            "Bash(cargo tree *)",
+            "Bash(cargo metadata *)",
+            "WebSearch",
+            "WebFetch",
+        ] {
+            assert!(allowed.contains(&rule.to_string()), "{rule}");
+        }
+        assert_eq!(allowed.len(), 17, "nothing else is allowed: {allowed:?}");
+        let denied = side_chat_disallowed();
+        for rule in [
+            "Edit",
+            "Write",
+            "NotebookEdit",
+            "Bash(find *-exec*)",
+            "Bash(find *-delete*)",
+            "Bash(rg *--pre*)",
+            "Bash(git *--output*)",
+        ] {
+            assert!(denied.contains(&rule.to_string()), "{rule}");
+        }
     }
 
     #[test]

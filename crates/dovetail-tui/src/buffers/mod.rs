@@ -9,6 +9,7 @@ mod inbox_detail;
 mod map_canvas;
 mod map_outline;
 mod map_shelf;
+mod side_panel;
 pub mod task_detail;
 mod task_research;
 pub(crate) use task_research::blocking_round;
@@ -36,6 +37,7 @@ pub use inbox_detail::InboxDetailBuffer;
 pub use map_canvas::Canvas as MapCanvas;
 pub use map_outline::{MapOutlineBuffer, MouseKind as MapMouse, Reaction as MapReaction};
 pub use map_shelf::MapShelfBuffer;
+pub use side_panel::{SidePanelBuffer, side_chats};
 pub use task_detail::TaskDetailBuffer;
 pub use tree::{TreeBuffer, p_label};
 pub use worktrees::WorktreesBuffer;
@@ -179,6 +181,8 @@ pub struct Buffers {
     pub map_shelf: MapShelfBuffer,
     /// One map as an outline.
     pub map_outline: MapOutlineBuffer,
+    /// The side panel: side chats beside the conversation.
+    pub panel: SidePanelBuffer,
 }
 
 impl Buffers {
@@ -196,6 +200,7 @@ impl Buffers {
             worktrees: WorktreesBuffer::default(),
             map_shelf: MapShelfBuffer::default(),
             map_outline: MapOutlineBuffer::default(),
+            panel: SidePanelBuffer::default(),
         }
     }
 
@@ -213,6 +218,7 @@ impl Buffers {
             BufferKind::Worktrees => &mut self.worktrees,
             BufferKind::MapShelf => &mut self.map_shelf,
             BufferKind::MapOutline => &mut self.map_outline,
+            BufferKind::SidePanel => &mut self.panel,
         }
     }
 }

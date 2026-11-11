@@ -28,6 +28,8 @@ pub enum BufferKind {
     MapShelf,
     /// One map as an outline.
     MapOutline,
+    /// The side panel: side chats, one at a time, with a chat bar.
+    SidePanel,
 }
 
 /// A slot in the layout.
