@@ -290,6 +290,7 @@ impl ReaderBuffer {
         } else {
             open.document.markdown.clone()
         };
+        let text = citations::keep_together(&text);
         let mut lines: Vec<Line<'static>> = Vec::new();
         let mut sections = Vec::new();
         let mut slots = Vec::new();

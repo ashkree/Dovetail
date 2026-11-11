@@ -154,7 +154,7 @@ impl Buffer for AskBuffer {
         let text = match self.task {
             Some(t) if has_report(t) => format!(
                 "› i to ask about #{}'s report. A read-only session answers from the report and \
-                 its sources, citing [F n] and [S n].",
+                 its sources, and cites them as the report does.",
                 t.0
             ),
             Some(t) => format!(
