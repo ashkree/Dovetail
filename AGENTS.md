@@ -30,7 +30,7 @@ Known conflicts, already resolved:
 
 The user wants to switch from building Dovetail with plain agents to building it **inside Dovetail** as early as possible.
 
-- **Self-hosting point.** The plan must name the earliest milestone after which the rest of the build can run inside Dovetail, and order the work to reach it fast. Minimum: real headless coordinator session with streaming chat, permission requests answered from the inbox, slice sessions in hook-created worktrees, `report_status`/`ask_user`, and state that survives a restart. Polish (board, maps, memory caps, take-over, context-fill display) comes after it.
+- **Self-hosting point.** The plan must name the earliest milestone after which the rest of the build can run inside Dovetail, and order the work to reach it fast. Minimum: real headless coordinator session with streaming chat, permission requests answered from the inbox, slice sessions in hook-created worktrees, `core_report_status`/`core_ask_user`, and state that survives a restart. Polish (board, maps, memory caps, take-over, context-fill display) comes after it.
 - **From that point on**, the repo's own role prompts and recipe are used for real, so they must stay accurate. Sources of truth:
   - `config/roles/coordinator.md`, `config/roles/slice.md` — role prompts (keep each under ~20 lines, Decision 8c). Dovetail reads the installed copies in `~/.config/dovetail/roles/`.
   - `config/projects/dovetail.toml` — the worktree recipe for this repo (format is a proposal; the plan finalises it and the core must read it).

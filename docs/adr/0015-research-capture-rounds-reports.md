@@ -22,3 +22,13 @@ Why: much of the user's work is research (business opportunities, whole features
 - **Task notes** (v1.1) overlap with `report.md` as "a markdown file per task". They stay separate: notes are the user's, reports the coordinator's. See the spec.
 
 Approved by the user in the grilling session of 2026-11-10 (claude.ai).
+
+**Amended 2026-11-11 (grill with the user; built in PRs #53 and #54).**
+
+- **Research-only projects (the open point) are decided:** a project has a `kind`, `code` or `research` (registry migration `0003_project_kind`; PR #54). A research project has no `repo_path` or `git_common_dir` and no worktrees or slices (`start_slice` and `:spawn` are refused), and its coordinator runs in the project's state folder, `<data>/projects/<id>/`, with research under `<data>/projects/<id>/research/`. This is the first option of the open point, except the columns also became nullable, so the folder is not a fake repo. `:project new <name> --research` creates one; `<leader>pp` switches (the binary restarts into `--project <id>`). Research-only projects are the home of macro research, and ADR 0017's Tangents is one.
+- **Rounds queue.** "At most one round open" stays, but a second request is queued like a slice: `brief.md` is written at once, the tool returns `queued` with a position, and the next round opens in request order when the open one closes (the coordinator is told). `:round drop <task> [n]` drops one. Real parallel rounds with tags are task 10, for later.
+- **Archiving a task with an open or queued round asks first** (y/n; yes closes the round, keeps its findings, drops the queued rounds). The coordinator's own `tasks_archive` refuses and says to ask.
+- **Unfiled findings.** With no round open, a coordinator subagent's research is stored with no task and shown in Needs you ("Unfiled finding"); `y` files it into a task's research folder, `d` drops it. This replaces "with no round open its subagents are not filed" for the coordinator (docs/research.md §5.7).
+- **Kind.** A task is marked `decision` or `question` by `research_start_round`'s `kind` or `:research kind <k>`; the decision template check runs on `decision`.
+- **Activity keeps all research lines**; the report's source counts and uncited-claim flags are as in decision 5.
+

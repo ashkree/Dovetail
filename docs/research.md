@@ -1,6 +1,8 @@
 # Research feature
 
-Spec for v1.1's first milestone. Decisions: [ADR 0015](adr/0015-research-capture-rounds-reports.md) (capture, rounds, reports, files), [0016](adr/0016-tool-suites.md) (tool suites), [0017](adr/0017-tangents-and-side-panel.md) (tangents, side panel), [0018](adr/0018-reading-mode-layout.md) (reading mode). Order of work: [`docs/plan/research-sessions.md`](plan/research-sessions.md). Where this file and an ADR differ, the ADR wins. Items marked **open** wait for the user's call (PR body, "Questions for you").
+Spec for v1.1's first milestone. Decisions: [ADR 0015](adr/0015-research-capture-rounds-reports.md) (capture, rounds, reports, files), [0016](adr/0016-tool-suites.md) (tool suites), [0017](adr/0017-tangents-and-side-panel.md) (tangents, side panel), [0018](adr/0018-reading-mode-layout.md) (reading mode). Order of work: [`docs/plan/research-sessions.md`](plan/research-sessions.md). Where this file and an ADR differ, the ADR wins. Items marked **open** wait for the user's call.
+
+**Status (2026-11-11):** R1 to R5 are built (PRs #49, #51, #50, #55, #56), with the follow-ups of PRs #52 to #54, #57 and #58; only R6 (tangents) and R7 are left. The user's decisions of 2026-11-11 are in the ADRs' "Amended" paragraphs; where this file still describes the pre-decision design (marked below) the ADR wins.
 
 ## 1. Purpose
 
@@ -86,15 +88,15 @@ CREATE TABLE decision_evidence (
   source_id INTEGER REFERENCES sources(id),
   CHECK (finding_id IS NOT NULL OR source_id IS NOT NULL));
 
--- registry.db (tangents are global, ADR 0017)
-CREATE TABLE tangents (
-  id INTEGER PRIMARY KEY, question TEXT NOT NULL, answer TEXT, dir TEXT NOT NULL,
-  created_ms INTEGER NOT NULL,
-  state TEXT NOT NULL DEFAULT 'new',        -- 'new' | 'filed' | 'task' | 'dropped'
-  filed_project TEXT, filed_task INTEGER);
+-- tangents: SUPERSEDED (2026-11-11, ADR 0017). Tangents is a built-in research-only project, so a
+-- tangent is a task in its Unsorted list with ordinary findings and sources; there is no tangents
+-- table and no tangents.db. Not built (R6).
+
+-- unfiled coordinator findings (built, PR #53): own table `unfiled_findings` (no task), filed or
+-- dropped from Needs you; filing gives the finding a new F id
 ```
 
-Sources of tangents reuse `sources`/`finding_sources` in a `tangents.db`, or `tangents` carries its own rows: **open**, decided in R6. v1.1 columns still to come: FTS rows for findings and reports (search, Decision 20).
+A tangent's sources reuse `sources`/`finding_sources` of the Tangents project's `state.db` (decided 2026-11-11). v1.1 columns still to come: FTS rows for findings and reports (search, Decision 20).
 
 `Snapshot` carries `research: Vec<ResearchSummary>` (per task: rounds, finding and source counts, report time); content loads through `Command::LoadResearch { task, what }` answered by `Event::ResearchLoaded`, as maps do. `Event::ResearchUpserted(ResearchSummary)` keeps the library current. Built in R1 (`0013_research`, which also holds `reports` and the two `tasks` columns); the file copy of a cached source is always `sources/<id>.md`, so no `cache_path` column is kept, and the content is stored so a missing file can be rebuilt.
 
@@ -114,7 +116,7 @@ research/<task-id>-<slug>/
 
 - **Default root:** `~/.local/share/dovetail/projects/<project-id>/research/`. (The brief writes `~/.local/share/dovetail/<project>/research/`; the existing layout puts projects under `projects/<id>/`, so the same place is used.)
 - **Opt-in root:** `research_dir = "docs/research"` in the project's recipe, `~/.config/dovetail/projects/<id>.toml`, relative to the repo root, or absolute. Dovetail's own `config/projects/dovetail.toml` sets it to `docs/research/` (ADR 0015). Slices and the coordinator never write there themselves; Dovetail does. Quick findings (no round) go to `research/<task-id>-<slug>/findings/` directly.
-- **Tangents:** `~/.local/share/dovetail/tangents/<id>-<slug>/{answer.md,sources/}`.
+- **Tangents:** the built-in research project's folder, `~/.local/share/dovetail/projects/tangents/research/<task-id>-<slug>/` (ADR 0017, amended 2026-11-11; not built). A research-only project's root is `~/.local/share/dovetail/projects/<id>/research/` (built, PR #54).
 - Files are written by the core after the database row, atomically (temp file and rename). The database is the source of truth; the files are a readable copy and can be rebuilt.
 
 ## 5. Capture pipeline
@@ -126,8 +128,8 @@ Nothing here is new protocol. It uses events the driver already parses (`dovetai
 3. **Sources.** For each `ToolUse` tagged to the subagent with `name` in `WebFetch`, `WebSearch`, `Read` (and `Grep`/`Glob` listed but not cached), the core records the input (`url` and `prompt`, `query`, `file_path`); the matching `DriverEvent` `ToolResult { tool_use_id, content, is_error }` gives what the tool returned. Error results are kept but marked. Content is cached to `sources/<id>.md`, deduplicated by locator and hash. A `Source` is created from the **tool call**, never from links in prose. Per spike S7: a **`WebFetch` result is a model's answer to the agent's own `prompt`, not the page**, so the cache stores it with that prompt and says "what the agent saw"; a **`WebSearch` result** gives one source per URL of its `Links: [...]` JSON array, and the rest of the result (a model's synthesis that can carry third-party text) is kept whole as one `search` source marked untrusted.
 4. **Finding body.** In priority order (S7, Claude Code 2.1.316, where every subagent ends with a `SubagentHandback` call): (a) `task_notification.handback_report.text`; (b) for a foreground call, the `Agent` result's `tool_use_result.handbackReport.text`; (c) the `SubagentHandback` call's `message`; (d) the `Agent` result content, only when the subagent used no handback (with a handback it is a boilerplate "delivered to you as a message" line); (e) the subagent's assistant text; (f) `task_notification.summary`, only when `handback` is not `send` (otherwise it is the same boilerplate); (g) last resort, the `assistant` lines of `output_file`, a symlink to the subagent's transcript. **Never copy `output_file` wholesale**: it also holds the request context, the user's email and connector lists included. The row records which one was used (`body_from`).
 5. **File the finding.** On subagent completion (`task_updated` with a final status, `task_notification`, or the foreground `Agent` `ToolResult`) — **never on a `result`**: a background subagent keeps streaming after the coordinator's turn ends — insert the `findings` and `finding_sources` rows, then write `findings/<n>-<label>.md` with front matter (finding id, task, round, agent, subagent type, description, started and finished time, tokens, `body_from`, `sources: [ids]`), a Sources section listing each source with its locator, tool and a link to its cached copy, and the report. A better body arriving later (the notification after `task_updated`) rewrites the row and file.
-6. **Context isolation.** The coordinator's context is whatever Claude Code already gave it (the `Agent` tool result, the summary). Dovetail sends **nothing** to the coordinator about findings and does not add them to its prompt. The coordinator reads findings only by choice, through the `get_finding` read (below) or a file path it is told.
-7. **No round open.** A research-shaped subagent (`WebFetch`/`WebSearch` use) of a session that works on a task (a slice) becomes a quick finding with `round_id NULL`, filed under `findings/` of the task folder; the coordinator has no task of its own, so with no round open its subagents are not filed. The user can promote a quick finding to a round (`:round` on the finding), which creates the round row and moves the file: **not built in R1** (it needs R3's listing to point at a finding).
+6. **Context isolation.** The coordinator's context is whatever Claude Code already gave it (the `Agent` tool result, the summary). Dovetail sends **nothing** to the coordinator about findings and does not add them to its prompt. The coordinator reads findings only by choice, through the `research_get` read (below) or a file path it is told.
+7. **No round open.** *(Amended 2026-11-11, PR #53: a research-shaped subagent of the **coordinator** with no round open is stored with no task as an unfiled finding, a Needs-you item filed into a task with `y`/Enter or dropped with `d`. A second round requested while one is open is queued and opens in order when the open one closes.)* A research-shaped subagent (`WebFetch`/`WebSearch` use) of a session that works on a task (a slice) becomes a quick finding with `round_id NULL`, filed under `findings/` of the task folder; the coordinator has no task of its own, so with no round open its subagents are not filed. The user can promote a quick finding to a round (`:round` on the finding), which creates the round row and moves the file: **not built in R1** (it needs R3's listing to point at a finding).
 8. **What the stream cannot give.** `WebFetch` results are a model's answer about the page, not the raw bytes; the cache is "what the agent saw", and raw pages exist only if Dovetail fetched the URL itself, which it does not. Not verified by S7: `Read` truncation of long files, a subagent that ends without a handback, a failing `WebFetch`'s error shape. Whether the research suite's own tools work inside background subagents matters only if subagents themselves call `research_*`, which they do not in this design: only the coordinator does (S7 (e): a subagent's `mcp__dovetail__*` call streams like any tool).
 
 Fake-driver coverage: S7's `research_round_foreground.ndjson` and `research_round_background.ndjson` (plus `research_websearch.ndjson`, `research_mcp_subagent.ndjson`) in `crates/dovetail-driver/tests/fixtures/`, replayed through the real core in `crates/dovetail-core/tests/research.rs`.
@@ -173,7 +175,7 @@ Validation (section 7) runs before anything is written. Returns `{written: true,
 
 Never writes directly: creates an inbox proposal item (new `InboxKind::Proposal { kind, text, evidence }`, Needs you). `y` accepts: an idea becomes a follow-up task in Unsorted or a new round brief (the item offers both, routing rule in ADR 0015); a decision is written through the existing `core_log_decision` path with `decision_evidence` rows. `d` drops it. The call returns at once, `pending`, as `project_start_slice` does; the answer reaches the coordinator as a short user message. Errors: **kind `decision` with no `evidence`**; an evidence id that does not resolve; unknown task; no `why` is allowed.
 
-Read helpers (Research suite, coordinator and the Ask column's subagent): `research_get(task, what)` where `what` is `report`, `round:N`, `finding:N`, `source:N`. Needed so the coordinator can cite without keeping content in context; kept small.
+Read helpers (Research suite, coordinator only; the Ask session has no suites and reads the files, PR #56): `research_get(task, what)` where `what` is `report`, `round:N`, `finding:N`, `source:N`. Needed so the coordinator can cite without keeping content in context; kept small.
 
 ## 7. Report template and validation
 
@@ -219,8 +221,8 @@ Checked against `crates/dovetail-tui/src/keymap.rs`. **open** means a clash or a
 
 | Key | Meaning | Scope | Status |
 | --- | --- | --- | --- |
-| `<leader>b` | Side panel (brief) | global | **open**: bound to the Board (`Action::ShowBoard`, digest 16, UI brief line 132) |
-| `<leader>?` | Alias for the side panel | global | **open**: free in code; documented as Decision 18's grilling toggle (README, digest). Alias is free |
+| `<leader>b` | Board (the brief's "side panel" use is dropped) | global | decided 2026-11-11: the Board keeps it |
+| `<leader>?` | Side panel | global | bound (PR #52, `Action::ToggleSidePanel`): decided 2026-11-11 |
 | `<leader>r` | Reading mode | global | bound (M21, `Action::ToggleReadingMode`; also `:read`) |
 | `Esc` | Leave reading mode | reading mode | bound (M21): Normal mode in any reading-mode column; in Ask's chat bar it only returns to Normal (decided 2026-11-11) |
 | `i` | Ask about the open report | reading column, Ask | bound (M21, `Action::AskAboutReport`); in the library `i` does nothing (`Action::Ignore`) |
@@ -228,8 +230,9 @@ Checked against `crates/dovetail-tui/src/keymap.rs`. **open** means a clash or a
 | `gd` | Open cited finding or source | reading column, Ask | bound (M21) |
 | `gx` | Open the source in a browser | reading column, Ask | bound (M21, `Command::OpenExternal`); the keymap test now uses `gq` as its unbound example |
 | `Ctrl-o` | Back to the document read before `gd` | reading column | bound (M21) |
-| `<leader>sq`, `:ask` | Side chat in the main region (ADR 0011) | global | **open**: behaviour changes if the panel replaces the main-region conversation |
-| `R` (proposed) | Run next round from the "What would change this" line under the cursor | report buffer | proposed, not in the brief |
+| `<leader>sq`, `:ask` | Side chat, opened in the side panel | global | bound (PR #52); they open in the panel, not the main region |
+| `<leader>y` | (was: copy a side chat's answer to the coordinator) | global | removed (PR #52) |
+| `R` (proposed) | Run next round from the "What would change this" line under the cursor | report buffer | proposed, not built; the user has not decided |
 | `y` / `d` | Accept / drop a proposal | inbox | existing keys |
 
 Inbox keys, the leader and which-key are unchanged.
@@ -253,7 +256,7 @@ Inbox keys, the leader and which-key are unchanged.
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-As built in M21 (ADR 0018, "Decided 2026-11-11"): no Tangents section until tangents exist; Ask is a read-only session (`AgentKind::Ask`), not a subagent.
+As built in M21 (ADR 0018, "Decided 2026-11-11"): no Tangents section until tangents exist (R6); Ask is a read-only session (`AgentKind::Ask`), not a subagent.
 
 120-column centred reading column, solid background on, citations as coloured `[n]` markers. Ask is a read-only subagent started on `i`, its context the open report and the sources it cites (loaded by the core from the research folder), answers citing with the same markers. Layout rules: ADR 0018.
 
@@ -261,10 +264,10 @@ As built in M21 (ADR 0018, "Decided 2026-11-11"): no Tangents section until tang
 
 Each ends with `scripts/check.sh` passing. "Done when" boxes are ticked by the integrator after checking. Session prompts are in `docs/plan/research-sessions.md`.
 
-- **R1 Capture (core).** Round, finding and source storage; automatic capture from the stream; files on disk; research dir from the recipe. Done when: a fake-driver replay of a subagent with `WebFetch` and `Read` produces `findings/01-<agent>.md` with its sources listed; the same source fetched twice is one `sources` row; nothing is sent to the coordinator's session (asserted on the `FakeDriver` command log); a restart keeps rounds and findings; the opt-in research dir writes under `docs/research/` of a temp repo and nothing else in it.
-- **R2 Research suite.** `research_start_round`, `research_write_report` with validation, `research_propose` → inbox proposal, `research_get`, decision evidence in the decision log, coordinator role-prompt lines. Done when: the fake-driver flow writes `brief.md` and `report.md`; every `[n]` resolves; an unresolved citation, a missing round, and a `decision` without evidence each return the specified error; an accepted decision shows evidence links in the task detail.
-- **R3 Rough reading.** Reports, rounds and findings open in existing buffers (task detail lists them; `Enter` opens one in the conversation-style reader or `e` hands it to nvim). Done when: each stored artifact is reachable from the task detail and renders with the reading column; `[n]` markers are coloured; no new layout.
-- **R4 Tool suites and rename (ADR 0016).** Done when: roles list suites; old names answer with a deprecation for one release; role prompts, `live-checks.sh` and tests updated; `allowed_tools` derived from suites.
-- **R5 Reading mode.** Three-column layout, citations, `]s` `[s` `gd` `gx`, Ask column. Done when: `<leader>r` toggles and `Esc` leaves; `gx` opens a source (browser launched by the core); `gd` opens the cited finding; the Ask subagent's answers carry markers that resolve; HTML converts to markdown; layout snapshots at 100, 160 and 220 columns; the side panel key decision is applied.
-- **R6 Tangents and the side panel.** Global Tangents space, one panel, destinations for an answer, morning-review listing. Done when: a tangent started with no project open is saved with sources and shows in the next morning review; filing it into a project creates the finding or task; `<leader>y` still works.
-- **R7 Role-prompt reliability.** Extends S6: does the coordinator, given a short role prompt, call the research suite (start a round before fanning out, write a cited report, propose instead of deciding)? Done when: 3 of 3 runs per case in a scratch repo with tiny prompts, recorded in `docs/spikes/`.
+- **R1 Capture (core). Done, PR #49.** Round, finding and source storage; automatic capture from the stream; files on disk; research dir from the recipe. Done when: a fake-driver replay of a subagent with `WebFetch` and `Read` produces `findings/01-<agent>.md` with its sources listed; the same source fetched twice is one `sources` row; nothing is sent to the coordinator's session (asserted on the `FakeDriver` command log); a restart keeps rounds and findings; the opt-in research dir writes under `docs/research/` of a temp repo and nothing else in it.
+- **R2 Research suite. Done, PR #51.** `research_start_round`, `research_write_report` with validation, `research_propose` → inbox proposal, `research_get`, decision evidence in the decision log, coordinator role-prompt lines. Done when: the fake-driver flow writes `brief.md` and `report.md`; every `[n]` resolves; an unresolved citation, a missing round, and a `decision` without evidence each return the specified error; an accepted decision shows evidence links in the task detail.
+- **R3 Rough reading. Done, PR #50.** Reports, rounds and findings open in existing buffers (task detail lists them; `Enter` opens one in the conversation-style reader or `e` hands it to nvim). Done when: each stored artifact is reachable from the task detail and renders with the reading column; `[n]` markers are coloured; no new layout.
+- **R4 Tool suites and rename (ADR 0016). Done, PR #55.** Done when: roles list suites; old names answer with a deprecation for one release; role prompts, `live-checks.sh` and tests updated; `allowed_tools` derived from suites.
+- **R5 Reading mode. Done, PR #56.** Three-column layout, citations, `]s` `[s` `gd` `gx`, Ask column. Done when: `<leader>r` toggles and `Esc` leaves; `gx` opens a source (browser launched by the core); `gd` opens the cited finding; the Ask subagent's answers carry markers that resolve; HTML converts to markdown; layout snapshots at 100, 160 and 220 columns; the side panel key decision is applied.
+- **R6 Tangents and the side panel.** The side panel is done (PR #52). Left (not built): Tangents as a built-in research project (always present, last in the switcher with its own marker, cannot be archived, tangents as tasks in Unsorted), answer destinations (attach to the current task as a finding, or Tangents), the "new tangents" morning item (file into a project, start a task, drop). Done when: a tangent is saved in Tangents with its sources and shows in the next morning's "new tangents" item; filing it into a project creates the finding or task; Tangents cannot be archived. (`<leader>y` was removed.)
+- **R7 Role-prompt reliability.** *(Not run; the user's.)* Extends S6: does the coordinator, given a short role prompt, call the research suite (start a round before fanning out, write a cited report, propose instead of deciding)? Done when: 3 of 3 runs per case in a scratch repo with tiny prompts, recorded in `docs/spikes/`.
