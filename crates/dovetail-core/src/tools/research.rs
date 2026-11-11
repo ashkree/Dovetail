@@ -159,6 +159,8 @@ impl Core {
         }
         let path = dir.join("report.md");
         let file = files::write_atomic(&path, &checked.body);
+        // Ask sessions were grounded in the old report (ADR 0018).
+        self.close_asks_of(task);
         let closed = open.is_some();
         if closed {
             if let Err(e) = self.close_round_for(task).await {

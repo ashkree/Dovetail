@@ -1,0 +1,34 @@
+---
+source: crates/dovetail-tui/tests/reading_mode.rs
+expression: "snapshot_at(100, 30)"
+---
+ folder /home/you/src/dovetail   maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+┌ library ─────────────┐┌ reading · #3 report ─────────────────────────┐┌ ask ─────────────────────┐
+│ ▾ Dovetail · open    ││ Which fuzzy matcher for the picker?          ││ › i to ask about #3's    │
+│   ▾ #3 Fuzzy picker  ││                                              ││ report. A read-only      │
+│       ● report       ││ Recommendation: use nucleo [F1][S1].         ││ session answers from the │
+│     ▸ round 1 · clo… ││ Confidence: medium.                          ││ report and its sources,  │
+│     ▸ round 2 · ope… ││                                              ││ and cites them as the    │
+│     ▸ quick finding… ││ Evidence                                     ││ report does.             │
+│     ▸ sources (3)    ││                                              ││                          │
+│   notes-site · ⏎ op… ││ • nucleo scores a few thousand rows well     ││                          │
+│   ◇ Market sizing ·… ││   inside a frame, and is what Helix uses     ││                          │
+│ ▸ Decisions (3)      ││   [F1, S2].                                  ││                          │
+│ ▸ Docs · ADRs (2)    ││                                              ││                          │
+│                      ││ • skim is slower to set up and pulls in a    ││                          │
+│                      ││   larger dependency tree [F2].               ││                          │
+│                      ││                                              ││                          │
+│                      ││ • Scoring on paths wants a bonus for matches ││                          │
+│                      ││   after / [F3].                              ││                          │
+│                      ││                                              ││                          │
+│                      ││ What would change this                       ││                          │
+│                      ││                                              ││                          │
+│                      ││ If non-ASCII paths score badly in round 2    ││                          │
+│                      ││ [S2], revisit.                               ││                          │
+│                      ││                                              ││                          │
+│                      ││                                              ││                          │
+│                      ││                                              ││                          │
+│                      ││                                              ││                          │
+│ ⏎ read · o fold      ││ end · ]s [s · gd · gx · i ask                ││                          │
+└──────────────────────┘└──────────────────────────────────────────────┘└──────────────────────────┘
+ NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 1… gd open · gx browser · i ask · ⎋ leave

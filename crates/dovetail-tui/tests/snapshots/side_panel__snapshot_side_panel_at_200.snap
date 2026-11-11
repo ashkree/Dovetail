@@ -29,8 +29,8 @@ expression: "render(&mut app, 200, 40)"
 │                                                                                                                          ││   ── side-1 · 10:12 ──────────────────────────────────────────────────   │
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││   A gap means an event was lost. apply returns Gap instead of            │
-│                                                                                                                          ││   guessing, and the UI asks for a resync (                               │
-│                                                                                                                          ││   crates/dovetail-api/src/apply.rs).                                     │
+│                                                                                                                          ││   guessing, and the UI asks for a resync                                 │
+│                                                                                                                          ││   (crates/dovetail-api/src/apply.rs).                                    │
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │

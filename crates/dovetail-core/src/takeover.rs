@@ -347,6 +347,10 @@ impl Core {
                 "{name} is a subagent: take over the session it runs in"
             ));
         }
+        // It runs in its task's research folder and only reads: nothing to take over to.
+        if row.agent.kind == AgentKind::Ask {
+            return Some(format!("{name} is reading mode's Ask: it stays headless"));
+        }
         if self.takeover.is_some() || self.editor_open {
             return Some("the terminal is already lent out".into());
         }

@@ -221,12 +221,13 @@ Checked against `crates/dovetail-tui/src/keymap.rs`. **open** means a clash or a
 | --- | --- | --- | --- |
 | `<leader>b` | Side panel (brief) | global | **open**: bound to the Board (`Action::ShowBoard`, digest 16, UI brief line 132) |
 | `<leader>?` | Alias for the side panel | global | **open**: free in code; documented as Decision 18's grilling toggle (README, digest). Alias is free |
-| `<leader>r` | Reading mode | global | free in code (`<leader>pr` is RegisterProject, `r` is bound only in inbox scopes). Not open as a key; the mode is gated on R5 |
-| `Esc` | Leave reading mode | reading mode | **open**: the UI brief reserves `Esc` for mode switching; scoped to Normal mode in reading mode |
-| `i` | Ask about the open report | Ask column | **open**: `i` is `EnterInsert` globally; scoped to the reading buffer, resolves to Ask there |
-| `]s` / `[s` | Next / previous citation | reading buffer | free (`]]`/`[[` exist, `]s` does not) |
-| `gd` | Open cited finding or source | reading buffer | free (`gg` is the only `g` binding; `gx` appears in a keymap test as an *unbound* example, `an_unbound_key_is_unmatched…`, which must change when `gx` is bound) |
-| `gx` | Open the source in a browser | reading buffer | free; the test above changes |
+| `<leader>r` | Reading mode | global | bound (M21, `Action::ToggleReadingMode`; also `:read`) |
+| `Esc` | Leave reading mode | reading mode | bound (M21): Normal mode in any reading-mode column; in Ask's chat bar it only returns to Normal (decided 2026-11-11) |
+| `i` | Ask about the open report | reading column, Ask | bound (M21, `Action::AskAboutReport`); in the library `i` does nothing (`Action::Ignore`) |
+| `]s` / `[s` | Next / previous citation | reading column, Ask | bound (M21) |
+| `gd` | Open cited finding or source | reading column, Ask | bound (M21) |
+| `gx` | Open the source in a browser | reading column, Ask | bound (M21, `Command::OpenExternal`); the keymap test now uses `gq` as its unbound example |
+| `Ctrl-o` | Back to the document read before `gd` | reading column | bound (M21) |
 | `<leader>sq`, `:ask` | Side chat in the main region (ADR 0011) | global | **open**: behaviour changes if the panel replaces the main-region conversation |
 | `R` (proposed) | Run next round from the "What would change this" line under the cursor | report buffer | proposed, not in the brief |
 | `y` / `d` | Accept / drop a proposal | inbox | existing keys |
@@ -251,6 +252,8 @@ Inbox keys, the leader and which-key are unchanged.
 │ READING  #1231 pricing · round 2 · 7 sources · [3] ◂ ]s/[s · gd open · gx browser │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+As built in M21 (ADR 0018, "Decided 2026-11-11"): no Tangents section until tangents exist; Ask is a read-only session (`AgentKind::Ask`), not a subagent.
 
 120-column centred reading column, solid background on, citations as coloured `[n]` markers. Ask is a read-only subagent started on `i`, its context the open report and the sources it cites (loaded by the core from the research folder), answers citing with the same markers. Layout rules: ADR 0018.
 

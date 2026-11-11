@@ -76,6 +76,7 @@ impl App {
             check_claude: false,
             scopes: None,
             upgrade: None,
+            opener: None,
         };
         let (link, core) = dovetail_core::spawn(
             Resolution::Registered(project),

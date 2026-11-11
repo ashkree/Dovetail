@@ -8,7 +8,8 @@
 //! - `--append-system-prompt-file`: the installed role prompt (Decision 8c).
 //! - `--allowedTools`: Dovetail's tools in the session's suites and, for one release, their old
 //!   names (ADR 0016), plus `SendMessage` and `ListAgents` (S2).
-//! - A side chat (ADR 0011, read-only per the 2026-11-11 decision): `--permission-mode dontAsk`,
+//! - A side chat (ADR 0011, read-only per the 2026-11-11 decision), and reading mode's Ask
+//!   (ADR 0018), which has no suites: `--permission-mode dontAsk`,
 //!   web tools and the read-only Bash commands of [`SIDE_CHAT_BASH`] allowed, and
 //!   `--disallowedTools` for the editing tools and the options of [`SIDE_CHAT_BASH_DENY`].
 //! - Environment: native to-do tools on, the to-do list id (A12), the hook's project id, and
@@ -183,7 +184,7 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     spec.allowed_tools = allowed_tools(&launch.suites);
     // A side chat reads and searches; it never edits, and runs only read-only commands. In
     // `dontAsk` mode anything not allowed here is denied, never asked (decided 2026-11-11).
-    if launch.role == Role::SideChat {
+    if matches!(launch.role, Role::SideChat | Role::Ask) {
         spec.permission_mode = CliMode::DontAsk;
         spec.allowed_tools.extend(side_chat_allowed());
         spec.extra_args.extend([

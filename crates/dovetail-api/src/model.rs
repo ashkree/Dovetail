@@ -336,6 +336,9 @@ pub enum AgentKind {
     /// A read-only session the user opens for a question or research: no worktree, no task
     /// (ADR 0011).
     SideChat,
+    /// Reading mode's Ask (ADR 0018): a read-only session about one research task's report,
+    /// in its research folder; [`Agent::task`] is the task. Shown only in the Ask column.
+    Ask,
     /// Spawned by a session for self-contained work.
     Subagent {
         /// Runs in the background with no to-do items.

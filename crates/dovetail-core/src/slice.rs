@@ -392,7 +392,10 @@ impl Core {
     /// `confirmed`: the user has already agreed to lose unsaved work.
     pub(crate) fn close_slice(&mut self, agent: &AgentId, confirmed: bool) {
         let kind = self.agents.get(agent).map(|r| r.agent.kind);
-        if !matches!(kind, Some(AgentKind::Slice | AgentKind::SideChat)) {
+        if !matches!(
+            kind,
+            Some(AgentKind::Slice | AgentKind::SideChat | AgentKind::Ask)
+        ) {
             self.fail(format!("{} is not a slice", agent.0));
             return;
         }
@@ -645,10 +648,10 @@ impl Core {
             .filter(|p| &p.item.agent == agent)
             .map(|p| p.item.id)
             .collect();
-        let what = if row.agent.kind == AgentKind::SideChat {
-            "side chat"
-        } else {
-            "slice"
+        let what = match row.agent.kind {
+            AgentKind::SideChat => "side chat",
+            AgentKind::Ask => "ask session",
+            _ => "slice",
         };
         for id in items {
             self.resolve(id, Some(format!("{what} archived")));

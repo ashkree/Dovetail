@@ -28,6 +28,25 @@ pub fn markers(text: &str) -> Vec<(usize, usize)> {
     found
 }
 
+/// `text` with the spaces inside citation markers made no-break spaces, so a list such as
+/// `[F1, S2]` is never wrapped across two lines.
+pub fn keep_together(text: &str) -> String {
+    let found = markers(text);
+    if found.is_empty() {
+        return text.to_string();
+    }
+    text.chars()
+        .enumerate()
+        .map(|(i, c)| {
+            if c == ' ' && found.iter().any(|&(a, b)| (a..b).contains(&i)) {
+                super::wrap::NBSP
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
 /// `3`, `F3`, `S12`, or a comma-separated list of those.
 fn is_citation(inner: &str) -> bool {
     !inner.is_empty()
@@ -96,6 +115,24 @@ mod tests {
             .map(|(a, b)| &text[a..b])
             .collect();
         assert_eq!(found, ["[1]", "[F3]", "[S2, F4]"]);
+    }
+
+    #[test]
+    fn a_citation_list_is_kept_on_one_line() {
+        let kept = keep_together("uses [F1, S2] and more [3]");
+        assert_eq!(kept, "uses [F1,\u{a0}S2] and more [3]");
+        let wrapped = crate::render::wrap::wrap_spans(&[Span::raw(kept)], 10);
+        assert!(
+            wrapped
+                .iter()
+                .any(|l| l.iter().any(|s| s.content.contains("[F1,")))
+        );
+        assert!(
+            wrapped
+                .iter()
+                .all(|l| !l.iter().any(|s| s.content == "[F1,")),
+            "{wrapped:?}"
+        );
     }
 
     #[test]

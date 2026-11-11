@@ -18,6 +18,9 @@ pub enum SessionError {
     /// A slice whose session never started cannot be resumed.
     #[error("slice {0} never started; archive it and start a new one")]
     NeverStarted(String),
+    /// An Ask session starts with a question from reading mode (ADR 0018).
+    #[error("{0} starts when you ask it something in reading mode")]
+    AskNotStarted(String),
     /// Subagents run inside their parent's session.
     #[error("subagents have no session of their own")]
     Subagent,

@@ -20,6 +20,7 @@ mod focus;
 mod overlay;
 mod panel;
 mod projects;
+mod reading;
 mod search;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -78,6 +79,18 @@ enum Then {
     Handoff(Command),
 }
 
+/// Which conversation view's chat bar is open, or was open last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ChatSite {
+    /// The main region's conversation.
+    #[default]
+    Main,
+    /// The side panel's.
+    Panel,
+    /// Reading mode's Ask column (ADR 0018).
+    Ask,
+}
+
 /// A yes/no question waiting for `y` or `n`. Any other key cancels it.
 struct Confirm {
     prompt: String,
@@ -124,8 +137,10 @@ pub struct App {
     exit_armed_until: Option<u64>,
     /// A side chat was asked for: open it in the side panel when it appears.
     open_side_chat: bool,
-    /// The chat bar open (or last open) is the side panel's, not the main region's.
-    chat_in_panel: bool,
+    /// Whose chat bar is open (or was open last): the main region's, the side panel's or Ask's.
+    chat_site: ChatSite,
+    /// `i` asked for a new Ask session for this task: type in it when it appears.
+    pending_ask: Option<dovetail_api::TaskId>,
     /// Focus mode (`<leader>z`): the side column is hidden.
     focus_mode: bool,
     /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
@@ -168,7 +183,8 @@ impl App {
             quit: false,
             exit_armed_until: None,
             open_side_chat: false,
-            chat_in_panel: false,
+            chat_site: ChatSite::Main,
+            pending_ask: None,
             focus_mode: false,
             quit_after_close: None,
             close_failure: None,
@@ -375,13 +391,10 @@ impl App {
                         self.note = Some(error.clone());
                     }
                 }
+                self.reading_event(&event);
                 if let Event::PathsListed { agent, dir, paths } = &event {
                     let commands = commands_for(&self.snap, agent);
-                    let view = if self.chat_in_panel {
-                        self.buffers.panel.conversation_mut()
-                    } else {
-                        &mut self.buffers.conversation
-                    };
+                    let view = chat_view_of(&mut self.buffers, self.chat_site);
                     view.receive_paths(agent, dir.clone(), paths.clone(), commands);
                     if let Some((agent, dir)) = view.take_path_request() {
                         self.outbox.push(Command::ListPaths { agent, dir });
@@ -412,6 +425,10 @@ impl App {
                     _ => None,
                 };
                 let journal = matches!(event, Event::JournalChanged(_));
+                let ask = match &event {
+                    Event::AgentUpserted(a) if a.kind == AgentKind::Ask => Some(event.clone()),
+                    _ => None,
+                };
                 // Every agent is idle and the user said so (ADR 0014): quit without asking, so
                 // the binary can swap the new build in and start it.
                 // Likewise when the user picked another project (B24) and said yes.
@@ -444,6 +461,9 @@ impl App {
                         }
                         if journal {
                             self.on_journal();
+                        }
+                        if let Some(event) = ask {
+                            self.reading_settle(&event);
                         }
                     }
                     ApplyResult::Gap { expected, got } => {
@@ -490,17 +510,30 @@ impl App {
         }
         // The panel follows the side chats: a closed one gives way to its neighbour.
         if self.buffers.panel.settle(&self.snap)
-            && self.chat_in_panel
+            && self.chat_site == ChatSite::Panel
             && self.mode == Mode::Insert
             && self.input.is_none()
         {
             self.mode = Mode::Normal;
+        }
+        if self.reading_mode() {
+            self.settle_reading();
+        }
+        // The Ask session went (closed, or a new report): its chat bar goes with it.
+        if self.chat_site == ChatSite::Ask
+            && self.buffers.ask.agent().is_none()
+            && self.mode == Mode::Insert
+            && self.input.is_none()
+        {
+            self.mode = Mode::Normal;
+            self.chat_site = ChatSite::Main;
         }
         let reading = match self.regions.focused_buffer() {
             BufferKind::Conversation if self.regions.focus() == RegionId::Main => {
                 self.buffers.conversation.agent().cloned()
             }
             BufferKind::SidePanel => self.buffers.panel.agent().cloned(),
+            BufferKind::Ask => self.buffers.ask.agent().cloned(),
             _ => None,
         };
         if reading != self.reading
@@ -618,6 +651,7 @@ impl App {
     /// then shown as its outline alone.
     pub fn set_graphics(&mut self, cell: Option<CellPx>) {
         self.buffers.map_outline.set_graphics(cell);
+        self.buffers.reader.set_graphics(cell);
         self.dirty = true;
     }
 
@@ -757,11 +791,7 @@ impl App {
                 _ => {}
             }
             // Fields borrowed apart, so the session's commands need no copy per key.
-            let view = if self.chat_in_panel {
-                self.buffers.panel.conversation_mut()
-            } else {
-                &mut self.buffers.conversation
-            };
+            let view = chat_view_of(&mut self.buffers, self.chat_site);
             let commands = view
                 .agent()
                 .map_or(&[][..], |a| commands_for(&self.snap, a));
@@ -1002,6 +1032,10 @@ impl App {
     /// Runs an action: global ones here, the rest in the focused buffer.
     pub fn run(&mut self, action: Action) {
         self.dirty = true;
+        // What shows something in Layout B leaves reading mode first, so it is seen.
+        if self.reading_mode() && shows_in_layout_b(action) {
+            self.leave_reading_mode();
+        }
         // Going to the side column leaves focus mode, so focus never lands on a hidden region.
         if self.focus_mode
             && matches!(
@@ -1040,6 +1074,10 @@ impl App {
             }
             Action::ListResearch => self.open_research_list(),
             Action::ToggleFocusMode => self.toggle_focus_mode(),
+            Action::ToggleReadingMode => self.toggle_reading_mode(),
+            Action::LeaveReadingMode => self.leave_reading_mode(),
+            Action::AskAboutReport => self.ask_about_report(),
+            Action::Ignore => {}
             Action::PasteClipboard => self.paste_clipboard(),
             Action::QuickCapture => self.open_capture(),
             Action::PickAgent => self.open_switcher(),
@@ -1180,6 +1218,18 @@ impl App {
             }
             Effect::Note(text) => self.note = Some(text),
             Effect::OpenEditor(path) => self.handoff = Some(Command::OpenEditor { path }),
+            Effect::Read {
+                target,
+                task,
+                title,
+            } => self.read(target, task, title),
+            Effect::Cite {
+                task,
+                evidence,
+                browse,
+                from,
+            } => self.follow_citation(task, evidence, browse, from),
+            Effect::OpenProject(id) => self.pick_project(id),
         }
     }
 
@@ -1192,8 +1242,43 @@ impl App {
     }
 
     fn open_agent_in_main(&mut self, id: AgentId) {
+        // A picked agent shows in Layout B (ADR 0018).
+        if self.reading_mode() {
+            self.leave_reading_mode();
+        }
         self.show_agent(id);
         self.regions.set_focus(RegionId::Main);
+    }
+}
+
+/// Actions that show something in Layout B: run in reading mode, they leave it first.
+fn shows_in_layout_b(action: Action) -> bool {
+    matches!(
+        action,
+        Action::FocusInbox
+            | Action::FocusCoordinator
+            | Action::AlternateAgent
+            | Action::ToggleFocusMode
+            | Action::ShowActivity
+            | Action::ShowMessages
+            | Action::ShowBoard
+            | Action::ShowWorktrees
+            | Action::ShowMaps
+            | Action::MapMode
+            | Action::ToggleSidePanel
+            | Action::NewSideChat
+            | Action::NewSlice
+            | Action::ListResearch
+            | Action::EnterInsert
+    )
+}
+
+/// The conversation view whose chat bar `site` names, borrowed from the buffers alone.
+fn chat_view_of(buffers: &mut Buffers, site: ChatSite) -> &mut crate::buffers::ConversationBuffer {
+    match site {
+        ChatSite::Main => &mut buffers.conversation,
+        ChatSite::Panel => buffers.panel.conversation_mut(),
+        ChatSite::Ask => buffers.ask.conversation_mut(),
     }
 }
 

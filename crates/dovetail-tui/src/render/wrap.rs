@@ -5,6 +5,9 @@ use std::ops::Range;
 use ratatui::text::Span;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+/// A space that never breaks a line.
+pub const NBSP: char = '\u{a0}';
+
 /// A newline inside a span forces a line break (markdown hard break).
 pub const BREAK: &str = "\n";
 
@@ -16,11 +19,15 @@ pub fn wrap_spans(spans: &[Span<'static>], width: usize) -> Vec<Vec<Span<'static
     let mut lines: Vec<Vec<Span<'static>>> = Vec::new();
     let mut line: Vec<Span<'static>> = Vec::new();
     let mut used = 0;
+    // The last thing on the line is a word with no space after it, so a word that follows in
+    // the next span continues it: markdown hands `[F1, S2]` over as `[` and `F1, S2]`.
+    let mut glued = false;
 
     for span in spans {
         if span.content == BREAK {
             lines.push(finish(std::mem::take(&mut line)));
             used = 0;
+            glued = false;
             continue;
         }
         for range in tokens(&span.content) {
@@ -31,13 +38,33 @@ pub fn wrap_spans(spans: &[Span<'static>], width: usize) -> Vec<Vec<Span<'static
                     line.push(Span::styled(" ", span.style));
                     used += 1;
                 }
+                glued = false;
                 continue;
             }
             let w = token.width();
             if used > 0 && used + w > width {
+                // Carry the start of a word split over spans to the next line with it, unless
+                // it is all the line has.
+                let start = line
+                    .iter()
+                    .rposition(|s| s.content.trim().is_empty())
+                    .map_or(0, |i| i + 1);
+                let carry = if glued && start > 0 {
+                    line.split_off(start)
+                } else {
+                    Vec::new()
+                };
+                let carried: usize = carry.iter().map(|s| s.content.width()).sum();
                 lines.push(finish(std::mem::take(&mut line)));
                 used = 0;
+                if carried + w <= width {
+                    line = carry;
+                    used = carried;
+                } else if !carry.is_empty() {
+                    lines.push(carry);
+                }
             }
+            glued = true;
             if w <= width {
                 line.push(Span::styled(token.to_string(), span.style));
                 used += w;
@@ -121,7 +148,8 @@ fn tokens(text: &str) -> Vec<Range<usize>> {
     let mut start = 0;
     let mut in_space: Option<bool> = None;
     for (i, c) in text.char_indices() {
-        let space = c.is_whitespace();
+        // A no-break space joins words (a citation list such as `[F1, S2]`).
+        let space = c.is_whitespace() && c != NBSP;
         match in_space {
             Some(prev) if prev != space => {
                 out.push(start..i);
@@ -172,6 +200,17 @@ mod tests {
         assert_eq!(bbb.style, red);
         assert_eq!(text(&lines[1]), "ccc");
         assert_eq!(lines[1][0].style, red);
+    }
+
+    #[test]
+    fn a_word_split_over_spans_wraps_whole() {
+        let spans = [Span::raw("one two ["), Span::raw("F1]")];
+        let lines = wrap_spans(&spans, 10);
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| l.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        assert_eq!(text, ["one two", "[F1]"]);
     }
 
     #[test]

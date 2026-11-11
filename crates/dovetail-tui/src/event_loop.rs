@@ -366,10 +366,11 @@ impl<'a> LoopIo<'a> {
         Ok(())
     }
 
-    /// After a frame: what kitty must change to show `scene`.
-    fn show(&mut self, scene: Option<&Scene>) -> io::Result<()> {
+    /// After a frame: what kitty must change to show `scene` and reading mode's `figures`.
+    fn show(&mut self, scene: Option<&Scene>, figures: &[kitty::Figure]) -> io::Result<()> {
         let mut bytes = Vec::new();
         self.kitty.sync(scene, &mut bytes);
+        self.kitty.sync_figures(figures, &mut bytes);
         if !bytes.is_empty() {
             self.out.write_all(&bytes)?;
             self.out.flush()?;
@@ -440,7 +441,7 @@ fn drive<B: ratatui::backend::Backend>(
             terminal
                 .draw(|frame| app.draw(frame))
                 .map_err(|e| io::Error::other(e.to_string()))?;
-            io.show(app.graphics_scene().as_ref())?;
+            io.show(app.graphics_scene().as_ref(), &app.reading_figures())?;
             tracing::trace!("frame");
             app.take_dirty();
             last_draw = Some(now);

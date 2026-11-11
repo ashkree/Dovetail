@@ -6,7 +6,12 @@
 //! key reader would take them for typing. Both images sit under the text (`z` < 0), so a
 //! popup's text stays readable over them; the canvas hides them while a popup is open anyway.
 //! [`Screen`] remembers what is on screen and writes only the difference.
+//!
+//! Reading mode's images ([`Figure`], ADR 0018) are sent by path (`t=f`): kitty reads the PNG
+//! itself, so the UI never opens the file.
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::Picture;
@@ -120,6 +125,43 @@ fn move_to(out: &mut Vec<u8>, col: u16, row: u16) {
     out.extend_from_slice(format!("\x1b7\x1b[{};{}H", row + 1, col + 1).as_bytes());
 }
 
+/// An image of the reading column to place after the frame, in screen cells.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Figure {
+    /// kitty image id.
+    pub id: u32,
+    /// The PNG file, which kitty reads itself.
+    pub path: PathBuf,
+    /// Left column.
+    pub col: u16,
+    /// Top row.
+    pub row: u16,
+    /// Width in cells.
+    pub cols: u16,
+    /// Height in cells.
+    pub rows: u16,
+}
+
+/// Sends a PNG file as image `id`: kitty reads it from `path`.
+pub fn send_png_file(out: &mut Vec<u8>, id: u32, path: &std::path::Path) {
+    let path = path.to_string_lossy();
+    transmit(out, &format!("a=t,f=100,t=f,i={id},q=2"), path.as_bytes());
+}
+
+/// Places a figure scaled into its cells, under the text.
+pub fn place_figure(out: &mut Vec<u8>, f: &Figure) {
+    move_to(out, f.col, f.row);
+    command(
+        out,
+        &format!(
+            "a=p,i={},p=1,c={},r={},z={MAP_Z},C=1,q=2",
+            f.id, f.cols, f.rows
+        ),
+        "",
+    );
+    out.extend_from_slice(b"\x1b8");
+}
+
 /// Takes an image's placements off the screen, keeping its data for a later placement.
 pub fn hide(out: &mut Vec<u8>, id: u32) {
     command(out, &format!("a=d,d=i,i={id},q=2"), "");
@@ -148,6 +190,10 @@ pub struct Screen {
     sent: Option<Arc<Picture>>,
     placed: Option<Placement>,
     ring: Option<Ring>,
+    /// Reading-mode figures sent, by id, with the file each was sent from.
+    figures_sent: HashMap<u32, PathBuf>,
+    /// Reading-mode figures on screen, by id.
+    figures_placed: HashMap<u32, Figure>,
 }
 
 impl Screen {
@@ -191,6 +237,36 @@ impl Screen {
         }
     }
 
+    /// Brings reading mode's figures to `want`: new files are sent, moved ones re-placed, and
+    /// those no longer wanted hidden.
+    pub fn sync_figures(&mut self, want: &[Figure], out: &mut Vec<u8>) {
+        for f in want {
+            if self.figures_sent.get(&f.id) != Some(&f.path) {
+                if self.figures_sent.contains_key(&f.id) {
+                    delete(out, f.id);
+                }
+                send_png_file(out, f.id, &f.path);
+                self.figures_sent.insert(f.id, f.path.clone());
+                self.figures_placed.remove(&f.id);
+            }
+            if self.figures_placed.get(&f.id) != Some(f) {
+                place_figure(out, f);
+                self.figures_placed.insert(f.id, f.clone());
+            }
+        }
+        let mut gone: Vec<u32> = self
+            .figures_placed
+            .keys()
+            .filter(|id| !want.iter().any(|f| f.id == **id))
+            .copied()
+            .collect();
+        gone.sort_unstable();
+        for id in gone {
+            hide(out, id);
+            self.figures_placed.remove(&id);
+        }
+    }
+
     /// The terminal lost its images (the alternate screen was left and entered again): send
     /// everything afresh next time.
     pub fn forget(&mut self) {
@@ -202,6 +278,11 @@ impl Screen {
         if self.sent.is_some() || self.ring.is_some() {
             delete(out, MAP_ID);
             delete(out, RING_ID);
+        }
+        let mut ids: Vec<u32> = self.figures_sent.keys().copied().collect();
+        ids.sort_unstable();
+        for id in ids {
+            delete(out, id);
         }
         self.forget();
     }
@@ -275,6 +356,53 @@ mod tests {
         let mut out = Vec::new();
         screen.sync(want, &mut out);
         String::from_utf8(out).expect("ascii")
+    }
+
+    #[test]
+    fn figures_are_sent_by_path_once_and_hidden_when_scrolled_away() {
+        let mut screen = Screen::default();
+        let fig = Figure {
+            id: 7_400,
+            path: "/r/fig.png".into(),
+            col: 3,
+            row: 4,
+            cols: 20,
+            rows: 6,
+        };
+        let mut out = Vec::new();
+        screen.sync_figures(std::slice::from_ref(&fig), &mut out);
+        let first = String::from_utf8(out).expect("ascii");
+        // The payload is the path in base64; kitty reads the file.
+        assert!(first.contains(&format!(
+            "a=t,f=100,t=f,i=7400,q=2,m=0;{}",
+            base64(b"/r/fig.png")
+        )));
+        assert!(first.contains("a=p,i=7400,p=1,c=20,r=6"));
+        let mut out = Vec::new();
+        screen.sync_figures(std::slice::from_ref(&fig), &mut out);
+        assert!(out.is_empty(), "nothing changed");
+        let moved = Figure {
+            row: 2,
+            ..fig.clone()
+        };
+        let mut out = Vec::new();
+        screen.sync_figures(std::slice::from_ref(&moved), &mut out);
+        let text = String::from_utf8(out).expect("ascii");
+        assert!(!text.contains("a=t") && text.contains("a=p,i=7400"));
+        let mut out = Vec::new();
+        screen.sync_figures(&[], &mut out);
+        assert!(
+            String::from_utf8(out)
+                .expect("ascii")
+                .contains("a=d,d=i,i=7400")
+        );
+        let mut out = Vec::new();
+        screen.clear(&mut out);
+        assert!(
+            String::from_utf8(out)
+                .expect("ascii")
+                .contains("a=d,d=I,i=7400")
+        );
     }
 
     #[test]

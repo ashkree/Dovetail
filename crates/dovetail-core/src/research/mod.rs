@@ -409,9 +409,16 @@ impl Core {
         let dir = self.research_dir(task, &t.title)?;
         let r = self.db.task_research(task).await?;
         let doc = |path: Option<String>, markdown: String| {
+            let path = path.map(|p| dir.join(p));
+            let base = path
+                .as_deref()
+                .and_then(std::path::Path::parent)
+                .unwrap_or(&dir);
+            let images = crate::docs::images(&markdown, base);
             ResearchContent::Document(ResearchDocument {
-                path: path.map(|p| dir.join(p)),
+                path,
                 markdown,
+                images,
             })
         };
         Ok(match what {
@@ -861,7 +868,7 @@ fn summary(row: SummaryRow, dir: PathBuf) -> ResearchSummary {
 }
 
 /// The API's listing of one task, with absolute paths.
-fn listing(dir: &std::path::Path, r: &TaskResearch) -> ResearchListing {
+pub(crate) fn listing(dir: &std::path::Path, r: &TaskResearch) -> ResearchListing {
     ResearchListing {
         findings: r
             .findings

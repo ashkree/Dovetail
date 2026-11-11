@@ -69,6 +69,8 @@ pub fn run_real(project: Option<&str>) -> Result<()> {
             exec: Arc::new(upgrade::SystemExec),
             install,
         }),
+        // `gx` in reading mode: `$BROWSER`, else `xdg-open`.
+        opener: None,
     };
     let (link, core) = dovetail_core::spawn(resolution, paths.clone(), config, options)
         .context("starting the core")?;

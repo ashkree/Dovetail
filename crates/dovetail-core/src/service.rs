@@ -88,6 +88,9 @@ pub struct CoreOptions {
     pub scopes: Option<crate::memory::Scopes>,
     /// What `:upgrade` needs (ADR 0014); `None` turns it off, as in tests that are not about it.
     pub upgrade: Option<UpgradeOptions>,
+    /// The program [`Command::OpenExternal`] runs with the URL; `None` for `$BROWSER`, else
+    /// `xdg-open`. Tests give a fake one.
+    pub opener: Option<std::ffi::OsString>,
 }
 
 /// What `:upgrade` runs its build with and installs over.
@@ -289,6 +292,8 @@ pub(crate) enum Input {
     },
     /// Copying text to the clipboard failed.
     CopyFailed(crate::clipboard::CopyError),
+    /// The browser opener exited unsuccessfully; the message says how.
+    OpenerFailed(String),
     /// The editor run in the UI's terminal exited; the message says why it failed, if it did.
     EditorExited(Option<String>),
     /// Native `claude` started for a take-over (M14).
@@ -667,6 +672,7 @@ impl Core {
                     self.emit(Event::PathsListed { agent, dir, paths });
                 }
                 Input::CopyFailed(e) => self.fail(e.to_string()),
+                Input::OpenerFailed(message) => self.fail(message),
                 Input::EditorExited(error) => {
                     self.editor_open = false;
                     self.emit(Event::TerminalReturned { error });
@@ -1384,6 +1390,10 @@ impl Core {
             Command::SetResearchKind { task, kind } => self.set_research_kind(task, kind).await,
             Command::FileUnfiled { item, task } => self.file_unfiled(item, task).await,
             Command::LoadResearch { task, what } => self.load_research_content(task, what).await,
+            Command::OpenExternal { url } => self.open_external(url),
+            Command::StartAsk { task } => self.start_ask(task).await,
+            Command::ListDocs => self.list_docs(),
+            Command::LoadDoc { path } => self.load_doc(path),
             Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
             Command::TakeOver { agent } => self.take_over(agent).await,
@@ -1437,6 +1447,59 @@ impl Core {
             };
             let _ = inputs.send(Input::PathsListed { agent, dir, paths });
         });
+    }
+
+    /// Opens a web page in the browser (ADR 0018). The opener is waited for on a blocking
+    /// thread, so it is reaped; only a failure is reported.
+    fn open_external(&mut self, url: String) {
+        let opener = crate::external::resolve(self.options.opener.as_deref());
+        let mut child = match crate::external::spawn(&opener, &url) {
+            Ok(child) => child,
+            Err(e) => {
+                self.fail(e);
+                return;
+            }
+        };
+        let inputs = self.inputs.clone();
+        let shown = opener.to_string_lossy().into_owned();
+        tokio::task::spawn_blocking(move || match child.wait() {
+            Ok(status) if status.success() => {}
+            Ok(status) => {
+                let _ = inputs.send(Input::OpenerFailed(format!(
+                    "{shown} could not open {url} ({status})"
+                )));
+            }
+            Err(e) => {
+                let _ = inputs.send(Input::OpenerFailed(format!("{shown}: {e}")));
+            }
+        });
+    }
+
+    /// The repo's `docs/` folder for reading mode's Docs · ADRs; `None` for a research project,
+    /// which has no repo.
+    fn docs_repo(&self) -> Option<PathBuf> {
+        (!self.project.is_research()).then(|| self.project.folder(&self.paths))
+    }
+
+    /// `Command::ListDocs`: small folders, read in place.
+    fn list_docs(&mut self) {
+        let docs = self
+            .docs_repo()
+            .map(|repo| crate::docs::list(&repo))
+            .unwrap_or_default();
+        self.emit(Event::DocsListed { docs });
+    }
+
+    /// `Command::LoadDoc`.
+    fn load_doc(&mut self, path: PathBuf) {
+        let Some(repo) = self.docs_repo() else {
+            self.fail("a research project has no repo docs");
+            return;
+        };
+        match crate::docs::load(&repo, &path) {
+            Ok(document) => self.emit(Event::DocLoaded { path, document }),
+            Err(e) => self.fail(e),
+        }
     }
 
     /// Copies text to the clipboard on a blocking thread; only a failure is reported.

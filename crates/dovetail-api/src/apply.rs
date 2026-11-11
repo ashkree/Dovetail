@@ -114,6 +114,8 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::CommandFailed { .. }
         | Event::MapLoaded(_)
         | Event::ResearchLoaded { .. }
+        | Event::DocsListed { .. }
+        | Event::DocLoaded { .. }
         | Event::ClipboardPasted { .. }
         | Event::PathsListed { .. }
         | Event::TerminalReturned { .. }

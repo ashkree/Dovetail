@@ -43,6 +43,8 @@ pub enum Role {
     Slice,
     /// A side chat: Core only (ADR 0011, ADR 0016).
     SideChat,
+    /// Reading mode's Ask (ADR 0018): no suites; it reads the research files.
+    Ask,
 }
 
 impl Role {
@@ -52,6 +54,7 @@ impl Role {
             Role::Coordinator => "coordinator",
             Role::Slice => "slice",
             Role::SideChat => "side-chat",
+            Role::Ask => "ask",
         }
     }
 
@@ -60,6 +63,7 @@ impl Role {
         match value {
             "coordinator" => Role::Coordinator,
             "side-chat" => Role::SideChat,
+            "ask" => Role::Ask,
             _ => Role::Slice,
         }
     }
@@ -70,6 +74,7 @@ impl Role {
             Role::Coordinator => Suite::ALL,
             Role::Slice => &[Suite::Core, Suite::Coordination, Suite::Maps],
             Role::SideChat => &[Suite::Core],
+            Role::Ask => &[],
         }
     }
 }
@@ -389,7 +394,7 @@ impl Tool {
             Tool::LogDecision(d) => {
                 match (role, d.task) {
                     // A side chat has no task to default to, like the coordinator.
-                    (Role::Coordinator | Role::SideChat, None) => {
+                    (Role::Coordinator | Role::SideChat | Role::Ask, None) => {
                         return Err(ToolError::DecisionNeedsTask);
                     }
                     (_, Some(task)) => id("task", task)?,

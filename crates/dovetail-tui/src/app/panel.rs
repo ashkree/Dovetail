@@ -4,7 +4,7 @@
 
 use dovetail_api::AgentId;
 
-use super::App;
+use super::{App, ChatSite};
 use crate::buffers::ConversationBuffer;
 use crate::mode::Mode;
 use crate::region::{BufferKind, RegionId, Regions};
@@ -34,9 +34,9 @@ impl App {
     pub(super) fn toggle_side_panel(&mut self) {
         match self.panel_region() {
             Some(region) => {
-                if self.chat_in_panel {
+                if self.chat_site == ChatSite::Panel {
                     self.buffers.panel.conversation_mut().park_chat();
-                    self.chat_in_panel = false;
+                    self.chat_site = ChatSite::Main;
                 }
                 let back = Regions::default().buffer(region);
                 self.regions.show(region, back);
@@ -64,8 +64,8 @@ impl App {
                 PANEL_REGION
             }
         };
-        if self.chat_in_panel {
-            self.chat_in_panel = false;
+        if self.chat_site == ChatSite::Panel {
+            self.chat_site = ChatSite::Main;
             if self.mode == Mode::Insert && self.input.is_none() {
                 self.mode = Mode::Normal;
             }
@@ -85,19 +85,15 @@ impl App {
     /// The conversation view whose chat bar is open, or was open last: the panel's or the
     /// main region's.
     pub(super) fn chat_view(&self) -> &ConversationBuffer {
-        if self.chat_in_panel {
-            self.buffers.panel.conversation()
-        } else {
-            &self.buffers.conversation
+        match self.chat_site {
+            ChatSite::Main => &self.buffers.conversation,
+            ChatSite::Panel => self.buffers.panel.conversation(),
+            ChatSite::Ask => self.buffers.ask.conversation(),
         }
     }
 
     /// See [`chat_view`](Self::chat_view).
     pub(super) fn chat_view_mut(&mut self) -> &mut ConversationBuffer {
-        if self.chat_in_panel {
-            self.buffers.panel.conversation_mut()
-        } else {
-            &mut self.buffers.conversation
-        }
+        super::chat_view_of(&mut self.buffers, self.chat_site)
     }
 }

@@ -27,8 +27,8 @@ expression: "render(&mut app, 120, 34)"
 │   It needs a key. slice-7 can only reach the eval path with             ││                                           │
 │   FS_EVAL_VIRTUAL_KEY set.▌                                             ││   A gap means an event was lost. apply    │
 │                                                                         ││   returns Gap instead of guessing, and    │
-│                                                                         ││   the UI asks for a resync (              │
-│                                                                         ││   crates/dovetail-api/src/apply.rs).      │
+│                                                                         ││   the UI asks for a resync                │
+│                                                                         ││   (crates/dovetail-api/src/apply.rs).     │
 │                                                                         ││                                           │
 │                                                                         ││                                           │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘

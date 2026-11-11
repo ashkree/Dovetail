@@ -28,6 +28,8 @@ pub fn agent_order(snap: &Snapshot) -> Vec<(&Agent, usize)> {
         .agents
         .iter()
         .filter(|a| a.parent.as_ref().is_none_or(|p| !known(p)))
+        // Reading mode's Ask lives in its column only (ADR 0018).
+        .filter(|a| a.kind != AgentKind::Ask)
         .collect();
     tops.sort_by_key(|a| (!needs(a), Reverse(a.last_activity_ms)));
     let mut out = Vec::new();
@@ -334,6 +336,7 @@ fn agent_preview(
         AgentKind::Coordinator => "coordinator",
         AgentKind::Slice => "slice",
         AgentKind::SideChat => "side chat",
+        AgentKind::Ask => "ask",
         AgentKind::Subagent { background: true } => "background subagent",
         AgentKind::Subagent { background: false } => "subagent",
     };

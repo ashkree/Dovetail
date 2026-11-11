@@ -446,6 +446,12 @@ fn every_event_roundtrips() {
             content: research::ResearchContent::Document(research::ResearchDocument {
                 path: None,
                 markdown: "# S1".into(),
+                images: vec![research::DocImage {
+                    src: "fig.png".into(),
+                    path: "/r/fig.png".into(),
+                    width: 640,
+                    height: 480,
+                }],
             }),
         },
         Event::TotalsChanged(totals()),
@@ -465,6 +471,16 @@ fn every_event_roundtrips() {
         }),
         Event::OpeningProject {
             id: ProjectId("market-sizing".into()),
+        },
+        Event::DocsListed {
+            docs: vec![research::DocEntry {
+                path: "adr/0018-reading-mode-layout.md".into(),
+                title: "Reading mode".into(),
+            }],
+        },
+        Event::DocLoaded {
+            path: "research.md".into(),
+            document: research::ResearchDocument::text(None, "# Research".into()),
         },
     ]
     .into_iter()
@@ -631,6 +647,14 @@ fn every_command_roundtrips() {
         Command::LoadResearch {
             task: TaskId(4),
             what: research::ResearchWhat::Report,
+        },
+        Command::OpenExternal {
+            url: "https://docs.rs/nucleo".into(),
+        },
+        Command::StartAsk { task: TaskId(4) },
+        Command::ListDocs,
+        Command::LoadDoc {
+            path: "adr/0018-reading-mode-layout.md".into(),
         },
         Command::Resync,
         Command::Quit {

@@ -120,6 +120,7 @@ fn loaded(app: &mut App, what: ResearchWhat, path: Option<&str>, markdown: &str)
             content: ResearchContent::Document(ResearchDocument {
                 path: path.map(Into::into),
                 markdown: markdown.into(),
+                images: Vec::new(),
             }),
         },
     );

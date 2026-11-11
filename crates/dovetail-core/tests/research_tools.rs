@@ -75,6 +75,8 @@ impl App {
             check_claude: false,
             scopes: None,
             upgrade: None,
+            // `gx` (ADR 0018): a script the reading-mode test writes, next to the data folder.
+            opener: Some(paths.data.with_file_name("opener.sh").into()),
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths, Config::default(), options).expect("core");
@@ -1087,5 +1089,195 @@ fn the_kind_comes_from_the_round_or_the_user_and_a_decision_is_held_to_its_templ
     });
     let (text, is_error) = write_report(&app, task, "# Should we?\n\nYes.\n");
     assert!(!is_error, "{text}");
+    app.quit();
+}
+
+// --- Reading mode (M21, ADR 0018) ---
+
+/// Waits for the next `CommandFailed` containing `needle`.
+fn wait_for_failure(app: &mut App, needle: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !app.failures.iter().any(|f| f.contains(needle)) {
+        assert!(
+            Instant::now() < deadline,
+            "no failure with {needle:?}: {:?}",
+            app.failures
+        );
+        app.drain(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
+    use dovetail_api::{AgentKind, EntryKind};
+    let dir = tempfile::tempdir().unwrap();
+    let Researched {
+        mut app,
+        task,
+        finding,
+        sources,
+    } = researched(dir.path());
+    // No report yet: nothing to ask about.
+    app.send(Command::StartAsk { task });
+    wait_for_failure(&mut app, "no report yet");
+    app.failures.clear();
+    let body = format!(
+        "# Codeword\n\nThe codeword is MARIGOLD-42 [F{finding}], read from [S{}].\n",
+        sources[0]
+    );
+    let (text, is_error) = write_report(&app, task, &body);
+    assert!(!is_error, "{text}");
+
+    // `i`: the agent is made, nothing is started yet.
+    let starts = app.fake.started_specs().len();
+    app.send(Command::StartAsk { task });
+    let ask = AgentId(format!("ask-{}", task.0));
+    app.wait_for("the Ask agent", |s| s.agents.iter().any(|a| a.id == ask));
+    let agent = app.snap.agents.iter().find(|a| a.id == ask).expect("ask");
+    assert_eq!(agent.kind, AgentKind::Ask);
+    assert_eq!(agent.task, Some(task));
+    assert_eq!(app.fake.started_specs().len(), starts);
+
+    // The first question starts it in the research folder, read-only, with no Dovetail suites,
+    // and carries the report and the index; the conversation shows only the question.
+    app.send(Command::Prompt {
+        agent: ask.clone(),
+        text: "Where does the codeword come from?".into(),
+        attachments: Vec::new(),
+    });
+    let sent = app.wait_for_note("## The report");
+    assert!(sent.contains("MARIGOLD-42"), "{sent}");
+    assert!(sent.contains(&format!("- F{finding} `")), "{sent}");
+    assert!(sent.contains(&format!("- S{} ", sources[0])), "{sent}");
+    assert!(
+        sent.ends_with("## Question\n\nWhere does the codeword come from?"),
+        "{sent}"
+    );
+    let spec = app
+        .fake
+        .started_specs()
+        .into_iter()
+        .find(|s| s.name.as_deref() == Some(ask.0.as_str()))
+        .expect("the Ask session started");
+    let research_dir = app.summary(task).expect("summary").dir.clone();
+    assert_eq!(spec.cwd, research_dir);
+    assert_eq!(
+        spec.permission_mode,
+        dovetail_driver::PermissionMode::DontAsk
+    );
+    assert!(
+        !spec
+            .allowed_tools
+            .iter()
+            .any(|t| t.starts_with("mcp__dovetail__")),
+        "{:?}",
+        spec.allowed_tools
+    );
+    assert!(spec.allowed_tools.contains(&"Bash(rg *)".to_string()));
+    let denied = spec.extra_args.join(" ");
+    assert!(
+        denied.contains("--disallowedTools") && denied.contains("Write"),
+        "{denied}"
+    );
+    app.wait_for("the question in the conversation", |s| {
+        s.conversations
+            .get(&ask)
+            .is_some_and(|t| t.entries.iter().any(|e| e.kind == EntryKind::User))
+    });
+    let shown: Vec<String> = app.snap.conversations[&ask]
+        .entries
+        .iter()
+        .filter(|e| e.kind == EntryKind::User)
+        .map(|e| e.text.clone())
+        .collect();
+    assert_eq!(shown, ["Where does the codeword come from?"]);
+    // The question went to the Ask session only, with its grounding.
+    let plain_question = app
+        .fake
+        .sent()
+        .into_iter()
+        .any(|s| matches!(s, Sent::User(t) if t == "Where does the codeword come from?"));
+    assert!(!plain_question, "{:#?}", app.fake.sent());
+
+    // A new report closes it: the next question starts on the new one.
+    let (text, is_error) = write_report(&app, task, "# Codeword again\n\nNothing new.\n");
+    assert!(!is_error, "{text}");
+    app.wait_for("the Ask session to close", |s| {
+        !s.agents.iter().any(|a| a.id == ask)
+    });
+    app.quit();
+}
+
+#[test]
+fn open_external_runs_the_opener_on_web_pages_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, paths) = open_repo(dir.path());
+    let opened = dir.path().join("opened.txt");
+    let script = paths.data.with_file_name("opener.sh");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\nprintf '%s' \"$1\" > '{}'\n", opened.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
+    app.send(Command::OpenExternal {
+        url: "file:///etc/passwd".into(),
+    });
+    wait_for_failure(&mut app, "only web pages");
+    assert!(!opened.exists());
+    app.send(Command::OpenExternal {
+        url: "https://docs.rs/nucleo".into(),
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !opened.exists() || read(&opened).is_empty() {
+        assert!(Instant::now() < deadline, "the opener did not run");
+        app.drain(Duration::from_millis(20));
+    }
+    assert_eq!(read(&opened), "https://docs.rs/nucleo");
+    app.quit();
+}
+
+#[test]
+fn the_repo_docs_are_listed_and_read_and_nothing_outside_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, paths) = open_repo(dir.path());
+    std::fs::create_dir_all(repo.join("docs/adr")).unwrap();
+    std::fs::write(
+        repo.join("docs/adr/0018-reading.md"),
+        "# Reading mode\n\nText.\n",
+    )
+    .unwrap();
+    std::fs::write(repo.join("README.md"), "# Not a doc\n").unwrap();
+    let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
+    app.send(Command::ListDocs);
+    app.send(Command::LoadDoc {
+        path: "adr/0018-reading.md".into(),
+    });
+    app.send(Command::LoadDoc {
+        path: "../README.md".into(),
+    });
+    let mut docs = None;
+    let mut doc = None;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while (docs.is_none() || doc.is_none()) && Instant::now() < deadline {
+        let Ok(message) = app.link.messages.recv_timeout(Duration::from_millis(50)) else {
+            continue;
+        };
+        if let ServerMsg::Event { event, .. } = &message {
+            match event {
+                Event::DocsListed { docs: d } => docs = Some(d.clone()),
+                Event::DocLoaded { document, .. } => doc = Some(document.markdown.clone()),
+                _ => {}
+            }
+        }
+        app.fold(message);
+    }
+    wait_for_failure(&mut app, "is not one of the project's docs");
+    let docs = docs.expect("docs listed");
+    assert_eq!(docs.len(), 1);
+    assert_eq!(docs[0].title, "Reading mode");
+    assert!(doc.is_some_and(|d| d.contains("Text.")));
     app.quit();
 }

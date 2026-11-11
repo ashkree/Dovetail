@@ -1,0 +1,683 @@
+//! Reading mode's library (ADR 0018): projects (research ones marked `◇`), the open project's
+//! research tasks with their report, rounds (brief and findings), quick findings and sources,
+//! then the decision log and the repo's docs.
+//!
+//! Only the open project's content is in the snapshot; another project's row offers to open
+//! it (B24). Findings and sources come from `LoadResearch { Listing }` and the docs from
+//! `ListDocs`, both asked for when reading mode opens. No Tangents section until tangents exist
+//! (M22).
+
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+
+use dovetail_api::research::{
+    DocEntry, FindingId, FindingSummary, ResearchListing, ResearchWhat, SourceId, SourceKind,
+};
+use dovetail_api::{DecisionId, ProjectId, ProjectKind, Snapshot, TaskId};
+use ratatui::Frame;
+use ratatui::layout::Rect;
+use ratatui::style::Modifier;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
+
+use super::reader::ReadTarget;
+use super::{Buffer, Effect, ViewCx, clip_spans, footer, pane, scroll_to, step, title};
+use crate::action::Action;
+use crate::fmt;
+use crate::region::BufferKind;
+use crate::theme::Theme;
+
+/// A row's identity, so the cursor and folds survive the list changing.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LibKey {
+    /// A project.
+    Project(ProjectId),
+    /// A research task.
+    Task(TaskId),
+    /// Its report.
+    Report(TaskId),
+    /// One of its rounds.
+    Round(TaskId, u32),
+    /// A round's brief.
+    Brief(TaskId, u32),
+    /// A finding.
+    Finding(TaskId, FindingId),
+    /// The task's quick findings.
+    Quick(TaskId),
+    /// The task's sources.
+    Sources(TaskId),
+    /// A source.
+    Source(TaskId, SourceId),
+    /// The decision log.
+    Decisions,
+    /// One decision.
+    Decision(DecisionId),
+    /// The repo's docs.
+    Docs,
+    /// One doc.
+    Doc(PathBuf),
+    /// The line saying the open project has no research yet.
+    NoResearch,
+    /// The line saying a task's findings are being listed.
+    Loading(TaskId),
+}
+
+impl LibKey {
+    /// Whether a group row starts open.
+    fn open_by_default(&self) -> bool {
+        matches!(self, LibKey::Task(_))
+    }
+}
+
+struct Row {
+    key: LibKey,
+    depth: usize,
+    /// `Some(open)` for a row that folds.
+    fold: Option<bool>,
+    spans: Vec<Span<'static>>,
+}
+
+/// The library buffer.
+#[derive(Default)]
+pub struct LibraryBuffer {
+    selected: Option<LibKey>,
+    /// Rows whose fold differs from their default.
+    toggled: HashSet<LibKey>,
+    listings: HashMap<TaskId, ResearchListing>,
+    docs: Option<Vec<DocEntry>>,
+    offset: usize,
+}
+
+impl LibraryBuffer {
+    /// Keeps a task's findings and sources, as the core listed them.
+    pub fn receive_listing(&mut self, task: TaskId, listing: ResearchListing) {
+        self.listings.insert(task, listing);
+    }
+
+    /// Keeps the repo's docs, as the core listed them.
+    pub fn receive_docs(&mut self, docs: Vec<DocEntry>) {
+        self.docs = Some(docs);
+    }
+
+    /// A task's findings and sources, if listed.
+    pub fn listing(&self, task: TaskId) -> Option<&ResearchListing> {
+        self.listings.get(&task)
+    }
+
+    /// The finding `id` of `task`, if listed.
+    pub fn finding(&self, task: TaskId, id: FindingId) -> Option<&FindingSummary> {
+        self.listing(task)?.findings.iter().find(|f| f.id == id)
+    }
+
+    /// The row under the cursor.
+    pub fn selected(&self) -> Option<&LibKey> {
+        self.selected.as_ref()
+    }
+
+    /// The research task of the row under the cursor, if it belongs to one.
+    pub fn selected_task(&self) -> Option<TaskId> {
+        match self.selected.as_ref()? {
+            LibKey::Task(t)
+            | LibKey::Report(t)
+            | LibKey::Round(t, _)
+            | LibKey::Brief(t, _)
+            | LibKey::Finding(t, _)
+            | LibKey::Quick(t)
+            | LibKey::Sources(t)
+            | LibKey::Source(t, _)
+            | LibKey::Loading(t) => Some(*t),
+            _ => None,
+        }
+    }
+
+    /// Puts the cursor on a row (opening its parents is the caller's business).
+    pub fn select(&mut self, key: LibKey) {
+        self.selected = Some(key);
+    }
+
+    fn is_open(&self, key: &LibKey) -> bool {
+        key.open_by_default() != self.toggled.contains(key)
+    }
+
+    fn toggle(&mut self, key: &LibKey) {
+        if !self.toggled.remove(key) {
+            self.toggled.insert(key.clone());
+        }
+    }
+
+    fn rows(&self, snap: &Snapshot, theme: &Theme) -> Vec<Row> {
+        let mut rows = Vec::new();
+        let open_id = snap.project.as_ref().map(|p| p.id.clone());
+        let mut projects: Vec<_> = snap.project.iter().collect();
+        projects.extend(
+            snap.projects
+                .iter()
+                .filter(|p| Some(&p.id) != open_id.as_ref()),
+        );
+        for project in projects {
+            let is_open = Some(&project.id) == open_id.as_ref();
+            let key = LibKey::Project(project.id.clone());
+            let research = project.kind == ProjectKind::Research;
+            let mut spans = Vec::new();
+            if research {
+                spans.push(Span::styled("◇ ", theme.fg(theme.italic)));
+            }
+            spans.push(Span::styled(
+                project.name.clone(),
+                if is_open {
+                    theme.body().add_modifier(Modifier::BOLD)
+                } else {
+                    theme.body()
+                },
+            ));
+            if is_open {
+                spans.push(Span::styled(" · open", theme.dim()));
+            } else {
+                spans.push(Span::styled(" · ⏎ opens", theme.dim()));
+            }
+            // The open project is open unless folded; others have nothing to show here.
+            let unfolded = is_open && !self.toggled.contains(&key);
+            rows.push(Row {
+                key,
+                depth: 0,
+                fold: is_open.then_some(unfolded),
+                spans,
+            });
+            if unfolded {
+                self.research_rows(snap, theme, &mut rows);
+            }
+        }
+
+        let key = LibKey::Decisions;
+        let open = self.is_open(&key);
+        rows.push(Row {
+            key,
+            depth: 0,
+            fold: Some(open),
+            spans: vec![Span::styled(
+                format!("Decisions ({})", snap.decisions.len()),
+                theme.body().add_modifier(Modifier::BOLD),
+            )],
+        });
+        if open {
+            let superseded: HashSet<DecisionId> =
+                snap.decisions.iter().filter_map(|d| d.supersedes).collect();
+            for d in snap.decisions.iter().rev() {
+                let mut spans = vec![
+                    Span::styled(format!("#{} ", d.task.0), theme.dim()),
+                    Span::styled(
+                        d.text.clone(),
+                        if superseded.contains(&d.id) {
+                            theme.dim()
+                        } else {
+                            theme.body()
+                        },
+                    ),
+                ];
+                if !d.evidence.is_empty() {
+                    spans.push(Span::styled(
+                        format!(" [{}]", d.evidence.len()),
+                        theme.fg(theme.cite),
+                    ));
+                }
+                rows.push(Row {
+                    key: LibKey::Decision(d.id),
+                    depth: 1,
+                    fold: None,
+                    spans,
+                });
+            }
+        }
+
+        // A research project has no repo, so no docs (decided 2026-11-11).
+        let research_project = snap
+            .project
+            .as_ref()
+            .is_some_and(|p| p.kind == ProjectKind::Research);
+        if !research_project {
+            let key = LibKey::Docs;
+            let open = self.is_open(&key);
+            let count = self
+                .docs
+                .as_ref()
+                .map_or_else(|| "…".to_string(), |d| d.len().to_string());
+            rows.push(Row {
+                key,
+                depth: 0,
+                fold: Some(open),
+                spans: vec![Span::styled(
+                    format!("Docs · ADRs ({count})"),
+                    theme.body().add_modifier(Modifier::BOLD),
+                )],
+            });
+            if open {
+                for doc in self.docs.iter().flatten() {
+                    rows.push(Row {
+                        key: LibKey::Doc(doc.path.clone()),
+                        depth: 1,
+                        fold: None,
+                        spans: vec![
+                            Span::styled(doc.title.clone(), theme.body()),
+                            Span::styled(format!("  {}", doc.path.display()), theme.dim()),
+                        ],
+                    });
+                }
+            }
+        }
+        rows
+    }
+
+    fn research_rows(&self, snap: &Snapshot, theme: &Theme, rows: &mut Vec<Row>) {
+        let mut summaries: Vec<_> = snap.research.iter().collect();
+        summaries.sort_by_key(|s| s.task);
+        if summaries.is_empty() {
+            rows.push(Row {
+                key: LibKey::NoResearch,
+                depth: 1,
+                fold: None,
+                spans: vec![Span::styled(
+                    "no research yet: :round <task> <brief>",
+                    theme.dim(),
+                )],
+            });
+        }
+        for summary in summaries {
+            let task = summary.task;
+            let name = snap
+                .tasks
+                .iter()
+                .find(|t| t.id == task)
+                .map_or_else(|| "task".to_string(), |t| t.title.clone());
+            let key = LibKey::Task(task);
+            let open = self.is_open(&key);
+            rows.push(Row {
+                key,
+                depth: 1,
+                fold: Some(open),
+                spans: vec![
+                    Span::styled(format!("#{} ", task.0), theme.dim()),
+                    Span::styled(name, theme.body()),
+                ],
+            });
+            if !open {
+                continue;
+            }
+            rows.push(Row {
+                key: LibKey::Report(task),
+                depth: 2,
+                fold: None,
+                spans: match summary.report_ms {
+                    Some(_) => vec![
+                        Span::styled("● ", theme.fg(theme.cite)),
+                        Span::styled("report", theme.body().add_modifier(Modifier::BOLD)),
+                    ],
+                    None => vec![Span::styled("○ no report yet", theme.dim())],
+                },
+            });
+            let listing = self.listings.get(&task);
+            for round in &summary.rounds {
+                let key = LibKey::Round(task, round.n);
+                let open = self.is_open(&key);
+                let state = if round.queued {
+                    "queued"
+                } else if round.closed_ms.is_some() {
+                    "closed"
+                } else {
+                    "open"
+                };
+                rows.push(Row {
+                    key,
+                    depth: 2,
+                    fold: Some(open),
+                    spans: vec![
+                        Span::styled(format!("round {} ", round.n), theme.body()),
+                        Span::styled(format!("· {state} · {}", round.findings), theme.dim()),
+                    ],
+                });
+                if !open {
+                    continue;
+                }
+                rows.push(Row {
+                    key: LibKey::Brief(task, round.n),
+                    depth: 3,
+                    fold: None,
+                    spans: vec![Span::styled("brief", theme.body())],
+                });
+                for f in listing
+                    .iter()
+                    .flat_map(|l| &l.findings)
+                    .filter(|f| f.round == Some(round.n))
+                {
+                    rows.push(finding_row(task, f, 3, theme));
+                }
+            }
+            let Some(listing) = listing else {
+                if summary.findings > 0 || summary.sources > 0 {
+                    rows.push(Row {
+                        key: LibKey::Loading(task),
+                        depth: 2,
+                        fold: None,
+                        spans: vec![Span::styled("(loading findings…)", theme.dim())],
+                    });
+                }
+                continue;
+            };
+            let quick: Vec<_> = listing
+                .findings
+                .iter()
+                .filter(|f| f.round.is_none())
+                .collect();
+            if !quick.is_empty() {
+                let key = LibKey::Quick(task);
+                let open = self.is_open(&key);
+                rows.push(Row {
+                    key,
+                    depth: 2,
+                    fold: Some(open),
+                    spans: vec![Span::styled(
+                        format!("quick findings ({})", quick.len()),
+                        theme.body(),
+                    )],
+                });
+                if open {
+                    for f in quick {
+                        rows.push(finding_row(task, f, 3, theme));
+                    }
+                }
+            }
+            if !listing.sources.is_empty() {
+                let key = LibKey::Sources(task);
+                let open = self.is_open(&key);
+                rows.push(Row {
+                    key,
+                    depth: 2,
+                    fold: Some(open),
+                    spans: vec![Span::styled(
+                        format!("sources ({})", listing.sources.len()),
+                        theme.body(),
+                    )],
+                });
+                if open {
+                    for s in &listing.sources {
+                        let kind = match s.kind {
+                            SourceKind::Web => "web",
+                            SourceKind::File => "file",
+                            SourceKind::Search => "search",
+                        };
+                        rows.push(Row {
+                            key: LibKey::Source(task, s.id),
+                            depth: 3,
+                            fold: None,
+                            spans: vec![
+                                Span::styled(format!("S{} ", s.id.0), theme.fg(theme.cite)),
+                                Span::styled(format!("{kind} "), theme.dim()),
+                                Span::styled(s.locator.clone(), theme.body()),
+                            ],
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    fn index(&self, rows: &[Row]) -> usize {
+        self.selected
+            .as_ref()
+            .and_then(|k| rows.iter().position(|r| &r.key == k))
+            .unwrap_or(0)
+    }
+
+    /// What `Enter` on `key` opens, with its pane title.
+    fn target(
+        &self,
+        key: &LibKey,
+        snap: &Snapshot,
+    ) -> Option<(ReadTarget, Option<TaskId>, String)> {
+        let research = |task: TaskId, what: ResearchWhat, title: String| {
+            Some((ReadTarget::Research { task, what }, Some(task), title))
+        };
+        match key {
+            LibKey::Report(task) => {
+                let has = snap
+                    .research
+                    .iter()
+                    .any(|r| r.task == *task && r.report_ms.is_some());
+                if !has {
+                    return None;
+                }
+                research(*task, ResearchWhat::Report, format!("#{} report", task.0))
+            }
+            LibKey::Brief(task, n) => research(
+                *task,
+                ResearchWhat::Brief { round: *n },
+                format!("#{} round {n} brief", task.0),
+            ),
+            LibKey::Finding(task, id) => {
+                let label = self
+                    .finding(*task, *id)
+                    .map_or_else(String::new, |f| format!(" · {}", f.label));
+                research(
+                    *task,
+                    ResearchWhat::Finding(*id),
+                    format!("F{}{label}", id.0),
+                )
+            }
+            LibKey::Source(task, id) => {
+                let locator = self
+                    .listing(*task)
+                    .and_then(|l| l.sources.iter().find(|s| s.id == *id))
+                    .map_or_else(String::new, |s| format!(" · {}", s.locator));
+                research(
+                    *task,
+                    ResearchWhat::Source(*id),
+                    format!("S{}{locator}", id.0),
+                )
+            }
+            LibKey::Decision(id) => {
+                let d = snap.decisions.iter().find(|d| d.id == *id)?;
+                Some((
+                    ReadTarget::Decision(*id),
+                    Some(d.task),
+                    format!("decision #{}", id.0),
+                ))
+            }
+            LibKey::Doc(path) => Some((
+                ReadTarget::Doc(path.clone()),
+                None,
+                path.display().to_string(),
+            )),
+            _ => None,
+        }
+    }
+}
+
+fn finding_row(task: TaskId, f: &FindingSummary, depth: usize, theme: &Theme) -> Row {
+    Row {
+        key: LibKey::Finding(task, f.id),
+        depth,
+        fold: None,
+        spans: vec![
+            Span::styled(format!("F{} ", f.id.0), theme.fg(theme.cite)),
+            Span::styled(format!("{:02} {}", f.n, f.label), theme.body()),
+        ],
+    }
+}
+
+impl Buffer for LibraryBuffer {
+    fn kind(&self) -> BufferKind {
+        BufferKind::Library
+    }
+
+    fn render(&mut self, cx: &ViewCx, frame: &mut Frame, area: Rect, focused: bool) {
+        let theme = cx.theme;
+        let inner = pane(
+            frame,
+            area,
+            title("library", focused, theme),
+            focused,
+            theme,
+        );
+        let rows = self.rows(cx.snap, theme);
+        let at = self.index(&rows);
+        if self.selected.is_none() {
+            self.selected = rows.first().map(|r| r.key.clone());
+        }
+        let height = usize::from(inner.height.saturating_sub(1)).max(1);
+        self.offset = scroll_to(self.offset.min(rows.len()), at, at, height);
+        let width = usize::from(inner.width);
+        for (n, row) in rows.iter().enumerate().skip(self.offset).take(height) {
+            let mut spans = vec![Span::raw("  ".repeat(row.depth))];
+            spans.push(match row.fold {
+                Some(true) => Span::styled("▾ ", theme.dim()),
+                Some(false) => Span::styled("▸ ", theme.dim()),
+                None => Span::raw("  "),
+            });
+            spans.extend(row.spans.iter().cloned());
+            let mut line = Line::from(clip_spans(spans, width));
+            if n == at && focused {
+                line = line.style(theme.selected());
+            }
+            let rect = Rect {
+                y: inner.y + (n - self.offset) as u16,
+                height: 1,
+                ..inner
+            };
+            frame.render_widget(Paragraph::new(line), rect);
+        }
+        footer(
+            frame,
+            inner,
+            &["⏎ read · o fold · l reading · ⎋ leave", "⏎ read · o fold"],
+            theme,
+        );
+    }
+
+    fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
+        let rows = self.rows(cx.snap, cx.theme);
+        let at = self.index(&rows);
+        let len = rows.len();
+        let go = |delta: isize, this: &mut Self| {
+            let i = step(at, len, delta);
+            this.selected = rows.get(i).map(|r| r.key.clone());
+        };
+        match action {
+            Action::MoveDown => go(1, self),
+            Action::MoveUp => go(-1, self),
+            Action::PageDown => go(10, self),
+            Action::PageUp => go(-10, self),
+            Action::GoTop => go(-(len as isize), self),
+            Action::GoBottom => go(len as isize, self),
+            Action::LibraryToggleFold => {
+                if let Some(row) = rows.get(at)
+                    && row.fold.is_some()
+                {
+                    let key = row.key.clone();
+                    self.toggle(&key);
+                }
+            }
+            Action::LibraryOpen => {
+                let Some(row) = rows.get(at) else {
+                    return true;
+                };
+                let key = row.key.clone();
+                if let LibKey::Project(id) = &key
+                    && cx.snap.project.as_ref().is_none_or(|p| &p.id != id)
+                {
+                    effects.push(Effect::OpenProject(id.clone()));
+                    return true;
+                }
+                // A task opens its report when it has one; other groups fold.
+                if let LibKey::Task(task) = &key
+                    && let Some((target, task, title)) =
+                        self.target(&LibKey::Report(*task), cx.snap)
+                {
+                    effects.push(Effect::Read {
+                        target,
+                        task,
+                        title,
+                    });
+                    return true;
+                }
+                if row.fold.is_some() {
+                    self.toggle(&key);
+                    return true;
+                }
+                match self.target(&key, cx.snap) {
+                    Some((target, task, title)) => effects.push(Effect::Read {
+                        target,
+                        task,
+                        title,
+                    }),
+                    None => effects.push(Effect::Note("nothing to read here".into())),
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn search_rows(&self, cx: &ViewCx) -> Vec<String> {
+        self.rows(cx.snap, cx.theme)
+            .iter()
+            .map(|r| r.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
+    }
+
+    fn current_row(&self, cx: &ViewCx) -> usize {
+        self.index(&self.rows(cx.snap, cx.theme))
+    }
+
+    fn goto_row(&mut self, row: usize, cx: &ViewCx, _effects: &mut Vec<Effect>) {
+        let rows = self.rows(cx.snap, cx.theme);
+        if let Some(r) = rows.get(row) {
+            self.selected = Some(r.key.clone());
+        }
+    }
+}
+
+/// The markdown of one decision-log entry, for the reading column: what, why, the options not
+/// taken, and its evidence as citation markers that `gd` follows.
+pub fn decision_markdown(
+    snap: &Snapshot,
+    id: DecisionId,
+    tz: &jiff::tz::TimeZone,
+) -> Option<String> {
+    let d = snap.decisions.iter().find(|d| d.id == id)?;
+    let task = snap
+        .tasks
+        .iter()
+        .find(|t| t.id == d.task)
+        .map_or_else(String::new, |t| format!(" {}", t.title));
+    let by = match &d.by {
+        dovetail_api::DecisionAuthor::User => "you".to_string(),
+        dovetail_api::DecisionAuthor::Agent(a) => a.0.clone(),
+    };
+    let mut md = format!(
+        "# {}\n\nTask #{}{task} · {} · by {by}\n",
+        d.text,
+        d.task.0,
+        fmt::when(d.at_ms, tz)
+    );
+    if let Some(why) = &d.why {
+        md.push_str(&format!("\n**Why:** {why}\n"));
+    }
+    if !d.alternatives.is_empty() {
+        md.push_str("\n## Not taken\n\n");
+        for a in &d.alternatives {
+            match &a.why_not {
+                Some(why) => md.push_str(&format!("- {}: {why}\n", a.option)),
+                None => md.push_str(&format!("- {}\n", a.option)),
+            }
+        }
+    }
+    if !d.evidence.is_empty() {
+        md.push_str("\n## Evidence\n\n");
+        let marks: Vec<String> = d.evidence.iter().map(|e| format!("[{e}]")).collect();
+        md.push_str(&marks.join(" "));
+        md.push_str("\n\n`]s` selects one, `gd` opens it.\n");
+    }
+    if let Some(old) = d.supersedes {
+        md.push_str(&format!("\nReplaces decision #{}.\n", old.0));
+    }
+    Some(md)
+}

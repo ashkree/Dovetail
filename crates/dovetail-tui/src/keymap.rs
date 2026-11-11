@@ -205,6 +205,9 @@ const WORKTREES: Scope = Scope::Buffer(BufferKind::Worktrees);
 const MAP_SHELF: Scope = Scope::Buffer(BufferKind::MapShelf);
 const MAP_OUTLINE: Scope = Scope::Buffer(BufferKind::MapOutline);
 const SIDE_PANEL: Scope = Scope::Buffer(BufferKind::SidePanel);
+const LIBRARY: Scope = Scope::Buffer(BufferKind::Library);
+const READER: Scope = Scope::Buffer(BufferKind::Reader);
+const ASK: Scope = Scope::Buffer(BufferKind::Ask);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
 pub const BINDINGS: &[Binding] = &[
@@ -306,6 +309,37 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, SIDE_PANEL, "<Tab>", Action::NextSideChat),
     bind(N, SIDE_PANEL, "<S-Tab>", Action::PrevSideChat),
     bind(N, SIDE_PANEL, "dd", Action::CloseSideChat),
+    // Reading mode (ADR 0018, decided 2026-11-11). `Esc` in Normal mode leaves it from any of
+    // its columns; in Ask's chat bar `Esc` only returns to Normal. `i` asks about the open
+    // report from the reading column and Ask, and does nothing in the library.
+    bind(N, G, "<leader>r", Action::ToggleReadingMode),
+    bind(N, LIBRARY, "<Esc>", Action::LeaveReadingMode),
+    bind(N, READER, "<Esc>", Action::LeaveReadingMode),
+    bind(N, ASK, "<Esc>", Action::LeaveReadingMode),
+    bind(N, LIBRARY, "<CR>", Action::LibraryOpen),
+    bind(N, LIBRARY, "o", Action::LibraryToggleFold),
+    bind(N, LIBRARY, "i", Action::Ignore),
+    bind(N, READER, "]s", Action::NextCitation),
+    bind(N, READER, "[s", Action::PrevCitation),
+    bind(N, READER, "gd", Action::OpenCitation),
+    bind(N, READER, "gx", Action::BrowseCitation),
+    bind(N, READER, "<C-o>", Action::ReaderBack),
+    bind(N, READER, "]]", Action::NextTurn),
+    bind(N, READER, "[[", Action::PrevTurn),
+    bind(N, READER, "zc", Action::FoldTurn),
+    bind(N, READER, "zo", Action::UnfoldTurn),
+    bind(N, READER, "i", Action::AskAboutReport),
+    bind(N, ASK, "i", Action::AskAboutReport),
+    bind(N, ASK, "<C-j>", Action::AskAboutReport),
+    bind(N, ASK, "]s", Action::NextCitation),
+    bind(N, ASK, "[s", Action::PrevCitation),
+    bind(N, ASK, "gd", Action::OpenCitation),
+    bind(N, ASK, "gx", Action::BrowseCitation),
+    bind(N, ASK, "]]", Action::NextTurn),
+    bind(N, ASK, "[[", Action::PrevTurn),
+    bind(N, ASK, "dd", Action::CloseAsk),
+    bind(Mode::Insert, ASK, "<PageDown>", Action::PageDown),
+    bind(Mode::Insert, ASK, "<PageUp>", Action::PageUp),
     // Task tree (Decision 24).
     bind(N, TREE, "<CR>", Action::TreeOpen),
     bind(N, TREE, "o", Action::TreeToggleFold),
@@ -679,11 +713,61 @@ mod tests {
     fn an_unbound_key_is_unmatched_and_clears_the_sequence() {
         let map = Keymap::default_map();
         let mut r = Resolver::default();
+        // `gx` is bound in reading mode's columns only (ADR 0018), so in the tree it is not.
+        assert_eq!(
+            feed_all(&mut r, &map, &TREE_SCOPES, "gq", 0),
+            Resolved::Unmatched
+        );
+        assert!(r.pending().is_empty());
         assert_eq!(
             feed_all(&mut r, &map, &TREE_SCOPES, "gx", 0),
             Resolved::Unmatched
         );
-        assert!(r.pending().is_empty());
+    }
+
+    #[test]
+    fn reading_mode_keys_resolve_in_its_columns() {
+        let map = Keymap::default_map();
+        let reader = [READER, G];
+        let library = [LIBRARY, G];
+        let ask = [ASK, G];
+        let resolve = |scopes: &[Scope], text: &str| {
+            let mut r = Resolver::default();
+            feed_all(&mut r, &map, scopes, text, 0)
+        };
+        assert_eq!(
+            resolve(&TREE_SCOPES, "<leader>r"),
+            Resolved::Action(Action::ToggleReadingMode)
+        );
+        assert_eq!(
+            resolve(&reader, "gx"),
+            Resolved::Action(Action::BrowseCitation)
+        );
+        assert_eq!(
+            resolve(&reader, "gd"),
+            Resolved::Action(Action::OpenCitation)
+        );
+        assert_eq!(
+            resolve(&reader, "]s"),
+            Resolved::Action(Action::NextCitation)
+        );
+        assert_eq!(
+            resolve(&reader, "[s"),
+            Resolved::Action(Action::PrevCitation)
+        );
+        assert_eq!(
+            resolve(&reader, "i"),
+            Resolved::Action(Action::AskAboutReport)
+        );
+        for scopes in [&reader, &library, &ask] {
+            assert_eq!(
+                resolve(scopes, "<Esc>"),
+                Resolved::Action(Action::LeaveReadingMode)
+            );
+        }
+        assert_eq!(resolve(&library, "i"), Resolved::Action(Action::Ignore));
+        // `gg` still goes to the top in the reading column.
+        assert_eq!(resolve(&reader, "gg"), Resolved::Action(Action::GoTop));
     }
 
     #[test]
