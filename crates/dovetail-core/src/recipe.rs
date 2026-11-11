@@ -243,7 +243,10 @@ mod tests {
     #[test]
     fn a_profile_uncomments_the_starter_line() {
         let text = set_profile_text(&starter("app", &["maveron"]), "maveron").unwrap();
-        assert_eq!(Recipe::parse(&text).unwrap().profile.as_deref(), Some("maveron"));
+        assert_eq!(
+            Recipe::parse(&text).unwrap().profile.as_deref(),
+            Some("maveron")
+        );
         assert_eq!(set_profile_text("name = \"app\"\n", "maveron"), None);
     }
 }

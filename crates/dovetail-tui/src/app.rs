@@ -466,7 +466,12 @@ impl App {
                         name,
                         path,
                         profiles,
-                    } => Some((project.clone(), name.clone(), path.clone(), profiles.clone())),
+                    } => Some((
+                        project.clone(),
+                        name.clone(),
+                        path.clone(),
+                        profiles.clone(),
+                    )),
                     _ => None,
                 };
                 // Every agent is idle and the user said so (ADR 0014): quit without asking, so
