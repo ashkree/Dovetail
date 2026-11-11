@@ -504,6 +504,11 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
         Span::styled(agent.name.clone(), theme.body()),
     ];
     match agent.permission_mode {
+        // A side chat runs read-only whatever its mode shows (decided 2026-11-11).
+        _ if agent.kind == AgentKind::SideChat => {
+            left.push(Span::raw(" "));
+            left.push(Span::styled(" read-only ", theme.badge(theme.italic)));
+        }
         PermissionMode::Auto => {}
         PermissionMode::AcceptEdits => {
             left.push(Span::raw(" "));

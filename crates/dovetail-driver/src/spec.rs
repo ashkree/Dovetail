@@ -13,6 +13,9 @@ pub enum PermissionMode {
     AcceptEdits,
     /// Plan mode (`plan`).
     Plan,
+    /// Only pre-approved tool use runs; everything else is denied without asking (`dontAsk`).
+    /// Side chats run in it, so a command outside their allow-list is refused, not asked about.
+    DontAsk,
 }
 
 impl PermissionMode {
@@ -23,6 +26,7 @@ impl PermissionMode {
             Self::Manual => "default",
             Self::AcceptEdits => "acceptEdits",
             Self::Plan => "plan",
+            Self::DontAsk => "dontAsk",
         }
     }
 
@@ -33,6 +37,7 @@ impl PermissionMode {
             "default" => Self::Manual,
             "acceptEdits" => Self::AcceptEdits,
             "plan" => Self::Plan,
+            "dontAsk" => Self::DontAsk,
             _ => return None,
         })
     }

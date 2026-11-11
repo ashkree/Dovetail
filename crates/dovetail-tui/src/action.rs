@@ -91,8 +91,15 @@ pub enum Action {
     PickAgent,
     /// Open a side chat: ask for its question, or take it from `:ask <question>` (ADR 0011).
     NewSideChat,
-    /// Copy the shown agent's last answer into the coordinator's chat bar (`<leader>y`).
-    YankToCoordinator,
+    /// Show or hide the side panel (`<leader>?`): side chats in the side column, in place of
+    /// the task tree, beside the conversation.
+    ToggleSidePanel,
+    /// Show the next side chat in the panel (`Tab`).
+    NextSideChat,
+    /// Show the previous side chat in the panel (`Shift-Tab`).
+    PrevSideChat,
+    /// Close the side chat shown in the panel (`dd`): its session stops.
+    CloseSideChat,
     /// Pick one of the session's slash commands or skills (`:skills`); it goes into the chat
     /// bar as `/name `.
     PickCommand,

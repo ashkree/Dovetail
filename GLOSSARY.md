@@ -15,8 +15,12 @@ A long-lived session that owns one piece of work and has exactly one worktree of
 _Avoid_: worker, worker session
 
 **Side chat**:
-A session the user opens for a question or some research: it cannot change files, runs in the main checkout, with no worktree or task (ADR 0011).
+A session the user opens for a question or some research: it cannot change files and runs only read-only commands, works in the main checkout, with no worktree or task, and shows in the side panel (ADR 0011; side panel decided 2026-11-11).
 _Avoid_: scratch session, helper
+
+**Side panel**:
+The pane in the side column, in place of the task tree, that shows side chats (later also tangents and the grilling helper) beside the coordinator's conversation; `<leader>?` toggles it.
+_Avoid_: drawer, sidebar
 
 **Subagent**:
 An agent a session spawns, at Claude's choice, for quick self-contained work. It shares its parent's worktree unless Claude isolates it.

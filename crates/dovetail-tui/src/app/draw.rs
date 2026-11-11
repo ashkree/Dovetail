@@ -342,8 +342,8 @@ impl App {
 
     /// Mode label for the status bar; while chatting it names the agent (as in the mocks).
     fn mode_label(&self) -> String {
-        match (self.mode, self.buffers.conversation.agent()) {
-            (Mode::Insert, Some(agent)) if self.buffers.conversation.is_chatting() => {
+        match (self.mode, self.chat_view().agent()) {
+            (Mode::Insert, Some(agent)) if self.chat_view().is_chatting() => {
                 format!("INSERT · {}", self.agent_name(agent))
             }
             (mode, _) => mode.label().to_string(),
