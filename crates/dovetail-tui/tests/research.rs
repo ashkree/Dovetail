@@ -290,7 +290,7 @@ fn the_reading_view_colours_citation_markers_and_nothing_else() {
     let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
     terminal.draw(|f| app.draw(f)).unwrap();
     let buffer = terminal.backend().buffer();
-    let cite = dovetail_tui::Theme::dusk().cite;
+    let cite = dovetail_tui::Theme::default().cite;
     let mut coloured = String::new();
     let mut plain_brackets = 0;
     for y in 0..buffer.area.height {

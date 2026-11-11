@@ -252,7 +252,7 @@ fn context_fill_shows_in_the_status_bar_and_the_tree_with_amber_and_red() {
     let screen = render(&mut app, 120, 40);
     let bar = screen.lines().last().expect("status bar");
     assert!(bar.contains("ctx 62%"), "{bar}");
-    let theme = dovetail_tui::Theme::dusk();
+    let theme = dovetail_tui::Theme::default();
     assert_eq!(
         cell_fg(&mut app, "ctx 62%"),
         theme.needs_you,
