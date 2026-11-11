@@ -20,6 +20,12 @@ pub(super) enum Purpose {
     FileUnfiled(InboxId),
     /// Browse the chosen project's library in reading mode (`<leader>fr`).
     Browse,
+    /// File this tangent into the chosen project (ADR 0017).
+    FileTangent(TaskId),
+    /// Start a task from this tangent in the chosen project.
+    StartTangent(TaskId),
+    /// Attach this tangent to the chosen task of the open project.
+    AttachTangent(TaskId),
 }
 
 /// What floats over the layout.
@@ -134,6 +140,19 @@ impl App {
                         (Purpose::FileUnfiled(item), PickerKey::Task(task)) => {
                             self.outbox.push(Command::FileUnfiled { item, task });
                             self.note = Some(format!("filing the finding under #{}", task.0));
+                        }
+                        (Purpose::FileTangent(tangent), PickerKey::Project(project)) => {
+                            self.note = Some(format!("filing the tangent into {}", project.0));
+                            self.outbox.push(Command::FileTangent { tangent, project });
+                        }
+                        (Purpose::StartTangent(tangent), PickerKey::Project(project)) => {
+                            self.note = Some(format!("starting a task in {}", project.0));
+                            self.outbox
+                                .push(Command::StartFromTangent { tangent, project });
+                        }
+                        (Purpose::AttachTangent(tangent), PickerKey::Task(task)) => {
+                            self.note = Some(format!("attaching the tangent to #{}", task.0));
+                            self.outbox.push(Command::AttachTangent { tangent, task });
                         }
                         (_, key) => self.choose(key),
                     }

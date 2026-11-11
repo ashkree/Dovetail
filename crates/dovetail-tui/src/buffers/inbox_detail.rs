@@ -11,7 +11,7 @@ use ratatui::widgets::Paragraph;
 use super::inbox::{
     answer_action, input_summary, item_label, kind_color, last_message, source_name,
 };
-use super::{Buffer, Effect, ViewCx, footer, pane, title, unfiled_title};
+use super::{Buffer, Effect, ViewCx, footer, pane, tangents_title, title, unfiled_title};
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
@@ -116,6 +116,16 @@ fn lines(cx: &ViewCx, item: &InboxItem, width: usize) -> Vec<Line<'static>> {
                 theme.dim(),
             );
         }
+        InboxKind::NewTangents { count } => {
+            plain(&mut out, &tangents_title(*count), theme.body());
+            plain(
+                &mut out,
+                "Questions you asked as tangents and have not sorted yet. Each can be filed into \
+                 a project (its answers and sources move there), started as a task in a project \
+                 (it stays in Tangents, linked), or dropped. :tangents lists them any time.",
+                theme.dim(),
+            );
+        }
         InboxKind::Proposal {
             task,
             text,
@@ -179,6 +189,10 @@ fn hints(item: &InboxItem) -> &'static [&'static str] {
         InboxKind::UnfiledFinding { .. } => &[
             "y or ⏎ file under a task · d drop · esc back",
             "y file · d drop · esc back",
+        ],
+        InboxKind::NewTangents { .. } => &[
+            "y or ⏎ triage them · x put away · esc back",
+            "y triage · x away · esc back",
         ],
     }
 }
@@ -250,6 +264,10 @@ impl Buffer for InboxDetailBuffer {
         match action {
             Action::InboxOpen if matches!(item.kind, InboxKind::UnfiledFinding { .. }) => {
                 effects.push(Effect::PickFileTarget(item.id));
+                true
+            }
+            Action::InboxOpen if matches!(item.kind, InboxKind::NewTangents { .. }) => {
+                effects.push(Effect::OpenTangents);
                 true
             }
             Action::InboxOpen => {

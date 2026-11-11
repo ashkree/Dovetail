@@ -100,6 +100,23 @@ pub enum Action {
     PrevSideChat,
     /// Close the side chat shown in the panel (`dd`): its session stops.
     CloseSideChat,
+    // --- tangents (ADR 0017) ---
+    /// Ask a tangent: a question that does not belong to this project, answered in Tangents
+    /// with its sources (`T` in the side panel, `:tangent [question]`).
+    NewTangent,
+    /// Attach the tangent shown (in the side panel or the tangents list) to a task of this
+    /// project: its answers become quick findings there (`a`).
+    AttachTangent,
+    /// The tangents list (`:tangents`, or the morning's "new tangents" item): triage them.
+    ShowTangents,
+    /// Read the selected tangent's latest answer in reading mode (`Enter` in the list).
+    TangentOpen,
+    /// File the selected tangent into a project, picked next (`f`).
+    TangentFile,
+    /// Start a task from the selected tangent in a project, picked next (`s`).
+    TangentStart,
+    /// Drop the selected tangent, after a y/n (`d`).
+    TangentDrop,
     // --- reading mode (ADR 0018) ---
     /// Reading mode on or off (`<leader>r`): library, reading column and Ask, in place of
     /// Layout B, which comes back as it was.

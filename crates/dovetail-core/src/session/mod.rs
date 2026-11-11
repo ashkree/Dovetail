@@ -30,6 +30,9 @@ use crate::recipe::Recipe;
 use crate::service::{COORDINATOR, Core, Input};
 use state::{Streaming, Turn};
 
+/// The role prompt a tangent reads (`config/roles/tangent.md`, ADR 0017).
+pub(crate) const TANGENT_PROMPT: &str = "tangent";
+
 /// The agent id of the subagent that `parent`'s tool use `tool_use_id` launched: the
 /// `parent_tool_use_id` its events carry. Its tree node ([`subagent`]) and its to-do items
 /// share it.
@@ -92,7 +95,8 @@ impl Core {
     pub(crate) fn role_of(&self, id: &AgentId) -> Option<Role> {
         self.agents.get(id).map(|r| match r.agent.kind {
             AgentKind::Coordinator => Role::Coordinator,
-            AgentKind::SideChat => Role::SideChat,
+            // A tangent is read-only like a side chat, with the same tools (ADR 0017).
+            AgentKind::SideChat | AgentKind::Tangent => Role::SideChat,
             AgentKind::Ask => Role::Ask,
             _ => Role::Slice,
         })
@@ -138,6 +142,7 @@ impl Core {
             agent_id: id.0.clone(),
             name: row.agent.name.clone(),
             role,
+            prompt: (row.agent.kind == AgentKind::Tangent).then_some(TANGENT_PROMPT),
             suites: self.config.suites.for_role(role).to_vec(),
             session_id,
             resume,
@@ -150,7 +155,10 @@ impl Core {
                 .unwrap_or_else(|| self.task_list_id(row.agent.task, &row.agent.name)),
             socket: self.socket.clone(),
             exe: self.options.exe.clone(),
-            model: if matches!(row.agent.kind, AgentKind::SideChat | AgentKind::Ask) {
+            model: if matches!(
+                row.agent.kind,
+                AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent
+            ) {
                 self.config.side_chat_model.clone()
             } else {
                 self.config.default_model.clone()
@@ -317,7 +325,7 @@ impl Core {
                 }
                 Ok(())
             }
-            AgentKind::Slice | AgentKind::SideChat => {
+            AgentKind::Slice | AgentKind::SideChat | AgentKind::Tangent => {
                 if row.transcript_path.is_none() {
                     return Err(SessionError::NeverStarted(row.agent.name));
                 }
@@ -525,7 +533,10 @@ impl Core {
         };
         // A side chat always runs in `dontAsk` with its read-only allow-list; auto mode would
         // let the classifier approve other commands.
-        if matches!(target_row.agent.kind, AgentKind::SideChat | AgentKind::Ask) {
+        if matches!(
+            target_row.agent.kind,
+            AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent
+        ) {
             self.fail(format!(
                 "{} is read-only, so its mode does not change",
                 target_row.agent.name
@@ -704,7 +715,10 @@ impl Core {
                 // Decision 15: if init reports anything but auto when auto was asked, run as
                 // manual and say so.
                 // A side chat runs in `dontAsk` on purpose (launch): manual, with no warning.
-                if matches!(row.agent.kind, AgentKind::SideChat | AgentKind::Ask) {
+                if matches!(
+                    row.agent.kind,
+                    AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent
+                ) {
                     row.agent.permission_mode = dovetail_api::PermissionMode::Manual;
                 } else if row.agent.permission_mode == dovetail_api::PermissionMode::Auto
                     && mode != Some(dovetail_api::PermissionMode::Auto)

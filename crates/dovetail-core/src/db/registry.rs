@@ -2,13 +2,16 @@
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::ProjectKind;
+use dovetail_api::{ProjectKind, TANGENTS_PROJECT};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::DbError;
 use crate::projects::Project;
 
 const COLUMNS: &str = "id, name, kind, repo_path, git_common_dir, last_opened_ms";
+
+/// Tangents' display name.
+pub(crate) const TANGENTS_NAME: &str = "Tangents";
 
 fn row_to_project(row: &Row<'_>) -> rusqlite::Result<Project> {
     let kind: String = row.get(2)?;
@@ -72,14 +75,16 @@ pub(super) fn list(conn: &Connection) -> Result<Vec<Project>, DbError> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// `slug`, numbered (`slug-2`, ...) when another project has it.
+/// `slug`, numbered (`slug-2`, ...) when another project has it. Tangents' id is reserved
+/// (ADR 0017): a project of the user's never gets it, even before Tangents is created.
 fn free_id(conn: &Connection, slug: &str) -> Result<String, DbError> {
     let mut id = slug.to_owned();
     let mut n = 2;
-    while conn
-        .query_row("SELECT 1 FROM projects WHERE id = ?1", [&id], |_| Ok(()))
-        .optional()?
-        .is_some()
+    while id == TANGENTS_PROJECT
+        || conn
+            .query_row("SELECT 1 FROM projects WHERE id = ?1", [&id], |_| Ok(()))
+            .optional()?
+            .is_some()
     {
         id = format!("{slug}-{n}");
         n += 1;
@@ -159,6 +164,35 @@ pub(super) fn register_research(
         git_common_dir: None,
         last_opened_ms: Some(now_ms),
     }))
+}
+
+/// Tangents, the built-in research project (ADR 0017): registered under its reserved id when
+/// missing, never touched when present. A row of another kind under that id (registered before
+/// the id was reserved) is refused, so tangents never write into a user's project.
+pub(super) fn ensure_tangents(conn: &mut Connection, now_ms: i64) -> Result<Project, DbError> {
+    let tx = conn.transaction()?;
+    if get(&tx, TANGENTS_PROJECT)?.is_none() {
+        tx.execute(
+            &format!(
+                "INSERT INTO projects ({COLUMNS}) VALUES (?1, ?2, 'research', NULL, NULL, ?3)"
+            ),
+            params![TANGENTS_PROJECT, TANGENTS_NAME, now_ms],
+        )?;
+    }
+    let project = get(&tx, TANGENTS_PROJECT)?
+        .ok_or_else(|| DbError::NotFound("Tangents was not registered".into()))?;
+    tx.commit()?;
+    if !project.is_research() {
+        return Err(DbError::Refused(format!(
+            "the project `{TANGENTS_PROJECT}` is not Tangents (it is a code project in {}): \
+             tangents are off until it is renamed",
+            project
+                .repo_path
+                .as_deref()
+                .map_or_else(|| "?".into(), |p| p.display().to_string())
+        )));
+    }
+    Ok(project)
 }
 
 /// Records that a folder project is now a git repo.

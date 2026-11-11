@@ -74,7 +74,7 @@ impl Core {
             .project
             .registered()
             .ok_or(ResearchDirError::NotRegistered)?;
-        research_root_of(&self.paths, project)
+        root_of(&self.paths, project)
     }
 
     /// The research folder of `task` (absolute), given its title.
@@ -388,7 +388,7 @@ impl Core {
             .ok_or_else(|| LoadError::Missing(format!("there is no task #{}", task.0)))?;
         let dir = self.research_dir(task, &t.title)?;
         let r = self.db.task_research(task).await?;
-        content_of(task, &t.title, &dir, &r, what)
+        content_of(&dir, task, &t.title, &r, what)
     }
 
     /// Writes research files that are missing (the database is the source of truth), on a
@@ -446,7 +446,9 @@ impl Core {
 
     /// Watches the stream for research (called for every event of a session, before routing).
     pub(crate) async fn research_event(&mut self, agent: &AgentId, event: &DriverEvent) {
-        if self.project.registered().is_none() {
+        // A tangent files into Tangents, whatever the open folder is (ADR 0017).
+        let tangent = self.tangent_of(agent);
+        if self.project.registered().is_none() && tangent.is_none() {
             return;
         }
         if let Some(origin) = event.origin().filter(|o| !o.is_main()) {
@@ -454,6 +456,9 @@ impl Core {
                 self.research.capture.subagent_event(key, event);
             }
             return;
+        }
+        if let Some(task) = tangent {
+            self.tangent_turn_event(agent, task, event).await;
         }
         let outcomes = match event {
             DriverEvent::Assistant(message) => {
@@ -484,6 +489,15 @@ impl Core {
     /// when the parent works on a task (a quick finding if it turns out research-shaped), or when
     /// it is the coordinator with no round open (an unfiled finding if research-shaped).
     fn research_launch(&mut self, agent: &AgentId, key: &str, input: &serde_json::Value) {
+        // A tangent's research subagents become quick findings of its task in Tangents.
+        if let Some(task) = self.tangent_of(agent) {
+            let sub = crate::session::subagent_id(agent, key);
+            self.research
+                .capture
+                .launched(agent, sub, key, input, Some(task), None, now_ms());
+            self.research.capture.mark_tangent(key);
+            return;
+        }
         let (task, round) = match (&self.research.open, agent.0 == COORDINATOR) {
             (Some(open), true) => (Some(open.task), Some(open.id)),
             (None, true) => (None, None),
@@ -498,9 +512,27 @@ impl Core {
             .launched(agent, sub, key, input, task, round, now_ms());
     }
 
-    async fn research_outcome(&mut self, outcome: Outcome) {
+    pub(crate) async fn research_outcome(&mut self, outcome: Outcome) {
         match outcome {
-            Outcome::File { key, from, finding } => {
+            Outcome::File {
+                key,
+                from,
+                finding,
+                tangent: true,
+            } => self.file_tangent_finding(key, from, *finding).await,
+            Outcome::Upgrade {
+                finding,
+                task: Some(task),
+                body,
+                from,
+                tangent: true,
+            } => {
+                self.upgrade_tangent_finding(task, finding, body, from)
+                    .await
+            }
+            Outcome::File {
+                key, from, finding, ..
+            } => {
                 let Some(task) = finding.task else {
                     self.file_unfiled_outcome(key, from, *finding).await;
                     return;
@@ -563,6 +595,7 @@ impl Core {
                 task: None,
                 body,
                 from,
+                ..
             } => {
                 match self
                     .db
@@ -579,6 +612,7 @@ impl Core {
                 task: Some(task),
                 body,
                 from,
+                ..
             } => {
                 if let Err(e) = self.db.set_finding_body(finding, body, from.as_str()).await {
                     tracing::warn!("updating finding F{}: {e}", finding.0);
@@ -638,7 +672,7 @@ impl Core {
 
     /// Writes a finding's file and its sources' cached copies (the ones not there yet) under
     /// `dir`, telling the user about any that fail.
-    fn write_finding_files(
+    pub(crate) fn write_finding_files(
         &mut self,
         dir: &std::path::Path,
         row: &FindingRow,
@@ -831,9 +865,9 @@ pub(crate) fn listing(dir: &std::path::Path, r: &TaskResearch) -> ResearchListin
     }
 }
 
-/// The research root of any registered project (the open one, or one browsed read-only), from
-/// its recipe.
-pub(crate) fn research_root_of(
+/// The research root of any registered project, from its recipe: what [`Core::research_root`]
+/// is for the open one. Filing a tangent into another project writes there.
+pub(crate) fn root_of(
     paths: &crate::paths::Paths,
     project: &crate::projects::Project,
 ) -> Result<PathBuf, ResearchDirError> {
@@ -854,13 +888,12 @@ pub(crate) fn research_root_of(
     )
 }
 
-/// A task's research content from what storage holds: `dir` is its research folder (for
-/// paths and images), `title` its task title. Pure, so a browsed project's content is made the
-/// same way as the open project's.
+/// Research content of `task` (titled `title`), whose folder is `dir` and whose rows are `r`:
+/// the open project's tasks and Tangents' tangents alike.
 pub(crate) fn content_of(
+    dir: &std::path::Path,
     task: TaskId,
     title: &str,
-    dir: &std::path::Path,
     r: &TaskResearch,
     what: &ResearchWhat,
 ) -> Result<ResearchContent, LoadError> {

@@ -1,6 +1,6 @@
 ---
 source: crates/dovetail-tui/tests/reading_mode.rs
-assertion_line: 474
+assertion_line: 543
 expression: "snapshot_at(100, 30)"
 ---
  folder /home/you/src/dovetail   maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
@@ -14,12 +14,12 @@ expression: "snapshot_at(100, 30)"
 │     ▸ sources (3)    ││    Evidence                                  ││                          │
 │   notes-site · ⏎ br… ││                                              ││                          │
 │   ◇ Market sizing ·… ││    • nucleo scores a few thousand rows       ││                          │
-│ ▸ Decisions (3)      ││      well inside a frame, and is what        ││                          │
-│ ▸ Docs · ADRs (2)    ││      Helix uses [F1, S2].                    ││                          │
-│                      ││                                              ││                          │
-│                      ││    • skim is slower to set up and pulls      ││                          │
-│                      ││      in a larger dependency tree [F2].       ││                          │
-│                      ││                                              ││                          │
+│   ↗ Tangents · ⏎ br… ││      well inside a frame, and is what        ││                          │
+│ ▾ ↗ Tangents (2)     ││      Helix uses [F1, S2].                    ││                          │
+│   ▸ How does kitty'… ││                                              ││                          │
+│   ▸ What hydration … ││    • skim is slower to set up and pulls      ││                          │
+│ ▸ Decisions (3)      ││      in a larger dependency tree [F2].       ││                          │
+│ ▸ Docs · ADRs (2)    ││                                              ││                          │
 │                      ││    • Scoring on paths wants a bonus for      ││                          │
 │                      ││      matches after / [F3].                   ││                          │
 │                      ││                                              ││                          │
@@ -32,4 +32,4 @@ expression: "snapshot_at(100, 30)"
 │                      ││    end · ]s [s · gd · gx · i ask             ││                          │
 │ ⏎ read · o fold      ││                                              ││                          │
 └──────────────────────┘└──────────────────────────────────────────────┘└──────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 1… gd open · gx browser · i ask · ⎋ leave
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 1… gd open · gx browser · i ask · ⎋ leave

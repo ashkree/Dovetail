@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 use dovetail_api::{
     Agent, AgentId, AgentKind, AgentStatus, InboxItem, InboxKind, ProjectKind, ProjectSummary,
-    SlashCommand, Snapshot, TaskStatus,
+    SlashCommand, Snapshot, TANGENTS_PROJECT, TaskStatus,
 };
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
@@ -255,6 +255,12 @@ pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem>
                 "Unfiled finding".into(),
                 crate::buffers::unfiled_title(kind),
             ),
+            InboxKind::NewTangents { count } => (
+                TANGENT_MARKER,
+                theme.needs_you,
+                "New tangents".into(),
+                crate::buffers::tangents_title(*count),
+            ),
         };
         PickerItem {
             key: PickerKey::Inbox(item.id),
@@ -337,6 +343,7 @@ fn agent_preview(
         AgentKind::Slice => "slice",
         AgentKind::SideChat => "side chat",
         AgentKind::Ask => "ask",
+        AgentKind::Tangent => "tangent",
         AgentKind::Subagent { background: true } => "background subagent",
         AgentKind::Subagent { background: false } => "subagent",
     };
@@ -423,16 +430,36 @@ fn command_preview(command: &SlashCommand, width: usize, theme: &Theme) -> Vec<L
 /// The marker a research project carries in the project switcher.
 pub const RESEARCH_MARKER: &str = "◇";
 
+/// The marker of Tangents, the built-in research project, and of tangents (ADR 0017).
+pub const TANGENT_MARKER: &str = "↗";
+
+/// Whether `p` is Tangents, the built-in research project.
+pub fn is_tangents(p: &ProjectSummary) -> bool {
+    p.id.0 == TANGENTS_PROJECT
+}
+
+/// The projects in switcher order: as the core lists them (most recently opened first), with
+/// Tangents pinned last (ADR 0017).
+pub fn projects_in_order(snap: &Snapshot) -> Vec<&ProjectSummary> {
+    let mut out: Vec<&ProjectSummary> = snap.projects.iter().collect();
+    out.sort_by_key(|p| is_tangents(p));
+    out
+}
+
 /// Rows for the project switcher (`<leader>pp`): every registered project, most recently opened
-/// first, as the core lists them. A research project is marked [`RESEARCH_MARKER`] and says
-/// `research` where a code project shows its folder; the open one says `open`.
+/// first, as the core lists them, and Tangents last with its own marker [`TANGENT_MARKER`]. A
+/// research project is marked [`RESEARCH_MARKER`] and says `research` where a code project
+/// shows its folder; the open one says `open`.
 pub fn project_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
     let open = snap.project.as_ref().map(|p| &p.id);
-    snap.projects
-        .iter()
+    projects_in_order(snap)
+        .into_iter()
         .map(|p| {
             let research = p.kind == ProjectKind::Research;
-            let mut detail = if research {
+            let tangents = is_tangents(p);
+            let mut detail = if tangents {
+                "built in · your tangents".to_string()
+            } else if research {
                 "research".to_string()
             } else {
                 p.repo_path.display().to_string()
@@ -445,7 +472,13 @@ pub fn project_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
                 label: p.name.clone(),
                 haystack: format!("{} {} {}", p.name, p.id.0, p.kind.as_str()),
                 detail,
-                glyph: if research { RESEARCH_MARKER } else { "·" },
+                glyph: if tangents {
+                    TANGENT_MARKER
+                } else if research {
+                    RESEARCH_MARKER
+                } else {
+                    "·"
+                },
                 color: if research { theme.cite } else { theme.dim },
                 depth: 0,
                 section: "Projects",
@@ -485,6 +518,14 @@ pub fn browse_preview(
         out.push(Line::from(Span::styled(line, theme.body())));
     }
     ("Browse", out)
+}
+
+/// Rows for picking the project a tangent goes to: every project but Tangents.
+pub fn tangent_target_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
+    project_items(snap, theme)
+        .into_iter()
+        .filter(|item| !matches!(&item.key, PickerKey::Project(id) if id.0 == TANGENTS_PROJECT))
+        .collect()
 }
 
 fn project_preview(p: &ProjectSummary, width: usize, theme: &Theme) -> Vec<Line<'static>> {
@@ -536,6 +577,10 @@ fn inbox_preview(
         kind @ InboxKind::UnfiledFinding { .. } => (
             format!("{name}'s subagent found something with no round open"),
             crate::buffers::unfiled_title(kind),
+        ),
+        InboxKind::NewTangents { count } => (
+            "Tangents waiting for triage".to_string(),
+            crate::buffers::tangents_title(*count),
         ),
     };
     let mut out = vec![

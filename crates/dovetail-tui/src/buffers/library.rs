@@ -4,7 +4,9 @@
 //!
 //! Only the open project's content is in the snapshot. Findings and sources come from
 //! `LoadResearch { Listing }` and the docs from `ListDocs`, both asked for when reading mode
-//! opens. No Tangents section until tangents exist (M22).
+//! opens. The Tangents section (ADR 0017, M22) lists every tangent from the snapshot; its
+//! answers and sources come from `LoadTangent { Listing }`, and Tangents is pinned last among
+//! the projects.
 //!
 //! `<leader>fr`, or `Enter` on another project's row, browses that project instead (ADR 0018,
 //! decided 2026-11-11 later): the library re-roots to its research, decisions and docs, loaded
@@ -53,6 +55,16 @@ pub enum LibKey {
     Sources(TaskId),
     /// A source.
     Source(TaskId, SourceId),
+    /// Tangents (ADR 0017): every tangent, whatever project is open.
+    Tangents,
+    /// One tangent, by its task in Tangents.
+    Tangent(TaskId),
+    /// One of a tangent's findings (its answers, and its subagents' findings).
+    TangentFinding(TaskId, FindingId),
+    /// A tangent's sources.
+    TangentSources(TaskId),
+    /// One of a tangent's sources.
+    TangentSource(TaskId, SourceId),
     /// The decision log.
     Decisions,
     /// One decision.
@@ -63,6 +75,10 @@ pub enum LibKey {
     Doc(PathBuf),
     /// The line saying the open project has no research yet.
     NoResearch,
+    /// The line saying a tangent's answers are being listed.
+    TangentLoading(TaskId),
+    /// The line saying there are no tangents yet.
+    NoTangents,
     /// The line saying a task's findings are being listed.
     Loading(TaskId),
     /// The line saying a browsed project is being loaded.
@@ -72,7 +88,7 @@ pub enum LibKey {
 impl LibKey {
     /// Whether a group row starts open.
     fn open_by_default(&self) -> bool {
-        matches!(self, LibKey::Task(_))
+        matches!(self, LibKey::Task(_) | LibKey::Tangents)
     }
 }
 
@@ -122,6 +138,8 @@ pub struct LibraryBuffer {
     /// Rows whose fold differs from their default.
     toggled: HashSet<LibKey>,
     listings: HashMap<TaskId, ResearchListing>,
+    /// Tangents' findings and sources, by tangent (their ids are Tangents' own).
+    tangent_listings: HashMap<TaskId, ResearchListing>,
     docs: Option<Vec<DocEntry>>,
     browsing: Option<Browsing>,
     offset: usize,
@@ -233,6 +251,27 @@ impl LibraryBuffer {
         self.listings.insert(task, listing);
     }
 
+    /// Keeps a tangent's findings and sources, as the core listed them.
+    pub fn receive_tangent_listing(&mut self, tangent: TaskId, listing: ResearchListing) {
+        self.tangent_listings.insert(tangent, listing);
+    }
+
+    /// A tangent's findings and sources, if listed.
+    pub fn tangent_listing(&self, tangent: TaskId) -> Option<&ResearchListing> {
+        self.tangent_listings.get(&tangent)
+    }
+
+    /// A tangent's latest answer: its newest finding labelled `answer`, else its newest
+    /// finding. `None` until its listing arrived, or when it has none.
+    pub fn latest_answer(&self, tangent: TaskId) -> Option<&FindingSummary> {
+        let findings = &self.tangent_listing(tangent)?.findings;
+        findings
+            .iter()
+            .filter(|f| f.label == ANSWER_LABEL)
+            .max_by_key(|f| f.id)
+            .or_else(|| findings.iter().max_by_key(|f| f.id))
+    }
+
     /// Keeps the repo's docs, as the core listed them.
     pub fn receive_docs(&mut self, docs: Vec<DocEntry>) {
         self.docs = Some(docs);
@@ -293,8 +332,8 @@ impl LibraryBuffer {
         let source = self.source(snap);
         let mut projects: Vec<_> = snap.project.iter().collect();
         projects.extend(
-            snap.projects
-                .iter()
+            crate::switcher::projects_in_order(snap)
+                .into_iter()
                 .filter(|p| Some(&p.id) != open_id.as_ref()),
         );
         for project in projects {
@@ -303,7 +342,10 @@ impl LibraryBuffer {
             let key = LibKey::Project(project.id.clone());
             let research = project.kind == ProjectKind::Research;
             let mut spans = Vec::new();
-            if research {
+            if crate::switcher::is_tangents(project) {
+                let marker = crate::switcher::TANGENT_MARKER;
+                spans.push(Span::styled(format!("{marker} "), theme.fg(theme.italic)));
+            } else if research {
                 spans.push(Span::styled("◇ ", theme.fg(theme.italic)));
             }
             let name_style = match (is_shown, browsed.is_some()) {
@@ -343,6 +385,18 @@ impl LibraryBuffer {
         let Some(source) = source else {
             return rows;
         };
+
+        // Tangents (ADR 0017), whatever project is open; when Tangents is the open project its
+        // tangents are its research tasks above.
+        let in_tangents = snap
+            .projects
+            .iter()
+            .chain(snap.project.iter())
+            .find(|p| Some(&p.id) == shown)
+            .is_some_and(crate::switcher::is_tangents);
+        if !in_tangents {
+            self.tangent_rows(snap, theme, &mut rows);
+        }
 
         let key = LibKey::Decisions;
         let open = self.is_open(&key);
@@ -553,11 +607,7 @@ impl LibraryBuffer {
                 });
                 if open {
                     for s in &listing.sources {
-                        let kind = match s.kind {
-                            SourceKind::Web => "web",
-                            SourceKind::File => "file",
-                            SourceKind::Search => "search",
-                        };
+                        let kind = source_kind(s.kind);
                         rows.push(Row {
                             key: LibKey::Source(task, s.id),
                             depth: 3,
@@ -565,6 +615,104 @@ impl LibraryBuffer {
                             spans: vec![
                                 Span::styled(format!("S{} ", s.id.0), theme.fg(theme.cite)),
                                 Span::styled(format!("{kind} "), theme.dim()),
+                                Span::styled(s.locator.clone(), theme.body()),
+                            ],
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// The Tangents section: every tangent, its answers and findings, and its sources.
+    fn tangent_rows(&self, snap: &Snapshot, theme: &Theme, rows: &mut Vec<Row>) {
+        let key = LibKey::Tangents;
+        let open = self.is_open(&key);
+        let marker = crate::switcher::TANGENT_MARKER;
+        rows.push(Row {
+            key,
+            depth: 0,
+            fold: Some(open),
+            spans: vec![Span::styled(
+                format!("{marker} Tangents ({})", snap.tangents.len()),
+                theme.body().add_modifier(Modifier::BOLD),
+            )],
+        });
+        if !open {
+            return;
+        }
+        if snap.tangents.is_empty() {
+            rows.push(Row {
+                key: LibKey::NoTangents,
+                depth: 1,
+                fold: None,
+                spans: vec![Span::styled(
+                    "no tangents yet: T in the side panel or :tangent <question>",
+                    theme.dim(),
+                )],
+            });
+        }
+        for t in &snap.tangents {
+            let task = t.task.id;
+            let key = LibKey::Tangent(task);
+            let open = self.is_open(&key);
+            let mut spans = vec![Span::styled(t.task.title.clone(), theme.body())];
+            if t.is_new() {
+                spans.push(Span::styled(" · new", theme.fg(theme.needs_you)));
+            }
+            if t.research.is_none() {
+                spans.push(Span::styled(" · no answer yet", theme.dim()));
+            }
+            rows.push(Row {
+                key,
+                depth: 1,
+                fold: t.research.is_some().then_some(open),
+                spans,
+            });
+            if !open || t.research.is_none() {
+                continue;
+            }
+            let Some(listing) = self.tangent_listings.get(&task) else {
+                rows.push(Row {
+                    key: LibKey::TangentLoading(task),
+                    depth: 2,
+                    fold: None,
+                    spans: vec![Span::styled("(loading answers…)", theme.dim())],
+                });
+                continue;
+            };
+            for f in &listing.findings {
+                rows.push(Row {
+                    key: LibKey::TangentFinding(task, f.id),
+                    depth: 2,
+                    fold: None,
+                    spans: vec![
+                        Span::styled(format!("F{} ", f.id.0), theme.fg(theme.cite)),
+                        Span::styled(format!("{:02} {}", f.n, f.label), theme.body()),
+                    ],
+                });
+            }
+            if !listing.sources.is_empty() {
+                let key = LibKey::TangentSources(task);
+                let open = self.is_open(&key);
+                rows.push(Row {
+                    key,
+                    depth: 2,
+                    fold: Some(open),
+                    spans: vec![Span::styled(
+                        format!("sources ({})", listing.sources.len()),
+                        theme.body(),
+                    )],
+                });
+                if open {
+                    for s in &listing.sources {
+                        rows.push(Row {
+                            key: LibKey::TangentSource(task, s.id),
+                            depth: 3,
+                            fold: None,
+                            spans: vec![
+                                Span::styled(format!("S{} ", s.id.0), theme.fg(theme.cite)),
+                                Span::styled(format!("{} ", source_kind(s.kind)), theme.dim()),
                                 Span::styled(s.locator.clone(), theme.body()),
                             ],
                         });
@@ -588,6 +736,40 @@ impl LibraryBuffer {
         key: &LibKey,
         snap: &Snapshot,
     ) -> Option<(ReadTarget, Option<TaskId>, String)> {
+        // Tangents are the same whatever the library shows: never a browsed project's.
+        match key {
+            // A tangent's documents carry no project task: their citations resolve against the
+            // tangent (`ReadTarget::Tangent`).
+            LibKey::TangentFinding(task, id) => {
+                let label = self
+                    .tangent_listing(*task)
+                    .and_then(|l| l.findings.iter().find(|f| f.id == *id))
+                    .map_or_else(String::new, |f| format!(" · {}", f.label));
+                return Some((
+                    ReadTarget::Tangent {
+                        task: *task,
+                        what: ResearchWhat::Finding(*id),
+                    },
+                    None,
+                    format!("tangent F{}{label}", id.0),
+                ));
+            }
+            LibKey::TangentSource(task, id) => {
+                let locator = self
+                    .tangent_listing(*task)
+                    .and_then(|l| l.sources.iter().find(|s| s.id == *id))
+                    .map_or_else(String::new, |s| format!(" · {}", s.locator));
+                return Some((
+                    ReadTarget::Tangent {
+                        task: *task,
+                        what: ResearchWhat::Source(*id),
+                    },
+                    None,
+                    format!("tangent S{}{locator}", id.0),
+                ));
+            }
+            _ => {}
+        }
         let source = self.source(snap)?;
         let (target, task, title) = Self::target_in(key, &source)?;
         match (source.elsewhere, &self.browsing) {
@@ -656,6 +838,18 @@ impl LibraryBuffer {
             )),
             _ => None,
         }
+    }
+}
+
+/// The label of a tangent's answers (one finding per turn; the core's `TURN_LABEL`).
+const ANSWER_LABEL: &str = "answer";
+
+/// A source's kind in a row.
+fn source_kind(kind: SourceKind) -> &'static str {
+    match kind {
+        SourceKind::Web => "web",
+        SourceKind::File => "file",
+        SourceKind::Search => "search",
     }
 }
 
@@ -755,6 +949,20 @@ impl Buffer for LibraryBuffer {
                     && row.fold.is_none()
                 {
                     effects.push(Effect::BrowseProject(id.clone()));
+                    return true;
+                }
+                // A tangent opens its latest answer (fetched first when not listed yet).
+                if let LibKey::Tangent(tangent) = &key {
+                    let answered = cx
+                        .snap
+                        .tangents
+                        .iter()
+                        .any(|t| t.task.id == *tangent && t.research.is_some());
+                    effects.push(if answered {
+                        Effect::ReadTangent(*tangent)
+                    } else {
+                        Effect::Note("no answer yet: it shows here when the turn ends".into())
+                    });
                     return true;
                 }
                 // A task opens its report when it has one; other groups fold.

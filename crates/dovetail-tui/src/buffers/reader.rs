@@ -46,6 +46,14 @@ pub enum ReadTarget {
         /// Which document.
         what: ResearchWhat,
     },
+    /// An answer, finding or source of a tangent, in Tangents (ADR 0017). Its citations
+    /// resolve against the tangent's own findings and sources.
+    Tangent {
+        /// The tangent's task in Tangents.
+        task: TaskId,
+        /// Which document.
+        what: ResearchWhat,
+    },
     /// A decision-log entry, written out from the snapshot.
     Decision(DecisionId),
     /// A repo doc, relative to `docs/`.
@@ -206,6 +214,17 @@ impl ReaderBuffer {
             } => (
                 ReadTarget::Research {
                     task: *task,
+                    what: what.clone(),
+                },
+                document,
+            ),
+            Event::TangentLoaded {
+                tangent,
+                what,
+                content: dovetail_api::research::ResearchContent::Document(document),
+            } => (
+                ReadTarget::Tangent {
+                    task: *tangent,
                     what: what.clone(),
                 },
                 document,

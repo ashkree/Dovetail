@@ -16,6 +16,18 @@ fn id(s: &str) -> AgentId {
     AgentId(s.into())
 }
 
+fn tangent() -> TangentSummary {
+    TangentSummary {
+        task: Task {
+            id: TaskId(2),
+            notes: "Asked from dovetail on 2026-11-11.".into(),
+            bucket: None,
+            ..task()
+        },
+        research: Some(research_summary()),
+    }
+}
+
 fn research_summary() -> research::ResearchSummary {
     research::ResearchSummary {
         task: TaskId(4),
@@ -396,6 +408,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
         }),
         maps: vec![map_summary()],
         research: vec![research_summary()],
+        tangents: vec![tangent()],
     };
     roundtrip(&ServerMsg::Hello {
         protocol: PROTOCOL_VERSION,
@@ -453,6 +466,13 @@ fn every_event_roundtrips() {
                     height: 480,
                 }],
             }),
+        },
+        Event::TangentUpserted(tangent()),
+        Event::TangentRemoved(TaskId(2)),
+        Event::TangentLoaded {
+            tangent: TaskId(2),
+            what: research::ResearchWhat::Listing,
+            content: research::ResearchContent::Listing(research_listing()),
         },
         Event::TotalsChanged(totals()),
         Event::UsageChanged(UsageLimits::default()),
@@ -679,6 +699,26 @@ fn every_command_roundtrips() {
             url: "https://docs.rs/nucleo".into(),
         },
         Command::StartAsk { task: TaskId(4) },
+        Command::NewTangent {
+            question: "sourdough hydration?".into(),
+        },
+        Command::AttachTangent {
+            tangent: TaskId(2),
+            task: TaskId(4),
+        },
+        Command::FileTangent {
+            tangent: TaskId(2),
+            project: ProjectId("market-sizing".into()),
+        },
+        Command::StartFromTangent {
+            tangent: TaskId(2),
+            project: ProjectId("dovetail".into()),
+        },
+        Command::DropTangent { tangent: TaskId(2) },
+        Command::LoadTangent {
+            tangent: TaskId(2),
+            what: research::ResearchWhat::Finding(research::FindingId(1)),
+        },
         Command::ListDocs,
         Command::BrowseProject {
             id: ProjectId("market-sizing".into()),
@@ -831,6 +871,16 @@ fn a_research_proposal_and_its_evidence_survive_json() {
         label: "pricing-pages".into(),
         sources: 2,
     });
+    roundtrip(&InboxKind::NewTangents { count: 2 });
+    roundtrip(&AgentKind::Tangent);
+    // A tangent's session is named after its task in Tangents, and back.
+    assert_eq!(tangent_agent(TaskId(12)), AgentId("tangent-12".into()));
+    assert_eq!(
+        tangent_task(&AgentId("tangent-12".into())),
+        Some(TaskId(12))
+    );
+    assert_eq!(tangent_task(&AgentId("side-1".into())), None);
+    assert_eq!(tangent_task(&AgentId("tangent-x".into())), None);
     // Evidence is written as the id the report cites.
     assert_eq!(
         serde_json::to_value(Evidence::Finding(FindingId(3))).unwrap(),

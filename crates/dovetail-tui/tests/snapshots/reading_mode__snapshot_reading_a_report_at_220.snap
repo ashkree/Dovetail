@@ -1,6 +1,6 @@
 ---
 source: crates/dovetail-tui/tests/reading_mode.rs
-assertion_line: 484
+assertion_line: 553
 expression: "snapshot_at(220, 50)"
 ---
  folder /home/you/src/dovetail                                                                                                                           maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
@@ -14,12 +14,12 @@ expression: "snapshot_at(220, 50)"
 │     ▸ sources (3)                   ││                                                                                                                               ││                                                  │
 │   notes-site · ⏎ browses            ││               • nucleo scores a few thousand rows well inside a frame, and is what Helix uses [F1, S2].                       ││                                                  │
 │   ◇ Market sizing · ⏎ browses       ││                                                                                                                               ││                                                  │
-│ ▸ Decisions (3)                     ││               • skim is slower to set up and pulls in a larger dependency tree [F2].                                          ││                                                  │
+│   ↗ Tangents · ⏎ browses            ││               • skim is slower to set up and pulls in a larger dependency tree [F2].                                          ││                                                  │
+│ ▾ ↗ Tangents (2)                    ││                                                                                                                               ││                                                  │
+│   ▸ How does kitty's graphics prot… ││               • Scoring on paths wants a bonus for matches after / [F3].                                                      ││                                                  │
+│   ▸ What hydration should a first … ││                                                                                                                               ││                                                  │
+│ ▸ Decisions (3)                     ││               What would change this                                                                                          ││                                                  │
 │ ▸ Docs · ADRs (2)                   ││                                                                                                                               ││                                                  │
-│                                     ││               • Scoring on paths wants a bonus for matches after / [F3].                                                      ││                                                  │
-│                                     ││                                                                                                                               ││                                                  │
-│                                     ││               What would change this                                                                                          ││                                                  │
-│                                     ││                                                                                                                               ││                                                  │
 │                                     ││               If non-ASCII paths score badly in round 2 [S2], revisit.                                                        ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
@@ -52,4 +52,4 @@ expression: "snapshot_at(220, 50)"
 │                                     ││               end · ]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave                                             ││                                                  │
 │ ⏎ read · o fold                     ││                                                                                                                               ││                                                  │
 └─────────────────────────────────────┘└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 18%   READING  [F1] 1/7                                                                             ]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%   READING  [F1] 1/7                                                                             ]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave

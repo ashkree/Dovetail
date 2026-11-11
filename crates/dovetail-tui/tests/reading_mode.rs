@@ -164,7 +164,7 @@ fn leader_r_toggles_reading_mode_and_layout_b_comes_back_as_it_was() {
 }
 
 #[test]
-fn the_library_lists_projects_research_decisions_and_docs_and_no_tangents() {
+fn the_library_lists_projects_research_tangents_decisions_and_docs() {
     let (_, mut app) = reading();
     pick(&mut app, "Decisions");
     keys(&mut app, "o");
@@ -189,10 +189,79 @@ fn the_library_lists_projects_research_decisions_and_docs_and_no_tangents() {
         "Use nucleo for the picker",
         "Docs · ADRs (2)",
         "Reading mode: a second",
+        // The Tangents section (ADR 0017, M22), from the mock's two seeded tangents.
+        "↗ Tangents (2)",
+        "How does kitty's graphics prot",
+        "What hydration should a first",
     ] {
         assert!(screen.contains(needle), "{needle:?} missing:\n{screen}");
     }
-    assert!(!screen.contains("Tangents"), "{screen}");
+    // Tangents, the built-in project, is pinned last among the projects with its own marker.
+    let market = screen.find("◇ Market sizing").expect("research project");
+    let tangents = screen.find("↗ Tangents ·").expect("Tangents project");
+    let notes = screen.find("notes-site").expect("code project");
+    assert!(notes < tangents && market < tangents, "{screen}");
+}
+
+#[test]
+fn a_tangent_opens_its_answer_and_its_citations_resolve_against_its_sources() {
+    let (mut core, mut app) = start();
+    keys(&mut app, " r");
+    let commands = app.take_commands();
+    for tangent in [1, 2] {
+        assert!(
+            commands.contains(&Command::LoadTangent {
+                tangent: TaskId(tangent),
+                what: ResearchWhat::Listing,
+            }),
+            "{commands:?}"
+        );
+    }
+    for command in commands {
+        core.handle(command);
+    }
+    deliver(&mut core, &mut app);
+    pick(&mut app, "How does kitty");
+    app.on_key(enter(), 0);
+    let commands = app.take_commands();
+    assert_eq!(
+        commands,
+        vec![Command::LoadTangent {
+            tangent: TaskId(1),
+            what: ResearchWhat::Finding(research::FindingId(1)),
+        }]
+    );
+    for command in commands {
+        core.handle(command);
+    }
+    deliver(&mut core, &mut app);
+    assert_eq!(app.focus(), RegionId::Reader);
+    let screen = render(&mut app, 160, 40);
+    assert!(screen.contains("kitty sends images"), "{screen}");
+    // `]s` selects [S1]; `gx` opens the web page; `gd` reads the cached copy. The tangent's
+    // own S1, not the open project's S1 (docs.rs/nucleo).
+    keys(&mut app, "]s");
+    keys(&mut app, "gx");
+    deliver(&mut core, &mut app);
+    assert_eq!(
+        core.opened(),
+        ["https://sw.kovidgoyal.net/kitty/graphics-protocol/"]
+    );
+    keys(&mut app, "gd");
+    let commands = app.take_commands();
+    assert_eq!(
+        commands,
+        vec![Command::LoadTangent {
+            tangent: TaskId(1),
+            what: ResearchWhat::Source(research::SourceId(1)),
+        }]
+    );
+    for command in commands {
+        core.handle(command);
+    }
+    deliver(&mut core, &mut app);
+    let screen = render(&mut app, 160, 40);
+    assert!(screen.contains("Terminal graphics protocol"), "{screen}");
 }
 
 #[test]

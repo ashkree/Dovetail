@@ -102,6 +102,8 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
             state.maps.insert(0, map);
         }
         Event::ResearchUpserted(summary) => upsert(&mut state.research, summary, |r| r.task),
+        Event::TangentUpserted(tangent) => upsert(&mut state.tangents, tangent, |t| t.task.id),
+        Event::TangentRemoved(id) => state.tangents.retain(|t| t.task.id != id),
         Event::TotalsChanged(totals) => state.totals = totals,
         Event::UsageChanged(usage) => state.usage = usage,
         Event::WarningSet(warning) => upsert(&mut state.warnings, warning, |w| w.id.clone()),
@@ -114,6 +116,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::CommandFailed { .. }
         | Event::MapLoaded(_)
         | Event::ResearchLoaded { .. }
+        | Event::TangentLoaded { .. }
         | Event::DocsListed { .. }
         | Event::DocLoaded { .. }
         | Event::ProjectBrowsed(_)

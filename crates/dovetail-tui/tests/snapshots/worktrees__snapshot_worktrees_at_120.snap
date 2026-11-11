@@ -3,10 +3,10 @@ source: crates/dovetail-tui/tests/worktrees.rs
 expression: "render(&mut app, 120, 34)"
 ---
  folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
-┌ worktrees · Dovetail · 3 ───────────────────────────────────────────────┐┌ inbox · needs you (2) ────────────────────┐
+┌ worktrees · Dovetail · 3 ───────────────────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │ slice         sync             changes  unpushed  PR          setup     ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
-│ ⚠ inbox-keys  ↑1 ↓4 origin ↓2  clean    1         none        ✓ done    ││   ✓ coordinator  M2 splits into th… 08:58 │
-│ ◌ picker      ↑0 ↓0            ●3       0         —           ✗ failed  ││                                           │
+│ ⚠ inbox-keys  ↑1 ↓4 origin ↓2  clean    1         none        ✓ done    ││   ↗ coordinator  2 new tangents · … 08:58 │
+│ ◌ picker      ↑0 ↓0            ●3       0         —           ✗ failed  ││   ✓ coordinator  M2 splits into th… 08:58 │
 │ ◐ tree-view   ↑3 ↓0            ●4       1         #1231 open  ✓ done    ││                                           │
 │                                                                         ││                                           │
 │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││                                           │
@@ -35,4 +35,4 @@ expression: "render(&mut app, 120, 34)"
 │                                                                         ││         ⎇ dovetail/inbox-keys             │
 │ ⏎ open · e editor · c copy path · X remove                              ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 18%                           i chat · ␣ss switch · : command
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%                           i chat · ␣ss switch · : command

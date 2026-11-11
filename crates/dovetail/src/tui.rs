@@ -41,6 +41,11 @@ pub fn run_real(project: Option<&str>) -> Result<()> {
     let paths = Paths::from_env();
     let config = Config::load(&paths).context("reading config.toml")?;
     let registry = Db::open(&paths, None).context("opening the project registry")?;
+    // Tangents is always there, so `--project tangents` opens it on the very first run too
+    // (ADR 0017); the core warns in the status bar when it cannot be.
+    if let Err(e) = registry.ensure_tangents().wait() {
+        tracing::warn!("tangents are off: {e}");
+    }
     let resolution = match project {
         Some(id) => projects::Resolution::Registered(projects::open(&registry, id)?),
         None => {

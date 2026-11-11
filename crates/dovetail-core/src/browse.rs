@@ -12,7 +12,7 @@ use dovetail_api::research::{
 use dovetail_api::{Event, ProjectId};
 
 use crate::projects::Project;
-use crate::research::{LoadError, content_of, files, listing, research_root_of, summary};
+use crate::research::{LoadError, content_of, files, listing, root_of, summary};
 use crate::service::Core;
 
 impl Core {
@@ -41,7 +41,7 @@ impl Core {
             Err(e) => return self.fail(format!("browsing {}: {e}", project.name)),
         };
         // A project whose research root cannot be found still shows its decisions and docs.
-        let root = research_root_of(&self.paths, &project).ok();
+        let root = root_of(&self.paths, &project).ok();
         let title = |task| {
             state
                 .tasks
@@ -117,9 +117,9 @@ impl Core {
         let (t, r) = self.db.browse_task(path, task).await?.ok_or_else(|| {
             LoadError::Missing(format!("{} has no task #{}", project.name, task.0))
         })?;
-        let root = research_root_of(&self.paths, project)?;
+        let root = root_of(&self.paths, project)?;
         let dir = files::task_dir(&root, task, &t.title);
-        match content_of(task, &t.title, &dir, &r, what)? {
+        match content_of(&dir, task, &t.title, &r, what)? {
             ResearchContent::Document(document) => Ok(document),
             ResearchContent::Listing(_) => Err(LoadError::Missing(
                 "a browsed project's listings come with it".into(),

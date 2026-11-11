@@ -13,6 +13,7 @@ mod map_outline;
 mod map_shelf;
 pub mod reader;
 mod side_panel;
+mod tangents;
 pub mod task_detail;
 mod task_research;
 pub(crate) use task_research::blocking_round;
@@ -37,7 +38,7 @@ pub use board::{BoardBuffer, COLUMNS as BOARD_COLUMNS};
 pub use conversation::ConversationBuffer;
 pub use feed::{ActivityBuffer, MessagesBuffer};
 pub use inbox::{InboxBuffer, ordered as inbox_order};
-pub(crate) use inbox::{input_summary, unfiled_title};
+pub(crate) use inbox::{input_summary, tangents_title, unfiled_title};
 pub use inbox_detail::InboxDetailBuffer;
 pub use library::LibraryBuffer;
 pub use map_canvas::Canvas as MapCanvas;
@@ -45,6 +46,7 @@ pub use map_outline::{MapOutlineBuffer, MouseKind as MapMouse, Reaction as MapRe
 pub use map_shelf::MapShelfBuffer;
 pub use reader::{ReadTarget, ReaderBuffer};
 pub use side_panel::{SidePanelBuffer, side_chats};
+pub use tangents::TangentsBuffer;
 pub use task_detail::TaskDetailBuffer;
 pub use tree::{TreeBuffer, p_label};
 pub use worktrees::WorktreesBuffer;
@@ -84,6 +86,8 @@ pub enum InputTarget {
     SliceBrief(String),
     /// The question that opens a side chat.
     SideChatQuestion,
+    /// The question of a tangent (ADR 0017).
+    TangentQuestion,
     /// An in-buffer search term.
     Search,
     /// A decision for this task's log.
@@ -159,6 +163,19 @@ pub enum Effect {
     /// Show a project's library in reading mode, read-only: another project is browsed, the
     /// open one comes back (ADR 0018, decided 2026-11-11 later).
     BrowseProject(dovetail_api::ProjectId),
+    /// Show the tangents list (ADR 0017).
+    OpenTangents,
+    /// Read a tangent's latest answer in reading mode.
+    ReadTangent(TaskId),
+    /// Pick the project to file a tangent into (`start: false`) or to start a task from it in.
+    PickTangentProject {
+        /// The tangent's task in Tangents.
+        tangent: TaskId,
+        /// Start a task from it rather than file it.
+        start: bool,
+    },
+    /// Attach a tangent to the focused task of this project (or one picked, when none is).
+    AttachTangent(TaskId),
 }
 
 /// A view with its own state and buffer-local keys.
@@ -220,6 +237,8 @@ pub struct Buffers {
     pub reader: ReaderBuffer,
     /// Reading mode's Ask column.
     pub ask: AskBuffer,
+    /// The tangents list (ADR 0017).
+    pub tangents: TangentsBuffer,
 }
 
 impl Buffers {
@@ -241,6 +260,7 @@ impl Buffers {
             library: LibraryBuffer::default(),
             reader: ReaderBuffer::default(),
             ask: AskBuffer::default(),
+            tangents: TangentsBuffer::default(),
         }
     }
 
@@ -262,6 +282,7 @@ impl Buffers {
             BufferKind::Library => &mut self.library,
             BufferKind::Reader => &mut self.reader,
             BufferKind::Ask => &mut self.ask,
+            BufferKind::Tangents => &mut self.tangents,
         }
     }
 }

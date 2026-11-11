@@ -394,7 +394,7 @@ impl Core {
         let kind = self.agents.get(agent).map(|r| r.agent.kind);
         if !matches!(
             kind,
-            Some(AgentKind::Slice | AgentKind::SideChat | AgentKind::Ask)
+            Some(AgentKind::Slice | AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent)
         ) {
             self.fail(format!("{} is not a slice", agent.0));
             return;
@@ -651,6 +651,7 @@ impl Core {
         let what = match row.agent.kind {
             AgentKind::SideChat => "side chat",
             AgentKind::Ask => "ask session",
+            AgentKind::Tangent => "tangent",
             _ => "slice",
         };
         for id in items {
