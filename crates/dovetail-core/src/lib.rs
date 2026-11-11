@@ -27,6 +27,7 @@ mod shutdown;
 mod side_chat;
 mod slice;
 pub mod socket;
+mod startup;
 pub mod takeover;
 mod todos;
 mod tools;

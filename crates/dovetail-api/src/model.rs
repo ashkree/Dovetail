@@ -516,6 +516,10 @@ pub enum ActivityKind {
     Message,
     /// An agent started, finished or was closed.
     Lifecycle,
+    /// The user answered a permission request.
+    Permission,
+    /// A task was created or changed.
+    Task,
 }
 
 /// A message sent between agents with `SendMessage`.

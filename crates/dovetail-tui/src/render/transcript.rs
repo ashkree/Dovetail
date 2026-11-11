@@ -39,6 +39,8 @@ pub struct Transcript {
 }
 
 struct Cached {
+    /// The [`build`] that last used it; older entries are dropped when a build ends.
+    used: u64,
     text_len: usize,
     width: usize,
     lines: Vec<Line<'static>>,
@@ -49,6 +51,8 @@ struct Cached {
 #[derive(Default)]
 pub struct Cache {
     entries: HashMap<EntryId, Cached>,
+    /// Counts builds, so entries no longer in the conversation (trimmed away) do not stay.
+    build: u64,
 }
 
 impl Cache {
@@ -67,15 +71,29 @@ impl Cache {
             self.entries.insert(
                 entry.id,
                 Cached {
+                    used: self.build,
                     text_len: entry.text.len(),
                     width,
                     lines,
                 },
             );
         }
-        self.entries
-            .get(&entry.id)
-            .map_or(&[][..], |c| c.lines.as_slice())
+        self.entries.get_mut(&entry.id).map_or(&[][..], |c| {
+            c.used = self.build;
+            c.lines.as_slice()
+        })
+    }
+
+    /// Drops what the build that just ran did not use.
+    fn end_build(&mut self) {
+        let build = self.build;
+        self.entries.retain(|_, c| c.used == build);
+    }
+
+    /// Entries held, for the memory test.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
     }
 }
 
@@ -99,6 +117,7 @@ pub struct Params<'a> {
 
 /// Renders `entries`.
 pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Transcript {
+    cache.build += 1;
     let mut groups: Vec<Vec<&ConversationEntry>> = Vec::new();
     for entry in entries {
         if entry.kind == EntryKind::User || groups.is_empty() {
@@ -162,6 +181,7 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
             out.lines.push(Line::default());
         }
     }
+    cache.end_build();
     out
 }
 
@@ -552,6 +572,30 @@ mod tests {
         let t = texts(&run(&entries, |p| p.width = 20));
         assert_eq!(t[3], "first");
         assert!(t.len() > 4);
+    }
+
+    #[test]
+    fn the_cache_drops_entries_the_conversation_no_longer_holds() {
+        let theme = Theme::dusk();
+        let folded = HashSet::new();
+        let expanded = HashSet::new();
+        let p = Params {
+            width: 60,
+            theme: &theme,
+            tz: &TimeZone::UTC,
+            agent: "coordinator",
+            streaming: None,
+            folded: &folded,
+            expanded: &expanded,
+        };
+        let mut cache = Cache::default();
+        let entries: Vec<_> = (1..=10)
+            .map(|i| entry(i, EntryKind::Assistant, "text"))
+            .collect();
+        build(&entries, &p, &mut cache);
+        assert_eq!(cache.len(), 10);
+        build(&entries[6..], &p, &mut cache);
+        assert_eq!(cache.len(), 4);
     }
 
     #[test]

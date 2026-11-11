@@ -379,6 +379,7 @@ impl Core {
         if let Some(notes) = update.notes {
             patch.push(TaskChange::Notes(notes));
         }
+        let described = patch.clone();
         let changed = match self.db.update_task(id, patch).await {
             Ok(changed) => changed,
             Err(e) => return error(format!("could not update task #{}: {e}", id.0)),
@@ -387,6 +388,7 @@ impl Core {
             .iter()
             .find(|t| t.id == id)
             .map(|task| read::task_line(task, &self.live_slices(id)));
+        self.task_activity(id, &changed, &described);
         self.emit_tasks(changed);
         match line {
             Some(line) => ok(line),

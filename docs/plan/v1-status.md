@@ -26,7 +26,7 @@ Overnight 2026-11-10/11: the three build sessions (map canvas, hardening, follow
 | Item | Who | Status |
 | --- | --- | --- |
 | M15 (f): kitty canvas, MAP mode, mouse only in MAP mode | agent | **Not done**: the overnight session did not run; reschedule |
-| M16: activity feed events moved from M7 (permission answers, coordinator start and exit, task changes, PR and CI), startup warnings audit, RSS measurement | agent | **Not done**: the overnight session did not run; reschedule |
+| M16: activity feed events moved from M7 (permission answers, coordinator start and exit, task changes, PR and CI), startup warnings audit, RSS measurement | agent | **Built on branch `claude/m16-activity`** (this PR): activity items for permission answers, coordinator start/exit, task changes and PR changes; startup warnings for Claude Code version and missing recipe; memory caps; `scripts/rss-check.sh` measures 67 MB for the UI over 10 000 streamed turns. CI events are not emitted (no observed source; question in the PR) |
 | Follow-ups #3 (attach an image from a pasted or dropped path) and #8 (clean up saved paste attachments); the digest's v1 roadmap audit | agent | **Done**: PR #45; the audit is the section below. Only the M15 canvas is partial |
 | Wave-4 code review from `review-wave-3` | agent (Opus) | **Done**: `docs/reviews/wave-4.md`, six questions for you |
 | `/retro` for wave 4, then the `review-wave-4` tag | you | after reading the review |

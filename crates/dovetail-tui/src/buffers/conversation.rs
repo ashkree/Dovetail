@@ -584,6 +584,9 @@ impl Buffer for ConversationBuffer {
         let older = tail
             .filter(|t| t.has_more)
             .and_then(|t| t.entries.first().map(|e| e.id));
+        // Views of agents that are gone (archived, removed) go with them.
+        self.views
+            .retain(|id, _| *id == agent_id || cx.snap.agents.iter().any(|a| a.id == *id));
         let view = self.views.entry(agent_id).or_default();
         let params = transcript::Params {
             width: usize::from(column.width),

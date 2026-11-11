@@ -267,6 +267,14 @@ impl Core {
             },
         );
         self.save_agent(id);
+        if id.0 == COORDINATOR {
+            let how = if resume { "resumed" } else { "started" };
+            self.activity(
+                ActivityKind::Lifecycle,
+                Some(id),
+                format!("coordinator {how}"),
+            );
+        }
         self.watch_todos(id);
         // Dovetail's notes held while it was taken over (M14), now that it runs.
         self.send_held(id);
@@ -923,6 +931,13 @@ impl Core {
             self.finish_close(agent, confirmed);
         }
         if agent.0 == COORDINATOR {
+            if self.quitting.is_none() && (live.stopping || info.success) {
+                self.activity(
+                    ActivityKind::Lifecycle,
+                    Some(agent),
+                    "coordinator exited".into(),
+                );
+            }
             self.closing_exit();
             self.coordinator_exited();
         }

@@ -436,6 +436,36 @@ pub enum TaskChange {
     Unrelate(TaskId),
 }
 
+impl TaskChange {
+    /// A few words for the Activity feed; `None` for changes that are not worth a line.
+    pub fn describe(&self) -> Option<String> {
+        Some(match self {
+            Self::Title(t) => format!("renamed to \"{t}\""),
+            Self::Status(s) => format!("status {s:?}").to_lowercase(),
+            Self::PLevel(Some(p)) => format!("priority {p:?}"),
+            Self::PLevel(None) => "priority cleared".to_owned(),
+            Self::Bucket(Some(b)) => format!("moved to {b:?}"),
+            Self::Bucket(None) => "moved to Unsorted".to_owned(),
+            Self::Notes(_) => "notes edited".to_owned(),
+            Self::Deps(_) => "dependencies changed".to_owned(),
+            Self::Pr(Some(n)) => format!("linked PR #{n}"),
+            Self::Pr(None) => "PR unlinked".to_owned(),
+            Self::Relate(t) => format!("related to #{}", t.0),
+            Self::Unrelate(t) => format!("unrelated from #{}", t.0),
+            Self::Seen => return None,
+        })
+    }
+}
+
+/// The Activity text for a task patch, `None` when it holds nothing worth a line.
+pub fn describe_task_patch(id: TaskId, title: &str, patch: &[TaskChange]) -> Option<String> {
+    let parts: Vec<String> = patch.iter().filter_map(TaskChange::describe).collect();
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!("task #{} {title}: {}", id.0, parts.join(", ")))
+}
+
 /// The UI's end of a connection to a core.
 ///
 /// Both the real core and `MockCore` hand one out. In v1 it is a pair of in-process channels;
