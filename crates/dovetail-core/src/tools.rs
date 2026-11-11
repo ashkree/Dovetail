@@ -369,15 +369,16 @@ impl Core {
 
     /// `tasks_update`: applies only the fields given, through the same patch path as the TUI's
     /// edits, and answers with the task's new `tasks_list` line. Validation already refused
-    /// Now and `archived`.
+    /// `archived`. A task moved into Now is marked unseen, so the user notices it.
     async fn update_task_tool(&mut self, update: UpdateTask) -> SocketResponseBody {
         let id = update.id;
+        let was_in_now;
         match self.task(id).await {
             None => return error(format!("there is no task #{}", id.0)),
             Some(t) if t.status == TaskStatus::Archived => {
                 return error(format!("task #{} is archived", id.0));
             }
-            Some(_) => {}
+            Some(t) => was_in_now = t.bucket == Some(dovetail_api::Bucket::Now),
         }
         let mut patch = Vec::new();
         if let Some(status) = update.status {
@@ -385,6 +386,10 @@ impl Core {
         }
         if let Some(bucket) = update.new_bucket() {
             patch.push(TaskChange::Bucket(bucket));
+            // The user did not put it in Now, so it carries the marker new tasks have.
+            if bucket == Some(dovetail_api::Bucket::Now) && !was_in_now {
+                patch.push(TaskChange::Unseen);
+            }
         }
         if let Some(p_level) = update.p_level {
             patch.push(TaskChange::PLevel(p_level));

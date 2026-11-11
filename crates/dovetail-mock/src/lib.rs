@@ -562,6 +562,7 @@ impl MockCore {
                         TaskChange::Deps(deps) => task.deps = deps,
                         TaskChange::Pr(pr) => task.pr = pr,
                         TaskChange::Seen => task.coordinator_created = false,
+                        TaskChange::Unseen => task.coordinator_created = true,
                         TaskChange::Relate(other) | TaskChange::Unrelate(other) => {
                             relations.push((other, matches!(change, TaskChange::Relate(_))));
                         }

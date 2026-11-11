@@ -564,6 +564,8 @@ pub enum TaskChange {
     Pr(Option<u32>),
     /// The user has seen a coordinator-created task.
     Seen,
+    /// Mark a task as not yet seen by the user: the coordinator moved it into Now.
+    Unseen,
     /// Relate this task to another, both ways.
     Relate(TaskId),
     /// Remove a relation, both ways.
@@ -586,7 +588,7 @@ impl TaskChange {
             Self::Pr(None) => "PR unlinked".to_owned(),
             Self::Relate(t) => format!("related to #{}", t.0),
             Self::Unrelate(t) => format!("unrelated from #{}", t.0),
-            Self::Seen => return None,
+            Self::Seen | Self::Unseen => return None,
         })
     }
 }

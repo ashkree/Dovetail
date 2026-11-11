@@ -145,7 +145,7 @@ pub(crate) fn task_detail(task: &Task, slices: &[&Agent], decisions: &[Decision]
         let _ = writeln!(out, "PR: #{pr}");
     }
     if task.coordinator_created {
-        out.push_str("Created by the coordinator; the user has not seen it yet.\n");
+        out.push_str("New to the user: the coordinator created it or moved it into Now, and the user has not seen it yet.\n");
     }
 
     out.push_str("\n## Notes\n\n");

@@ -2455,7 +2455,7 @@ fn update(id: i64) -> UpdateTask {
 }
 
 #[test]
-fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
+fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     for title in ["one", "two"] {
         h.send(Command::CreateTask(NewTask {
@@ -2536,6 +2536,16 @@ fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
         })
     });
 
+    // Into Now is allowed, and the task is flagged as new until the user sees it.
+    h.send(Command::UpdateTask {
+        id: TaskId(1),
+        patch: vec![dovetail_api::TaskChange::Seen],
+    });
+    h.wait_for("task 1 seen", |s| {
+        s.tasks
+            .iter()
+            .any(|t| t.id == TaskId(1) && !t.coordinator_created)
+    });
     let (text, is_error) = call(
         COORDINATOR,
         UpdateTask {
@@ -2543,9 +2553,39 @@ fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
             ..update(1)
         },
     );
+    assert!(!is_error, "{text}");
+    assert!(text.starts_with("#1 [done · now]"), "{text}");
+    h.wait_for("task 1 unseen in Now", |s| {
+        s.tasks
+            .iter()
+            .any(|t| t.id == TaskId(1) && t.bucket == Some(Bucket::Now) && t.coordinator_created)
+    });
+    // Already in Now: a later update does not flag it again once the user has looked.
+    h.send(Command::UpdateTask {
+        id: TaskId(1),
+        patch: vec![dovetail_api::TaskChange::Seen],
+    });
+    h.wait_for("task 1 seen again", |s| {
+        s.tasks
+            .iter()
+            .any(|t| t.id == TaskId(1) && !t.coordinator_created)
+    });
+    let (_, is_error) = call(
+        COORDINATOR,
+        UpdateTask {
+            bucket: Some(BucketFilter::Now),
+            p_level: Some(Some(PLevel::P1)),
+            ..update(1)
+        },
+    );
+    assert!(!is_error);
+    h.drain(Duration::from_millis(100));
     assert!(
-        is_error && text.contains("cannot be `now`") && text.contains("project_start_slice"),
-        "{text}"
+        h.snap
+            .tasks
+            .iter()
+            .any(|t| t.id == TaskId(1) && !t.coordinator_created),
+        "a task already in Now was flagged again"
     );
 
     // Out of Now is fine, and leaves the slice running.
