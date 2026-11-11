@@ -55,6 +55,9 @@ pub enum CoreError {
     Thread(std::io::Error),
 }
 
+/// Most message ids remembered to drop duplicates.
+const MAX_SEEN_MESSAGES: usize = 4096;
+
 /// What the core needs from the binary.
 #[derive(Clone)]
 pub struct CoreOptions {
@@ -77,6 +80,9 @@ pub struct CoreOptions {
     /// Probe `systemd-run --user --scope` at start and run sessions under memory caps (M13).
     /// Tests leave it off: sessions run uncapped and no warning is raised.
     pub memory_caps: bool,
+    /// Run `claude --version` at start and warn when it is missing or older than
+    /// [`crate::startup::MIN_CLAUDE`]. Tests leave it off: no `claude` process is started.
+    pub check_claude: bool,
     /// Tests: take these scopes instead of probing (a temp dir stands in for the cgroup slice;
     /// nothing is launched under `systemd-run` by the fake driver).
     pub scopes: Option<crate::memory::Scopes>,
@@ -526,6 +532,7 @@ impl Core {
         };
         self.startup_warnings();
         self.send_snapshot(true).await;
+        self.sweep_attachments();
         // After the first snapshot, so a slow user systemd never holds up the UI; before
         // anything can start a session (restore, the queue, commands), so every session gets
         // the probe's answer.
@@ -538,6 +545,14 @@ impl Core {
                     id: WarningId("memory-caps".into()),
                     text: format!("memory caps off, sessions run uncapped: {reason}"),
                 };
+                self.warnings.push(warning.clone());
+                self.emit(Event::WarningSet(warning));
+            }
+        }
+        if self.options.check_claude {
+            let program = self.options.claude.clone().unwrap_or("claude".into());
+            let found = crate::startup::run_claude_version(&program).await;
+            if let Some(warning) = crate::startup::claude_version(found) {
                 self.warnings.push(warning.clone());
                 self.emit(Event::WarningSet(warning));
             }
@@ -727,39 +742,60 @@ impl Core {
         Ok(restored)
     }
 
+    /// Removes saved paste attachments older than a week that no live agent in any project
+    /// names, on a blocking thread so the first frame never waits for it.
+    fn sweep_attachments(&self) {
+        let paths = self.paths.clone();
+        tokio::task::spawn_blocking(move || {
+            let Some(keep) = crate::db::live_attachments(&paths) else {
+                tracing::warn!("attachment sweep skipped: a project database could not be read");
+                return;
+            };
+            let dir = paths.attachments();
+            let n = crate::attachments::sweep(
+                &dir,
+                std::time::SystemTime::now(),
+                crate::attachments::MAX_AGE,
+                &keep,
+            );
+            if n > 0 {
+                tracing::info!("removed {n} old attachment files");
+            }
+        });
+    }
+
+    /// Deletes the saved images an archived agent's messages named.
+    pub(crate) fn remove_attachments_of(&self, agent: &AgentId) {
+        let pending = self.db.agent_attachments(agent.clone());
+        let dir = self.paths.attachments();
+        tokio::spawn(async move {
+            match pending.await {
+                Ok(files) => {
+                    let _ = tokio::task::spawn_blocking(move || {
+                        crate::attachments::remove(&dir, &files)
+                    })
+                    .await;
+                }
+                Err(e) => tracing::warn!("listing an archived agent's attachments: {e}"),
+            }
+        });
+    }
+
     /// Status-bar warnings known at start.
     fn startup_warnings(&mut self) {
-        let blockers: Vec<&str> = [
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-            "DISABLE_TELEMETRY",
-            "DO_NOT_TRACK",
-            "DISABLE_GROWTHBOOK",
-        ]
-        .into_iter()
-        .filter(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty()))
-        .collect();
-        if !blockers.is_empty() {
-            self.warnings.push(Warning {
-                id: WarningId("messaging".into()),
-                text: format!(
-                    "{} set: sessions may not be able to message each other",
-                    blockers.join(", ")
-                ),
-            });
-        }
-        let missing: Vec<&str> = ["coordinator", "slice"]
-            .into_iter()
-            .filter(|r| !self.paths.role_prompt(r).exists())
-            .collect();
-        if !missing.is_empty() {
-            self.warnings.push(Warning {
-                id: WarningId("roles".into()),
-                text: format!(
-                    "role prompts missing ({}): run scripts/bootstrap.sh",
-                    missing.join(", ")
-                ),
-            });
-        }
+        let checks = [
+            crate::startup::messaging(|v| std::env::var(v).ok()),
+            crate::startup::roles(
+                &["coordinator", "slice"]
+                    .into_iter()
+                    .filter(|r| !self.paths.role_prompt(r).exists())
+                    .collect::<Vec<_>>(),
+            ),
+            self.project
+                .registered()
+                .and_then(|p| crate::startup::recipe(&p.id, self.paths.recipe(&p.id).exists())),
+        ];
+        self.warnings.extend(checks.into_iter().flatten());
         if self.project.registered().is_none() {
             self.warnings.push(Warning {
                 id: WarningId(crate::registration::UNREGISTERED_WARNING.into()),
@@ -1060,6 +1096,10 @@ impl Core {
         {
             return;
         }
+        // Old ids do not come back, so forgetting them all now and then is safe.
+        if self.seen_messages.len() > MAX_SEEN_MESSAGES {
+            self.seen_messages.clear();
+        }
         let message = AgentMessage {
             id: self.next_message,
             at_ms: now_ms(),
@@ -1173,6 +1213,17 @@ impl Core {
             .first()
             .map(|t| t.id)
             .ok_or_else(|| DbError::NotFound("no task was created".into()))?;
+        let title = tasks.first().map(|t| t.title.clone()).unwrap_or_default();
+        let who = if coordinator_created {
+            "the coordinator"
+        } else {
+            "you"
+        };
+        self.activity(
+            ActivityKind::Task,
+            None,
+            format!("task #{} {title}: created by {who}", id.0),
+        );
         self.emit_tasks(tasks);
         Ok(id)
     }
@@ -1193,9 +1244,21 @@ impl Core {
     }
 
     pub(crate) async fn update_task(&mut self, id: TaskId, patch: Vec<TaskChange>) {
+        let described = patch.clone();
         match self.db.update_task(id, patch).await {
-            Ok(tasks) => self.emit_tasks(tasks),
+            Ok(tasks) => {
+                self.task_activity(id, &tasks, &described);
+                self.emit_tasks(tasks);
+            }
             Err(e) => self.fail(e.to_string()),
+        }
+    }
+
+    /// Adds the Activity line for a task patch that was applied.
+    pub(crate) fn task_activity(&mut self, id: TaskId, changed: &[Task], patch: &[TaskChange]) {
+        let title = changed.iter().find(|t| t.id == id).map_or("", |t| &t.title);
+        if let Some(text) = dovetail_api::describe_task_patch(id, title, patch) {
+            self.activity(ActivityKind::Task, None, text);
         }
     }
 
@@ -1209,6 +1272,7 @@ impl Core {
                 attachments,
             } => self.prompt(&agent, text, attachments).await,
             Command::PasteClipboard { agent } => self.paste_clipboard(agent),
+            Command::PasteText { agent, text } => self.paste_text(agent, text),
             Command::ListPaths { agent, dir } => self.list_paths(agent, dir),
             Command::CopyToClipboard { text } => self.copy_to_clipboard(text),
             Command::OpenEditor { path } => self.open_editor(path),
@@ -1312,6 +1376,18 @@ impl Core {
         let inputs = self.inputs.clone();
         tokio::task::spawn_blocking(move || {
             let paste = crate::clipboard::paste(&dir);
+            let _ = inputs.send(Input::Pasted { agent, paste });
+        });
+    }
+
+    /// Pasted text: a path to an existing image becomes an attachment (the file is read and
+    /// copied on a blocking thread), anything else comes back as the text.
+    fn paste_text(&mut self, agent: AgentId, text: String) {
+        let dir = self.paths.attachments();
+        let inputs = self.inputs.clone();
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        tokio::task::spawn_blocking(move || {
+            let paste = crate::attachments::paste_text(text, &dir, home.as_deref());
             let _ = inputs.send(Input::Pasted { agent, paste });
         });
     }

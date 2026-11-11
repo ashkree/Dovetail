@@ -56,6 +56,7 @@ pub fn run_real() -> Result<()> {
         claude: Some(program),
         processes: None,
         memory_caps: true,
+        check_claude: true,
         scopes: None,
         // `:upgrade` (ADR 0014); without a HOME there is no install path to replace.
         upgrade: upgrade::install_path().ok().map(|install| UpgradeOptions {

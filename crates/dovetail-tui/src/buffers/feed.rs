@@ -164,6 +164,8 @@ fn activity_rows(cx: &ViewCx) -> Vec<Row> {
                 ActivityKind::Ci => "CI  ",
                 ActivityKind::Message => "msg ",
                 ActivityKind::Lifecycle => "·   ",
+                ActivityKind::Permission => "perm",
+                ActivityKind::Task => "task",
             };
             let who = item
                 .agent

@@ -227,6 +227,11 @@ impl MockCore {
                     .unwrap_or_else(|| Paste::Refused("the mock core has no clipboard".into()));
                 self.emit(Event::ClipboardPasted { agent, paste });
             }
+            // The mock reads no files, so a pasted path stays text.
+            Command::PasteText { agent, text } => self.emit(Event::ClipboardPasted {
+                agent,
+                paste: Paste::Text(text),
+            }),
             // The mock touches nothing outside itself: no clipboard, no editor and no native
             // claude. The answer still comes, so the UI takes its terminal back.
             Command::CopyToClipboard { .. } => {}
@@ -252,6 +257,18 @@ impl MockCore {
                     return self.fail("that item is not a permission request".into());
                 }
                 self.resolve(item);
+                if let InboxKind::Permission { tool, .. } = &found.kind {
+                    let verdict = match &answer {
+                        PermissionAnswer::Allow => "allowed",
+                        PermissionAnswer::AllowAlways => "always allowed",
+                        PermissionAnswer::Deny { .. } => "denied",
+                    };
+                    self.activity(
+                        Some(found.agent.clone()),
+                        ActivityKind::Permission,
+                        format!("{tool}: {verdict}"),
+                    );
+                }
                 let removal = matches!(&found.kind, InboxKind::Permission { tool, .. }
                     if tool == REMOVE_WORKTREE_PERMISSION);
                 if removal {
@@ -423,6 +440,11 @@ impl MockCore {
                 };
                 self.next_task += 1;
                 let id = task.id;
+                self.activity(
+                    None,
+                    ActivityKind::Task,
+                    format!("task #{} {}: created by you", id.0, task.title),
+                );
                 self.emit(Event::TaskUpserted(task));
                 for other in new.related {
                     self.relate(id, other, true);
@@ -439,6 +461,9 @@ impl MockCore {
                     return self.fail(format!("no task {}", id.0));
                 };
                 let mut relations = Vec::new();
+                if let Some(text) = dovetail_api::describe_task_patch(id, &task.title, &patch) {
+                    self.activity(None, ActivityKind::Task, text);
+                }
                 for change in patch {
                     match change {
                         TaskChange::Title(title) => task.title = title,

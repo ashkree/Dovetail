@@ -33,9 +33,9 @@ use std::io::Write;
 use std::sync::Arc;
 
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyEventKind,
-    KeyboardEnhancementFlags, MouseEvent, PopKeyboardEnhancementFlags,
-    PushKeyboardEnhancementFlags,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event as TermEvent, KeyEventKind, KeyboardEnhancementFlags, MouseEvent,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use dovetail_api::{Command, CoreLink, ServerMsg};
 
@@ -54,6 +54,8 @@ enum Msg {
     Key(crossterm::event::KeyEvent),
     Mouse(MouseEvent),
     Painted(Painted),
+    /// Text from a bracketed paste: pasted or dropped, not typed.
+    Paste(String),
     Resize,
     Server(Box<ServerMsg>),
     ServerClosed,
@@ -114,6 +116,7 @@ impl Lend for Crossterm {
         crossterm::terminal::disable_raw_mode()?;
         crossterm::execute!(
             io::stdout(),
+            DisableBracketedPaste,
             crossterm::terminal::LeaveAlternateScreen,
             crossterm::cursor::Show
         )
@@ -121,7 +124,11 @@ impl Lend for Crossterm {
 
     fn reclaim(&mut self) -> io::Result<()> {
         crossterm::terminal::enable_raw_mode()?;
-        crossterm::execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
+        crossterm::execute!(
+            io::stdout(),
+            crossterm::terminal::EnterAlternateScreen,
+            EnableBracketedPaste
+        )?;
         if self.enhanced {
             crossterm::execute!(
                 io::stdout(),
@@ -201,6 +208,9 @@ impl Drop for TerminalGuard {
         if self.enhanced && !thread::panicking() {
             pop_keyboard_flags();
         }
+        if !thread::panicking() {
+            let _ = crossterm::execute!(io::stdout(), DisableBracketedPaste);
+        }
         ratatui::restore();
     }
 }
@@ -215,6 +225,9 @@ pub fn run(
 ) -> io::Result<()> {
     let mut terminal = ratatui::try_init()?;
     let enhanced = push_keyboard_flags();
+    // Without it a terminal types a paste as keys, and a dropped file path cannot be told from
+    // typing. Terminals that lack it keep doing that.
+    let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
     let _guard = TerminalGuard { enhanced };
     let CoreLink { commands, messages } = link;
     let (tx, rx) = mpsc::channel::<Msg>();
@@ -229,6 +242,7 @@ pub fn run(
                 TermEvent::Key(key) if key.kind != KeyEventKind::Release => {
                     input_tx.send(Msg::Key(key)).is_err() || go_rx.recv().is_err()
                 }
+                TermEvent::Paste(text) => input_tx.send(Msg::Paste(text)).is_err(),
                 TermEvent::Resize(..) => input_tx.send(Msg::Resize).is_err(),
                 TermEvent::Mouse(mouse) => input_tx.send(Msg::Mouse(mouse)).is_err(),
                 _ => false,
@@ -476,6 +490,7 @@ fn drive<B: ratatui::backend::Backend>(
                     away = app.terminal_away();
                 }
                 Msg::Mouse(mouse) => app.on_mouse(mouse),
+                Msg::Paste(text) => app.on_paste(&text, mono_ms(Instant::now())),
                 Msg::Painted(painted) => app.on_painted(painted),
                 Msg::Resize => {
                     // A font size change changes the cell size too.

@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use dovetail_api::{
-    AgentId, AgentKind, Changes, Event, PrLookup, PrState, PullRequest, SyncState, WorktreeInfo,
-    WorktreeSetup,
+    ActivityKind, AgentId, AgentKind, Changes, Event, PrLookup, PrState, PullRequest, SyncState,
+    WorktreeInfo, WorktreeSetup,
 };
 use serde::Deserialize;
 
@@ -550,8 +550,39 @@ impl Core {
         let Some(info) = merge(self.worktrees.get(&gathered.info.agent), gathered) else {
             return;
         };
+        let change = self
+            .worktrees
+            .get(&info.agent)
+            .and_then(|old| pr_change(&old.pr, &info.pr));
         self.worktrees.insert(info.agent.clone(), info.clone());
+        if let Some(text) = change {
+            let agent = info.agent.clone();
+            self.activity(ActivityKind::Pr, Some(&agent), text);
+        }
         self.emit(Event::WorktreeUpserted(info));
+    }
+}
+
+/// The Activity line when the PR `gh` reports differs from the last one seen. The first lookup
+/// after start is a baseline, not news; a failed lookup says nothing. CI status is not
+/// observed (`gh pr list` is asked for number, state and url only).
+fn pr_change(old: &PrLookup, new: &PrLookup) -> Option<String> {
+    let PrLookup::Found(pr) = new else {
+        return None;
+    };
+    match old {
+        PrLookup::Found(was) if was.number == pr.number && was.state == pr.state => None,
+        PrLookup::Found(was) if was.number == pr.number => Some(format!(
+            "PR #{} {}",
+            pr.number,
+            match pr.state {
+                PrState::Open => "reopened",
+                PrState::Merged => "merged",
+                PrState::Closed => "closed",
+            }
+        )),
+        PrLookup::Found(_) | PrLookup::None => Some(format!("PR #{} opened", pr.number)),
+        PrLookup::Unknown { .. } => None,
     }
 }
 
@@ -577,6 +608,36 @@ mod tests {
     use std::process::{Command, Stdio};
 
     use super::*;
+
+    fn pr(number: u32, state: PrState) -> PrLookup {
+        PrLookup::Found(PullRequest {
+            number,
+            state,
+            url: String::new(),
+        })
+    }
+
+    #[test]
+    fn a_pr_that_appears_or_changes_state_is_news_a_steady_one_is_not() {
+        let unknown = PrLookup::Unknown {
+            reason: "gh timed out".into(),
+        };
+        assert_eq!(
+            pr_change(&PrLookup::None, &pr(7, PrState::Open)).as_deref(),
+            Some("PR #7 opened")
+        );
+        assert_eq!(
+            pr_change(&pr(7, PrState::Open), &pr(7, PrState::Merged)).as_deref(),
+            Some("PR #7 merged")
+        );
+        assert_eq!(
+            pr_change(&pr(7, PrState::Open), &pr(7, PrState::Open)),
+            None
+        );
+        assert_eq!(pr_change(&unknown, &pr(7, PrState::Open)), None);
+        assert_eq!(pr_change(&pr(7, PrState::Open), &unknown), None);
+        assert_eq!(pr_change(&pr(7, PrState::Open), &PrLookup::None), None);
+    }
     use crate::recipe::Recipe;
     use crate::worktree::{CreateRequest, create};
 

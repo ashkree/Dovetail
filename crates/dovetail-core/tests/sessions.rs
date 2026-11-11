@@ -111,6 +111,7 @@ impl Harness {
             claude: None,
             processes: None,
             memory_caps: false,
+            check_claude: false,
             scopes,
             upgrade,
         };
@@ -517,6 +518,7 @@ impl Harness {
             claude,
             processes,
             memory_caps: false,
+            check_claude: false,
             scopes: None,
             upgrade: None,
         };

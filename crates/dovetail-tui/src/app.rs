@@ -20,7 +20,7 @@ mod focus;
 mod overlay;
 mod search;
 
-use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dovetail_api::{
     AgentId, AgentKind, AgentStatus, ApplyResult, Command, EntryKind, Event, InboxKind,
     PROTOCOL_VERSION, PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
@@ -538,6 +538,35 @@ impl App {
         match self.mode {
             Mode::Normal | Mode::Map => self.normal_key(event, mono_ms),
             Mode::Insert | Mode::Command => self.input_key(event),
+        }
+    }
+
+    /// Handles pasted or dropped text (a bracketed paste). In an open chat bar it goes to the core,
+    /// which attaches it when it is a path to an image and hands back the text otherwise
+    /// ([`Command::PasteText`]). Into any other input it is typed as keys, one line. In Normal
+    /// and MAP mode it is ignored, as the keys it would have been are not commands.
+    pub fn on_paste(&mut self, text: &str, mono_ms: u64) {
+        if self.confirm.is_some()
+            || matches!(self.mode, Mode::Normal | Mode::Map) && self.overlay.is_none()
+        {
+            return;
+        }
+        if self.overlay.is_none()
+            && self.input.is_none()
+            && self.buffers.conversation.is_chatting()
+            && let Some(agent) = self.buffers.conversation.agent().cloned()
+        {
+            self.dirty = true;
+            self.note = None;
+            self.outbox.push(Command::PasteText {
+                agent,
+                text: text.to_string(),
+            });
+            return;
+        }
+        let line = text.lines().next().unwrap_or("");
+        for c in line.chars() {
+            self.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE), mono_ms);
         }
     }
 

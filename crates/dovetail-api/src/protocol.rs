@@ -190,6 +190,15 @@ pub enum Command {
         /// The agent whose chat bar is pasting.
         agent: AgentId,
     },
+    /// Text pasted into an agent's chat bar (a bracketed paste or a dropped file). The core
+    /// answers with [`Event::ClipboardPasted`]: an image attachment when the text is a path to
+    /// an existing image (`~`, `file://` and shell quoting understood), else the text itself.
+    PasteText {
+        /// The agent whose chat bar is pasting.
+        agent: AgentId,
+        /// What the terminal delivered.
+        text: String,
+    },
     /// List paths for `@` completion in an agent's chat bar. `dir: None` lists the files of the
     /// agent's folder (the main checkout or its worktree) that git does not ignore; `Some` lists
     /// one directory, `~/`, absolute, or relative to that folder. The core answers with
@@ -425,6 +434,36 @@ pub enum TaskChange {
     Relate(TaskId),
     /// Remove a relation, both ways.
     Unrelate(TaskId),
+}
+
+impl TaskChange {
+    /// A few words for the Activity feed; `None` for changes that are not worth a line.
+    pub fn describe(&self) -> Option<String> {
+        Some(match self {
+            Self::Title(t) => format!("renamed to \"{t}\""),
+            Self::Status(s) => format!("status {s:?}").to_lowercase(),
+            Self::PLevel(Some(p)) => format!("priority {p:?}"),
+            Self::PLevel(None) => "priority cleared".to_owned(),
+            Self::Bucket(Some(b)) => format!("moved to {b:?}"),
+            Self::Bucket(None) => "moved to Unsorted".to_owned(),
+            Self::Notes(_) => "notes edited".to_owned(),
+            Self::Deps(_) => "dependencies changed".to_owned(),
+            Self::Pr(Some(n)) => format!("linked PR #{n}"),
+            Self::Pr(None) => "PR unlinked".to_owned(),
+            Self::Relate(t) => format!("related to #{}", t.0),
+            Self::Unrelate(t) => format!("unrelated from #{}", t.0),
+            Self::Seen => return None,
+        })
+    }
+}
+
+/// The Activity text for a task patch, `None` when it holds nothing worth a line.
+pub fn describe_task_patch(id: TaskId, title: &str, patch: &[TaskChange]) -> Option<String> {
+    let parts: Vec<String> = patch.iter().filter_map(TaskChange::describe).collect();
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!("task #{} {title}: {}", id.0, parts.join(", ")))
 }
 
 /// The UI's end of a connection to a core.

@@ -406,3 +406,13 @@ fn a_failed_painting_says_why_and_is_not_retried() {
     assert!(scene.is_none());
     assert!(app.take_paint_job().is_none());
 }
+
+/// A paste in MAP mode is not typed as keys: `hjkl` in it would move the selection.
+#[test]
+fn a_paste_in_map_mode_does_nothing() {
+    let mut app = painted();
+    frame(&mut app);
+    app.on_paste("lllj+", 0);
+    assert_eq!(app.selected_map_node(), None);
+    assert_eq!(app.mode(), Mode::Map);
+}
