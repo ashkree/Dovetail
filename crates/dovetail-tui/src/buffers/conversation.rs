@@ -93,6 +93,11 @@ pub struct ConversationBuffer {
     reading_width: u16,
     solid: bool,
     layout: Layout,
+    /// [`BufferKind::Conversation`] in the main region, [`BufferKind::SidePanel`] inside the
+    /// side panel.
+    kind: BufferKind,
+    /// Added to the pane title (the side panel's "2/3 ⇥").
+    heading_suffix: Option<String>,
 }
 
 impl Default for ConversationBuffer {
@@ -108,11 +113,33 @@ impl Default for ConversationBuffer {
             reading_width: DEFAULT_WIDTH,
             solid: false,
             layout: Layout::default(),
+            kind: BufferKind::Conversation,
+            heading_suffix: None,
         }
     }
 }
 
 impl ConversationBuffer {
+    /// The conversation view of the side panel.
+    pub fn for_panel() -> Self {
+        Self {
+            kind: BufferKind::SidePanel,
+            ..Self::default()
+        }
+    }
+
+    /// Text added to the pane title, after the agent's.
+    pub fn set_heading_suffix(&mut self, suffix: Option<String>) {
+        self.heading_suffix = suffix;
+    }
+
+    /// Shows no agent (the side panel when its last side chat closes).
+    pub fn clear(&mut self) {
+        self.park_chat();
+        self.previous = self.agent.take();
+        self.layout = Layout::default();
+    }
+
     /// The agent shown.
     pub fn agent(&self) -> Option<&AgentId> {
         self.agent.as_ref()
@@ -449,7 +476,7 @@ fn chip_rows(
 
 impl Buffer for ConversationBuffer {
     fn kind(&self) -> BufferKind {
-        BufferKind::Conversation
+        self.kind
     }
 
     fn render(&mut self, cx: &ViewCx, frame: &mut Frame, area: Rect, focused: bool) {
@@ -466,6 +493,7 @@ impl Buffer for ConversationBuffer {
                     parts.push(fmt::memory(mb));
                 }
                 parts.push(fmt::cost(a.cost_usd));
+                parts.extend(self.heading_suffix.clone());
                 parts.join(" · ")
             }
             None => "no agent".into(),
@@ -561,7 +589,9 @@ impl Buffer for ConversationBuffer {
                 .and_then(|a| self.views.get(a))
                 .map(|v| v.draft.lines().next().unwrap_or("").trim())
                 .unwrap_or("");
-            let text = if draft.is_empty() {
+            let text = if draft.is_empty() && self.kind == BufferKind::SidePanel {
+                "› i or ^j to type · ⇥ next chat · dd close · ␣? hide".to_string()
+            } else if draft.is_empty() {
                 "› i or ^j to type · ]] [[ turns · zc zo fold · gg G".to_string()
             } else {
                 format!("› {draft} · i or ^j to go on typing")

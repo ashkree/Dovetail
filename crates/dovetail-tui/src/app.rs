@@ -18,12 +18,13 @@ macro_rules! cx {
 mod draw;
 mod focus;
 mod overlay;
+mod panel;
 mod search;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dovetail_api::{
-    AgentId, AgentKind, AgentStatus, ApplyResult, Command, EntryKind, Event, InboxKind,
-    PROTOCOL_VERSION, PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
+    AgentId, AgentKind, AgentStatus, ApplyResult, Command, Event, InboxKind, PROTOCOL_VERSION,
+    PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
 };
 use jiff::tz::TimeZone;
 
@@ -120,8 +121,10 @@ pub struct App {
     quit: bool,
     /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
     exit_armed_until: Option<u64>,
-    /// A side chat was asked for: open it when it appears.
+    /// A side chat was asked for: open it in the side panel when it appears.
     open_side_chat: bool,
+    /// The chat bar open (or last open) is the side panel's, not the main region's.
+    chat_in_panel: bool,
     /// Focus mode (`<leader>z`): the side column is hidden.
     focus_mode: bool,
     /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
@@ -164,6 +167,7 @@ impl App {
             quit: false,
             exit_armed_until: None,
             open_side_chat: false,
+            chat_in_panel: false,
             focus_mode: false,
             quit_after_close: None,
             close_failure: None,
@@ -372,21 +376,18 @@ impl App {
                 }
                 if let Event::PathsListed { agent, dir, paths } = &event {
                     let commands = commands_for(&self.snap, agent);
-                    self.buffers.conversation.receive_paths(
-                        agent,
-                        dir.clone(),
-                        paths.clone(),
-                        commands,
-                    );
-                    if let Some((agent, dir)) = self.buffers.conversation.take_path_request() {
+                    let view = if self.chat_in_panel {
+                        self.buffers.panel.conversation_mut()
+                    } else {
+                        &mut self.buffers.conversation
+                    };
+                    view.receive_paths(agent, dir.clone(), paths.clone(), commands);
+                    if let Some((agent, dir)) = view.take_path_request() {
                         self.outbox.push(Command::ListPaths { agent, dir });
                     }
                 }
                 if let Event::ClipboardPasted { agent, paste } = &event
-                    && let Some(notice) = self
-                        .buffers
-                        .conversation
-                        .receive_paste(agent, paste.clone())
+                    && let Some(notice) = self.chat_view_mut().receive_paste(agent, paste.clone())
                 {
                     self.note = Some(notice);
                 }
@@ -434,7 +435,7 @@ impl App {
                         }
                         if let Some(id) = side_chat {
                             self.open_side_chat = false;
-                            self.open_agent_in_main(id);
+                            self.open_in_panel(id);
                         }
                         if journal {
                             self.on_journal();
@@ -482,10 +483,21 @@ impl App {
                 self.buffers.conversation.show(agent.id.clone());
             }
         }
-        let reading = (self.regions.focus() == RegionId::Main
-            && self.regions.buffer(RegionId::Main) == BufferKind::Conversation)
-            .then(|| self.buffers.conversation.agent().cloned())
-            .flatten();
+        // The panel follows the side chats: a closed one gives way to its neighbour.
+        if self.buffers.panel.settle(&self.snap)
+            && self.chat_in_panel
+            && self.mode == Mode::Insert
+            && self.input.is_none()
+        {
+            self.mode = Mode::Normal;
+        }
+        let reading = match self.regions.focused_buffer() {
+            BufferKind::Conversation if self.regions.focus() == RegionId::Main => {
+                self.buffers.conversation.agent().cloned()
+            }
+            BufferKind::SidePanel => self.buffers.panel.agent().cloned(),
+            _ => None,
+        };
         if reading != self.reading
             && let Some(id) = &reading
         {
@@ -563,8 +575,8 @@ impl App {
         }
         if self.overlay.is_none()
             && self.input.is_none()
-            && self.buffers.conversation.is_chatting()
-            && let Some(agent) = self.buffers.conversation.agent().cloned()
+            && self.chat_view().is_chatting()
+            && let Some(agent) = self.chat_view().agent().cloned()
         {
             self.dirty = true;
             self.note = None;
@@ -710,10 +722,11 @@ impl App {
 
     fn input_key(&mut self, event: KeyEvent) {
         if self.input.is_none() {
-            if !self.buffers.conversation.is_chatting() {
+            if !self.chat_view().is_chatting() {
                 self.mode = Mode::Normal;
                 return;
             }
+            // The side panel's chat bar is a conversation's chat bar: the same keys.
             let chord = self.keymap.text_chord(
                 Mode::Insert,
                 BufferKind::Conversation,
@@ -724,13 +737,11 @@ impl App {
                     self.paste_clipboard();
                     return;
                 }
-                Some(Action::DropLastAttachment)
-                    if self.buffers.conversation.drop_last_attachment() =>
-                {
+                Some(Action::DropLastAttachment) if self.chat_view_mut().drop_last_attachment() => {
                     return;
                 }
                 Some(Action::LeaveChatBar) => {
-                    self.buffers.conversation.park_chat();
+                    self.chat_view_mut().park_chat();
                     self.mode = Mode::Normal;
                     return;
                 }
@@ -740,24 +751,29 @@ impl App {
                 }
                 _ => {}
             }
-            let commands = self
-                .buffers
-                .conversation
+            // Fields borrowed apart, so the session's commands need no copy per key.
+            let view = if self.chat_in_panel {
+                self.buffers.panel.conversation_mut()
+            } else {
+                &mut self.buffers.conversation
+            };
+            let commands = view
                 .agent()
                 .map_or(&[][..], |a| commands_for(&self.snap, a));
-            if let Some((agent, text, attachments)) =
-                self.buffers.conversation.chat_key(event, commands)
-            {
+            let sent = view.chat_key(event, commands);
+            let paths = view.take_path_request();
+            let chatting = view.is_chatting();
+            if let Some((agent, text, attachments)) = sent {
                 self.outbox.push(Command::Prompt {
                     agent,
                     text,
                     attachments,
                 });
             }
-            if let Some((agent, dir)) = self.buffers.conversation.take_path_request() {
+            if let Some((agent, dir)) = paths {
                 self.outbox.push(Command::ListPaths { agent, dir });
             }
-            if !self.buffers.conversation.is_chatting() {
+            if !chatting {
                 self.mode = Mode::Normal;
             }
             return;
@@ -783,10 +799,10 @@ impl App {
     /// Ctrl-V in the chat bar: ask the core to read the clipboard. It answers with
     /// [`Event::ClipboardPasted`]: an image saved as an attachment, text, or a refusal.
     fn paste_clipboard(&mut self) {
-        if !self.buffers.conversation.is_chatting() {
+        if !self.chat_view().is_chatting() {
             return;
         }
-        if let Some(agent) = self.buffers.conversation.agent().cloned() {
+        if let Some(agent) = self.chat_view().agent().cloned() {
             self.outbox.push(Command::PasteClipboard { agent });
         }
     }
@@ -853,43 +869,11 @@ impl App {
             }));
     }
 
-    /// Asks the core for a side chat; the first one to appear afterwards opens in the main
-    /// region.
+    /// Asks the core for a side chat; the first one to appear afterwards opens in the side
+    /// panel.
     fn new_side_chat(&mut self, question: String) {
         self.open_side_chat = true;
         self.outbox.push(Command::NewSideChat { question });
-    }
-
-    /// `<leader>y`: the shown agent's last answer goes into the coordinator's chat bar, after
-    /// anything already typed there (Decision 18).
-    fn yank_to_coordinator(&mut self) {
-        let (Some(shown), Some(coordinator)) = (
-            self.buffers.conversation.agent().cloned(),
-            self.coordinator(),
-        ) else {
-            return;
-        };
-        if shown == coordinator {
-            self.note = Some("<leader>y copies another agent's answer to the coordinator".into());
-            return;
-        }
-        let answer = self
-            .snap
-            .conversations
-            .get(&shown)
-            .and_then(|t| {
-                t.entries
-                    .iter()
-                    .rev()
-                    .find(|e| e.kind == EntryKind::Assistant)
-            })
-            .map(|e| e.text.trim().to_string());
-        let Some(answer) = answer.filter(|a| !a.is_empty()) else {
-            self.note = Some("no answer to copy yet".into());
-            return;
-        };
-        self.start_chat(coordinator);
-        self.buffers.conversation.insert_text(&answer);
     }
 
     fn new_slice(&mut self, name: String, brief: String) {
@@ -1099,7 +1083,7 @@ impl App {
             }
             Action::NewSlice => self.run_with_arg(Action::NewSlice, ""),
             Action::NewSideChat => self.run_with_arg(Action::NewSideChat, ""),
-            Action::YankToCoordinator => self.yank_to_coordinator(),
+            Action::ToggleSidePanel => self.toggle_side_panel(),
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
             Action::TakeOver => self.take_over(),
