@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Wave-2 live checks: real Claude Code sessions against scratch repos in /tmp. YOU run this; it
+# Live checks: real Claude Code sessions against scratch repos in /tmp. YOU run this; it
 # costs a little money (tiny prompts, Haiku where the check allows).
 #
 #   DOVETAIL_LIVE_TESTS=1 scripts/live-checks.sh            # all checks

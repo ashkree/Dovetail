@@ -1,6 +1,6 @@
 # Dovetail
 
-> Status: **design phase**. No code yet.
+> Status: **v1 built (M1–M15), in hardening (M16)**. See "Status and open items".
 
 A keyboard-driven terminal UI, written in Rust, for running many Claude Code agents on one feature at the same time: a **coordinator** you work with directly, plus the sessions and subagents doing the rest of the work.
 
@@ -32,13 +32,13 @@ Dovetail keeps the parts that work (Claude Code itself, its native cross-session
 - **Worktree view.** Every session's worktree in one list: branch, sync, changes, PR, setup and cleanup.
 - **Quick capture.** `<leader>t` (or `dovetail add [--project <id>]` from a shell) turns one line like `fix eval key leak !p1 @now #1231` into a task. Anything without a bucket lands in Unsorted, which the morning review sorts.
 - **Visual maps.** Ask an agent to explain code, structure, an outcome or an architecture, and it draws a map: parts, connections and plain-English descriptions, as a structure diagram or a swimlane of a business flow, with step-by-step guided flows. Maps show as a proper diagram right in kitty, navigable by keyboard and mouse in a dedicated map mode, with an outline beside it that also serves as the fallback in terminals without image support. Each map is saved with its task.
-- **Built for reading.** Conversations render in a 120-column column with real spacing, markdown styling plus a color for each kind of emphasis on soft off-white text, folded tool chatter, turn-by-turn navigation, and a solid background behind the text in reading views, with your terminal's own background everywhere else.
+- **Built for reading.** Conversations render in a 120-column column with real spacing, markdown styling plus a color for each kind of emphasis on soft off-white text, folded tool chatter, turn-by-turn navigation, and your terminal's own background everywhere (no solid backgrounds on areas).
 - **Fresh context, never lost work.** Dovetail shows how full each agent's context is. A full coordinator or slice is replaced by a fresh session seeded with a written handoff, and the coordinator starts fresh every morning from the previous day's handoff.
 - **Daily review cycle.** At the end of the day Dovetail writes a record of what happened (facts, a short narrative from the coordinator, and your notes). Next morning the coordinator reviews it with your open tasks and proposes cleanup and new priorities, which you accept or reject one by one.
 - **Remembers for you.** Each task keeps your notes and a log of decisions, written by you and by the agents as they decide things. One search (`<leader>/`) covers notes, decisions, the journal, inbox, messages and conversation text, and keeps history after Claude Code clears old transcripts.
 - **A helper for grilling sessions.** When the coordinator starts grilling you, a read-only side chat opens next to it in the side panel for quick lookups, so the grill keeps going and the coordinator's context stays clean.
 - **Message timeline.** See what sessions say to each other over Claude Code's native messaging.
-- **Enforced coordination.** A small set of tools the sessions call, served by the app over MCP and grouped in suites per role: `core_ask_user`, `core_report_status`, then `claim` / `release` for PR ownership and rules like "rebase #1231 after #1230 merges."
+- **Enforced coordination.** A small set of tools the sessions call, served by the app over MCP and grouped in suites per role: `core_ask_user`, `core_report_status`, `core_log_decision`, `tasks_*`, `project_*`, `research_*` and `maps_draw`, then `claim` / `release` for PR ownership and rules like "rebase #1231 after #1230 merges."
 - **Take over any session.** Drop into native `claude --resume` for hands-on work, then hand it back.
 - **Project persistence.** Close everything at the end of the day; reopen tomorrow and your tasks, agents, ownership and conversations are all back.
 
@@ -98,7 +98,7 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 
 ## Roadmap
 
-- **v1:** task tracker with a kanban board, P-levels, Now / Next / Later buckets and quick capture; agent tree with subagent progress; to-do items from Claude's native task list; headless sessions in auto mode with a per-agent mode switch; one worktree per slice with a worktree view; fixed layout and focus mode; Telescope-style session switcher; inbox with inline approvals; take-over; project persistence; memory caps and context fill per agent; readability theme; visual maps (`draw_map`, image canvas in kitty, outline fallback, map mode, guided flows); `ask_user` and `report_status`; role prompts for coordinator and slices
+- **v1:** task tracker with a kanban board, P-levels, Now / Next / Later buckets and quick capture; agent tree with subagent progress; to-do items from Claude's native task list; headless sessions in auto mode with a per-agent mode switch; one worktree per slice with a worktree view; fixed layout and focus mode; Telescope-style session switcher; inbox with inline approvals; take-over; project persistence; memory caps and context fill per agent; readability theme; visual maps (`maps_draw`, image canvas in kitty, outline fallback, map mode, guided flows); `core_ask_user` and `core_report_status`; role prompts for coordinator and slices
 - **v1.1:** **research first** (automatic capture of every research subagent's full output and the sources it read, rounds with a `brief.md`, cited reports, ideas and decisions as inbox proposals with evidence, reading mode, tangents, and tool suites; see `docs/research.md`), then daily review cycle, fresh starts with handoffs, side-chat helper for grilling, task notes and decision log, search across everything, map comments and Mermaid import, PR ownership tools, configurable keymap and theme, Dovetail plugin with skills for procedures
 - **v2:** automation rules, map versions and export, window splits, Visual mode
 - **Later:** daemon and remote attach, Lua configuration, idle reaping of slice sessions, checklists for background subagents, a neovim-based editor and file tree for reviewing agent work, automatic code maps
@@ -108,19 +108,22 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 
 All design decisions are made; the full design and decision log live in the design doc. The order of work is in `docs/implementation-plan.md`.
 
-- Done: spikes S0–S4 (terms of use, driver, messaging, MCP, cgroups); results in `docs/spikes/`
-- Done: M1. The workspace, the core/UI protocol and a seeded mock core. Try `cargo run -p dovetail -- --mock --dump`; the same `--seed` prints the same stream
-- Next: M2, the TUI shell running on the mock
-- Later spikes: merman map rendering (S5, before maps); whether a short role prompt makes slices use `ask_user` reliably (S6, during M9)
+- Built: v1 milestones M1–M15 (TUI, storage, driver, permissions, slices, MCP tools, self-hosting, subagents, board, caps, take-over, maps). Plan: `docs/implementation-plan.md`; what is left for you to try: `docs/plan/v1-status.md`
+- Open: M16, hardening and daily-driver polish (a real week of use, RSS target, cutting anything from the v1 list)
+- Pulled in beyond the original v1 list: reading mode and research (ADRs 0015–0018), the Companion window (ADR 0019), side chats (ADR 0011), end-of-day handoff (ADR 0012), `:upgrade` (ADR 0014), tool suites (ADR 0016)
+- Still open: S6 (does a short role prompt make agents use `core_ask_user` reliably) and the look of the map canvas in kitty
 
 ## Repository layout
 
 - `crates/dovetail-api/` — plain-data protocol between core and UI: `Snapshot`, `Event`, `Command` and the `apply()` reducer
 - `crates/dovetail-mock/` — `MockCore`, a seeded stand-in for the core that speaks the same protocol
-- `crates/dovetail-core/` — sessions, storage, worktrees and MCP tool handlers (from M5)
-- `crates/dovetail-driver/` — runs headless Claude Code sessions (from M6); recorded stream fixtures in `tests/fixtures/`
-- `crates/dovetail-tui/` — the terminal UI (from M2); depends only on `dovetail-api`
-- `crates/dovetail/` — the `dovetail` binary
+- `crates/dovetail-core/` — sessions, storage, worktrees and MCP tool handlers
+- `crates/dovetail-driver/` — runs headless Claude Code sessions; recorded stream fixtures in `tests/fixtures/`
+- `crates/dovetail-tui/` — the terminal UI; depends only on `dovetail-api`
+- `crates/dovetail-maps/` — `maps_draw` input, validation and the `MapRenderer` (merman) behind it
+- `crates/dovetail/` — the `dovetail` binary (TUI, `add`, `mcp`, `hook`, `upgrade`)
+- `scripts/` — `bootstrap.sh`, `install.sh`, `check.sh`, `live-checks.sh`, `rss-check.sh`
+- `config/` — role prompts and the project recipe that `bootstrap.sh` installs
 - `spikes/` — throwaway spike programs, outside the workspace
 - `docs/implementation-plan.md` — milestones and the order of work
 - `docs/ui-session-brief.md` — detailed UI spec

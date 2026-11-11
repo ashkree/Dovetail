@@ -17,7 +17,7 @@ Spike results were measured on Claude Code **2.1.312** (Oct 29, 2026). Re-check 
 | 4b | Process ownership | v1 single app with project persistence; split into a daemon later for remote |
 | 5a–c | State | Global `registry.db` + one folder per project, nothing in repos; app state + search index (no tool output); transcripts referenced not copied; `rusqlite` (bundled) on a dedicated thread, WAL |
 | 6a / 6b | Panes / projects | Buffers from day one; fixed layout in v1, splits later. One active project |
-| 7a–c | Inbox | Two tiers (Needs you / Activity); every finished turn lands in Needs you, `ask_user` adds a question item, never blocking (ADR 0007); approvals inline; the full context opens with `Enter` in the item's detail view, rows stay one line (task #5) |
+| 7a–c | Inbox | Two tiers (Needs you / Activity); every finished turn lands in Needs you, `core_ask_user` adds a question item, never blocking (ADR 0007); approvals inline; the full context opens with `Enter` in the item's detail view, rows stay one line (task #5) |
 | 8 | Wrapper MCP | 8a stdio MCP server = same binary run as `dovetail mcp`, connecting back to the app's unix socket; 8b tools in order (see §6); 8c short role prompts in v1 via `--append-system-prompt-file`, plugin skills later |
 | 9 | Lifecycle | Coordinator always live with a higher memory cap; quick work as subagents; per-session cgroup caps + memory display in v1; idle reaping later |
 | 10a–c | Keymap | Mnemonic leader groups + single-key hot actions, which-key popup; hardcoded → TOML → Lua; global movement, buffer-local actions |
@@ -31,13 +31,13 @@ Spike results were measured on Claude Code **2.1.312** (Oct 29, 2026). Re-check 
 | 16a–c | Readability | Blank rows between blocks, 120-col reading column; bold/italic/code each keep style + get a colour, off-white body; transparent by default, solid-background toggle, auto-on in focus mode |
 | 17, 17a–e | Inbox keys / daily cycle / priority | `y A d D r x Enter`; end-of-day record (facts + coordinator narrative + user notes) as `journal/YYYY-MM-DD.md`; "Close the day?" on quit, morning review on first open of a day, `:eod` / `:morning`; review buffer with `y`/`n`/`A`; P0–P3 + Now/Next/Later buckets, mismatch flagged |
 | 18 | Side-chat helper | Separate lightweight headless session on a faster model, read-only + exploration tools, one per grill, auto-starts on a `grill*` Skill call, `<leader>?` swaps it into the inbox region, `<leader>y` copies its answer into the coordinator input |
-| 19 | Notes / decisions | User notes + `log_decision` tool; one markdown file per task (`tasks/<id>.md`), edited by handing off to nvim, indexed; task detail view |
+| 19 | Notes / decisions | User notes + `core_log_decision` tool; one markdown file per task (`tasks/<id>.md`), edited by handing off to nvim, indexed; task detail view |
 | 20 | Search | FTS5 over notes, decisions, journal, messages, inbox, conversation text (no tool output); deep transcript search on demand; `<leader>/` picker |
-| 21 | Quick capture | `<leader>t` and `dovetail add "…"`; `!p0–3 @now/@next/@later #1231` tokens; Unsorted group; switchable link to the focused task (`Ctrl-l`); coordinator `create_task` |
+| 21 | Quick capture | `<leader>t` and `dovetail add "…"`; `!p0–3 @now/@next/@later #1231` tokens; Unsorted group; switchable link to the focused task (`Ctrl-l`); coordinator `tasks_create` |
 | 22 | Context fill | Coordinator % in status bar, slices' in tree; amber 60 %, red 80 %; estimated from per-turn token usage ÷ model context window. Above 80 %: coordinator offered a fresh start with handoff; slices restart automatically with handoff; fresh coordinator every morning |
-| 23, 23a–i | Visual maps | One structured map model; v1 = image canvas (kitty graphics) with an outline beside it and as fallback; agents draw via `draw_map`; merman behind a `MapRenderer` trait (fallback elkjs in QuickJS); nine node kinds; structure maps (merman) + swimlane flow maps (laid out by Dovetail on a grid); MAP mode with mouse capture only there; guided flows `n`/`p`; ids + versions |
+| 23, 23a–i | Visual maps | One structured map model; v1 = image canvas (kitty graphics) with an outline beside it and as fallback; agents draw via `maps_draw`; merman behind a `MapRenderer` trait (fallback elkjs in QuickJS); nine node kinds; structure maps (merman) + swimlane flow maps (laid out by Dovetail on a grid); MAP mode with mouse capture only there; guided flows `n`/`p`; ids + versions |
 | 24 | Keymap confirmations | Inbox always-allow is `A`; `<leader>a` activity; tree `Enter o a e s b p J K dd`; map mode `f u c s` |
-| 25 | Agent tools | v1 `ask_user`, `report_status`, `draw_map`; v1.1 `log_decision`, `create_task`, `claim`/`release`/`list_claims`; v2 `when`; later `notify` |
+| 25 | Agent tools | v1 `core_ask_user`, `core_report_status`, `maps_draw`, plus `core_log_decision` and `tasks_create` (ADRs 0002, 0003), `tasks_*`, `project_*` and `research_*` (ADRs 0004, 0015, 0016); v1.1 `claim`/`release`/`list_claims`; v2 `when`; later `notify` |
 
 ---
 
@@ -118,15 +118,22 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 
 - **Native messaging** (Claude Code ≥ 2.1.224): per-session unix sockets, `ListAgents` / `SendMessage`. Workers launch with `crossSessionInbound: "accept"`. Messages carry no authority. The message timeline is built from `SendMessage` tool calls and received messages in each stream (how inbound messages appear is an **open spike**). Warn at startup if `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `DISABLE_GROWTHBOOK` is set (any can silently disable messaging).
 - **Agent teams ruled out** (can't spawn teammates from non-interactive sessions).
-- **Wrapper tools** served by `dovetail mcp`:
+- **Wrapper tools** served by `dovetail mcp`, grouped in suites per role (ADR 0016: Core, Tasks, Project, Coordination, Research, Maps; coordinator all, slice Core + Coordination + Maps, helper Core only). The old unprefixed names still answer as aliases for one release:
 
 | Tool | Purpose | Coordinator | Slices | Helper | Ships |
 | --- | --- | --- | --- | --- | --- |
-| `ask_user` | Question to the inbox and chat; returns at once (ADR 0007) | ✓ | ✓ | – | v1 |
-| `report_status` | One-line status for the tree | ✓ | ✓ | – | v1 |
-| `draw_map` | Create/update a map | ✓ | ✓ | ✓ | v1 |
-| `log_decision` | Add to a task's decision log | ✓ | ✓ | – | v1.1 |
-| `create_task` | Create a task (lands in Unsorted) | ✓ | – | – | v1.1 |
+| `core_ask_user` (was `ask_user`) | Question to the inbox and chat; returns at once (ADR 0007) | ✓ | ✓ | ✓ | v1 |
+| `core_report_status` (was `report_status`) | One-line status for the tree | ✓ | ✓ | ✓ | v1 |
+| `core_log_decision` (was `log_decision`) | Add to a task's decision log (ADR 0003) | ✓ | ✓ | ✓ | v1 |
+| `maps_draw` (was `draw_map`) | Create/update a map | ✓ | ✓ | – | v1 |
+| `tasks_create` (was `create_task`) | Create a task (lands in Unsorted; ADR 0002) | ✓ | – | – | v1 |
+| `tasks_list` / `tasks_get` | Find tasks; read one in full | ✓ | – | – | v1 |
+| `tasks_update` | Change status, bucket, priority, title or notes (may move a task into Now; marked unseen) | ✓ | – | – | v1 |
+| `tasks_archive` | Archive a finished task; its live slices first | ✓ | – | – | v1 |
+| `project_start_slice` (was `start_slice`) | Start a slice on an existing task (ADR 0004) | ✓ | – | – | v1 |
+| `project_archive_slice` (was `archive_slice`) | Archive a slice after its PR merged | ✓ | – | – | v1 |
+| `project_add` (was `add_project`) | Register the current folder as a project | ✓ | – | – | v1 |
+| `research_start_round` / `research_write_report` / `research_propose` / `research_get` | Research rounds, cited reports, proposals, reading a stored document (ADR 0015) | ✓ | – | – | v1 |
 | `claim` / `release` / `list_claims` | PR and task ownership | ✓ | ✓ | – | v1.1 |
 | `when` | Rules like "rebase #1231 after #1230 merges" | ✓ | – | – | v2 |
 | `notify` | Wake a stopped slice | ✓ | – | – | later |
@@ -168,14 +175,14 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 
 - Model: map (id, title, type `structure`|`swimlane`), nodes (id, kind, label, description, optional file link, optional pseudocode), groups, connections (from, to, label), flows (name, ordered steps with notes), lanes. Stored per project, linked to a task, versioned by id.
 - Node kinds (fixed nine): Part, File, Endpoint, Data, External, Actor, Outcome, Logic, Concept.
-- `draw_map` validates input and returns specific errors (unknown kind, connection to a missing node, step in an unknown lane).
-- Structure maps → Mermaid flowchart → merman → PNG → kitty graphics (e.g. `ratatui-image`); selection re-renders with a highlight class. Swimlanes laid out by Dovetail on a lane × step grid. Map code talks only to `MapRenderer`.
+- `maps_draw` validates input and returns specific errors (unknown kind, connection to a missing node, step in an unknown lane).
+- Structure maps → Mermaid flowchart → merman → PNG → kitty graphics (hand-written escape sequences in `dovetail-tui` `canvas::kitty`; `ratatui-image` was not added); selection re-renders with a highlight class. Swimlanes laid out by Dovetail on a lane × step grid. Map code talks only to `MapRenderer`.
 - v1 view: image canvas with `hjkl` node selection, `Enter` drill-in, flows `n`/`p`, keyboard pan/zoom; outline beside it and as the fallback in terminals without images; a map shelf. The text box-drawing renderer was **dropped**.
 - merman caveats: pre-1.0, node positions undocumented (may need reading from the SVG) — **open spike**.
 
 ## 12. Roadmap
 
-**v1** — SessionDriver on a community crate · headless launch with injected settings/hooks/role prompts · registry + `state.db`, resume after restart · buffers in the fixed layout · Normal/Insert/Command, hardcoded keymap via the action registry, `nucleo` picker · two-tier inbox with inline approvals · maps stage 1 · context fill display · quick capture + `dovetail add` + `create_task` · readability · auto mode + `<leader>sm` + concurrent approvals · one worktree per slice via hooks · task tracker · agent tree with subagents · background subagent nodes + native to-do items · take-over · cgroup caps + memory display · `ask_user`, `report_status` · role prompts.
+**v1** — SessionDriver on a community crate · headless launch with injected settings/hooks/role prompts · registry + `state.db`, resume after restart · buffers in the fixed layout · Normal/Insert/Command, hardcoded keymap via the action registry, `nucleo` picker · two-tier inbox with inline approvals · maps stage 1 · context fill display · quick capture + `dovetail add` + `tasks_create` · readability · auto mode + `<leader>sm` + concurrent approvals · one worktree per slice via hooks · task tracker · agent tree with subagents · background subagent nodes + native to-do items · take-over · cgroup caps + memory display · `core_ask_user`, `core_report_status` · role prompts.
 
 **v1.1** — claims · TOML keymap + which-key · maps stage 2 · fresh starts with handoffs · task notes + decision log · search · side-chat helper · daily review cycle · syntax highlighting, theme config, focus mode · Dovetail plugin with skills.
 
@@ -189,6 +196,6 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 | Inbound `SendMessage` in a headless stream | Message timeline | Timeline from sender side only |
 | `systemd-run --user --scope -p MemoryMax=…` without root on the target machine | Memory caps | Another capping method, or none |
 | merman: 30-node map, two nesting levels, one style per kind → PNG; time, memory, node positions, look in kitty | Map canvas | elkjs in QuickJS behind `MapRenderer` |
-| MCP tools in background subagents | Subagents using `ask_user`/`draw_map` | Route through the parent session |
-| `ask_user` role-prompt test (run during the build) | Role prompt wording | Stronger prompting or a skill |
+| MCP tools in background subagents | Subagents using `core_ask_user`/`maps_draw` | Route through the parent session |
+| `core_ask_user` role-prompt test (run during the build) | Role prompt wording | Stronger prompting or a skill |
 | Terms of use for running Claude Code headless this way | Everything | Rethink (user's call, not an agent task) |
