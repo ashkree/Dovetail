@@ -125,6 +125,21 @@ pub enum Event {
         /// The answer.
         content: ResearchContent,
     },
+    /// A tangent was saved or changed: asked, answered, triaged (ADR 0017).
+    TangentUpserted(crate::model::TangentSummary),
+    /// A tangent left the list: dropped, filed into a project, or attached to a task (its
+    /// Tangents task is archived).
+    TangentRemoved(TaskId),
+    /// A tangent's content, in answer to [`Command::LoadTangent`]. Changes nothing in the
+    /// snapshot.
+    TangentLoaded {
+        /// The tangent's task in Tangents.
+        tangent: TaskId,
+        /// What was asked for.
+        what: ResearchWhat,
+        /// The answer.
+        content: ResearchContent,
+    },
     /// The project's read-only docs, in answer to [`Command::ListDocs`]. Changes nothing in the
     /// snapshot.
     DocsListed {
@@ -326,6 +341,56 @@ pub enum Command {
     NewSideChat {
         /// The first prompt.
         question: String,
+    },
+    /// Ask a tangent (`:tangent [question]`, `T` in the side panel; ADR 0017): a question that
+    /// does not belong to the open project. The core saves it as a task in Tangents' Unsorted
+    /// list and starts a read-only session for it in Tangents' folder (side chats' launch lists,
+    /// Core suite only), shown in the side panel. Its answers and the sources it and its
+    /// subagents reached are filed on that task as findings. The core answers with
+    /// [`Event::TangentUpserted`] and [`Event::AgentUpserted`].
+    NewTangent {
+        /// The question, also its first prompt.
+        question: String,
+    },
+    /// Attach a tangent to a task of the open project (`a` in the side panel or the tangents
+    /// list): its answers and sources become quick findings of `task`, and the tangent leaves
+    /// Tangents (its task there is archived, with a note saying where it went).
+    AttachTangent {
+        /// The tangent's task in Tangents.
+        tangent: TaskId,
+        /// The open project's task.
+        task: TaskId,
+    },
+    /// File a tangent into a project (`f` in the tangents list): a new task in that project's
+    /// Unsorted list with the tangent's question, notes, answers and sources; the tangent leaves
+    /// Tangents (archived there, with a note). Refused for Tangents itself.
+    FileTangent {
+        /// The tangent's task in Tangents.
+        tangent: TaskId,
+        /// The project.
+        project: ProjectId,
+    },
+    /// Start a task from a tangent (`s` in the tangents list): a new task in the project's
+    /// Unsorted list whose notes link back to the tangent, which stays in Tangents, marked done.
+    StartFromTangent {
+        /// The tangent's task in Tangents.
+        tangent: TaskId,
+        /// The project.
+        project: ProjectId,
+    },
+    /// Drop a tangent (`d` in the tangents list): its task in Tangents is archived, nothing is
+    /// deleted.
+    DropTangent {
+        /// The tangent's task in Tangents.
+        tangent: TaskId,
+    },
+    /// Fetch a tangent's content, as [`Command::LoadResearch`] does for the open project's
+    /// tasks. The core answers with [`Event::TangentLoaded`].
+    LoadTangent {
+        /// The tangent's task in Tangents.
+        tangent: TaskId,
+        /// What to fetch.
+        what: ResearchWhat,
     },
     /// Hand a session to native `claude` in the UI's terminal (`<leader>st`, M14). Like
     /// [`Command::OpenEditor`], the UI sends it only after it has let go of the terminal, and

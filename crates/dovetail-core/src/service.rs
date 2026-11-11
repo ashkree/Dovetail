@@ -132,6 +132,11 @@ pub fn spawn(
             (ProjectState::Unregistered { candidate, key }, db)
         }
     };
+    // Tangents is always there (ADR 0017): registered now if missing.
+    let tangents = crate::tangents::open(&paths, &db, &project);
+    if let Err(why) = &tangents {
+        tracing::warn!("tangents are off: {why}");
+    }
     let socket_path = paths.socket(project.key());
     let listener = socket::bind(&socket_path)?;
 
@@ -189,6 +194,7 @@ pub fn spawn(
                 );
                 core.upgrade.restart = restart_flag;
                 core.switch_to = switch_slot;
+                core.tangents = tangents;
                 core.run(input_rx).await
             });
             sockets.extend(more);
@@ -449,6 +455,8 @@ pub(crate) struct Core {
     pub(crate) switch_to: Arc<std::sync::Mutex<Option<String>>>,
     /// Research capture: the open round and the subagents being watched (R1, `research`).
     pub(crate) research: crate::research::Research,
+    /// Tangents' database (ADR 0017, `tangents`), or why tangents are off.
+    pub(crate) tangents: Result<Db, String>,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -541,6 +549,7 @@ impl Core {
             upgrade: Default::default(),
             switch_to: Default::default(),
             research: Default::default(),
+            tangents: Err("not opened".into()),
         }
     }
 
@@ -826,6 +835,12 @@ impl Core {
                 .and_then(|p| crate::startup::recipe(&p.id, self.paths.recipe(&p.id).exists())),
         ];
         self.warnings.extend(checks.into_iter().flatten());
+        if let Err(why) = &self.tangents {
+            self.warnings.push(Warning {
+                id: WarningId("tangents".into()),
+                text: format!("tangents are off: {why}"),
+            });
+        }
         if self.project.registered().is_none() {
             self.warnings.push(Warning {
                 id: WarningId(crate::registration::UNREGISTERED_WARNING.into()),
@@ -884,6 +899,7 @@ impl Core {
             worktrees: self.worktrees.values().cloned().collect(),
             commands: self.commands.clone(),
             journal: self.journal_state(),
+            tangents: self.tangent_summaries().await,
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1318,6 +1334,16 @@ impl Core {
             Command::DismissInbox { item } => self.dismiss(item).await,
             Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
             Command::NewSideChat { question } => self.start_side_chat(question),
+            Command::NewTangent { question } => self.start_tangent(question).await,
+            Command::AttachTangent { tangent, task } => self.attach_tangent(tangent, task).await,
+            Command::FileTangent { tangent, project } => {
+                self.file_tangent(tangent, project).await;
+            }
+            Command::StartFromTangent { tangent, project } => {
+                self.start_from_tangent(tangent, project).await;
+            }
+            Command::DropTangent { tangent } => self.drop_tangent(tangent).await,
+            Command::LoadTangent { tangent, what } => self.load_tangent(tangent, what).await,
             Command::EndOfDay => self.end_of_day(),
             Command::FreshStart => self.fresh_start(),
             Command::Upgrade { local } => self.start_upgrade(local),

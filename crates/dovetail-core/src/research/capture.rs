@@ -34,9 +34,14 @@ const OUTPUT_FILE_MAX: u64 = 16 * 1024 * 1024;
 /// Longest label made from a description.
 const LABEL_MAX: usize = 40;
 
+/// The label of a tangent's answer: one finding per turn (ADR 0017).
+pub(crate) const TURN_LABEL: &str = "answer";
+
 /// Where a finding's body came from, best first. Stored as [`BodyFrom::as_str`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum BodyFrom {
+    /// A tangent's turn: the `result` text, its final answer (ADR 0017).
+    TurnResult,
     /// `task_notification.handback_report.text`.
     NotificationHandback,
     /// The foreground `Agent` result's `tool_use_result.handbackReport.text`.
@@ -57,6 +62,7 @@ impl BodyFrom {
     /// The stored spelling.
     pub(crate) fn as_str(self) -> &'static str {
         match self {
+            Self::TurnResult => "turn_result",
             Self::NotificationHandback => "task_notification.handback_report",
             Self::AgentResultHandback => "agent_result.handback_report",
             Self::HandbackCall => "subagent_handback",
@@ -101,6 +107,10 @@ struct Candidate {
     tokens: Option<u64>,
     /// Filed as this finding, with where its body came from and the body.
     filed: Option<(FindingId, BodyFrom, String)>,
+    /// Its task is a tangent's, in Tangents (ADR 0017), not the open project's.
+    tangent: bool,
+    /// A tangent session's own turn, watched on its main stream: always filed, as its answer.
+    turn: bool,
 }
 
 impl Candidate {
@@ -137,24 +147,33 @@ impl Candidate {
     }
 
     fn worth_filing(&self) -> bool {
-        self.round.is_some() || self.research_shaped
+        self.turn || self.round.is_some() || self.research_shaped
     }
 
     fn draft(&self) -> Option<(BodyFrom, NewFinding)> {
         if !self.worth_filing() {
             return None;
         }
-        let (from, body) = self.best_body().unwrap_or((
-            BodyFrom::AssistantText,
-            "(the subagent ended without a report)".to_owned(),
-        ));
+        let missing = if self.turn {
+            "(the turn ended without an answer)"
+        } else {
+            "(the subagent ended without a report)"
+        };
+        let (from, body) = self
+            .best_body()
+            .unwrap_or((BodyFrom::AssistantText, missing.to_owned()));
+        let label = if self.turn {
+            TURN_LABEL.to_owned()
+        } else {
+            label_of(self.description.as_deref(), self.subagent_type.as_deref())
+        };
         Some((
             from,
             NewFinding {
                 task: self.task,
                 round: self.round,
                 agent: self.agent.clone(),
-                label: label_of(self.description.as_deref(), self.subagent_type.as_deref()),
+                label,
                 description: self.description.clone(),
                 body,
                 body_from: from.as_str().to_owned(),
@@ -178,6 +197,8 @@ pub(crate) enum Outcome {
         from: BodyFrom,
         /// The finding.
         finding: Box<NewFinding>,
+        /// It goes to a tangent's task in Tangents, not the open project.
+        tangent: bool,
     },
     /// A better body arrived for a finding already filed.
     Upgrade {
@@ -189,6 +210,8 @@ pub(crate) enum Outcome {
         body: String,
         /// Where it came from.
         from: BodyFrom,
+        /// The finding is in Tangents.
+        tangent: bool,
     },
 }
 
@@ -245,7 +268,56 @@ impl Capture {
                 output_file: None,
                 tokens: None,
                 filed: None,
+                tangent: false,
+                turn: false,
             });
+    }
+
+    /// The subagent `key` works for a tangent: its finding goes to Tangents (ADR 0017).
+    pub(crate) fn mark_tangent(&mut self, key: &str) {
+        if let Some(c) = self.candidates.get_mut(key) {
+            c.tangent = true;
+        }
+    }
+
+    /// Watches a tangent session's own turn on its main stream, as `key`: its text and the
+    /// sources its own tool calls reach. [`Capture::turn_ended`] files it as an answer of
+    /// `task` in Tangents. Nothing happens when it is watched already.
+    pub(crate) fn watch_turn(&mut self, agent: &AgentId, key: &str, task: TaskId, now_ms: i64) {
+        self.candidates
+            .entry(key.to_owned())
+            .or_insert_with(|| Candidate {
+                parent: agent.clone(),
+                agent: agent.clone(),
+                task: Some(task),
+                round: None,
+                description: None,
+                subagent_type: None,
+                started_ms: now_ms,
+                background: false,
+                calls: HashMap::new(),
+                sources: Vec::new(),
+                research_shaped: false,
+                body: None,
+                texts: Vec::new(),
+                output_file: None,
+                tokens: None,
+                filed: None,
+                tangent: true,
+                turn: true,
+            });
+    }
+
+    /// The tangent turn `key` ended with `result` (its final text, when there is one): files
+    /// it and forgets it, so the next turn is watched afresh.
+    pub(crate) fn turn_ended(&mut self, key: &str, result: Option<&str>) -> Vec<Outcome> {
+        let Some(c) = self.candidates.get_mut(key) else {
+            return Vec::new();
+        };
+        if let Some(text) = result {
+            c.offer(BodyFrom::TurnResult, text);
+        }
+        self.settle(key, true)
     }
 
     /// Whether `key` is watched.
@@ -436,11 +508,13 @@ impl Capture {
                 key: key.to_owned(),
                 from,
                 finding: Box::new(finding),
+                tangent: c.tangent,
             }),
             Some((id, had, text)) => match c.best_body() {
                 Some((from, body)) if from < *had => {
                     let id = *id;
                     let task = c.task;
+                    let tangent = c.tangent;
                     let changed = body != *text;
                     if let Some(c) = self.candidates.get_mut(key) {
                         c.filed = Some((id, from, body.clone()));
@@ -451,6 +525,7 @@ impl Capture {
                         task,
                         body,
                         from,
+                        tangent,
                     })
                 }
                 _ => None,

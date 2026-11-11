@@ -244,6 +244,12 @@ impl Db {
         self.run(move |c, now| registry::register_research(&mut c.registry, &slug, &name, now))
     }
 
+    /// Registers Tangents, the built-in research project, if it is missing (ADR 0017), and
+    /// returns it. Refused when a code project holds its reserved id.
+    pub fn ensure_tangents(&self) -> Pending<Project> {
+        self.run(|c, now| registry::ensure_tangents(&mut c.registry, now))
+    }
+
     /// The project with this id, if registered.
     pub fn get_project(&self, id: String) -> Pending<Option<Project>> {
         self.run(move |c, _| registry::get(&c.registry, &id))

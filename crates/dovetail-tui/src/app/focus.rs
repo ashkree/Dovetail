@@ -147,7 +147,8 @@ impl App {
             | BufferKind::Messages
             | BufferKind::MapShelf
             | BufferKind::MapOutline
-            | BufferKind::SidePanel => None,
+            | BufferKind::SidePanel
+            | BufferKind::Tangents => None,
         }
     }
 
@@ -216,6 +217,10 @@ impl App {
                 self.start_input(InputTarget::SideChatQuestion, "")
             }
             Action::NewSideChat => self.new_side_chat(arg.to_string()),
+            Action::NewTangent if arg.is_empty() => {
+                self.start_input(InputTarget::TangentQuestion, "")
+            }
+            Action::NewTangent => self.new_tangent(arg.to_string()),
             Action::Upgrade if arg.is_empty() || arg == "--local" => {
                 self.outbox.push(Command::Upgrade {
                     local: arg == "--local",
@@ -415,9 +420,14 @@ impl App {
         let Some(agent) = self.snap.agents.iter().find(|a| a.id == session) else {
             return;
         };
-        if agent.kind == AgentKind::SideChat {
+        if matches!(agent.kind, AgentKind::SideChat | AgentKind::Tangent) {
+            let what = if agent.kind == AgentKind::Tangent {
+                "a tangent"
+            } else {
+                "a side chat"
+            };
             self.note = Some(format!(
-                "{} is a side chat: it stays read-only, so its mode does not change",
+                "{} is {what}: it stays read-only, so its mode does not change",
                 agent.name
             ));
             return;

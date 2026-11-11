@@ -97,6 +97,9 @@ pub struct Launch {
     pub name: String,
     /// Its role prompt and permission rules.
     pub role: Role,
+    /// The installed role prompt to read instead of the role's own: a tangent has side chats'
+    /// role and rules but its own prompt, `tangent` (ADR 0017).
+    pub prompt: Option<&'static str>,
     /// The tool suites it gets (`config.toml` `[suites]`, ADR 0016).
     pub suites: Vec<Suite>,
     /// The Claude Code session id.
@@ -173,7 +176,7 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     }}});
     write_json(&mcp_path, &mcp)?;
 
-    let role_prompt = paths.role_prompt(launch.role.as_str());
+    let role_prompt = paths.role_prompt(launch.prompt.unwrap_or(launch.role.as_str()));
 
     let mut spec = SessionSpec::new(launch.session_id.clone(), launch.cwd.clone());
     spec.resume = launch.resume;

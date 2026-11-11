@@ -324,6 +324,7 @@ pub(crate) fn facts(tasks: &[Task], agents: &[&Agent], inbox: &[&InboxItem]) -> 
             InboxKind::UnfiledFinding { label, sources, .. } => {
                 format!("unfiled finding: {label} ({sources} sources)")
             }
+            InboxKind::NewTangents { count } => format!("{count} new tangents to triage"),
         };
         out.push_str(&format!("- {}, {what}\n", name(&item.agent)));
     }

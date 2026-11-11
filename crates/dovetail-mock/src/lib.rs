@@ -10,6 +10,7 @@
 mod maps;
 mod research;
 mod rng;
+mod tangents;
 mod world;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -86,6 +87,8 @@ pub struct MockCore {
     research: research::Research,
     /// Pages [`Command::OpenExternal`] was asked to open, oldest first; the mock opens nothing.
     opened: Vec<String>,
+    /// Tangents' content, for [`Command::LoadTangent`] (ADR 0017).
+    tangents: tangents::Tangents,
     quit: bool,
 }
 
@@ -116,6 +119,7 @@ impl MockCore {
                 .map(|(_, map)| (map.id.clone(), map))
                 .collect(),
             research: research::seeded(config.start_ms),
+            tangents: tangents::seeded(config.start_ms).1,
             opened: Vec::new(),
             quit: false,
         };
@@ -332,7 +336,7 @@ impl MockCore {
                     return self.fail(format!("no agent {}", agent.0));
                 };
                 // Like the core: a side chat stays read-only.
-                if found.kind == AgentKind::SideChat {
+                if matches!(found.kind, AgentKind::SideChat | AgentKind::Tangent) {
                     return self.fail(format!(
                         "{} is a side chat: it stays read-only, so its mode does not change",
                         found.name
@@ -661,6 +665,76 @@ impl MockCore {
                     path.display()
                 )),
             },
+            Command::NewTangent { question } => self.new_tangent(question),
+            Command::AttachTangent { tangent, task } => {
+                let Some(t) = self.task(task) else {
+                    return self.fail(format!("there is no task #{}", task.0));
+                };
+                self.leave_tangents(tangent, "attached to", &format!("#{} {}", task.0, t.title));
+            }
+            Command::FileTangent { tangent, project } => {
+                let Some(found) = self.tangent(tangent) else {
+                    return self.fail(format!("there is no tangent #{}", tangent.0));
+                };
+                // Filed into the open project, it shows as a task; elsewhere the mock keeps
+                // nothing.
+                let open = self.state.project.as_ref().map(|p| p.id.clone());
+                if open.as_ref() == Some(&project) {
+                    self.handle(Command::CreateTask(NewTask {
+                        title: found.task.title.clone(),
+                        p_level: None,
+                        bucket: None,
+                        notes: format!("{}\n\nFiled from Tangents.", found.task.notes),
+                        follow_up_of: None,
+                        pr: None,
+                        related: vec![],
+                    }));
+                }
+                self.leave_tangents(tangent, "filed into", &project.0);
+            }
+            Command::StartFromTangent { tangent, project } => {
+                let Some(mut found) = self.tangent(tangent) else {
+                    return self.fail(format!("there is no tangent #{}", tangent.0));
+                };
+                let open = self.state.project.as_ref().map(|p| p.id.clone());
+                if open.as_ref() == Some(&project) {
+                    self.handle(Command::CreateTask(NewTask {
+                        title: found.task.title.clone(),
+                        p_level: None,
+                        bucket: None,
+                        notes: format!(
+                            "Started from the tangent \"{}\" (Tangents #{}).",
+                            found.task.title, tangent.0
+                        ),
+                        follow_up_of: None,
+                        pr: None,
+                        related: vec![],
+                    }));
+                }
+                found.task.status = TaskStatus::Done;
+                found.task.notes = format!("{}\n\nStarted in {}.", found.task.notes, project.0);
+                self.activity(
+                    None,
+                    ActivityKind::Task,
+                    format!(
+                        "tangent \"{}\" started as a task in {}",
+                        found.task.title, project.0
+                    ),
+                );
+                self.emit(Event::TangentUpserted(found));
+                self.refresh_new_tangents();
+            }
+            Command::DropTangent { tangent } => {
+                self.leave_tangents(tangent, "dropped", "");
+            }
+            Command::LoadTangent { tangent, what } => match self.tangents.load(tangent, &what) {
+                Some(content) => self.emit(Event::TangentLoaded {
+                    tangent,
+                    what,
+                    content,
+                }),
+                None => self.fail(format!("the mock has no such tangent content: {what:?}")),
+            },
             Command::LoadResearch { task, what } => match self.research.load(task, &what) {
                 Some(content) => self.emit(Event::ResearchLoaded {
                     task,
@@ -724,6 +798,115 @@ impl MockCore {
         });
         self.ready
             .push_back(ServerMsg::Snapshot(self.state.trimmed()));
+    }
+
+    fn tangent(&self, id: TaskId) -> Option<TangentSummary> {
+        self.state
+            .tangents
+            .iter()
+            .find(|t| t.task.id == id)
+            .cloned()
+    }
+
+    /// `:tangent`: a new tangent in Tangents and its session, answering in the side panel.
+    fn new_tangent(&mut self, question: String) {
+        let question = question.trim().to_owned();
+        if question.is_empty() {
+            return self.fail("a tangent needs a question: :tangent <question>".into());
+        }
+        let id = TaskId(
+            self.state
+                .tangents
+                .iter()
+                .map(|t| t.task.id.0)
+                .max()
+                .unwrap_or(0)
+                + 1,
+        );
+        let task = Task {
+            id,
+            title: question
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(80)
+                .collect(),
+            status: TaskStatus::Todo,
+            p_level: None,
+            bucket: None,
+            order: id.0,
+            deps: vec![],
+            notes: "Asked from Dovetail.".into(),
+            pr: None,
+            follow_up_of: None,
+            coordinator_created: false,
+            related: vec![],
+        };
+        self.emit(Event::TangentUpserted(TangentSummary {
+            task,
+            research: None,
+        }));
+        let agent = world::tangent(id, AgentStatus::Working, self.state.now_ms);
+        let agent_id = agent.id.clone();
+        self.emit(Event::AgentUpserted(agent));
+        self.append(&agent_id, EntryKind::User, question);
+        self.refresh_totals();
+        self.schedule_reply(agent_id, true);
+    }
+
+    /// The mock's tangent turn ended: its answer is filed in Tangents.
+    fn tangent_answered(&mut self, tangent: TaskId, body: &str) {
+        let Some(mut found) = self.tangent(tangent) else {
+            return;
+        };
+        let now = self.state.now_ms;
+        found.research = Some(self.tangents.answer(tangent, body, now));
+        self.emit(Event::TangentUpserted(found));
+    }
+
+    /// The tangent leaves Tangents (attached, filed or dropped): its session closes, and the
+    /// "new tangents" count follows.
+    fn leave_tangents(&mut self, tangent: TaskId, verb: &str, target: &str) {
+        let Some(found) = self.tangent(tangent) else {
+            return self.fail(format!("there is no tangent #{}", tangent.0));
+        };
+        self.activity(
+            None,
+            ActivityKind::Task,
+            format!("tangent \"{}\" {verb} {target}", found.task.title)
+                .trim_end()
+                .to_owned(),
+        );
+        self.emit(Event::TangentRemoved(tangent));
+        let agent = tangent_agent(tangent);
+        if self.agent(&agent).is_some() {
+            self.remove_agent(&agent);
+        }
+        self.refresh_new_tangents();
+    }
+
+    /// Keeps the "new tangents" item's count true, and takes it out once none are left.
+    fn refresh_new_tangents(&mut self) {
+        let Some(item) = self
+            .state
+            .inbox
+            .iter()
+            .find(|i| matches!(i.kind, InboxKind::NewTangents { .. }))
+            .cloned()
+        else {
+            return;
+        };
+        let count = self.state.tangents.iter().filter(|t| t.is_new()).count() as u32;
+        if count == 0 {
+            return self.resolve(item.id);
+        }
+        if item.kind != (InboxKind::NewTangents { count }) {
+            self.emit(Event::InboxUpserted(InboxItem {
+                kind: InboxKind::NewTangents { count },
+                ..item
+            }));
+        }
     }
 
     fn after(&mut self, delay_ms: u64, action: impl FnOnce(&mut MockCore) + Send + 'static) {
@@ -1024,11 +1207,18 @@ impl MockCore {
         }
         // Reading mode's Ask answers with one canned, cited reply about the seeded report.
         let ask = self.agent(&agent).map(|a| a.kind) == Some(AgentKind::Ask);
+        // A tangent answers with one canned reply, filed as its answer (ADR 0017).
+        let tangent = (self.agent(&agent).map(|a| a.kind) == Some(AgentKind::Tangent))
+            .then(|| tangent_task(&agent))
+            .flatten();
         let text = if ask {
             world::ASK_REPLY
+        } else if tangent.is_some() {
+            tangents::REPLY
         } else {
             world::REPLIES[(self.reply_count % world::REPLIES.len() as u64) as usize]
         };
+
         self.reply_count += 1;
         let entry = self.entry_id();
 
@@ -1115,6 +1305,10 @@ impl MockCore {
         let cost = self.rng.range(1, 6) as f64 / 100.0;
         let id = agent.clone();
         self.reply_step(&agent, delay, move |core| core.end_turn(&id, preview, cost));
+        // A tangent's answer is filed in Tangents when its turn ends, as the core does.
+        if let Some(task) = tangent {
+            self.reply_step(&agent, 0, move |core| core.tangent_answered(task, text));
+        }
     }
 
     /// Ends a turn. The previous finished-turn item is replaced (ADR 0001), and an agent with

@@ -58,6 +58,8 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "research" => Action::ListResearch,
         "spawn" => Action::NewSlice,
         "ask" => Action::NewSideChat,
+        "tangent" => Action::NewTangent,
+        "tangents" => Action::ShowTangents,
         "interrupt" => Action::Interrupt,
         "decide" => Action::TaskAddDecision,
         // Aliases: every action a key reaches can be named here too.

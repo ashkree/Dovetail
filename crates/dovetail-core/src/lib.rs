@@ -33,6 +33,7 @@ mod slice;
 pub mod socket;
 mod startup;
 pub mod takeover;
+mod tangents;
 mod todos;
 mod tools;
 pub mod upgrade;

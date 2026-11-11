@@ -16,6 +16,7 @@ use super::{Buffer, Effect, InputTarget, ViewCx, footer, pane, scroll_to, spread
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
+use crate::switcher::TANGENT_MARKER;
 
 /// Inbox items in display order: permission requests first, then questions, errors and finished
 /// turns; newest first within each.
@@ -29,7 +30,8 @@ fn rank(kind: &InboxKind) -> u8 {
     match kind {
         InboxKind::Permission { .. }
         | InboxKind::Proposal { .. }
-        | InboxKind::UnfiledFinding { .. } => 0,
+        | InboxKind::UnfiledFinding { .. }
+        | InboxKind::NewTangents { .. } => 0,
         InboxKind::Question { .. } => 1,
         InboxKind::Error { .. } => 2,
         InboxKind::FinishedTurn { .. } => 3,
@@ -221,6 +223,7 @@ pub(crate) fn item_label(item: &InboxItem) -> (&'static str, String) {
         InboxKind::Question { .. } => ("?", "Question".into()),
         InboxKind::Proposal { kind, .. } => ("⚑", format!("Proposed {}", kind.as_str())),
         InboxKind::UnfiledFinding { .. } => ("⚑", "Unfiled finding".into()),
+        InboxKind::NewTangents { .. } => (TANGENT_MARKER, "New tangents".into()),
         InboxKind::FinishedTurn { .. } => ("✓", "Finished turn".into()),
         InboxKind::Error { .. } => ("✗", "Error".into()),
     }
@@ -240,7 +243,8 @@ pub(crate) fn kind_color(item: &InboxItem, theme: &crate::theme::Theme) -> ratat
         InboxKind::Permission { .. }
         | InboxKind::Question { .. }
         | InboxKind::Proposal { .. }
-        | InboxKind::UnfiledFinding { .. } => theme.needs_you,
+        | InboxKind::UnfiledFinding { .. }
+        | InboxKind::NewTangents { .. } => theme.needs_you,
         InboxKind::FinishedTurn { .. } => theme.ok,
         InboxKind::Error { .. } => theme.error,
     }
@@ -264,7 +268,16 @@ pub(crate) fn row_title(snap: &Snapshot, item: &InboxItem) -> String {
         | InboxKind::Proposal { text, .. }
         | InboxKind::Error { text } => first_sentence(text),
         InboxKind::UnfiledFinding { .. } => unfiled_title(&item.kind),
+        InboxKind::NewTangents { count } => tangents_title(*count),
     }
+}
+
+/// `2 new tangents` (ADR 0017): the morning's item; opening it lists them for triage.
+pub(crate) fn tangents_title(count: u32) -> String {
+    format!(
+        "{count} new tangent{} · ⏎ triage",
+        if count == 1 { "" } else { "s" }
+    )
 }
 
 /// `Unfiled finding: 'pricing pages' (3 sources)`.
@@ -346,6 +359,14 @@ pub(crate) fn answer_action(action: Action, item: &InboxItem, effects: &mut Vec<
             effects.push(Effect::PickFileTarget(item.id));
         }
         (Action::InboxDeny, InboxKind::UnfiledFinding { .. }) => {
+            effects.push(Effect::Command(Command::DismissInbox { item: item.id }));
+        }
+        // New tangents (ADR 0017): `y` (or Enter) lists them for triage, `d` or `x` puts the
+        // item away; they stay in Tangents and `:tangents` lists them any time.
+        (Action::InboxAllow | Action::InboxOpen, InboxKind::NewTangents { .. }) => {
+            effects.push(Effect::OpenTangents);
+        }
+        (Action::InboxDeny | Action::InboxDismiss, InboxKind::NewTangents { .. }) => {
             effects.push(Effect::Command(Command::DismissInbox { item: item.id }));
         }
         (Action::InboxAllow | Action::InboxAllowAlways | Action::InboxDeny, _)
@@ -492,6 +513,9 @@ impl Buffer for InboxBuffer {
             (Action::InboxOpen, InboxKind::UnfiledFinding { .. }) => {
                 effects.push(Effect::PickFileTarget(item.id))
             }
+            (Action::InboxOpen, InboxKind::NewTangents { .. }) => {
+                effects.push(Effect::OpenTangents)
+            }
             (Action::InboxOpen, _) => effects.push(Effect::OpenInboxItem(item.id)),
             _ => return answer_action(action, item, effects),
         }
@@ -512,6 +536,7 @@ impl Buffer for InboxBuffer {
                     InboxKind::FinishedTurn { preview } => preview.clone(),
                     InboxKind::Proposal { text, .. } => text.clone(),
                     kind @ InboxKind::UnfiledFinding { .. } => unfiled_title(kind),
+                    InboxKind::NewTangents { count } => tangents_title(*count),
                 };
                 format!("{name} {label} {body}")
             })

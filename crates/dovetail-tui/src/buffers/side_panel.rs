@@ -1,9 +1,10 @@
 //! The side panel (decided 2026-11-11, refining ADR 0011 and ADR 0017): side chats in the side
 //! column, beside the coordinator's conversation. It shows one side chat at a time as a
 //! conversation with its own chat bar; `Tab` and `Shift-Tab` switch between them and `dd`
-//! closes the one shown. Later, tangents and the grilling helper show here too.
+//! closes the one shown. Tangents (ADR 0017) show here too, labelled `↗ tangent`: `T` asks one,
+//! `a` attaches the one shown to a task of this project. Later, the grilling helper joins them.
 
-use dovetail_api::{Agent, AgentId, AgentKind, Command, Snapshot};
+use dovetail_api::{Agent, AgentId, AgentKind, Command, Snapshot, tangent_task};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
@@ -14,14 +15,33 @@ use crate::action::Action;
 use crate::region::BufferKind;
 
 /// What the panel says when it has nothing to show.
-const EMPTY: &str = "No side chats. ␣sq or :ask <question> starts one; ␣? hides this panel.";
+const EMPTY: &str = "No side chats or tangents. ␣sq or :ask <question> starts a side chat; T or \
+                     :tangent <question> asks a tangent, kept in Tangents; ␣? hides this panel.";
 
-/// The agents the panel switches between, in the snapshot's order (oldest first).
+/// The agents the panel switches between, side chats and tangents, in the snapshot's order
+/// (oldest first).
 pub fn side_chats(snap: &Snapshot) -> Vec<&Agent> {
     snap.agents
         .iter()
-        .filter(|a| a.kind == AgentKind::SideChat)
+        .filter(|a| matches!(a.kind, AgentKind::SideChat | AgentKind::Tangent))
         .collect()
+}
+
+/// The label after a tangent's name in the panel's title: what it is and where it goes.
+fn tangent_label(snap: &Snapshot, agent: &Agent) -> Option<String> {
+    let task = tangent_task(&agent.id).filter(|_| agent.kind == AgentKind::Tangent)?;
+    let saved = snap.tangents.iter().any(|t| t.task.id == task);
+    Some(if saved {
+        format!(
+            "{} tangent · kept in Tangents · a attach",
+            crate::switcher::TANGENT_MARKER
+        )
+    } else {
+        format!(
+            "{} tangent · left Tangents",
+            crate::switcher::TANGENT_MARKER
+        )
+    })
 }
 
 /// The side panel buffer: a conversation view kept on a side chat.
@@ -141,8 +161,13 @@ impl Buffer for SidePanelBuffer {
             );
             return;
         }
-        let position = self.position(cx.snap);
-        self.chat.set_heading_suffix(position);
+        let label = self
+            .agent()
+            .and_then(|id| cx.snap.agents.iter().find(|a| &a.id == id))
+            .and_then(|a| tangent_label(cx.snap, a));
+        let suffix: Vec<String> = label.into_iter().chain(self.position(cx.snap)).collect();
+        self.chat
+            .set_heading_suffix((!suffix.is_empty()).then(|| suffix.join(" · ")));
         self.chat.render(cx, frame, area, focused);
     }
 
@@ -156,6 +181,19 @@ impl Buffer for SidePanelBuffer {
                 })),
                 None => effects.push(Effect::Note("no side chat to close".into())),
             },
+            Action::AttachTangent => {
+                let shown = self
+                    .agent()
+                    .and_then(|id| cx.snap.agents.iter().find(|a| &a.id == id))
+                    .filter(|a| a.kind == AgentKind::Tangent)
+                    .and_then(|a| tangent_task(&a.id));
+                effects.push(match shown {
+                    Some(task) => Effect::AttachTangent(task),
+                    None => Effect::Note(
+                        "a attaches a tangent; this is a side chat (T asks a tangent)".into(),
+                    ),
+                });
+            }
             _ => return self.chat.on_action(action, cx, effects),
         }
         true

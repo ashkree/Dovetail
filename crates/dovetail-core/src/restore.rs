@@ -218,7 +218,11 @@ impl Core {
                     let question = text.clone();
                     self.restore_item(item, Waiter::RestoredQuestion { question });
                 }
-                InboxKind::FinishedTurn { .. } | InboxKind::Error { .. } => {
+                // The count is brought up to date below: tangents may have been triaged from
+                // another project since.
+                InboxKind::FinishedTurn { .. }
+                | InboxKind::Error { .. }
+                | InboxKind::NewTangents { .. } => {
                     self.restore_item(item, Waiter::None);
                 }
                 // The finding is in `state.db`; the question of where it goes is still open.
@@ -263,6 +267,9 @@ impl Core {
             };
             self.raise(&agent, InboxKind::Error { text }, Waiter::None);
         }
+        // Tangents waiting for triage, on the first open of a day (ADR 0017, ADR 0012).
+        self.refresh_new_tangents().await;
+        self.morning_tangents(last_used).await;
         // Locks left by a crash, before anything can start a session (M14).
         self.reconcile_locks();
         self.sweep().await;
