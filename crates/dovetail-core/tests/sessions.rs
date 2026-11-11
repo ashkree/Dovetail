@@ -1697,6 +1697,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             lock: dovetail_api::SessionLock::Headless,
             model: None,
             subagent_tokens: 0,
+            tool: None,
         };
         agent.status_line.clear();
         db.upsert_agent(dovetail_core::db::AgentRow {
@@ -2147,6 +2148,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             lock: dovetail_api::SessionLock::Headless,
             model: None,
             subagent_tokens: 0,
+            tool: None,
         };
         db.upsert_agent(dovetail_core::db::AgentRow {
             agent,
@@ -3321,6 +3323,7 @@ fn session_row(
             lock: dovetail_api::SessionLock::Headless,
             model: None,
             subagent_tokens: 0,
+            tool: None,
         },
         session_id: Some(format!("{id}-session")),
         transcript_path: Some(transcript),

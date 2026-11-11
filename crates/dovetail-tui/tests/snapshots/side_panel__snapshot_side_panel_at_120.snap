@@ -18,18 +18,18 @@ expression: "render(&mut app, 120, 34)"
 │                                                                         │└───────────────────────────────────────────┘
 │                                                                         │┌ side-1 · ○ idle · 210M · $0.03 · 1/2 ⇥ ───┐
 │   ── You · 10:14 ────────────────────────────────────────────────────   ││                                           │
+│                                                                         ││   Why does the reducer refuse a gap in    │
+│   What's blocking slice-7?                                              ││   seq?                                    │
 │                                                                         ││                                           │
-│   What's blocking slice-7?                                              ││   Why does the reducer refuse a gap in    │
-│                                                                         ││   seq?                                    │
 │                                                                         ││                                           │
-│   ── coordinator · 10:14 ◐ ──────────────────────────────────────────   ││                                           │
-│                                                                         ││  ▎── side-1 · 10:12 ───────────────────   │
-│   It needs a key. slice-7 can only reach the eval path with             ││                                           │
-│   FS_EVAL_VIRTUAL_KEY set.▌                                             ││  ▎A gap means an event was lost. apply    │
-│                                                                         ││  ▎returns Gap instead of guessing, and    │
+│   ── coordinator · 10:14 ◐ ──────────────────────────────────────────   ││  ▎── side-1 · 10:12 ───────────────────   │
+│                                                                         ││                                           │
+│   It needs a key. slice-7 can only reach the eval path with             ││  ▎A gap means an event was lost. apply    │
+│   FS_EVAL_VIRTUAL_KEY set.▌                                             ││  ▎returns Gap instead of guessing, and    │
 │                                                                         ││  ▎the UI asks for a resync                │
 │                                                                         ││  ▎(crates/dovetail-api/src/apply.rs).     │
 │                                                                         ││                                           │
+│   ⠋ Mortising… 0s                                                       ││                                           │
 │                                                                         ││                                           │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
 ┌ chat › coordinator ─────────────────────────────────────────────────────┐┌ chat › side-1 ────────────────────────────┐

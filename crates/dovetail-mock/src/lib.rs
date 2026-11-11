@@ -392,6 +392,7 @@ impl MockCore {
                 self.emit(Event::JournalChanged(JournalState {
                     latest,
                     closing: true,
+                    fresh: false,
                 }));
                 let coordinator = agent_id(COORDINATOR);
                 self.append(
@@ -410,6 +411,7 @@ impl MockCore {
                     core.emit(Event::JournalChanged(JournalState {
                         latest: Some(date),
                         closing: false,
+                        fresh: false,
                     }));
                 });
             }
@@ -428,6 +430,7 @@ impl MockCore {
                 self.emit(Event::JournalChanged(JournalState {
                     latest,
                     closing: true,
+                    fresh: true,
                 }));
                 self.append(
                     &coordinator,
@@ -445,6 +448,7 @@ impl MockCore {
                     core.emit(Event::JournalChanged(JournalState {
                         latest: Some(date.clone()),
                         closing: false,
+                        fresh: false,
                     }));
                     core.append(
                         &coordinator,
@@ -625,8 +629,15 @@ impl MockCore {
             Command::OpenProject { .. } => {
                 self.fail("the mock does not switch projects; the real app restarts on it".into())
             }
-            Command::Upgrade { .. }
-            | Command::RemoveWorktree { .. }
+            // A pretend build, so the working indicator can be tried: it ends with a failure.
+            Command::Upgrade { .. } => {
+                self.emit(Event::UpgradeBuilding(true));
+                self.after(6_000, |core| {
+                    core.emit(Event::UpgradeBuilding(false));
+                    core.fail("not available in the mock".into());
+                });
+            }
+            Command::RemoveWorktree { .. }
             | Command::RegisterProject { .. }
             | Command::SetRecipeProfile { .. }
             | Command::StartRound { .. }

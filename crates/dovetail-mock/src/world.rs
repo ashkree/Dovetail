@@ -57,6 +57,7 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
         lock: SessionLock::Headless,
         model: Some("claude-opus-5-5".into()),
         subagent_tokens: 0,
+        tool: None,
     }
 }
 
@@ -123,6 +124,7 @@ pub(crate) fn subagent(id: &str, parent: &Agent, background: bool, now_ms: i64) 
         lock: SessionLock::Headless,
         model: None,
         subagent_tokens: 0,
+        tool: None,
     }
 }
 
@@ -537,6 +539,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         commands: BTreeMap::from([(agent_id(COORDINATOR), commands())]),
         // No journal, so quitting the mock never asks to close the day; `:eod` still works.
         journal: None,
+        upgrade_building: false,
         research: vec![crate::research::seeded(now_ms).summary],
         tangents,
     };

@@ -512,7 +512,8 @@ fn eod_closes_the_day_with_the_mock_clocks_date() {
         core.state().journal,
         Some(JournalState {
             latest: None,
-            closing: true
+            closing: true,
+            fresh: false,
         })
     );
     // Until the journal is written: 2026-11-01, as the virtual clock reads.
@@ -526,7 +527,8 @@ fn eod_closes_the_day_with_the_mock_clocks_date() {
         core.state().journal,
         Some(JournalState {
             latest: Some("2026-11-01".into()),
-            closing: false
+            closing: false,
+            fresh: false,
         })
     );
 }
@@ -570,7 +572,8 @@ fn fresh_simulates_a_handoff_and_a_new_coordinator() {
         core.state().journal,
         Some(JournalState {
             latest: Some("2026-11-01".into()),
-            closing: false
+            closing: false,
+            fresh: false,
         })
     );
     core.handle(Command::AnswerPermission {

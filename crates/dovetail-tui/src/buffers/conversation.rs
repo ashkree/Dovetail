@@ -109,6 +109,8 @@ pub struct ConversationBuffer {
     kind: BufferKind,
     /// Added to the pane title (the side panel's "2/3 ⇥").
     heading_suffix: Option<String>,
+    /// The last draw put a spinner on screen (the working line).
+    shows_working: bool,
 }
 
 impl Default for ConversationBuffer {
@@ -125,11 +127,22 @@ impl Default for ConversationBuffer {
             layout: Layout::default(),
             kind: BufferKind::Conversation,
             heading_suffix: None,
+            shows_working: false,
         }
     }
 }
 
 impl ConversationBuffer {
+    /// Whether the last draw put a spinner on screen, so the UI must keep animating.
+    pub fn shows_working(&self) -> bool {
+        self.shows_working
+    }
+
+    /// Forgets the spinner; the next draw says again.
+    pub fn clear_working(&mut self) {
+        self.shows_working = false;
+    }
+
     /// The conversation view of the side panel.
     pub fn for_panel() -> Self {
         Self {
@@ -617,6 +630,17 @@ impl Buffer for ConversationBuffer {
             theme,
         );
         let body = crate::theme::CHAT_PADDING.shrink(inner);
+        // The bottom row is the working line's: always reserved, so it never shifts the text.
+        let reserve = u16::from(body.height >= 3);
+        let working_row = Rect {
+            y: body.y + body.height - reserve,
+            height: reserve,
+            ..body
+        };
+        let body = Rect {
+            height: body.height - reserve,
+            ..body
+        };
 
         let typing = focused && chatting;
         let name = agent.map_or("no agent", |a| a.name.as_str());
@@ -761,6 +785,21 @@ impl Buffer for ConversationBuffer {
                     gutter,
                 );
             }
+        }
+        if working_row.height > 0
+            && let Some(since) = cx.activity.working_for(&agent.id, cx.now_ms)
+        {
+            self.shows_working = true;
+            let width = usize::from(body.x + body.width - column.x);
+            let line = crate::render::working::working_line(
+                theme, agent, entries, since, cx.now_ms, width,
+            );
+            let rect = Rect {
+                x: column.x,
+                width: width as u16,
+                ..working_row
+            };
+            frame.render_widget(Paragraph::new(line), rect);
         }
         if self.chat.is_some() {
             self.render_popup(frame, body, cx);

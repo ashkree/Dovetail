@@ -11,6 +11,7 @@ macro_rules! cx {
             theme: &$app.theme,
             now_ms: $app.now_ms,
             tz: &$app.tz,
+            activity: &$app.activity,
         }
     };
 }
@@ -32,6 +33,7 @@ use dovetail_api::{
 use jiff::tz::TimeZone;
 
 use crate::action::Action;
+use crate::activity::{self, Activity};
 use crate::buffers::{Buffers, Effect, InputTarget, MapMouse, MapReaction, ViewCx};
 use crate::canvas::kitty::Scene;
 use crate::canvas::view::CellPx;
@@ -106,6 +108,8 @@ pub struct App {
     theme: Theme,
     tz: TimeZone,
     now_ms: i64,
+    /// When each working indicator began (the working line, the status bar's long command).
+    activity: Activity,
     keymap: Keymap,
     resolver: Resolver,
     mode: Mode,
@@ -172,6 +176,7 @@ impl App {
             theme: Theme::default(),
             tz,
             now_ms: 0,
+            activity: Activity::default(),
             keymap: Keymap::default_map(),
             resolver: Resolver::default(),
             mode: Mode::Normal,
@@ -242,7 +247,27 @@ impl App {
         if self.next_clock_change_ms().is_some_and(|d| d <= now_ms) {
             self.dirty = true;
         }
+        // A new spinner frame is a new picture, but only where a spinner is on screen.
+        if self.animating() && activity::frame_index(now_ms) != activity::frame_index(self.now_ms) {
+            self.dirty = true;
+        }
         self.now_ms = now_ms;
+    }
+
+    /// Whether a spinner is on screen: a long command in the status bar, or a working agent's
+    /// line under a conversation drawn last frame. Only then does the UI animate.
+    pub fn animating(&self) -> bool {
+        self.activity.busy(self.now_ms).is_some()
+            || self.buffers.conversation.shows_working()
+            || self.buffers.panel.conversation().shows_working()
+            || self.buffers.ask.conversation().shows_working()
+    }
+
+    /// Time to the next spinner frame, for the loop's deadline; `None` when nothing animates,
+    /// so an idle UI sleeps.
+    pub fn next_animation_in(&self) -> Option<std::time::Duration> {
+        self.animating()
+            .then(|| activity::next_frame_in(self.now_ms))
     }
 
     /// When the screen next changes with the wall clock alone (a usage-limit reset passing),
@@ -524,6 +549,11 @@ impl App {
                     ApplyResult::Stale => {}
                 }
             }
+        }
+        if let Some(done) = self.activity.sync(&self.snap, self.now_ms)
+            && self.note.is_none()
+        {
+            self.note = Some(done.done().into());
         }
         self.settle();
     }
@@ -1220,6 +1250,7 @@ impl App {
                     theme: &self.theme,
                     now_ms: self.now_ms,
                     tz: &self.tz,
+                    activity: &self.activity,
                 };
                 let mut effects = Vec::new();
                 self.buffers

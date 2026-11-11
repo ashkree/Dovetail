@@ -684,6 +684,7 @@ mod tests {
             lock: SessionLock::Headless,
             model: None,
             subagent_tokens: 0,
+            tool: None,
         }
     }
 

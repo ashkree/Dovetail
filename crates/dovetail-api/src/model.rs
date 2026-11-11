@@ -118,6 +118,9 @@ pub struct Snapshot {
     /// registered project, so it has no journal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub journal: Option<JournalState>,
+    /// `:upgrade` is building the next binary in the background (ADR 0014).
+    #[serde(default)]
+    pub upgrade_building: bool,
     /// The tangents in Tangents (ADR 0017), whatever project is open: every one that is not
     /// archived, oldest first. Content is fetched with [`crate::Command::LoadTangent`].
     #[serde(default)]
@@ -160,6 +163,9 @@ pub struct JournalState {
     pub latest: Option<String>,
     /// `:eod` is waiting for the coordinator's handoff before it writes the day's file.
     pub closing: bool,
+    /// The handoff `closing` waits for is a `:fresh` start's, not `:eod`'s.
+    #[serde(default)]
+    pub fresh: bool,
 }
 
 /// A slash command or skill a session offers (`/compact`, `/code-review`), typed as `/name` in
@@ -359,6 +365,19 @@ pub struct Agent {
     /// the final `result` undercounts). Includes subagents whose nodes are gone.
     #[serde(default)]
     pub subagent_tokens: u64,
+    /// The tool the session is running right now (sessions only); `None` between tools, while
+    /// the model thinks or writes, and when idle. Not stored: a restart starts without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<RunningTool>,
+}
+
+/// A tool call in flight: what the working line says the agent is doing ("Reading plan.md").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunningTool {
+    /// Claude Code's tool name (`Read`, `Bash`, `mcp__dovetail__ask_user`).
+    pub name: String,
+    /// The call's main argument: a path, command, pattern or URL; empty when it has none.
+    pub arg: String,
 }
 
 /// What an agent is. Coordinators and slices are their own Claude Code sessions; subagents

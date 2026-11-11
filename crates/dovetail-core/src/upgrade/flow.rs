@@ -25,7 +25,7 @@ use crate::socket::HandlerError;
 #[derive(Debug, Default)]
 pub(crate) struct UpgradeState {
     /// Cancels the running build (the app is quitting); `None` when none runs.
-    building: Option<Arc<AtomicBool>>,
+    pub(crate) building: Option<Arc<AtomicBool>>,
     /// The "Upgrade ready" item in Needs you.
     item: Option<InboxId>,
     /// `y` was pressed: restart as soon as every agent is idle.
@@ -122,6 +122,7 @@ impl Core {
         let staging = Staging::new(&self.paths);
         let cancel = Arc::new(AtomicBool::new(false));
         self.upgrade.building = Some(cancel.clone());
+        self.emit(Event::UpgradeBuilding(true));
         let what = if local { "the checkout" } else { "origin/main" };
         self.activity(
             ActivityKind::Lifecycle,
@@ -138,6 +139,7 @@ impl Core {
     /// The build finished: "Upgrade ready", or an Error item with the build's tail.
     pub(crate) fn on_upgrade_built(&mut self, result: Result<Ready, BuildError>) {
         self.upgrade.building = None;
+        self.emit(Event::UpgradeBuilding(false));
         if self.quitting.is_some() {
             return;
         }

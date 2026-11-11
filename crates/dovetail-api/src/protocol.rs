@@ -212,6 +212,9 @@ pub enum Event {
     /// The end-of-day journal changed: `:eod` started waiting for the handoff, or a day's file
     /// was written (ADR 0012).
     JournalChanged(JournalState),
+    /// `:upgrade` started building the next binary (`true`) or the build finished, failed or was
+    /// cancelled (`false`); the result arrives as a Needs-you item.
+    UpgradeBuilding(bool),
     /// Every agent is idle and the user said `y` on "Upgrade ready" (ADR 0014): the core is
     /// quitting, and the UI quits too, without asking. The binary then swaps the staged build in
     /// and starts it in the same terminal. Changes nothing in the snapshot.

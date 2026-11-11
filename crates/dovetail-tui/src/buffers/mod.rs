@@ -65,6 +65,8 @@ pub struct ViewCx<'a> {
     pub now_ms: i64,
     /// Time zone for displayed times.
     pub tz: &'a TimeZone,
+    /// When each working indicator began.
+    pub activity: &'a crate::activity::Activity,
 }
 
 /// What typing in the prompt row is for.

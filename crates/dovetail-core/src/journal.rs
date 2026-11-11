@@ -441,6 +441,7 @@ impl Core {
         Some(JournalState {
             latest: latest(&dir).map(|d| d.to_string()),
             closing: self.closing.is_some(),
+            fresh: self.closing.as_ref().is_some_and(|c| c.fresh.is_some()),
         })
     }
 

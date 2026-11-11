@@ -1,0 +1,34 @@
+---
+source: crates/dovetail-tui/tests/working.rs
+expression: screen
+---
+ folder /src/business
+┌ coordinator · ◐ working · 1.2G · $3.10 ──────────────────┐┌ inbox · needs you (3) ───────────────┐
+│                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
+│   src/decision.rs reads it once at start-up.             ││   ? slice-4  Which route pref… 10:12 │
+│                                                          ││   ✓ slice-4  Handler wired; t… 10:09 │
+│   What I checked                                         ││                                      │
+│                                                          ││                                      │
+│   • the handler in crates/api/src/routes.rs              ││                                      │
+│                                                          ││                                      │
+│   • the eval path, which fails before it logs            ││                                      │
+│                                                          ││ y allow · d deny · r reply · x dism… │
+│   • the CI config                                        │└──────────────────────────────────────┘
+│                                                          │┌ tasks · business ────────────────────┐
+│   rust                                                   ││ ◐ ◆ coordinator   working 1.2G $3.10 │
+│     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;     ││ ▾ Now (2)                            │
+│                                                          ││ ▾ ⚠ business surface P1     PR #1231 │
+│   Slice   │ State                                        ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│   ────────┼────────                                      ││         ⎇ dovetail/slice-4           │
+│   slice-4 │ editing                                      ││         ✓ write route tests          │
+│   slice-7 │ blocked                                      ││         ◐ wire handler to registry   │
+│                                                          ││         ○ update OpenAPI spec ⊘ blo… │
+│   │ Merge order: #1231 first, then the 500 fix.▌         ││       ✓ ◇ rebase          done $0.21 │
+│                                                          ││       ◐ ◇ explore c… 12 tools · Grep │
+│   ⠋ Reading plan.md… 1m 05s                              ││ ▾ ⚠ get_decision 500 P0              │
+│                                                          ││   ▾ ⚠ ◆ slice-7  manual    needs you │
+└──────────────────────────────────────────────────────────┘│         ⎇ dovetail/slice-7           │
+┌ chat › coordinator ──────────────────────────────────────┐│ ▾ Next (1)                           │
+│   › i or ^j to type · ]] [[ turns · zc zo fold entry …   ││ ⏎ open · o fold · dd archive         │
+└──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command
