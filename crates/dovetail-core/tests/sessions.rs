@@ -343,6 +343,25 @@ fn the_core_checks_the_editors_path_before_asking_the_ui_to_let_go() {
 }
 
 #[test]
+fn a_peer_message_becomes_an_agent_message_entry() {
+    let fake = fixture("peer_message");
+    let mut h = Harness::start(fake, true, Config::default());
+    prompt(&h, "Reply with exactly the word: alpha");
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+    let entries = h.entries(COORDINATOR);
+    let text = dovetail_api::agent_message_text("scout", false, "The report.\nSecond line.");
+    assert!(
+        entries.contains(&(EntryKind::AgentMessage, text)),
+        "{entries:?}"
+    );
+    assert!(
+        !entries
+            .iter()
+            .any(|(k, t)| *k == EntryKind::Notice && t.contains("scout"))
+    );
+}
+
+#[test]
 fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     let fake = fixture("plain_turn");
     let mut h = Harness::start(fake.clone(), true, Config::default());

@@ -643,7 +643,7 @@ impl Core {
                 .entries
                 .iter()
                 .rev()
-                .find(|e| e.kind != EntryKind::Notice)
+                .find(|e| !matches!(e.kind, EntryKind::Notice | EntryKind::AgentMessage))
                 .map(|e| e.at_ms),
         }
     }

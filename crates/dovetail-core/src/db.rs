@@ -924,6 +924,45 @@ mod tests {
     }
 
     #[test]
+    fn agent_messages_and_old_notices_both_load() {
+        use dovetail_api::{AgentKind, EntryKind, agent_message_text};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
+        let agent = AgentId("a".into());
+        db.upsert_agent(AgentRow {
+            agent: crate::service::new_agent(agent.clone(), "a".into(), AgentKind::Slice, None),
+            session_id: None,
+            transcript_path: None,
+            task_list_id: None,
+            created_ms: 0,
+            tool_use_id: None,
+            claude_home: None,
+            takeover: None,
+        })
+        .wait()
+        .unwrap();
+        let entry = |n: u64, kind, text: String| ConversationEntry {
+            id: EntryId(n),
+            at_ms: 0,
+            kind,
+            text,
+            attachments: Vec::new(),
+        };
+        // The old build stored a peer message as a notice.
+        let old = entry(1, EntryKind::Notice, "Message from x: y".into());
+        let new = entry(
+            2,
+            EntryKind::AgentMessage,
+            agent_message_text("x", true, "y"),
+        );
+        db.upsert_entry(agent.clone(), old.clone()).wait().unwrap();
+        db.upsert_entry(agent.clone(), new.clone()).wait().unwrap();
+        let (loaded, _) = db.load_entries(agent, None, 10).wait().unwrap();
+        assert_eq!(loaded, vec![old, new]);
+    }
+
+    #[test]
     fn todo_owners_migrate_up_from_empty_and_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
