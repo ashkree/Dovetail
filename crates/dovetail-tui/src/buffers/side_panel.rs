@@ -32,15 +32,9 @@ fn tangent_label(snap: &Snapshot, agent: &Agent) -> Option<String> {
     let task = tangent_task(&agent.id).filter(|_| agent.kind == AgentKind::Tangent)?;
     let saved = snap.tangents.iter().any(|t| t.task.id == task);
     Some(if saved {
-        format!(
-            "{} tangent · kept in Tangents · a attach",
-            crate::switcher::TANGENT_MARKER
-        )
+        format!("{} tangent · a attach", crate::switcher::TANGENT_MARKER)
     } else {
-        format!(
-            "{} tangent · left Tangents",
-            crate::switcher::TANGENT_MARKER
-        )
+        format!("{} tangent, left Tangents", crate::switcher::TANGENT_MARKER)
     })
 }
 

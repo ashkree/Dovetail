@@ -842,7 +842,10 @@ fn a_research_proposal_and_its_evidence_survive_json() {
     roundtrip(&AgentKind::Tangent);
     // A tangent's session is named after its task in Tangents, and back.
     assert_eq!(tangent_agent(TaskId(12)), AgentId("tangent-12".into()));
-    assert_eq!(tangent_task(&AgentId("tangent-12".into())), Some(TaskId(12)));
+    assert_eq!(
+        tangent_task(&AgentId("tangent-12".into())),
+        Some(TaskId(12))
+    );
     assert_eq!(tangent_task(&AgentId("side-1".into())), None);
     assert_eq!(tangent_task(&AgentId("tangent-x".into())), None);
     // Evidence is written as the id the report cites.

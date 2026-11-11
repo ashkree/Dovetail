@@ -135,7 +135,7 @@ pub fn spawn(
     // Tangents is always there (ADR 0017): registered now if missing.
     let tangents = crate::tangents::open(&paths, &db, &project);
     if let Err(why) = &tangents {
-        tracing::warn!("tangents are off: {why}");
+        tracing::warn!("{why}");
     }
     let socket_path = paths.socket(project.key());
     let listener = socket::bind(&socket_path)?;
@@ -456,7 +456,7 @@ pub(crate) struct Core {
     /// Research capture: the open round and the subagents being watched (R1, `research`).
     pub(crate) research: crate::research::Research,
     /// Tangents' database (ADR 0017, `tangents`), or why tangents are off.
-    pub(crate) tangents: Result<Db, String>,
+    pub(crate) tangents: Result<Db, crate::tangents::TangentError>,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -549,7 +549,7 @@ impl Core {
             upgrade: Default::default(),
             switch_to: Default::default(),
             research: Default::default(),
-            tangents: Err("not opened".into()),
+            tangents: Err(crate::tangents::TangentError::Off("not opened".into())),
         }
     }
 
@@ -838,7 +838,7 @@ impl Core {
         if let Err(why) = &self.tangents {
             self.warnings.push(Warning {
                 id: WarningId("tangents".into()),
-                text: format!("tangents are off: {why}"),
+                text: why.to_string(),
             });
         }
         if self.project.registered().is_none() {

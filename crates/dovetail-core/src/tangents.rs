@@ -36,17 +36,68 @@ use crate::service::{COORDINATOR, Core, new_agent};
 /// Longest task title a question gives; the whole question is kept in the notes.
 const TITLE_MAX: usize = 80;
 
+/// The file in a project's state folder holding the day its morning last looked for new
+/// tangents, so the "new tangents" item comes once a day.
+const MORNING_MARKER: &str = "tangents-morning";
+
+/// Why a tangent command could not be carried out.
+#[derive(Debug, Clone, thiserror::Error)]
+pub(crate) enum TangentError {
+    /// Tangents could not be opened at start: no tangent can be asked or moved.
+    #[error("tangents are off: {0}")]
+    Off(String),
+    /// No such tangent, or not one that can do this now.
+    #[error("{0}")]
+    Refused(String),
+    /// Storage or a file failed.
+    #[error("{0}")]
+    Failed(String),
+}
+
+impl From<DbError> for TangentError {
+    fn from(e: DbError) -> Self {
+        TangentError::Failed(e.to_string())
+    }
+}
+
+/// A refusal worded for the user.
+impl From<String> for TangentError {
+    fn from(why: String) -> Self {
+        TangentError::Refused(why)
+    }
+}
+
+/// A refusal worded for the user.
+impl From<&str> for TangentError {
+    fn from(why: &str) -> Self {
+        TangentError::Refused(why.to_owned())
+    }
+}
+
+impl From<tokio::task::JoinError> for TangentError {
+    fn from(e: tokio::task::JoinError) -> Self {
+        TangentError::Failed(e.to_string())
+    }
+}
+
+impl From<crate::research::files::ResearchDirError> for TangentError {
+    fn from(e: crate::research::files::ResearchDirError) -> Self {
+        TangentError::Failed(e.to_string())
+    }
+}
+
 /// Opens Tangents for the core: registers it when missing, makes its folder, and returns its
 /// database (`own` when Tangents is the open project), or why tangents are off. Blocks on the
 /// DB thread: call it before the core's runtime starts.
-pub(crate) fn open(paths: &Paths, own: &Db, project: &ProjectState) -> Result<Db, String> {
-    own.ensure_tangents().wait().map_err(|e| e.to_string())?;
+pub(crate) fn open(paths: &Paths, own: &Db, project: &ProjectState) -> Result<Db, TangentError> {
+    let off = |e: &dyn std::fmt::Display| TangentError::Off(e.to_string());
+    own.ensure_tangents().wait().map_err(|e| off(&e))?;
     let dir = paths.project_dir(TANGENTS_PROJECT);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| off(&format!("creating {}: {e}", dir.display())))?;
     if project.key() == TANGENTS_PROJECT {
         return Ok(own.clone());
     }
-    Db::open(paths, Some(TANGENTS_PROJECT)).map_err(|e| format!("opening Tangents: {e}"))
+    Db::open(paths, Some(TANGENTS_PROJECT)).map_err(|e| off(&format!("opening Tangents: {e}")))
 }
 
 /// The task title a question gives: its first line, cut at [`TITLE_MAX`] characters.
@@ -137,7 +188,7 @@ async fn file_all(
 
 impl Core {
     /// Tangents' database, or why tangents are off.
-    pub(crate) fn tangents_db(&self) -> Result<Db, String> {
+    pub(crate) fn tangents_db(&self) -> Result<Db, TangentError> {
         self.tangents.clone()
     }
 
@@ -167,12 +218,12 @@ impl Core {
     }
 
     /// Tangent `task` of Tangents.
-    async fn tangent_task(&self, db: &Db, task: TaskId) -> Result<Task, String> {
-        let tasks = db.load_tasks().await.map_err(|e| e.to_string())?;
+    async fn tangent_task(&self, db: &Db, task: TaskId) -> Result<Task, TangentError> {
+        let tasks = db.load_tasks().await?;
         tasks
             .into_iter()
             .find(|t| t.id == task)
-            .ok_or_else(|| format!("there is no tangent #{}", task.0))
+            .ok_or_else(|| TangentError::Refused(format!("there is no tangent #{}", task.0)))
     }
 
     /// The summary of one tangent task, with its research when it has any.
@@ -247,7 +298,7 @@ impl Core {
         }
         let db = match self.tangents_db() {
             Ok(db) => db,
-            Err(why) => return self.fail(format!("tangents are off: {why}")),
+            Err(e) => return self.fail(e),
         };
         let title = title_of(&question);
         let asked = format!(
@@ -357,7 +408,7 @@ impl Core {
         let agent = finding.agent.clone();
         let db = match self.tangents_db() {
             Ok(db) => db,
-            Err(why) => return self.fail(format!("tangents are off: {why}")),
+            Err(e) => return self.fail(e),
         };
         let (row, sources) = match db.file_finding(finding).await {
             Ok(filed) => filed,
@@ -424,7 +475,7 @@ impl Core {
     pub(crate) async fn load_tangent(&mut self, tangent: TaskId, what: ResearchWhat) {
         let db = match self.tangents_db() {
             Ok(db) => db,
-            Err(why) => return self.fail(format!("tangents are off: {why}")),
+            Err(e) => return self.fail(e),
         };
         let t = match self.tangent_task(&db, tangent).await {
             Ok(t) => t,
@@ -451,20 +502,19 @@ impl Core {
         &self,
         tangent: TaskId,
         need_answer: bool,
-    ) -> Result<(Db, Task, TaskResearch), String> {
-        let db = self
-            .tangents_db()
-            .map_err(|why| format!("tangents are off: {why}"))?;
+    ) -> Result<(Db, Task, TaskResearch), TangentError> {
+        let db = self.tangents_db()?;
         let t = self.tangent_task(&db, tangent).await?;
         if t.status == TaskStatus::Archived {
-            return Err(format!("tangent #{} has already left Tangents", tangent.0));
+            return Err(format!("tangent #{} has already left Tangents", tangent.0).into());
         }
-        let r = db.task_research(tangent).await.map_err(|e| e.to_string())?;
+        let r = db.task_research(tangent).await?;
         if need_answer && r.findings.is_empty() {
             return Err(format!(
                 "tangent #{} has no answer yet: wait for it, or drop it",
                 tangent.0
-            ));
+            )
+            .into());
         }
         Ok((db, t, r))
     }
@@ -522,47 +572,38 @@ impl Core {
     async fn project_db(
         &self,
         id: &ProjectId,
-    ) -> Result<(crate::projects::Project, Db, bool), String> {
+    ) -> Result<(crate::projects::Project, Db, bool), TangentError> {
         if id.0 == TANGENTS_PROJECT {
             return Err("the tangent is in Tangents already: pick another project".into());
         }
-        let project = self
-            .db
-            .get_project(id.0.clone())
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| crate::projects::ProjectError::UnknownId(id.0.clone()).to_string())?;
+        let project =
+            self.db.get_project(id.0.clone()).await?.ok_or_else(|| {
+                crate::projects::ProjectError::UnknownId(id.0.clone()).to_string()
+            })?;
         if self.project.registered().is_some_and(|p| p.id == id.0) {
             return Ok((project, self.db.clone(), true));
         }
         let paths = self.paths.clone();
         let key = project.id.clone();
-        let db = tokio::task::spawn_blocking(move || Db::open(&paths, Some(&key)))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
+        let db = tokio::task::spawn_blocking(move || Db::open(&paths, Some(&key))).await??;
         Ok((project, db, false))
     }
 
     /// Creates a task in a project's `db` (the open one when `here`), telling the UI when it is
     /// the open project's.
-    async fn task_in(&mut self, db: &Db, here: bool, new: NewTask) -> Result<Task, String> {
+    async fn task_in(&mut self, db: &Db, here: bool, new: NewTask) -> Result<Task, TangentError> {
         if here {
-            let id = self
-                .create_task(new, false)
-                .await
-                .map_err(|e| e.to_string())?;
+            let id = self.create_task(new, false).await?;
             return self
                 .task(id)
                 .await
-                .ok_or_else(|| "the new task is gone".to_owned());
+                .ok_or_else(|| TangentError::Failed("the new task is gone".into()));
         }
         db.create_task(new, false)
-            .await
-            .map_err(|e| e.to_string())?
+            .await?
             .into_iter()
             .next()
-            .ok_or_else(|| "no task was created".to_owned())
+            .ok_or_else(|| TangentError::Failed("no task was created".into()))
     }
 
     /// `Command::FileTangent`: a new task in the project with the tangent's question, notes,
@@ -573,10 +614,14 @@ impl Core {
         }
     }
 
-    async fn try_file_tangent(&mut self, tangent: TaskId, id: &ProjectId) -> Result<(), String> {
+    async fn try_file_tangent(
+        &mut self,
+        tangent: TaskId,
+        id: &ProjectId,
+    ) -> Result<(), TangentError> {
         let (db, t, r) = self.tangent_for_move(tangent, false).await?;
         let (project, target, here) = self.project_db(id).await?;
-        let root = crate::research::root_of(&self.paths, &project).map_err(|e| e.to_string())?;
+        let root = crate::research::root_of(&self.paths, &project)?;
         let new = NewTask {
             title: t.title.clone(),
             p_level: None,
@@ -637,7 +682,7 @@ impl Core {
         &mut self,
         tangent: TaskId,
         id: &ProjectId,
-    ) -> Result<(), String> {
+    ) -> Result<(), TangentError> {
         let (db, t, r) = self.tangent_for_move(tangent, false).await?;
         let (project, target, here) = self.project_db(id).await?;
         let dir = self.tangent_dir(tangent, &t.title);
@@ -680,8 +725,7 @@ impl Core {
                 TaskChange::Status(TaskStatus::Done),
             ],
         )
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
         self.activity(
             ActivityKind::Task,
             None,
@@ -752,9 +796,22 @@ impl Core {
     /// Tangents has untriaged tangents. `last_used` is when the coordinator was last used,
     /// read before anything was added to its conversation.
     pub(crate) async fn morning_tangents(&mut self, last_used: crate::journal::LastUse) {
-        let first_open = last_used.date.is_some_and(|d| d < crate::journal::today());
-        if !first_open {
+        let today = crate::journal::today();
+        let first_open = last_used.date.is_some_and(|d| d < today);
+        if !first_open || self.project.registered().is_none() {
             return;
+        }
+        // Once a day: a second open before the coordinator is used again asks nothing more.
+        let marker = self
+            .paths
+            .project_dir(self.project.key())
+            .join(MORNING_MARKER);
+        let stamp = today.to_string();
+        if std::fs::read_to_string(&marker).is_ok_and(|seen| seen.trim() == stamp) {
+            return;
+        }
+        if let Err(e) = files::write_atomic(&marker, &stamp) {
+            tracing::warn!("writing {}: {e}", marker.display());
         }
         let count = self.new_tangents().await;
         if count == 0 {
