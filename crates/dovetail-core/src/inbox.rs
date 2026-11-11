@@ -6,7 +6,7 @@
 //! another (stream rule 3).
 
 use dovetail_api::{
-    AgentId, Event, InboxId, InboxItem, InboxKind, PermissionAnswer, RuleSuggestion,
+    ActivityKind, AgentId, Event, InboxId, InboxItem, InboxKind, PermissionAnswer, RuleSuggestion,
 };
 use dovetail_driver::{ControlAnswer, ControlId, PermissionRequest};
 use serde_json::Value;
@@ -261,10 +261,19 @@ impl Core {
                 )
             }
         };
-        let Some(entry) = self.resolve(id, Some(label)) else {
+        let tool = match &self.inbox[&id].item.kind {
+            InboxKind::Permission { tool, .. } => tool.clone(),
+            _ => String::new(),
+        };
+        let Some(entry) = self.resolve(id, Some(label.clone())) else {
             return;
         };
         let agent = entry.item.agent.clone();
+        self.activity(
+            ActivityKind::Permission,
+            Some(&agent),
+            format!("{tool}: {}", label.lines().next().unwrap_or_default()),
+        );
         match entry.waiter {
             Waiter::Control {
                 control,

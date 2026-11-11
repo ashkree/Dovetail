@@ -1173,6 +1173,17 @@ impl Core {
             .first()
             .map(|t| t.id)
             .ok_or_else(|| DbError::NotFound("no task was created".into()))?;
+        let title = tasks.first().map(|t| t.title.clone()).unwrap_or_default();
+        let who = if coordinator_created {
+            "the coordinator"
+        } else {
+            "you"
+        };
+        self.activity(
+            ActivityKind::Task,
+            None,
+            format!("task #{} {title}: created by {who}", id.0),
+        );
         self.emit_tasks(tasks);
         Ok(id)
     }
@@ -1193,9 +1204,21 @@ impl Core {
     }
 
     pub(crate) async fn update_task(&mut self, id: TaskId, patch: Vec<TaskChange>) {
+        let described = patch.clone();
         match self.db.update_task(id, patch).await {
-            Ok(tasks) => self.emit_tasks(tasks),
+            Ok(tasks) => {
+                self.task_activity(id, &tasks, &described);
+                self.emit_tasks(tasks);
+            }
             Err(e) => self.fail(e.to_string()),
+        }
+    }
+
+    /// Adds the Activity line for a task patch that was applied.
+    pub(crate) fn task_activity(&mut self, id: TaskId, changed: &[Task], patch: &[TaskChange]) {
+        let title = changed.iter().find(|t| t.id == id).map_or("", |t| &t.title);
+        if let Some(text) = dovetail_api::describe_task_patch(id, title, patch) {
+            self.activity(ActivityKind::Task, None, text);
         }
     }
 
