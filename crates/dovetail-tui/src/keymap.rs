@@ -11,6 +11,10 @@ use crate::region::BufferKind;
 /// How long a half-typed sequence waits for its next key (plan B27).
 pub const SEQUENCE_TIMEOUT_MS: u64 = 1000;
 
+/// How long a half-typed sequence waits, after its last key, before the which-key popup lists
+/// what can come next.
+pub const WHICH_KEY_DELAY_MS: u64 = 400;
+
 /// A key with its modifiers, normalised so that `A` is `Char('A')` with no Shift.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Key {
@@ -50,6 +54,12 @@ impl Key {
             KeyCode::Char(c) => c.to_string(),
             KeyCode::Enter => "⏎".into(),
             KeyCode::Tab => "⇥".into(),
+            KeyCode::BackTab => "⇧⇥".into(),
+            KeyCode::Backspace => "⌫".into(),
+            KeyCode::Up => "↑".into(),
+            KeyCode::Down => "↓".into(),
+            KeyCode::Left => "←".into(),
+            KeyCode::Right => "→".into(),
             KeyCode::Esc => "⎋".into(),
             other => format!("{other:?}"),
         };
@@ -459,6 +469,21 @@ pub fn default_bindings() -> Vec<Binding> {
     BINDINGS.iter().copied().chain(answers).collect()
 }
 
+/// A key sequence as shown to the user (`␣ss`, `gg`, `^j`).
+pub fn label_sequence(keys: &[Key]) -> String {
+    keys.iter().map(Key::label).collect()
+}
+
+/// A key that can follow the keys typed so far.
+#[derive(Debug, Clone)]
+pub struct Continuation {
+    /// The key.
+    pub key: Key,
+    /// What it leads to: the keys still to type after it (none when it completes a binding),
+    /// and the action.
+    pub leads_to: Vec<(Vec<Key>, Action)>,
+}
+
 #[derive(Debug, Clone)]
 struct Entry {
     mode: Mode,
@@ -522,6 +547,66 @@ impl Keymap {
             .map(|e| e.action)
     }
 
+    /// The keys that can follow `pending` in `mode` and `scopes` (most specific first), each with
+    /// what it leads to, in table order. A key bound twice as a last key keeps the more specific
+    /// binding, as the resolver does. This is what the which-key popup lists.
+    pub fn continuations(
+        &self,
+        mode: Mode,
+        scopes: &[Scope],
+        pending: &[Key],
+    ) -> Vec<Continuation> {
+        type Lead = (usize, Vec<Key>, Action);
+        let mut found: Vec<(Key, Vec<Lead>)> = Vec::new();
+        for (rank, keys, action) in self.candidates(mode, scopes) {
+            if keys.len() <= pending.len() || !keys.starts_with(pending) {
+                continue;
+            }
+            let key = keys[pending.len()];
+            let lead = (rank, keys[pending.len() + 1..].to_vec(), action);
+            match found.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, leads)) => leads.push(lead),
+                None => found.push((key, vec![lead])),
+            }
+        }
+        found
+            .into_iter()
+            .map(|(key, leads)| {
+                // The same last key in two scopes: the more specific one wins.
+                let completing = leads
+                    .iter()
+                    .filter(|(_, rest, _)| rest.is_empty())
+                    .min_by_key(|(rank, _, _)| *rank)
+                    .map(|(rank, _, _)| *rank);
+                let leads_to = leads
+                    .into_iter()
+                    .filter(|(rank, rest, _)| !rest.is_empty() || Some(*rank) == completing)
+                    .map(|(_, rest, action)| (rest, action))
+                    .collect();
+                Continuation { key, leads_to }
+            })
+            .collect()
+    }
+
+    /// Every binding of `action`, as (mode, scope, key sequence as shown), in table order.
+    pub fn bindings_of(&self, action: Action) -> Vec<(Mode, Scope, String)> {
+        self.entries
+            .iter()
+            .filter(|e| e.action == action)
+            .map(|e| (e.mode, e.scope, label_sequence(&e.keys)))
+            .collect()
+    }
+
+    /// The keys that run `action` in `mode` and one of `scopes`, as shown: the shortest binding
+    /// (`i` over `^j`), the more specific scope's among equals.
+    pub fn label_for(&self, action: Action, mode: Mode, scopes: &[Scope]) -> Option<String> {
+        self.candidates(mode, scopes)
+            .filter(|(_, _, a)| *a == action)
+            .map(|(rank, keys, _)| (label_sequence(keys), rank))
+            .min_by_key(|(label, rank)| (label.chars().count(), *rank))
+            .map(|(label, _)| label)
+    }
+
     /// Entries for a mode whose scope is one of `scopes`, as (scope rank, keys, action); a lower
     /// rank is more specific.
     fn candidates<'a>(
@@ -554,11 +639,13 @@ pub enum Resolved {
 #[derive(Debug, Default)]
 pub struct Resolver {
     pending: Vec<Key>,
-    /// When the first pending key arrived.
-    since_ms: u64,
+    /// When the last pending key arrived.
+    last_ms: u64,
     /// The action to run if the timeout fires: set when the pending keys are a complete
     /// sequence that is also the start of a longer one (`g` against `gg`).
     ambiguous: Option<Action>,
+    /// Whether the which-key popup is open for the pending keys.
+    hint_shown: bool,
 }
 
 impl Resolver {
@@ -572,9 +659,7 @@ impl Resolver {
         key: Key,
         now_ms: u64,
     ) -> Resolved {
-        if self.pending.is_empty() {
-            self.since_ms = now_ms;
-        }
+        self.last_ms = now_ms;
         self.pending.push(key);
         let mut exact: Option<(usize, Action)> = None;
         let mut longer = false;
@@ -609,9 +694,28 @@ impl Resolver {
         }
     }
 
-    /// When the pending keys give up, if any are pending.
+    /// When the pending keys give up (a timeout after the last key), if any are pending. While
+    /// the which-key popup is open the sequence waits for the user, so there is no deadline,
+    /// unless a shorter binding is waiting to run (`g` against `gg`).
     pub fn deadline_ms(&self) -> Option<u64> {
-        (!self.pending.is_empty()).then_some(self.since_ms + SEQUENCE_TIMEOUT_MS)
+        let waits = !self.pending.is_empty() && (self.ambiguous.is_some() || !self.hint_shown);
+        waits.then_some(self.last_ms + SEQUENCE_TIMEOUT_MS)
+    }
+
+    /// When the which-key popup opens: [`WHICH_KEY_DELAY_MS`] after the last key. `None` when
+    /// nothing is pending or the popup is already open, so an idle UI has no deadline.
+    pub fn hint_deadline_ms(&self) -> Option<u64> {
+        (!self.pending.is_empty() && !self.hint_shown).then_some(self.last_ms + WHICH_KEY_DELAY_MS)
+    }
+
+    /// Opens the which-key popup for the pending keys.
+    pub fn show_hint(&mut self) {
+        self.hint_shown = !self.pending.is_empty();
+    }
+
+    /// Whether the which-key popup is open.
+    pub fn hint_shown(&self) -> bool {
+        self.hint_shown
     }
 
     /// The deadline passed: runs the ambiguous shorter sequence if there is one.
@@ -630,6 +734,7 @@ impl Resolver {
     pub fn reset(&mut self) {
         self.pending.clear();
         self.ambiguous = None;
+        self.hint_shown = false;
     }
 }
 

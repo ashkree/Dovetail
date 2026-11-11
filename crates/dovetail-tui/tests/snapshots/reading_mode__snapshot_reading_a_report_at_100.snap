@@ -31,4 +31,4 @@ expression: "snapshot_at(100, 30)"
 │                      ││    end · ]s [s · gd · gx · i ask             ││                          │
 │ ⏎ read · o fold      ││                                              ││                          │
 └──────────────────────┘└──────────────────────────────────────────────┘└──────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 1… gd open · gx browser · i ask · ⎋ leave
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%   READING  [F1] … ]s cite · : command

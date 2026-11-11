@@ -35,4 +35,4 @@ expression: "render(&mut app, 120, 34)"
 ┌ chat › coordinator ─────────────────────────────────────────────────────┐┌ chat › side-1 ────────────────────────────┐
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn       ││   › i or ^j to type · ⇥ next chat · dd…   │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 5 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command
+ NORMAL   business · 4 tasks · 5 agents · 3 ⚠ · 2.1G · ctx 62%        i chat · ⇥ next · dd close · T tangent · : command

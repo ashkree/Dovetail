@@ -41,4 +41,4 @@ expression: "render(&mut app, 200, 40)"
 ┌ chat › coordinator ──────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ chat › side-1 ───────────────────────────────────────────────────────────┐
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn                                                        ││   › i or ^j to type · ⇥ next chat · dd close · ␣? hide                   │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 5 agents · 3 ⚠ · 2.1G · ctx 62%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command
+ NORMAL   business · 4 tasks · 5 agents · 3 ⚠ · 2.1G · ctx 62%                                                                             i chat · ⇥ next · dd close · T tangent · a attach · : command

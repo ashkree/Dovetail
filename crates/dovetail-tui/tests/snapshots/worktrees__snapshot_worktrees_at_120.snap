@@ -35,4 +35,4 @@ expression: "render(&mut app, 120, 34)"
 │                                                                         ││         ⎇ dovetail/inbox-keys             │
 │ ⏎ open · e editor · c copy path · X remove                              ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%                           i chat · ␣ss switch · : command
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%      ⏎ open · e edit · c copy path · X remove · : command

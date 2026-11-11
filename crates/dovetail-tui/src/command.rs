@@ -31,6 +31,55 @@ impl std::fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
+/// Every `:` command name and the action it runs. `:keys` reads it to show the commands of an
+/// action; [`parse`] reads it to resolve a name. `project add` and `project new` are two words
+/// but one command each.
+pub const COMMANDS: &[(&str, Action)] = &[
+    ("q", Action::Quit),
+    ("quit", Action::Quit),
+    ("q!", Action::ForceQuit),
+    ("quit!", Action::ForceQuit),
+    ("eod", Action::EndOfDay),
+    ("fresh", Action::FreshStart),
+    ("upgrade", Action::Upgrade),
+    ("round", Action::StartRound),
+    ("research", Action::ListResearch),
+    ("spawn", Action::NewSlice),
+    ("ask", Action::NewSideChat),
+    ("tangent", Action::NewTangent),
+    ("tangents", Action::ShowTangents),
+    ("interrupt", Action::Interrupt),
+    ("decide", Action::TaskAddDecision),
+    // Aliases: every action a key reaches can be named here too.
+    ("focus", Action::ToggleFocusMode),
+    ("read", Action::ToggleReadingMode),
+    ("reading", Action::ToggleReadingMode),
+    ("inbox", Action::FocusInbox),
+    ("coordinator", Action::FocusCoordinator),
+    ("alternate", Action::AlternateAgent),
+    ("activity", Action::ShowActivity),
+    ("messages", Action::ShowMessages),
+    ("board", Action::ShowBoard),
+    ("worktrees", Action::ShowWorktrees),
+    ("maps", Action::ShowMaps),
+    ("switch", Action::PickAgent),
+    ("skills", Action::PickCommand),
+    ("commands", Action::PickCommand),
+    ("find", Action::PickAny),
+    ("add", Action::QuickCapture),
+    ("capture", Action::QuickCapture),
+    ("mode", Action::CyclePermissionMode),
+    ("perm", Action::CyclePermissionMode),
+    ("takeover", Action::TakeOver),
+    ("keys", Action::ShowKeys),
+    ("project", Action::SwitchProject),
+    ("project add", Action::RegisterProject),
+    ("project new", Action::NewProject),
+    ("register", Action::RegisterProject),
+    #[cfg(debug_assertions)]
+    ("panic", Action::DebugPanic),
+];
+
 /// Parses a command line (without the leading `:`).
 pub fn parse(line: &str) -> Result<Parsed, CommandError> {
     let line = line.trim();
@@ -47,45 +96,19 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
             arg: rest.trim().to_string(),
         });
     }
-    let action = match name {
-        "" => return Err(CommandError::Empty),
-        "q" | "quit" => Action::Quit,
-        "q!" | "quit!" => Action::ForceQuit,
-        "eod" => Action::EndOfDay,
-        "fresh" => Action::FreshStart,
-        "upgrade" => Action::Upgrade,
-        "round" => Action::StartRound,
-        "research" => Action::ListResearch,
-        "spawn" => Action::NewSlice,
-        "ask" => Action::NewSideChat,
-        "tangent" => Action::NewTangent,
-        "tangents" => Action::ShowTangents,
-        "interrupt" => Action::Interrupt,
-        "decide" => Action::TaskAddDecision,
-        // Aliases: every action a key reaches can be named here too.
-        "focus" => Action::ToggleFocusMode,
-        "read" | "reading" => Action::ToggleReadingMode,
-        "inbox" => Action::FocusInbox,
-        "coordinator" => Action::FocusCoordinator,
-        "alternate" => Action::AlternateAgent,
-        "activity" => Action::ShowActivity,
-        "messages" => Action::ShowMessages,
-        "board" => Action::ShowBoard,
-        "worktrees" => Action::ShowWorktrees,
-        "maps" => Action::ShowMaps,
-        "switch" => Action::PickAgent,
-        "skills" | "commands" => Action::PickCommand,
-        "find" => Action::PickAny,
-        "add" | "capture" => Action::QuickCapture,
-        "mode" | "perm" => Action::CyclePermissionMode,
-        "takeover" => Action::TakeOver,
-        "project" if arg == "add" => Action::RegisterProject,
-        "project" => Action::SwitchProject,
-        "register" => Action::RegisterProject,
-        #[cfg(debug_assertions)]
-        "panic" => Action::DebugPanic,
-        other => return Err(CommandError::Unknown(other.to_owned())),
+    if name.is_empty() {
+        return Err(CommandError::Empty);
+    }
+    let lookup = if name == "project" && arg == "add" {
+        "project add"
+    } else {
+        name
     };
+    let action = COMMANDS
+        .iter()
+        .find(|(n, _)| *n == lookup)
+        .map(|&(_, action)| action)
+        .ok_or_else(|| CommandError::Unknown(name.to_owned()))?;
     Ok(Parsed {
         action,
         arg: arg.to_string(),

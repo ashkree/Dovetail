@@ -1,0 +1,21 @@
+---
+source: crates/dovetail-tui/tests/discoverability.rs
+expression: "popup_text(&CONVERSATION, \"<leader>\")"
+---
+[Move] n    focus the inbox
+[Move] ␣    find any task, agent or inbox item
+[Views] z    focus mode: hide the side column
+[Views] a    activity feed
+[Views] m    message timeline
+[Views] b    task board
+[Views] g    worktrees
+[Views] M    maps
+[Views] R    list tasks that have research
+[Views] ?    show or hide the side chats
+[Views] r    reading mode: library, reader and Ask
+[Agents] c    show the coordinator
+[Agents] ⇥    back to the previous agent
+[Agents] s…   +agents
+[Tasks] t    capture a task
+[Projects] p…   +projects
+[Maps] v    MAP mode: the map full screen

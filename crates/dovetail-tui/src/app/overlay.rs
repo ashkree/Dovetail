@@ -8,6 +8,8 @@ use dovetail_api::{Command, InboxId, ProjectId, TaskChange, TaskId};
 
 use super::App;
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
+use crate::help;
+use crate::keymap::Scope;
 use crate::mode::Mode;
 use crate::picker::{Picker, PickerKey, PickerOutcome};
 use crate::switcher;
@@ -87,6 +89,17 @@ impl App {
     pub(super) fn open_finder(&mut self) {
         let items = switcher::all_items(&self.snap, self.now_ms, &self.theme);
         self.open_overlay(Overlay::Picker(Picker::new("Find", items), Purpose::Open));
+    }
+
+    /// The scopes in force for the focused buffer, most specific first.
+    pub(super) fn scopes(&self) -> [Scope; 2] {
+        [Scope::Buffer(self.regions.focused_buffer()), Scope::Global]
+    }
+
+    /// `:keys`: every action with its keys here and its description.
+    pub(super) fn open_keys_picker(&mut self) {
+        let items = help::keys_items(&self.keymap, &self.scopes(), &self.theme);
+        self.open_overlay(Overlay::Picker(Picker::new("Keys", items), Purpose::Open));
     }
 
     /// `:research`: the tasks that have research; choosing one opens its detail.
@@ -252,6 +265,14 @@ impl App {
         match key {
             // Only the profile picker has these rows, and it is handled above.
             PickerKey::Profile(_) => {}
+            // `:keys`: run what can run from here, otherwise the picker just closed.
+            PickerKey::Action(action) => {
+                if help::runnable(&self.keymap, &self.scopes(), action) {
+                    self.run(action);
+                } else {
+                    self.note = Some(format!("{}: works in another view", action.describe()));
+                }
+            }
             PickerKey::Agent(id) => self.open_agent_in_main(id),
             PickerKey::Task(id) => self.open_task(id, false),
             PickerKey::Project(id) => self.pick_project(id),

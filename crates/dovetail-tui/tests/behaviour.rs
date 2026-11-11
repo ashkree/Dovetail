@@ -6,7 +6,7 @@ mod support;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::*;
 use dovetail_tui::Mode;
-use dovetail_tui::keymap::SEQUENCE_TIMEOUT_MS;
+use dovetail_tui::keymap::{SEQUENCE_TIMEOUT_MS, WHICH_KEY_DELAY_MS};
 use dovetail_tui::region::RegionId;
 use support::*;
 
@@ -108,14 +108,19 @@ fn j_and_k_never_leave_a_list() {
 }
 
 #[test]
-fn a_half_typed_leader_times_out_and_is_dropped() {
+fn a_half_typed_leader_opens_the_popup_then_waits_and_esc_drops_it() {
     let mut app = app_with(world());
     app.on_key(key(' '), 100);
-    assert_eq!(app.next_deadline_ms(), Some(100 + SEQUENCE_TIMEOUT_MS));
-    app.on_timeout(100 + SEQUENCE_TIMEOUT_MS);
+    // The first deadline is the popup's, before the sequence gives up (task #19).
+    assert_eq!(app.next_deadline_ms(), Some(100 + WHICH_KEY_DELAY_MS));
+    const { assert!(WHICH_KEY_DELAY_MS < SEQUENCE_TIMEOUT_MS) };
+    app.on_timeout(100 + WHICH_KEY_DELAY_MS);
+    // With the list on screen the sequence waits for the user: no deadline.
     assert_eq!(app.next_deadline_ms(), None);
+    app.on_key(esc(), 5_000);
+    assert!(app.which_key().is_empty());
     // `n` alone is not bound, so nothing moves.
-    app.on_key(key('n'), 2_000);
+    app.on_key(key('n'), 6_000);
     assert_eq!(app.focus(), RegionId::SideBottom);
 }
 

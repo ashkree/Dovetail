@@ -1,0 +1,22 @@
+---
+source: crates/dovetail-tui/tests/discoverability.rs
+expression: "render(&mut app, 100, 18)"
+---
+ folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+┌ coordinator · ◐ wo┌ ␣ ───────────────────────────────────────────────────────────────────────────┐
+│                   │ Move                                       Agents                            │
+│                   │ n   focus the inbox                        c   show the coordinator          │
+│                   │ ␣   find any task, agent or inbox item     ⇥   back to the previous agent    │
+│   ── coordinator ·│ Views                                      s…  +agents                       │
+│                   │ z   focus mode: hide the side column       Tasks                             │
+│   It needs a key. │ a   activity feed                          t   capture a task                │
+│   with FS_EVAL_VIR│ m   message timeline                       Projects                          │
+│                   │ b   task board                             p…  +projects                     │
+│   ⠋ Mortising… 0s │ g   worktrees                              Maps                              │
+│                   │ M   maps                                   v   MAP mode: the map full screen │
+└───────────────────│ R   list tasks that have research                                            │
+┌ chat › coordinator│ ?   show or hide the side chats                                              │
+│   › i or ^j to typ│ r   reading mode: library, reader and Ask                                    │
+└───────────────────└──────────────────────────────────────────────────────────────────────────────┘
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%  ␣ …      ⏎ open · o fold · : command

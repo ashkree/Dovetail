@@ -14,6 +14,7 @@ pub mod command;
 pub mod complete;
 pub mod event_loop;
 pub mod fmt;
+pub mod help;
 pub mod input;
 pub mod keymap;
 pub mod mode;
