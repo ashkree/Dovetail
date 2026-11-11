@@ -3,10 +3,10 @@ source: crates/dovetail-tui/tests/worktrees.rs
 expression: "render(&mut app, 200, 40)"
 ---
  folder /home/you/src/dovetail                                                                                                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
-┌ worktrees · Dovetail · 3 ────────────────────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (2) ───────────────────────────────────────────────────┐
+┌ worktrees · Dovetail · 3 ────────────────────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────────────────────────────────────────┐
 │ slice         branch               sync             changes  unpushed  PR          setup                                 ││ ▸ ⚠ inbox-keys  Bash · cargo test -p dovetail-tui                  08:59 │
-│ ⚠ inbox-keys  dovetail/inbox-keys  ↑1 ↓4 origin ↓2  clean    1         none        ✓ done                                ││   ✓ coordinator  M2 splits into three slices: tree view, inbox ke… 08:58 │
-│ ◌ picker      dovetail/picker      ↑0 ↓0            ●3       0         —           ✗ failed                              ││                                                                          │
+│ ⚠ inbox-keys  dovetail/inbox-keys  ↑1 ↓4 origin ↓2  clean    1         none        ✓ done                                ││   ↗ coordinator  2 new tangents · ⏎ triage                         08:58 │
+│ ◌ picker      dovetail/picker      ↑0 ↓0            ●3       0         —           ✗ failed                              ││   ✓ coordinator  M2 splits into three slices: tree view, inbox ke… 08:58 │
 │ ◐ tree-view   dovetail/tree-view   ↑3 ↓0            ●4       1         #1231 open  ✓ done                                ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││                                                                          │
@@ -41,4 +41,4 @@ expression: "render(&mut app, 200, 40)"
 │                                                                                                                          ││ ▾ Next (2)                                                               │
 │ ⏎ open session · e open in editor · c copy path · X remove (asks if work is unpushed)                                    ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 18%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command

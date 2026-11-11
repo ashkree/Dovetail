@@ -1390,7 +1390,14 @@ impl MockCore {
             AgentStatus::Idle,
             AgentStatus::NeedsYou,
         ];
-        let full_inbox = self.state.inbox.len() >= 6;
+        // The standing "new tangents" item does not crowd out the invented ones.
+        let full_inbox = self
+            .state
+            .inbox
+            .iter()
+            .filter(|i| !matches!(i.kind, InboxKind::NewTangents { .. }))
+            .count()
+            >= 6;
         match choice {
             0 => {
                 let free: Vec<AgentId> = self

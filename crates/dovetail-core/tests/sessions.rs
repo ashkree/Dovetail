@@ -1252,10 +1252,15 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
         related: vec![],
     }));
     h.wait_for("the task", |s| !s.tasks.is_empty());
-    assert!(
-        !h.paths.data.join("projects").exists(),
-        "nothing written yet"
-    );
+    // Only Dovetail's own built-in Tangents (ADR 0017) has a folder; nothing for this one.
+    let written: Vec<String> = std::fs::read_dir(h.paths.data.join("projects"))
+        .map(|dir| {
+            dir.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(written, ["tangents"], "nothing written yet");
     // A slice may start before the folder is a project (decided 2026-11-06).
     h.send(Command::NewSlice {
         task: None,
