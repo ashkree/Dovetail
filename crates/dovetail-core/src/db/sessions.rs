@@ -269,6 +269,47 @@ pub(super) fn close_agent(conn: &mut Connection, id: &AgentId, now: i64) -> Resu
     Ok(())
 }
 
+/// Image files named by an agent's conversation entries.
+pub(super) fn agent_attachments(
+    conn: &Connection,
+    agent: &AgentId,
+) -> Result<Vec<PathBuf>, DbError> {
+    attachment_paths(
+        conn,
+        "SELECT attachments FROM conversation_entries \
+         WHERE agent_id = ?1 AND attachments IS NOT NULL",
+        params![agent.0],
+    )
+}
+
+/// Image files named by the conversations of agents that are not archived.
+pub(super) fn live_attachments(conn: &Connection) -> Result<Vec<PathBuf>, DbError> {
+    attachment_paths(
+        conn,
+        "SELECT e.attachments FROM conversation_entries e \
+         JOIN agents a ON a.id = e.agent_id \
+         WHERE a.closed_ms IS NULL AND e.attachments IS NOT NULL",
+        [],
+    )
+}
+
+fn attachment_paths(
+    conn: &Connection,
+    sql: &str,
+    params: impl rusqlite::Params,
+) -> Result<Vec<PathBuf>, DbError> {
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map(params, |r| r.get::<_, String>(0))?;
+    let mut paths = Vec::new();
+    for json in rows {
+        // A row that does not parse names nothing we could delete; load_entries reports it.
+        if let Ok(list) = serde_json::from_str::<Vec<Attachment>>(&json?) {
+            paths.extend(list.into_iter().map(|a| a.path));
+        }
+    }
+    Ok(paths)
+}
+
 pub(super) fn upsert_entry(
     conn: &mut Connection,
     agent: &AgentId,

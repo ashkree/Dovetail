@@ -227,6 +227,11 @@ impl MockCore {
                     .unwrap_or_else(|| Paste::Refused("the mock core has no clipboard".into()));
                 self.emit(Event::ClipboardPasted { agent, paste });
             }
+            // The mock reads no files, so a pasted path stays text.
+            Command::PasteText { agent, text } => self.emit(Event::ClipboardPasted {
+                agent,
+                paste: Paste::Text(text),
+            }),
             // The mock touches nothing outside itself: no clipboard, no editor and no native
             // claude. The answer still comes, so the UI takes its terminal back.
             Command::CopyToClipboard { .. } => {}

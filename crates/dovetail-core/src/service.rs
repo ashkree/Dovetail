@@ -532,6 +532,7 @@ impl Core {
         };
         self.startup_warnings();
         self.send_snapshot(true).await;
+        self.sweep_attachments();
         // After the first snapshot, so a slow user systemd never holds up the UI; before
         // anything can start a session (restore, the queue, commands), so every session gets
         // the probe's answer.
@@ -739,6 +740,45 @@ impl Core {
         // The native lists as they are on disk now, with their owners.
         self.load_todos().await?;
         Ok(restored)
+    }
+
+    /// Removes saved paste attachments older than a week that no live agent in any project
+    /// names, on a blocking thread so the first frame never waits for it.
+    fn sweep_attachments(&self) {
+        let paths = self.paths.clone();
+        tokio::task::spawn_blocking(move || {
+            let Some(keep) = crate::db::live_attachments(&paths) else {
+                tracing::warn!("attachment sweep skipped: a project database could not be read");
+                return;
+            };
+            let dir = paths.attachments();
+            let n = crate::attachments::sweep(
+                &dir,
+                std::time::SystemTime::now(),
+                crate::attachments::MAX_AGE,
+                &keep,
+            );
+            if n > 0 {
+                tracing::info!("removed {n} old attachment files");
+            }
+        });
+    }
+
+    /// Deletes the saved images an archived agent's messages named.
+    pub(crate) fn remove_attachments_of(&self, agent: &AgentId) {
+        let pending = self.db.agent_attachments(agent.clone());
+        let dir = self.paths.attachments();
+        tokio::spawn(async move {
+            match pending.await {
+                Ok(files) => {
+                    let _ = tokio::task::spawn_blocking(move || {
+                        crate::attachments::remove(&dir, &files)
+                    })
+                    .await;
+                }
+                Err(e) => tracing::warn!("listing an archived agent's attachments: {e}"),
+            }
+        });
     }
 
     /// Status-bar warnings known at start.
@@ -1232,6 +1272,7 @@ impl Core {
                 attachments,
             } => self.prompt(&agent, text, attachments).await,
             Command::PasteClipboard { agent } => self.paste_clipboard(agent),
+            Command::PasteText { agent, text } => self.paste_text(agent, text),
             Command::ListPaths { agent, dir } => self.list_paths(agent, dir),
             Command::CopyToClipboard { text } => self.copy_to_clipboard(text),
             Command::OpenEditor { path } => self.open_editor(path),
@@ -1335,6 +1376,18 @@ impl Core {
         let inputs = self.inputs.clone();
         tokio::task::spawn_blocking(move || {
             let paste = crate::clipboard::paste(&dir);
+            let _ = inputs.send(Input::Pasted { agent, paste });
+        });
+    }
+
+    /// Pasted text: a path to an existing image becomes an attachment (the file is read and
+    /// copied on a blocking thread), anything else comes back as the text.
+    fn paste_text(&mut self, agent: AgentId, text: String) {
+        let dir = self.paths.attachments();
+        let inputs = self.inputs.clone();
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        tokio::task::spawn_blocking(move || {
+            let paste = crate::attachments::paste_text(text, &dir, home.as_deref());
             let _ = inputs.send(Input::Pasted { agent, paste });
         });
     }

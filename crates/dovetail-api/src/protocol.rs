@@ -190,6 +190,15 @@ pub enum Command {
         /// The agent whose chat bar is pasting.
         agent: AgentId,
     },
+    /// Text pasted into an agent's chat bar (a bracketed paste or a dropped file). The core
+    /// answers with [`Event::ClipboardPasted`]: an image attachment when the text is a path to
+    /// an existing image (`~`, `file://` and shell quoting understood), else the text itself.
+    PasteText {
+        /// The agent whose chat bar is pasting.
+        agent: AgentId,
+        /// What the terminal delivered.
+        text: String,
+    },
     /// List paths for `@` completion in an agent's chat bar. `dir: None` lists the files of the
     /// agent's folder (the main checkout or its worktree) that git does not ignore; `Some` lists
     /// one directory, `~/`, absolute, or relative to that folder. The core answers with
