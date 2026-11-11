@@ -15,7 +15,7 @@ A long-lived session that owns one piece of work and has exactly one worktree of
 _Avoid_: worker, worker session
 
 **Side chat**:
-A session the user opens for a question or some research: read-only, in the main checkout, with no worktree or task (ADR 0011).
+A session the user opens for a question or some research: it cannot change files, runs in the main checkout, with no worktree or task (ADR 0011).
 _Avoid_: scratch session, helper
 
 **Subagent**:
@@ -131,7 +131,7 @@ The coordinator's curated synthesis for one research task, `report.md`, rewritte
 _Avoid_: summary, write-up
 
 **Tangent**:
-A question that does not belong to the current project, answered in the global Tangents space with sources and kept until filed, started as a task or dropped (ADR 0017).
+A question that does not belong to the current project, answered in Tangents, a built-in research-only project, with sources, and kept until the morning review files it into a project, starts a task from it or drops it (ADR 0017).
 _Avoid_: side chat (which is project-scoped), aside
 
 **Suite**:
@@ -143,7 +143,7 @@ Whether research is macro (business, economics, direction) or micro (implementat
 _Avoid_: scope, level, depth
 
 **Research-only project**:
-A project that exists for macro research and has no repo and no worktrees (ADR 0015).
+A project of the research kind: it exists for macro research and has no repo, no worktrees and no slices; its sessions run in Dovetail's own folder for it (ADR 0015).
 _Avoid_: notes project, non-code project
 
 ### Maps
