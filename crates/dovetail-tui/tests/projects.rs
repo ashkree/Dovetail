@@ -132,6 +132,70 @@ fn project_new_research_sends_the_name() {
     );
 }
 
+/// Types `:project new <name> --research`; the core's answer is a snapshot that lists the project.
+fn create_project(app: &mut dovetail_tui::App, name: &str) {
+    type_keys(app, &format!(":project new {name} --research"));
+    app.on_key(enter(), 500);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::NewResearchProject { name: name.into() }]
+    );
+    let mut snap = with_projects(false);
+    snap.projects.push(research("market-sizing-2", name));
+    app.on_server(ServerMsg::Snapshot(snap));
+}
+
+#[test]
+fn a_new_research_project_asks_to_open_it_now_and_y_switches() {
+    let mut app = app_with(with_projects(false));
+    create_project(&mut app, "Market sizing 2");
+    let screen = render(&mut app, 120, 30);
+    assert!(
+        screen.contains("Open Market sizing 2 now? (y/n)"),
+        "{screen}"
+    );
+    app.on_key(key('y'), 600);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::OpenProject {
+            id: ProjectId("market-sizing-2".into())
+        }]
+    );
+}
+
+#[test]
+fn n_on_the_open_now_question_stays_and_it_is_not_asked_twice() {
+    let mut app = app_with(with_projects(false));
+    create_project(&mut app, "Market sizing 2");
+    app.on_key(key('n'), 600);
+    assert!(app.take_commands().is_empty());
+    assert!(!app.should_quit());
+    let mut snap = with_projects(false);
+    snap.projects
+        .push(research("market-sizing-2", "Market sizing 2"));
+    app.on_server(ServerMsg::Snapshot(snap));
+    let screen = render(&mut app, 120, 30);
+    assert!(!screen.contains("now?"), "{screen}");
+}
+
+#[test]
+fn a_refused_new_project_asks_nothing() {
+    let mut app = app_with(with_projects(false));
+    type_keys(&mut app, ":project new Market sizing --research");
+    app.on_key(enter(), 500);
+    app.take_commands();
+    // The name is taken: the core says so, and a later snapshot still lists the old project.
+    app.on_server(ServerMsg::Event {
+        seq: 1,
+        event: Event::CommandFailed {
+            message: "there is already a research project named `Market sizing`".into(),
+        },
+    });
+    app.on_server(ServerMsg::Snapshot(with_projects(false)));
+    let screen = render(&mut app, 120, 30);
+    assert!(!screen.contains("now?"), "{screen}");
+}
+
 #[test]
 fn project_new_without_research_says_how() {
     let mut app = app_with(with_projects(false));

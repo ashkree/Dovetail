@@ -130,6 +130,9 @@ pub struct App {
     /// `OpenEditor` is out and the core has not answered yet: the loop keeps the terminal and
     /// reads no key until it does ([`App::awaiting_lend`]).
     awaiting_lend: bool,
+    /// The name of a research project `:project new` asked the core to make: once the snapshot
+    /// lists it, the app asks whether to open it.
+    new_project: Option<String>,
     /// A resync was requested and its snapshot has not arrived yet.
     resyncing: bool,
     /// The agent whose conversation had focus at the last settle, so focusing it counts as
@@ -182,6 +185,7 @@ impl App {
             handoff: None,
             terminal_away: false,
             awaiting_lend: false,
+            new_project: None,
             resyncing: false,
             reading: None,
             quit: false,
@@ -361,12 +365,16 @@ impl App {
                 self.now_ms = self.now_ms.max(snapshot.now_ms);
                 self.snap = snapshot;
                 self.resyncing = false;
+                self.offer_new_project();
             }
             ServerMsg::Event { seq, event } => {
                 let failure = match &event {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
                 };
+                if failure.is_some() {
+                    self.new_project = None;
+                }
                 match self.buffers.map_outline.on_event(&event) {
                     Some(MapReaction::Show) => {
                         self.regions.show(RegionId::Main, BufferKind::MapOutline);

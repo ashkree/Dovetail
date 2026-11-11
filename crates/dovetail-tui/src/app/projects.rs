@@ -90,9 +90,36 @@ impl App {
             self.note = Some(NEW_USAGE.into());
             return;
         }
-        self.note = Some(format!(
-            "creating research project {name}: <leader>pp opens it"
-        ));
+        self.note = Some(format!("creating research project {name}"));
+        self.new_project = Some(name.clone());
         self.outbox.push(Command::NewResearchProject { name });
+    }
+
+    /// The snapshot that follows `:project new <name> --research` lists the project: asks
+    /// whether to open it now. `y` switches as the project switcher does; `n` stays.
+    pub(super) fn offer_new_project(&mut self) {
+        let Some(name) = self.new_project.take_if(|name| {
+            self.snap
+                .projects
+                .iter()
+                .any(|p| p.kind == ProjectKind::Research && p.name == *name)
+        }) else {
+            return;
+        };
+        let Some(project) = self
+            .snap
+            .projects
+            .iter()
+            .find(|p| p.kind == ProjectKind::Research && p.name == name)
+        else {
+            return;
+        };
+        self.confirm = Some(Confirm {
+            prompt: format!("Open {name} now?"),
+            then: Then::Commands(vec![Command::OpenProject {
+                id: project.id.clone(),
+            }]),
+            otherwise: None,
+        });
     }
 }
