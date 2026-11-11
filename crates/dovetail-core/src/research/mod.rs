@@ -159,7 +159,10 @@ impl Core {
         }
         let position = if round.queued {
             let queued = self.db.queued_rounds().await?;
-            let position = queued.iter().position(|q| q.id == round.id).map_or(2, |i| i + 2);
+            let position = queued
+                .iter()
+                .position(|q| q.id == round.id)
+                .map_or(2, |i| i + 2);
             self.activity(
                 ActivityKind::Task,
                 None,
@@ -684,7 +687,12 @@ impl Core {
 
     /// Writes a finding's file and its sources' cached copies (the ones not there yet) under
     /// `dir`, telling the user about any that fail.
-    fn write_finding_files(&mut self, dir: &std::path::Path, row: &FindingRow, sources: &[SourceRow]) {
+    fn write_finding_files(
+        &mut self,
+        dir: &std::path::Path,
+        row: &FindingRow,
+        sources: &[SourceRow],
+    ) {
         let mut problems = Vec::new();
         for s in sources {
             let Some(rel) = files::source_path(s) else {

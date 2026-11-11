@@ -246,10 +246,7 @@ impl App {
     /// a decision is held to the decision template when its report is written.
     fn research_kind(&mut self, arg: &str) {
         use dovetail_api::research::ResearchKind;
-        let kind = arg
-            .split_whitespace()
-            .nth(1)
-            .and_then(ResearchKind::parse);
+        let kind = arg.split_whitespace().nth(1).and_then(ResearchKind::parse);
         match (kind, self.focused_task()) {
             (Some(kind), Some(task)) => {
                 self.outbox.push(Command::SetResearchKind { task, kind });
@@ -304,11 +301,7 @@ impl App {
         match (task, brief) {
             (Some(task), brief) if !brief.is_empty() => {
                 let task = dovetail_api::TaskId(task);
-                let busy = self
-                    .snap
-                    .research
-                    .iter()
-                    .any(|r| r.open_round().is_some());
+                let busy = self.snap.research.iter().any(|r| r.open_round().is_some());
                 self.outbox.push(Command::StartRound {
                     task,
                     brief: brief.to_string(),

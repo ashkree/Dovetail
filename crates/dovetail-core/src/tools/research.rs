@@ -145,9 +145,7 @@ impl Core {
             Err(e) => return error(e.to_string()),
         };
         // The round this report closes, or else the latest one.
-        let round_id = open
-            .or(r.rounds.iter().rfind(|x| !x.queued))
-            .map(|x| x.id);
+        let round_id = open.or(r.rounds.iter().rfind(|x| !x.queued)).map(|x| x.id);
         let flags = (
             u32::try_from(checked.uncited.len()).unwrap_or(u32::MAX),
             u32::try_from(checked.unlabelled_figures.len()).unwrap_or(u32::MAX),

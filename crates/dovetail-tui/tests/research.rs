@@ -597,8 +597,14 @@ fn a_queued_round_shows_its_place_in_line() {
     select(&mut app, "idea: eval key flow");
     app.on_key(enter(), 0);
     let screen = render(&mut app, 120, 60);
-    assert!(screen.contains("Round 1 · queued (2nd in line)"), "{screen}");
-    assert!(!screen.contains("1 round ·"), "queued is not a round yet:\n{screen}");
+    assert!(
+        screen.contains("Round 1 · queued (2nd in line)"),
+        "{screen}"
+    );
+    assert!(
+        !screen.contains("1 round ·"),
+        "queued is not a round yet:\n{screen}"
+    );
 }
 
 #[test]
@@ -689,7 +695,11 @@ fn colon_research_kind_sets_the_kind_of_the_selected_task() {
         }]
     );
     assert_eq!(run(&mut app, "research kind soon"), vec![]);
-    assert!(app.note().unwrap_or_default().contains("usage: :research kind"));
+    assert!(
+        app.note()
+            .unwrap_or_default()
+            .contains("usage: :research kind")
+    );
 }
 
 fn unfiled_item(id: u64) -> InboxItem {
@@ -713,10 +723,7 @@ fn an_unfiled_finding_is_filed_from_the_inbox_through_a_task_picker() {
     let mut app = app_with(snap);
     press(&mut app, " n");
     let screen = render(&mut app, 140, 40);
-    assert!(
-        screen.contains("Unfiled finding: 'pricing"),
-        "{screen}"
-    );
+    assert!(screen.contains("Unfiled finding: 'pricing"), "{screen}");
     // `y` opens the picker over tasks; Enter chooses the first row.
     assert_eq!(press(&mut app, "y"), vec![]);
     let screen = render(&mut app, 140, 40);
@@ -724,7 +731,13 @@ fn an_unfiled_finding_is_filed_from_the_inbox_through_a_task_picker() {
     app.on_key(enter(), 60);
     let commands = app.take_commands();
     assert!(
-        matches!(commands.as_slice(), [Command::FileUnfiled { item: InboxId(40), .. }]),
+        matches!(
+            commands.as_slice(),
+            [Command::FileUnfiled {
+                item: InboxId(40),
+                ..
+            }]
+        ),
         "{commands:?}"
     );
 }

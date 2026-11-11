@@ -380,9 +380,9 @@ pub(super) fn drop_round(
                 )));
             }
         },
-        None => queued.pop().ok_or_else(|| {
-            DbError::NotFound(format!("task #{} has no queued round", task.0))
-        })?,
+        None => queued
+            .pop()
+            .ok_or_else(|| DbError::NotFound(format!("task #{} has no queued round", task.0)))?,
     };
     conn.execute("DELETE FROM research_rounds WHERE id = ?1", [found.id])?;
     Ok(found)
@@ -409,7 +409,9 @@ pub(super) fn file_finding(
     now: i64,
 ) -> Result<(FindingRow, Vec<SourceRow>), DbError> {
     let Some(task) = new.task else {
-        return Err(DbError::Refused("a finding for a task needs the task".into()));
+        return Err(DbError::Refused(
+            "a finding for a task needs the task".into(),
+        ));
     };
     let tx = conn.transaction()?;
     let (round_n, round_dir): (Option<u32>, Option<String>) = match new.round {
@@ -729,10 +731,7 @@ fn unfiled(row: &Row<'_>) -> rusqlite::Result<FindingRow> {
 }
 
 /// The sources of unfiled finding `id`, in the order it reached them.
-fn unfiled_sources(
-    conn: &Connection,
-    id: i64,
-) -> Result<(Vec<SourceId>, Vec<SourceRow>), DbError> {
+fn unfiled_sources(conn: &Connection, id: i64) -> Result<(Vec<SourceId>, Vec<SourceRow>), DbError> {
     let mut stmt = conn.prepare(
         "SELECT source_id FROM unfiled_finding_sources WHERE finding_id = ?1 ORDER BY rowid",
     )?;
