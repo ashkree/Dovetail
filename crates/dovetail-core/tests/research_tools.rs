@@ -184,6 +184,7 @@ impl App {
         let body = SocketRequestBody::ToolCall {
             agent: AgentId(COORDINATOR.into()),
             tool_use_id: None,
+            called_as: None,
             call: tool,
         };
         let mut line = serde_json::to_string(&SocketRequest { id: 7, body }).expect("encode");
@@ -561,7 +562,7 @@ fn an_accepted_decision_is_logged_with_its_evidence_and_never_before() {
     let note = app.wait_for_note("research_propose accepted");
     assert!(note.contains("decision D1"), "{note}");
 
-    // get_task shows the links to the coordinator too.
+    // tasks_get shows the links to the coordinator too.
     let (text, _) = app.call(Tool::GetTask(dovetail_api::tools::GetTask { id: task }));
     assert!(text.contains(&format!("Evidence: {f}, {s}")), "{text}");
 

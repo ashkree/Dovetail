@@ -662,7 +662,7 @@ pub(crate) fn permission_input(n: u64) -> (&'static str, serde_json::Value) {
     }
 }
 
-/// Questions the mock asks with `ask_user`.
+/// Questions the mock asks with `core_ask_user`.
 pub(crate) const QUESTIONS: &[&str] = &[
     "Should Done tasks fold into one row, or show the last three?",
     "Which colour should the mismatch marker use: amber or the dim accent?",

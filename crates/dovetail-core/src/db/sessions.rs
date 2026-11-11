@@ -404,7 +404,7 @@ pub(super) fn max_ids(conn: &mut Connection) -> Result<MaxIds, DbError> {
 pub(super) fn insert_inbox(conn: &mut Connection, item: &InboxItem) -> Result<(), DbError> {
     let (kind, blocking) = match &item.kind {
         InboxKind::Permission { .. } => ("permission", false),
-        // `ask_user` never blocks (ADR 0007); the column stays for old rows.
+        // `core_ask_user` never blocks (ADR 0007); the column stays for old rows.
         InboxKind::Question { .. } => ("question", false),
         InboxKind::FinishedTurn { .. } => ("finished_turn", false),
         InboxKind::Error { .. } => ("error", false),
@@ -486,7 +486,7 @@ pub struct QueuedSlice {
     pub name: String,
     /// First prompt.
     pub brief: String,
-    /// Started by the coordinator's `start_slice` (it is told if the start fails).
+    /// Started by the coordinator's `project_start_slice` (it is told if the start fails).
     pub by_coordinator: bool,
 }
 

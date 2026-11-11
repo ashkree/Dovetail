@@ -223,6 +223,7 @@ fn tool(agent: &str, call: Tool) -> SocketRequestBody {
     SocketRequestBody::ToolCall {
         agent: AgentId(agent.into()),
         tool_use_id: None,
+        called_as: None,
         call,
     }
 }
@@ -352,7 +353,7 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
     );
     assert!(
         spec.allowed_tools
-            .contains(&"mcp__dovetail__start_slice".to_string())
+            .contains(&"mcp__dovetail__project_start_slice".to_string())
     );
     assert!(
         spec.env
@@ -1085,7 +1086,10 @@ fn slices_cannot_call_coordinator_tools_and_bad_names_are_refused() {
     assert!(!is_error && text.starts_with("started"), "{text}");
     h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "one"));
     let (text, is_error) = result_text(socket_call(&socket, tool("slice-one", start("two"))));
-    assert!(is_error && text.contains("coordinator only"), "{text}");
+    assert!(
+        is_error && text.contains("not in this session's tool suites"),
+        "{text}"
+    );
     h.wait_for("the shared-folder brief", |s| {
         s.conversations
             .get(&AgentId("slice-one".into()))
@@ -1342,7 +1346,7 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
         s.conversations.get(&coordinator).is_some_and(|t| {
             t.entries
                 .iter()
-                .any(|e| e.text.contains("start_slice later approved"))
+                .any(|e| e.text.contains("project_start_slice later approved"))
         })
     });
     assert!(h.snap.agents.iter().any(|a| a.name == "later"));
@@ -1800,6 +1804,75 @@ fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
     h.quit();
 }
 
+/// ADR 0016 migration: a conversation from before the rename, resumed, keeps calling the old
+/// names. They stay allowed, and a call by one answers as the new tool with a note naming it.
+#[test]
+fn a_resumed_conversation_calling_an_old_tool_name_still_works() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    prompt(&h, "hello");
+    h.wait_for("the first run", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "alpha"))
+    });
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    // The resumed session's model still knows the tool as `report_status`.
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"carry on"},"parent_tool_use_id":null,"isReplay":true}"#,
+        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"mcp__dovetail__report_status","input":{"status":"resumed"}}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"carried on"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"carried on","total_cost_usd":0.01}"#,
+    ];
+    let fake = FakeDriver::from_ndjson(&lines.join("\n")).expect("fixture");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.drain(Duration::from_millis(300));
+    let spec = &fake.started_specs()[0];
+    assert!(spec.resume);
+    for name in ["report_status", "core_report_status"] {
+        let tool = format!("mcp__dovetail__{name}");
+        assert!(spec.allowed_tools.contains(&tool), "{tool} not allowed");
+    }
+
+    prompt(&h, "carry on");
+    h.wait_for("the resumed turn, its old-name tool use tallied", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| {
+                t.entries.iter().any(|e| e.text == "carried on")
+                    && t.entries.iter().any(|e| {
+                        e.kind == EntryKind::ToolSummary && e.text.contains("report_status")
+                    })
+            })
+    });
+
+    // What the bridge forwards for that call: the new tool, and the name it was called by.
+    let call = Tool::parse("report_status", serde_json::json!({"status": "resumed"}))
+        .expect("the old name parses");
+    assert_eq!(call.name(), "core_report_status");
+    let (text, is_error) = result_text(socket_call(
+        &h.socket(),
+        SocketRequestBody::ToolCall {
+            agent: AgentId(COORDINATOR.into()),
+            tool_use_id: Some("t1".into()),
+            call,
+            called_as: Some("report_status".into()),
+        },
+    ));
+    assert!(!is_error, "{text}");
+    assert!(
+        text.ends_with("Note: `report_status` is deprecated and will be removed; call `core_report_status` instead."),
+        "{text}"
+    );
+    h.wait_for("the status line", |s| {
+        s.agents.iter().any(|a| a.status_line == "resumed")
+    });
+    h.quit();
+}
+
 /// Live rehearsal 2026-11-06: two "slice ready" notes sent mid-turn were folded into the
 /// running turn (both echoed before its one `result`); the coordinator stayed "working".
 #[test]
@@ -1835,7 +1908,7 @@ fn inputs_folded_into_the_running_turn_end_with_its_result() {
     h.quit();
 }
 
-/// Raises a pending `start_slice` approval: the coordinator to acceptEdits, a task, the call.
+/// Raises a pending `project_start_slice` approval: the coordinator to acceptEdits, a task, the call.
 fn pending_start(h: &mut Harness) {
     h.send(Command::CyclePermissionMode {
         agent: AgentId(COORDINATOR.into()),
@@ -1879,7 +1952,7 @@ fn sent_users(fake: &FakeDriver) -> Vec<String> {
         .collect()
 }
 
-const EXPIRED: &str = "start_slice later expired at restart; call it again if still needed";
+const EXPIRED: &str = "project_start_slice later expired at restart; call it again if still needed";
 
 #[test]
 fn a_start_slice_approval_pending_at_quit_is_answered_after_reopen() {
@@ -2076,7 +2149,10 @@ fn archive_slice_removes_a_clean_worktree_and_branch_and_frees_the_queue() {
         &socket,
         tool("slice-done", archive_slice("done")),
     ));
-    assert!(is_error && text.contains("coordinator only"), "{text}");
+    assert!(
+        is_error && text.contains("not in this session's tool suites"),
+        "{text}"
+    );
     let (text, is_error) = result_text(socket_call(
         &socket,
         tool(COORDINATOR, archive_slice("coordinator")),
@@ -2203,7 +2279,10 @@ fn archive_task_archives_the_task_and_its_live_slice() {
     let archive = Tool::ArchiveTask(ArchiveTask { id });
 
     let (text, is_error) = result_text(socket_call(&socket, tool("slice-work", archive.clone())));
-    assert!(is_error && text.contains("coordinator only"), "{text}");
+    assert!(
+        is_error && text.contains("not in this session's tool suites"),
+        "{text}"
+    );
 
     let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, archive.clone())));
     assert!(
@@ -2316,7 +2395,10 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
         Tool::GetTask(GetTask { id: TaskId(3) }),
     ] {
         let (text, is_error) = call("slice-work", refused);
-        assert!(is_error && text.contains("coordinator only"), "{text}");
+        assert!(
+            is_error && text.contains("not in this session's tool suites"),
+            "{text}"
+        );
     }
     h.quit();
 }
@@ -2424,7 +2506,7 @@ fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
         },
     );
     assert!(
-        is_error && text.contains("cannot be `now`") && text.contains("start_slice"),
+        is_error && text.contains("cannot be `now`") && text.contains("project_start_slice"),
         "{text}"
     );
 
@@ -2447,7 +2529,10 @@ fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
             ..update(2)
         },
     );
-    assert!(is_error && text.contains("coordinator only"), "{text}");
+    assert!(
+        is_error && text.contains("not in this session's tool suites"),
+        "{text}"
+    );
 
     let (text, is_error) = call(
         COORDINATOR,
@@ -3397,7 +3482,7 @@ fn y_on_an_undecidable_crash_lock_releases_it_and_delivers_the_held_notes() {
     h.quit();
 }
 
-/// `ask_user` from native returns at once and leaves its question in Needs you. Answering it
+/// `core_ask_user` from native returns at once and leaves its question in Needs you. Answering it
 /// while native still has the session is refused and the question stays; once headless is
 /// back the answer reaches the session.
 #[test]
@@ -3448,7 +3533,10 @@ fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() 
         ),
     ));
     assert!(!is_error, "{text}");
-    assert!(asked.elapsed() < Duration::from_secs(2), "ask_user waited");
+    assert!(
+        asked.elapsed() < Duration::from_secs(2),
+        "core_ask_user waited"
+    );
     h.wait_for("the question", |s| !open_questions(s).is_empty());
     let question = open_questions(&h.snap)[0];
 
@@ -3479,7 +3567,7 @@ fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() 
     h.quit();
 }
 
-// --- draw_map (M15) ---
+// --- maps_draw (M15) ---
 
 fn draw(h: &Harness, map: serde_json::Value) -> (String, bool) {
     result_text(socket_call(

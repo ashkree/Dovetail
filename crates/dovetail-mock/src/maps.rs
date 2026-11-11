@@ -2,7 +2,7 @@
 //! swimlane map of a permission request whose lanes link that structure map's nodes.
 //!
 //! Written with the API types, so the mock (and the TUI tests that use it) stay clear of
-//! `dovetail-maps`; `tests/mock.rs` checks they pass `draw_map` validation.
+//! `dovetail-maps`; `tests/mock.rs` checks they pass `maps_draw` validation.
 
 use dovetail_api::map::{
     Connection, Flow, FlowStep, Group, Lane, LaneId, Map, MapContent, MapId, MapKind, MapSummary,

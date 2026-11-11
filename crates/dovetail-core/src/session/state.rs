@@ -66,7 +66,7 @@ impl ToolTally {
         }
     }
 
-    /// `Bash ×2 · Read · ask_user`.
+    /// `Bash ×2 · Read · core_ask_user`.
     pub fn line(&self) -> String {
         self.counts
             .iter()
@@ -191,9 +191,9 @@ mod tests {
     #[test]
     fn the_tally_folds_repeats() {
         let mut tally = ToolTally::default();
-        for name in ["Bash", "Read", "Bash", "mcp__dovetail__ask_user"] {
+        for name in ["Bash", "Read", "Bash", "mcp__dovetail__core_ask_user"] {
             tally.add(name);
         }
-        assert_eq!(tally.line(), "Bash ×2 · Read · ask_user");
+        assert_eq!(tally.line(), "Bash ×2 · Read · core_ask_user");
     }
 }

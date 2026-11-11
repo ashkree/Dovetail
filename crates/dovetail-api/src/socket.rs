@@ -40,6 +40,10 @@ pub enum SocketRequestBody {
         tool_use_id: Option<String>,
         /// The tool and its arguments, parsed and validated by the bridge.
         call: Tool,
+        /// The name the session called, when it was a deprecated alias (ADR 0016): the app logs
+        /// it and adds a note naming the new tool to the result.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        called_as: Option<String>,
     },
 }
 

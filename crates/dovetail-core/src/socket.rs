@@ -2,7 +2,7 @@
 //! `dovetail_api::socket`).
 //!
 //! Framing is NDJSON. Each request runs on its own task and its response goes out when it is
-//! ready, so a held `ask_user` never blocks other requests on the same connection. The core
+//! ready, so a held `core_ask_user` never blocks other requests on the same connection. The core
 //! implements [`SocketHandler`] by handing each request to its loop, so tool handlers see the
 //! core's state.
 
@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
-use dovetail_api::tools::Tool;
+use dovetail_api::tools::{Tool, deprecated_alias, deprecation_note};
 use dovetail_api::{AgentId, NewTask, TaskId};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -174,14 +174,27 @@ async fn connection(stream: UnixStream, handler: Arc<dyn SocketHandler>) {
                     agent,
                     tool_use_id,
                     call,
+                    called_as,
                 } => {
-                    handler
+                    let alias = called_as.as_deref().and_then(deprecated_alias);
+                    if let (Some(spec), Some(old)) = (alias, &called_as) {
+                        tracing::warn!(
+                            agent = %agent.0,
+                            "deprecated tool name `{old}` called; it is `{}` now (ADR 0016)",
+                            spec.name
+                        );
+                    }
+                    let body = handler
                         .tool_call(ToolCall {
                             agent,
                             tool_use_id,
                             call,
                         })
-                        .await
+                        .await;
+                    match alias {
+                        Some(spec) => with_note(body, &deprecation_note(spec)),
+                        None => body,
+                    }
                 }
             };
             // The client may have gone; nothing to do then.
@@ -190,6 +203,17 @@ async fn connection(stream: UnixStream, handler: Arc<dyn SocketHandler>) {
                 body,
             });
         });
+    }
+}
+
+/// Adds `note` as the last line of a tool result; other replies are left alone.
+fn with_note(body: SocketResponseBody, note: &str) -> SocketResponseBody {
+    match body {
+        SocketResponseBody::ToolResult { text, is_error } => SocketResponseBody::ToolResult {
+            text: format!("{text}\n{note}"),
+            is_error,
+        },
+        other => other,
     }
 }
 

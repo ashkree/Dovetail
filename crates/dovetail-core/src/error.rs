@@ -57,7 +57,7 @@ pub enum SessionError {
     },
 }
 
-/// Why a slice could not start (`start_slice` answers `denied: <this>`).
+/// Why a slice could not start (`project_start_slice` answers `denied: <this>`).
 #[derive(Debug, thiserror::Error)]
 pub enum SliceError {
     /// The name is not usable as a directory and branch name.
@@ -76,7 +76,7 @@ pub enum SliceError {
     #[error("a slice named `{0}` already exists")]
     Taken(String),
     /// The task does not exist.
-    #[error("there is no task #{0}; create it first with `create_task`")]
+    #[error("there is no task #{0}; create it first with `tasks_create`")]
     NoTask(i64),
     /// The open project is a research project: it has no repo, so no slices.
     #[error(
@@ -84,10 +84,10 @@ pub enum SliceError {
          and subagents here; code work belongs in a code project"
     )]
     ResearchProject,
-    /// `archive_slice` named the coordinator.
+    /// `project_archive_slice` named the coordinator.
     #[error("the coordinator cannot be archived")]
     ArchiveCoordinator,
-    /// `archive_slice` named no open slice.
+    /// `project_archive_slice` named no open slice.
     #[error("there is no slice named {0} (unknown or already archived)")]
     NoSlice(String),
     /// The session did not start.

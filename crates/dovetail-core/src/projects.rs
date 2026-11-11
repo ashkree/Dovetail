@@ -1,7 +1,7 @@
 //! Project identity and the registry (plan B9, ADR 0005).
 //!
 //! A project is registered only when the user asks (`:project add`, or the coordinator's
-//! `add_project`). Which folder is the project ([`locate`]): inside a git repo, the repo,
+//! `project_add`). Which folder is the project ([`locate`]): inside a git repo, the repo,
 //! identified by `git rev-parse --path-format=absolute --git-common-dir` so that a worktree is the
 //! same project as its main checkout; otherwise the nearest registered ancestor folder; otherwise
 //! the folder itself, as a [`Candidate`]. Its id is the slug of the folder name, numbered

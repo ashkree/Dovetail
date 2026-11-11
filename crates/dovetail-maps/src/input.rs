@@ -1,4 +1,4 @@
-//! The `draw_map` tool's input, as an agent sends it (design 23i).
+//! The `maps_draw` tool's input, as an agent sends it (design 23i).
 //!
 //! Everything [`crate::validate`] judges is kept loose here (kinds and types as strings, text
 //! fields defaulting to empty), so a missing field or an unknown kind comes back as one of our
@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The whole `draw_map` input.
+/// The whole `maps_draw` input.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DrawMapInput {

@@ -152,7 +152,7 @@ fn the_selected_row_is_highlighted_only_when_its_region_has_focus() {
     assert_eq!(cell.bg, ratatui::style::Color::Reset);
 }
 
-/// `report_status` lines show dim after the agent's name, cut to the pane, and go first when
+/// `core_report_status` lines show dim after the agent's name, cut to the pane, and go first when
 /// the pane is narrow (live check, 2026-11-06).
 #[test]
 fn status_lines_show_on_agent_rows_and_drop_first_when_narrow() {

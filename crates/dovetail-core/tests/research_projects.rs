@@ -289,12 +289,13 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
         "{:?}",
         app.failures
     );
-    // `start_slice` from the coordinator.
+    // `project_start_slice` from the coordinator.
     let (text, is_error) = socket_call(
         &app.socket(&paths, &project.id),
         SocketRequestBody::ToolCall {
             agent: AgentId(COORDINATOR.into()),
             tool_use_id: None,
+            called_as: None,
             call: Tool::StartSlice(StartSlice {
                 task: TaskId(1),
                 name: "later".into(),

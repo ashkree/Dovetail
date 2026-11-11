@@ -399,7 +399,7 @@ pub(crate) struct Core {
     flush_at: Option<tokio::time::Instant>,
     /// Slice starts over the `max_slices` cap, oldest first (ADR 0004).
     pub(crate) queue: VecDeque<crate::db::QueuedSlice>,
-    /// `archive_slice` / `archive_task` calls waiting for their slices' outcomes (task #9).
+    /// `project_archive_slice` / `tasks_archive` calls waiting for their slices' outcomes (task #9).
     pub(crate) archive_calls: Vec<crate::slice::ArchiveCall>,
     /// Slices whose archive call returned `waiting_for_user`: the coordinator is told how the
     /// user decided.

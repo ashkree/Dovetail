@@ -1,4 +1,4 @@
-//! The text of `list_tasks` and `get_task` (task #20): compact lines and markdown a model reads
+//! The text of `tasks_list` and `tasks_get` (task #20): compact lines and markdown a model reads
 //! without parsing JSON. Pure functions, so the wording is tested without a core.
 
 use std::fmt::Write as _;
@@ -7,7 +7,7 @@ use dovetail_api::tools::{BucketFilter, ListTasks};
 use dovetail_api::{Agent, Bucket, Decision, DecisionAuthor, PLevel, Task, TaskId, TaskStatus};
 use serde::Serialize;
 
-/// Longest title `list_tasks` shows before cutting it with `…`.
+/// Longest title `tasks_list` shows before cutting it with `…`.
 const TITLE_MAX: usize = 100;
 
 /// The wire word of a snake_case enum value (`in_progress`, `needs_you`).
@@ -53,7 +53,7 @@ fn slices_note(slices: &[&Agent]) -> String {
     }
 }
 
-/// `list_tasks`' answer: one line per matching task, Now, Next, Unsorted, Later, then by
+/// `tasks_list`'s answer: one line per matching task, Now, Next, Unsorted, Later, then by
 /// priority (none last) and id. `slices` gives a task's live slices.
 pub(crate) fn task_list<'a>(
     tasks: &[Task],
@@ -89,7 +89,7 @@ pub(crate) fn task_list<'a>(
         .join("\n")
 }
 
-/// One task as a line of `list_tasks` (also `update_task`'s answer):
+/// One task as a line of `tasks_list` (also `tasks_update`'s answer):
 /// `#3 [in_progress · now · P2] title (slice work)`.
 pub(crate) fn task_line(task: &Task, slices: &[&Agent]) -> String {
     let mut tags = vec![word(task.status), bucket_word(task.bucket)];
@@ -118,7 +118,7 @@ fn author(by: &DecisionAuthor) -> String {
     }
 }
 
-/// `get_task`'s answer: the task in compact markdown, its live slices, and its decision log
+/// `tasks_get`'s answer: the task in compact markdown, its live slices, and its decision log
 /// oldest first, each entry marked with what superseded it.
 pub(crate) fn task_detail(task: &Task, slices: &[&Agent], decisions: &[Decision]) -> String {
     let mut out = format!("# #{} {}\n\n", task.id.0, task.title);

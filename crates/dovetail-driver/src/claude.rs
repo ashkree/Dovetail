@@ -472,7 +472,7 @@ mod tests {
         spec.settings_path = Some("/run/settings.json".into());
         spec.mcp_config_path = Some("/run/mcp.json".into());
         spec.append_system_prompt_file = Some("/roles/slice.md".into());
-        spec.allowed_tools = vec!["mcp__dovetail__ask_user".into()];
+        spec.allowed_tools = vec!["mcp__dovetail__core_ask_user".into()];
         spec.worktree = Some("slice-4".into());
         spec.permission_mode = PermissionMode::AcceptEdits;
         let native = spec.native_args();
@@ -494,7 +494,7 @@ mod tests {
                 "--append-system-prompt-file",
                 "/roles/slice.md",
                 "--allowedTools",
-                "mcp__dovetail__ask_user",
+                "mcp__dovetail__core_ask_user",
             ]
         );
         // Every native flag is one headless passes too (bar the resume and worktree).

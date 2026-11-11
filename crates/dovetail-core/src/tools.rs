@@ -39,7 +39,7 @@ fn error(text: impl Into<String>) -> SocketResponseBody {
     }
 }
 
-/// `start_slice`'s answer: `started`, `queued` or `denied` first, then what to do next.
+/// `project_start_slice`'s answer: `started`, `queued` or `denied` first, then what to do next.
 pub(crate) fn slice_reply(result: Result<SliceStart, SliceError>) -> SocketResponseBody {
     match result {
         Ok(SliceStart::Started(name)) => ok(format!(
@@ -54,7 +54,7 @@ pub(crate) fn slice_reply(result: Result<SliceStart, SliceError>) -> SocketRespo
     }
 }
 
-/// Answers a settled `archive_slice` / `archive_task` call: `archived` or `waiting_for_user`
+/// Answers a settled `project_archive_slice` / `tasks_archive` call: `archived` or `waiting_for_user`
 /// first, or an error.
 pub(crate) fn answer_archive(call: ArchiveCall) {
     let _ = call.reply.send(archive_reply(
@@ -113,7 +113,7 @@ fn archive_reply(
 }
 
 impl Core {
-    /// Answers one tool call, at once: `ask_user` too, whose answer arrives later as a message
+    /// Answers one tool call, at once: `core_ask_user` too, whose answer arrives later as a message
     /// (ADR 0007).
     pub(crate) async fn tool(
         &mut self,
@@ -127,9 +127,9 @@ impl Core {
             });
             return;
         };
-        if !Tool::allowed(call.name(), role) {
+        if !Tool::allowed(call.name(), self.config.suites.for_role(role)) {
             let _ = reply.send(error(format!(
-                "`{}` is for the coordinator only",
+                "`{}` is not in this session's tool suites",
                 call.name()
             )));
             return;
@@ -261,8 +261,8 @@ impl Core {
                     // 2026-11-06, ADR 0004).
                     let _ = reply.send(ok(format!(
                         "pending: the user is asked to approve slice {name}. The answer arrives \
-                         as a message: \"start_slice {name} approved\" (then wait for \"slice \
-                         {name} ready\") or \"start_slice {name} denied\"."
+                         as a message: \"project_start_slice {name} approved\" (then wait for \"slice \
+                         {name} ready\") or \"project_start_slice {name} denied\"."
                     )));
                     return;
                 }
@@ -367,8 +367,8 @@ impl Core {
         let _ = reply.send(answer);
     }
 
-    /// `update_task`: applies only the fields given, through the same patch path as the TUI's
-    /// edits, and answers with the task's new `list_tasks` line. Validation already refused
+    /// `tasks_update`: applies only the fields given, through the same patch path as the TUI's
+    /// edits, and answers with the task's new `tasks_list` line. Validation already refused
     /// Now and `archived`.
     async fn update_task_tool(&mut self, update: UpdateTask) -> SocketResponseBody {
         let id = update.id;
@@ -442,15 +442,29 @@ mod tests {
     }
 
     #[test]
-    fn roles_are_checked_with_the_shared_rule() {
-        assert!(!Tool::allowed("start_slice", Role::Slice));
-        assert!(!Tool::allowed("add_project", Role::Slice));
-        assert!(!Tool::allowed("archive_slice", Role::Slice));
-        assert!(!Tool::allowed("archive_task", Role::Slice));
-        assert!(!Tool::allowed("list_tasks", Role::Slice));
-        assert!(!Tool::allowed("get_task", Role::Slice));
-        assert!(!Tool::allowed("update_task", Role::Slice));
-        assert!(Tool::allowed("archive_slice", Role::Coordinator));
-        assert!(Tool::allowed("ask_user", Role::Slice));
+    fn suites_are_checked_with_the_shared_rule_for_new_and_old_names() {
+        let slice = Role::Slice.default_suites();
+        let coordinator = Role::Coordinator.default_suites();
+        for name in [
+            "project_start_slice",
+            "start_slice",
+            "project_add",
+            "add_project",
+            "project_archive_slice",
+            "tasks_archive",
+            "tasks_list",
+            "tasks_get",
+            "tasks_update",
+            "research_get",
+        ] {
+            assert!(!Tool::allowed(name, slice), "{name}");
+            assert!(Tool::allowed(name, coordinator), "{name}");
+        }
+        for name in ["core_ask_user", "ask_user", "maps_draw", "draw_map"] {
+            assert!(Tool::allowed(name, slice), "{name}");
+        }
+        let side_chat = Role::SideChat.default_suites();
+        assert!(Tool::allowed("core_log_decision", side_chat));
+        assert!(!Tool::allowed("maps_draw", side_chat));
     }
 }

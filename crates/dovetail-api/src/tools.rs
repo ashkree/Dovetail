@@ -15,8 +15,11 @@ pub mod env {
     pub const AGENT_ID: &str = "DOVETAIL_AGENT_ID";
     /// Path of the app's unix socket; set for the MCP bridge.
     pub const SOCKET: &str = "DOVETAIL_SOCKET";
-    /// `coordinator` or `slice` (see [`super::Role`]); set for the MCP bridge.
+    /// `coordinator`, `slice` or `side-chat` (see [`super::Role`]); set for the MCP bridge.
     pub const ROLE: &str = "DOVETAIL_ROLE";
+    /// The session's suites, comma-separated (see [`super::Suite::join`]); set for the MCP
+    /// bridge. Without it the bridge uses the role's defaults.
+    pub const SUITES: &str = "DOVETAIL_SUITES";
     /// The project id; set for the worktree hook.
     pub const PROJECT: &str = "DOVETAIL_PROJECT";
     /// Replaces `$XDG_DATA_HOME/dovetail` (databases, worktrees). With the three below, lets a
@@ -30,15 +33,15 @@ pub mod env {
     pub const RUNTIME_DIR: &str = "DOVETAIL_RUNTIME_DIR";
 }
 
-/// Which tools a session gets.
+/// Which suites a session gets by default, and which role prompt it reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
-    /// The coordinator: every tool.
+    /// The coordinator: every suite.
     Coordinator,
-    /// A slice: none of the [`Access::CoordinatorOnly`] tools.
+    /// A slice: Core, Coordination and Maps.
     Slice,
-    /// A side chat: the tools a slice gets (ADR 0011).
+    /// A side chat: Core only (ADR 0011, ADR 0016).
     SideChat,
 }
 
@@ -60,41 +63,119 @@ impl Role {
             _ => Role::Slice,
         }
     }
+
+    /// The suites the role gets unless `config.toml` says otherwise (ADR 0016).
+    pub fn default_suites(self) -> &'static [Suite] {
+        match self {
+            Role::Coordinator => Suite::ALL,
+            Role::Slice => &[Suite::Core, Suite::Coordination, Suite::Maps],
+            Role::SideChat => &[Suite::Core],
+        }
+    }
 }
 
-/// Who may call a tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Access {
-    /// Every session.
-    Everyone,
-    /// The coordinator only; refused to slices.
-    CoordinatorOnly,
+/// A named group of tools; a role's config lists the suites it gets (ADR 0016). Each tool's
+/// name starts with its suite's [`Suite::as_str`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Suite {
+    /// Questions, status and the decision log: every role.
+    Core,
+    /// The user's task list.
+    Tasks,
+    /// Slice lifecycle and project registration.
+    Project,
+    /// Claims and ordering between sessions (v1.1; no tools yet).
+    Coordination,
+    /// Research rounds, reports and proposals (ADR 0015).
+    Research,
+    /// Maps (decision 25).
+    Maps,
 }
 
-/// A row of [`TOOLS`]: a tool's name and who may call it.
+impl Suite {
+    /// Every suite, in the order the ADR lists them.
+    pub const ALL: &'static [Suite] = &[
+        Suite::Core,
+        Suite::Tasks,
+        Suite::Project,
+        Suite::Coordination,
+        Suite::Research,
+        Suite::Maps,
+    ];
+
+    /// The name in `config.toml` and [`env::SUITES`], also the tools' prefix.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Suite::Core => "core",
+            Suite::Tasks => "tasks",
+            Suite::Project => "project",
+            Suite::Coordination => "coordination",
+            Suite::Research => "research",
+            Suite::Maps => "maps",
+        }
+    }
+
+    /// Parses one suite name.
+    pub fn from_name(name: &str) -> Option<Suite> {
+        Suite::ALL.iter().copied().find(|s| s.as_str() == name)
+    }
+
+    /// The value of [`env::SUITES`]: names joined by commas.
+    pub fn join(suites: &[Suite]) -> String {
+        suites
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// Parses [`env::SUITES`]; unknown names are skipped, so a typo grants nothing.
+    pub fn parse_list(value: &str) -> Vec<Suite> {
+        value
+            .split(',')
+            .filter_map(|n| Suite::from_name(n.trim()))
+            .collect()
+    }
+}
+
+/// A row of [`TOOLS`]: a tool's name, its suite, and the name it had before ADR 0016.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolSpec {
     /// The name, without the server prefix.
     pub name: &'static str,
-    /// Who may call it.
-    pub access: Access,
+    /// The suite that grants it.
+    pub suite: Suite,
+    /// The unprefixed v1 name, still answered for one release as a deprecated alias.
+    pub old_name: Option<&'static str>,
 }
 
-/// Defines [`Tool`], [`TOOLS`] and [`Tool::name`] from one list, so a tool's variant, wire name
-/// and access rule are written once.
+/// `Some(old)` or `None`, for the optional `was` of a `tools!` row.
+macro_rules! old_name {
+    () => {
+        None
+    };
+    ($old:literal) => {
+        Some($old)
+    };
+}
+
+/// Defines [`Tool`], [`TOOLS`] and [`Tool::name`] from one list, so a tool's variant, wire name,
+/// suite and old name are written once.
 macro_rules! tools {
-    ($( $(#[doc = $doc:literal])* $variant:ident($input:ident) = $name:literal, $access:ident; )*) => {
+    ($( $(#[doc = $doc:literal])* $variant:ident($input:ident) = $name:literal, $suite:ident
+        $(, was $old:literal)?; )*) => {
         /// One tool call: the tool and its arguments. On the wire,
-        /// `{"tool": "<name>", "input": {..}}`.
+        /// `{"tool": "<name>", "input": {..}}`; an old name still parses (ADR 0016).
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[serde(tag = "tool", content = "input")]
         pub enum Tool {
-            $( $(#[doc = $doc])* #[serde(rename = $name)] $variant($input), )*
+            $( $(#[doc = $doc])* #[serde(rename = $name $(, alias = $old)?)] $variant($input), )*
         }
 
         /// Every tool, in the order `tools/list` shows them.
         pub const TOOLS: &[ToolSpec] = &[
-            $( ToolSpec { name: $name, access: Access::$access }, )*
+            $( ToolSpec { name: $name, suite: Suite::$suite, old_name: old_name!($($old)?) }, )*
         ];
 
         impl Tool {
@@ -109,46 +190,67 @@ macro_rules! tools {
 }
 
 tools! {
-    /// `ask_user`.
-    AskUser(AskUser) = "ask_user", Everyone;
-    /// `report_status`.
-    ReportStatus(ReportStatus) = "report_status", Everyone;
-    /// `create_task`, coordinator only.
-    CreateTask(CreateTask) = "create_task", CoordinatorOnly;
-    /// `log_decision`.
-    LogDecision(LogDecision) = "log_decision", Everyone;
-    /// `start_slice`, coordinator only (ADR 0004).
-    StartSlice(StartSlice) = "start_slice", CoordinatorOnly;
-    /// `add_project`, coordinator only (ADR 0005).
-    AddProject(AddProject) = "add_project", CoordinatorOnly;
-    /// `archive_slice`, coordinator only (task #9).
-    ArchiveSlice(ArchiveSlice) = "archive_slice", CoordinatorOnly;
-    /// `archive_task`, coordinator only (task #9).
-    ArchiveTask(ArchiveTask) = "archive_task", CoordinatorOnly;
-    /// `list_tasks`, coordinator only (task #20).
-    ListTasks(ListTasks) = "list_tasks", CoordinatorOnly;
-    /// `get_task`, coordinator only (task #20).
-    GetTask(GetTask) = "get_task", CoordinatorOnly;
-    /// `update_task`, coordinator only (task #25).
-    UpdateTask(UpdateTask) = "update_task", CoordinatorOnly;
-    /// `draw_map`, for the coordinator and slices (decision 25, M15).
-    DrawMap(DrawMap) = "draw_map", Everyone;
-    /// `research_start_round`, coordinator only (ADR 0015).
-    ResearchStartRound(ResearchStartRound) = "research_start_round", CoordinatorOnly;
-    /// `research_write_report`, coordinator only (ADR 0015).
-    ResearchWriteReport(ResearchWriteReport) = "research_write_report", CoordinatorOnly;
-    /// `research_propose`, coordinator only (ADR 0015).
-    ResearchPropose(ResearchPropose) = "research_propose", CoordinatorOnly;
-    /// `research_get`, coordinator only until the Ask column (R5) gets it too.
-    ResearchGet(ResearchGet) = "research_get", CoordinatorOnly;
+    /// `core_ask_user`.
+    AskUser(AskUser) = "core_ask_user", Core, was "ask_user";
+    /// `core_report_status`.
+    ReportStatus(ReportStatus) = "core_report_status", Core, was "report_status";
+    /// `core_log_decision`.
+    LogDecision(LogDecision) = "core_log_decision", Core, was "log_decision";
+    /// `tasks_create` (ADR 0002).
+    CreateTask(CreateTask) = "tasks_create", Tasks, was "create_task";
+    /// `tasks_list` (task #20).
+    ListTasks(ListTasks) = "tasks_list", Tasks, was "list_tasks";
+    /// `tasks_get` (task #20).
+    GetTask(GetTask) = "tasks_get", Tasks, was "get_task";
+    /// `tasks_update` (task #25).
+    UpdateTask(UpdateTask) = "tasks_update", Tasks, was "update_task";
+    /// `tasks_archive` (task #9).
+    ArchiveTask(ArchiveTask) = "tasks_archive", Tasks, was "archive_task";
+    /// `project_start_slice` (ADR 0004).
+    StartSlice(StartSlice) = "project_start_slice", Project, was "start_slice";
+    /// `project_archive_slice` (task #9).
+    ArchiveSlice(ArchiveSlice) = "project_archive_slice", Project, was "archive_slice";
+    /// `project_add` (ADR 0005).
+    AddProject(AddProject) = "project_add", Project, was "add_project";
+    /// `research_start_round` (ADR 0015).
+    ResearchStartRound(ResearchStartRound) = "research_start_round", Research;
+    /// `research_write_report` (ADR 0015).
+    ResearchWriteReport(ResearchWriteReport) = "research_write_report", Research;
+    /// `research_propose` (ADR 0015).
+    ResearchPropose(ResearchPropose) = "research_propose", Research;
+    /// `research_get`: read a stored research document.
+    ResearchGet(ResearchGet) = "research_get", Research;
+    /// `maps_draw` (decision 25, M15).
+    DrawMap(DrawMap) = "maps_draw", Maps, was "draw_map";
 }
 
-/// The row of [`TOOLS`] named `name`.
+/// The row of [`TOOLS`] named `name`, by its current or its old name.
 pub fn tool_spec(name: &str) -> Option<&'static ToolSpec> {
-    TOOLS.iter().find(|t| t.name == name)
+    TOOLS
+        .iter()
+        .find(|t| t.name == name || t.old_name == Some(name))
 }
 
-/// The first word of an `archive_slice` / `archive_task` answer that did not fail.
+/// The row whose old name is `name`: a call by a deprecated alias (ADR 0016).
+pub fn deprecated_alias(name: &str) -> Option<&'static ToolSpec> {
+    TOOLS.iter().find(|t| t.old_name == Some(name))
+}
+
+/// The line added to the result of a call by an old name, so the model learns the new one.
+pub fn deprecation_note(spec: &ToolSpec) -> String {
+    format!(
+        "Note: `{}` is deprecated and will be removed; call `{}` instead.",
+        spec.old_name.unwrap_or(spec.name),
+        spec.name
+    )
+}
+
+/// The rows of [`TOOLS`] the suites grant, in table order.
+pub fn tools_in(suites: &[Suite]) -> impl Iterator<Item = &'static ToolSpec> + '_ {
+    TOOLS.iter().filter(|t| suites.contains(&t.suite))
+}
+
+/// The first word of an `project_archive_slice` / `tasks_archive` answer that did not fail.
 pub mod archive_result {
     /// The slice is gone: session stopped, worktree and branch removed, its place freed.
     pub const ARCHIVED: &str = "archived";
@@ -173,15 +275,15 @@ pub enum ToolError {
     Empty(&'static str),
     /// A task id is not positive.
     NotATaskId(&'static str),
-    /// `create_task` asked for Now (ADR 0002).
+    /// `tasks_create` asked for Now (ADR 0002).
     BucketNow,
     /// The coordinator logged a decision without naming its task.
     DecisionNeedsTask,
-    /// `update_task` asked for Now: only starting a slice moves a task there (task #25).
+    /// `tasks_update` asked for Now: only starting a slice moves a task there (task #25).
     UpdateIntoNow,
-    /// `update_task` asked for `archived`, which is `archive_task`'s job.
+    /// `tasks_update` asked for `archived`, which is `tasks_archive`'s job.
     UpdateToArchived,
-    /// `update_task` named no field to change.
+    /// `tasks_update` named no field to change.
     NothingToUpdate,
     /// `research_propose` of a decision with no evidence (ADR 0015).
     DecisionNeedsEvidence,
@@ -210,11 +312,11 @@ impl std::fmt::Display for ToolError {
             }
             ToolError::UpdateIntoNow => f.write_str(
                 "`bucket` cannot be `now`: a task moves into Now only when a slice starts on it \
-                 (`start_slice`). Use `next`, `later` or `unsorted`",
+                 (`project_start_slice`). Use `next`, `later` or `unsorted`",
             ),
             ToolError::UpdateToArchived => f.write_str(
                 "`status` must be `todo`, `in_progress` or `done`: archive a task with \
-                 `archive_task`",
+                 `tasks_archive`",
             ),
             ToolError::NothingToUpdate => f.write_str(
                 "give at least one field to change: `status`, `bucket`, `p_level`, `title` or \
@@ -240,23 +342,21 @@ impl std::error::Error for ToolError {}
 
 impl Tool {
     /// Parses MCP `tools/call` arguments for the tool `name` (without the server prefix).
+    /// An old name (ADR 0016) parses as its new one.
     pub fn parse(name: &str, arguments: serde_json::Value) -> Result<Tool, ToolError> {
-        if tool_spec(name).is_none() {
+        let Some(spec) = tool_spec(name) else {
             return Err(ToolError::Unknown(name.to_owned()));
-        }
-        let wire = serde_json::json!({ "tool": name, "input": arguments });
+        };
+        let wire = serde_json::json!({ "tool": spec.name, "input": arguments });
         serde_json::from_value(wire).map_err(|e| ToolError::BadArguments {
             tool: name.to_owned(),
             message: e.to_string(),
         })
     }
 
-    /// Whether a session with `role` may call the tool named `name`.
-    pub fn allowed(name: &str, role: Role) -> bool {
-        tool_spec(name).is_some_and(|t| match t.access {
-            Access::Everyone => true,
-            Access::CoordinatorOnly => role == Role::Coordinator,
-        })
+    /// Whether a session with `suites` may call the tool named `name` (current or old name).
+    pub fn allowed(name: &str, suites: &[Suite]) -> bool {
+        tool_spec(name).is_some_and(|t| suites.contains(&t.suite))
     }
 
     /// Checks what serde cannot: non-empty text, positive ids, the bucket rule, and that the
@@ -356,7 +456,7 @@ impl Tool {
     }
 }
 
-/// `ask_user`: a question for the user's inbox. It never blocks: the call returns at once and the
+/// `core_ask_user`: a question for the user's inbox. It never blocks: the call returns at once and the
 /// answer arrives as a user message (ADR 0007). An old caller's `blocking` field is ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AskUser {
@@ -364,14 +464,14 @@ pub struct AskUser {
     pub question: String,
 }
 
-/// `report_status`: the agent's one-line status.
+/// `core_report_status`: the agent's one-line status.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReportStatus {
     /// One line; the core cuts it at 120 characters.
     pub status: String,
 }
 
-/// `create_task`: a task filed by the coordinator.
+/// `tasks_create`: a task filed by the coordinator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTask {
     /// Short imperative title.
@@ -390,7 +490,7 @@ pub struct CreateTask {
     pub related: Vec<TaskId>,
 }
 
-/// `log_decision`: an entry in a task's decision log.
+/// `core_log_decision`: an entry in a task's decision log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogDecision {
     /// The task; required for the coordinator, a slice's own task by default.
@@ -406,7 +506,7 @@ pub struct LogDecision {
     pub supersedes: Option<DecisionId>,
 }
 
-/// `start_slice`: start a slice on an existing task (ADR 0004).
+/// `project_start_slice`: start a slice on an existing task (ADR 0004).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartSlice {
     /// An existing task.
@@ -417,27 +517,27 @@ pub struct StartSlice {
     pub brief: String,
 }
 
-/// `add_project`: register the folder the coordinator runs in as a Dovetail project (ADR 0005).
+/// `project_add`: register the folder the coordinator runs in as a Dovetail project (ADR 0005).
 /// Takes no arguments.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddProject {}
 
-/// `archive_slice`: archive a slice by name (task #9). Clean, pushed work goes at once; unsaved
+/// `project_archive_slice`: archive a slice by name (task #9). Clean, pushed work goes at once; unsaved
 /// work waits for the user's yes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveSlice {
-    /// The slice's name, as given to `start_slice`.
+    /// The slice's name, as given to `project_start_slice`.
     pub name: String,
 }
 
-/// `archive_task`: archive a task, and first its live slices, with `archive_slice`'s rules.
+/// `tasks_archive`: archive a task, and first its live slices, with `project_archive_slice`'s rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveTask {
     /// The task.
     pub id: TaskId,
 }
 
-/// A bucket as `list_tasks` filters it: the three [`Bucket`]s plus Unsorted (no bucket).
+/// A bucket as `tasks_list` filters it: the three [`Bucket`]s plus Unsorted (no bucket).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BucketFilter {
@@ -463,7 +563,7 @@ impl BucketFilter {
     }
 }
 
-/// `list_tasks`: one line per task, Now, Next, Unsorted, Later (task #20). Every field is
+/// `tasks_list`: one line per task, Now, Next, Unsorted, Later (task #20). Every field is
 /// optional.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -477,14 +577,14 @@ pub struct ListTasks {
     pub include_archived: bool,
 }
 
-/// `get_task`: one task in full, with its agents and decision log (task #20).
+/// `tasks_get`: one task in full, with its agents and decision log (task #20).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GetTask {
     /// The task.
     pub id: TaskId,
 }
 
-/// `update_task`: change some fields of a task (task #25). Only the fields given change.
+/// `tasks_update`: change some fields of a task (task #25). Only the fields given change.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateTask {
     /// The task.
@@ -522,7 +622,7 @@ impl UpdateTask {
     }
 }
 
-/// `draw_map`: a structure or swimlane map (design 23i). The arguments stay raw JSON here:
+/// `maps_draw`: a structure or swimlane map (design 23i). The arguments stay raw JSON here:
 /// their shape is `dovetail_maps::DrawMapInput`, which lives with the validation (decision on
 /// task #34), and the core parses and validates them there so every problem comes back at once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

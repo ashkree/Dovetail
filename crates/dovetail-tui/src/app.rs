@@ -710,7 +710,7 @@ impl App {
             return;
         };
         let text = format!(
-            "Please redraw the map \"{}\" (id `{}`) from the current code: call draw_map with \
+            "Please redraw the map \"{}\" (id `{}`) from the current code: call maps_draw with \
              the same id, so it is updated in place.",
             map.content.title, map.id.0
         );

@@ -77,7 +77,7 @@ struct Row {
     left: Vec<Span<'static>>,
     /// Versions of the right-hand side, fullest first; a narrow pane uses a shorter one.
     right: Vec<Vec<Span<'static>>>,
-    /// An agent's one-line status (`report_status`): dim, after the name, cut to the room left
+    /// An agent's one-line status (`core_report_status`): dim, after the name, cut to the room left
     /// by the fullest right side, and the first thing dropped in a narrow pane.
     status: Option<String>,
 }

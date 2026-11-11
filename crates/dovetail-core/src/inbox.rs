@@ -1,7 +1,7 @@
 //! Needs you: raising inbox items and acting on their answers (M7, M9).
 //!
 //! Each item remembers what waits on it ([`Waiter`]): a held permission request in a session, an
-//! `ask_user` question whose answer goes to the agent as a message, a `start_slice` call waiting
+//! `core_ask_user` question whose answer goes to the agent as a message, a `project_start_slice` call waiting
 //! for approval, or a worktree removal waiting for confirmation. Answers go straight to whatever waits, so one held item never blocks
 //! another (stream rule 3).
 
@@ -26,15 +26,15 @@ pub(crate) enum Waiter {
         /// The rules Claude Code offered, as sent, for "always allow".
         suggestions: Vec<Value>,
     },
-    /// An `ask_user` question: it never blocks, and the answer goes to the session as a message
+    /// A `core_ask_user` question: it never blocks, and the answer goes to the session as a message
     /// (ADR 0007).
     Question { question: String },
-    /// A `start_slice` waiting for approval; the call already returned `pending`, and the
+    /// A `project_start_slice` waiting for approval; the call already returned `pending`, and the
     /// answer goes to the coordinator as a message (ADR 0004).
     StartSlice { request: SliceRequest },
     /// A slice archive waiting for confirmation that unsaved work may go.
     RemoveWorktree,
-    /// An `ask_user` question from before a restart: its call is gone, so the answer goes to
+    /// A `core_ask_user` question from before a restart: its call is gone, so the answer goes to
     /// the agent as a normal message (M10, decided 2026-11-06).
     RestoredQuestion { question: String },
     /// A worktree no agent owns, found by the sweep on open (M10): `y` removes it, `d` keeps
@@ -329,19 +329,21 @@ impl Core {
                 let text = match answer {
                     PermissionAnswer::Deny { message } => {
                         let why = message.map(|m| format!(": {m}")).unwrap_or_default();
-                        format!("start_slice {name} denied by the user{why}")
+                        format!("project_start_slice {name} denied by the user{why}")
                     }
                     _ => match self.request_slice(request).await {
                         Ok(SliceStart::Started(_)) => format!(
-                            "start_slice {name} approved: it is setting up; wait for \"slice \
+                            "project_start_slice {name} approved: it is setting up; wait for \"slice \
                              {name} ready\" before you message it"
                         ),
                         Ok(SliceStart::Queued(_)) => format!(
-                            "start_slice {name} approved and queued: the maximum number of \
+                            "project_start_slice {name} approved and queued: the maximum number of \
                              slices is running; it starts when one is archived"
                         ),
                         Err(e) => {
-                            format!("start_slice {name} approved, but it could not start: {e}")
+                            format!(
+                                "project_start_slice {name} approved, but it could not start: {e}"
+                            )
                         }
                     },
                 };
@@ -425,7 +427,7 @@ impl Core {
             }
             Waiter::StartSlice { request } => {
                 self.tell_coordinator(format!(
-                    "start_slice {} denied: the user dismissed the request",
+                    "project_start_slice {} denied: the user dismissed the request",
                     request.name
                 ));
             }
