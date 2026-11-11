@@ -439,7 +439,7 @@ fn the_same_page_fetched_twice_is_one_source_row_linked_by_each_fetch() {
 }
 
 #[test]
-fn with_no_round_open_the_coordinators_subagents_are_not_filed() {
+fn with_no_round_open_the_coordinators_subagents_are_not_filed_under_any_task() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("work");
     std::fs::create_dir_all(&repo).unwrap();
@@ -448,7 +448,14 @@ fn with_no_round_open_the_coordinators_subagents_are_not_filed() {
     let mut app = App::start(&fake, &paths, &repo);
     prompt(&app, "go");
     app.wait_for("the finished turn", finished_turn);
+    // No task has research; the finding waits, unfiled, in Needs you (follow-ups of 2026-11-11).
     assert!(app.snap.research.is_empty());
-    assert!(!paths.data.join("projects/p/research").exists());
+    assert!(
+        app.snap
+            .inbox
+            .iter()
+            .any(|i| matches!(i.kind, dovetail_api::InboxKind::UnfiledFinding { .. }))
+    );
+    assert!(paths.data.join("projects/p/research/unfiled").exists());
     app.quit();
 }

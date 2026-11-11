@@ -935,7 +935,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 #[test]
 fn a_coordinator_finding_with_no_round_is_unfiled_and_filing_moves_it_and_its_files() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut app, root, repo) = unfiled(dir.path());
+    let (app, root, repo) = unfiled(dir.path());
     let (item, label, sources) = unfiled_item(&app);
     assert_eq!(sources, 2);
     assert!(label.len() > 2, "{label}");
