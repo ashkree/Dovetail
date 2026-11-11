@@ -39,16 +39,22 @@ CREATE TABLE findings (
   n INTEGER NOT NULL,                                -- 1-based within the round (or the task)
   agent_id TEXT NOT NULL,                            -- agents.id of the subagent
   label TEXT NOT NULL,                               -- slug used in the file name
-  path TEXT NOT NULL,                                -- findings/01-<label>.md, relative
+  description TEXT,                                  -- the Agent call's description
+  path TEXT NOT NULL,                                -- rounds/01-…/findings/01-<label>.md, relative to the task folder
   body TEXT NOT NULL,                                -- the full output; also on disk
+  body_from TEXT NOT NULL,                           -- which stream field the body came from (§5.4)
+  subagent_type TEXT, started_ms INTEGER, tokens INTEGER,
   created_ms INTEGER NOT NULL);
 
 CREATE TABLE sources (
   id INTEGER PRIMARY KEY,
-  kind TEXT NOT NULL,                       -- 'web' | 'file'
-  locator TEXT NOT NULL,                    -- URL or absolute file path
-  tool TEXT NOT NULL,                       -- 'WebFetch' | 'WebSearch' | 'Read' | ...
-  cache_path TEXT,                          -- sources/<id>.md, relative; what the tool returned
+  kind TEXT NOT NULL,                       -- 'web' | 'file' | 'search' (a WebSearch itself)
+  locator TEXT NOT NULL,                    -- URL, absolute file path, or search query
+  tool TEXT NOT NULL,                       -- 'WebFetch' | 'WebSearch' | 'Read' | 'Grep' | 'Glob'
+  query TEXT,                               -- WebFetch's prompt, WebSearch's query
+  content TEXT NOT NULL,                    -- what the tool returned, so the cache can be rebuilt
+  cached INTEGER NOT NULL,                  -- written to sources/<id>.md (Grep/Glob: no)
+  is_error INTEGER NOT NULL DEFAULT 0,
   content_hash TEXT NOT NULL,               -- dedups the same page fetched twice
   fetched_ms INTEGER NOT NULL,
   UNIQUE(locator, content_hash));
@@ -90,7 +96,7 @@ CREATE TABLE tangents (
 
 Sources of tangents reuse `sources`/`finding_sources` in a `tangents.db`, or `tangents` carries its own rows: **open**, decided in R6. v1.1 columns still to come: FTS rows for findings and reports (search, Decision 20).
 
-`Snapshot` carries `research: Vec<ResearchSummary>` (per task: rounds, finding and source counts, report time); content loads through `Command::LoadResearch { task, what }` answered by `Event::ResearchLoaded`, as maps do. `Event::ResearchUpserted(ResearchSummary)` keeps the library current.
+`Snapshot` carries `research: Vec<ResearchSummary>` (per task: rounds, finding and source counts, report time); content loads through `Command::LoadResearch { task, what }` answered by `Event::ResearchLoaded`, as maps do. `Event::ResearchUpserted(ResearchSummary)` keeps the library current. Built in R1 (`0013_research`, which also holds `reports` and the two `tasks` columns); the file copy of a cached source is always `sources/<id>.md`, so no `cache_path` column is kept, and the content is stored so a missing file can be rebuilt.
 
 ## 4. Folder layout
 
@@ -115,16 +121,16 @@ research/<task-id>-<slug>/
 
 Nothing here is new protocol. It uses events the driver already parses (`dovetail-driver/src/event.rs`) and the core's session state (`session/state.rs`).
 
-1. **Round open.** `research_start_round(task, brief)` creates a `research_rounds` row and `brief.md`; the core remembers "round R is open for coordinator session S".
+1. **Round open.** `research_start_round(task, brief)` (R2; in R1 `Command::StartRound`, `:round <task> <brief>`) creates a `research_rounds` row and `brief.md`; the core remembers "round R is open for the coordinator". At most one round is open at a time; `:round close` (`Command::CloseRound`) closes it, and subagents already launched in it are still filed under it.
 2. **Which subagents belong.** A `DriverEvent` assistant `ContentBlock::ToolUse { name: "Agent" | "Task", .. }` from the coordinator while a round is open starts a candidate; its `tool_use_id` is the key. `TaskEvent { phase: Started, tool_use_id, subagent_type, description }` confirms a background subagent and names it. Every later event of that subagent carries `parent_tool_use_id` equal to that id (digest §3).
-3. **Sources.** For each `ToolUse` tagged to the subagent with `name` in `WebFetch`, `WebSearch`, `Read` (and `Grep`/`Glob` listed but not cached), the core records the input (`url`, `query`, `file_path`); the matching `DriverEvent` `ToolResult { tool_use_id, content, is_error }` gives what the tool returned. Error results are kept but marked. Content is cached to `sources/<id>.md`, deduplicated by hash. A `Source` is created from the **tool call**, never from links in prose.
-4. **Finding body.** In priority order: (a) the subagent's final report as the text of its handback — in the recorded fixture `subagent_background.ndjson` the subagent ends with a `SubagentHandback` tool call whose `message` is the report, and a foreground `Agent` call's `ToolResult` carries it; (b) `TaskEvent` `Notification { output_file, summary }` — `output_file` is the full transcript output on disk, `summary` is only a summary; (c) the concatenated assistant text of the subagent. The best available full text is the finding; the others are kept in the row if they differ.
-5. **File the finding.** On subagent completion (`Notification`/`Updated` with a final status, or the foreground `Agent` `ToolResult`), write `findings/<n>-<label>.md` with front matter (agent, subagent type, task id, round, started and finished time, tokens, `sources: [ids]`) and the body, then insert `findings` and `finding_sources` rows. The file's header lists its sources with locators.
+3. **Sources.** For each `ToolUse` tagged to the subagent with `name` in `WebFetch`, `WebSearch`, `Read` (and `Grep`/`Glob` listed but not cached), the core records the input (`url` and `prompt`, `query`, `file_path`); the matching `DriverEvent` `ToolResult { tool_use_id, content, is_error }` gives what the tool returned. Error results are kept but marked. Content is cached to `sources/<id>.md`, deduplicated by locator and hash. A `Source` is created from the **tool call**, never from links in prose. Per spike S7: a **`WebFetch` result is a model's answer to the agent's own `prompt`, not the page**, so the cache stores it with that prompt and says "what the agent saw"; a **`WebSearch` result** gives one source per URL of its `Links: [...]` JSON array, and the rest of the result (a model's synthesis that can carry third-party text) is kept whole as one `search` source marked untrusted.
+4. **Finding body.** In priority order (S7, Claude Code 2.1.316, where every subagent ends with a `SubagentHandback` call): (a) `task_notification.handback_report.text`; (b) for a foreground call, the `Agent` result's `tool_use_result.handbackReport.text`; (c) the `SubagentHandback` call's `message`; (d) the `Agent` result content, only when the subagent used no handback (with a handback it is a boilerplate "delivered to you as a message" line); (e) the subagent's assistant text; (f) `task_notification.summary`, only when `handback` is not `send` (otherwise it is the same boilerplate); (g) last resort, the `assistant` lines of `output_file`, a symlink to the subagent's transcript. **Never copy `output_file` wholesale**: it also holds the request context, the user's email and connector lists included. The row records which one was used (`body_from`).
+5. **File the finding.** On subagent completion (`task_updated` with a final status, `task_notification`, or the foreground `Agent` `ToolResult`) — **never on a `result`**: a background subagent keeps streaming after the coordinator's turn ends — insert the `findings` and `finding_sources` rows, then write `findings/<n>-<label>.md` with front matter (finding id, task, round, agent, subagent type, description, started and finished time, tokens, `body_from`, `sources: [ids]`), a Sources section listing each source with its locator, tool and a link to its cached copy, and the report. A better body arriving later (the notification after `task_updated`) rewrites the row and file.
 6. **Context isolation.** The coordinator's context is whatever Claude Code already gave it (the `Agent` tool result, the summary). Dovetail sends **nothing** to the coordinator about findings and does not add them to its prompt. The coordinator reads findings only by choice, through the `get_finding` read (below) or a file path it is told.
-7. **No round open.** A research-shaped subagent (`WebFetch`/`WebSearch` use) on a task becomes a quick finding with `round_id NULL`; the user can promote it to a round (`:round` on the finding) which creates the round row and moves the file.
-8. **What the stream cannot give.** `WebFetch` results are a model's rendering of the page, not the raw bytes; the cache is "what the agent saw". Subagents' `WebSearch` results are lists of titles and URLs. Whether `tool_result` bodies for these tools survive the stream unmodified, and whether `Read` results are truncated, is spike **S7**. Whether the research suite's own tools work inside background subagents (digest §13 still lists it open; `docs/spikes/mcp.md` shows a pass) matters only if subagents themselves call `research_*`, which they do not in this design: only the coordinator does.
+7. **No round open.** A research-shaped subagent (`WebFetch`/`WebSearch` use) of a session that works on a task (a slice) becomes a quick finding with `round_id NULL`, filed under `findings/` of the task folder; the coordinator has no task of its own, so with no round open its subagents are not filed. The user can promote a quick finding to a round (`:round` on the finding), which creates the round row and moves the file: **not built in R1** (it needs R3's listing to point at a finding).
+8. **What the stream cannot give.** `WebFetch` results are a model's answer about the page, not the raw bytes; the cache is "what the agent saw", and raw pages exist only if Dovetail fetched the URL itself, which it does not. Not verified by S7: `Read` truncation of long files, a subagent that ends without a handback, a failing `WebFetch`'s error shape. Whether the research suite's own tools work inside background subagents matters only if subagents themselves call `research_*`, which they do not in this design: only the coordinator does (S7 (e): a subagent's `mcp__dovetail__*` call streams like any tool).
 
-Fake-driver coverage: a fixture `research_round.ndjson` (recorded in S7) replayed through `FakeDriver`.
+Fake-driver coverage: S7's `research_round_foreground.ndjson` and `research_round_background.ndjson` (plus `research_websearch.ndjson`, `research_mcp_subagent.ndjson`) in `crates/dovetail-driver/tests/fixtures/`, replayed through the real core in `crates/dovetail-core/tests/research.rs`.
 
 ## 6. Tools
 

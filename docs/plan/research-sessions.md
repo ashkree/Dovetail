@@ -87,12 +87,12 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
 - **Prompt (copy-paste):**
   > Implement milestone R1 of `docs/research.md` §10, following §3 (migration `0013_research` with `research_rounds`, `findings`, `sources`, `finding_sources`; `reports` and the `tasks` columns can land here too), §4 (folder layout, default root and the recipe's `research_dir`) and §5 (capture pipeline), and `docs/spikes/research-capture.md` for which stream events carry what. Put plain types in `dovetail-api` (`ResearchSummary`, `Event::ResearchUpserted`, `Command::LoadResearch` and `Event::ResearchLoaded`), the pipeline in `dovetail-core/src/research/{mod,capture,files}.rs`, the recipe field in `recipe.rs`, and add `research_dir = "docs/research"` to `config/projects/dovetail.toml` with a bootstrap check. No MCP tools yet: a round is opened by a `Command::StartRound` (and `:round <task> <brief>`) so it is testable. Nothing is ever sent to the coordinator's session. Quick findings (no round) follow §5.7. Update `docs/implementation-plan.md` §5 (migration list) and §6 with an R1 entry. Tests: the two S7 fixtures through `FakeDriver`, dedup of a source fetched twice, restart keeps rows, opt-in dir writes only under `docs/research/`.
 - **Validation:**
-  - [ ] Fake-driver replay of a subagent with WebFetch and Read yields `findings/01-<agent>.md` listing its sources
-  - [ ] Same page fetched twice is one `sources` row, two `finding_sources`
-  - [ ] The `FakeDriver` command log shows no input sent to the coordinator because of capture
-  - [ ] Restart keeps rounds, findings and sources; files are rebuilt if missing
-  - [ ] Opt-in `research_dir` writes only under that folder of a temp repo
-  - [ ] `scripts/check.sh` passes
+  - [x] Fake-driver replay of a subagent with WebFetch and Read yields `findings/01-<agent>.md` listing its sources (`dovetail-core/tests/research.rs`: `a_foreground_subagent_in_a_round_is_filed_with_its_sources`, `a_background_subagent_is_filed_on_its_notification_not_the_turn_result`; files `findings/01-fetch-page-and-read-notes.md` and `01-fetch-page-read-notes-report.md`)
+  - [x] Same page fetched twice is one `sources` row, two `finding_sources` (`the_same_page_fetched_twice_is_one_source_row_linked_by_each_fetch`, counted in `state.db`)
+  - [x] The `FakeDriver` command log shows no input sent to the coordinator because of capture (`fake.sent()` is exactly the user's one prompt in both S7 replays)
+  - [x] Restart keeps rounds, findings and sources; files are rebuilt if missing (`a_restart_keeps_rounds_findings_and_sources_and_rebuilds_missing_files`: the task folder is deleted, the reopened app rewrites the same four files byte for byte)
+  - [x] Opt-in `research_dir` writes only under that folder of a temp repo (`an_opt_in_research_dir_writes_only_under_that_folder_of_the_repo`)
+  - [x] `scripts/check.sh` passes
 
 ### M18 — R2 Research suite tools
 - **Model:** Sonnet — well specified by §6 and §7 once R1 exists
