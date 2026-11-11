@@ -369,9 +369,13 @@ Session state is an explicit machine in `dovetail-core/src/session/state.rs`. It
 `registry.db` plus a `state.db` per project. Each is served by the single DB thread through typed requests. WAL on. Migrations are forward-only and start from empty.
 
 ```sql
--- registry.db
-CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, repo_path TEXT NOT NULL,
-  git_common_dir TEXT NOT NULL UNIQUE, last_opened_ms INTEGER);
+-- registry.db (as of registry migration 0003: a git dir is optional, ADR 0005, and a research
+-- project has neither repo nor git dir, decided 2026-11-11)
+CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'code' CHECK (kind IN ('code', 'research')),
+  repo_path TEXT, git_common_dir TEXT UNIQUE, last_opened_ms INTEGER,
+  CHECK (kind = 'research' OR repo_path IS NOT NULL),
+  CHECK (kind = 'code' OR (repo_path IS NULL AND git_common_dir IS NULL)));
 
 -- state.db
 CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
@@ -418,7 +422,12 @@ CREATE TABLE map_versions (map_id TEXT NOT NULL REFERENCES maps(id), version INT
   model TEXT NOT NULL, drawn_by TEXT, created_ms INTEGER NOT NULL, PRIMARY KEY(map_id, version));
 ```
 
-**Migrations**
+**Registry migrations** (`db/migrations/registry/`)
+- M5 `0001_init`: `projects`
+- Wave 2 `0002_optional_git`: `git_common_dir` nullable, so any folder can be a project (ADR 0005)
+- Research-only projects `0003_project_kind`: `projects.kind` (`code` or `research`, existing rows become `code`), `repo_path` nullable; a research project has neither path, `UNIQUE` still holds for the git dirs that are set (decided 2026-11-11, ADR 0015's open point)
+
+**Migrations** (`state.db`, `db/migrations/state/`)
 - M5 `0001_init`: `tasks`, `task_deps`, `task_related`, `decisions`
 - M6 `0002_agents_conversation`
 - M7 `0003_inbox_activity`
@@ -683,6 +692,17 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - Mock: task #3 is seeded with two rounds, three findings (one quick), three sources and a report, and `LoadResearch` is answered (`dovetail-mock/src/research.rs`), so `dovetail --mock` shows everything.
 - **Done when:** the M19 validation list in `docs/plan/research-sessions.md`.
 - **Tests:** `dovetail-tui/tests/research.rs` (rows listed, every artifact kind opens, coloured markers, `Esc`, `e` hand-off, `:research`, snapshots of the detail and of a report at 80, 120 and 200 columns), `render::citations` unit tests, `dovetail-mock/tests/mock.rs` (every listed document loads).
+
+### Research-only projects (decided 2026-11-11)
+- **Scope:** ADR 0015's open point, decided by the user on 2026-11-11 (the ADR text is not updated yet; this wins): the registry gets a project kind, `code` or `research`. A research project has no repo; its sessions run in its state folder `<data>/projects/<id>/`. Code paths check the kind, never whether a folder exists. Also B24, the project switch, which was a stub.
+- **Built (branch `dovetail/research-projects`):**
+  - Registry migration `0003_project_kind`; `projects::Project { kind, repo_path: Option<_> }` with `folder(&Paths)` (repo, or `Paths::project_dir`) and `summary(&Paths)`; `Db::{register_research, get_project}`; `projects::open` (by id). `ProjectSummary::kind` (`ProjectKind`, serde default `code`); `repo_path` there is the folder sessions run in.
+  - Core kind checks (`ProjectState::is_research`): `check_slice` refuses with `SliceError::ResearchProject` (so `start_slice`, `:spawn` and queued starts); worktree gathering, the stale-state sweep, subagent worktree cleanup and `@`-completion's `git ls-files` are skipped; `:upgrade` refuses; no "no recipe" warning; the research root is always the default `<data>/projects/<id>/research/` (a recipe's `research_dir` is ignored). The recipe is still read for a `profile` (ADR 0009).
+  - `Command::NewResearchProject { name }` registers one (refused when a research project of that name exists) and makes its folder; a fresh snapshot lists it. `Command::OpenProject { id }` (B24): the core records the id (`CoreHandle::switch_requested`), sends `Event::OpeningProject` and quits; the UI quits on it; the binary then `exec`s itself with `--project <id>` (in the project's folder for a code project). `dovetail --project <id>` opens any registered project, research ones included.
+  - TUI: `<leader>pp` / `:project` opens the project picker (`switcher::project_items`, `PickerKey::Project`): research projects marked `◇` and `research` where a code project shows its folder, the open one `open ·`, a preview per project; choosing one asks first. `:project new <name> --research` (`Action::NewProject`). `<leader>g` in a research project says it has no worktrees instead of opening the view.
+  - Mock: "Market sizing" is seeded as a research project; `:project new … --research` adds one to the list; opening another project is not simulated.
+- **Done when:** a research project can be created, opened from the switcher, chats in its state folder with the coordinator role prompt, runs rounds, findings and reports, closes the day, and comes back after a restart; slices, worktrees and git never run for it.
+- **Tests:** `dovetail-core/tests/research_projects.rs` (coordinator cwd and role prompt, restart resumes it there, slices refused by command and tool, no worktree gathering, no git listing, `:upgrade` refused, `NewResearchProject` and `OpenProject`), `db::tests::an_existing_registry_migrates_to_project_kinds`, `dovetail-tui/tests/projects.rs` (switcher marker, pick asks then sends `OpenProject`, `:project new`, no worktree view), `command` unit test, serde round trip.
 
 ### Daily-driver fixes (after M10)
 Fixes from the first days of building Dovetail inside Dovetail, one slice and PR each, all merged on 2026-11-09. They come ahead of M11 and count towards M16's "fixing what hurts"; no milestone box is ticked by them.
