@@ -15,6 +15,7 @@ fn idle_world(latest: Option<&str>) -> Snapshot {
     snap.journal = Some(JournalState {
         latest: latest.map(str::to_owned),
         closing: false,
+        fresh: false,
     });
     snap
 }
@@ -35,6 +36,7 @@ fn journal_event(app: &mut dovetail_tui::App, latest: Option<&str>, closing: boo
         event: Event::JournalChanged(JournalState {
             latest: latest.map(str::to_owned),
             closing,
+            fresh: false,
         }),
     });
 }
@@ -101,6 +103,7 @@ fn while_the_day_closes_quit_asks_only_about_the_running_turn() {
         event: Event::JournalChanged(JournalState {
             latest: None,
             closing: true,
+            fresh: false,
         }),
     });
     run(&mut app, "q");

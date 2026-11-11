@@ -27,7 +27,7 @@ expression: screen
 │   It needs a key. slice-7 can only reach the eval path with             ││       ✓ ◇ rebase               done $0.21 │
 │   FS_EVAL_VIRTUAL_KEY set.▌                                             ││       ◐ ◇ explore callers 12 tools · Grep │
 │                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
-│                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
+│   ⠋ Mortising… 0s                                                       ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                         ││         ⎇ dovetail/slice-7                │
 └─────────────────────────────────────────────────────────────────────────┘│ ▾ Next (1)                                │
 ┌ chat › coordinator ─────────────────────────────────────────────────────┐│   ○ idea: eval key flow P2                │

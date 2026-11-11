@@ -177,6 +177,7 @@ fn subagent() -> Agent {
         lock: SessionLock::TakenOver,
         model: Some("claude-opus-5-5".into()),
         subagent_tokens: 12_345,
+        tool: None,
     }
 }
 
@@ -405,7 +406,9 @@ fn hello_and_a_full_snapshot_roundtrip() {
         journal: Some(JournalState {
             latest: Some("2026-11-10".into()),
             closing: false,
+            fresh: false,
         }),
+        upgrade_building: true,
         maps: vec![map_summary()],
         research: vec![research_summary()],
         tangents: vec![tangent()],
@@ -489,7 +492,9 @@ fn every_event_roundtrips() {
         Event::JournalChanged(JournalState {
             latest: None,
             closing: true,
+            fresh: true,
         }),
+        Event::UpgradeBuilding(true),
         Event::OpeningProject {
             id: ProjectId("market-sizing".into()),
         },

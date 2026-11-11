@@ -94,6 +94,8 @@ pub struct Turn {
     pub streaming: Option<Streaming>,
     /// This turn's tools.
     pub tools: ToolTally,
+    /// The `tool_use` id of the tool shown as running (`Agent::tool`), until its result.
+    pub tool_id: Option<String>,
     /// The last assistant text, for the finished-turn preview.
     pub last_text: String,
     /// An interrupt was requested and its `result` has not come yet.
@@ -136,6 +138,7 @@ impl Turn {
         self.running = self.queued > 0;
         self.streaming = None;
         self.tools = ToolTally::default();
+        self.tool_id = None;
         self.interrupting = false;
     }
 }

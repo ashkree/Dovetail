@@ -64,17 +64,19 @@ enum Msg {
 }
 
 /// How long the loop may sleep: until the next draw window if the screen is dirty, until the
-/// key-sequence deadline if one is pending, and forever (`None`) if neither.
+/// key-sequence deadline if one is pending, until the next spinner frame (`frame_in`, given
+/// only while a spinner is on screen), and forever (`None`) if none of them.
 pub fn next_wake(
     dirty: bool,
     since_last_draw: Duration,
     key_deadline_in: Option<Duration>,
+    frame_in: Option<Duration>,
 ) -> Option<Duration> {
     let draw_in = dirty.then(|| MIN_FRAME.saturating_sub(since_last_draw));
-    match (draw_in, key_deadline_in) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (a, b) => a.or(b),
-    }
+    [draw_in, key_deadline_in, frame_in]
+        .into_iter()
+        .flatten()
+        .min()
 }
 
 /// Lets go of the terminal and takes it back, for a program the core runs in it.
@@ -470,7 +472,8 @@ fn drive<B: ratatui::backend::Backend>(
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
-        let first = match next_wake(app.is_dirty() && !away, since, key_in) {
+        let frame_in = if away { None } else { app.next_animation_in() };
+        let first = match next_wake(app.is_dirty() && !away, since, key_in, frame_in) {
             // Every sender gone: nothing can wake the loop again.
             None => match rx.recv() {
                 Ok(msg) => Some(msg),
@@ -688,6 +691,7 @@ mod tests {
             lock: SessionLock::Headless,
             model: None,
             subagent_tokens: 0,
+            tool: None,
         };
         snap.agents
             .push(session("coordinator", AgentKind::Coordinator, None));
@@ -764,17 +768,17 @@ mod tests {
 
     #[test]
     fn an_idle_ui_sleeps_with_no_deadline() {
-        assert_eq!(next_wake(false, Duration::from_secs(5), None), None);
+        assert_eq!(next_wake(false, Duration::from_secs(5), None, None), None);
     }
 
     #[test]
     fn a_dirty_screen_waits_out_the_frame_window() {
         assert_eq!(
-            next_wake(true, Duration::from_millis(10), None),
+            next_wake(true, Duration::from_millis(10), None, None),
             Some(Duration::from_millis(23))
         );
         assert_eq!(
-            next_wake(true, Duration::from_millis(40), None),
+            next_wake(true, Duration::from_millis(40), None, None),
             Some(Duration::ZERO)
         );
     }
@@ -782,10 +786,29 @@ mod tests {
     #[test]
     fn a_pending_key_sequence_sets_the_wake_even_when_clean() {
         let d = Duration::from_millis(700);
-        assert_eq!(next_wake(false, Duration::ZERO, Some(d)), Some(d));
+        assert_eq!(next_wake(false, Duration::ZERO, Some(d), None), Some(d));
         assert_eq!(
-            next_wake(true, Duration::from_millis(30), Some(d)),
+            next_wake(true, Duration::from_millis(30), Some(d), None),
             Some(Duration::from_millis(3))
+        );
+    }
+
+    #[test]
+    fn a_spinner_on_screen_sets_a_one_shot_wake_within_a_frame() {
+        let frame = Duration::from_millis(80);
+        assert_eq!(
+            next_wake(false, Duration::from_secs(5), None, Some(frame)),
+            Some(frame)
+        );
+        // The draw window comes first when it is nearer, a key deadline when that is.
+        assert_eq!(
+            next_wake(true, Duration::from_millis(10), None, Some(frame)),
+            Some(Duration::from_millis(23))
+        );
+        let key = Duration::from_millis(20);
+        assert_eq!(
+            next_wake(false, Duration::ZERO, Some(key), Some(frame)),
+            Some(key)
         );
     }
 }

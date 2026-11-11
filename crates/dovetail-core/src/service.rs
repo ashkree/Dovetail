@@ -899,6 +899,7 @@ impl Core {
             worktrees: self.worktrees.values().cloned().collect(),
             commands: self.commands.clone(),
             journal: self.journal_state(),
+            upgrade_building: self.upgrade.building.is_some(),
             tangents: self.tangent_summaries().await,
             ..Snapshot::default()
         };
@@ -1651,6 +1652,7 @@ pub(crate) fn new_agent(id: AgentId, name: String, kind: AgentKind, task: Option
         lock: SessionLock::Headless,
         model: None,
         subagent_tokens: 0,
+        tool: None,
     }
 }
 

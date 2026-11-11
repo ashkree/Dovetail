@@ -27,7 +27,7 @@ expression: wide
 │                                                                                                                          ││       ✓ ◇ rebase                                              done $0.21 │
 │                                                                                                                          ││       ◐ ◇ explore callers                                12 tools · Grep │
 │                                                                                                                          ││ ▾ ⚠ get_decision 500 P0                                                  │
-│                                                                                                                          ││   ▾ ⚠ ◆ slice-7  manual                         needs you 388M 85% $0.92 │
+│   ⠋ Mortising… 0s                                                                                                        ││   ▾ ⚠ ◆ slice-7  manual                         needs you 388M 85% $0.92 │
 │                                                                                                                          ││         ⎇ dovetail/slice-7                                               │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘│ ▾ Next (1)                                                               │
 ┌ chat › coordinator ──────────────────────────────────────────────────────────────────────────────────────────────────────┐│   ○ idea: eval key flow P2                                               │

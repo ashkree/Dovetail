@@ -38,6 +38,7 @@ fn agent(id: &str, status: AgentStatus) -> Agent {
         lock: SessionLock::Headless,
         model: None,
         subagent_tokens: 0,
+        tool: None,
     }
 }
 

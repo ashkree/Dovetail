@@ -17,8 +17,8 @@ use std::path::PathBuf;
 
 use dovetail_api::tools::Role;
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, AgentStatus, Attachment, EntryKind, InboxKind,
-    MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, Warning, WarningId,
+    ActivityKind, AgentId, AgentKind, AgentStatus, Attachment, EntryKind, Event, InboxKind,
+    MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, RunningTool, Warning, WarningId,
 };
 use dovetail_driver::{
     ContentBlock, DriverEvent, ExitInfo, ImageInput, InitInfo, PeerMessage, Session, TurnResult,
@@ -603,6 +603,13 @@ impl Core {
             DriverEvent::Assistant(message) => self.on_assistant(&agent, message),
             DriverEvent::ToolResult(result) => {
                 self.subagent_tool_result(&agent, &result);
+                if self
+                    .live
+                    .get_mut(&agent)
+                    .is_some_and(|l| l.turn.tool_id.as_deref() == Some(result.tool_use_id.as_str()))
+                {
+                    self.set_running_tool(&agent, None);
+                }
                 let send = self
                     .live
                     .get_mut(&agent)
@@ -827,6 +834,17 @@ impl Core {
             }
         }
         for (id, name, input) in tools {
+            // The working line names the newest tool call until its result comes back.
+            self.set_running_tool(
+                agent,
+                Some(RunningTool {
+                    name: name.clone(),
+                    arg: tool_arg(&input),
+                }),
+            );
+            if let Some(live) = self.live.get_mut(agent) {
+                live.turn.tool_id = Some(id.clone());
+            }
             if subagent::launches_subagent(&name) {
                 self.subagent_launched(agent, &id, &input);
             }
@@ -861,7 +879,22 @@ impl Core {
         }
     }
 
+    /// Shows (or clears) the tool the session is running. Shown to the UI only, never stored:
+    /// it changes with every tool call.
+    fn set_running_tool(&mut self, agent: &AgentId, tool: Option<RunningTool>) {
+        let Some(row) = self.agents.get_mut(agent) else {
+            return;
+        };
+        if row.agent.tool == tool {
+            return;
+        }
+        row.agent.tool = tool;
+        let agent = row.agent.clone();
+        self.emit(Event::AgentUpserted(agent));
+    }
+
     fn on_result(&mut self, agent: &AgentId, result: TurnResult) {
+        self.set_running_tool(agent, None);
         let Some(live) = self.live.get_mut(agent) else {
             return;
         };
@@ -1025,4 +1058,44 @@ pub(crate) fn read_attachments(
             })
         })
         .collect()
+}
+
+/// The main argument of a tool call, for the working line: a path, command, pattern, URL or
+/// query, the first line of it; empty when the call has none of those.
+fn tool_arg(input: &serde_json::Value) -> String {
+    const KEYS: [&str; 8] = [
+        "file_path",
+        "notebook_path",
+        "path",
+        "command",
+        "pattern",
+        "url",
+        "query",
+        "description",
+    ];
+    KEYS.iter()
+        .find_map(|k| input.get(k).and_then(|v| v.as_str()))
+        .and_then(|s| s.lines().find(|l| !l.trim().is_empty()))
+        .map(|s| s.trim().chars().take(200).collect())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tool_arg_tests {
+    use super::tool_arg;
+    use serde_json::json;
+
+    #[test]
+    fn the_main_argument_is_the_path_command_or_pattern() {
+        assert_eq!(
+            tool_arg(&json!({"file_path": "/a/b.rs", "limit": 5})),
+            "/a/b.rs"
+        );
+        assert_eq!(
+            tool_arg(&json!({"command": "\ncargo test\nmore"})),
+            "cargo test"
+        );
+        assert_eq!(tool_arg(&json!({"pattern": "fn main"})), "fn main");
+        assert_eq!(tool_arg(&json!({"other": 1})), "");
+    }
 }

@@ -252,6 +252,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 },
                 model: None,
                 subagent_tokens: u64::try_from(subagent_tokens).unwrap_or(0),
+                tool: None,
             },
             session_id,
             transcript_path: transcript.map(PathBuf::from),

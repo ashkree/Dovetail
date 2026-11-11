@@ -32,6 +32,10 @@ impl App {
     /// Draws the whole screen.
     pub fn draw(&mut self, frame: &mut Frame) {
         let prompting = self.input.is_some() || self.confirm.is_some();
+        // Each conversation says again, as it draws, whether a spinner is on screen.
+        self.buffers.conversation.clear_working();
+        self.buffers.panel.conversation_mut().clear_working();
+        self.buffers.ask.conversation_mut().clear_working();
         // Whatever moved focus to the side column (a picker choice, Esc from an inbox item)
         // ends focus mode, so the focused region is always on screen.
         if self.focus_mode && self.regions.focus().is_side() {
@@ -59,6 +63,7 @@ impl App {
             theme: &self.theme,
             now_ms: self.now_ms,
             tz: &self.tz,
+            activity: &self.activity,
         };
         for (region, area) in [
             (RegionId::SideTop, areas.side_top),
@@ -89,6 +94,7 @@ impl App {
             theme: &self.theme,
             now_ms: self.now_ms,
             tz: &self.tz,
+            activity: &self.activity,
         };
         for region in RegionId::READING {
             let area = areas.of(region);
@@ -348,6 +354,18 @@ impl App {
                 theme.body(),
             ),
         ];
+        // A long command (:eod, :fresh, :upgrade) shows its spinner next to the mode badge,
+        // where the bar clips last.
+        if let Some((busy, ran)) = self.activity.busy(self.now_ms) {
+            let mut spans = vec![Span::raw("  ")];
+            spans.extend(crate::render::working::busy_spans(
+                theme,
+                busy,
+                ran,
+                self.now_ms,
+            ));
+            left.splice(1..1, spans);
+        }
         if let Some(pct) = self
             .coordinator()
             .and_then(|id| snap.agents.iter().find(|a| a.id == id))

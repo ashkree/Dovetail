@@ -5,25 +5,25 @@ expression: "render(&mut app, 80, 28)"
  folder /src/business
 ┌ coordinator · ◐ working · 1.2G · $3.1┐┌ inbox · needs you (3) ───────────────┐
 │                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
-│                                      ││   ? slice-4  Which route pref… 10:12 │
-│   ── coordinator · 10:08 ─────────   ││   ✓ slice-4  Handler wired; t… 10:09 │
-│                                      ││                                      │
+│   ── coordinator · 10:08 ─────────   ││   ? slice-4  Which route pref… 10:12 │
+│                                      ││   ✓ slice-4  Handler wired; t… 10:09 │
 │   Told slice-4 to stay out of        ││                                      │
 │   src/decision.rs until slice-7      ││                                      │
 │   hands it back.                     ││                                      │
+│                                      ││                                      │
 │                                      ││ y allow · d deny · r reply · x dism… │
-│                                      │└──────────────────────────────────────┘
-│   ── You · 10:14 ─────────────────   │┌ tasks · business ────────────────────┐
-│                                      ││ ◐ ◆ coordinator   working 1.2G $3.10 │
-│   What's blocking slice-7?           ││ ▾ Now (2)                            │
+│   ── You · 10:14 ─────────────────   │└──────────────────────────────────────┘
+│                                      │┌ tasks · business ────────────────────┐
+│   What's blocking slice-7?           ││ ◐ ◆ coordinator   working 1.2G $3.10 │
+│                                      ││ ▾ Now (2)                            │
 │                                      ││ ▾ ⚠ business surface P1     PR #1231 │
-│                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│   ── coordinator · 10:14 ◐ ───────   ││         ⎇ dovetail/slice-4           │
-│                                      ││         ✓ write route tests          │
-│   It needs a key. slice-7 can only   ││         ◐ wire handler to registry   │
-│   reach the eval path with           ││         ○ update OpenAPI spec ⊘ blo… │
-│   FS_EVAL_VIRTUAL_KEY set.▌          ││       ✓ ◇ rebase          done $0.21 │
-│                                      ││       ◐ ◇ explore c… 12 tools · Grep │
+│   ── coordinator · 10:14 ◐ ───────   ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│                                      ││         ⎇ dovetail/slice-4           │
+│   It needs a key. slice-7 can only   ││         ✓ write route tests          │
+│   reach the eval path with           ││         ◐ wire handler to registry   │
+│   FS_EVAL_VIRTUAL_KEY set.▌          ││         ○ update OpenAPI spec ⊘ blo… │
+│                                      ││       ✓ ◇ rebase          done $0.21 │
+│   ⠋ Mortising… 0s                    ││       ◐ ◇ explore c… 12 tools · Grep │
 │                                      ││ ▾ ⚠ get_decision 500 P0              │
 └──────────────────────────────────────┘│   ▾ ⚠ ◆ slice-7  manual    needs you │
 ┌ chat › coordinator ──────────────────┐│         ⎇ dovetail/slice-7           │

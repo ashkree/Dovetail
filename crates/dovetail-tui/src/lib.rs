@@ -5,6 +5,7 @@
 //! [`dovetail_api::Command`]s.
 
 pub mod action;
+pub mod activity;
 pub mod app;
 pub mod buffers;
 pub mod canvas;

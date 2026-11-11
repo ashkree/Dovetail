@@ -528,6 +528,9 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
     }
     let word_style = if agent.status == AgentStatus::NeedsYou {
         theme.fg(theme.needs_you)
+    } else if agent.status == AgentStatus::Working {
+        // Working reads differently from idle at a glance; the glyph itself stays still.
+        theme.fg(theme.working)
     } else {
         theme.dim()
     };
@@ -822,6 +825,7 @@ mod tests {
             lock: SessionLock::Headless,
             model: None,
             subagent_tokens: 0,
+            tool: None,
         }
     }
 

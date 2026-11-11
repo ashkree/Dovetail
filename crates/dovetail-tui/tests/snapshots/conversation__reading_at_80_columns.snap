@@ -5,9 +5,8 @@ expression: "render(&mut reading_app(), 80, 40)"
  folder /src/business
 ┌ coordinator · ○ idle · 1.2G · $3.10 ─┐┌ inbox · needs you (3) ───────────────┐
 │                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
-│                                      ││   ? slice-4  Which route pref… 10:12 │
-│   ▸ read 2 files · checked           ││   ✓ slice-4  Handler wired; t… 10:09 │
-│   slice-7's stream · 4 s             ││                                      │
+│   ▸ read 2 files · checked           ││   ? slice-4  Which route pref… 10:12 │
+│   slice-7's stream · 4 s             ││   ✓ slice-4  Handler wired; t… 10:09 │
 │                                      ││                                      │
 │   It needs a key. slice-7 can only   ││                                      │
 │   reach the eval path with           ││                                      │
@@ -16,25 +15,26 @@ expression: "render(&mut reading_app(), 80, 40)"
 │   once at start-up.                  ││                                      │
 │                                      ││                                      │
 │   What I checked                     ││                                      │
-│                                      ││ y allow · d deny · r reply · x dism… │
-│   • the handler in                   │└──────────────────────────────────────┘
-│     crates/api/src/routes.rs         │┌ tasks · business ────────────────────┐
-│                                      ││ ○ ◆ coordinator      idle 1.2G $3.10 │
-│   • the eval path, which fails       ││ ▾ Now (2)                            │
-│     before it logs                   ││ ▾ ⚠ business surface P1     PR #1231 │
-│                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│   • the CI config                    ││         ⎇ dovetail/slice-4           │
-│                                      ││         ✓ write route tests          │
-│   rust                               ││         ◐ wire handler to registry   │
-│     let key = std::env::var("FS_EV   ││         ○ update OpenAPI spec ⊘ blo… │
-│                                      ││       ✓ ◇ rebase          done $0.21 │
-│   Slice   │ State                    ││       ◐ ◇ explore c… 12 tools · Grep │
-│   ────────┼────────                  ││ ▾ ⚠ get_decision 500 P0              │
-│   slice-4 │ editing                  ││   ▾ ⚠ ◆ slice-7  manual    needs you │
-│   slice-7 │ blocked                  ││         ⎇ dovetail/slice-7           │
-│                                      ││ ▾ Next (1)                           │
-│   │ Merge order: #1231 first, then   ││   ○ idea: eval key flow P2           │
-│   │ the 500 fix.                     ││ ▸ Later (1)                          │
+│                                      ││                                      │
+│   • the handler in                   ││ y allow · d deny · r reply · x dism… │
+│     crates/api/src/routes.rs         │└──────────────────────────────────────┘
+│                                      │┌ tasks · business ────────────────────┐
+│   • the eval path, which fails       ││ ○ ◆ coordinator      idle 1.2G $3.10 │
+│     before it logs                   ││ ▾ Now (2)                            │
+│                                      ││ ▾ ⚠ business surface P1     PR #1231 │
+│   • the CI config                    ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│                                      ││         ⎇ dovetail/slice-4           │
+│   rust                               ││         ✓ write route tests          │
+│     let key = std::env::var("FS_EV   ││         ◐ wire handler to registry   │
+│                                      ││         ○ update OpenAPI spec ⊘ blo… │
+│   Slice   │ State                    ││       ✓ ◇ rebase          done $0.21 │
+│   ────────┼────────                  ││       ◐ ◇ explore c… 12 tools · Grep │
+│   slice-4 │ editing                  ││ ▾ ⚠ get_decision 500 P0              │
+│   slice-7 │ blocked                  ││   ▾ ⚠ ◆ slice-7  manual    needs you │
+│                                      ││         ⎇ dovetail/slice-7           │
+│   │ Merge order: #1231 first, then   ││ ▾ Next (1)                           │
+│   │ the 500 fix.                     ││   ○ idea: eval key flow P2           │
+│                                      ││ ▸ Later (1)                          │
 │                                      ││ ▸ Done (1)                           │
 │                                      ││                                      │
 └──────────────────────────────────────┘│                                      │
