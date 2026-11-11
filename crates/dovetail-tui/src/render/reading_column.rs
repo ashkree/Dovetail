@@ -17,7 +17,7 @@ pub fn column(area: Rect, max_width: u16) -> Rect {
     }
 }
 
-/// Paints `background` behind the column (the optional solid reading background). Text already
+/// Paints `background` behind the column (the solid background of reading views). Text already
 /// drawn keeps its colour; only cells' backgrounds change.
 pub fn paint_background(buf: &mut Buffer, column: Rect, background: Style) {
     buf.set_style(column, background);

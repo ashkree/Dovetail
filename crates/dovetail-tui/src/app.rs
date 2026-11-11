@@ -1085,12 +1085,6 @@ impl App {
                 Some(id) => self.open_agent_in_main(id),
                 None => self.note = Some("no previous agent".into()),
             },
-            Action::ToggleSolidBackground => {
-                self.buffers.conversation.toggle_solid();
-                self.buffers
-                    .task_detail
-                    .set_solid(self.buffers.conversation.solid());
-            }
             Action::ListResearch => self.open_research_list(),
             Action::ToggleFocusMode => self.toggle_focus_mode(),
             Action::ToggleReadingMode => self.toggle_reading_mode(),

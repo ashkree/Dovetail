@@ -104,13 +104,13 @@ fn bold_italic_and_code_get_their_own_colours_on_screen() {
 // --- solid background ---
 
 #[test]
-fn the_solid_background_is_off_by_default_and_toggles_with_leader_b_and_solid() {
+fn the_conversation_never_paints_a_background_and_has_no_toggle_for_one() {
     let mut app = reading_app();
-    let theme = dovetail_tui::Theme::dusk();
     let probe = |app: &mut dovetail_tui::App| cell_bg(app, 120, 40, 60, 5);
     assert_eq!(probe(&mut app), ratatui::style::Color::Reset);
+    // `<leader>B` and `:solid` are gone: neither changes anything.
     type_keys(&mut app, " B");
-    assert_eq!(probe(&mut app), theme.reading_bg);
+    assert_eq!(probe(&mut app), ratatui::style::Color::Reset);
     type_keys(&mut app, ":solid");
     app.on_key(enter(), 99);
     assert_eq!(probe(&mut app), ratatui::style::Color::Reset);

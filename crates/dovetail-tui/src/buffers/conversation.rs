@@ -10,7 +10,6 @@ use dovetail_api::{
 };
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
 
@@ -91,7 +90,6 @@ pub struct ConversationBuffer {
     /// A path listing the popup needs, for the app to ask the core for.
     wants_paths: Option<Option<String>>,
     reading_width: u16,
-    solid: bool,
     layout: Layout,
     /// [`BufferKind::Conversation`] in the main region, [`BufferKind::SidePanel`] inside the
     /// side panel.
@@ -111,7 +109,6 @@ impl Default for ConversationBuffer {
             completion: Completion::default(),
             wants_paths: None,
             reading_width: DEFAULT_WIDTH,
-            solid: false,
             layout: Layout::default(),
             kind: BufferKind::Conversation,
             heading_suffix: None,
@@ -165,16 +162,6 @@ impl ConversationBuffer {
             self.previous = self.agent.replace(agent);
             self.layout = Layout::default();
         }
-    }
-
-    /// Whether the reading column has a solid background.
-    pub fn solid(&self) -> bool {
-        self.solid
-    }
-
-    /// Toggles the solid reading background.
-    pub fn toggle_solid(&mut self) {
-        self.solid = !self.solid;
     }
 
     /// Starts typing to `agent`, picking up its unsent draft.
@@ -681,13 +668,6 @@ impl Buffer for ConversationBuffer {
                 height: 1,
             };
             frame.render_widget(Paragraph::new(line.clone()), rect);
-        }
-        if self.solid {
-            reading_column::paint_background(
-                frame.buffer_mut(),
-                column,
-                Style::new().bg(theme.reading_bg),
-            );
         }
         if self.chat.is_some() {
             self.render_popup(frame, body, cx);

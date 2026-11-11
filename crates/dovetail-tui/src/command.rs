@@ -61,7 +61,6 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "interrupt" => Action::Interrupt,
         "decide" => Action::TaskAddDecision,
         // Aliases: every action a key reaches can be named here too.
-        "solid" => Action::ToggleSolidBackground,
         "focus" => Action::ToggleFocusMode,
         "read" | "reading" => Action::ToggleReadingMode,
         "inbox" => Action::FocusInbox,
