@@ -289,6 +289,13 @@ pub fn open(db: &Db, id: &str) -> Result<Project, ProjectError> {
     Ok(project)
 }
 
+/// The registered project `id`, without marking it opened (`dovetail add --project <id>`).
+pub fn find(db: &Db, id: &str) -> Result<Project, ProjectError> {
+    db.get_project(id.to_owned())
+        .wait()?
+        .ok_or_else(|| ProjectError::UnknownId(id.to_owned()))
+}
+
 /// Every registered project, most recently opened first.
 pub fn list(db: &Db) -> Result<Vec<Project>, ProjectError> {
     Ok(db.list_projects().wait()?)
