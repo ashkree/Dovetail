@@ -115,14 +115,18 @@ impl App {
                 // The preview pane is the right 55 % of a box at most 130 wide, less its border.
                 let width = (usize::from(screen.width.saturating_sub(4).min(130)) * 55 / 100)
                     .saturating_sub(4);
-                let (title, lines) = match picker.selected() {
-                    Some(item) if matches!(purpose, Purpose::Browse) => {
+                let (title, lines) = match (picker.selected(), purpose) {
+                    (Some(item), Purpose::Browse) => {
                         switcher::browse_preview(&self.snap, &item.key, width, &self.theme)
                     }
-                    Some(item) => {
+                    (Some(item), Purpose::Profile { path, .. }) => (
+                        "Profile",
+                        switcher::profile_preview(&item.key, path, width, &self.theme),
+                    ),
+                    (Some(item), _) => {
                         switcher::preview(&self.snap, &item.key, width, &self.theme, &self.tz)
                     }
-                    None => ("Preview", Vec::new()),
+                    (None, _) => ("Preview", Vec::new()),
                 };
                 picker.render(frame, screen, &self.theme, title, &lines);
             }

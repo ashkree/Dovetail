@@ -3033,6 +3033,47 @@ fn project_add_with_an_unknown_profile_raises_the_error() {
     h.wait_for("the profile error", |s| profile_errors(s, "\"ghost\"") > 0);
     h.drain(Duration::from_millis(200));
     assert_eq!(profile_errors(&h.snap, "\"ghost\""), 1);
+    // The recipe was there already: never overwritten by the starter (task #31).
+    let text = std::fs::read_to_string(h.paths.recipe("work")).expect("recipe");
+    assert_eq!(text, "profile = \"ghost\"\n");
+    h.quit();
+}
+
+#[test]
+fn project_add_writes_a_starter_recipe_and_a_picked_profile_lands_in_it() {
+    use dovetail_core::recipe::Recipe;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut h = Harness::start(fixture("plain_turn"), false, profiles_config(dir.path()));
+    let path = h.repo.clone();
+    h.send(Command::RegisterProject { path });
+    h.wait_for("registration", |s| {
+        s.warnings.iter().all(|w| w.id.0 != "unregistered")
+    });
+    let file = h.paths.recipe("work");
+    let recipe = Recipe::load(&file).expect("the starter parses");
+    assert_eq!(recipe.name.as_deref(), Some("work"));
+    assert_eq!(recipe.profile, None, "the profile starts commented out");
+
+    h.send(Command::SetRecipeProfile {
+        project: dovetail_api::ProjectId("work".into()),
+        profile: "work".into(),
+    });
+    h.drain(Duration::from_millis(300));
+    assert!(h.failures.is_empty(), "{:?}", h.failures);
+    let recipe = Recipe::load(&file).expect("still parses");
+    assert_eq!(recipe.profile.as_deref(), Some("work"));
+
+    // A profile config.toml lacks is refused, and the file is left alone.
+    h.send(Command::SetRecipeProfile {
+        project: dovetail_api::ProjectId("work".into()),
+        profile: "ghost".into(),
+    });
+    h.drain(Duration::from_millis(300));
+    assert_eq!(h.failures.len(), 1, "{:?}", h.failures);
+    assert_eq!(
+        Recipe::load(&file).expect("parses").profile.as_deref(),
+        Some("work")
+    );
     h.quit();
 }
 

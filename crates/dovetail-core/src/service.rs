@@ -1388,9 +1388,19 @@ impl Core {
                     self.fail("only the open folder can be added as a project");
                     return;
                 }
-                if let Err(message) = self.register_project().await {
-                    self.fail(message);
+                match self.register_project().await {
+                    Ok((project, Some(path))) => self.emit(Event::RecipeStarted {
+                        project: dovetail_api::ProjectId(project.id),
+                        name: project.name,
+                        path,
+                        profiles: self.config.profiles.keys().cloned().collect(),
+                    }),
+                    Ok((_, None)) => {}
+                    Err(message) => self.fail(message),
                 }
+            }
+            Command::SetRecipeProfile { project, profile } => {
+                self.set_recipe_profile(project, profile)
             }
             Command::LoadConversation { agent, before } => {
                 let before = before.or_else(|| {

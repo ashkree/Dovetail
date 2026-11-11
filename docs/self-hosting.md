@@ -6,8 +6,8 @@ From M10 on, the rest of the build runs inside Dovetail: the installed release d
 
 1. `scripts/bootstrap.sh` creates Dovetail's directories, installs the role prompts and this repo's recipe (`~/.config/dovetail/projects/dovetail.toml`), and checks Claude Code, `git` and the memory caps. Run it again with `--force` after the role prompts or the recipe change in the repo.
 2. `scripts/install.sh` installs the stable build to `~/.local/bin/dovetail`. Put `~/.local/bin` on your `PATH`.
-3. In the repo, run `dovetail`, then `:project add`.
-4. Optional: pick the Claude account this project runs on (see "Claude profiles" below).
+3. In the repo, run `dovetail`, then `:project add`. For Dovetail's own repo the recipe from step 1 is already there and is kept as it is. For any other project, Dovetail writes a starter recipe at `~/.config/dovetail/projects/<id>.toml`: the project's name, with `profile`, `[worktree]` and `[env]` commented out, each with a one-line hint. An existing recipe is never overwritten. The coordinator's `project_add` tool writes the same starter and names its path in the reply.
+4. Optional: pick the Claude account this project runs on (see "Claude profiles" below). When `config.toml` lists profiles and `:project add` wrote a starter recipe, a picker titled `Profile for <name>` opens right away: `(none: use default)` first, then each profile. Picking one uncomments `profile = "<name>"` in the new recipe. `Enter` on the first row or `Esc` leaves it commented out.
 
 ## Daily flow
 
@@ -61,7 +61,7 @@ Everything Dovetail does is ordinary git and ordinary Claude Code, so if Dovetai
 A profile is a Claude Code account, kept in its own config folder (ADR 0009). Each project picks one, and every session of the project runs under it. A project without one uses your default `~/.claude`, as before.
 
 1. `dovetail login maveron` creates the profile (under `~/.local/share/dovetail/profiles/maveron`), adds it to `~/.config/dovetail/config.toml`, and opens Claude Code in it. Type `/login`, sign in with that account, then `/exit`.
-2. Add `profile = "maveron"` to the project's recipe, `~/.config/dovetail/projects/<id>.toml`.
+2. Add `profile = "maveron"` to the project's recipe, `~/.config/dovetail/projects/<id>.toml` (or pick it in the picker `:project add` shows, step 4 above). A starter recipe has the line commented out: remove the `# `.
 3. Restart Dovetail in that project. The header now starts with `maveron`, and the usage figures are that account's.
 
 To name your existing login too, add it by hand under `[profiles]`, for example `walid = "~/.claude"`. `dovetail login --list` shows every profile, its folder, and whether it is logged in.

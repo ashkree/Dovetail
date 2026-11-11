@@ -9,6 +9,7 @@ use dovetail_api::{ActivityKind, AgentId, ProjectSummary};
 use crate::error::RegisterError;
 use crate::paths::Paths;
 use crate::projects::{Candidate, Project};
+use crate::recipe;
 use crate::service::{Core, CoreHandler, serve};
 use crate::socket::{self, SocketHandler};
 
@@ -139,10 +140,14 @@ impl Core {
     }
 
     /// Registers the open folder (ADR 0005): writes the in-memory state to the new project's
-    /// `state.db`, listens on its socket, and sends a fresh snapshot.
-    pub(crate) async fn register_project(&mut self) -> Result<Project, RegisterError> {
+    /// `state.db`, writes a starter recipe when the project has none, listens on its socket, and
+    /// sends a fresh snapshot. Returns the project and the starter recipe's path when one was
+    /// written now (`None` when it was registered already or a recipe existed).
+    pub(crate) async fn register_project(
+        &mut self,
+    ) -> Result<(Project, Option<PathBuf>), RegisterError> {
         let candidate = match &self.project {
-            ProjectState::Registered(p) => return Ok(p.clone()),
+            ProjectState::Registered(p) => return Ok((p.clone(), None)),
             ProjectState::Unregistered { candidate, .. } => candidate.clone(),
         };
         let project = self
@@ -170,6 +175,7 @@ impl Core {
         }
         let old_lists = format!("dovetail-{}-", self.project.key());
         self.project = ProjectState::Registered(project.clone());
+        let starter = self.write_starter_recipe(&project);
         // A recipe may already pick a profile; sessions that ran before keep theirs until they
         // next start (ADR 0009).
         self.claude = crate::service::project_claude_home(&self.paths, &self.config, &self.project);
@@ -204,6 +210,69 @@ impl Core {
         );
         // The project itself changed: there is no event for that, so resend the state.
         self.send_snapshot(false).await;
-        Ok(project)
+        Ok((project, starter))
+    }
+
+    /// Writes `~/.config/dovetail/projects/<id>.toml` from [`recipe::starter`] unless a file is
+    /// there already (task #31): it is never overwritten. The path when written; a failure is
+    /// noted in the activity log and registration goes on without it.
+    fn write_starter_recipe(&mut self, project: &Project) -> Option<PathBuf> {
+        let path = self.paths.recipe(&project.id);
+        let profiles: Vec<&str> = self.config.profiles.keys().map(String::as_str).collect();
+        let text = recipe::starter(&project.name, &profiles);
+        let written = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| {
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+            })
+            .and_then(|mut file| std::io::Write::write_all(&mut file, text.as_bytes()));
+        match written {
+            Ok(()) => Some(path),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+            Err(e) => {
+                self.activity(
+                    ActivityKind::Lifecycle,
+                    None,
+                    format!("could not write the starter recipe {}: {e}", path.display()),
+                );
+                None
+            }
+        }
+    }
+
+    /// The profile picker after `:project add` chose `profile` (task #31): uncomments it in the
+    /// starter recipe just written. Sessions that already run keep their account until they next
+    /// start (ADR 0009).
+    pub(crate) fn set_recipe_profile(&mut self, id: dovetail_api::ProjectId, profile: String) {
+        let Some(project) = self.project.registered().filter(|p| p.id == id.0).cloned() else {
+            return self.fail(format!("{} is not the open project", id.0));
+        };
+        if !self.config.profiles.contains_key(&profile) {
+            return self.fail(format!("config.toml lists no profile {profile}"));
+        }
+        let path = self.paths.recipe(&project.id);
+        let updated = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| recipe::set_profile_text(&text, &profile));
+        let Some(text) = updated else {
+            return self.fail(format!(
+                "could not set the profile: add `profile = \"{profile}\"` to {} by hand",
+                path.display()
+            ));
+        };
+        if let Err(e) = std::fs::write(&path, text) {
+            return self.fail(format!("could not write {}: {e}", path.display()));
+        }
+        self.claude = crate::service::project_claude_home(&self.paths, &self.config, &self.project);
+        self.profile_error_notice();
+        self.activity(
+            ActivityKind::Lifecycle,
+            None,
+            format!("{} now runs under profile {profile}", project.id),
+        );
     }
 }

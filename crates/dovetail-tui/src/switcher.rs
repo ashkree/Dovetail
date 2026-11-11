@@ -311,6 +311,8 @@ pub fn preview(
                 .map(|p| project_preview(p, width, theme))
                 .unwrap_or_default(),
         ),
+        // Previewed by `profile_preview`, which knows the recipe path.
+        PickerKey::Profile(_) => ("Profile", Vec::new()),
         PickerKey::Inbox(id) => (
             "Inbox item",
             snap.inbox
@@ -526,6 +528,65 @@ pub fn tangent_target_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
         .into_iter()
         .filter(|item| !matches!(&item.key, PickerKey::Project(id) if id.0 == TANGENTS_PROJECT))
         .collect()
+}
+
+/// The label of the profile picker's first row: keep the profile commented out.
+pub const NO_PROFILE: &str = "(none: use default)";
+
+/// The profile picker after `:project add` (task #31): the default first, so Enter skips
+/// safely, then each profile in config.toml.
+pub fn profile_items(profiles: &[String], theme: &Theme) -> Vec<PickerItem> {
+    let none = PickerItem {
+        key: PickerKey::Profile(None),
+        label: NO_PROFILE.into(),
+        haystack: format!("{NO_PROFILE} default"),
+        detail: "~/.claude".into(),
+        glyph: "·",
+        color: theme.dim,
+        depth: 0,
+        section: "Profiles",
+    };
+    std::iter::once(none)
+        .chain(profiles.iter().map(|name| PickerItem {
+            key: PickerKey::Profile(Some(name.clone())),
+            label: name.clone(),
+            haystack: name.clone(),
+            detail: "config.toml".into(),
+            glyph: "·",
+            color: theme.dim,
+            depth: 0,
+            section: "Profiles",
+        }))
+        .collect()
+}
+
+/// The preview of a profile picker row: what choosing it writes into `recipe`.
+pub fn profile_preview(
+    key: &PickerKey,
+    recipe: &std::path::Path,
+    width: usize,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let PickerKey::Profile(profile) = key else {
+        return Vec::new();
+    };
+    let what = match profile {
+        Some(name) => format!(
+            "Writes profile = \"{name}\" into {}. This project's sessions run under that Claude \
+             account from their next start.",
+            recipe.display()
+        ),
+        None => format!(
+            "Leaves profile commented out in {}. Sessions use your default Claude account; edit \
+             the file to change it later.",
+            recipe.display()
+        ),
+    };
+    let mut out = Vec::new();
+    for line in fmt::wrap(&what, width) {
+        out.push(Line::from(Span::styled(line, theme.body())));
+    }
+    out
 }
 
 fn project_preview(p: &ProjectSummary, width: usize, theme: &Theme) -> Vec<Line<'static>> {

@@ -222,6 +222,19 @@ pub enum Event {
         /// The project to open next.
         id: ProjectId,
     },
+    /// [`Command::RegisterProject`] wrote a starter recipe for the project, which had none
+    /// (task #31). The UI offers `profiles` (config.toml's, empty for none) and answers with
+    /// [`Command::SetRecipeProfile`]. Changes nothing in the snapshot.
+    RecipeStarted {
+        /// The project just added.
+        project: ProjectId,
+        /// Its display name.
+        name: String,
+        /// The recipe file written.
+        path: PathBuf,
+        /// The profile names in `config.toml`, sorted.
+        profiles: Vec<String>,
+    },
 }
 
 /// What the core found on the system clipboard.
@@ -473,6 +486,14 @@ pub enum Command {
     RegisterProject {
         /// Path inside the repo.
         path: PathBuf,
+    },
+    /// Uncomment `profile = "<profile>"` in the starter recipe [`Event::RecipeStarted`] named
+    /// (task #31). Fails when the line is gone (the file was edited) or config.toml lacks it.
+    SetRecipeProfile {
+        /// The open project.
+        project: ProjectId,
+        /// A profile name from `config.toml`.
+        profile: String,
     },
     /// Fetch conversation entries older than the tail.
     LoadConversation {

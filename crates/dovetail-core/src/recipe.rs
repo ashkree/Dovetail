@@ -112,6 +112,69 @@ impl Recipe {
     }
 }
 
+/// The commented-out profile line of a starter recipe: [`set_profile_text`] uncomments it.
+const STARTER_PROFILE: &str = "# profile = \"";
+
+/// The recipe `:project add` writes when the project has none (task #31): the name, and the
+/// `profile`, `[worktree]` and `[env]` sections commented out, each with a one-line hint.
+/// `profiles` are the names in `config.toml` `[profiles]`, listed in the profile hint.
+pub fn starter(name: &str, profiles: &[&str]) -> String {
+    let name = toml::Value::String(name.to_owned());
+    let example = profiles.first().copied().unwrap_or("work");
+    let listed = if profiles.is_empty() {
+        "none yet: `dovetail login <name>` adds one".to_owned()
+    } else {
+        profiles.join(", ")
+    };
+    format!(
+        "# Worktree recipe (Decision 12b), written once by `:project add`; Dovetail never \
+         overwrites it.\n\
+         # Every section is optional. Uncomment what you need (Dovetail's docs/self-hosting.md).\n\
+         \n\
+         name = {name}\n\
+         \n\
+         # The Claude account (ADR 0009) from config.toml [profiles] ({listed}). Left out: ~/.claude.\n\
+         {STARTER_PROFILE}{example}\"\n\
+         \n\
+         # How slice worktrees are prepared.\n\
+         # [worktree]\n\
+         # Paths relative to the repo root, symlinked (never copied) into each new worktree.\n\
+         # symlink = [\".env\"]\n\
+         # Commands run in order in the new worktree before the slice's first prompt; safe to re-run.\n\
+         # setup = [\"cargo fetch\"]\n\
+         \n\
+         # Set for the setup commands and the slice's session; {{worktree}} and {{worktree_hash}} are filled in.\n\
+         # [env]\n\
+         # BUILD_DIR = \"{{worktree}}/target\"\n"
+    )
+}
+
+/// Recipe text with the starter's commented-out profile line replaced by
+/// `profile = "<profile>"`. `None` when there is no such line (the file was edited) or the
+/// result would not parse to that profile.
+pub fn set_profile_text(text: &str, profile: &str) -> Option<String> {
+    let line = format!("profile = {}", toml::Value::String(profile.to_owned()));
+    let mut found = false;
+    let mut out = String::with_capacity(text.len() + line.len());
+    for l in text.split_inclusive('\n') {
+        if !found && l.starts_with(STARTER_PROFILE) {
+            found = true;
+            out.push_str(&line);
+            out.push_str(if l.ends_with("\r\n") {
+                "\r\n"
+            } else if l.ends_with('\n') {
+                "\n"
+            } else {
+                ""
+            });
+        } else {
+            out.push_str(l);
+        }
+    }
+    let parsed = Recipe::parse(&out).ok()?;
+    (found && parsed.profile.as_deref() == Some(profile)).then_some(out)
+}
+
 /// FNV-1a: a stable, dependency-free hash for `{worktree_hash}`.
 fn fnv1a(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| {
@@ -159,5 +222,31 @@ mod tests {
             runtime,
             &recipe.env_for(Path::new("/w/slice-b"))["DOVETAIL_RUNTIME_DIR"]
         );
+    }
+
+    #[test]
+    fn the_starter_recipe_parses_to_just_a_name() {
+        let text = starter("my \"app\"", &["maveron", "walid"]);
+        let recipe = Recipe::parse(&text).unwrap();
+        assert_eq!(recipe.name.as_deref(), Some("my \"app\""));
+        assert_eq!(
+            recipe,
+            Recipe {
+                name: recipe.name.clone(),
+                ..Recipe::default()
+            }
+        );
+        assert!(text.contains("(maveron, walid)"));
+        assert!(Recipe::parse(&starter("x", &[])).is_ok());
+    }
+
+    #[test]
+    fn a_profile_uncomments_the_starter_line() {
+        let text = set_profile_text(&starter("app", &["maveron"]), "maveron").unwrap();
+        assert_eq!(
+            Recipe::parse(&text).unwrap().profile.as_deref(),
+            Some("maveron")
+        );
+        assert_eq!(set_profile_text("name = \"app\"\n", "maveron"), None);
     }
 }
