@@ -272,3 +272,33 @@ fn a_paste_round_trips_through_the_mock_core() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn pasted_text_in_the_chat_bar_goes_to_the_core_and_its_answer_is_used() {
+    let mut app = app_with(world());
+    press(&mut app, "i");
+    app.on_paste("'/tmp/a b.png'", 10);
+    let agent = agent_id("coordinator");
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::PasteText {
+            agent,
+            text: "'/tmp/a b.png'".into()
+        }]
+    );
+    reply(&mut app, image(1));
+    assert!(render(&mut app, 100, 30).contains("[image 1"));
+}
+
+#[test]
+fn pasted_text_elsewhere_is_typed_on_one_line_or_ignored() {
+    let mut app = app_with(world());
+    // Normal mode: nothing.
+    app.on_paste("hello", 1);
+    assert!(app.take_commands().is_empty());
+    // The `:` row takes the first line as keys and sends nothing to the core.
+    press(&mut app, ":");
+    app.on_paste("tasks\nsecond line", 2);
+    assert!(app.take_commands().is_empty());
+    assert!(render(&mut app, 100, 30).contains(":tasks"));
+}

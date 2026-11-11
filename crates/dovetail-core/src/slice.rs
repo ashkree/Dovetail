@@ -653,6 +653,7 @@ impl Core {
         self.close_subagents_of(agent);
         let key = self.worktree_key(&row.agent);
         worktree::clear_hook_outcome(&self.paths, &key, &row.agent.name);
+        self.remove_attachments_of(agent);
         self.persist("a closed agent", self.db.close_agent(agent.clone()));
         self.commands.remove(agent);
         self.emit(Event::AgentRemoved(agent.clone()));

@@ -353,6 +353,11 @@ impl Db {
         self.run(move |c, now| sessions::close_agent(c.state()?, &id, now))
     }
 
+    /// Image files named by an agent's conversation entries.
+    pub fn agent_attachments(&self, agent: AgentId) -> Pending<Vec<PathBuf>> {
+        self.run(move |c, _| sessions::agent_attachments(c.state()?, &agent))
+    }
+
     /// Inserts or replaces a conversation entry.
     pub fn upsert_entry(&self, agent: AgentId, entry: ConversationEntry) -> Pending<()> {
         self.run(move |c, _| sessions::upsert_entry(c.state()?, &agent, &entry))
@@ -478,6 +483,27 @@ pub(crate) fn now_ms() -> i64 {
         .map_or(0, |d| d.as_millis() as i64)
 }
 
+/// Image files named by the conversations of agents that are not archived, in every project's
+/// `state.db` on disk, so the startup sweep of `attachments/` (shared by all projects) keeps
+/// them. Opens each file read-only on its own connection; `None` when any of them cannot be read,
+/// so a sweep that cannot see everything does not run.
+pub fn live_attachments(paths: &Paths) -> Option<HashSet<PathBuf>> {
+    use rusqlite::OpenFlags;
+    let mut keep = HashSet::new();
+    let Ok(projects) = std::fs::read_dir(paths.data.join("projects")) else {
+        return Some(keep);
+    };
+    for project in projects.flatten() {
+        let file = project.path().join("state.db");
+        if !file.exists() {
+            continue;
+        }
+        let conn = Connection::open_with_flags(&file, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+        keep.extend(sessions::live_attachments(&conn).ok()?);
+    }
+    Some(keep)
+}
+
 fn open_connection(path: &Path, migrations: &[Migration]) -> Result<Connection, DbError> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|source| DbError::Io {
@@ -579,6 +605,62 @@ mod tests {
             state: dir.join("state"),
             runtime: dir.join("run"),
         }
+    }
+
+    #[test]
+    fn live_attachments_skip_archived_agents_across_projects() {
+        use dovetail_api::{AgentKind, Attachment, EntryKind, ImageType};
+
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let attachment = |name: &str| Attachment {
+            path: paths.attachments().join(name),
+            media_type: ImageType::Png,
+            size: 1,
+        };
+        let row = |id: &str| AgentRow {
+            agent: crate::service::new_agent(AgentId(id.into()), id.into(), AgentKind::Slice, None),
+            session_id: None,
+            transcript_path: None,
+            task_list_id: None,
+            created_ms: 0,
+            tool_use_id: None,
+            claude_home: None,
+            takeover: None,
+        };
+        let entry = |n: u64, name: &str| ConversationEntry {
+            id: EntryId(n),
+            at_ms: 0,
+            kind: EntryKind::User,
+            text: "look".into(),
+            attachments: vec![attachment(name)],
+        };
+        for (project, live, archived) in [
+            ("p", "live-p.png", "gone-p.png"),
+            ("q", "live-q.png", "gone-q.png"),
+        ] {
+            let db = Db::open(&paths, Some(project)).unwrap();
+            let (a, b) = (AgentId("a".into()), AgentId("b".into()));
+            db.upsert_agent(row("a")).wait().unwrap();
+            db.upsert_agent(row("b")).wait().unwrap();
+            db.upsert_entry(a.clone(), entry(1, live)).wait().unwrap();
+            db.upsert_entry(b.clone(), entry(2, archived))
+                .wait()
+                .unwrap();
+            assert_eq!(
+                db.agent_attachments(b.clone()).wait().unwrap(),
+                vec![paths.attachments().join(archived)]
+            );
+            db.close_agent(b).wait().unwrap();
+        }
+        let keep = live_attachments(&paths).unwrap();
+        assert_eq!(
+            keep,
+            HashSet::from([
+                paths.attachments().join("live-p.png"),
+                paths.attachments().join("live-q.png")
+            ])
+        );
     }
 
     #[test]
