@@ -351,6 +351,16 @@ impl App {
                     Some(MapReaction::Request(command)) => self.outbox.push(command),
                     None => {}
                 }
+                if self.buffers.task_detail.on_event(&event) {
+                    self.regions.show(RegionId::Main, BufferKind::TaskDetail);
+                    self.regions.set_focus(RegionId::Main);
+                    self.note = None;
+                }
+                if let Event::ResearchUpserted(summary) = &event
+                    && self.buffers.task_detail.task() == Some(summary.task)
+                {
+                    self.request_research_listing(summary.task);
+                }
                 if let Some(note) = self.buffers.worktrees.on_event(&event) {
                     self.note = Some(note);
                 }
@@ -1033,7 +1043,13 @@ impl App {
                 Some(id) => self.open_agent_in_main(id),
                 None => self.note = Some("no previous agent".into()),
             },
-            Action::ToggleSolidBackground => self.buffers.conversation.toggle_solid(),
+            Action::ToggleSolidBackground => {
+                self.buffers.conversation.toggle_solid();
+                self.buffers
+                    .task_detail
+                    .set_solid(self.buffers.conversation.solid());
+            }
+            Action::ListResearch => self.open_research_list(),
             Action::ToggleFocusMode => self.toggle_focus_mode(),
             Action::PasteClipboard => self.paste_clipboard(),
             Action::QuickCapture => self.open_capture(),
@@ -1059,8 +1075,14 @@ impl App {
                 }
             }
             Action::BackToConversation => {
-                // Leaving an inbox item goes back to the inbox, for the next one.
                 let main = self.regions.buffer(RegionId::Main);
+                // A research document goes back to the task detail it was opened from.
+                if main == BufferKind::TaskDetail && self.buffers.task_detail.is_reading() {
+                    self.buffers.task_detail.close_reading();
+                    self.settle();
+                    return;
+                }
+                // Leaving an inbox item goes back to the inbox, for the next one.
                 if main == BufferKind::InboxDetail {
                     self.focus_inbox();
                 }
@@ -1147,6 +1169,13 @@ impl App {
                 self.buffers.map_outline.await_map(id.clone());
                 self.outbox.push(Command::LoadMap { id, version: None });
                 self.note = Some("loading map…".into());
+            }
+            Effect::OpenResearch { task, what, title } => {
+                self.buffers
+                    .task_detail
+                    .await_document(task, what.clone(), title);
+                self.outbox.push(Command::LoadResearch { task, what });
+                self.note = Some("loading…".into());
             }
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
             Effect::PickRelated(task) => self.open_relate_picker(task),

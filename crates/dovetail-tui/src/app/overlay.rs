@@ -65,6 +65,19 @@ impl App {
         self.open_overlay(Overlay::Picker(Picker::new("Find", items), Purpose::Open));
     }
 
+    /// `:research`: the tasks that have research; choosing one opens its detail.
+    pub(super) fn open_research_list(&mut self) {
+        let items = switcher::research_items(&self.snap, &self.theme);
+        if items.is_empty() {
+            self.note = Some("no research yet · :round <task> <brief> opens a round".into());
+            return;
+        }
+        self.open_overlay(Overlay::Picker(
+            Picker::new("Research", items),
+            Purpose::Open,
+        ));
+    }
+
     /// `R` in the task detail: pick a task to relate this one to (or unrelate).
     pub(super) fn open_relate_picker(&mut self, task: TaskId) {
         let items = switcher::relate_items(&self.snap, &self.theme, task);

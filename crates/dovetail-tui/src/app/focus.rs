@@ -129,6 +129,17 @@ impl App {
         self.buffers.task_detail.show(id);
         self.regions.show(RegionId::Main, BufferKind::TaskDetail);
         self.regions.set_focus(RegionId::Main);
+        self.request_research_listing(id);
+    }
+
+    /// Asks the core for a task's findings and sources, if the task has research.
+    pub(super) fn request_research_listing(&mut self, task: TaskId) {
+        if self.snap.research.iter().any(|r| r.task == task) {
+            self.outbox.push(Command::LoadResearch {
+                task,
+                what: dovetail_api::research::ResearchWhat::Listing,
+            });
+        }
     }
 
     /// Shows an inbox item in full in the main region; the inbox keeps it selected.

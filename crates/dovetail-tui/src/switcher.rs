@@ -157,6 +157,41 @@ pub fn task_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
         .collect()
 }
 
+/// Rows for `:research`: the tasks that have research, with what each holds.
+pub fn research_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
+    snap.research
+        .iter()
+        .filter_map(|r| {
+            let task = snap.tasks.iter().find(|t| t.id == r.task)?;
+            let report = if r.report_ms.is_some() {
+                "report"
+            } else {
+                "no report yet"
+            };
+            let (glyph, color) = if r.report_ms.is_some() {
+                ("◆", theme.ok)
+            } else {
+                ("◇", theme.dim)
+            };
+            Some(PickerItem {
+                key: PickerKey::Task(task.id),
+                label: task.title.clone(),
+                haystack: task.title.clone(),
+                detail: format!(
+                    "{} rounds · {} findings · {} sources · {report}",
+                    r.rounds.len(),
+                    r.findings,
+                    r.sources
+                ),
+                glyph,
+                color,
+                depth: 0,
+                section: "Research",
+            })
+        })
+        .collect()
+}
+
 /// Rows for relating `task` to another: every other task, with the ones already related marked.
 pub fn relate_items(snap: &Snapshot, theme: &Theme, task: dovetail_api::TaskId) -> Vec<PickerItem> {
     let related = snap

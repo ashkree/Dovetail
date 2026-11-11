@@ -44,6 +44,7 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         "eod" => Action::EndOfDay,
         "upgrade" => Action::Upgrade,
         "round" => Action::StartRound,
+        "research" => Action::ListResearch,
         "spawn" => Action::NewSlice,
         "ask" => Action::NewSideChat,
         "interrupt" => Action::Interrupt,

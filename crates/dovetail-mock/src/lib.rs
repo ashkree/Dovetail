@@ -8,6 +8,7 @@
 #![warn(missing_docs)]
 
 mod maps;
+mod research;
 mod rng;
 mod world;
 
@@ -81,6 +82,8 @@ pub struct MockCore {
     context_tokens: BTreeMap<AgentId, u64>,
     /// Each seeded map's content, latest version only, for [`Command::LoadMap`].
     maps: BTreeMap<MapId, Map>,
+    /// The seeded task's research content, for [`Command::LoadResearch`].
+    research: research::Research,
     quit: bool,
 }
 
@@ -110,6 +113,7 @@ impl MockCore {
                 .into_iter()
                 .map(|(_, map)| (map.id.clone(), map))
                 .collect(),
+            research: research::seeded(config.start_ms),
             quit: false,
         };
         core.after(3_000, |core| core.finish_setup(&agent_id("picker")));
@@ -537,8 +541,15 @@ impl MockCore {
             | Command::OpenProject { .. }
             | Command::RegisterProject { .. }
             | Command::StartRound { .. }
-            | Command::CloseRound { .. }
-            | Command::LoadResearch { .. } => self.fail("not available in the mock".into()),
+            | Command::CloseRound { .. } => self.fail("not available in the mock".into()),
+            Command::LoadResearch { task, what } => match self.research.load(task, &what) {
+                Some(content) => self.emit(Event::ResearchLoaded {
+                    task,
+                    what,
+                    content,
+                }),
+                None => self.fail(format!("the mock has no such research: {what:?}")),
+            },
         }
     }
 

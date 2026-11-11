@@ -47,6 +47,8 @@ pub enum Action {
     /// Open a research round on a task (`:round <task> <brief>`), or close the open one
     /// (`:round close`) (R1, `docs/research.md` §5).
     StartRound,
+    /// List the tasks that have research (`:research`); choosing one opens its detail (R3).
+    ListResearch,
     /// Panic on purpose, to check that the terminal is restored. Debug builds only.
     #[cfg(debug_assertions)]
     DebugPanic,
@@ -130,6 +132,9 @@ pub enum Action {
     TaskRelate,
     /// Add an entry to the task's decision log.
     TaskAddDecision,
+    /// Open the research row under the cursor (report, round brief, finding, source) in the
+    /// task detail's reading view (R3).
+    ResearchOpen,
     // --- tree ---
     /// Open the selected agent's conversation, or the selected task's detail.
     TreeOpen,

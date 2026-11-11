@@ -437,6 +437,52 @@ fn a_logged_decision_lands_on_its_task_and_a_snapshot_is_trimmed() {
 }
 
 #[test]
+fn research_loads_the_listing_and_every_document_the_listing_names() {
+    use dovetail_api::research::{ResearchContent, ResearchWhat};
+    let mut core = MockCore::new(config(1));
+    let summary = core.state().research.first().cloned().expect("seeded");
+    let mut load = |what: ResearchWhat| {
+        core.handle(Command::LoadResearch {
+            task: summary.task,
+            what,
+        });
+        loop {
+            match core.pop() {
+                ServerMsg::Event {
+                    event: Event::ResearchLoaded { content, .. },
+                    ..
+                } => return Ok(content),
+                ServerMsg::Event {
+                    event: Event::CommandFailed { message },
+                    ..
+                } => return Err(message),
+                _ => {}
+            }
+        }
+    };
+    let Ok(ResearchContent::Listing(listing)) = load(ResearchWhat::Listing) else {
+        panic!("the listing loads");
+    };
+    assert_eq!(listing.findings.len() as u32, summary.findings);
+    assert_eq!(listing.sources.len() as u32, summary.sources);
+    let mut whats = vec![ResearchWhat::Report];
+    whats.extend(
+        summary
+            .rounds
+            .iter()
+            .map(|r| ResearchWhat::Brief { round: r.n }),
+    );
+    whats.extend(listing.findings.iter().map(|f| ResearchWhat::Finding(f.id)));
+    whats.extend(listing.sources.iter().map(|s| ResearchWhat::Source(s.id)));
+    for what in whats {
+        let Ok(ResearchContent::Document(doc)) = load(what.clone()) else {
+            panic!("{what:?} loads");
+        };
+        assert!(!doc.markdown.is_empty(), "{what:?}");
+    }
+}
+
+#[test]
 fn refreshing_worktrees_fills_one_entry_per_slice_worktree() {
     let mut core = MockCore::new(config(1));
     assert!(core.state().worktrees.is_empty());
