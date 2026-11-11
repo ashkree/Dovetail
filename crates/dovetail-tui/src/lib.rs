@@ -7,6 +7,7 @@
 pub mod action;
 pub mod app;
 pub mod buffers;
+pub mod canvas;
 pub mod capture;
 pub mod command;
 pub mod complete;

@@ -30,8 +30,16 @@ impl App {
         if self.focus_mode && self.regions.focus().is_side() {
             self.toggle_focus_mode();
         }
-        let mut areas = layout(frame.area(), prompting);
-        if self.focus_mode {
+        let screen = frame.area();
+        self.buffers
+            .map_outline
+            .set_screen(screen.width, screen.height);
+        self.buffers
+            .map_outline
+            .set_map_mode(self.mode == Mode::Map);
+        let mut areas = layout(screen, prompting);
+        // MAP mode gives the map the whole width, as focus mode does the conversation.
+        if self.focus_mode || self.mode == Mode::Map {
             areas = areas.focused();
         }
         self.draw_header(frame, areas.header);
@@ -247,6 +255,7 @@ impl App {
             Mode::Normal => theme.mode_normal,
             Mode::Insert => theme.mode_insert,
             Mode::Command => theme.mode_command,
+            Mode::Map => theme.mode_map,
         };
         let snap = &self.snap;
         let tasks = snap

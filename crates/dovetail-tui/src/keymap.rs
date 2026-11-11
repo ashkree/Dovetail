@@ -191,6 +191,7 @@ const fn bind(mode: Mode, scope: Scope, keys: &'static str, action: Action) -> B
 }
 
 const N: Mode = Mode::Normal;
+const M: Mode = Mode::Map;
 const G: Scope = Scope::Global;
 const TREE: Scope = Scope::Buffer(BufferKind::Tree);
 const INBOX: Scope = Scope::Buffer(BufferKind::Inbox);
@@ -226,6 +227,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<C-c>", Action::QuitOnRepeat),
     bind(Mode::Insert, G, "<C-c>", Action::QuitOnRepeat),
     bind(Mode::Command, G, "<C-c>", Action::QuitOnRepeat),
+    bind(M, G, "<C-c>", Action::QuitOnRepeat),
     bind(N, G, "i", Action::EnterInsert),
     bind(N, G, "<leader>c", Action::FocusCoordinator),
     bind(N, G, "<leader><Tab>", Action::AlternateAgent),
@@ -242,6 +244,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>b", Action::ShowBoard),
     bind(N, G, "<leader>g", Action::ShowWorktrees),
     bind(N, G, "<leader>M", Action::ShowMaps),
+    bind(N, G, "<leader>v", Action::MapMode),
     bind(N, G, "<leader>sn", Action::NewSlice),
     bind(N, G, "<leader>sq", Action::NewSideChat),
     bind(N, G, "<leader>y", Action::YankToCoordinator),
@@ -323,6 +326,39 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, MAP_OUTLINE, "f", Action::MapNextFlow),
     bind(N, MAP_OUTLINE, "]]", Action::MapNextStep),
     bind(N, MAP_OUTLINE, "[[", Action::MapPrevStep),
+    // MAP mode (decisions 23f, 23g, 24): the map fills the screen. `hjkl` select the nearest
+    // node that way, `Tab`/`Shift-Tab` follow connections, `Enter` drills into a group and
+    // `Backspace` comes back up, `n`/`p` walk the flow and `f` switches it, `+ - 0` zoom,
+    // `Ctrl-hjkl` pan (B2), `v` shows or hides the outline, `u` asks for a redraw (23h).
+    // `c` (comments) is v1.1 and `s` stays unbound (B6).
+    bind(M, G, "<Esc>", Action::LeaveMapMode),
+    bind(M, G, ":", Action::EnterCommand),
+    bind(M, G, "h", Action::MapSelectLeft),
+    bind(M, G, "j", Action::MapSelectDown),
+    bind(M, G, "k", Action::MapSelectUp),
+    bind(M, G, "l", Action::MapSelectRight),
+    bind(M, G, "<Left>", Action::MapSelectLeft),
+    bind(M, G, "<Down>", Action::MapSelectDown),
+    bind(M, G, "<Up>", Action::MapSelectUp),
+    bind(M, G, "<Right>", Action::MapSelectRight),
+    bind(M, G, "<Tab>", Action::MapFollow),
+    bind(M, G, "<S-Tab>", Action::MapFollowBack),
+    bind(M, G, "<CR>", Action::MapDrillIn),
+    bind(M, G, "<BS>", Action::MapDrillOut),
+    bind(M, G, "n", Action::MapNextStep),
+    bind(M, G, "p", Action::MapPrevStep),
+    bind(M, G, "f", Action::MapNextFlow),
+    bind(M, G, "+", Action::MapZoomIn),
+    // `=` is `+` without Shift on most keyboards.
+    bind(M, G, "=", Action::MapZoomIn),
+    bind(M, G, "-", Action::MapZoomOut),
+    bind(M, G, "0", Action::MapZoomFit),
+    bind(M, G, "<C-h>", Action::MapPanLeft),
+    bind(M, G, "<C-j>", Action::MapPanDown),
+    bind(M, G, "<C-k>", Action::MapPanUp),
+    bind(M, G, "<C-l>", Action::MapPanRight),
+    bind(M, G, "v", Action::MapToggleOutline),
+    bind(M, G, "u", Action::MapRedraw),
     // An inbox item in full goes back with Esc; the answer keys are in `INBOX_ANSWERS`.
     bind(N, INBOX_DETAIL, "<Esc>", Action::BackToConversation),
 ];

@@ -181,6 +181,44 @@ pub enum Action {
     MapNextStep,
     /// Select the node of the flow's previous step.
     MapPrevStep,
+    /// Enter MAP mode on the map in the main region (`<leader>v`, decision 23f).
+    MapMode,
+    /// Leave MAP mode; the map stays open.
+    LeaveMapMode,
+    /// MAP mode `h`: the nearest node to the left on the canvas.
+    MapSelectLeft,
+    /// MAP mode `j`: the nearest node below (the next row in the outline alone).
+    MapSelectDown,
+    /// MAP mode `k`: the nearest node above (the previous row in the outline alone).
+    MapSelectUp,
+    /// MAP mode `l`: the nearest node to the right.
+    MapSelectRight,
+    /// MAP mode `Tab`: follow the selected node's first outgoing connection.
+    MapFollow,
+    /// MAP mode `Shift-Tab`: follow its first incoming connection back.
+    MapFollowBack,
+    /// MAP mode `Enter`: drill into the selected group.
+    MapDrillIn,
+    /// MAP mode `Backspace`: back up a level.
+    MapDrillOut,
+    /// MAP mode `+`: zoom in.
+    MapZoomIn,
+    /// MAP mode `-`: zoom out.
+    MapZoomOut,
+    /// MAP mode `0`: fit the whole map.
+    MapZoomFit,
+    /// MAP mode `Ctrl-h`: pan left.
+    MapPanLeft,
+    /// MAP mode `Ctrl-j`: pan down.
+    MapPanDown,
+    /// MAP mode `Ctrl-k`: pan up.
+    MapPanUp,
+    /// MAP mode `Ctrl-l`: pan right.
+    MapPanRight,
+    /// MAP mode `v`: show or hide the outline beside the canvas.
+    MapToggleOutline,
+    /// MAP mode `u`: ask the coordinator to redraw the map from the current code (23h).
+    MapRedraw,
     // --- inbox ---
     /// Allow a permission request once.
     InboxAllow,
