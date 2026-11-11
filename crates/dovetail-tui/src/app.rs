@@ -982,7 +982,7 @@ impl App {
             }
             Effect::OpenInboxItem(id) => self.open_inbox_item(id),
             Effect::OpenMap(id) => {
-                self.buffers.map_outline.expect(id.clone());
+                self.buffers.map_outline.await_map(id.clone());
                 self.outbox.push(Command::LoadMap { id, version: None });
                 self.note = Some("loading map…".into());
             }
