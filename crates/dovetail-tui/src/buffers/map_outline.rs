@@ -66,7 +66,7 @@ struct Row<'a> {
 
 impl MapOutlineBuffer {
     /// A map was asked for; the next [`Event::MapLoaded`] for it shows the outline.
-    pub fn expect(&mut self, id: MapId) {
+    pub fn await_map(&mut self, id: MapId) {
         self.loading = Some(id);
     }
 
