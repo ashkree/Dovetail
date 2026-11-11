@@ -84,6 +84,8 @@ pub struct MockCore {
     maps: BTreeMap<MapId, Map>,
     /// The seeded task's research content, for [`Command::LoadResearch`].
     research: research::Research,
+    /// Pages [`Command::OpenExternal`] was asked to open, oldest first; the mock opens nothing.
+    opened: Vec<String>,
     quit: bool,
 }
 
@@ -114,6 +116,7 @@ impl MockCore {
                 .map(|(_, map)| (map.id.clone(), map))
                 .collect(),
             research: research::seeded(config.start_ms),
+            opened: Vec::new(),
             quit: false,
         };
         core.after(3_000, |core| core.finish_setup(&agent_id("picker")));
@@ -133,6 +136,12 @@ impl MockCore {
     /// The core's own copy of the state.
     pub fn state(&self) -> &Snapshot {
         &self.state
+    }
+
+    /// The pages `gx` asked to open ([`Command::OpenExternal`]), oldest first. The mock opens
+    /// no browser.
+    pub fn opened(&self) -> &[String] {
+        &self.opened
     }
 
     /// Queues what the next [`Command::PasteClipboard`] answers. The mock reads no real
@@ -550,6 +559,39 @@ impl MockCore {
             | Command::DropRound { .. }
             | Command::SetResearchKind { .. }
             | Command::FileUnfiled { .. } => self.fail("not available in the mock".into()),
+            Command::OpenExternal { url } => {
+                if url.starts_with("http://") || url.starts_with("https://") {
+                    self.opened.push(url);
+                } else {
+                    self.fail(format!("only web pages open in the browser, not {url}"));
+                }
+            }
+            Command::StartAsk { task } => {
+                let report = dovetail_api::research::ResearchWhat::Report;
+                if self.research.load(task, &report).is_none() {
+                    return self.fail(format!(
+                        "task #{} has no report yet, so there is nothing to ask about",
+                        task.0
+                    ));
+                }
+                let name = format!("ask-{}", task.0);
+                let ask = match self.agent(&agent_id(&name)) {
+                    Some(ask) => ask,
+                    None => world::ask(&name, task, self.state.now_ms),
+                };
+                self.emit(Event::AgentUpserted(ask));
+            }
+            Command::ListDocs => {
+                let docs = research::docs();
+                self.emit(Event::DocsListed { docs });
+            }
+            Command::LoadDoc { path } => match research::doc(&path) {
+                Some(document) => self.emit(Event::DocLoaded { path, document }),
+                None => self.fail(format!(
+                    "{} is not one of the project's docs",
+                    path.display()
+                )),
+            },
             Command::LoadResearch { task, what } => match self.research.load(task, &what) {
                 Some(content) => self.emit(Event::ResearchLoaded {
                     task,
@@ -911,7 +953,13 @@ impl MockCore {
         if !self.replying.insert(agent.clone()) {
             return;
         }
-        let text = world::REPLIES[(self.reply_count % world::REPLIES.len() as u64) as usize];
+        // Reading mode's Ask answers with one canned, cited reply about the seeded report.
+        let ask = self.agent(&agent).map(|a| a.kind) == Some(AgentKind::Ask);
+        let text = if ask {
+            world::ASK_REPLY
+        } else {
+            world::REPLIES[(self.reply_count % world::REPLIES.len() as u64) as usize]
+        };
         self.reply_count += 1;
         let entry = self.entry_id();
 
@@ -919,7 +967,9 @@ impl MockCore {
         // Slices sometimes hand part of the turn to a background subagent; any session may run
         // a foreground one inside its turn.
         let is_slice = self.agent(&agent).map(|a| a.kind) == Some(AgentKind::Slice);
-        let delegate = if is_slice && self.rng.chance(40) {
+        let delegate = if ask {
+            None
+        } else if is_slice && self.rng.chance(40) {
             Some(true)
         } else if self.rng.chance(25) {
             Some(false)
@@ -967,7 +1017,12 @@ impl MockCore {
             });
         }
 
-        if !answering_user || self.rng.chance(60) {
+        if ask {
+            let id = agent.clone();
+            self.reply_step(&agent, 200, move |core| {
+                core.append(&id, EntryKind::ToolSummary, world::ASK_TOOLS.into())
+            });
+        } else if !answering_user || self.rng.chance(60) {
             let tools = match self.rng.range(0, 2) {
                 0 => "Read src/app.rs · Edit src/app.rs",
                 1 => "Grep \"Region\" · Read buffers/inbox.rs · Bash cargo test",

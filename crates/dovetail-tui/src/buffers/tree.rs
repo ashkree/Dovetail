@@ -243,7 +243,8 @@ impl TreeBuffer {
         let sessions: Vec<&Agent> = snap
             .agents
             .iter()
-            .filter(|a| a.task == Some(task.id) && a.parent.is_none())
+            // Reading mode's Ask lives in its column only (ADR 0018).
+            .filter(|a| a.task == Some(task.id) && a.parent.is_none() && a.kind != AgentKind::Ask)
             .collect();
         rows.push(Row {
             key,

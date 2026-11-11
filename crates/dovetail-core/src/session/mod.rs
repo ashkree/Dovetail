@@ -93,6 +93,7 @@ impl Core {
         self.agents.get(id).map(|r| match r.agent.kind {
             AgentKind::Coordinator => Role::Coordinator,
             AgentKind::SideChat => Role::SideChat,
+            AgentKind::Ask => Role::Ask,
             _ => Role::Slice,
         })
     }
@@ -149,7 +150,7 @@ impl Core {
                 .unwrap_or_else(|| self.task_list_id(row.agent.task, &row.agent.name)),
             socket: self.socket.clone(),
             exe: self.options.exe.clone(),
-            model: if row.agent.kind == AgentKind::SideChat {
+            model: if matches!(row.agent.kind, AgentKind::SideChat | AgentKind::Ask) {
                 self.config.side_chat_model.clone()
             } else {
                 self.config.default_model.clone()
@@ -324,6 +325,8 @@ impl Core {
                 let cwd = self.session_cwd(&row.agent);
                 self.launch(id, cwd, None)
             }
+            // Only a question starts it, in its task's research folder (`ask`).
+            AgentKind::Ask => Err(SessionError::AskNotStarted(row.agent.name)),
             AgentKind::Subagent { .. } => Err(SessionError::Subagent),
         }
     }
@@ -341,7 +344,7 @@ impl Core {
 
     /// Sends a message, with any images, and records `shown` (with `attachments`) in the
     /// agent's conversation. Starts a turn.
-    fn send_input(
+    pub(crate) fn send_input(
         &mut self,
         id: &AgentId,
         input: UserInput,
@@ -372,6 +375,14 @@ impl Core {
     ) {
         if self.live.get(id).is_some_and(|l| l.setting_up) {
             self.fail("this slice is still setting up");
+            return;
+        }
+        if self
+            .agents
+            .get(id)
+            .is_some_and(|r| r.agent.kind == AgentKind::Ask)
+        {
+            self.ask(id, text, attachments).await;
             return;
         }
         let images = match read_attachments(&attachments) {
@@ -514,9 +525,9 @@ impl Core {
         };
         // A side chat always runs in `dontAsk` with its read-only allow-list; auto mode would
         // let the classifier approve other commands.
-        if target_row.agent.kind == AgentKind::SideChat {
+        if matches!(target_row.agent.kind, AgentKind::SideChat | AgentKind::Ask) {
             self.fail(format!(
-                "{} is a side chat: it stays read-only, so its mode does not change",
+                "{} is read-only, so its mode does not change",
                 target_row.agent.name
             ));
             return;
@@ -693,7 +704,7 @@ impl Core {
                 // Decision 15: if init reports anything but auto when auto was asked, run as
                 // manual and say so.
                 // A side chat runs in `dontAsk` on purpose (launch): manual, with no warning.
-                if row.agent.kind == AgentKind::SideChat {
+                if matches!(row.agent.kind, AgentKind::SideChat | AgentKind::Ask) {
                     row.agent.permission_mode = dovetail_api::PermissionMode::Manual;
                 } else if row.agent.permission_mode == dovetail_api::PermissionMode::Auto
                     && mode != Some(dovetail_api::PermissionMode::Auto)
@@ -973,7 +984,9 @@ fn exit_text(info: &ExitInfo) -> String {
 
 /// Reads the image files the UI saved for a prompt. The UI checked them already; the limits
 /// are checked again because the files are read here, not where they were written.
-fn read_attachments(attachments: &[Attachment]) -> Result<Vec<ImageInput>, SessionError> {
+pub(crate) fn read_attachments(
+    attachments: &[Attachment],
+) -> Result<Vec<ImageInput>, SessionError> {
     if attachments.len() > MAX_ATTACHMENTS {
         return Err(SessionError::TooManyImages(MAX_ATTACHMENTS));
     }

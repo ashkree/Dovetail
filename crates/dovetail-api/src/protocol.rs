@@ -12,7 +12,7 @@ use crate::model::{
     SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals, UsageLimits,
     Warning, WarningId, WorktreeInfo,
 };
-use crate::research::{ResearchContent, ResearchSummary, ResearchWhat};
+use crate::research::{DocEntry, ResearchContent, ResearchDocument, ResearchSummary, ResearchWhat};
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -124,6 +124,20 @@ pub enum Event {
         what: ResearchWhat,
         /// The answer.
         content: ResearchContent,
+    },
+    /// The project's read-only docs, in answer to [`Command::ListDocs`]. Changes nothing in the
+    /// snapshot.
+    DocsListed {
+        /// Markdown files under the repo's `docs/`, sorted by path; empty for a project with no
+        /// repo.
+        docs: Vec<DocEntry>,
+    },
+    /// One doc's text, in answer to [`Command::LoadDoc`]. Changes nothing in the snapshot.
+    DocLoaded {
+        /// The doc, as [`DocEntry::path`] names it.
+        path: PathBuf,
+        /// Its text; HTML is left as it is, for the UI to convert.
+        document: ResearchDocument,
     },
     /// A command could not be carried out; the UI shows the message.
     CommandFailed {
@@ -429,6 +443,31 @@ pub enum Command {
         task: TaskId,
         /// What to fetch.
         what: ResearchWhat,
+    },
+    /// Open a web page in the user's browser (`gx` in reading mode, ADR 0018): `$BROWSER` if
+    /// set, else `xdg-open`. Only `http` and `https` URLs; anything else, or a launch that fails,
+    /// comes back as [`Event::CommandFailed`]. Success sends nothing.
+    OpenExternal {
+        /// The page.
+        url: String,
+    },
+    /// Make the Ask session of a research task ready (`i` in reading mode, ADR 0018): a
+    /// read-only session grounded in the task's report and the sources it cites, apart from
+    /// the coordinator. The core answers with [`Event::AgentUpserted`] for an
+    /// [`crate::AgentKind::Ask`] agent of the task (the one there is, or a new one); questions
+    /// then go to it as [`Command::Prompt`]s. Refused for a task with no report.
+    StartAsk {
+        /// The research task.
+        task: TaskId,
+    },
+    /// List the project's read-only docs (reading mode's Docs · ADRs). The core answers with
+    /// [`Event::DocsListed`].
+    ListDocs,
+    /// Fetch one doc listed by [`Event::DocsListed`]. The core answers with
+    /// [`Event::DocLoaded`], or [`Event::CommandFailed`] for a path outside the docs.
+    LoadDoc {
+        /// As [`DocEntry::path`] names it.
+        path: PathBuf,
     },
     /// Send a fresh snapshot (after a [`crate::ApplyResult::Gap`]).
     Resync,

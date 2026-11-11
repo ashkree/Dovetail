@@ -80,6 +80,8 @@ impl RoleSuites {
             Role::Coordinator => &self.coordinator,
             Role::Slice => &self.slice,
             Role::SideChat => &self.side_chat,
+            // Ask reads files and changes nothing in Dovetail (ADR 0018); not configurable.
+            Role::Ask => Role::Ask.default_suites(),
         }
     }
 }

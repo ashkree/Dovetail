@@ -115,6 +115,7 @@ impl Harness {
             check_claude: false,
             scopes,
             upgrade,
+            opener: None,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
@@ -524,6 +525,7 @@ impl Harness {
             check_claude: false,
             scopes: None,
             upgrade: None,
+            opener: None,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");

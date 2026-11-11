@@ -258,6 +258,43 @@ pub struct ResearchDocument {
     pub path: Option<PathBuf>,
     /// The file's content, from the database (the files are a readable copy).
     pub markdown: String,
+    /// The local PNG images the text shows (`![alt](src)`) that exist, with their size, so the
+    /// UI can place them with kitty graphics without reading files. Others are shown as text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<DocImage>,
+}
+
+impl ResearchDocument {
+    /// A document with no images.
+    pub fn text(path: Option<PathBuf>, markdown: String) -> Self {
+        Self {
+            path,
+            markdown,
+            images: Vec::new(),
+        }
+    }
+}
+
+/// An image a document shows, found by the core.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocImage {
+    /// The image's address as the markdown writes it.
+    pub src: String,
+    /// The file, absolute.
+    pub path: PathBuf,
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+}
+
+/// A read-only markdown doc of the project's repo (reading mode's Docs · ADRs).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocEntry {
+    /// Relative to the repo's `docs/` folder: `research.md`, `adr/0018-reading-mode-layout.md`.
+    pub path: PathBuf,
+    /// Its first `# ` heading, else the file name.
+    pub title: String,
 }
 
 /// A finding or source cited as evidence, written `F<id>` or `S<id>` (no brackets) on the wire.

@@ -2,10 +2,12 @@
 //! three findings (one quick), three sources and a report, so the research views in the task
 //! detail can be tried with `dovetail --mock` and drive the TUI tests.
 
+use std::path::Path;
+
 use dovetail_api::TaskId;
 use dovetail_api::research::{
-    FindingId, FindingSummary, ResearchContent, ResearchDocument, ResearchListing, ResearchSummary,
-    ResearchWhat, RoundSummary, SourceId, SourceKind, SourceSummary,
+    DocEntry, FindingId, FindingSummary, ResearchContent, ResearchDocument, ResearchListing,
+    ResearchSummary, ResearchWhat, RoundSummary, SourceId, SourceKind, SourceSummary,
 };
 
 use crate::world::agent_id;
@@ -41,11 +43,48 @@ impl Research {
     }
 }
 
+/// The repo docs reading mode's library lists for the mock's project (ADR 0018).
+const DOCS: &[(&str, &str, &str)] = &[
+    (
+        "research.md",
+        "Research sessions",
+        "# Research sessions\n\nRounds, findings and sources are captured from the stream; the \
+         coordinator writes a cited report with `research_write_report`.\n\n## Reading mode\n\n\
+         `<leader>r` opens the library, the reading column and Ask.\n",
+    ),
+    (
+        "adr/0018-reading-mode-layout.md",
+        "Reading mode: a second layout preset",
+        "# Reading mode: a second layout preset\n\nReading mode is a full-screen layout with \
+         three columns: Library, Reading and Ask. Layout B stays the default.\n\n\
+         ![The three columns](reading-mode.png)\n",
+    ),
+];
+
+/// The mock's repo docs, as `Command::ListDocs` answers.
+pub(crate) fn docs() -> Vec<DocEntry> {
+    DOCS.iter()
+        .map(|(path, title, _)| DocEntry {
+            path: (*path).into(),
+            title: (*title).into(),
+        })
+        .collect()
+}
+
+/// One of [`docs`], as `Command::LoadDoc` answers.
+pub(crate) fn doc(path: &Path) -> Option<ResearchDocument> {
+    DOCS.iter()
+        .find(|(p, _, _)| Path::new(p) == path)
+        .map(|(p, _, text)| {
+            ResearchDocument::text(
+                Some(format!("/home/you/code/notes-site/docs/{p}").into()),
+                (*text).into(),
+            )
+        })
+}
+
 fn document(path: Option<&str>, markdown: &str) -> ResearchDocument {
-    ResearchDocument {
-        path: path.map(Into::into),
-        markdown: markdown.into(),
-    }
+    ResearchDocument::text(path.map(Into::into), markdown.into())
 }
 
 /// The seeded research, relative to the mock's start time.
@@ -197,8 +236,12 @@ pub(crate) fn seeded(now_ms: i64) -> Research {
             ResearchWhat::Source(SourceId(1)),
             document(
                 Some(&format!("{DIR}/sources/1.md")),
-                "# docs.rs/nucleo\n\nnucleo: a fast fuzzy matcher. `Matcher`, `Pattern`, \
-                 `Nucleo` (the threaded one).\n",
+                "<!DOCTYPE html><html><head><title>nucleo - Rust</title><style>body{}</style>\
+                 </head><body><h1>Crate nucleo</h1><p><strong>nucleo</strong> is a fast fuzzy \
+                 matcher. See <a href=\"https://docs.rs/nucleo/latest/nucleo/struct.Matcher.html\">\
+                 <code>Matcher</code></a>.</p><h2>Types</h2><ul><li><code>Matcher</code></li>\
+                 <li><code>Pattern</code></li><li><code>Nucleo</code> (the threaded one)</li></ul>\
+                 <script>track()</script></body></html>\n",
             ),
         ),
         (

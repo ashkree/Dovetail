@@ -60,6 +60,26 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
     }
 }
 
+/// Reading mode's Ask for a research task: read-only, like a side chat, about the task's report.
+pub(crate) fn ask(id: &str, task: TaskId, now_ms: i64) -> Agent {
+    let mut ask = session(id, AgentKind::Ask, AgentStatus::Idle, now_ms);
+    ask.task = Some(task);
+    ask.permission_mode = PermissionMode::Manual;
+    ask.model = Some("claude-sonnet-5-5".into());
+    ask.memory_mb = None;
+    ask
+}
+
+/// What the mock's Ask answers, whatever it is asked: cited with the seeded ids.
+pub(crate) const ASK_REPLY: &str = "Speed decided it: nucleo matches a few thousand rows well \
+inside a frame [F1], and its parallel matcher handled 100k items in milliseconds in the docs \
+[S1]. skim was usable but heavier to set up [F2].\n\nThe open question is non-ASCII paths, \
+which round 2 is checking [S2].";
+
+/// The tool line of the mock's Ask turn.
+pub(crate) const ASK_TOOLS: &str =
+    "Read report.md · Read rounds/01-2026-10-30/findings/01-nucleo.md";
+
 /// A side chat: a session with no task, running read-only (shown as manual, like the core's).
 pub(crate) fn side_chat(id: &str, status: AgentStatus, now_ms: i64) -> Agent {
     let mut chat = session(id, AgentKind::SideChat, status, now_ms);
@@ -702,7 +722,25 @@ fn decisions(now_ms: i64) -> Vec<Decision> {
         supersedes: Some(DecisionId(1)),
         evidence: Vec::new(),
     };
-    vec![first, second]
+    // Accepted from the coordinator's research proposal on the fuzzy-matcher research (#3).
+    let third = Decision {
+        id: DecisionId(3),
+        task: TaskId(3),
+        at_ms: now_ms - 900_000,
+        by: DecisionAuthor::User,
+        text: "Use nucleo for the picker".into(),
+        why: Some("Fast on a few thousand rows and maintained by the Helix authors.".into()),
+        alternatives: vec![Alternative {
+            option: "skim".into(),
+            why_not: Some("heavier to set up".into()),
+        }],
+        supersedes: None,
+        evidence: vec![
+            research::Evidence::Finding(research::FindingId(1)),
+            research::Evidence::Source(research::SourceId(2)),
+        ],
+    };
+    vec![first, second, third]
 }
 
 /// Decisions the coordinator logs as the mock runs.

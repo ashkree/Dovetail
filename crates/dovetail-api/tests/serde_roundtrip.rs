@@ -446,6 +446,12 @@ fn every_event_roundtrips() {
             content: research::ResearchContent::Document(research::ResearchDocument {
                 path: None,
                 markdown: "# S1".into(),
+                images: vec![research::DocImage {
+                    src: "fig.png".into(),
+                    path: "/r/fig.png".into(),
+                    width: 640,
+                    height: 480,
+                }],
             }),
         },
         Event::TotalsChanged(totals()),
