@@ -32,11 +32,15 @@ Overnight 2026-11-10/11 the three build sessions stalled on a permission prompt;
 | Wave-4 code review from `review-wave-3` | agent (Opus) | **Done**: `docs/reviews/wave-4.md`, six questions for you |
 | `/retro` for wave 4, then the `review-wave-4` tag | you | after reading the review |
 | Answer the review's six questions (blocking `systemctl`, editor path check, `update_task` and Now, morning coordinator day rule, `<leader>y`, side chat read-only) | you | **Answered 2026-11-11**, built in PR `dovetail/small-fixes`: (1) `systemctl` left for v1.1 (`launch` goes async then); (2) the path check moved to the core (`OpenEditor` asks, the core answers `LendTerminal` or `CommandFailed`, no flicker); (3) `tasks_update` may move a task into Now, and marks it unseen; (4) day rule: fresh only when the newest journal is at least as new as the last use, else the coordinator is kept and Needs you says the day wasn't closed (ADR 0012 amendment); (5) `<leader>y` stays removed; (6) side chats: Bash allow-list with `--locked` on `cargo tree`/`cargo metadata`, and the core suite only whatever `[suites]` says |
-| Research docs PR #43 (ADRs 0015–0018) and its conflict list | you | open, not merged |
+| Research docs PR #43 (ADRs 0015–0018) and its conflict list | you | **Merged**; conflicts decided 2026-11-11 (ADR amendments) |
 | Live checks M6–M9, M11, M14 round trip, M15 "a real agent draws both map types" | you | run `scripts/live-checks.sh`; real sessions cost money, so agents don't run them |
 | S6 (`ask_user` role-prompt reliability), now also covering the research suite | you review | open |
 | S5 look in kitty, and the canvas look (M15 f has landed) | you | open: see "Try the map canvas" |
 | M16: a full working week in place of tmux; RSS under 100 MB after a day; cutting anything in the v1 roadmap | you | open |
+
+## Since then (2026-11-11)
+
+Merged after the table above was written: the research feature through reading mode and its follow-ups (PRs #48 to #51, #53, #54, #56), the side panel (#52), tool suites (#55), `:fresh` (#57) and the small fixes (#58). This is v1.1 work: its progress and what remains (tangents, the automatic 80 % fresh start, async `launch`, CI events, parallel rounds) is in `docs/plan/v1.1-brief.md`. The v1 list above is unchanged. Tool names in the audit table are the pre-rename ones (`ask_user` is now `core_ask_user`, and so on).
 
 Agents update this file's "Left for v1" table when their work lands.
 

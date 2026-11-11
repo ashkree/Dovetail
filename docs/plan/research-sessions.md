@@ -2,6 +2,8 @@
 
 Written 2026-11-11 against `main` at `cf15fe2`. Spec: [`docs/research.md`](../research.md); decisions: ADRs [0015](../adr/0015-research-capture-rounds-reports.md) to [0018](../adr/0018-reading-mode-layout.md). Source of truth for v1 order of work stays `docs/implementation-plan.md`; `docs/plan/v1-status.md` is the user-facing summary of the same ground and was written the evening before this file.
 
+**Update 2026-11-11 (grill with the user):** M17 to M21 and the follow-ups are built and merged (M17 to M19 earlier; M20 PR #55, M21 PR #56; follow-ups PRs #52 to #54, #57, #58). G1 to G3 are decided. Only M22 (tangents) and S8 are left. Sections 1 to 3 below are the state at the time of writing, kept as the record; the M22 prompt is rewritten.
+
 ## 1. Status report
 
 Evidence is the "done when" boxes and "Merged:/Progress:" lines of `docs/implementation-plan.md` §6, its Daily-driver fixes table, `git log --merges`, and the files on `main`. A milestone with any unticked box is **partial**. `git branch -a --no-merged main` lists nothing, so there are no unmerged branches: `dovetail/m15-outline` merged as PR #42 and `dovetail/upgrade` as PR #41.
@@ -66,11 +68,11 @@ Note: the plan's own header still says "waves 1 and 2 in progress"; it is stale.
 
 ## 3. Schedule
 
-Order: S7, M17, M18, M19, S8, M20, M21, M22. Research starts now, in parallel with the rest of M15 (f) and ahead of M16's user week; the only shared files are `dovetail-api` types and migration numbers (next state migration is `0013`), so merge in order. Gates that need the user: **G1** (before M20) placement of the tools the brief does not name (ADR 0016); **G2** (before M21) the side-panel key and the `Esc`/`i` scoping; **G3** (before M22) the registry and tangent-storage questions.
+Order: S7, M17, M18, M19, S8, M20, M21, M22. Research starts now, in parallel with the rest of M15 (f) and ahead of M16's user week; the only shared files are `dovetail-api` types and migration numbers (next state migration is `0013`), so merge in order. Gates that need the user: **G1** (before M20) placement of the tools the brief does not name (ADR 0016); **G2** (before M21) the side-panel key and the `Esc`/`i` scoping; **G3** (before M22) the registry and tangent-storage questions. **All three decided 2026-11-11:** G1 in ADR 0016, G2 in ADRs 0017 (`<leader>?`) and 0018 (`Esc`/`i`), G3 in ADRs 0015 (research-only projects) and 0017 (Tangents is a built-in research project).
 
 Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODING_STANDARDS.md` first, work in a worktree on branch `dovetail/<name>`, tests only for things that break and for the "done when" items named, `scripts/check.sh` before reporting, commit in steps ending with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` (or the model that did the work), open a PR, do not merge, list every departure from the spec as a question. No real Claude sessions against real projects; scratch repos under `/tmp` only.
 
-### S7 — Capture fidelity spike
+### S7 — Capture fidelity spike (done, PR #48)
 - **Model:** Sonnet — scripted, well-specified, small
 - **Depends on:** none
 - **Prompt (copy-paste):**
@@ -81,7 +83,7 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
   - [ ] A one-paragraph conclusion: which source each finding body comes from, and what "cached copy" really is
   - [ ] No process left running; cost recorded
 
-### M17 — R1 Capture (core)
+### M17 — R1 Capture (core) (done, PR #49)
 - **Model:** Opus — touches driver events, the core session state, storage and a new snapshot surface; the capture rules are the heart of the feature
 - **Depends on:** S7, v1 M11 (subagent routing)
 - **Prompt (copy-paste):**
@@ -94,7 +96,7 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
   - [x] Opt-in `research_dir` writes only under that folder of a temp repo (`an_opt_in_research_dir_writes_only_under_that_folder_of_the_repo`)
   - [x] `scripts/check.sh` passes
 
-### M18 — R2 Research suite tools
+### M18 — R2 Research suite tools (done, PR #51)
 - **Model:** Sonnet — well specified by §6 and §7 once R1 exists
 - **Depends on:** M17
 - **Prompt (copy-paste):**
@@ -107,7 +109,7 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
   - [x] Coordinator prompt still under ~20 lines; `bootstrap.sh` copies it (18 lines; the script copies `config/roles/*.md`; `--force` is needed to replace an installed copy)
   - [x] `scripts/check.sh` passes
 
-### M19 — R3 Rough reading
+### M19 — R3 Rough reading (done, PR #50)
 - **Model:** Sonnet — views over existing buffers
 - **Depends on:** M17 (M18 for reports)
 - **Prompt (copy-paste):**
@@ -118,7 +120,7 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
   - [x] No change to Layout B, no new global keys (the keymap gains one row, `<CR>` in the `DETAIL` scope; `:research` is a command; no `<leader>` binding touched)
   - [x] `scripts/check.sh` passes
 
-### S8 — Research role-prompt reliability (extends S6)
+### S8 — Research role-prompt reliability (extends S6) (not run; the user's)
 - **Model:** Sonnet — runs trials; the user reviews
 - **Depends on:** M18
 - **Prompt (copy-paste):**
@@ -128,7 +130,7 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
   - [ ] Pass or fail stated per case, with the fallback if failed
   - [ ] The user reviews the result (not an agent task)
 
-### M20 — R4 Tool suites and rename (ADR 0016)
+### M20 — R4 Tool suites and rename (ADR 0016) (done, PR #55)
 - **Model:** Opus — repo-wide rename with migration, role config, persisted conversations
 - **Depends on:** M18, **G1** (the user's placement of the tools the brief does not name)
 - **Prompt (copy-paste):**
@@ -140,7 +142,7 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
   - [x] A resumed v1 conversation using an old name works — `sessions::a_resumed_conversation_calling_an_old_tool_name_still_works` (FakeDriver: resume, the stream's `mcp__dovetail__report_status` tool use, the call by the old name answered with the note)
   - [x] `scripts/check.sh` passes
 
-### M21 — R5 Reading mode (ADR 0018)
+### M21 — R5 Reading mode (ADR 0018) (done, PR #56)
 - **Model:** Opus — a second layout preset against the single-layout assumption in TUI code; kitty graphics fallback
 - **Depends on:** M19, M20, **G2** (side-panel key; `Esc`/`i` scoping)
 - **Prompt (copy-paste):**
@@ -153,17 +155,34 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
   - [x] Works in a terminal without kitty graphics — all reading-mode tests run without graphics; images fall back to a text line (`a_doc_opens_read_only_and_its_image_is_text_without_kitty_graphics`)
   - [x] `scripts/check.sh` passes
 
-### M22 — R6 Tangents and the side panel (ADR 0017)
-- **Model:** Opus — global state outside the per-project model, one panel merging three session uses
-- **Depends on:** M21, **G3** (registry and tangent storage; research-only project folder question)
+### M22 — R6 Tangents (ADR 0017, amended 2026-11-11)
+- **Status:** not built. The side panel it needs (PR #52, `<leader>?`), the research-only project kind (PR #54) and the unfiled-findings flow (PR #53) exist.
+- **Model:** Opus — a built-in project that is always present, plus the morning item
+- **Depends on:** M21 (done), G3 (decided)
+- **What the merged PRs say tangents need:**
+  - PR #52: a side chat has no destination for its answer since `<leader>y` went; the destinations are "attach to the current task as a finding" and Tangents. The panel holds side chats only; tangents join it. The panel is the `<leader>?` pane in the tree's region.
+  - PR #54: a research-only project exists (`kind = 'research'`, no repo, sessions in `<data>/projects/<id>/`), and `--project <id>` / `Command::OpenProject` switch to it by restarting the binary; `dovetail add` cannot target one; the switcher shows `◇`.
+  - PR #56: the reading-mode library lists projects but has **no Tangents section** until this lands, and reading mode's Ask is not a tangent.
 - **Prompt (copy-paste):**
-  > Implement milestone R6 of `docs/research.md` §10 and ADR 0017 with the user's G3 decisions. A global Tangents space (`tangents` table in `registry.db` and files under `~/.local/share/dovetail/tangents/`), a tangent session that runs there with the side-chat role prompt and read tools, captured sources as in R1, one side panel for side chats, grilling helper (auto-start still v1.1) and tangents, destinations per answer (`<leader>y`, attach to the current task as a quick finding, or Tangents by default), and the morning-review listing (file into a project, start a task, drop). Keep `<leader>sq`/`:ask` working as G2 decided. Research-only projects per G3. Update `docs/implementation-plan.md` and the glossary if names change.
+  > Implement milestone R6 of `docs/research.md` §10 and ADR 0017 as amended 2026-11-11. **Tangents is a built-in research project:** created on first start with a fixed id (`tangents`), always present, pinned last in the project switcher with its own marker, cannot be archived (refuse `dd`, `tasks_archive` and the registry removal). It uses the research-only kind from PR #54, so its files are under `<data>/projects/tangents/` and there is no `tangents` table or `tangents.db`. A tangent is a task in its Unsorted list; its question, answer and sources are captured as in R1 (the side chat's answer is stored as a finding on that task). `<leader>?`, `<leader>sq` and `:ask` stay as built; add a way to ask a tangent (a side chat that is not tied to the open project) and the answer destinations: attach to the current task as a finding, or Tangents (the default). Raise one Needs-you item, "new tangents", in the morning (when ADR 0012's fresh start runs); from it each tangent can be filed into a project (moves its finding to a task), started as a task, or dropped. Add the Tangents section to the reading-mode library. Update `docs/implementation-plan.md`, the glossary only if a term changes, and ADR 0017's "not built" note.
 - **Validation:**
-  - [ ] A tangent asked with no project open is saved with its sources
-  - [ ] The next morning review lists it; filing creates the finding or task in the chosen project
-  - [ ] `<leader>y` still copies the last answer into the reply
+  - [ ] A tangent asked from any project is saved in Tangents with its sources
+  - [ ] Tangents cannot be archived and is last in the switcher
+  - [ ] The morning item lists new tangents; filing creates the finding or task in the chosen project
   - [ ] State is restored after restart
   - [ ] `scripts/check.sh` passes
+
+### Follow-ups decided 2026-11-11 (all merged)
+
+| Work | PR |
+| --- | --- |
+| Side panel (`<leader>?`), read-only Bash allow-list, `<leader>y` removed | #52 |
+| Round queue, unfiled findings, archive confirm, task-detail keys, kind | #53 |
+| Research-only projects (`kind`), project switcher, `--project <id>` | #54 |
+| `:fresh`, a mid-day fresh coordinator (ADR 0012 amendment) | #57 |
+| Small fixes: `--locked` cargo, Core-only side chats, editor path check in the core, `tasks_update` into Now, morning day rule, `<leader>B` removed, `:project new --research` asks to open, `dovetail add --project` | #58 |
+
+Filed for later: **task 10**, real parallel rounds with tags (the queue of #53 is the stand-in).
 
 ## 4. Earliest usable point
 
