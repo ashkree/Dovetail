@@ -139,7 +139,7 @@ The coordinator's curated synthesis for one research task, `report.md`, rewritte
 _Avoid_: summary, write-up
 
 **Tangent**:
-A question that does not belong to the current project, answered in Tangents, a built-in research-only project, with sources, and kept until the morning review files it into a project, starts a task from it or drops it (ADR 0017).
+A question that does not belong to the current project, answered in Tangents, a built-in research-only project that is always there, with sources, and kept until the morning review files it into a project, starts a task from it or drops it (ADR 0017).
 _Avoid_: side chat (which is project-scoped), aside
 
 **Suite**:
