@@ -30,7 +30,8 @@ pub fn run_mock(seed: u64, speed: f64) -> Result<()> {
     let clock: Clock =
         Box::new(move || start_ms + (began.elapsed().as_secs_f64() * 1_000.0 * speed) as i64);
     let mut app = App::new(TimeZone::system());
-    dovetail_tui::run(&mut app, link, clock).context("terminal UI failed")
+    dovetail_tui::run(&mut app, link, clock, Some(crate::paint::painter()))
+        .context("terminal UI failed")
 }
 
 /// Runs the TUI on the real core for the folder the user is in. Nothing is registered on the way
@@ -70,7 +71,8 @@ pub fn run_real() -> Result<()> {
             .map_or(0, |d| d.as_millis() as i64)
     });
     let mut app = App::new(TimeZone::system());
-    let result = dovetail_tui::run(&mut app, link, clock).context("terminal UI failed");
+    let result = dovetail_tui::run(&mut app, link, clock, Some(crate::paint::painter()))
+        .context("terminal UI failed");
     let restart = core.restart_requested();
     // Sessions end with the app (B23): wait until they have exited and been reaped.
     if !core.wait(Duration::from_secs(10)) {

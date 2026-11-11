@@ -39,6 +39,6 @@ expression: "render(&mut app, 120, 40)"
 │                                                                         ││         ⎇ dovetail/picker                 │
 │   5 Claude Code — Claude Code streams its reply back.                   ││ ▾ Next (2)                                │
 │                                                                         ││   ○ Quick capture parser P1               │
-│ o fold · f next flow · ]] [[ walk the flow · / search · Esc shelf       ││ ⏎ open · o fold · dd archive              │
+│ ␣v map · o fold · f flow · ]] [[ steps · Esc shelf                      ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  NORMAL   Dovetail · 8 tasks · 4 agents · 2 ⚠ · 885M · ctx 18%                           i chat · ␣ss switch · : command

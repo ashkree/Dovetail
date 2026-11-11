@@ -44,7 +44,8 @@ fn shelf() -> (MockCore, App) {
     (core, app)
 }
 
-/// The shelf, with the map on row `row` opened.
+/// The shelf, with the map on row `row` opened. Opening goes to MAP mode (M15 f); `Esc` leaves
+/// it for the outline in Normal mode, which these tests drive.
 fn outline(row: usize) -> (MockCore, App) {
     let (mut core, mut app) = shelf();
     for _ in 0..row {
@@ -52,6 +53,8 @@ fn outline(row: usize) -> (MockCore, App) {
     }
     app.on_key(enter(), 0);
     deliver(&mut core, &mut app);
+    assert_eq!(app.mode(), dovetail_tui::Mode::Map);
+    app.on_key(esc(), 0);
     (core, app)
 }
 

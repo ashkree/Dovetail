@@ -14,6 +14,11 @@
 //! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::Event::TerminalReturned`] the loop takes the
 //! terminal back ([`Lend::reclaim`]), redraws it in full and lets the input thread read again.
 //!
+//! **The map canvas** (M15 f). Mouse capture is switched on only while the app is in MAP mode
+//! ([`MouseCapture`], decision 23f), so the terminal's own text selection works everywhere else.
+//! A painter thread paints maps off the UI thread ([`MapPainter`]); after each frame the loop
+//! writes what kitty must change to show the app's [`Scene`] ([`kitty::Screen`]).
+//!
 //! **Shift-Enter.** Where the terminal speaks the kitty keyboard protocol, the loop asks it to
 //! disambiguate keys, so Shift-Enter arrives as itself and starts a new line in the chat bar.
 //! Nothing depends on it: other terminals keep Alt-Enter. The flags are pushed on the alternate
@@ -24,13 +29,20 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use std::io::Write;
+use std::sync::Arc;
+
 use crossterm::event::{
-    self, Event as TermEvent, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    self, DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyEventKind,
+    KeyboardEnhancementFlags, MouseEvent, PopKeyboardEnhancementFlags,
     PushKeyboardEnhancementFlags,
 };
 use dovetail_api::{Command, CoreLink, ServerMsg};
 
 use crate::app::{App, Signal};
+use crate::canvas::kitty::{self, Scene};
+use crate::canvas::view::CellPx;
+use crate::canvas::{MapPainter, PaintJob, Painted, detect};
 
 /// Shortest time between two draws: about 30 fps, so streaming text is coalesced.
 pub const MIN_FRAME: Duration = Duration::from_millis(33);
@@ -40,6 +52,8 @@ pub type Clock = Box<dyn Fn() -> i64 + Send>;
 
 enum Msg {
     Key(crossterm::event::KeyEvent),
+    Mouse(MouseEvent),
+    Painted(Painted),
     Resize,
     Server(Box<ServerMsg>),
     ServerClosed,
@@ -118,6 +132,54 @@ impl Lend for Crossterm {
     }
 }
 
+/// Turns the terminal's mouse reporting on and off to follow [`App::wants_mouse`].
+#[derive(Debug, Default)]
+pub struct MouseCapture {
+    on: bool,
+}
+
+impl MouseCapture {
+    /// Whether capture is on now.
+    pub fn is_on(&self) -> bool {
+        self.on
+    }
+
+    /// Writes the switch to `out` if `want` differs from what the terminal has.
+    pub fn sync(&mut self, want: bool, out: &mut dyn Write) -> io::Result<()> {
+        if want == self.on {
+            return Ok(());
+        }
+        let mut ansi = String::new();
+        let written = if want {
+            crossterm::Command::write_ansi(&EnableMouseCapture, &mut ansi)
+        } else {
+            crossterm::Command::write_ansi(&DisableMouseCapture, &mut ansi)
+        };
+        written.map_err(|e| io::Error::other(e.to_string()))?;
+        out.write_all(ansi.as_bytes())?;
+        out.flush()?;
+        self.on = want;
+        Ok(())
+    }
+}
+
+/// The cell size in pixels when the terminal shows kitty graphics and reports its pixel size;
+/// `None` means the outline alone.
+fn graphics_cell() -> Option<CellPx> {
+    if !detect::kitty_graphics(|k| std::env::var(k).ok()) {
+        return None;
+    }
+    let size = crossterm::terminal::window_size().ok()?;
+    if size.columns == 0 || size.rows == 0 || size.width == 0 || size.height == 0 {
+        tracing::info!("the terminal reports no pixel size; maps show as outlines");
+        return None;
+    }
+    Some(CellPx {
+        w: size.width / size.columns,
+        h: size.height / size.rows,
+    })
+}
+
 /// Restores the terminal when dropped, including on an early return or panic unwind.
 struct TerminalGuard {
     enhanced: bool,
@@ -125,6 +187,15 @@ struct TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
+        // Harmless when capture is off or the screen is already left; a shell left with mouse
+        // reporting on is not.
+        let mut out = io::stdout();
+        let _ = crossterm::execute!(out, DisableMouseCapture);
+        let mut clear = Vec::new();
+        kitty::delete(&mut clear, kitty::MAP_ID);
+        kitty::delete(&mut clear, kitty::RING_ID);
+        let _ = out.write_all(&clear);
+        let _ = out.flush();
         // On a panic ratatui's hook has already left the alternate screen, whose flags went with
         // it; popping now would pop the shell's.
         if self.enhanced && !thread::panicking() {
@@ -135,7 +206,13 @@ impl Drop for TerminalGuard {
 }
 
 /// Runs the UI until the user quits. Sets up the terminal and a panic hook that restores it.
-pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
+/// `painter` draws map pictures for the canvas; without one maps show as outlines.
+pub fn run(
+    app: &mut App,
+    link: CoreLink,
+    clock: Clock,
+    painter: Option<Arc<dyn MapPainter>>,
+) -> io::Result<()> {
     let mut terminal = ratatui::try_init()?;
     let enhanced = push_keyboard_flags();
     let _guard = TerminalGuard { enhanced };
@@ -153,6 +230,7 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
                     input_tx.send(Msg::Key(key)).is_err() || go_rx.recv().is_err()
                 }
                 TermEvent::Resize(..) => input_tx.send(Msg::Resize).is_err(),
+                TermEvent::Mouse(mouse) => input_tx.send(Msg::Mouse(mouse)).is_err(),
                 _ => false,
             };
             if gone {
@@ -185,6 +263,32 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
         }
         Err(e) => tracing::warn!(%e, "could not install signal handlers"),
     }
+    if painter.is_some() {
+        app.set_graphics(graphics_cell());
+    }
+    // The painter thread: paints the newest job, skipping any that a newer one replaced.
+    let paint = painter.map(|painter| {
+        let (job_tx, job_rx) = mpsc::channel::<PaintJob>();
+        let painted_tx = tx.clone();
+        thread::spawn(move || {
+            while let Ok(mut job) = job_rx.recv() {
+                while let Ok(newer) = job_rx.try_recv() {
+                    job = newer;
+                }
+                let started = Instant::now();
+                let result = painter.paint(&job.map, job.key.fit).map(Arc::new);
+                tracing::debug!(map = %job.key.map.0, ms = started.elapsed().as_millis(), ok = result.is_ok(), "map painted");
+                let painted = Painted {
+                    key: job.key,
+                    result,
+                };
+                if painted_tx.send(Msg::Painted(painted)).is_err() {
+                    return;
+                }
+            }
+        });
+        job_tx
+    });
     thread::spawn(move || {
         for msg in messages {
             if tx.send(Msg::Server(Box::new(msg))).is_err() {
@@ -194,11 +298,11 @@ pub fn run(app: &mut App, link: CoreLink, clock: Clock) -> io::Result<()> {
         let _ = tx.send(Msg::ServerClosed);
     });
 
-    let mut io = LoopIo {
-        commands: &commands,
-        go: &go_tx,
-        lend: &mut Crossterm { enhanced },
-    };
+    let mut lend = Crossterm { enhanced };
+    let mut out = io::stdout();
+    let mut io = LoopIo::new(&commands, &go_tx, &mut lend, &mut out);
+    io.paint = paint;
+    io.graphics = app.graphics_on();
     drive(&mut terminal, app, &rx, &mut io, &clock)
 }
 
@@ -208,9 +312,67 @@ struct LoopIo<'a> {
     commands: &'a mpsc::Sender<Command>,
     go: &'a mpsc::Sender<()>,
     lend: &'a mut dyn Lend,
+    /// The terminal, for kitty graphics and mouse capture.
+    out: &'a mut dyn Write,
+    mouse: MouseCapture,
+    kitty: kitty::Screen,
+    /// The painter thread's job queue, when there is a painter.
+    paint: Option<mpsc::Sender<PaintJob>>,
+    /// The terminal shows kitty graphics: re-read the cell size on a resize.
+    graphics: bool,
 }
 
-impl LoopIo<'_> {
+impl<'a> LoopIo<'a> {
+    fn new(
+        commands: &'a mpsc::Sender<Command>,
+        go: &'a mpsc::Sender<()>,
+        lend: &'a mut dyn Lend,
+        out: &'a mut dyn Write,
+    ) -> Self {
+        Self {
+            commands,
+            go,
+            lend,
+            out,
+            mouse: MouseCapture::default(),
+            kitty: kitty::Screen::default(),
+            paint: None,
+            graphics: false,
+        }
+    }
+
+    /// Mouse capture follows the app's mode; a painting it asked for goes to the painter.
+    fn follow_app(&mut self, app: &mut App) -> io::Result<()> {
+        self.mouse.sync(app.wants_mouse(), self.out)?;
+        if let Some(job) = app.take_paint_job()
+            && let Some(paint) = &self.paint
+        {
+            let _ = paint.send(job);
+        }
+        Ok(())
+    }
+
+    /// After a frame: what kitty must change to show `scene`.
+    fn show(&mut self, scene: Option<&Scene>) -> io::Result<()> {
+        let mut bytes = Vec::new();
+        self.kitty.sync(scene, &mut bytes);
+        if !bytes.is_empty() {
+            self.out.write_all(&bytes)?;
+            self.out.flush()?;
+        }
+        Ok(())
+    }
+
+    /// Before lending the terminal out: no mouse reporting and no images for the program that
+    /// gets it.
+    fn let_go(&mut self) -> io::Result<()> {
+        self.mouse.sync(false, self.out)?;
+        let mut bytes = Vec::new();
+        self.kitty.clear(&mut bytes);
+        self.out.write_all(&bytes)?;
+        self.out.flush()
+    }
+
     fn send_all(&mut self, app: &mut App) {
         for command in app.take_commands() {
             let _ = self.commands.send(command);
@@ -234,6 +396,7 @@ impl LoopIo<'_> {
             let _ = self.go.send(());
             return Ok(());
         }
+        self.let_go()?;
         self.lend.release()?;
         tracing::debug!(?handoff, "terminal lent out");
         let _ = self.commands.send(handoff);
@@ -263,10 +426,12 @@ fn drive<B: ratatui::backend::Backend>(
             terminal
                 .draw(|frame| app.draw(frame))
                 .map_err(|e| io::Error::other(e.to_string()))?;
+            io.show(app.graphics_scene().as_ref())?;
             tracing::trace!("frame");
             app.take_dirty();
             last_draw = Some(now);
         }
+        io.follow_app(app)?;
         io.send_all(app);
         if app.should_quit() {
             // Sessions end with the app: there is no daemon in v1 (plan B23).
@@ -310,7 +475,15 @@ fn drive<B: ratatui::backend::Backend>(
                     io.after_key(app)?;
                     away = app.terminal_away();
                 }
-                Msg::Resize => app.on_resize(),
+                Msg::Mouse(mouse) => app.on_mouse(mouse),
+                Msg::Painted(painted) => app.on_painted(painted),
+                Msg::Resize => {
+                    // A font size change changes the cell size too.
+                    if io.graphics {
+                        app.set_graphics(graphics_cell());
+                    }
+                    app.on_resize();
+                }
                 Msg::Server(msg) => app.on_server(*msg),
                 Msg::ServerClosed => app.on_core_closed(),
                 Msg::Signal(signal) => app.on_signal(signal),
@@ -318,6 +491,7 @@ fn drive<B: ratatui::backend::Backend>(
         }
         if away && !app.terminal_away() {
             io.lend.reclaim()?;
+            io.kitty.forget();
             terminal
                 .clear()
                 .map_err(|e| io::Error::other(e.to_string()))?;
@@ -362,11 +536,9 @@ mod tests {
         let (tx, rx) = mpsc::channel::<Msg>();
         let (commands, _sent) = mpsc::channel::<Command>();
         let (go, _gone) = mpsc::channel::<()>();
-        let mut io = LoopIo {
-            commands: &commands,
-            go: &go,
-            lend: &mut Recorder::default(),
-        };
+        let mut recorder = Recorder::default();
+        let mut out = Vec::new();
+        let mut io = LoopIo::new(&commands, &go, &mut recorder, &mut out);
         let feeder = thread::spawn(move || {
             let send = |m| tx.send(Msg::Server(Box::new(m))).expect("loop alive");
             send(ServerMsg::Hello {
@@ -541,11 +713,8 @@ mod tests {
         });
 
         let mut recorder = Recorder { log: log.clone() };
-        let mut io = LoopIo {
-            commands: &commands,
-            go: &go,
-            lend: &mut recorder,
-        };
+        let mut out = Vec::new();
+        let mut io = LoopIo::new(&commands, &go, &mut recorder, &mut out);
         let clock: Clock = Box::new(|| 0);
         drive(&mut terminal, &mut app, &rx, &mut io, &clock).expect("loop");
         input.join().expect("input");

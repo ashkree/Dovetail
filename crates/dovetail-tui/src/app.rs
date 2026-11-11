@@ -20,7 +20,7 @@ mod focus;
 mod overlay;
 mod search;
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use dovetail_api::{
     AgentId, AgentKind, AgentStatus, ApplyResult, Command, EntryKind, Event, InboxKind,
     PROTOCOL_VERSION, PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
@@ -28,7 +28,10 @@ use dovetail_api::{
 use jiff::tz::TimeZone;
 
 use crate::action::Action;
-use crate::buffers::{Buffers, Effect, InputTarget, MapReaction, ViewCx};
+use crate::buffers::{Buffers, Effect, InputTarget, MapMouse, MapReaction, ViewCx};
+use crate::canvas::kitty::Scene;
+use crate::canvas::view::CellPx;
+use crate::canvas::{PaintJob, Painted};
 use crate::command;
 use crate::input::{InputOutcome, TextInput};
 use crate::keymap::{Key, Keymap, Resolved, Resolver, Scope};
@@ -339,6 +342,11 @@ impl App {
                         self.regions.show(RegionId::Main, BufferKind::MapOutline);
                         self.regions.set_focus(RegionId::Main);
                         self.note = None;
+                        // Opening a map from the shelf or picker goes straight to MAP mode
+                        // (decision 23f), unless the user is typing something meanwhile.
+                        if self.mode == Mode::Normal && self.overlay.is_none() {
+                            self.enter_map_mode();
+                        }
                     }
                     Some(MapReaction::Request(command)) => self.outbox.push(command),
                     None => {}
@@ -441,6 +449,13 @@ impl App {
     /// finishes while the conversation already has focus stays in Needs you (Decision 7a; live
     /// check 2026-11-06).
     fn settle(&mut self) {
+        // MAP mode is about the map in the main region; without one it ends.
+        if self.mode == Mode::Map
+            && (self.regions.buffer(RegionId::Main) != BufferKind::MapOutline
+                || self.buffers.map_outline.map().is_none())
+        {
+            self.mode = Mode::Normal;
+        }
         let shown_exists = self
             .buffers
             .conversation
@@ -521,16 +536,17 @@ impl App {
             return;
         }
         match self.mode {
-            Mode::Normal => self.normal_key(event, mono_ms),
+            Mode::Normal | Mode::Map => self.normal_key(event, mono_ms),
             Mode::Insert | Mode::Command => self.input_key(event),
         }
     }
 
+    /// Normal and MAP mode keys go through the keymap; MAP mode has its own rows.
     fn normal_key(&mut self, event: KeyEvent, mono_ms: u64) {
         let scopes = [Scope::Buffer(self.regions.focused_buffer()), Scope::Global];
         let resolved = self.resolver.feed(
             &self.keymap,
-            Mode::Normal,
+            self.mode,
             &scopes,
             Key::from_event(event),
             mono_ms,
@@ -538,6 +554,119 @@ impl App {
         if let Resolved::Action(action) = resolved {
             self.run(action);
         }
+    }
+
+    // --- the map canvas ---
+
+    /// Kitty graphics on, with the terminal's cell size in pixels, or off (`None`): the map is
+    /// then shown as its outline alone.
+    pub fn set_graphics(&mut self, cell: Option<CellPx>) {
+        self.buffers.map_outline.set_graphics(cell);
+        self.dirty = true;
+    }
+
+    /// The node selected in the open map.
+    pub fn selected_map_node(&self) -> Option<&dovetail_api::map::NodeId> {
+        self.buffers.map_outline.selected_node()
+    }
+
+    /// Whether the map view uses kitty graphics.
+    pub fn graphics_on(&self) -> bool {
+        self.buffers.map_outline.canvas().active()
+    }
+
+    /// Whether the terminal should report the mouse: in MAP mode only (decision 23f), and never
+    /// while the terminal is lent out.
+    pub fn wants_mouse(&self) -> bool {
+        self.mode == Mode::Map && !self.terminal_away
+    }
+
+    /// A mouse event. Only MAP mode uses the mouse, and only on the map.
+    pub fn on_mouse(&mut self, event: MouseEvent) {
+        if self.mode != Mode::Map || self.overlay.is_some() || self.confirm.is_some() {
+            return;
+        }
+        let kind = match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => MapMouse::Press,
+            MouseEventKind::Drag(MouseButton::Left) => MapMouse::Drag,
+            MouseEventKind::Up(MouseButton::Left) => MapMouse::Release,
+            MouseEventKind::ScrollUp => MapMouse::ScrollUp,
+            MouseEventKind::ScrollDown => MapMouse::ScrollDown,
+            _ => return,
+        };
+        if self
+            .buffers
+            .map_outline
+            .on_mouse(kind, event.column, event.row)
+        {
+            self.note = None;
+            self.dirty = true;
+        }
+    }
+
+    /// A map painting for the event loop's painter thread.
+    pub fn take_paint_job(&mut self) -> Option<PaintJob> {
+        self.buffers.map_outline.take_paint_job()
+    }
+
+    /// A painting came back from the painter thread.
+    pub fn on_painted(&mut self, painted: Painted) {
+        if self.buffers.map_outline.on_painted(painted) {
+            self.dirty = true;
+        }
+    }
+
+    /// What kitty should show after the frame just drawn: the map picture and the selection
+    /// ring when the main region shows the map and nothing floats over it.
+    pub fn graphics_scene(&self) -> Option<Scene> {
+        if self.terminal_away
+            || self.overlay.is_some()
+            || self.regions.buffer(RegionId::Main) != BufferKind::MapOutline
+        {
+            return None;
+        }
+        let ring = match self.theme.map_ring {
+            ratatui::style::Color::Rgb(r, g, b) => [r, g, b],
+            _ => [0xff, 0xd8, 0x4a],
+        };
+        self.buffers.map_outline.scene(ring)
+    }
+
+    /// MAP mode on the map in the main region.
+    fn enter_map_mode(&mut self) {
+        if self.regions.buffer(RegionId::Main) != BufferKind::MapOutline
+            || self.buffers.map_outline.map().is_none()
+        {
+            self.note = Some("open a map first: ␣M shows the shelf".into());
+            return;
+        }
+        self.resolver.reset();
+        self.regions.set_focus(RegionId::Main);
+        self.mode = Mode::Map;
+    }
+
+    /// `u` in MAP mode: after a yes, the coordinator is asked to redraw the open map (23h).
+    fn ask_redraw_map(&mut self) {
+        let (Some(map), Some(coordinator)) =
+            (self.buffers.map_outline.map().cloned(), self.coordinator())
+        else {
+            self.note = Some("no coordinator to ask".into());
+            return;
+        };
+        let text = format!(
+            "Please redraw the map \"{}\" (id `{}`) from the current code: call draw_map with \
+             the same id, so it is updated in place.",
+            map.content.title, map.id.0
+        );
+        self.confirm = Some(Confirm {
+            prompt: format!("Ask the coordinator to redraw \"{}\"?", map.content.title),
+            then: Then::Commands(vec![Command::Prompt {
+                agent: coordinator,
+                text,
+                attachments: Vec::new(),
+            }]),
+            otherwise: None,
+        });
     }
 
     fn input_key(&mut self, event: KeyEvent) {
@@ -889,6 +1018,9 @@ impl App {
             Action::ShowMessages => self.toggle_main(BufferKind::Messages),
             Action::ShowBoard => self.toggle_main(BufferKind::Board),
             Action::ShowMaps => self.toggle_main(BufferKind::MapShelf),
+            Action::MapMode => self.enter_map_mode(),
+            Action::LeaveMapMode => self.mode = Mode::Normal,
+            Action::MapRedraw => self.ask_redraw_map(),
             Action::ShowWorktrees => {
                 let opening = self.regions.buffer(RegionId::Main) != BufferKind::Worktrees;
                 self.toggle_main(BufferKind::Worktrees);

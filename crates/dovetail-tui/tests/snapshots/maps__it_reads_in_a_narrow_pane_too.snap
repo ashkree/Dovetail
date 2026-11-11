@@ -23,6 +23,6 @@ expression: "render(&mut app, 70, 24)"
 │                                 ││         ✓ Group tasks by bucket │
 │ flow A prompt's trip            ││         ◐ Sort by P-level with… │
 │                                 ││         ○ Mark P-level and buc… │
-│ o f ]] [[                       ││ ⏎ open · o fold · dd archive    │
+│ ␣v o f ]] [[                    ││ ⏎ open · o fold · dd archive    │
 └─────────────────────────────────┘└─────────────────────────────────┘
  NORMAL   Dovetail · 8 tasks · 4 agen… i chat · ␣ss switch · : command

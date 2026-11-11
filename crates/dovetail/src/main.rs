@@ -7,6 +7,7 @@ mod hook;
 mod logging;
 mod login;
 mod mcp;
+mod paint;
 mod tui;
 mod upgrade;
 

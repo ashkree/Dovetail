@@ -105,6 +105,57 @@ impl Picture {
     }
 }
 
+/// A direction for `hjkl` on the canvas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    /// `h`.
+    Left,
+    /// `j`.
+    Down,
+    /// `k`.
+    Up,
+    /// `l`.
+    Right,
+}
+
+/// The node nearest `from` in `dir`, other than `skip`. Nodes within 45° of the direction come
+/// first; among them (or among all ahead, when none is) the smallest distance along the
+/// direction plus twice the distance across it wins, so a node straight ahead beats a closer
+/// one off to the side.
+pub fn nearest<'a>(
+    nodes: &'a [Placed],
+    from: (f64, f64),
+    dir: Direction,
+    skip: Option<&NodeId>,
+) -> Option<&'a Placed> {
+    let ahead: Vec<(f64, f64, &Placed)> = nodes
+        .iter()
+        .filter(|n| Some(&n.id) != skip)
+        .filter_map(|n| {
+            let (x, y) = n.rect.center();
+            let (along, across) = match dir {
+                Direction::Left => (from.0 - x, (y - from.1).abs()),
+                Direction::Right => (x - from.0, (y - from.1).abs()),
+                Direction::Up => (from.1 - y, (x - from.0).abs()),
+                Direction::Down => (y - from.1, (x - from.0).abs()),
+            };
+            (along > 0.5).then_some((along, across, n))
+        })
+        .collect();
+    let best = |cone: bool| {
+        ahead
+            .iter()
+            .filter(|(along, across, _)| !cone || across <= along)
+            .min_by(|a, b| {
+                (a.0 + 2.0 * a.1)
+                    .partial_cmp(&(b.0 + 2.0 * b.1))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(_, _, n)| *n)
+    };
+    best(true).or_else(|| best(false))
+}
+
 /// Why a map could not be painted, as text for the status bar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaintError(pub String);
@@ -164,6 +215,25 @@ mod tests {
             is_group,
             step: None,
         }
+    }
+
+    #[test]
+    fn hjkl_picks_the_node_straight_ahead_over_a_closer_one_aside() {
+        let nodes = vec![
+            placed("here", 100.0, 100.0, 20.0, 20.0, false),
+            placed("ahead", 300.0, 100.0, 20.0, 20.0, false),
+            placed("aside", 160.0, 200.0, 20.0, 20.0, false),
+            placed("near", 150.0, 160.0, 20.0, 20.0, false),
+            placed("above", 100.0, 0.0, 20.0, 20.0, false),
+        ];
+        let from = nodes[0].rect.center();
+        let here = Some(&nodes[0].id);
+        let go = |d| nearest(&nodes, from, d, here).map(|p| p.id.0.as_str());
+        assert_eq!(go(Direction::Right), Some("ahead"));
+        // "near" is closer to the right but mostly below: it belongs to `j`.
+        assert_eq!(go(Direction::Down), Some("near"));
+        assert_eq!(go(Direction::Up), Some("above"));
+        assert_eq!(go(Direction::Left), None);
     }
 
     #[test]
