@@ -51,3 +51,60 @@ impl MapPainter for Painter {
 pub fn painter() -> Arc<dyn MapPainter> {
     Arc::new(Painter::default())
 }
+
+#[cfg(test)]
+mod tests {
+    use dovetail_api::{Command, Event, ServerMsg};
+    use dovetail_mock::{MockConfig, MockCore};
+
+    use super::*;
+
+    /// The mock's two seeded maps, as `LoadMap` returns them.
+    fn seeded() -> Vec<Map> {
+        let mut core = MockCore::new(MockConfig::default());
+        let ids: Vec<_> = core.state().maps.iter().map(|m| m.id.clone()).collect();
+        let mut maps = Vec::new();
+        for id in ids {
+            core.handle(Command::LoadMap { id, version: None });
+            while let Some(scheduled) = core.next_message() {
+                if let ServerMsg::Event {
+                    event: Event::MapLoaded(map),
+                    ..
+                } = scheduled.msg
+                {
+                    maps.push(map);
+                    break;
+                }
+            }
+        }
+        maps
+    }
+
+    /// Both map types paint inside the fit box, with every node's box inside the picture.
+    #[test]
+    fn both_seeded_maps_paint_with_their_nodes_inside_the_picture() {
+        let maps = seeded();
+        assert_eq!(maps.len(), 2);
+        let painter = Painter::default();
+        for map in &maps {
+            let picture = painter.paint(map, (1600, 1000)).expect("paints");
+            assert!(picture.png.starts_with(b"\x89PNG"), "{}", map.id.0);
+            assert!(picture.width <= 1600 && picture.height <= 1000);
+            assert!(!picture.nodes.is_empty(), "{}", map.id.0);
+            for n in &picture.nodes {
+                let r = n.rect;
+                assert!(
+                    r.x >= -1.0
+                        && r.y >= -1.0
+                        && r.x + r.w <= f64::from(picture.width) + 1.0
+                        && r.y + r.h <= f64::from(picture.height) + 1.0,
+                    "{} {:?} outside {}x{}",
+                    map.id.0,
+                    n,
+                    picture.width,
+                    picture.height
+                );
+            }
+        }
+    }
+}

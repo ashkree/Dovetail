@@ -190,13 +190,14 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | *none:* hand-written NDJSON layer on `tokio` + `serde_json` | driver | n/a | Decision 4a fallback. S1 (2026-11-02): `claude-agent-sdk-rs` and `rusty_claw` both fail C (concurrent permissions) and H (tolerance); the hand-written layer passed A–H (18 crates, +1.39 MB, 4.3 MB RSS) |
 | `merman` `=0.9.3` | maps | `default-features = false`, `diagram-flowchart`, `layout-elk`, `png` | Decision 23c, S5 passed: renders structure maps to PNG and gives node positions. 105 new crates, ≈ 14 MB, one EPL-2.0 crate (`merman-elk-layered`, notice must ship) |
 | `png` | maps, dev only | default | Tests decode the rendered PNG to check the selection ring is drawn (merman already pulls it in) |
-| `ratatui-image` (latest stable) | tui, M15 only | `crossterm` | kitty graphics |
+| `resvg` `=0.47.0` | maps | `default-features = false`, `text`, `system-fonts` | M15 (f): rasterises the swimlane map's SVG, which Dovetail draws itself (23e). No new crates: merman's PNG export already pulls in this version |
 | `rustix` 1 | core | `std`, `process` only | `waitpid` with `WUNTRACED` and `SIGCONT`, so an editor or native `claude` that stops itself (Ctrl-Z) is continued instead of hanging the terminal (task #32); no unsafe of ours, and already in the tree through `crossterm` and `tempfile` |
 | `signal-hook` | tui, binary | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; the binary's `dovetail upgrade` sets a flag on SIGINT/SIGTERM so a Ctrl-C stops and reaps cargo (ADR 0014); no unsafe of ours |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
 
 **Deliberately not added**
 - `clap`: four subcommands are parsed by hand.
+- `ratatui-image` (planned for M15): kitty graphics are a few hand-written escape sequences (`dovetail-tui` `canvas::kitty`), and the canvas needs kitty's source rectangle for pan and zoom, so the crate would add weight without doing the work.
 - `rmcp`: `dovetail mcp` is a small synchronous JSON-RPC loop using only the standard library and `serde_json`. One bridge runs per session, so its memory matters, and three tools don't justify a framework.
 - `dirs`: XDG paths are ten lines.
 - `rand`: `MockCore` uses a small seeded generator.

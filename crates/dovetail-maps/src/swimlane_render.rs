@@ -166,11 +166,30 @@ fn to_svg(content: &MapContent, grid: &SwimlaneLayout) -> String {
             points.join(" ")
         );
         if let Some(label) = &arrow.label {
+            // Beside a vertical segment, above a horizontal one, so the line never crosses it.
+            let at = arrow.label_at;
+            let vertical = arrow.route.windows(2).any(|w| {
+                w[0].x == w[1].x
+                    && w[0].x == at.x
+                    && at.y >= w[0].y.min(w[1].y)
+                    && at.y <= w[0].y.max(w[1].y)
+            });
+            let (x, y, anchor) = if vertical {
+                (
+                    f64::from(at.x) * UNIT_X + 6.0,
+                    f64::from(at.y) * UNIT_Y,
+                    "start",
+                )
+            } else {
+                (
+                    f64::from(at.x) * UNIT_X,
+                    f64::from(at.y) * UNIT_Y - 4.0,
+                    "middle",
+                )
+            };
             let _ = write!(
                 s,
-                r#"<text x="{}" y="{}" fill="{ARROW}" font-size="{}" text-anchor="middle">{}</text>"#,
-                f64::from(arrow.label_at.x) * UNIT_X,
-                f64::from(arrow.label_at.y) * UNIT_Y - 4.0,
+                r#"<text x="{x}" y="{y}" fill="{ARROW}" font-size="{}" text-anchor="{anchor}">{}</text>"#,
                 FONT_SIZE * 0.85,
                 esc(&fit_label(
                     label,
