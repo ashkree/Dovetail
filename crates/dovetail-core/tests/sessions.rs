@@ -4522,7 +4522,7 @@ fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
     for rule in [
         "Bash(git log *)",
         "Bash(rg *)",
-        "Bash(cargo tree *)",
+        "Bash(cargo tree --locked *)",
         "WebFetch",
     ] {
         assert!(allowed.contains(rule), "{rule} in {allowed}");
