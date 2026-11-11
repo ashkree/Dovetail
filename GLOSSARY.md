@@ -162,6 +162,10 @@ _Avoid_: tree (the task tree), shelf (the map shelf)
 A project of the research kind: it exists for macro research and has no repo, no worktrees and no slices; its sessions run in Dovetail's own folder for it (ADR 0015).
 _Avoid_: notes project, non-code project
 
+**Companion**:
+A GUI window the user can open beside the terminal UI, for views a terminal does badly (maps first); it shows the same app and never holds the only way to do something (ADR 0019).
+_Avoid_: GUI, viewer, canvas window, desktop app
+
 ### Maps
 
 **Map shelf**:
