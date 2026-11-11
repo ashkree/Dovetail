@@ -207,7 +207,7 @@ fn answering_a_permission_resolves_it_and_frees_the_agent() {
 }
 
 #[test]
-fn opening_an_editor_hands_the_terminal_straight_back() {
+fn opening_an_editor_is_refused_and_the_terminal_stays_with_the_ui() {
     let mut core = MockCore::new(config(1));
     core.handle(Command::OpenEditor {
         path: "/tmp/wt".into(),
@@ -215,7 +215,7 @@ fn opening_an_editor_hands_the_terminal_straight_back() {
     assert!(matches!(
         core.next_message().expect("runs").msg,
         ServerMsg::Event {
-            event: Event::TerminalReturned { error: Some(_) },
+            event: Event::CommandFailed { .. },
             ..
         }
     ));

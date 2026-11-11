@@ -397,20 +397,22 @@ impl<'a> LoopIo<'a> {
     /// After a key: lends the terminal out if the key asked for it, else lets the input thread
     /// read the next key.
     fn after_key(&mut self, app: &mut App) -> io::Result<()> {
+        // Commands the key queued go first, in order.
+        self.send_all(app);
+        if app.awaiting_lend() {
+            // The core is checking the editor's path: no key is read until it answers.
+            return Ok(());
+        }
+        self.lend_out(app)
+    }
+
+    /// Lends the terminal out if the app has a hand-off, else lets the input thread read the
+    /// next key.
+    fn lend_out(&mut self, app: &mut App) -> io::Result<()> {
         let Some(handoff) = app.take_handoff() else {
             let _ = self.go.send(());
             return Ok(());
         };
-        // Commands the key queued go first, in order.
-        self.send_all(app);
-        // A worktree that is gone is refused here, before the screen flickers out and back.
-        if let Command::OpenEditor { path } = &handoff
-            && !path.exists()
-        {
-            app.handoff_refused(format!("{} does not exist", path.display()));
-            let _ = self.go.send(());
-            return Ok(());
-        }
         self.let_go()?;
         self.lend.release()?;
         tracing::debug!(?handoff, "terminal lent out");
@@ -434,6 +436,8 @@ fn drive<B: ratatui::backend::Backend>(
     let mut last_draw: Option<Instant> = None;
     // The terminal is lent out: nothing is drawn and no key is read until it comes back.
     let mut away = false;
+    // `OpenEditor` is out: the key that asked is not released until the core says yes or no.
+    let mut waiting = false;
     loop {
         let now = Instant::now();
         let since = last_draw.map_or(MIN_FRAME, |t| now.duration_since(t));
@@ -489,6 +493,7 @@ fn drive<B: ratatui::backend::Backend>(
                     app.on_key(key, mono_ms(Instant::now()));
                     io.after_key(app)?;
                     away = app.terminal_away();
+                    waiting = app.awaiting_lend();
                 }
                 Msg::Mouse(mouse) => app.on_mouse(mouse),
                 Msg::Paste(text) => app.on_paste(&text, mono_ms(Instant::now())),
@@ -504,6 +509,12 @@ fn drive<B: ratatui::backend::Backend>(
                 Msg::ServerClosed => app.on_core_closed(),
                 Msg::Signal(signal) => app.on_signal(signal),
             }
+        }
+        // The core answered the editor request: the terminal goes out, or the keys resume.
+        if waiting && !app.awaiting_lend() {
+            waiting = false;
+            io.lend_out(app)?;
+            away = app.terminal_away();
         }
         if away && !app.terminal_away() {
             io.lend.reclaim()?;
@@ -611,8 +622,8 @@ mod tests {
         assert!(!app.terminal_away());
     }
 
-    /// A worktree that is gone is refused before the terminal is touched: no flicker, no
-    /// `OpenEditor`, the reason in the status bar, and keys keep coming.
+    /// A worktree that is gone is refused by the core before the terminal is touched: no
+    /// flicker, nothing released, the reason in the status bar, and keys keep coming.
     #[test]
     fn e_on_a_missing_worktree_never_lets_go_of_the_terminal() {
         let missing = std::env::temp_dir().join("dovetail-no-such-worktree-4f1c");
@@ -699,17 +710,23 @@ mod tests {
         let core_log = log.clone();
         let core = thread::spawn(move || {
             for command in sent {
+                let answer = |event| {
+                    let _ = core_tx.send(Msg::Server(Box::new(ServerMsg::Event { seq: 1, event })));
+                };
                 match command {
-                    Command::OpenEditor { .. } | Command::TakeOver { .. } => {
+                    // Like the core: a path that is gone is refused, else the UI is asked to
+                    // let go, and the editor runs once it says it has.
+                    Command::OpenEditor { path } if path.exists() => answer(Event::LendTerminal),
+                    Command::OpenEditor { path } => answer(Event::CommandFailed {
+                        message: format!("{} does not exist", path.display()),
+                    }),
+                    Command::TerminalReleased | Command::TakeOver { .. } => {
                         let what = match &command {
                             Command::TakeOver { agent } => format!("native {}", agent.0),
                             _ => "editor".into(),
                         };
                         note(&core_log, &what);
-                        let _ = core_tx.send(Msg::Server(Box::new(ServerMsg::Event {
-                            seq: 1,
-                            event: Event::TerminalReturned { error: None },
-                        })));
+                        answer(Event::TerminalReturned { error: None });
                     }
                     Command::Quit { .. } => return,
                     other => note(&core_log, &format!("{other:?}")),

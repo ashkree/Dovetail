@@ -50,6 +50,8 @@ struct Harness {
     repo: PathBuf,
     /// `TerminalReturned` events, in order: the error each carried.
     returned: Vec<Option<String>>,
+    /// How many `LendTerminal` events came.
+    lent: usize,
     /// `CommandFailed` messages, in order.
     failures: Vec<String>,
     _dir: TempDir,
@@ -127,6 +129,7 @@ impl Harness {
             paths,
             repo,
             returned: Vec::new(),
+            lent: 0,
             failures: Vec::new(),
             _dir: dir,
             _run: run,
@@ -160,6 +163,7 @@ impl Harness {
         match &event {
             dovetail_api::Event::TerminalReturned { error } => self.returned.push(error.clone()),
             dovetail_api::Event::CommandFailed { message } => self.failures.push(message.clone()),
+            dovetail_api::Event::LendTerminal => self.lent += 1,
             _ => {}
         }
         apply(&mut self.snap, seq, event);
@@ -305,6 +309,37 @@ fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result()
 
 fn s_util(w: &Option<dovetail_api::UsageWindow>) -> Option<f64> {
     w.as_ref().map(|w| w.utilization)
+}
+
+#[test]
+fn the_core_checks_the_editors_path_before_asking_the_ui_to_let_go() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let missing = h.repo.join("no-such-folder");
+    h.send(Command::OpenEditor {
+        path: missing.clone(),
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(h.lent, 0, "the UI was told to let go of the terminal");
+    assert_eq!(h.returned, Vec::<Option<String>>::new());
+    assert_eq!(
+        h.failures,
+        vec![format!("{} does not exist", missing.display())]
+    );
+
+    // A path that exists is accepted; until the UI answers, a second request is refused and a
+    // stray release does nothing.
+    h.send(Command::OpenEditor {
+        path: h.repo.clone(),
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(h.lent, 1);
+    h.send(Command::OpenEditor {
+        path: h.repo.clone(),
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(h.lent, 1);
+    assert_eq!(h.failures.len(), 2);
+    assert_eq!(h.failures[1], "the terminal is already lent out");
 }
 
 #[test]
@@ -537,6 +572,7 @@ impl Harness {
             paths,
             repo,
             returned: Vec::new(),
+            lent: 0,
             failures: Vec::new(),
             _dir: dir,
             _run: run,

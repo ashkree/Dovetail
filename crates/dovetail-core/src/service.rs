@@ -377,6 +377,8 @@ pub(crate) struct Core {
     ui_alive: bool,
     /// An editor runs in the UI's terminal ([`Command::OpenEditor`]).
     pub(crate) editor_open: bool,
+    /// An editor the core accepted and is waiting for the UI to let go of the terminal for.
+    pub(crate) editor_pending: Option<PathBuf>,
     /// A take-over this app runs: the terminal is lent to native `claude` (M14, `takeover`).
     pub(crate) takeover: Option<crate::takeover::Active>,
     /// Dovetail's notes for sessions taken over, sent once headless is back.
@@ -498,6 +500,7 @@ impl Core {
             seq: 0,
             ui_alive: true,
             editor_open: false,
+            editor_pending: None,
             takeover: None,
             held_for_takeover: HashMap::new(),
             agents: BTreeMap::new(),
@@ -1305,6 +1308,7 @@ impl Core {
             Command::ListPaths { agent, dir } => self.list_paths(agent, dir),
             Command::CopyToClipboard { text } => self.copy_to_clipboard(text),
             Command::OpenEditor { path } => self.open_editor(path),
+            Command::TerminalReleased => self.run_editor(),
             Command::Interrupt { agent } => self.interrupt(&agent),
             Command::AnswerPermission { item, answer } => {
                 self.answer_permission(item, answer).await
@@ -1516,17 +1520,31 @@ impl Core {
         });
     }
 
-    /// Runs the editor in the terminal the UI has let go of, and answers
-    /// [`Event::TerminalReturned`] when it exits. A second request while one runs is answered at
-    /// once, so the UI never waits for nothing; it cannot normally happen, as the UI sends no
-    /// commands while the editor has the terminal.
+    /// Accepts [`Command::OpenEditor`]: checks the path, then asks the UI to let go of the
+    /// terminal ([`Event::LendTerminal`]). A missing path or a terminal already lent out is
+    /// answered with [`Event::CommandFailed`] and the UI keeps the terminal, so nothing
+    /// flickers.
     fn open_editor(&mut self, path: PathBuf) {
-        if self.editor_open || self.takeover.is_some() {
-            self.emit(Event::TerminalReturned {
-                error: Some("the terminal is already lent out".into()),
-            });
+        if self.editor_open || self.editor_pending.is_some() || self.takeover.is_some() {
+            self.fail("the terminal is already lent out");
             return;
         }
+        if !path.exists() {
+            self.fail(crate::editor::EditorError::Missing(
+                path.display().to_string(),
+            ));
+            return;
+        }
+        self.editor_pending = Some(path);
+        self.emit(Event::LendTerminal);
+    }
+
+    /// Runs the accepted editor in the terminal the UI has let go of, and answers
+    /// [`Event::TerminalReturned`] when it exits.
+    fn run_editor(&mut self) {
+        let Some(path) = self.editor_pending.take() else {
+            return;
+        };
         self.editor_open = true;
         let editor = crate::editor::resolve(self.options.editor.as_deref());
         let inputs = self.inputs.clone();

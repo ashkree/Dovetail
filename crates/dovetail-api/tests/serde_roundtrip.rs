@@ -461,6 +461,7 @@ fn every_event_roundtrips() {
         Event::CommandFailed {
             message: "no such agent".into(),
         },
+        Event::LendTerminal,
         Event::TerminalReturned { error: None },
         Event::TerminalReturned {
             error: Some("nvim exited with status 1".into()),
@@ -632,6 +633,7 @@ fn every_command_roundtrips() {
         Command::OpenEditor {
             path: "/tmp/wt".into(),
         },
+        Command::TerminalReleased,
         Command::StartRound {
             task: TaskId(4),
             brief: "per seat or flat?".into(),

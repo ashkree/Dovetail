@@ -236,10 +236,6 @@ fn e_hands_off_the_terminal_and_takes_it_back_on_the_core_answer() {
     let (mut core, mut app) = view();
     on(&mut app, "tree-view");
     app.on_key(key('e'), 10);
-    assert!(
-        app.take_commands().is_empty(),
-        "OpenEditor waits for the hand-off"
-    );
     let path = app
         .snapshot()
         .agents
@@ -248,14 +244,34 @@ fn e_hands_off_the_terminal_and_takes_it_back_on_the_core_answer() {
         .and_then(|a| a.worktree.as_ref())
         .map(|w| w.path.clone())
         .expect("a worktree");
+    // The core is asked first; the terminal is not let go of until it says so.
+    assert_eq!(app.take_commands(), vec![Command::OpenEditor { path }]);
+    assert!(app.awaiting_lend());
+    assert!(!app.has_handoff());
+    assert!(!app.terminal_away());
+    app.on_server(ServerMsg::Event {
+        seq: 1,
+        event: Event::LendTerminal,
+    });
+    assert!(!app.awaiting_lend());
     let handoff = app.take_handoff().expect("a hand-off");
-    assert_eq!(handoff, Command::OpenEditor { path });
+    assert_eq!(handoff, Command::TerminalReleased);
     assert!(app.terminal_away());
     assert_eq!(app.take_handoff(), None, "one hand-off per key");
+    app.on_server(ServerMsg::Event {
+        seq: 2,
+        event: Event::TerminalReturned { error: None },
+    });
+    assert!(!app.terminal_away());
 
-    // The mock opens no editor and says so; the terminal comes back either way.
-    core.handle(handoff);
+    // A refusal (the mock core opens no editor) leaves the terminal alone.
+    app.on_key(key('e'), 11);
+    for command in app.take_commands() {
+        core.handle(command);
+    }
     deliver(&mut core, &mut app);
+    assert!(!app.awaiting_lend());
+    assert!(!app.has_handoff());
     assert!(!app.terminal_away());
     assert_eq!(app.note(), Some("the mock core opens no editor"));
 }
@@ -266,6 +282,10 @@ fn ctrl_c_in_the_editor_is_the_editor_s_but_sigterm_still_quits() {
     // tree-view is mid-turn, so a SIGINT would normally ask "Quit anyway?".
     on(&mut app, "tree-view");
     app.on_key(key('e'), 10);
+    app.on_server(ServerMsg::Event {
+        seq: 1,
+        event: Event::LendTerminal,
+    });
     app.take_handoff().expect("a hand-off");
     app.on_signal(Signal::Interrupt);
     app.on_signal(Signal::Interrupt);

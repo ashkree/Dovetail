@@ -248,9 +248,8 @@ impl MockCore {
             // The mock touches nothing outside itself: no clipboard, no editor and no native
             // claude. The answer still comes, so the UI takes its terminal back.
             Command::CopyToClipboard { .. } => {}
-            Command::OpenEditor { .. } => self.emit(Event::TerminalReturned {
-                error: Some("the mock core opens no editor".into()),
-            }),
+            Command::OpenEditor { .. } => self.fail("the mock core opens no editor".into()),
+            Command::TerminalReleased => {}
             Command::TakeOver { .. } => self.emit(Event::TerminalReturned {
                 error: Some("the mock core runs no native claude".into()),
             }),

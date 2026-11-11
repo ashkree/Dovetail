@@ -351,7 +351,7 @@ impl Core {
         if row.agent.kind == AgentKind::Ask {
             return Some(format!("{name} is reading mode's Ask: it stays headless"));
         }
-        if self.takeover.is_some() || self.editor_open {
+        if self.takeover.is_some() || self.editor_open || self.editor_pending.is_some() {
             return Some("the terminal is already lent out".into());
         }
         if row.takeover.is_some() {

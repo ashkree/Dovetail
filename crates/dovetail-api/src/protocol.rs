@@ -170,6 +170,9 @@ pub enum Event {
         /// trailing `/` on directories. Empty when nothing could be listed.
         paths: Vec<String>,
     },
+    /// The core accepted [`Command::OpenEditor`]: the UI lets go of the terminal and answers
+    /// [`Command::TerminalReleased`]. Changes nothing in the snapshot.
+    LendTerminal,
     /// The program run in the user's terminal ([`Command::OpenEditor`], [`Command::TakeOver`])
     /// has exited, so the UI takes the terminal back. Changes nothing in the snapshot.
     TerminalReturned {
@@ -252,14 +255,20 @@ pub enum Command {
         text: String,
     },
     /// Open a folder or file in the user's editor (`$EDITOR`, else `nvim`), in the terminal the
-    /// UI runs in. The UI sends it only after it has let go of the terminal (left the alternate
-    /// screen and raw mode, stopped reading keys), and takes the terminal back on
-    /// [`Event::TerminalReturned`], which the core always sends once the editor exits or fails
+    /// UI runs in. A request: the UI still holds the terminal. The core checks the path first;
+    /// a missing one comes back as [`Event::CommandFailed`] and the UI never lets go (no
+    /// flicker). Otherwise the core answers [`Event::LendTerminal`], the UI lets go of the
+    /// terminal (leaves the alternate screen and raw mode, stops reading keys) and sends
+    /// [`Command::TerminalReleased`], and the core runs the editor. The UI takes the terminal
+    /// back on [`Event::TerminalReturned`], which the core sends once the editor exits or fails
     /// to start.
     OpenEditor {
         /// What to open; the editor also starts in it when it is a folder.
         path: PathBuf,
     },
+    /// The UI has let go of the terminal, as [`Event::LendTerminal`] asked: the core runs the
+    /// editor it accepted with [`Command::OpenEditor`]. Ignored when none is waiting.
+    TerminalReleased,
     /// Stop an agent's current turn.
     Interrupt {
         /// The agent.

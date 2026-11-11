@@ -317,11 +317,13 @@ fn e_hands_the_documents_file_to_the_editor_and_a_listed_source_has_none() {
     open_report(&mut app);
     app.on_key(key('e'), 3);
     assert_eq!(
-        app.take_handoff(),
-        Some(Command::OpenEditor {
+        app.take_commands(),
+        vec![Command::OpenEditor {
             path: "/data/research/1-pricing/report.md".into()
-        })
+        }]
     );
+    deliver(&mut app, Event::LendTerminal);
+    assert_eq!(app.take_handoff(), Some(Command::TerminalReleased));
     deliver(&mut app, Event::TerminalReturned { error: None });
     // A source that was listed but not cached has no file.
     app.on_key(esc(), 4);
@@ -550,11 +552,13 @@ fn e_on_a_selected_research_row_opens_that_file_in_the_editor() {
     }
     app.on_key(key('e'), 2);
     assert_eq!(
-        app.take_handoff(),
-        Some(Command::OpenEditor {
+        app.take_commands(),
+        vec![Command::OpenEditor {
             path: "/data/research/1-pricing/findings/1-seat-plans.md".into()
-        })
+        }]
     );
+    deliver(&mut app, Event::LendTerminal);
+    assert_eq!(app.take_handoff(), Some(Command::TerminalReleased));
     deliver(&mut app, Event::TerminalReturned { error: None });
 }
 
