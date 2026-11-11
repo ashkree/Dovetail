@@ -22,6 +22,7 @@ mod panel;
 mod projects;
 mod reading;
 mod search;
+mod tangents;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dovetail_api::{
@@ -147,6 +148,8 @@ pub struct App {
     chat_site: ChatSite,
     /// `i` asked for a new Ask session for this task: type in it when it appears.
     pending_ask: Option<dovetail_api::TaskId>,
+    /// A tangent whose latest answer opens once its listing arrives (ADR 0017).
+    pending_tangent_read: Option<dovetail_api::TaskId>,
     /// Focus mode (`<leader>z`): the side column is hidden.
     focus_mode: bool,
     /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
@@ -193,6 +196,7 @@ impl App {
             open_side_chat: false,
             chat_site: ChatSite::Main,
             pending_ask: None,
+            pending_tangent_read: None,
             focus_mode: false,
             quit_after_close: None,
             close_failure: None,
@@ -435,7 +439,7 @@ impl App {
                 let side_chat = match &event {
                     Event::AgentUpserted(agent)
                         if self.open_side_chat
-                            && agent.kind == AgentKind::SideChat
+                            && matches!(agent.kind, AgentKind::SideChat | AgentKind::Tangent)
                             && !self.snap.agents.iter().any(|a| a.id == agent.id) =>
                     {
                         Some(agent.id.clone())
@@ -914,6 +918,7 @@ impl App {
             }
             InputTarget::SliceBrief(name) => self.new_slice(name, text),
             InputTarget::SideChatQuestion if !text.is_empty() => self.new_side_chat(text),
+            InputTarget::TangentQuestion if !text.is_empty() => self.new_tangent(text),
             InputTarget::Search => self.start_search(text),
             InputTarget::Decision(task) if !text.is_empty() => self.log_decision(task, text),
             _ => {}
@@ -1152,6 +1157,8 @@ impl App {
             Action::NewSlice => self.run_with_arg(Action::NewSlice, ""),
             Action::NewSideChat => self.run_with_arg(Action::NewSideChat, ""),
             Action::ToggleSidePanel => self.toggle_side_panel(),
+            Action::NewTangent => self.run_with_arg(Action::NewTangent, ""),
+            Action::ShowTangents => self.show_tangents(),
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
             Action::TakeOver => self.take_over(),
@@ -1259,6 +1266,12 @@ impl App {
                 from,
             } => self.follow_citation(task, evidence, browse, from),
             Effect::OpenProject(id) => self.pick_project(id),
+            Effect::OpenTangents => self.show_tangents(),
+            Effect::ReadTangent(tangent) => self.read_tangent(tangent),
+            Effect::PickTangentProject { tangent, start } => {
+                self.pick_tangent_project(tangent, start);
+            }
+            Effect::AttachTangent(tangent) => self.attach_tangent(tangent),
         }
     }
 
@@ -1296,6 +1309,8 @@ fn shows_in_layout_b(action: Action) -> bool {
             | Action::MapMode
             | Action::ToggleSidePanel
             | Action::NewSideChat
+            | Action::NewTangent
+            | Action::ShowTangents
             | Action::NewSlice
             | Action::ListResearch
             | Action::EnterInsert

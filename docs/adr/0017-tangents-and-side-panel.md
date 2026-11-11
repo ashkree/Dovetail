@@ -22,7 +22,7 @@ Why: the user asks questions that do not belong to the current project and loses
 
 Approved by the user in the grilling session of 2026-11-10 (claude.ai).
 
-**Amended 2026-11-11 (grill with the user).** Settles the open points above; the side panel is built (PR #52), tangents are **not built yet** (M22). Changes:
+**Amended 2026-11-11 (grill with the user).** Settles the open points above; the side panel is built (PR #52), tangents are built in M22 (see "Built" below). Changes:
 
 - **The key is `<leader>?`.** The Board keeps `<leader>b`; the brief's `<leader>b` is dropped. The panel takes the task tree's region in the side column, one side chat at a time (`Tab`/`Shift-Tab` switch). `<leader>sq` and `:ask` keep working and open the new side chat in the panel (ADR 0011).
 - **`<leader>y` is removed** (ADR 0011), so it is no destination. The destinations of an answer are: attach to the current task as a finding, or, by default, Tangents.
@@ -30,3 +30,11 @@ Approved by the user in the grilling session of 2026-11-10 (claude.ai).
 - **The morning review** lists new tangents as one "new tangents" item to triage (file into a project, start a task from it, or drop it). Until `:morning` exists they wait in Tangents' Unsorted list.
 - **No project open** stops being a case: Tangents is itself a project, so a tangent started from there is filed in it. Decision 18's grill auto-start stays v1.1.
 - The reading-mode library shows no Tangents section until tangents exist (ADR 0018).
+
+**Built 2026-11-11 (M22, branch `dovetail/m22-tangents`; detail in `docs/implementation-plan.md` §6 "R6").** As decided above, with these details chosen in the build:
+
+- A tangent is asked with `T` in the side panel or `:tangent [question]`; the panel labels it `↗ tangent` next to side chats, and the tree leaves it out. Its session (`AgentKind::Tangent`, named `tangent-<task id>`) has side chats' role and rules (Core suite, `dontAsk`, the read-only lists) but its own short role prompt, `config/roles/tangent.md`, since a side chat's says it reads the main checkout and a tangent runs in `<data>/projects/tangents/`.
+- Each turn's answer is one quick finding labelled `answer` (body from the turn's `result`), with the sources the session's own tool calls reached; its research subagents are quick findings of the same task, as in R1.
+- Attach (`a`) puts the answers and sources on the task in focus of the open project. A tangent that leaves Tangents (attached, filed or dropped) is archived there with a note saying where it went, never deleted; starting a task from it keeps it in Tangents, marked done.
+- "New" means still to do and in Tangents' Unsorted list. The "N new tangents" item comes on the first open of a day (at most once a day per project); `:tangents` shows the same list any time.
+- Tangents is pinned last with `↗` in the switcher and the library; v1 has no project archive or removal, so "cannot be archived" holds with nothing to refuse.

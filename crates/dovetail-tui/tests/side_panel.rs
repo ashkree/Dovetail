@@ -107,7 +107,7 @@ fn an_empty_panel_says_how_to_start_a_side_chat() {
     let mut app = app_with(world());
     press(&mut app, " ?");
     let screen = render(&mut app, 120, 34);
-    assert!(screen.contains("No side chats."), "{screen}");
+    assert!(screen.contains("No side chats or tangents."), "{screen}");
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn dd_closes_the_side_chat_shown_and_the_panel_moves_on() {
         event: Event::AgentRemoved(agent_id("side-2")),
     });
     assert_eq!(app.panel_agent(), None);
-    assert!(render(&mut app, 120, 34).contains("No side chats."));
+    assert!(render(&mut app, 120, 34).contains("No side chats or tangents."));
 }
 
 #[test]

@@ -13,12 +13,12 @@ expression: "snapshot_at(100, 30)"
 │     ▸ sources (3)    ││                                              ││                          │
 │   notes-site · ⏎ op… ││ • nucleo scores a few thousand rows well     ││                          │
 │   ◇ Market sizing ·… ││   inside a frame, and is what Helix uses     ││                          │
-│ ▸ Decisions (3)      ││   [F1, S2].                                  ││                          │
-│ ▸ Docs · ADRs (2)    ││                                              ││                          │
-│                      ││ • skim is slower to set up and pulls in a    ││                          │
-│                      ││   larger dependency tree [F2].               ││                          │
-│                      ││                                              ││                          │
-│                      ││ • Scoring on paths wants a bonus for matches ││                          │
+│   ↗ Tangents · ⏎ op… ││   [F1, S2].                                  ││                          │
+│ ▾ ↗ Tangents (2)     ││                                              ││                          │
+│   ▸ How does kitty'… ││ • skim is slower to set up and pulls in a    ││                          │
+│   ▸ What hydration … ││   larger dependency tree [F2].               ││                          │
+│ ▸ Decisions (3)      ││                                              ││                          │
+│ ▸ Docs · ADRs (2)    ││ • Scoring on paths wants a bonus for matches ││                          │
 │                      ││   after / [F3].                              ││                          │
 │                      ││                                              ││                          │
 │                      ││ What would change this                       ││                          │
@@ -31,4 +31,4 @@ expression: "snapshot_at(100, 30)"
 │                      ││                                              ││                          │
 │ ⏎ read · o fold      ││ end · ]s [s · gd · gx · i ask                ││                          │
 └──────────────────────┘└──────────────────────────────────────────────┘└──────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 1… gd open · gx browser · i ask · ⎋ leave
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 1… gd open · gx browser · i ask · ⎋ leave

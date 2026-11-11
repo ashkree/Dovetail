@@ -88,6 +88,15 @@ pub(crate) fn side_chat(id: &str, status: AgentStatus, now_ms: i64) -> Agent {
     chat
 }
 
+/// A tangent's session (ADR 0017): read-only like a side chat, its id naming its Tangents task.
+pub(crate) fn tangent(task: TaskId, status: AgentStatus, now_ms: i64) -> Agent {
+    let id = tangent_agent(task);
+    let mut agent = session(&id.0, AgentKind::Tangent, status, now_ms);
+    agent.permission_mode = PermissionMode::Manual;
+    agent.model = Some("claude-sonnet-5-5".into());
+    agent
+}
+
 pub(crate) fn worktree(name: &str) -> WorktreeRef {
     WorktreeRef {
         path: format!("{WORKTREES_DIR}/{name}").into(),
@@ -287,6 +296,10 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
     // `--mock` seeds a side chat, so the side panel (`<leader>?`) has one to show.
     let mut side = side_chat("side-1", AgentStatus::Idle, now_ms);
     side.cost_usd = 0.03;
+    // And a tangent's session (ADR 0017), the first of the two seeded tangents.
+    let mut tangent = tangent(TaskId(1), AgentStatus::Idle, now_ms);
+    tangent.cost_usd = 0.04;
+    let (tangents, _) = crate::tangents::seeded(now_ms);
 
     let mut explore = subagent("explore-keymap", &tree, false, now_ms);
     explore.status_line = "reading keymap.rs".into();
@@ -315,6 +328,13 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
                 preview: "M2 splits into three slices: tree view, inbox keys and the picker."
                     .into(),
             },
+        },
+        // The morning's item (ADR 0017): the two seeded tangents wait for triage.
+        InboxItem {
+            id: InboxId(3),
+            agent: agent_id(COORDINATOR),
+            at_ms: now_ms - 120_000,
+            kind: InboxKind::NewTangents { count: 2 },
         },
     ];
 
@@ -407,6 +427,32 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
                 has_more: false,
             },
         ),
+        (
+            tangent_agent(TaskId(1)),
+            ConversationTail {
+                entries: vec![
+                    entry(
+                        12,
+                        now_ms - 25_000,
+                        EntryKind::User,
+                        crate::tangents::QUESTION,
+                    ),
+                    entry(
+                        13,
+                        now_ms - 24_000,
+                        EntryKind::ToolSummary,
+                        "WebFetch sw.kovidgoyal.net · WebSearch \"sixel graphics terminal\"",
+                    ),
+                    entry(
+                        14,
+                        now_ms - 20_000,
+                        EntryKind::Assistant,
+                        crate::tangents::ANSWER,
+                    ),
+                ],
+                has_more: false,
+            },
+        ),
     ]);
 
     let list = TodoListId("tree-view".into());
@@ -461,9 +507,17 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         seq: 0,
         now_ms,
         project: Some(project.clone()),
-        projects: vec![project, other, research],
+        projects: vec![project, other, research, crate::tangents::project()],
         tasks,
-        agents: vec![coordinator, tree, inbox_keys, picker, explore, side],
+        agents: vec![
+            coordinator,
+            tree,
+            inbox_keys,
+            picker,
+            explore,
+            side,
+            tangent,
+        ],
         todos,
         inbox,
         activity,
@@ -484,6 +538,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         // No journal, so quitting the mock never asks to close the day; `:eod` still works.
         journal: None,
         research: vec![crate::research::seeded(now_ms).summary],
+        tangents,
     };
     snapshot.totals = totals_of(&snapshot);
     snapshot

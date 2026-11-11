@@ -208,6 +208,7 @@ const SIDE_PANEL: Scope = Scope::Buffer(BufferKind::SidePanel);
 const LIBRARY: Scope = Scope::Buffer(BufferKind::Library);
 const READER: Scope = Scope::Buffer(BufferKind::Reader);
 const ASK: Scope = Scope::Buffer(BufferKind::Ask);
+const TANGENTS: Scope = Scope::Buffer(BufferKind::Tangents);
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
 pub const BINDINGS: &[Binding] = &[
@@ -308,6 +309,16 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, SIDE_PANEL, "<Tab>", Action::NextSideChat),
     bind(N, SIDE_PANEL, "<S-Tab>", Action::PrevSideChat),
     bind(N, SIDE_PANEL, "dd", Action::CloseSideChat),
+    // Tangents (ADR 0017): `T` asks one from the panel, `a` attaches the one shown to a task.
+    bind(N, SIDE_PANEL, "T", Action::NewTangent),
+    bind(N, SIDE_PANEL, "a", Action::AttachTangent),
+    // The tangents list (`:tangents`, or the "new tangents" item): triage.
+    bind(N, TANGENTS, "<Esc>", Action::BackToConversation),
+    bind(N, TANGENTS, "<CR>", Action::TangentOpen),
+    bind(N, TANGENTS, "f", Action::TangentFile),
+    bind(N, TANGENTS, "s", Action::TangentStart),
+    bind(N, TANGENTS, "a", Action::AttachTangent),
+    bind(N, TANGENTS, "d", Action::TangentDrop),
     // Reading mode (ADR 0018, decided 2026-11-11). `Esc` in Normal mode leaves it from any of
     // its columns; in Ask's chat bar `Esc` only returns to Normal. `i` asks about the open
     // report from the reading column and Ask, and does nothing in the library.

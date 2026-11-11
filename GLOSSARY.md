@@ -19,7 +19,7 @@ A session the user opens for a question or some research: it cannot change files
 _Avoid_: scratch session, helper
 
 **Side panel**:
-The pane in the side column, in place of the task tree, that shows side chats (later also tangents and the grilling helper) beside the coordinator's conversation; `<leader>?` toggles it.
+The pane in the side column, in place of the task tree, that shows side chats and tangents (later also the grilling helper) beside the coordinator's conversation; `<leader>?` toggles it.
 _Avoid_: drawer, sidebar
 
 **Ask**:
@@ -139,7 +139,7 @@ The coordinator's curated synthesis for one research task, `report.md`, rewritte
 _Avoid_: summary, write-up
 
 **Tangent**:
-A question that does not belong to the current project, answered in Tangents, a built-in research-only project that is always there, with sources, and kept until the morning review files it into a project, starts a task from it or drops it (ADR 0017).
+A question that does not belong to the current project, answered in Tangents, a built-in research-only project that is always there, with sources, and kept there until the user attaches it to a task, or triages it (the morning's "new tangents" item, or `:tangents`): files it into a project, starts a task from it or drops it (ADR 0017).
 _Avoid_: side chat (which is project-scoped), aside
 
 **Suite**:

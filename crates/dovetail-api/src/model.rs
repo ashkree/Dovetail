@@ -52,6 +52,11 @@ pub struct WarningId(pub String);
 /// TUI shows it in the header row instead of the status bar.
 pub const UNREGISTERED_WARNING: &str = "unregistered";
 
+/// The id of Tangents, the built-in research project every tangent is saved in (ADR 0017,
+/// amended 2026-11-11). It is reserved: no other project can take it, it is always registered
+/// and it cannot be archived.
+pub const TANGENTS_PROJECT: &str = "tangents";
+
 /// The whole client-visible state at one point in the event stream.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -113,6 +118,38 @@ pub struct Snapshot {
     /// registered project, so it has no journal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub journal: Option<JournalState>,
+    /// The tangents in Tangents (ADR 0017), whatever project is open: every one that is not
+    /// archived, oldest first. Content is fetched with [`crate::Command::LoadTangent`].
+    #[serde(default)]
+    pub tangents: Vec<TangentSummary>,
+}
+
+/// A tangent: a question that did not belong to the project it was asked from, saved as a task
+/// in Tangents' Unsorted list with its answers and sources (ADR 0017, amended 2026-11-11).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TangentSummary {
+    /// Its task in Tangents (the id is Tangents' own, not the open project's).
+    pub task: Task,
+    /// Its answers and sources, once one was filed.
+    pub research: Option<crate::research::ResearchSummary>,
+}
+
+impl TangentSummary {
+    /// Not triaged yet: still to do and in Tangents' Unsorted list. The morning's "new
+    /// tangents" item counts these.
+    pub fn is_new(&self) -> bool {
+        self.task.bucket.is_none() && self.task.status == TaskStatus::Todo
+    }
+}
+
+/// The agent id of the tangent session whose tangent is task `task` of Tangents.
+pub fn tangent_agent(task: TaskId) -> AgentId {
+    AgentId(format!("tangent-{}", task.0))
+}
+
+/// The Tangents task a tangent session's agent id names (see [`tangent_agent`]).
+pub fn tangent_task(agent: &AgentId) -> Option<TaskId> {
+    agent.0.strip_prefix("tangent-")?.parse().ok().map(TaskId)
 }
 
 /// Where the project's end-of-day journal stands (ADR 0012).
@@ -339,6 +376,11 @@ pub enum AgentKind {
     /// Reading mode's Ask (ADR 0018): a read-only session about one research task's report,
     /// in its research folder; [`Agent::task`] is the task. Shown only in the Ask column.
     Ask,
+    /// A tangent (ADR 0017): a read-only session like a side chat, run in Tangents' folder
+    /// whatever project is open, whose answers and sources are saved in Tangents. Its tangent is
+    /// the Tangents task its id names ([`tangent_task`]); [`Agent::task`] stays `None`, since
+    /// that task is not the open project's. Shown in the side panel, not in the tree.
+    Tangent,
     /// Spawned by a session for self-contained work.
     Subagent {
         /// Runs in the background with no to-do items.
@@ -506,6 +548,13 @@ pub enum InboxKind {
         label: String,
         /// How many sources it fetched or read.
         sources: u32,
+    },
+    /// Tangents has tangents nobody has triaged yet: raised on the first open of a day (ADR
+    /// 0012's morning path). Opening it lists them, to file into a project, start a task from,
+    /// or drop (ADR 0017).
+    NewTangents {
+        /// How many.
+        count: u32,
     },
     /// A `research_propose` call: an idea or a decision the coordinator wants the user to accept
     /// (ADR 0015). Nothing is written until `y`.

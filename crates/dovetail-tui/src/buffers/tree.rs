@@ -154,7 +154,8 @@ impl TreeBuffer {
         for agent in snap
             .agents
             .iter()
-            .filter(|a| a.task.is_none() && a.parent.is_none())
+            // A tangent belongs to Tangents, not this project: it shows in the side panel.
+            .filter(|a| a.task.is_none() && a.parent.is_none() && a.kind != AgentKind::Tangent)
         {
             self.agent_rows(snap, theme, agent, 0, &mut rows);
         }

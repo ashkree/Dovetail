@@ -33,7 +33,7 @@ impl App {
         }
     }
 
-    fn enter_reading_mode(&mut self) {
+    pub(super) fn enter_reading_mode(&mut self) {
         // The task in focus in Layout B, to open its report straight away.
         let focused = self.focused_task();
         self.park_chat();
@@ -102,6 +102,20 @@ impl App {
         if !research && self.snap.project.is_some() {
             self.outbox.push(Command::ListDocs);
         }
+        // The Tangents section's answers and sources (ADR 0017).
+        let tangents: Vec<TaskId> = self
+            .snap
+            .tangents
+            .iter()
+            .filter(|t| t.research.is_some())
+            .map(|t| t.task.id)
+            .collect();
+        for tangent in tangents {
+            self.outbox.push(Command::LoadTangent {
+                tangent,
+                what: ResearchWhat::Listing,
+            });
+        }
     }
 
     /// Core answers reading mode uses: listings, docs, documents, and a new Ask session.
@@ -114,6 +128,26 @@ impl App {
                 ..
             } => self.buffers.library.receive_listing(*task, listing.clone()),
             Event::DocsListed { docs } => self.buffers.library.receive_docs(docs.clone()),
+            Event::TangentLoaded {
+                tangent,
+                content: ResearchContent::Listing(listing),
+                ..
+            } => {
+                self.buffers
+                    .library
+                    .receive_tangent_listing(*tangent, listing.clone());
+                if self.pending_tangent_read == Some(*tangent) {
+                    self.pending_tangent_read = None;
+                    self.read_latest_answer(*tangent);
+                }
+            }
+            // A new answer: list it again, so the library and `gd` see it.
+            Event::TangentUpserted(t) if self.reading_mode() && t.research.is_some() => {
+                self.outbox.push(Command::LoadTangent {
+                    tangent: t.task.id,
+                    what: ResearchWhat::Listing,
+                });
+            }
             Event::ResearchUpserted(summary) if self.reading_mode() => {
                 self.outbox.push(Command::LoadResearch {
                     task: summary.task,
@@ -184,6 +218,14 @@ impl App {
                 self.buffers.reader.await_target(target, task, title);
                 self.note = Some("loading…".into());
             }
+            ReadTarget::Tangent { task: t, what } => {
+                self.outbox.push(Command::LoadTangent {
+                    tangent: *t,
+                    what: what.clone(),
+                });
+                self.buffers.reader.await_target(target, task, title);
+                self.note = Some("loading…".into());
+            }
             ReadTarget::Doc(path) => {
                 self.outbox.push(Command::LoadDoc { path: path.clone() });
                 self.buffers.reader.await_target(target, task, title);
@@ -213,6 +255,11 @@ impl App {
         browse: bool,
         from: ReadTarget,
     ) {
+        // A tangent's citations are its own findings and sources (ADR 0017).
+        if let ReadTarget::Tangent { task: tangent, .. } = &from {
+            let tangent = *tangent;
+            return self.follow_tangent_citation(tangent, evidence, browse, from);
+        }
         let Some(task) = task else {
             self.note =
                 Some("this document is not research: it cites nothing Dovetail keeps".into());
@@ -302,7 +349,7 @@ impl App {
     }
 
     /// The core opens the page; the TUI never starts a process.
-    fn open_external(&mut self, url: String) {
+    pub(super) fn open_external(&mut self, url: String) {
         self.note = Some(format!("opening {url} in the browser"));
         self.outbox.push(Command::OpenExternal { url });
     }

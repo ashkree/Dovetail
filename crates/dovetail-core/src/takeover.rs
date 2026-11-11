@@ -748,6 +748,8 @@ impl Core {
     pub(crate) fn session_cwd(&self, agent: &dovetail_api::Agent) -> PathBuf {
         match (agent.kind, &agent.worktree) {
             (AgentKind::Slice, Some(w)) => w.path.clone(),
+            // Whatever project runs it, a tangent works in Tangents' folder (ADR 0017).
+            (AgentKind::Tangent, _) => self.tangents_folder(),
             _ => self.project.folder(&self.paths),
         }
     }

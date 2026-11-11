@@ -40,6 +40,8 @@ pub enum BufferKind {
     Reader,
     /// Reading mode's Ask: a read-only session about the open report, with a chat bar.
     Ask,
+    /// The tangents list: Tangents' tangents, to triage (ADR 0017).
+    Tangents,
 }
 
 /// A slot in the layout.

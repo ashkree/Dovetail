@@ -3,10 +3,10 @@ source: crates/dovetail-tui/tests/maps.rs
 expression: "render(&mut app, 120, 40)"
 ---
  folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
-┌ Answering a permission request · swimlane · v1 ─────────────────────────┐┌ inbox · needs you (2) ────────────────────┐
+┌ Answering a permission request · swimlane · v1 ─────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │    1 ◇ can_use_tool  external · Claude Code                             ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
-│    2 ƒ raise  logic · Core                                              ││   ✓ coordinator  M2 splits into th… 08:58 │
-│    3 ◈ Needs you  endpoint · TUI                                        ││                                           │
+│    2 ƒ raise  logic · Core                                              ││   ↗ coordinator  2 new tangents · … 08:58 │
+│    3 ◈ Needs you  endpoint · TUI                                        ││   ✓ coordinator  M2 splits into th… 08:58 │
 │    4 ◉ You  actor · You                                                 ││                                           │
 │    5 ✓ Allowed  outcome · Claude Code                                   ││                                           │
 │                                                                         ││                                           │
@@ -41,4 +41,4 @@ expression: "render(&mut app, 120, 40)"
 │                                                                         ││ ▾ Next (2)                                │
 │ ␣v map mode · f next flow · ]] [[ walk the flow · / search · Esc shelf  ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 18%                           i chat · ␣ss switch · : command
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%                           i chat · ␣ss switch · : command
