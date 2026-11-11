@@ -132,8 +132,8 @@ Visual mode comes later; leave room for it.
 | `<leader>b` | Board: tasks as a kanban in the main region |
 | `<leader>g` | Worktree view |
 | `<leader>z` | Focus mode: the conversation alone |
-| `<leader>sq` / `:ask` | Open a side chat (ADR 0011) |
-| `<leader>y` | Copy the shown agent's last answer into the coordinator's chat bar |
+| `<leader>sq` / `:ask` | Open a side chat (ADR 0011) in the side panel |
+| `<leader>?` | Show or hide the side panel (side chats) |
 | `<leader>ss` / `sn` / `st` / `sx` | Pick agent / new slice / take over (stub) / interrupt |
 | `<leader>pp` / `pr` | Switch project (the project switcher, below) / register the open folder (`:project add`) |
 | `<leader>sm` | Cycle the focused agent's permission mode: `auto` → `acceptEdits` → `manual`. Show a small badge in the tree for any agent not in `auto` |
@@ -170,6 +170,7 @@ Visual mode comes later; leave room for it.
 
 - **Board (`<leader>b`, `:board`):** tasks as a kanban in the main region, columns Todo, In progress, Done. A task that needs you shows `⚠` and an amber border on its card, in its status column; done wins (B4). Cards show the id, the title cut to fit, the P-level and the names of live slices. `j`/`k` card, `Tab`/`Shift-Tab` next or previous column, wrapping (plain `h`/`l` stay focus movement), `H`/`L` move a card to the previous or next status (the cursor follows once the core confirms it; a refused change leaves it in place), `<` `>` move a card up or down its column (a column lists Now, Next, Later, then Unsorted, each in the task order `J`/`K` set in the tree; a card moves past neighbours in its own bucket only), `s` cycles the status, `a` quick capture, `Enter` the task detail (`Esc` there returns to the board), `Esc` or `<leader>b` back. Task #22, 2026-11-09.
 - **Worktrees (`<leader>g`):** one row per session's worktree: branch, ahead/behind, changes, PR, setup state; the coordinator on the main checkout; subagents Claude isolated, under their parent; archived worktrees waiting for removal. The selected row shows path, setup, base, head, uncommitted files and commits ahead. `Enter` open the session, `e` open in nvim, `c` copy path, `X` remove (asks first if work is unpushed).
+- **Side panel (`<leader>?`):** side chats in the side column, in place of the task tree; the inbox stays on top and the coordinator's conversation stays full height on the left (Layout B). It shows one side chat at a time, with its own chat bar: `i` or `Ctrl-j` types to it, `Ctrl-k` leaves the chat bar, `Tab`/`Shift-Tab` switch side chats (the title shows `2/3 ⇥`), `dd` closes the one shown (its session stops). `<leader>sq` and `:ask` open the new side chat here. `h` goes to the conversation and `l` back, `Ctrl-k` up to the inbox and `Ctrl-j` down again. `<leader>?` again gives the region back to the tree. Focus mode hides it; it is still open afterwards. Side chats cannot change files: Edit, Write and NotebookEdit are off, and Bash runs only read-only commands (`git log`/`show`/`diff`/`status`/`blame`, `rg`, `grep`, `ls`, `cat`, `head`, `tail`, `wc`, `find` without `-exec`/`-delete`, `cargo tree`, `cargo metadata`); anything else is denied without asking. Their mode does not cycle, and the tree shows them `read-only`. Decided 2026-11-11.
 - **Focus mode (`<leader>z`, `:focus`):** only the conversation and the input, full width, background unchanged (ADR 0013); the status bar keeps the "needs you" count. It keeps the agent in view (the coordinator, a slice or a side chat). `<leader>z` again, or any move to the side column (`l`, `<leader>n`, `Ctrl-j`/`Ctrl-k` outside the conversation), leaves it. As built 2026-11-10.
 
 **Buffer-local:**

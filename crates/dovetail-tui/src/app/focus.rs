@@ -53,8 +53,14 @@ impl App {
     }
 
     /// Who `i` talks to (plan A11): the agent in the main region when it has focus, the agent
-    /// selected in the tree when the tree has focus, otherwise the coordinator.
+    /// selected in the tree when the tree has focus, the side chat shown when the side panel
+    /// has focus, otherwise the coordinator.
     pub(super) fn chat_target(&self) -> Option<AgentId> {
+        if self.regions.focused_buffer() == BufferKind::SidePanel
+            && let Some(agent) = self.buffers.panel.agent()
+        {
+            return Some(agent.clone());
+        }
         let from_tree = if self.regions.focused_buffer() == BufferKind::Tree {
             self.buffers.tree.selected_agent(&cx!(self))
         } else {
@@ -82,6 +88,22 @@ impl App {
     }
 
     pub(super) fn start_chat(&mut self, agent: AgentId) {
+        // In the side panel, the panel's own chat bar: the main region stays as it is.
+        if self.chats_in_panel(&agent) {
+            if !self.chat_in_panel {
+                self.buffers.conversation.park_chat();
+            }
+            self.chat_in_panel = true;
+            self.clear_finished_turn(&agent);
+            self.buffers.panel.conversation_mut().begin_chat(agent);
+            self.input = None;
+            self.mode = Mode::Insert;
+            return;
+        }
+        if self.chat_in_panel {
+            self.buffers.panel.conversation_mut().park_chat();
+            self.chat_in_panel = false;
+        }
         self.show_agent(agent.clone());
         self.buffers.conversation.begin_chat(agent);
         self.input = None;
@@ -114,10 +136,12 @@ impl App {
                 .worktrees
                 .selected_agent(&self.snap)
                 .and_then(|id| task_of(&id)),
+            // Side chats have no task.
             BufferKind::Activity
             | BufferKind::Messages
             | BufferKind::MapShelf
-            | BufferKind::MapOutline => None,
+            | BufferKind::MapOutline
+            | BufferKind::SidePanel => None,
         }
     }
 
@@ -319,6 +343,13 @@ impl App {
         let Some(agent) = self.snap.agents.iter().find(|a| a.id == session) else {
             return;
         };
+        if agent.kind == AgentKind::SideChat {
+            self.note = Some(format!(
+                "{} is a side chat: it stays read-only, so its mode does not change",
+                agent.name
+            ));
+            return;
+        }
         let next = next_mode(agent.permission_mode);
         let mut note = format!("{}: permission mode → {}", agent.name, mode_name(next));
         if redirected {

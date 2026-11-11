@@ -167,7 +167,7 @@ impl App {
             PickerKey::Command(name) => {
                 if let Some(agent) = self.chat_target() {
                     self.start_chat(agent);
-                    self.buffers.conversation.insert_text(&format!("/{name} "));
+                    self.chat_view_mut().insert_text(&format!("/{name} "));
                 }
             }
         }

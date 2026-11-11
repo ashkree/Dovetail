@@ -14,6 +14,7 @@ expression: "render(&mut app, 120, 24)"
 │                                                                         │└───────────────────────────────────────────┘
 │                                                                         │┌ tasks · Dovetail ─────────────────────────┐
 │                                                                         ││ ○ ◆ coordinator  plannin… idle 245M $0.84 │
+│                                                                         ││ ○ ◆ side-1  read-only     idle 210M $0.03 │
 │                                                                         ││ ▾ Unsorted (1)                            │
 │                                                                         ││   ○ Check the kitty graphics fallback ✦ … │
 │                                                                         ││ ▾ Now (3)                                 │
@@ -22,7 +23,6 @@ expression: "render(&mut app, 120, 24)"
 │                                                                         ││         ⎇ dovetail/tree-view              │
 │                                                                         ││         ✓ Group tasks by bucket           │
 │                                                                         ││         ◐ Sort by P-level within a bucket │
-│                                                                         ││         ○ Mark P-level and bucket mismat… │
 │ ⏎ open in the outline · / search · Esc back                             ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 4 agents · 2 ⚠ · 885M · ctx 18%                           i chat · ␣ss switch · : command
+ NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 18%                           i chat · ␣ss switch · : command

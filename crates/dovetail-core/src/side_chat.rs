@@ -1,8 +1,9 @@
 //! Side chats (ADR 0011): read-only sessions the user opens for a question or some research,
 //! in the main checkout, with no worktree and no task. They close like slices
-//! ([`Core::close_slice`]).
+//! ([`Core::close_slice`]). They run in `dontAsk` mode with a read-only allow-list
+//! (`session::launch::side_chat_allowed`).
 
-use dovetail_api::{ActivityKind, AgentId, AgentKind, EntryKind};
+use dovetail_api::{ActivityKind, AgentId, AgentKind, EntryKind, PermissionMode};
 
 use crate::db::{AgentRow, now_ms};
 use crate::service::{Core, new_agent};
@@ -20,8 +21,11 @@ impl Core {
             return;
         };
         let id = AgentId(name.clone());
+        let mut agent = new_agent(id.clone(), name.clone(), AgentKind::SideChat, None);
+        // It runs in `dontAsk`, where nothing outside its allow-list runs (launch).
+        agent.permission_mode = PermissionMode::Manual;
         let row = AgentRow {
-            agent: new_agent(id.clone(), name.clone(), AgentKind::SideChat, None),
+            agent,
             session_id: Some(uuid::Uuid::new_v4().to_string()),
             transcript_path: None,
             task_list_id: Some(self.task_list_id(None, &name)),

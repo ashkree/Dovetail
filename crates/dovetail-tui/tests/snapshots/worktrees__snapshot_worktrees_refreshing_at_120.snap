@@ -1,6 +1,5 @@
 ---
 source: crates/dovetail-tui/tests/worktrees.rs
-assertion_line: 296
 expression: "render(&mut app, 120, 34)"
 ---
  folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
@@ -19,8 +18,9 @@ expression: "render(&mut app, 120, 34)"
 │ changes  —                                                              │└───────────────────────────────────────────┘
 │ unpushed —                                                              │┌ tasks · Dovetail ─────────────────────────┐
 │ PR       —                                                              ││ ○ ◆ coordinator  plannin… idle 245M $0.84 │
-│ setup    —                                                              ││ ▾ Unsorted (1)                            │
-│ checked  —                                                              ││   ○ Check the kitty graphics fallback ✦ … │
+│ setup    —                                                              ││ ○ ◆ side-1  read-only     idle 210M $0.03 │
+│ checked  —                                                              ││ ▾ Unsorted (1)                            │
+│                                                                         ││   ○ Check the kitty graphics fallback ✦ … │
 │                                                                         ││ ▾ Now (3)                                 │
 │                                                                         ││ ▾ ◐ Task tree with bucket group… PR #1231 │
 │                                                                         ││   ▾ ◐ ◆ tree-view  working 232M 34% $0.41 │
@@ -33,7 +33,6 @@ expression: "render(&mut app, 120, 34)"
 │                                                                         ││ ▾ ⚠ Inbox keys and preview P0 ↔ 1         │
 │                                                                         ││   ▾ ⚠ ◆ inbox-keys  edits   needs you 52% │
 │                                                                         ││         ⎇ dovetail/inbox-keys             │
-│                                                                         ││ ▾ ◐ Fuzzy picker P3 ≠                     │
 │ ⏎ open · e editor · c copy path · X remove                              ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 4 agents · 2 ⚠ · 885M · ctx 18%                           i chat · ␣ss switch · : command
+ NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 18%                           i chat · ␣ss switch · : command

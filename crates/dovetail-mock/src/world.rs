@@ -60,6 +60,14 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
     }
 }
 
+/// A side chat: a session with no task, running read-only (shown as manual, like the core's).
+pub(crate) fn side_chat(id: &str, status: AgentStatus, now_ms: i64) -> Agent {
+    let mut chat = session(id, AgentKind::SideChat, status, now_ms);
+    chat.permission_mode = PermissionMode::Manual;
+    chat.model = Some("claude-sonnet-5-5".into());
+    chat
+}
+
 pub(crate) fn worktree(name: &str) -> WorktreeRef {
     WorktreeRef {
         path: format!("{WORKTREES_DIR}/{name}").into(),
@@ -256,6 +264,10 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
     picker.status_line = "setup: cargo fetch".into();
     picker.memory_mb = Some(190);
 
+    // `--mock` seeds a side chat, so the side panel (`<leader>?`) has one to show.
+    let mut side = side_chat("side-1", AgentStatus::Idle, now_ms);
+    side.cost_usd = 0.03;
+
     let mut explore = subagent("explore-keymap", &tree, false, now_ms);
     explore.status_line = "reading keymap.rs".into();
     explore.cost_usd = 0.05;
@@ -354,6 +366,27 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
                 has_more: false,
             },
         ),
+        (
+            agent_id("side-1"),
+            ConversationTail {
+                entries: vec![
+                    entry(
+                        9,
+                        now_ms - 35_000,
+                        EntryKind::User,
+                        "Why does the reducer refuse an event with a gap in seq?",
+                    ),
+                    entry(
+                        10,
+                        now_ms - 34_000,
+                        EntryKind::ToolSummary,
+                        "Read crates/dovetail-api/src/apply.rs",
+                    ),
+                    entry(11, now_ms - 30_000, EntryKind::Assistant, SIDE_ANSWER),
+                ],
+                has_more: false,
+            },
+        ),
     ]);
 
     let list = TodoListId("tree-view".into());
@@ -410,7 +443,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         project: Some(project.clone()),
         projects: vec![project, other, research],
         tasks,
-        agents: vec![coordinator, tree, inbox_keys, picker, explore],
+        agents: vec![coordinator, tree, inbox_keys, picker, explore, side],
         todos,
         inbox,
         activity,
@@ -435,6 +468,11 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
     snapshot.totals = totals_of(&snapshot);
     snapshot
 }
+
+/// The seeded side chat's answer.
+const SIDE_ANSWER: &str = "A gap means an event was lost, so the UI's copy may differ from the \
+core's. `apply` returns `Gap` instead of guessing, and the UI asks for a resync \
+(`crates/dovetail-api/src/apply.rs`).\n\nNothing is applied until the new snapshot arrives.";
 
 /// What the coordinator lists for `/` completion: a few built-ins and skills.
 fn commands() -> Vec<SlashCommand> {

@@ -17,13 +17,14 @@ pub fn to_cli(mode: PermissionMode) -> CliMode {
     }
 }
 
-/// Maps the CLI's mode name (`auto`, `acceptEdits`, `default`, `plan`) to the UI's. Plan mode
-/// asks before acting, so it shows as manual.
+/// Maps the CLI's mode name (`auto`, `acceptEdits`, `default`, `plan`, `dontAsk`) to the UI's.
+/// Plan mode asks before acting, and `dontAsk` (side chats) runs nothing unapproved, so both
+/// show as manual.
 pub fn from_cli(name: &str) -> Option<PermissionMode> {
     Some(match CliMode::from_cli(name)? {
         CliMode::Auto => PermissionMode::Auto,
         CliMode::AcceptEdits => PermissionMode::AcceptEdits,
-        CliMode::Manual | CliMode::Plan => PermissionMode::Manual,
+        CliMode::Manual | CliMode::Plan | CliMode::DontAsk => PermissionMode::Manual,
     })
 }
 

@@ -508,9 +508,19 @@ impl Core {
             (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
             _ => id.clone(),
         };
-        let Some(current) = self.agents.get(&target).map(|r| r.agent.permission_mode) else {
+        let Some(target_row) = self.agents.get(&target) else {
             return;
         };
+        // A side chat always runs in `dontAsk` with its read-only allow-list; auto mode would
+        // let the classifier approve other commands.
+        if target_row.agent.kind == AgentKind::SideChat {
+            self.fail(format!(
+                "{} is a side chat: it stays read-only, so its mode does not change",
+                target_row.agent.name
+            ));
+            return;
+        }
+        let current = target_row.agent.permission_mode;
         let next = state::next_mode(current);
         if let Some(live) = self.live.get(&target)
             && let Err(e) = live.session.set_permission_mode(state::to_cli(next))
@@ -681,7 +691,10 @@ impl Core {
                 row.transcript_path = Some(transcript);
                 // Decision 15: if init reports anything but auto when auto was asked, run as
                 // manual and say so.
-                if row.agent.permission_mode == dovetail_api::PermissionMode::Auto
+                // A side chat runs in `dontAsk` on purpose (launch): manual, with no warning.
+                if row.agent.kind == AgentKind::SideChat {
+                    row.agent.permission_mode = dovetail_api::PermissionMode::Manual;
+                } else if row.agent.permission_mode == dovetail_api::PermissionMode::Auto
                     && mode != Some(dovetail_api::PermissionMode::Auto)
                 {
                     warn = Some(format!(
