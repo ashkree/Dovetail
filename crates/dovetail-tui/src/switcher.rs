@@ -454,6 +454,39 @@ pub fn project_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
         .collect()
 }
 
+/// The preview for a row of `<leader>fr`'s project picker: browsing reads, it does not open.
+pub fn browse_preview(
+    snap: &Snapshot,
+    key: &PickerKey,
+    width: usize,
+    theme: &Theme,
+) -> (&'static str, Vec<Line<'static>>) {
+    let PickerKey::Project(id) = key else {
+        return ("Project", Vec::new());
+    };
+    let Some(p) = snap.projects.iter().find(|p| p.id == *id) else {
+        return ("Project", Vec::new());
+    };
+    let open = snap.project.as_ref().is_some_and(|o| o.id == *id);
+    let text = if open {
+        "The open project. Enter shows its library again."
+    } else if p.kind == ProjectKind::Research {
+        "Enter shows its research and decisions in the library, read-only. It stays closed: \
+         <leader>pp opens it."
+    } else {
+        "Enter shows its research, decisions and docs in the library, read-only. It stays \
+         closed: <leader>pp opens it."
+    };
+    let mut out = vec![
+        Line::from(Span::styled(p.name.clone(), theme.accent())),
+        Line::default(),
+    ];
+    for line in fmt::wrap(text, width) {
+        out.push(Line::from(Span::styled(line, theme.body())));
+    }
+    ("Browse", out)
+}
+
 fn project_preview(p: &ProjectSummary, width: usize, theme: &Theme) -> Vec<Line<'static>> {
     let what = match p.kind {
         ProjectKind::Code => format!("code project in {}", p.repo_path.display()),

@@ -8,7 +8,7 @@ use dovetail_api::{
 use jiff::tz::TimeZone;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
@@ -381,7 +381,8 @@ impl TaskDetailBuffer {
             height: inner.height.saturating_sub(u16::from(inner.height >= 5)),
             ..inner
         };
-        let column = reading_column::column(body, reading_column::DEFAULT_WIDTH);
+        // The same transparent, padded 96-column text as reading mode (decided 2026-11-11 later).
+        let column = reading_column::reading_text(body);
         let width = usize::from(column.width);
         if reading.width != width || reading.lines.is_empty() {
             let lines = if reading.doc.markdown.trim().is_empty() {
@@ -392,7 +393,7 @@ impl TaskDetailBuffer {
             reading.lines = lines;
             reading.width = width;
         }
-        let height = usize::from(body.height);
+        let height = usize::from(column.height);
         reading.page = height.max(1);
         reading.top = reading.top.min(reading.lines.len().saturating_sub(height));
         for (n, line) in reading
@@ -404,18 +405,12 @@ impl TaskDetailBuffer {
         {
             let rect = Rect {
                 x: column.x,
-                y: body.y + n as u16,
+                y: column.y + n as u16,
                 width: column.width,
                 height: 1,
             };
             frame.render_widget(Paragraph::new(line.clone()), rect);
         }
-        // A document in the reading column is read on a solid background, as in reading mode.
-        reading_column::paint_background(
-            frame.buffer_mut(),
-            column,
-            Style::new().bg(theme.reading_bg),
-        );
         footer(
             frame,
             inner,

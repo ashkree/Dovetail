@@ -1403,6 +1403,8 @@ impl Core {
             Command::StartAsk { task } => self.start_ask(task).await,
             Command::ListDocs => self.list_docs(),
             Command::LoadDoc { path } => self.load_doc(path),
+            Command::BrowseProject { id } => self.browse_project(id).await,
+            Command::LoadBrowsed { project, what } => self.load_browsed(project, what).await,
             Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
             Command::TakeOver { agent } => self.take_over(agent).await,

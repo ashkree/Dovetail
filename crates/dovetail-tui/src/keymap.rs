@@ -317,6 +317,11 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, ASK, "<Esc>", Action::LeaveReadingMode),
     bind(N, LIBRARY, "<CR>", Action::LibraryOpen),
     bind(N, LIBRARY, "o", Action::LibraryToggleFold),
+    // Browse another project's library, read-only (decided 2026-11-11 later): reading mode's
+    // columns only, so `<leader>r` stays a whole key everywhere else.
+    bind(N, LIBRARY, "<leader>fr", Action::BrowseProjectLibrary),
+    bind(N, READER, "<leader>fr", Action::BrowseProjectLibrary),
+    bind(N, ASK, "<leader>fr", Action::BrowseProjectLibrary),
     bind(N, LIBRARY, "i", Action::Ignore),
     bind(N, READER, "]s", Action::NextCitation),
     bind(N, READER, "[s", Action::PrevCitation),

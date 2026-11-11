@@ -110,6 +110,9 @@ pub enum Action {
     LibraryOpen,
     /// Fold or unfold the library row under the cursor.
     LibraryToggleFold,
+    /// Pick a project whose library to browse, read-only, without opening it (`<leader>fr`,
+    /// reading mode only; ADR 0018, decided 2026-11-11 later).
+    BrowseProjectLibrary,
     /// Select the next citation id in the reading column (`]s`), or in Ask's latest answer.
     NextCitation,
     /// Select the previous citation id (`[s`).

@@ -2,18 +2,23 @@
 //! research tasks with their report, rounds (brief and findings), quick findings and sources,
 //! then the decision log and the repo's docs.
 //!
-//! Only the open project's content is in the snapshot; another project's row offers to open
-//! it (B24). Findings and sources come from `LoadResearch { Listing }` and the docs from
-//! `ListDocs`, both asked for when reading mode opens. No Tangents section until tangents exist
-//! (M22).
+//! Only the open project's content is in the snapshot. Findings and sources come from
+//! `LoadResearch { Listing }` and the docs from `ListDocs`, both asked for when reading mode
+//! opens. No Tangents section until tangents exist (M22).
+//!
+//! `<leader>fr`, or `Enter` on another project's row, browses that project instead (ADR 0018,
+//! decided 2026-11-11 later): the library re-roots to its research, decisions and docs, loaded
+//! read-only with `Command::BrowseProject` and not kept up to date. Its documents are
+//! [`ReadTarget::Elsewhere`]. Browsing never opens the project: `<leader>pp` does that.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use dovetail_api::research::{BrowsedProject, ResearchSummary};
 use dovetail_api::research::{
     DocEntry, FindingId, FindingSummary, ResearchListing, ResearchWhat, SourceId, SourceKind,
 };
-use dovetail_api::{DecisionId, ProjectId, ProjectKind, Snapshot, TaskId};
+use dovetail_api::{Decision, DecisionId, ProjectId, ProjectKind, Snapshot, Task, TaskId};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -60,6 +65,8 @@ pub enum LibKey {
     NoResearch,
     /// The line saying a task's findings are being listed.
     Loading(TaskId),
+    /// The line saying a browsed project is being loaded.
+    BrowseLoading,
 }
 
 impl LibKey {
@@ -77,6 +84,37 @@ struct Row {
     spans: Vec<Span<'static>>,
 }
 
+/// Another project the library shows instead of the open one.
+struct Browsing {
+    id: ProjectId,
+    name: String,
+    /// `None` until the core's answer arrives.
+    loaded: Option<Browsed>,
+}
+
+/// A browsed project's library, as the core loaded it.
+struct Browsed {
+    kind: ProjectKind,
+    tasks: Vec<Task>,
+    decisions: Vec<Decision>,
+    research: Vec<ResearchSummary>,
+    listings: HashMap<TaskId, ResearchListing>,
+    docs: Vec<DocEntry>,
+}
+
+/// What the rows are made from: the open project's snapshot and listings, or a browsed
+/// project's copy.
+struct Source<'a> {
+    kind: ProjectKind,
+    tasks: &'a [Task],
+    decisions: &'a [Decision],
+    research: &'a [ResearchSummary],
+    listings: &'a HashMap<TaskId, ResearchListing>,
+    docs: Option<&'a [DocEntry]>,
+    /// The browsed project, when it is not the open one.
+    elsewhere: Option<&'a ProjectId>,
+}
+
 /// The library buffer.
 #[derive(Default)]
 pub struct LibraryBuffer {
@@ -85,10 +123,111 @@ pub struct LibraryBuffer {
     toggled: HashSet<LibKey>,
     listings: HashMap<TaskId, ResearchListing>,
     docs: Option<Vec<DocEntry>>,
+    browsing: Option<Browsing>,
     offset: usize,
 }
 
 impl LibraryBuffer {
+    /// Shows `id` (named `name`) instead of the open project, loading until
+    /// [`Self::receive_browsed`]; the cursor goes to its row. Folds start over.
+    pub fn browse(&mut self, id: ProjectId, name: String) {
+        self.toggled.clear();
+        self.selected = Some(LibKey::Project(id.clone()));
+        self.offset = 0;
+        self.browsing = Some(Browsing {
+            id,
+            name,
+            loaded: None,
+        });
+    }
+
+    /// Back to the open project; the cursor goes to its row when given.
+    pub fn stop_browsing(&mut self, open: Option<&ProjectId>) {
+        if self.browsing.take().is_some() {
+            self.toggled.clear();
+            self.offset = 0;
+            self.selected = open.map(|id| LibKey::Project(id.clone()));
+        }
+    }
+
+    /// The project browsed, if not the open one.
+    pub fn browsing(&self) -> Option<&ProjectId> {
+        self.browsing.as_ref().map(|b| &b.id)
+    }
+
+    /// Whether the browsed project is still loading.
+    pub fn browse_loading(&self) -> bool {
+        self.browsing.as_ref().is_some_and(|b| b.loaded.is_none())
+    }
+
+    /// Keeps a browsed project's library, if it is the one browsed.
+    pub fn receive_browsed(&mut self, browsed: &BrowsedProject) {
+        let Some(b) = self
+            .browsing
+            .as_mut()
+            .filter(|b| b.id == browsed.project.id)
+        else {
+            return;
+        };
+        b.name = browsed.project.name.clone();
+        b.loaded = Some(Browsed {
+            kind: browsed.project.kind,
+            tasks: browsed.tasks.clone(),
+            decisions: browsed.decisions.clone(),
+            research: browsed.research.clone(),
+            listings: browsed
+                .listings
+                .iter()
+                .map(|l| (l.task, l.listing.clone()))
+                .collect(),
+            docs: browsed.docs.clone(),
+        });
+    }
+
+    /// A browsed project's findings and sources of `task`, if `project` is the one browsed.
+    pub fn browsed_listing(&self, project: &ProjectId, task: TaskId) -> Option<&ResearchListing> {
+        let b = self.browsing.as_ref().filter(|b| &b.id == project)?;
+        b.loaded.as_ref()?.listings.get(&task)
+    }
+
+    /// The decision-log entry `id` of the browsed project `project`, as markdown.
+    pub fn browsed_decision(
+        &self,
+        project: &ProjectId,
+        id: DecisionId,
+        tz: &jiff::tz::TimeZone,
+    ) -> Option<String> {
+        let b = self.browsing.as_ref().filter(|b| &b.id == project)?;
+        let loaded = b.loaded.as_ref()?;
+        decision_markdown(&loaded.decisions, &loaded.tasks, id, tz)
+    }
+
+    fn source<'a>(&'a self, snap: &'a Snapshot) -> Option<Source<'a>> {
+        match &self.browsing {
+            Some(b) => {
+                let l = b.loaded.as_ref()?;
+                Some(Source {
+                    kind: l.kind,
+                    tasks: &l.tasks,
+                    decisions: &l.decisions,
+                    research: &l.research,
+                    listings: &l.listings,
+                    docs: Some(&l.docs),
+                    elsewhere: Some(&b.id),
+                })
+            }
+            None => Some(Source {
+                kind: snap.project.as_ref().map_or(ProjectKind::Code, |p| p.kind),
+                tasks: &snap.tasks,
+                decisions: &snap.decisions,
+                research: &snap.research,
+                listings: &self.listings,
+                docs: self.docs.as_deref(),
+                elsewhere: None,
+            }),
+        }
+    }
+
     /// Keeps a task's findings and sources, as the core listed them.
     pub fn receive_listing(&mut self, task: TaskId, listing: ResearchListing) {
         self.listings.insert(task, listing);
@@ -148,6 +287,10 @@ impl LibraryBuffer {
     fn rows(&self, snap: &Snapshot, theme: &Theme) -> Vec<Row> {
         let mut rows = Vec::new();
         let open_id = snap.project.as_ref().map(|p| p.id.clone());
+        let browsed = self.browsing.as_ref().map(|b| &b.id);
+        // The project shown: the browsed one, else the open one.
+        let shown = browsed.or(open_id.as_ref());
+        let source = self.source(snap);
         let mut projects: Vec<_> = snap.project.iter().collect();
         projects.extend(
             snap.projects
@@ -156,37 +299,50 @@ impl LibraryBuffer {
         );
         for project in projects {
             let is_open = Some(&project.id) == open_id.as_ref();
+            let is_shown = Some(&project.id) == shown;
             let key = LibKey::Project(project.id.clone());
             let research = project.kind == ProjectKind::Research;
             let mut spans = Vec::new();
             if research {
                 spans.push(Span::styled("◇ ", theme.fg(theme.italic)));
             }
-            spans.push(Span::styled(
-                project.name.clone(),
-                if is_open {
-                    theme.body().add_modifier(Modifier::BOLD)
-                } else {
-                    theme.body()
-                },
-            ));
-            if is_open {
-                spans.push(Span::styled(" · open", theme.dim()));
-            } else {
-                spans.push(Span::styled(" · ⏎ opens", theme.dim()));
-            }
-            // The open project is open unless folded; others have nothing to show here.
-            let unfolded = is_open && !self.toggled.contains(&key);
+            let name_style = match (is_shown, browsed.is_some()) {
+                // The browsed project's row is highlighted.
+                (true, true) => theme.accent().add_modifier(Modifier::BOLD),
+                (true, false) => theme.body().add_modifier(Modifier::BOLD),
+                _ => theme.body(),
+            };
+            spans.push(Span::styled(project.name.clone(), name_style));
+            let tag = match (is_open, is_shown) {
+                (true, true) => " · open",
+                (true, false) => " · open · ⏎ back",
+                (false, true) => " · not open · read-only",
+                (false, false) => " · ⏎ browses",
+            };
+            spans.push(Span::styled(tag, theme.dim()));
+            // The project shown is unfolded unless folded; the others have nothing to show here.
+            let unfolded = is_shown && !self.toggled.contains(&key);
             rows.push(Row {
                 key,
                 depth: 0,
-                fold: is_open.then_some(unfolded),
+                fold: is_shown.then_some(unfolded),
                 spans,
             });
             if unfolded {
-                self.research_rows(snap, theme, &mut rows);
+                match &source {
+                    Some(source) => self.research_rows(source, theme, &mut rows),
+                    None => rows.push(Row {
+                        key: LibKey::BrowseLoading,
+                        depth: 1,
+                        fold: None,
+                        spans: vec![Span::styled("(loading…)", theme.dim())],
+                    }),
+                }
             }
         }
+        let Some(source) = source else {
+            return rows;
+        };
 
         let key = LibKey::Decisions;
         let open = self.is_open(&key);
@@ -195,14 +351,17 @@ impl LibraryBuffer {
             depth: 0,
             fold: Some(open),
             spans: vec![Span::styled(
-                format!("Decisions ({})", snap.decisions.len()),
+                format!("Decisions ({})", source.decisions.len()),
                 theme.body().add_modifier(Modifier::BOLD),
             )],
         });
         if open {
-            let superseded: HashSet<DecisionId> =
-                snap.decisions.iter().filter_map(|d| d.supersedes).collect();
-            for d in snap.decisions.iter().rev() {
+            let superseded: HashSet<DecisionId> = source
+                .decisions
+                .iter()
+                .filter_map(|d| d.supersedes)
+                .collect();
+            for d in source.decisions.iter().rev() {
                 let mut spans = vec![
                     Span::styled(format!("#{} ", d.task.0), theme.dim()),
                     Span::styled(
@@ -230,16 +389,11 @@ impl LibraryBuffer {
         }
 
         // A research project has no repo, so no docs (decided 2026-11-11).
-        let research_project = snap
-            .project
-            .as_ref()
-            .is_some_and(|p| p.kind == ProjectKind::Research);
-        if !research_project {
+        if source.kind != ProjectKind::Research {
             let key = LibKey::Docs;
             let open = self.is_open(&key);
-            let count = self
+            let count = source
                 .docs
-                .as_ref()
                 .map_or_else(|| "…".to_string(), |d| d.len().to_string());
             rows.push(Row {
                 key,
@@ -251,7 +405,7 @@ impl LibraryBuffer {
                 )],
             });
             if open {
-                for doc in self.docs.iter().flatten() {
+                for doc in source.docs.into_iter().flatten() {
                     rows.push(Row {
                         key: LibKey::Doc(doc.path.clone()),
                         depth: 1,
@@ -267,8 +421,8 @@ impl LibraryBuffer {
         rows
     }
 
-    fn research_rows(&self, snap: &Snapshot, theme: &Theme, rows: &mut Vec<Row>) {
-        let mut summaries: Vec<_> = snap.research.iter().collect();
+    fn research_rows(&self, source: &Source, theme: &Theme, rows: &mut Vec<Row>) {
+        let mut summaries: Vec<_> = source.research.iter().collect();
         summaries.sort_by_key(|s| s.task);
         if summaries.is_empty() {
             rows.push(Row {
@@ -283,7 +437,7 @@ impl LibraryBuffer {
         }
         for summary in summaries {
             let task = summary.task;
-            let name = snap
+            let name = source
                 .tasks
                 .iter()
                 .find(|t| t.id == task)
@@ -314,7 +468,7 @@ impl LibraryBuffer {
                     None => vec![Span::styled("○ no report yet", theme.dim())],
                 },
             });
-            let listing = self.listings.get(&task);
+            let listing = source.listings.get(&task);
             for round in &summary.rounds {
                 let key = LibKey::Round(task, round.n);
                 let open = self.is_open(&key);
@@ -427,18 +581,33 @@ impl LibraryBuffer {
             .unwrap_or(0)
     }
 
-    /// What `Enter` on `key` opens, with its pane title.
+    /// What `Enter` on `key` opens, with its pane title. A browsed project's document is
+    /// [`ReadTarget::Elsewhere`], titled with the project's name.
     fn target(
         &self,
         key: &LibKey,
         snap: &Snapshot,
     ) -> Option<(ReadTarget, Option<TaskId>, String)> {
+        let source = self.source(snap)?;
+        let (target, task, title) = Self::target_in(key, &source)?;
+        match (source.elsewhere, &self.browsing) {
+            (Some(project), Some(b)) => Some((
+                ReadTarget::Elsewhere(project.clone(), Box::new(target)),
+                task,
+                format!("{} · {title}", b.name),
+            )),
+            _ => Some((target, task, title)),
+        }
+    }
+
+    fn target_in(key: &LibKey, source: &Source) -> Option<(ReadTarget, Option<TaskId>, String)> {
         let research = |task: TaskId, what: ResearchWhat, title: String| {
             Some((ReadTarget::Research { task, what }, Some(task), title))
         };
+        let listing = |task: TaskId| source.listings.get(&task);
         match key {
             LibKey::Report(task) => {
-                let has = snap
+                let has = source
                     .research
                     .iter()
                     .any(|r| r.task == *task && r.report_ms.is_some());
@@ -453,8 +622,8 @@ impl LibraryBuffer {
                 format!("#{} round {n} brief", task.0),
             ),
             LibKey::Finding(task, id) => {
-                let label = self
-                    .finding(*task, *id)
+                let label = listing(*task)
+                    .and_then(|l| l.findings.iter().find(|f| f.id == *id))
                     .map_or_else(String::new, |f| format!(" · {}", f.label));
                 research(
                     *task,
@@ -463,8 +632,7 @@ impl LibraryBuffer {
                 )
             }
             LibKey::Source(task, id) => {
-                let locator = self
-                    .listing(*task)
+                let locator = listing(*task)
                     .and_then(|l| l.sources.iter().find(|s| s.id == *id))
                     .map_or_else(String::new, |s| format!(" · {}", s.locator));
                 research(
@@ -474,7 +642,7 @@ impl LibraryBuffer {
                 )
             }
             LibKey::Decision(id) => {
-                let d = snap.decisions.iter().find(|d| d.id == *id)?;
+                let d = source.decisions.iter().find(|d| d.id == *id)?;
                 Some((
                     ReadTarget::Decision(*id),
                     Some(d.task),
@@ -510,13 +678,11 @@ impl Buffer for LibraryBuffer {
 
     fn render(&mut self, cx: &ViewCx, frame: &mut Frame, area: Rect, focused: bool) {
         let theme = cx.theme;
-        let inner = pane(
-            frame,
-            area,
-            title("library", focused, theme),
-            focused,
-            theme,
-        );
+        let heading = match &self.browsing {
+            Some(b) => format!("library · {} · not open", b.name),
+            None => "library".to_string(),
+        };
+        let inner = pane(frame, area, title(&heading, focused, theme), focused, theme);
         let rows = self.rows(cx.snap, theme);
         let at = self.index(&rows);
         if self.selected.is_none() {
@@ -547,7 +713,10 @@ impl Buffer for LibraryBuffer {
         footer(
             frame,
             inner,
-            &["⏎ read · o fold · l reading · ⎋ leave", "⏎ read · o fold"],
+            &[
+                "⏎ read · o fold · <leader>fr browse · ⎋ leave",
+                "⏎ read · o fold",
+            ],
             theme,
         );
     }
@@ -580,10 +749,12 @@ impl Buffer for LibraryBuffer {
                     return true;
                 };
                 let key = row.key.clone();
+                // Another project's row browses it; the open one's, while browsing, comes back
+                // (ADR 0018, decided 2026-11-11 later). Only `<leader>pp` switches projects.
                 if let LibKey::Project(id) = &key
-                    && cx.snap.project.as_ref().is_none_or(|p| &p.id != id)
+                    && row.fold.is_none()
                 {
-                    effects.push(Effect::OpenProject(id.clone()));
+                    effects.push(Effect::BrowseProject(id.clone()));
                     return true;
                 }
                 // A task opens its report when it has one; other groups fold.
@@ -638,13 +809,13 @@ impl Buffer for LibraryBuffer {
 /// The markdown of one decision-log entry, for the reading column: what, why, the options not
 /// taken, and its evidence as citation markers that `gd` follows.
 pub fn decision_markdown(
-    snap: &Snapshot,
+    decisions: &[Decision],
+    tasks: &[Task],
     id: DecisionId,
     tz: &jiff::tz::TimeZone,
 ) -> Option<String> {
-    let d = snap.decisions.iter().find(|d| d.id == id)?;
-    let task = snap
-        .tasks
+    let d = decisions.iter().find(|d| d.id == id)?;
+    let task = tasks
         .iter()
         .find(|t| t.id == d.task)
         .map_or_else(String::new, |t| format!(" {}", t.title));

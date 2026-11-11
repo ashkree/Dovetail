@@ -7,6 +7,7 @@
 
 #![warn(missing_docs)]
 
+mod browse;
 mod maps;
 mod research;
 mod rng;
@@ -660,6 +661,20 @@ impl MockCore {
                     "{} is not one of the project's docs",
                     path.display()
                 )),
+            },
+            Command::BrowseProject { id } => {
+                let found = self.state.projects.iter().find(|p| p.id == id).cloned();
+                match found.and_then(|p| browse::project(&p, self.state.now_ms)) {
+                    Some(browsed) => self.emit(Event::ProjectBrowsed(Box::new(browsed))),
+                    None => self.fail(format!("the mock has nothing to show for {}", id.0)),
+                }
+            }
+            Command::LoadBrowsed { project, what } => match browse::load(&project.0, &what) {
+                Some(document) => self.emit(Event::BrowsedLoaded {
+                    doc: dovetail_api::research::BrowsedDoc { project, what },
+                    document,
+                }),
+                None => self.fail(format!("the mock has no such document: {what:?}")),
             },
             Command::LoadResearch { task, what } => match self.research.load(task, &what) {
                 Some(content) => self.emit(Event::ResearchLoaded {

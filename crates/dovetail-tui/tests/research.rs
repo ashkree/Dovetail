@@ -180,19 +180,19 @@ fn open_report(app: &mut App) {
 }
 
 #[test]
-fn a_document_in_the_task_details_reading_view_is_on_a_solid_background() {
+fn a_document_in_the_task_details_reading_view_paints_no_background() {
     let mut app = detail(true);
     let probe = |app: &mut App| {
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
         terminal.draw(|f| app.draw(f)).expect("draw");
-        // Inside the 120-column reading column, away from the borders.
+        // Inside the reading column, away from the borders.
         let buffer = terminal.backend().buffer().clone();
         buffer[(60, 12)].bg
     };
-    // The detail itself paints no background.
     assert_eq!(probe(&mut app), ratatui::style::Color::Reset);
     open_report(&mut app);
-    assert_eq!(probe(&mut app), dovetail_tui::Theme::dusk().reading_bg);
+    // Nothing paints a solid background (decided 2026-11-11 later).
+    assert_eq!(probe(&mut app), ratatui::style::Color::Reset);
 }
 
 #[test]

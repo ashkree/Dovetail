@@ -74,26 +74,7 @@ impl Core {
             .project
             .registered()
             .ok_or(ResearchDirError::NotRegistered)?;
-        // A research project has no repo for a research folder to sit in: always the default.
-        let Some(repo) = project
-            .repo_path
-            .as_deref()
-            .filter(|_| !project.is_research())
-        else {
-            return files::root(
-                &self.paths.data,
-                &project.id,
-                std::path::Path::new(""),
-                None,
-            );
-        };
-        let recipe = crate::recipe::Recipe::load(&self.paths.recipe(&project.id))?;
-        files::root(
-            &self.paths.data,
-            &project.id,
-            repo,
-            recipe.research_dir.as_deref(),
-        )
+        research_root_of(&self.paths, project)
     }
 
     /// The research folder of `task` (absolute), given its title.
@@ -401,63 +382,13 @@ impl Core {
         task: TaskId,
         what: &ResearchWhat,
     ) -> Result<ResearchContent, LoadError> {
-        let missing = |what: String| LoadError::Missing(format!("task #{} {what}", task.0));
         let t = self
             .task(task)
             .await
             .ok_or_else(|| LoadError::Missing(format!("there is no task #{}", task.0)))?;
         let dir = self.research_dir(task, &t.title)?;
         let r = self.db.task_research(task).await?;
-        let doc = |path: Option<String>, markdown: String| {
-            let path = path.map(|p| dir.join(p));
-            let base = path
-                .as_deref()
-                .and_then(std::path::Path::parent)
-                .unwrap_or(&dir);
-            let images = crate::docs::images(&markdown, base);
-            ResearchContent::Document(ResearchDocument {
-                path,
-                markdown,
-                images,
-            })
-        };
-        Ok(match what {
-            ResearchWhat::Listing => ResearchContent::Listing(listing(&dir, &r)),
-            ResearchWhat::Brief { round } => {
-                let round = r
-                    .rounds
-                    .iter()
-                    .find(|x| x.n == *round)
-                    .ok_or_else(|| missing(format!("has no round {round}")))?;
-                doc(
-                    Some(files::brief_path(round)),
-                    files::brief_md(task, &t.title, round),
-                )
-            }
-            ResearchWhat::Finding(id) => {
-                let f = r
-                    .findings
-                    .iter()
-                    .find(|f| f.id == *id)
-                    .ok_or_else(|| missing(format!("has no finding F{}", id.0)))?;
-                doc(Some(f.path.clone()), files::finding_md(f, &r.sources))
-            }
-            ResearchWhat::Source(id) => {
-                let s = r
-                    .sources
-                    .iter()
-                    .find(|s| s.id == *id)
-                    .ok_or_else(|| missing(format!("cites no source S{}", id.0)))?;
-                doc(files::source_path(s), files::source_md(s))
-            }
-            ResearchWhat::Report => {
-                let (_, body) = r
-                    .report
-                    .clone()
-                    .ok_or_else(|| missing("has no report yet".into()))?;
-                doc(Some("report.md".into()), body)
-            }
-        })
+        content_of(task, &t.title, &dir, &r, what)
     }
 
     /// Writes research files that are missing (the database is the source of truth), on a
@@ -841,7 +772,7 @@ impl Core {
 }
 
 /// The API's summary of one task.
-fn summary(row: SummaryRow, dir: PathBuf) -> ResearchSummary {
+pub(crate) fn summary(row: SummaryRow, dir: PathBuf) -> ResearchSummary {
     ResearchSummary {
         task: row.task,
         dir,
@@ -898,4 +829,90 @@ pub(crate) fn listing(dir: &std::path::Path, r: &TaskResearch) -> ResearchListin
             })
             .collect(),
     }
+}
+
+/// The research root of any registered project (the open one, or one browsed read-only), from
+/// its recipe.
+pub(crate) fn research_root_of(
+    paths: &crate::paths::Paths,
+    project: &crate::projects::Project,
+) -> Result<PathBuf, ResearchDirError> {
+    // A research project has no repo for a research folder to sit in: always the default.
+    let Some(repo) = project
+        .repo_path
+        .as_deref()
+        .filter(|_| !project.is_research())
+    else {
+        return files::root(&paths.data, &project.id, std::path::Path::new(""), None);
+    };
+    let recipe = crate::recipe::Recipe::load(&paths.recipe(&project.id))?;
+    files::root(
+        &paths.data,
+        &project.id,
+        repo,
+        recipe.research_dir.as_deref(),
+    )
+}
+
+/// A task's research content from what storage holds: `dir` is its research folder (for
+/// paths and images), `title` its task title. Pure, so a browsed project's content is made the
+/// same way as the open project's.
+pub(crate) fn content_of(
+    task: TaskId,
+    title: &str,
+    dir: &std::path::Path,
+    r: &TaskResearch,
+    what: &ResearchWhat,
+) -> Result<ResearchContent, LoadError> {
+    let missing = |what: String| LoadError::Missing(format!("task #{} {what}", task.0));
+    let doc = |path: Option<String>, markdown: String| {
+        let path = path.map(|p| dir.join(p));
+        let base = path
+            .as_deref()
+            .and_then(std::path::Path::parent)
+            .unwrap_or(dir);
+        let images = crate::docs::images(&markdown, base);
+        ResearchContent::Document(ResearchDocument {
+            path,
+            markdown,
+            images,
+        })
+    };
+    Ok(match what {
+        ResearchWhat::Listing => ResearchContent::Listing(listing(dir, r)),
+        ResearchWhat::Brief { round } => {
+            let round = r
+                .rounds
+                .iter()
+                .find(|x| x.n == *round)
+                .ok_or_else(|| missing(format!("has no round {round}")))?;
+            doc(
+                Some(files::brief_path(round)),
+                files::brief_md(task, title, round),
+            )
+        }
+        ResearchWhat::Finding(id) => {
+            let f = r
+                .findings
+                .iter()
+                .find(|f| f.id == *id)
+                .ok_or_else(|| missing(format!("has no finding F{}", id.0)))?;
+            doc(Some(f.path.clone()), files::finding_md(f, &r.sources))
+        }
+        ResearchWhat::Source(id) => {
+            let s = r
+                .sources
+                .iter()
+                .find(|s| s.id == *id)
+                .ok_or_else(|| missing(format!("cites no source S{}", id.0)))?;
+            doc(files::source_path(s), files::source_md(s))
+        }
+        ResearchWhat::Report => {
+            let (_, body) = r
+                .report
+                .clone()
+                .ok_or_else(|| missing("has no report yet".into()))?;
+            doc(Some("report.md".into()), body)
+        }
+    })
 }

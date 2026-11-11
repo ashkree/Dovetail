@@ -1,27 +1,26 @@
 ---
 source: crates/dovetail-tui/tests/reading_mode.rs
+assertion_line: 484
 expression: "snapshot_at(220, 50)"
 ---
  folder /home/you/src/dovetail                                                                                                                           maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
 ┌ library ────────────────────────────┐┌ reading · #3 report ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ ask ─────────────────────────────────────────────┐
-│ ▾ Dovetail · open                   ││   Which fuzzy matcher for the picker?                                                                                         ││ › i to ask about #3's report. A read-only        │
-│   ▾ #3 Fuzzy picker                 ││                                                                                                                               ││ session answers from the report and its sources, │
-│       ● report                      ││   Recommendation: use nucleo [F1][S1]. Confidence: medium.                                                                    ││ and cites them as the report does.               │
-│     ▸ round 1 · closed · 2          ││                                                                                                                               ││                                                  │
-│     ▸ round 2 · open · 0            ││   Evidence                                                                                                                    ││                                                  │
-│     ▸ quick findings (1)            ││                                                                                                                               ││                                                  │
-│     ▸ sources (3)                   ││   • nucleo scores a few thousand rows well inside a frame, and is what Helix uses [F1, S2].                                   ││                                                  │
-│   notes-site · ⏎ opens              ││                                                                                                                               ││                                                  │
-│   ◇ Market sizing · ⏎ opens         ││   • skim is slower to set up and pulls in a larger dependency tree [F2].                                                      ││                                                  │
-│ ▸ Decisions (3)                     ││                                                                                                                               ││                                                  │
-│ ▸ Docs · ADRs (2)                   ││   • Scoring on paths wants a bonus for matches after / [F3].                                                                  ││                                                  │
+│ ▾ Dovetail · open                   ││                                                                                                                               ││ › i to ask about #3's report. A read-only        │
+│   ▾ #3 Fuzzy picker                 ││               Which fuzzy matcher for the picker?                                                                             ││ session answers from the report and its sources, │
+│       ● report                      ││                                                                                                                               ││ and cites them as the report does.               │
+│     ▸ round 1 · closed · 2          ││               Recommendation: use nucleo [F1][S1]. Confidence: medium.                                                        ││                                                  │
+│     ▸ round 2 · open · 0            ││                                                                                                                               ││                                                  │
+│     ▸ quick findings (1)            ││               Evidence                                                                                                        ││                                                  │
+│     ▸ sources (3)                   ││                                                                                                                               ││                                                  │
+│   notes-site · ⏎ browses            ││               • nucleo scores a few thousand rows well inside a frame, and is what Helix uses [F1, S2].                       ││                                                  │
+│   ◇ Market sizing · ⏎ browses       ││                                                                                                                               ││                                                  │
+│ ▸ Decisions (3)                     ││               • skim is slower to set up and pulls in a larger dependency tree [F2].                                          ││                                                  │
+│ ▸ Docs · ADRs (2)                   ││                                                                                                                               ││                                                  │
+│                                     ││               • Scoring on paths wants a bonus for matches after / [F3].                                                      ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
-│                                     ││   What would change this                                                                                                      ││                                                  │
+│                                     ││               What would change this                                                                                          ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
-│                                     ││   If non-ASCII paths score badly in round 2 [S2], revisit.                                                                    ││                                                  │
-│                                     ││                                                                                                                               ││                                                  │
-│                                     ││                                                                                                                               ││                                                  │
-│                                     ││                                                                                                                               ││                                                  │
+│                                     ││               If non-ASCII paths score badly in round 2 [S2], revisit.                                                        ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
@@ -49,6 +48,8 @@ expression: "snapshot_at(220, 50)"
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
-│ ⏎ read · o fold                     ││   end · ]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave                                                         ││                                                  │
+│                                     ││                                                                                                                               ││                                                  │
+│                                     ││               end · ]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave                                             ││                                                  │
+│ ⏎ read · o fold                     ││                                                                                                                               ││                                                  │
 └─────────────────────────────────────┘└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────┘
  NORMAL   Dovetail · 8 tasks · 5 agents · 2 ⚠ · 1.1G · ctx 18%   READING  [F1] 1/7                                                                             ]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave

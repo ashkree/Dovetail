@@ -4,6 +4,7 @@
 
 mod ask;
 mod attachments;
+mod browse;
 mod clipboard;
 mod completion;
 pub mod config;

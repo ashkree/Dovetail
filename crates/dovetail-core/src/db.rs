@@ -505,6 +505,46 @@ impl Db {
         self.run(|c, _| research::load_all(c.state()?))
     }
 
+    // --- another project, read-only (`<leader>fr`) ---
+
+    /// What reading mode's library shows of another project, from its `state.db` at `path`
+    /// opened read-only for this request (WAL lets it be read while that project's own Dovetail
+    /// writes). `None` when the project has no `state.db` yet. Nothing is written.
+    pub fn browse_state(&self, path: PathBuf) -> Pending<Option<BrowsedState>> {
+        self.run(move |_, _| {
+            let Some(mut conn) = open_read_only(&path)? else {
+                return Ok(None);
+            };
+            Ok(Some(BrowsedState {
+                tasks: tasks::load_tasks(&mut conn)?,
+                decisions: tasks::load_decisions(&mut conn, None)?,
+                summaries: research::load_summaries(&conn)?,
+                research: research::load_all(&conn)?,
+            }))
+        })
+    }
+
+    /// Task `task` of another project, with its research, read-only as in
+    /// [`Db::browse_state`]; `None` when there is no such task or no `state.db`.
+    pub fn browse_task(
+        &self,
+        path: PathBuf,
+        task: TaskId,
+    ) -> Pending<Option<(Task, research::TaskResearch)>> {
+        self.run(move |_, _| {
+            let Some(mut conn) = open_read_only(&path)? else {
+                return Ok(None);
+            };
+            let Some(t) = tasks::load_tasks(&mut conn)?
+                .into_iter()
+                .find(|t| t.id == task)
+            else {
+                return Ok(None);
+            };
+            Ok(Some((t, research::load_task(&conn, task)?)))
+        })
+    }
+
     // --- agents and conversations ---
 
     /// Every agent not yet closed.
@@ -671,6 +711,51 @@ pub fn live_attachments(paths: &Paths) -> Option<HashSet<PathBuf>> {
         keep.extend(sessions::live_attachments(&conn).ok()?);
     }
     Some(keep)
+}
+
+/// Another project's state, as [`Db::browse_state`] reads it.
+#[derive(Debug, Default)]
+pub struct BrowsedState {
+    /// Every task, archived ones included.
+    pub tasks: Vec<Task>,
+    /// The decision log, oldest first.
+    pub decisions: Vec<Decision>,
+    /// Research counts per task.
+    pub summaries: Vec<research::SummaryRow>,
+    /// Every task's research in full.
+    pub research: Vec<(TaskId, research::TaskResearch)>,
+}
+
+/// Opens another project's `state.db` read-only, on the DB thread, for one request; `None` when
+/// it does not exist. Its schema must be this build's: an older one is upgraded only by opening
+/// that project, which this never does.
+fn open_read_only(path: &Path) -> Result<Option<Connection>, DbError> {
+    use rusqlite::OpenFlags;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    let found: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let supported = STATE_MIGRATIONS.len() as u32;
+    if found > supported {
+        return Err(DbError::SchemaTooNew {
+            path: path.to_owned(),
+            found,
+            supported,
+        });
+    }
+    if found < supported {
+        return Err(DbError::Refused(format!(
+            "{} was last opened by an older Dovetail: open that project once (<leader>pp) so \
+             it is brought up to date, then browse it",
+            path.display()
+        )));
+    }
+    Ok(Some(conn))
 }
 
 fn open_connection(path: &Path, migrations: &[Migration]) -> Result<Connection, DbError> {

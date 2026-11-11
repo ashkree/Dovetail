@@ -1,5 +1,6 @@
 //! Reading mode's reading column (ADR 0018): one document at a time, from the library or a
-//! followed citation, in the 120-column reading column with the solid background on.
+//! followed citation, in a centred column of at most 96 columns of text, padded, with no
+//! background.
 //!
 //! The document is split at its headings into sections (`]]`/`[[` jump between them, `zc`/`zo`
 //! fold one), and each section into markdown and image parts. Citation ids (`[F3]`, `[S2]`,
@@ -11,8 +12,9 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use dovetail_api::research::{BrowseWhat, BrowsedDoc};
 use dovetail_api::research::{DocImage, Evidence, ResearchDocument, ResearchWhat};
-use dovetail_api::{DecisionId, Event, TaskId};
+use dovetail_api::{DecisionId, Event, ProjectId, TaskId};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -48,6 +50,19 @@ pub enum ReadTarget {
     Decision(DecisionId),
     /// A repo doc, relative to `docs/`.
     Doc(PathBuf),
+    /// One of the above, of a project browsed with `<leader>fr` rather than the open one
+    /// (ADR 0018, decided 2026-11-11 later): fetched with `Command::LoadBrowsed`, read-only.
+    Elsewhere(ProjectId, Box<ReadTarget>),
+}
+
+impl ReadTarget {
+    /// The browsed project it belongs to, when it is not the open one's.
+    pub fn elsewhere(&self) -> Option<&ProjectId> {
+        match self {
+            ReadTarget::Elsewhere(project, _) => Some(project),
+            _ => None,
+        }
+    }
 }
 
 /// A document open in the reading column.
@@ -120,6 +135,28 @@ impl ReaderBuffer {
         self.open.as_ref().and_then(|o| o.task)
     }
 
+    /// Forgets documents of browsed projects, shown or on the `Ctrl-o` stack: reading mode
+    /// starts on the open project (ADR 0018, decided 2026-11-11 later).
+    pub fn forget_elsewhere(&mut self) {
+        self.back.retain(|(o, _)| o.target.elsewhere().is_none());
+        if self
+            .awaiting
+            .as_ref()
+            .is_some_and(|(t, _, _)| t.elsewhere().is_some())
+        {
+            self.awaiting = None;
+        }
+        if self
+            .open
+            .as_ref()
+            .is_some_and(|o| o.target.elsewhere().is_some())
+        {
+            self.open = self.back.pop().map(|(o, _)| o);
+            self.top = 0;
+            self.reset_view();
+        }
+    }
+
     /// kitty graphics on (with the cell size) or off.
     pub fn set_graphics(&mut self, cell: Option<CellPx>) {
         if self.graphics != cell {
@@ -174,6 +211,22 @@ impl ReaderBuffer {
                 document,
             ),
             Event::DocLoaded { path, document } => (ReadTarget::Doc(path.clone()), document),
+            Event::BrowsedLoaded {
+                doc: BrowsedDoc { project, what },
+                document,
+            } => {
+                let inner = match what {
+                    BrowseWhat::Research { task, what } => ReadTarget::Research {
+                        task: *task,
+                        what: what.clone(),
+                    },
+                    BrowseWhat::Doc(path) => ReadTarget::Doc(path.clone()),
+                };
+                (
+                    ReadTarget::Elsewhere(project.clone(), Box::new(inner)),
+                    document,
+                )
+            }
             Event::CommandFailed { .. } => {
                 self.awaiting = None;
                 return false;
@@ -550,13 +603,8 @@ impl Buffer for ReaderBuffer {
             None => "reading".to_string(),
         };
         let inner = pane(frame, area, title(&heading, focused, theme), focused, theme);
-        let column = reading_column::column(inner, reading_column::DEFAULT_WIDTH);
-        // Reading mode turns the solid background on (ADR 0018, decided 2026-11-11).
-        reading_column::paint_background(
-            frame.buffer_mut(),
-            column,
-            Style::new().bg(theme.reading_bg),
-        );
+        // Transparent, padded, 96 columns of text (ADR 0018, decided 2026-11-11 later).
+        let column = reading_column::reading_text(inner);
         if self.open.is_none() {
             let text = if self.awaiting.is_some() {
                 "loading…"

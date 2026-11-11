@@ -483,6 +483,29 @@ fn every_event_roundtrips() {
             path: "research.md".into(),
             document: research::ResearchDocument::text(None, "# Research".into()),
         },
+        Event::ProjectBrowsed(Box::new(research::BrowsedProject {
+            project: ProjectSummary {
+                id: ProjectId("market-sizing".into()),
+                name: "Market sizing".into(),
+                repo_path: "/d/projects/market-sizing".into(),
+                kind: ProjectKind::Research,
+            },
+            tasks: Vec::new(),
+            decisions: vec![decision()],
+            research: vec![research_summary()],
+            listings: vec![research::BrowsedListing {
+                task: TaskId(4),
+                listing: research_listing(),
+            }],
+            docs: Vec::new(),
+        })),
+        Event::BrowsedLoaded {
+            doc: research::BrowsedDoc {
+                project: ProjectId("notes-site".into()),
+                what: research::BrowseWhat::Doc("intro.md".into()),
+            },
+            document: research::ResearchDocument::text(None, "# Notes".into()),
+        },
     ]
     .into_iter()
     .chain(inbox_items().into_iter().map(Event::InboxUpserted))
@@ -657,6 +680,16 @@ fn every_command_roundtrips() {
         },
         Command::StartAsk { task: TaskId(4) },
         Command::ListDocs,
+        Command::BrowseProject {
+            id: ProjectId("market-sizing".into()),
+        },
+        Command::LoadBrowsed {
+            project: ProjectId("market-sizing".into()),
+            what: research::BrowseWhat::Research {
+                task: TaskId(4),
+                what: research::ResearchWhat::Report,
+            },
+        },
         Command::LoadDoc {
             path: "adr/0018-reading-mode-layout.md".into(),
         },
