@@ -28,3 +28,5 @@ Upgrading meant quitting Dovetail, running `scripts/install.sh`, waiting for the
 - `dovetail upgrade` talks to the app of the project in the current folder. With no app of it running but another project's app running, it refuses with "close Dovetail first: ...".
 - `y` waits for other projects' apps as well as for busy agents, and the item names both. If something that runs the installed binary appears after the wait ended, the swap is skipped, the build stays staged, and a note is printed once the terminal is restored. A staged build left over (the user chose `d` and the app crashed) is offered again on the next open.
 - Restarting by `y` skips the "Close the day?" question: every agent is idle and the app comes straight back.
+
+**Amendment, 2026-11-11:** where the code lives. The staging, build, swap and restart logic is in `crates/dovetail-core/src/upgrade/` (`mod.rs`, `flow.rs`, tests in `tests.rs`), because the app runs it. `crates/dovetail/src/upgrade.rs` is only the `dovetail upgrade` command-line entry, which hands the work to that module or to a running app over the socket.

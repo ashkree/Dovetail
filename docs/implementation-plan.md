@@ -197,7 +197,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 
 **Deliberately not added**
 - `clap`: four subcommands are parsed by hand.
-- `ratatui-image` (planned for M15): kitty graphics are a few hand-written escape sequences (`dovetail-tui` `canvas::kitty`), and the canvas needs kitty's source rectangle for pan and zoom, so the crate would add weight without doing the work.
+- `ratatui-image` (considered for M15, deliberately not added): kitty graphics are a few hand-written escape sequences (`dovetail-tui` `canvas::kitty`), and the canvas needs kitty's source rectangle for pan and zoom, so the crate would add weight without doing the work.
 - `rmcp`: `dovetail mcp` is a small synchronous JSON-RPC loop using only the standard library and `serde_json`. One bridge runs per session, so its memory matters, and three tools don't justify a framework.
 - `dirs`: XDG paths are ten lines.
 - `rand`: `MockCore` uses a small seeded generator.
@@ -531,18 +531,18 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [x] Tasks survive restart
   - [x] `dovetail add "x !p1 @now"` appears live if the app is running, or on next open if not
   - [x] Recipe format is final and bootstrap matches it
-- **Tests:** migrations from empty, typed requests, project identity from a worktree, recipe parsing, `add` both ways (deferred: tests are written when something breaks, decided 2026-11-05)
+- **Tests:** migrations from empty, typed requests, project identity from a worktree, recipe parsing, `add` both ways (written since: suites under `crates/*/tests/` and module tests; only wave 1 had none)
 
 ### M6. Driver and one coordinator session
 - **Spikes needed:** S0, S1
 - **Scope:** `ClaudeDriver`, `FakeDriver`, the session state machine, launch settings, coordinator in the main checkout, streaming chat, interrupt, finished-turn inbox items, stored conversation entries, `<leader>sx`, messaging-blocker warnings.
 - **Files:** `crates/dovetail-driver/src/{lib,claude,fake,events}.rs`, `crates/dovetail-core/src/session/{mod,state,launch}.rs`
 - **Done when:**
-  - [ ] Real streaming chat with a coordinator in a scratch repo
+  - [ ] Real streaming chat with a coordinator in a scratch repo (covered by the M10 rehearsal, awaiting the user's tick)
   - [ ] Interrupt works
   - [ ] Non-`auto` init shows a warning
   - [ ] Child processes are always reaped
-- **Tests:** fixtures for plain turn, double `result`, partial stream; live test behind `DOVETAIL_LIVE_TESTS=1` (deferred: tests are written when something breaks, decided 2026-11-05)
+- **Tests:** fixtures for plain turn, double `result`, partial stream; live test behind `DOVETAIL_LIVE_TESTS=1` (written since: suites under `crates/*/tests/` and module tests; only wave 1 had none)
 
 ### M7. Live permissions
 - **Scope:** `can_use_tool` to inbox and back, concurrent answers, `y A d D`, rule suggestions for always-allow, `<leader>sm` over the control protocol, `permission_denials` surfaced, activity feed from real events (slice lifecycle and messages; the rest moved to M16, see below).
@@ -553,34 +553,34 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - [ ] In manual mode, a real request is answered from the inbox
   - [ ] One held request never blocks another
   - [ ] Mode changes with no restart, and the badge follows
-- **Tests:** `concurrent_permissions` fixture, always-allow payloads, mode mapping (`manual`) (deferred: tests are written when something breaks, decided 2026-11-05)
+- **Tests:** `concurrent_permissions` fixture, always-allow payloads, mode mapping (`manual`) (written since: suites under `crates/*/tests/` and module tests; only wave 1 had none)
 
 ### M8. Slices, worktree hooks, cleanup
 - **Spikes needed:** S2 (done: no relay needed)
 - **Scope:** `dovetail hook worktree-create` (idempotent; symlinks only; recipe setup; prints the path). `SettingUp` state in the tree. `<leader>sn` and `:spawn`. Slice brief from task plus your text. First prompt sent after init. *As built (wave 2): the first prompt is sent when the `WorktreeCreate` hook records its outcome (`hook.json`), which stands in for "after init": whether `system/init` arrives before the first input is unknown, and waiting for it could deadlock; the outcome also tells success from failure, so a failed setup never gets a prompt.* Worktree removal: check for uncommitted or unpushed work, ask, remove our files, `git worktree remove`, delete the `dovetail/*` branch. Message timeline from `SendMessage` calls and `origin` objects joined on `msg_id` (no relay, per S2); sessions launch with `--replay-user-messages` and `SendMessage` in `--allowedTools`. Archive flow with `dd`.
 - **Files:** `crates/dovetail-core/src/{worktree,slice,messaging}.rs`, `crates/dovetail/src/hook.rs`
 - **Done when:**
-  - [ ] A real slice starts in a hook-created worktree outside the repo
+  - [ ] A real slice starts in a hook-created worktree outside the repo (covered by the M10 rehearsal, awaiting the user's tick)
   - [ ] Failed setup means no first prompt, and an inbox error
   - [ ] A setup longer than Claude Code's default hook timeout finishes under the 15-minute timeout (B5)
   - [ ] In a scratch repo, `gh pr merge` in auto mode raises a Permission request through the launch-settings ask rule, or the B7 fallback is recorded
   - [ ] Coordinator and slice exchange messages in a scratch repo
   - [ ] Archiving removes everything, after asking when work is unpushed
   - [ ] Only branches appear in the repo
-- **Tests:** hook idempotence, cleanup against real temp git repos, dirty and unpushed detection (deferred: tests are written when something breaks, decided 2026-11-05)
+- **Tests:** hook idempotence, cleanup against real temp git repos, dirty and unpushed detection (written since: suites under `crates/*/tests/` and module tests; only wave 1 had none)
 
 ### M9. MCP bridge, `ask_user`, `report_status`, `create_task`, role prompts
 - **Spikes needed:** S3; S6 runs here
 - **Scope:** `dovetail mcp` as a synchronous stdio server, forwarding to the app socket with its agent id. Tool handlers in core. Question inbox items, after permission requests (ADR 0007: no blocked flag). `r` reply. `create_task` for the coordinator only (ADR 0002). `log_decision` for the coordinator and slices (ADR 0003): schema `{task?, decision, why?, alternatives?: [{option, why_not?}], supersedes?}`; slices default to their task, the coordinator must name one. Role prompts passed at launch.
-- **Role prompt fix:** `config/roles/coordinator.md` tells the coordinator to call `draw_map`, which won't exist until M15. Remove that line now and restore it at M15. Also tell the coordinator that the user starts slices and it recommends them (B1), and that it merges only on the user's yes and then pulls `main` (B7). Tell slices to push and open a PR once checks pass (B7). Then run `scripts/bootstrap.sh --force`, because your installed copy from the earlier run has the old text.
+- **Role prompt fix:** (done: the `maps_draw` line is back in `config/roles/coordinator.md` since M15) the prompt told the coordinator to call `draw_map` before it existed. Also tell the coordinator that the user starts slices and it recommends them (B1), and that it merges only on the user's yes and then pulls `main` (B7). Tell slices to push and open a PR once checks pass (B7). Then run `scripts/bootstrap.sh --force`, because your installed copy from the earlier run has the old text.
 - **Files:** `crates/dovetail/src/mcp.rs`, `crates/dovetail-core/src/tools/{mod,ask_user,report_status,create_task}.rs`, `config/roles/*.md`
 - **Done when:**
-  - [ ] An `ask_user` reaches the inbox and the chat, returns at once, and your reply arrives as a message (ADR 0007; was: a blocking call your reply unblocks)
+  - [ ] An `ask_user` reaches the inbox and the chat, returns at once, and your reply arrives as a message (ADR 0007; was: a blocking call your reply unblocks) (covered by the M10 rehearsal, awaiting the user's tick)
   - [ ] Status lines appear in the tree
   - [ ] A coordinator `create_task` lands in Unsorted, marked until seen; a slice can't call it
   - [ ] App exit gives the agent a clear error, not a hang
   - [ ] S6 recorded
-- **Tests:** MCP protocol, tool schemas, socket forwarding, `ask_user` returning at once with the answer arriving as a message (ADR 0007) (deferred: tests are written when something breaks, decided 2026-11-05)
+- **Tests:** MCP protocol, tool schemas, socket forwarding, `ask_user` returning at once with the answer arriving as a message (ADR 0007) (written since: suites under `crates/*/tests/` and module tests; only wave 1 had none)
 
 ### M10. Resume, stable install, rehearsal — **SELF-HOSTING POINT**
 - **Scope:** restore on open (coordinator immediately, slices on first touch). Pending inbox items reconciled after restart. A stale-state sweep for agents and worktrees. Stable install (`cargo install --path crates/dovetail --root ~/.local`), with hook and MCP paths using the installed path, not `target/`. `docs/self-hosting.md` covering the daily flow, upgrades and recovery.
@@ -641,7 +641,7 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 
 ### M15. Maps stage 1
 - **Spikes needed:** S5
-- **Scope:** `dovetail-maps`: model, nine kinds, `draw_map` validation with specific errors, `MapRenderer`, Mermaid conversion, swimlane grid layout. kitty canvas with node selection, flows, pan and zoom. Outline beside it and as the fallback. Map shelf. MAP mode with mouse only there. Restore the `draw_map` line in the coordinator prompt.
+- **Scope:** `dovetail-maps`: model, nine kinds, `draw_map` validation with specific errors, `MapRenderer`, Mermaid conversion, swimlane grid layout. kitty canvas with node selection, flows, pan and zoom. Outline beside it and as the fallback. Map shelf. MAP mode with mouse only there. (Built; the coordinator prompt line is restored.)
 - **Slices:** (a) model and validation; (b) tool and storage, after (a); (c) merman renderer, after (a); (d) swimlane layout, after (a); (e) outline, after (b); (f) canvas and MAP mode, after (c) and (e).
 - **Progress:** (a) merged, PR #32 (task #34). (b) merged, PR #35 (task #35); its maps migration is `0012_maps`, after `0011_agent_takeover`. (c) merged, PR #39 (task #5); (d) merged, PR #38 (task #6); (e) merged, PR #42 (task #7). (f) merged, PR #47. (b): `draw_map` for both roles, schema from `dovetail_maps::input_schema`; reusing an id stores a new version and a map keeps its type; a new map's id is its title's slug; lane `node` links are checked against the latest structure maps; the shelf is `Snapshot::maps` with `Event::MapUpserted`, content through `Command::LoadMap` → `Event::MapLoaded`; the mock seeds one structure and one swimlane map; the coordinator prompt's `draw_map` line is back. (e): the map shelf (`<leader>M`, `:maps`, newest first) and the outline buffer in `dovetail-tui`: `Enter` loads a map, `o` folds a group, `f` switches flow, `]]`/`[[` walk a flow's steps, `Esc` goes outline → shelf → conversation; a newer version of the open map is refetched in place. (f): the kitty canvas and MAP mode. The binary hands the event loop a painter (`dovetail_maps::MapRenderer` behind `dovetail_tui::canvas::MapPainter`, so merman stays out of the TUI); it paints each map version once per terminal size on its own thread, at twice the screen's pixel size (capped at 4096 px), and pan and zoom move kitty's source rectangle over that cached picture. Swimlanes are drawn by Dovetail as SVG on the (d) grid and rasterised with `resvg`. The selection is a ring drawn as a second small image over the picture, not a re-render with a highlight class: 0.06 ms against 56–184 ms (S5), and the layout does not move when classes change. The kitty commands are hand-written (`canvas::kitty`, base64 in 4096-byte chunks, `q=2` so no replies reach stdin). Graphics are detected from the environment (`TERM=xterm-kitty`, `KITTY_WINDOW_ID`, WezTerm, Ghostty; never inside tmux or screen; `DOVETAIL_GRAPHICS=kitty|none` overrides) plus the terminal's pixel size; without them the outline is the whole view. MAP mode (`Mode::Map`, status bar `MAP`): opening a map from the shelf enters it, `<leader>v` enters it on the open map, `Esc` leaves; the map takes the full width with the outline beside it (`v` hides it); `hjkl` and the arrows select the nearest node that way, `Tab`/`Shift-Tab` follow the first connection out or in, `Enter` drills into a group (zooms to its box) and `Backspace` comes back, `n`/`p` walk the flow, `f` switches it, `+`/`=`, `-`, `0` zoom, `Ctrl-hjkl` pan, `u` asks the coordinator to redraw after a yes; `c` (comments, v1.1) and `s` (B6) stay unbound. Mouse: click selects, the wheel zooms around the pointer, a drag pans.
 - **Done when:**
