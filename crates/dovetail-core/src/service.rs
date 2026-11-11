@@ -55,6 +55,9 @@ pub enum CoreError {
     Thread(std::io::Error),
 }
 
+/// Most message ids remembered to drop duplicates.
+const MAX_SEEN_MESSAGES: usize = 4096;
+
 /// What the core needs from the binary.
 #[derive(Clone)]
 pub struct CoreOptions {
@@ -1052,6 +1055,10 @@ impl Core {
             && !self.seen_messages.insert(id.clone())
         {
             return;
+        }
+        // Old ids do not come back, so forgetting them all now and then is safe.
+        if self.seen_messages.len() > MAX_SEEN_MESSAGES {
+            self.seen_messages.clear();
         }
         let message = AgentMessage {
             id: self.next_message,

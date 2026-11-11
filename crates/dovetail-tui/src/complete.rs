@@ -104,6 +104,9 @@ pub enum KeyResult {
     Accept(Accept),
 }
 
+/// Most directory listings the `@` popup keeps.
+const MAX_LISTINGS: usize = 32;
+
 /// The chat bar's completion state.
 pub struct Completion {
     token: Option<Token>,
@@ -204,6 +207,10 @@ impl Completion {
     /// Takes a listing from the core. Call [`update`](Self::update) after it to show it.
     pub fn receive(&mut self, dir: Option<String>, paths: Vec<String>) {
         self.asked.retain(|d| *d != dir);
+        // A listing is cheap to ask for again; keep only the latest few directories.
+        if self.paths.len() >= MAX_LISTINGS {
+            self.paths.clear();
+        }
         self.paths.insert(dir, paths);
     }
 
