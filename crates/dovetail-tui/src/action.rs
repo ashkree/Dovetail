@@ -44,6 +44,9 @@ pub enum Action {
     /// Build the next Dovetail in the background (`:upgrade`, ADR 0014); `:upgrade --local` builds
     /// the checkout instead of `origin/main`.
     Upgrade,
+    /// Open a research round on a task (`:round <task> <brief>`), or close the open one
+    /// (`:round close`) (R1, `docs/research.md` §5).
+    StartRound,
     /// Panic on purpose, to check that the terminal is restored. Debug builds only.
     #[cfg(debug_assertions)]
     DebugPanic,
