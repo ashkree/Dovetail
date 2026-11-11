@@ -117,7 +117,8 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         | Event::ClipboardPasted { .. }
         | Event::PathsListed { .. }
         | Event::TerminalReturned { .. }
-        | Event::UpgradeRestarting => {}
+        | Event::UpgradeRestarting
+        | Event::OpeningProject { .. } => {}
     }
     ApplyResult::Applied
 }

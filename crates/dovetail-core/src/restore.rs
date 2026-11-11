@@ -340,6 +340,10 @@ impl Core {
 
     /// The stale-state sweep (decision 4 of 2026-11-06).
     async fn sweep(&mut self) {
+        // Only worktrees are swept, and a research project has none: no git calls.
+        if self.project.is_research() {
+            return;
+        }
         let missing: Vec<(AgentId, String, std::path::PathBuf)> = self
             .agents
             .values()
@@ -349,7 +353,7 @@ impl Core {
                     .then(|| (r.agent.id.clone(), r.agent.name.clone(), w.path.clone()))
             })
             .collect();
-        let repo = self.project.repo_path().to_path_buf();
+        let repo = self.project.folder(&self.paths);
         for (agent, name, path) in missing {
             // One failed `exists()` is not proof: archive only when the parent directory reads
             // fine and git no longer lists the worktree either.
@@ -388,7 +392,7 @@ impl Core {
                 return;
             }
         };
-        let repo = self.project.repo_path().to_path_buf();
+        let repo = self.project.folder(&self.paths);
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -478,7 +482,7 @@ impl Core {
         }
         let paths = self.paths.clone();
         let key = self.project.key().to_owned();
-        let repo = self.project.repo_path().to_path_buf();
+        let repo = self.project.folder(&self.paths);
         let inputs = self.inputs.clone();
         let name = found.name;
         tokio::task::spawn_blocking(move || {

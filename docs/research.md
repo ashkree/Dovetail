@@ -75,8 +75,8 @@ CREATE TABLE reports (
 ALTER TABLE tasks ADD COLUMN research_kind TEXT;     -- NULL | 'question' | 'decision'
 ALTER TABLE tasks ADD COLUMN altitude TEXT;          -- NULL | 'macro' | 'micro'
 
--- research-only project, if the user approves (ADR 0015 open point)
--- registry.db: ALTER TABLE projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'code';  -- 'code' | 'research'
+-- research-only project (ADR 0015 open point, decided 2026-11-11): registry migration
+-- 0003_project_kind adds projects.kind ('code' | 'research') and makes repo_path nullable
 -- state.db config: research_dir overrides the default (read from the recipe, not stored)
 
 -- 0014_decision_evidence

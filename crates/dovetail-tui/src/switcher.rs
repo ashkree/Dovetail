@@ -5,8 +5,8 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, AgentStatus, InboxItem, InboxKind, SlashCommand, Snapshot,
-    TaskStatus,
+    Agent, AgentId, AgentKind, AgentStatus, InboxItem, InboxKind, ProjectKind, ProjectSummary,
+    SlashCommand, Snapshot, TaskStatus,
 };
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
@@ -295,6 +295,14 @@ pub fn preview(
                 .map(|c| command_preview(c, width, theme))
                 .unwrap_or_default(),
         ),
+        PickerKey::Project(id) => (
+            "Project",
+            snap.projects
+                .iter()
+                .find(|p| p.id == *id)
+                .map(|p| project_preview(p, width, theme))
+                .unwrap_or_default(),
+        ),
         PickerKey::Inbox(id) => (
             "Inbox item",
             snap.inbox
@@ -405,6 +413,64 @@ fn command_preview(command: &SlashCommand, width: usize, theme: &Theme) -> Vec<L
     ];
     for line in fmt::wrap(&command.description, width) {
         out.push(Line::from(Span::styled(line, theme.body())));
+    }
+    out
+}
+
+/// The marker a research project carries in the project switcher.
+pub const RESEARCH_MARKER: &str = "◇";
+
+/// Rows for the project switcher (`<leader>pp`): every registered project, most recently opened
+/// first, as the core lists them. A research project is marked [`RESEARCH_MARKER`] and says
+/// `research` where a code project shows its folder; the open one says `open`.
+pub fn project_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
+    let open = snap.project.as_ref().map(|p| &p.id);
+    snap.projects
+        .iter()
+        .map(|p| {
+            let research = p.kind == ProjectKind::Research;
+            let mut detail = if research {
+                "research".to_string()
+            } else {
+                p.repo_path.display().to_string()
+            };
+            if open == Some(&p.id) {
+                detail = format!("open · {detail}");
+            }
+            PickerItem {
+                key: PickerKey::Project(p.id.clone()),
+                label: p.name.clone(),
+                haystack: format!("{} {} {}", p.name, p.id.0, p.kind.as_str()),
+                detail,
+                glyph: if research { RESEARCH_MARKER } else { "·" },
+                color: if research { theme.cite } else { theme.dim },
+                depth: 0,
+                section: "Projects",
+            }
+        })
+        .collect()
+}
+
+fn project_preview(p: &ProjectSummary, width: usize, theme: &Theme) -> Vec<Line<'static>> {
+    let what = match p.kind {
+        ProjectKind::Code => format!("code project in {}", p.repo_path.display()),
+        ProjectKind::Research => format!(
+            "research project: no repo, no slices; its sessions run in {}",
+            p.repo_path.display()
+        ),
+    };
+    let mut out = vec![
+        Line::from(Span::styled(p.name.clone(), theme.accent())),
+        Line::default(),
+    ];
+    for text in [
+        what,
+        "Enter opens it: this project's sessions stop and resume when you come back.".into(),
+    ] {
+        for line in fmt::wrap(&text, width) {
+            out.push(Line::from(Span::styled(line, theme.body())));
+        }
+        out.push(Line::default());
     }
     out
 }

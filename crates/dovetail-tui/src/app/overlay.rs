@@ -29,7 +29,7 @@ pub(super) enum Overlay {
 }
 
 impl App {
-    fn open_overlay(&mut self, overlay: Overlay) {
+    pub(super) fn open_overlay(&mut self, overlay: Overlay) {
         self.resolver.reset();
         self.overlay = Some(overlay);
         // Typing goes to the overlay, so the status bar reads INSERT.
@@ -178,6 +178,7 @@ impl App {
         match key {
             PickerKey::Agent(id) => self.open_agent_in_main(id),
             PickerKey::Task(id) => self.open_task(id, false),
+            PickerKey::Project(id) => self.pick_project(id),
             PickerKey::Inbox(id) => {
                 self.focus_inbox();
                 self.buffers.inbox.select_item(&self.snap, id);

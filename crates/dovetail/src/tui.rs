@@ -34,14 +34,20 @@ pub fn run_mock(seed: u64, speed: f64) -> Result<()> {
         .context("terminal UI failed")
 }
 
-/// Runs the TUI on the real core for the folder the user is in. Nothing is registered on the way
-/// (ADR 0005): a folder that is not a project yet runs from memory until `:project add`.
-pub fn run_real() -> Result<()> {
+/// Runs the TUI on the real core for `project` (an id, from `--project` or the project
+/// switcher), else for the folder the user is in. Nothing is registered on the way (ADR 0005): a
+/// folder that is not a project yet runs from memory until `:project add`.
+pub fn run_real(project: Option<&str>) -> Result<()> {
     let paths = Paths::from_env();
     let config = Config::load(&paths).context("reading config.toml")?;
-    let cwd = std::env::current_dir().context("finding the current directory")?;
     let registry = Db::open(&paths, None).context("opening the project registry")?;
-    let resolution = projects::locate(&registry, &cwd)?;
+    let resolution = match project {
+        Some(id) => projects::Resolution::Registered(projects::open(&registry, id)?),
+        None => {
+            let cwd = std::env::current_dir().context("finding the current directory")?;
+            projects::locate(&registry, &cwd)?
+        }
+    };
     drop(registry);
     let program = config
         .claude
@@ -75,13 +81,48 @@ pub fn run_real() -> Result<()> {
     let result = dovetail_tui::run(&mut app, link, clock, Some(crate::paint::painter()))
         .context("terminal UI failed");
     let restart = core.restart_requested();
+    let switch = core.switch_requested();
     // Sessions end with the app (B23): wait until they have exited and been reaped.
     if !core.wait(Duration::from_secs(10)) {
         tracing::warn!("the core did not stop within 10 s");
     }
     // The terminal is ours again (and nothing runs): a staged upgrade goes in now (ADR 0014).
     finish_upgrade(&paths, restart);
+    if let (Ok(()), Some(id), false) = (&result, switch, restart) {
+        open_project(&paths, &id);
+    }
     result
+}
+
+/// After the app has shut down because the user picked another project (B24): start this binary
+/// again on it, in this terminal, with the same flags. A fresh process gets a fresh core, socket
+/// and input thread; `--project` names the project, so it opens research projects too.
+fn open_project(paths: &Paths, id: &str) {
+    use std::os::unix::process::CommandExt;
+    let mut args: Vec<std::ffi::OsString> = Vec::new();
+    let mut old = std::env::args_os().skip(1);
+    while let Some(arg) = old.next() {
+        if arg == "--project" {
+            old.next();
+        } else {
+            args.push(arg);
+        }
+    }
+    args.extend(["--project".into(), id.into()]);
+    let mut command =
+        std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "dovetail".into()));
+    command.args(args);
+    // A code project opens in its folder, as if `dovetail` had been run there.
+    let folder = Db::open(paths, None)
+        .ok()
+        .and_then(|db| db.get_project(id.to_owned()).wait().ok().flatten())
+        .filter(|p| !p.is_research())
+        .and_then(|p| p.repo_path);
+    if let Some(folder) = folder {
+        command.current_dir(folder);
+    }
+    let error = command.exec();
+    eprintln!("could not open project {id}: {error}; run `dovetail --project {id}`");
 }
 
 /// After the app has shut down: swap a staged build over the installed binary, and when the user

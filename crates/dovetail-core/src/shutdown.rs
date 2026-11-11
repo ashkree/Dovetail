@@ -15,12 +15,22 @@ pub struct CoreHandle {
     /// Set by the core when the user said `y` on "Upgrade ready" and the app is quitting to
     /// restart into the new build (ADR 0014).
     pub(crate) restart: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Set by the core when the user picked another project (B24): the app quits and the binary
+    /// starts again on it.
+    pub(crate) switch_to: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl CoreHandle {
     /// Whether the app quit to restart into an upgrade. Read it before [`CoreHandle::wait`].
     pub fn restart_requested(&self) -> bool {
         self.restart.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// The id of the project the user picked to open next, if the app quit for that. Read it
+    /// before [`CoreHandle::wait`].
+    pub fn switch_requested(&self) -> Option<String> {
+        // A poisoned lock means the core panicked mid-write: nothing reliable to switch to.
+        self.switch_to.lock().ok().and_then(|slot| slot.clone())
     }
 
     /// Blocks until the core has stopped or `timeout` passed. `true` if it stopped.

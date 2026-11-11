@@ -55,6 +55,7 @@ macro_rules! migration {
 const REGISTRY_MIGRATIONS: &[Migration] = &[
     migration!("registry", "0001_init.sql"),
     migration!("registry", "0002_optional_git.sql"),
+    migration!("registry", "0003_project_kind.sql"),
 ];
 /// Migrations of a project's `state.db`, in order.
 const STATE_MIGRATIONS: &[Migration] = &[
@@ -235,6 +236,17 @@ impl Db {
                 now,
             )
         })
+    }
+
+    /// Registers a research project named `name` under id `slug` (numbered when taken). `None`
+    /// when a research project of that name exists already.
+    pub fn register_research(&self, slug: String, name: String) -> Pending<Option<Project>> {
+        self.run(move |c, now| registry::register_research(&mut c.registry, &slug, &name, now))
+    }
+
+    /// The project with this id, if registered.
+    pub fn get_project(&self, id: String) -> Pending<Option<Project>> {
+        self.run(move |c, _| registry::get(&c.registry, &id))
     }
 
     /// Every registered project, most recently opened first.
@@ -966,5 +978,97 @@ mod tests {
             .wait()
             .unwrap();
         assert_eq!(repo.id, "notes-2");
+    }
+
+    #[test]
+    fn an_existing_registry_migrates_to_project_kinds() {
+        use dovetail_api::ProjectKind;
+
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        // A registry.db as the build before project kinds left it: a repo and a folder.
+        let path = paths.registry_db();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut old = Connection::open(&path).unwrap();
+        let before = REGISTRY_MIGRATIONS.len() - 1;
+        migrate(&mut old, &path, &REGISTRY_MIGRATIONS[..before]).unwrap();
+        old.execute_batch(
+            "INSERT INTO projects VALUES ('dovetail', 'Dovetail', '/src/dovetail', \
+             '/src/dovetail/.git', 5);
+             INSERT INTO projects VALUES ('notes', 'notes', '/x/notes', NULL, 4);",
+        )
+        .unwrap();
+        drop(old);
+
+        let db = Db::open(&paths, None).unwrap();
+        let listed = db.list_projects().wait().unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|p| p.kind == ProjectKind::Code));
+        assert_eq!(
+            listed[0].repo_path.as_deref(),
+            Some(Path::new("/src/dovetail"))
+        );
+        assert_eq!(
+            listed[0].git_common_dir.as_deref(),
+            Some(Path::new("/src/dovetail/.git"))
+        );
+        assert_eq!(listed[1].repo_path.as_deref(), Some(Path::new("/x/notes")));
+        // Folder and repo lookups still find them.
+        assert!(db.find_folder("/x/notes".into()).wait().unwrap().is_some());
+        assert!(
+            db.find_project("/src/dovetail/.git".into())
+                .wait()
+                .unwrap()
+                .is_some()
+        );
+
+        // A research project has neither path; its id is numbered past the folder's.
+        let research = db
+            .register_research("notes".into(), "notes".into())
+            .wait()
+            .unwrap()
+            .expect("new");
+        assert_eq!(research.id, "notes-2");
+        assert_eq!((research.repo_path, research.git_common_dir), (None, None));
+        assert_eq!(
+            db.get_project("notes-2".into())
+                .wait()
+                .unwrap()
+                .map(|p| p.kind),
+            Some(ProjectKind::Research)
+        );
+        // A second research project of the same name is refused; a folder lookup never finds
+        // one.
+        assert!(
+            db.register_research("notes".into(), "notes".into())
+                .wait()
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            db.find_folder("/x/notes".into())
+                .wait()
+                .unwrap()
+                .map(|p| p.id),
+            Some("notes".into())
+        );
+        drop(db);
+
+        // The table refuses what the kinds rule out, and git dirs stay unique.
+        let conn = Connection::open(&path).unwrap();
+        let insert = |sql: &str| conn.execute(sql, []).is_err();
+        assert!(insert(
+            "INSERT INTO projects (id, name, kind) VALUES ('c', 'c', 'code')"
+        ));
+        assert!(insert(
+            "INSERT INTO projects (id, name, kind, repo_path) VALUES ('r', 'r', 'research', '/r')"
+        ));
+        assert!(insert(
+            "INSERT INTO projects (id, name, kind) VALUES ('o', 'o', 'other')"
+        ));
+        assert!(insert(
+            "INSERT INTO projects (id, name, repo_path, git_common_dir) \
+             VALUES ('d', 'd', '/d', '/src/dovetail/.git')"
+        ));
     }
 }

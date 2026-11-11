@@ -1,11 +1,13 @@
 //! Registering the open folder as a project (ADR 0005), and the project state the core runs
 //! on before and after.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use dovetail_api::{ActivityKind, AgentId, ProjectSummary};
 
 use crate::error::RegisterError;
+use crate::paths::Paths;
 use crate::projects::{Candidate, Project};
 use crate::service::{Core, CoreHandler, serve};
 use crate::socket::{self, SocketHandler};
@@ -35,18 +37,24 @@ impl ProjectState {
         }
     }
 
-    pub(crate) fn summary(&self) -> ProjectSummary {
+    pub(crate) fn summary(&self, paths: &Paths) -> ProjectSummary {
         match self {
-            ProjectState::Registered(p) => p.summary(),
+            ProjectState::Registered(p) => p.summary(paths),
             ProjectState::Unregistered { candidate, .. } => candidate.summary(),
         }
     }
 
-    pub(crate) fn repo_path(&self) -> &std::path::Path {
+    /// The folder sessions run in: the repo or folder, or a research project's state folder.
+    pub(crate) fn folder(&self, paths: &Paths) -> PathBuf {
         match self {
-            ProjectState::Registered(p) => &p.repo_path,
-            ProjectState::Unregistered { candidate, .. } => &candidate.repo_path,
+            ProjectState::Registered(p) => p.folder(paths),
+            ProjectState::Unregistered { candidate, .. } => candidate.repo_path.clone(),
         }
+    }
+
+    /// A research project: code paths that need a repo (slices, worktrees, git) check this.
+    pub(crate) fn is_research(&self) -> bool {
+        self.registered().is_some_and(Project::is_research)
     }
 
     pub(crate) fn registered(&self) -> Option<&Project> {
@@ -58,6 +66,78 @@ impl ProjectState {
 }
 
 impl Core {
+    /// `:project new <name> --research` (decided 2026-11-11): registers a research project and
+    /// makes its state folder, where its sessions will run. The open project stays open; the
+    /// fresh snapshot lists the new one in the switcher.
+    pub(crate) async fn new_research_project(&mut self, name: String) {
+        let name = name.trim().to_owned();
+        if name.is_empty() {
+            return self.fail(crate::projects::ProjectError::NoName.to_string());
+        }
+        let project = match self
+            .db
+            .register_research(crate::projects::slug(&name), name.clone())
+            .await
+        {
+            Ok(Some(project)) => project,
+            Ok(None) => {
+                return self.fail(crate::projects::ProjectError::NameTaken(name).to_string());
+            }
+            Err(e) => return self.fail(e.to_string()),
+        };
+        let path = self.paths.project_dir(&project.id);
+        if let Err(source) = std::fs::create_dir_all(&path) {
+            let error = crate::projects::ProjectError::Folder { path, source };
+            return self.fail(error.to_string());
+        }
+        self.activity(
+            ActivityKind::Lifecycle,
+            None,
+            format!(
+                "research project {} created as {}: <leader>pp opens it",
+                project.name, project.id
+            ),
+        );
+        // The project list changed: there is no event for that, so resend the state.
+        self.send_snapshot(false).await;
+    }
+
+    /// The user picked another project in the switcher (B24): remember it for the binary, tell
+    /// the UI, and quit the way `:q` does (sessions end and resume when the project is opened
+    /// again).
+    pub(crate) async fn open_other_project(&mut self, id: dovetail_api::ProjectId) {
+        if self.quitting.is_some() {
+            return;
+        }
+        if id.0 == self.project.key() {
+            return self.fail(format!("{} is already open", id.0));
+        }
+        match self.db.get_project(id.0.clone()).await {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return self.fail(crate::projects::ProjectError::UnknownId(id.0).to_string());
+            }
+            Err(e) => return self.fail(e.to_string()),
+        }
+        let recorded = match self.switch_to.lock() {
+            Ok(mut slot) => {
+                *slot = Some(id.0.clone());
+                true
+            }
+            Err(_) => false,
+        };
+        if !recorded {
+            return self.fail("could not record the project to open");
+        }
+        self.activity(
+            ActivityKind::Lifecycle,
+            None,
+            format!("opening project {}", id.0),
+        );
+        self.emit(dovetail_api::Event::OpeningProject { id });
+        self.begin_quit();
+    }
+
     /// Registers the open folder (ADR 0005): writes the in-memory state to the new project's
     /// `state.db`, listens on its socket, and sends a fresh snapshot.
     pub(crate) async fn register_project(&mut self) -> Result<Project, RegisterError> {
@@ -118,7 +198,7 @@ impl Core {
             None,
             format!(
                 "{} added as project {}",
-                project.repo_path.display(),
+                project.folder(&self.paths).display(),
                 project.id
             ),
         );

@@ -217,6 +217,7 @@ impl App {
             }
             Action::Upgrade => self.note = Some("usage: :upgrade [--local]".into()),
             Action::StartRound => self.round(arg),
+            Action::NewProject => self.new_project(arg),
             Action::ListResearch if arg.split_whitespace().next() == Some("kind") => {
                 self.research_kind(arg);
             }

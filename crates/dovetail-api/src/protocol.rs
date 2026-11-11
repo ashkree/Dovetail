@@ -170,6 +170,12 @@ pub enum Event {
     /// quitting, and the UI quits too, without asking. The binary then swaps the staged build in
     /// and starts it in the same terminal. Changes nothing in the snapshot.
     UpgradeRestarting,
+    /// The user picked another project (B24): the core is quitting so the binary can start on
+    /// `id`, and the UI quits too, without asking. Changes nothing in the snapshot.
+    OpeningProject {
+        /// The project to open next.
+        id: ProjectId,
+    },
 }
 
 /// What the core found on the system clipboard.
@@ -341,10 +347,19 @@ pub enum Command {
     /// opens): `git fetch origin <base>` first, then local git and `gh pr list`. The core
     /// answers with one [`Event::WorktreeUpserted`] per worktree.
     RefreshWorktrees,
-    /// Switch to another project.
+    /// Switch to another registered project (B24): the core answers with
+    /// [`Event::OpeningProject`] and quits, ending this project's sessions, and the binary starts
+    /// again on the other one.
     OpenProject {
         /// The project.
         id: ProjectId,
+    },
+    /// Create and register a research project named `name` (`:project new <name> --research`).
+    /// It has no repo; its folder is made under Dovetail's state folder. The core answers with a
+    /// fresh snapshot, whose `projects` lists it.
+    NewResearchProject {
+        /// Display name; the id is its slug.
+        name: String,
     },
     /// Register a repo as a project.
     RegisterProject {

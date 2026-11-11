@@ -280,7 +280,7 @@ impl Core {
                         let text = format!(
                             "Added `{}` as the Dovetail project `{}`. Its tasks, inbox and this \
                              conversation are now kept.",
-                            project.repo_path.display(),
+                            project.folder(&self.paths).display(),
                             project.id
                         );
                         self.add_entry(&agent, EntryKind::Notice, text.clone());

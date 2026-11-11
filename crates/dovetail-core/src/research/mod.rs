@@ -74,11 +74,24 @@ impl Core {
             .project
             .registered()
             .ok_or(ResearchDirError::NotRegistered)?;
+        // A research project has no repo for a research folder to sit in: always the default.
+        let Some(repo) = project
+            .repo_path
+            .as_deref()
+            .filter(|_| !project.is_research())
+        else {
+            return files::root(
+                &self.paths.data,
+                &project.id,
+                std::path::Path::new(""),
+                None,
+            );
+        };
         let recipe = crate::recipe::Recipe::load(&self.paths.recipe(&project.id))?;
         files::root(
             &self.paths.data,
             &project.id,
-            &project.repo_path,
+            repo,
             recipe.research_dir.as_deref(),
         )
     }

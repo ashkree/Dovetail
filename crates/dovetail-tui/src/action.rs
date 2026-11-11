@@ -129,10 +129,13 @@ pub enum Action {
     /// Take the focused session over: native `claude` on it in this terminal, headless again
     /// when it exits (a subagent's goes to its session).
     TakeOver,
-    /// Switch project (a stub until M5).
+    /// Switch project: the project picker (`<leader>pp`, `:project`); opening one stops this
+    /// project's sessions and starts the app again on it (B24).
     SwitchProject,
-    /// Register a project (a stub until M5).
+    /// Register the open folder as a project (`:project add`, ADR 0005).
     RegisterProject,
+    /// Create a project: `:project new <name> --research` makes a research project.
+    NewProject,
     /// Edit the task's notes in `$EDITOR` (arrives with storage in M5).
     TaskEditNotes,
     /// Relate the task to another, or remove the relation, through the picker.

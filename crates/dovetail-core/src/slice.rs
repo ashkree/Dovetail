@@ -86,6 +86,9 @@ impl Core {
 
     /// Everything that makes a request impossible, checked before asking anyone.
     pub(crate) async fn check_slice(&self, request: &SliceRequest) -> Result<(), SliceError> {
+        if self.project.is_research() {
+            return Err(SliceError::ResearchProject);
+        }
         let name = request.name.trim();
         worktree::validate_name(name).map_err(SliceError::BadName)?;
         if name.starts_with(SUBAGENT_PREFIX) {
@@ -172,7 +175,7 @@ impl Core {
     async fn start_slice(&mut self, request: SliceRequest) -> Result<(), SliceError> {
         // A folder that is not a project yet may run slices too; their state is kept with the
         // rest on registration (ADR 0005, decided 2026-11-06).
-        let repo_path = self.project.repo_path().to_path_buf();
+        let repo_path = self.project.folder(&self.paths);
         let name = request.name.trim().to_owned();
         let id = slice_id(&name);
         let git = projects::has_git(&repo_path);
@@ -440,7 +443,7 @@ impl Core {
         let name = row.agent.name.clone();
         let paths = self.paths.clone();
         let key = self.worktree_key(&row.agent);
-        let repo = self.project.repo_path().to_path_buf();
+        let repo = self.project.folder(&self.paths);
         let inputs = self.inputs.clone();
         let agent = agent.clone();
         tokio::task::spawn_blocking(move || {

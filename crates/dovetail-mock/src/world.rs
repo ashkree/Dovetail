@@ -107,17 +107,31 @@ fn entry(id: u64, at_ms: i64, kind: EntryKind, text: &str) -> ConversationEntry 
     }
 }
 
+/// The state folder a research project's sessions run in, as the real core names it.
+pub(crate) fn research_project_dir(id: &str) -> std::path::PathBuf {
+    format!("/home/you/.local/share/dovetail/projects/{id}").into()
+}
+
 /// The world at time zero. Entry ids below 100 are used here; [`crate::MockCore`] counts on.
 pub(crate) fn initial(now_ms: i64) -> Snapshot {
     let project = ProjectSummary {
         id: ProjectId("dovetail".into()),
         name: "Dovetail".into(),
         repo_path: PROJECT_DIR.into(),
+        kind: ProjectKind::Code,
     };
     let other = ProjectSummary {
         id: ProjectId("notes-site".into()),
         name: "notes-site".into(),
         repo_path: "/home/you/src/notes-site".into(),
+        kind: ProjectKind::Code,
+    };
+    // A research-only project: no repo, its sessions run in Dovetail's state folder for it.
+    let research = ProjectSummary {
+        id: ProjectId("market-sizing".into()),
+        name: "Market sizing".into(),
+        repo_path: research_project_dir("market-sizing"),
+        kind: ProjectKind::Research,
     };
 
     let mut tasks = vec![
@@ -427,7 +441,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         seq: 0,
         now_ms,
         project: Some(project.clone()),
-        projects: vec![project, other],
+        projects: vec![project, other, research],
         tasks,
         agents: vec![coordinator, tree, inbox_keys, picker, explore, side],
         todos,

@@ -37,6 +37,16 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
     let (name, arg) = line
         .split_once(char::is_whitespace)
         .map_or((line, ""), |(n, a)| (n, a.trim()));
+    // `:project new <name> --research`: the subcommand is part of the command's name.
+    if name == "project"
+        && let Some(rest) = arg.strip_prefix("new")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        return Ok(Parsed {
+            action: Action::NewProject,
+            arg: rest.trim().to_string(),
+        });
+    }
     let action = match name {
         "" => return Err(CommandError::Empty),
         "q" | "quit" => Action::Quit,
@@ -116,6 +126,24 @@ mod tests {
         );
         assert_eq!(
             parse("project").map(|p| p.action),
+            Ok(Action::SwitchProject)
+        );
+    }
+
+    #[test]
+    fn project_new_takes_the_rest_as_its_argument() {
+        let new = parse("project new Market sizing --research").unwrap();
+        assert_eq!(
+            (new.action, new.arg.as_str()),
+            (Action::NewProject, "Market sizing --research")
+        );
+        assert_eq!(
+            parse("project new").map(|p| p.action),
+            Ok(Action::NewProject)
+        );
+        // A project switch named like the subcommand is not one.
+        assert_eq!(
+            parse("project newsletter").map(|p| p.action),
             Ok(Action::SwitchProject)
         );
     }

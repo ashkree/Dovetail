@@ -135,7 +135,7 @@ Visual mode comes later; leave room for it.
 | `<leader>sq` / `:ask` | Open a side chat (ADR 0011) in the side panel |
 | `<leader>?` | Show or hide the side panel (side chats) |
 | `<leader>ss` / `sn` / `st` / `sx` | Pick agent / new slice / take over (stub) / interrupt |
-| `<leader>pp` / `pr` | Switch project / register project (stubs) |
+| `<leader>pp` / `pr` | Switch project (the project switcher, below) / register the open folder (`:project add`) |
 | `<leader>sm` | Cycle the focused agent's permission mode: `auto` → `acceptEdits` → `manual`. Show a small badge in the tree for any agent not in `auto` |
 | `<leader>t` | Quick capture: a one-line overlay. Anything that isn't a token is the title; `!p0`–`!p3` sets P-level, `@now`/`@next`/`@later` the bucket, `#1231` a PR. No bucket → `Unsorted`. When a task (or an agent on one) is focused, show "linked to: <task>" under the line, on by default, `Ctrl-l` to unlink. `Enter` saves and returns to where I was; `Tab` opens the full task detail view |
 
@@ -160,6 +160,11 @@ Visual mode comes later; leave room for it.
 - Keys: type to filter; `Ctrl-j` / `Ctrl-k` or arrows to move; `Enter` opens the agent in the main pane; `Esc` closes.
 - Lists Dovetail's agents only.
 - `<leader><leader>` is the same overlay over everything (tasks, agents, inbox items), so build one picker component and reuse it.
+
+**Project switcher (`<leader>pp`, `:project`).** The same picker over every registered project, most recently opened first. Each row is the project's name, then its folder for a code project, or `research` for a research-only project, whose row is also marked `◇` (in the citation colour; code projects get a dim `·`). The open project's row starts its right-hand text with `open ·`. The preview says what the project is and where its sessions run. `Enter` asks "Open <name>? This project's sessions stop and resume when you come back." (prefixed "A turn is running." or "This folder is not a project yet, so its chat is lost." when that applies); `y` quits this project and the app starts again on the chosen one in the same terminal (B24; `dovetail --project <id>` does the same from a shell). Choosing the open project only says it is already open. Research-only projects, decided 2026-11-11:
+
+- `:project new <name> --research` creates and registers one; the name may have spaces, its id is the name's slug. It has no repo: its sessions run in `~/.local/share/dovetail/projects/<id>/`, its research files go in `research/` there. The open project stays open; `<leader>pp` lists the new one. Without `--research` the command only explains itself: a code project is a folder of yours, added from inside it with `:project add`.
+- In a research project there are no slices (`:spawn` and `start_slice` say why), `<leader>g` says "a research project has no repo, so no worktrees" instead of opening the view, and `:upgrade` is refused. Rounds, findings, reports, `:eod` and the morning coordinator work as in any project. The header shows its folder as usual.
 
 **Other views.**
 

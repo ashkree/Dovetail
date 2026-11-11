@@ -538,9 +538,12 @@ impl MockCore {
                 .ready
                 .push_back(ServerMsg::Snapshot(self.state.trimmed())),
             Command::Quit { .. } => self.quit = true,
+            Command::NewResearchProject { name } => self.new_research_project(name),
+            Command::OpenProject { .. } => {
+                self.fail("the mock does not switch projects; the real app restarts on it".into())
+            }
             Command::Upgrade { .. }
             | Command::RemoveWorktree { .. }
-            | Command::OpenProject { .. }
             | Command::RegisterProject { .. }
             | Command::StartRound { .. }
             | Command::CloseRound { .. }
@@ -569,6 +572,47 @@ impl MockCore {
 
     fn fail(&mut self, message: String) {
         self.emit(Event::CommandFailed { message });
+    }
+
+    /// `:project new <name> --research`: lists it in the switcher, as the real core does by
+    /// resending the snapshot.
+    fn new_research_project(&mut self, name: String) {
+        let name = name.trim().to_owned();
+        if name.is_empty() {
+            return self.fail("a research project needs a name".into());
+        }
+        let taken = |p: &ProjectSummary| p.kind == ProjectKind::Research && p.name == name;
+        if self.state.projects.iter().any(taken) {
+            return self.fail(format!(
+                "there is already a research project named `{name}`"
+            ));
+        }
+        let mut id: String = name
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        id = id
+            .split('-')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("-");
+        if id.is_empty() {
+            id = "project".into();
+        }
+        self.state.projects.push(ProjectSummary {
+            id: ProjectId(id.clone()),
+            name,
+            repo_path: world::research_project_dir(&id),
+            kind: ProjectKind::Research,
+        });
+        self.ready
+            .push_back(ServerMsg::Snapshot(self.state.trimmed()));
     }
 
     fn after(&mut self, delay_ms: u64, action: impl FnOnce(&mut MockCore) + Send + 'static) {

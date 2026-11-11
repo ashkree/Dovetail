@@ -502,6 +502,10 @@ impl Core {
     /// Looks at `agents`' worktrees in the background; each result arrives as
     /// [`Input::WorktreeGathered`].
     fn gather_worktrees(&mut self, agents: &[AgentId], refresh: Refresh) {
+        // No repo, no worktrees, no git (research projects, decided 2026-11-11).
+        if self.project.is_research() {
+            return;
+        }
         let targets: Vec<Target> = agents
             .iter()
             .filter_map(|id| self.agents.get(id))
@@ -522,7 +526,7 @@ impl Core {
         }
         let ctx = Context {
             paths: self.paths.clone(),
-            repo: self.project.repo_path().to_path_buf(),
+            repo: self.project.folder(&self.paths),
             gh: PathBuf::from("gh"),
             ssh_command: std::env::var("GIT_SSH_COMMAND").ok(),
         };

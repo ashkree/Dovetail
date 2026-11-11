@@ -88,7 +88,8 @@ impl Harness {
             Resolution::Registered(Project {
                 id: "p".into(),
                 name: "work".into(),
-                repo_path: repo.clone(),
+                kind: dovetail_api::ProjectKind::Code,
+                repo_path: Some(repo.clone()),
                 git_common_dir: None,
                 last_opened_ms: None,
             })
@@ -506,7 +507,8 @@ impl Harness {
         let resolution = Resolution::Registered(Project {
             id: "p".into(),
             name: "work".into(),
-            repo_path: repo.clone(),
+            kind: dovetail_api::ProjectKind::Code,
+            repo_path: Some(repo.clone()),
             git_common_dir,
             last_opened_ms: None,
         });

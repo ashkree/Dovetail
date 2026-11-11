@@ -172,8 +172,43 @@ pub struct ProjectSummary {
     pub id: ProjectId,
     /// Display name.
     pub name: String,
-    /// The main checkout.
+    /// The folder its sessions run in: the main checkout, the folder of a project without git,
+    /// or, for a research project, Dovetail's own state folder for it.
     pub repo_path: PathBuf,
+    /// Code or research. A peer that does not send it means a code project.
+    #[serde(default)]
+    pub kind: ProjectKind,
+}
+
+/// What a project is for. A research project has no repo: no worktrees, no slices, no git; its
+/// sessions run in `~/.local/share/dovetail/projects/<id>/`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectKind {
+    /// A repo or folder of the user's: the default.
+    #[default]
+    Code,
+    /// Macro research only (glossary "Research-only project").
+    Research,
+}
+
+impl ProjectKind {
+    /// The name stored in the registry.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProjectKind::Code => "code",
+            ProjectKind::Research => "research",
+        }
+    }
+
+    /// The kind stored as `name`, if it is one.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "code" => Some(ProjectKind::Code),
+            "research" => Some(ProjectKind::Research),
+            _ => None,
+        }
+    }
 }
 
 /// A piece of the user's own work, with or without agents attached.
