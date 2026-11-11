@@ -77,6 +77,9 @@ pub struct CoreOptions {
     /// Probe `systemd-run --user --scope` at start and run sessions under memory caps (M13).
     /// Tests leave it off: sessions run uncapped and no warning is raised.
     pub memory_caps: bool,
+    /// Run `claude --version` at start and warn when it is missing or older than
+    /// [`crate::startup::MIN_CLAUDE`]. Tests leave it off: no `claude` process is started.
+    pub check_claude: bool,
     /// Tests: take these scopes instead of probing (a temp dir stands in for the cgroup slice;
     /// nothing is launched under `systemd-run` by the fake driver).
     pub scopes: Option<crate::memory::Scopes>,
@@ -542,6 +545,14 @@ impl Core {
                 self.emit(Event::WarningSet(warning));
             }
         }
+        if self.options.check_claude {
+            let program = self.options.claude.clone().unwrap_or("claude".into());
+            let found = crate::startup::run_claude_version(&program).await;
+            if let Some(warning) = crate::startup::claude_version(found) {
+                self.warnings.push(warning.clone());
+                self.emit(Event::WarningSet(warning));
+            }
+        }
         self.reconcile(restored).await;
         self.resume_upgrade();
         self.start_queued().await;
@@ -729,37 +740,19 @@ impl Core {
 
     /// Status-bar warnings known at start.
     fn startup_warnings(&mut self) {
-        let blockers: Vec<&str> = [
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-            "DISABLE_TELEMETRY",
-            "DO_NOT_TRACK",
-            "DISABLE_GROWTHBOOK",
-        ]
-        .into_iter()
-        .filter(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty()))
-        .collect();
-        if !blockers.is_empty() {
-            self.warnings.push(Warning {
-                id: WarningId("messaging".into()),
-                text: format!(
-                    "{} set: sessions may not be able to message each other",
-                    blockers.join(", ")
-                ),
-            });
-        }
-        let missing: Vec<&str> = ["coordinator", "slice"]
-            .into_iter()
-            .filter(|r| !self.paths.role_prompt(r).exists())
-            .collect();
-        if !missing.is_empty() {
-            self.warnings.push(Warning {
-                id: WarningId("roles".into()),
-                text: format!(
-                    "role prompts missing ({}): run scripts/bootstrap.sh",
-                    missing.join(", ")
-                ),
-            });
-        }
+        let checks = [
+            crate::startup::messaging(|v| std::env::var(v).ok()),
+            crate::startup::roles(
+                &["coordinator", "slice"]
+                    .into_iter()
+                    .filter(|r| !self.paths.role_prompt(r).exists())
+                    .collect::<Vec<_>>(),
+            ),
+            self.project
+                .registered()
+                .and_then(|p| crate::startup::recipe(&p.id, self.paths.recipe(&p.id).exists())),
+        ];
+        self.warnings.extend(checks.into_iter().flatten());
         if self.project.registered().is_none() {
             self.warnings.push(Warning {
                 id: WarningId(crate::registration::UNREGISTERED_WARNING.into()),
