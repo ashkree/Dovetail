@@ -18,28 +18,82 @@ const RING: &str = "stroke:#ffd84a,stroke-width:6px";
 const HEADER: &str =
     "---\nconfig:\n  layout: elk\n  theme: dark\n  look: classic\n---\nflowchart TB\n";
 
-/// The `classDef` body for a kind (design 23d colours).
-fn style(kind: NodeKind) -> &'static str {
+/// A kind's colours (design 23d). One table for both renderers: the Mermaid `classDef`s here
+/// and the swimlane SVG in `swimlane_render.rs`.
+pub(crate) struct KindColors {
+    /// Box fill; `None` draws no box.
+    pub fill: Option<&'static str>,
+    /// Border colour; `None` draws no border.
+    pub stroke: Option<&'static str>,
+    /// Border width in pixels.
+    pub stroke_width: u32,
+    /// Dashed border (External).
+    pub dashed: bool,
+    /// Label colour.
+    pub text: &'static str,
+    /// Extra CSS for the label, if any.
+    pub extra: Option<&'static str>,
+}
+
+/// The colours for a kind.
+pub(crate) fn kind_colors(kind: NodeKind) -> KindColors {
+    let c = |fill, stroke, stroke_width, text| KindColors {
+        fill: Some(fill),
+        stroke: Some(stroke),
+        stroke_width,
+        dashed: false,
+        text,
+        extra: None,
+    };
     match kind {
-        NodeKind::Part => "fill:#c9785d,stroke:#f2c2a8,stroke-width:3px,color:#1b1b1b",
-        NodeKind::File => "fill:#f3efe6,stroke:#9a958c,stroke-width:1px,color:#1b1b1b",
-        NodeKind::Endpoint => "fill:#4cc3d9,stroke:#1d7f91,stroke-width:2px,color:#0b2a30",
-        NodeKind::Data => "fill:#e8a93a,stroke:#9b6a12,stroke-width:2px,color:#2a1b00",
-        NodeKind::External => {
-            "fill:#5c5f66,stroke:#c3c6cc,stroke-width:2px,stroke-dasharray:6 4,color:#eceff4"
-        }
-        NodeKind::Actor => "fill:#f2a1b6,stroke:#b5546f,stroke-width:2px,color:#3a0f1c",
-        NodeKind::Outcome => "fill:#5fbf6a,stroke:#1f6b2a,stroke-width:5px,color:#0d2a11",
-        NodeKind::Logic => {
-            "fill:#8f9be8,stroke:#4c58a8,stroke-width:1px,color:#101433,font-family:monospace"
-        }
-        NodeKind::Concept => "fill:none,stroke:none,color:#c8b6f0,font-style:italic",
+        NodeKind::Part => c("#c9785d", "#f2c2a8", 3, "#1b1b1b"),
+        NodeKind::File => c("#f3efe6", "#9a958c", 1, "#1b1b1b"),
+        NodeKind::Endpoint => c("#4cc3d9", "#1d7f91", 2, "#0b2a30"),
+        NodeKind::Data => c("#e8a93a", "#9b6a12", 2, "#2a1b00"),
+        NodeKind::External => KindColors {
+            dashed: true,
+            ..c("#5c5f66", "#c3c6cc", 2, "#eceff4")
+        },
+        NodeKind::Actor => c("#f2a1b6", "#b5546f", 2, "#3a0f1c"),
+        NodeKind::Outcome => c("#5fbf6a", "#1f6b2a", 5, "#0d2a11"),
+        NodeKind::Logic => KindColors {
+            extra: Some("font-family:monospace"),
+            ..c("#8f9be8", "#4c58a8", 1, "#101433")
+        },
+        NodeKind::Concept => KindColors {
+            fill: None,
+            stroke: None,
+            stroke_width: 0,
+            dashed: false,
+            text: "#c8b6f0",
+            extra: Some("font-style:italic"),
+        },
     }
+}
+
+/// The `classDef` body for a kind.
+fn style(kind: NodeKind) -> String {
+    let c = kind_colors(kind);
+    let mut parts = vec![format!("fill:{}", c.fill.unwrap_or("none"))];
+    match c.stroke {
+        Some(stroke) => {
+            parts.push(format!("stroke:{stroke}"));
+            parts.push(format!("stroke-width:{}px", c.stroke_width));
+        }
+        None => parts.push("stroke:none".into()),
+    }
+    if c.dashed {
+        parts.push("stroke-dasharray:6 4".into());
+    }
+    parts.push(format!("color:{}", c.text));
+    parts.extend(c.extra.map(str::to_owned));
+    parts.join(",")
 }
 
 /// The kind's style with the selection ring in place of its stroke.
 fn selected_style(kind: NodeKind) -> String {
-    let kept: Vec<&str> = style(kind)
+    let full = style(kind);
+    let kept: Vec<&str> = full
         .split(',')
         .filter(|p| !p.starts_with("stroke:") && !p.starts_with("stroke-width:"))
         .collect();

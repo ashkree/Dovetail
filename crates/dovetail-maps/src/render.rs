@@ -1,4 +1,5 @@
-//! `MapRenderer`: a structure map in, a PNG and the node rectangles in PNG pixels out.
+//! `MapRenderer`: a map in, a PNG and the node rectangles in PNG pixels out. Structure maps go
+//! through merman; swimlane maps are drawn by Dovetail itself (`swimlane_render.rs`).
 //!
 //! merman is pre-1.0 and heavy, so everything that touches it lives in this file and
 //! `mermaid.rs`. Positions come from merman's layout JSON (S5): `layout.FlowchartV2.nodes[]`
@@ -19,18 +20,19 @@ const DIAGRAM_PADDING: f64 = 8.0;
 /// Why a map could not be rendered.
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
-    /// Only structure maps go through merman; swimlane maps have their own layout.
-    #[error("only structure maps are rendered with merman, this map is a {0} map")]
-    NotStructure(&'static str),
     /// merman rejected the source or failed to rasterise it.
     #[error("merman failed to render the map: {0}")]
     Merman(String),
     /// merman returned no diagram (an empty map).
     #[error("the map has nothing to draw")]
     Empty,
-    /// The layout JSON did not have the shape S5 recorded; merman changed under us.
-    #[error("merman's layout JSON is not in the expected shape: {0}")]
+    /// The layout did not work out: merman's layout JSON is not in the shape S5 recorded, or a
+    /// swimlane map cannot be laid out on its grid.
+    #[error("the map could not be laid out: {0}")]
     Layout(String),
+    /// A swimlane map's SVG could not be parsed or encoded.
+    #[error("the swimlane map could not be drawn: {0}")]
+    Raster(String),
 }
 
 /// What to render.
@@ -73,6 +75,9 @@ pub struct NodePlacement {
     /// True for a group parent: its box encloses its children, so a hit test should prefer a
     /// non-group placement when both contain the point.
     pub is_group: bool,
+    /// On a swimlane map, the flow step this box draws (a node can have several). `None` on
+    /// structure maps.
+    pub step: Option<usize>,
 }
 
 /// A rendered map.
@@ -101,7 +106,7 @@ impl RenderedMap {
     }
 }
 
-/// Renders structure maps with merman.
+/// Renders maps: structure maps with merman, swimlane maps on Dovetail's grid.
 pub struct MapRenderer {
     renderer: Renderer,
 }
@@ -125,17 +130,18 @@ impl MapRenderer {
         to_mermaid(content, selected).0
     }
 
-    /// Renders a structure map to PNG and finds where each node landed.
+    /// Renders a map to PNG and finds where each node landed. Swimlane maps ignore
+    /// [`RenderOptions::selected`]: the canvas rings the selection itself.
     pub fn render(
         &self,
         content: &MapContent,
         options: &RenderOptions,
     ) -> Result<RenderedMap, RenderError> {
-        if content.kind != MapKind::Structure {
-            return Err(RenderError::NotStructure(content.kind.as_str()));
-        }
         if content.nodes.is_empty() {
             return Err(RenderError::Empty);
+        }
+        if content.kind == MapKind::Swimlane {
+            return crate::swimlane_render::render(content, options);
         }
         let (source, mermaid_ids) = to_mermaid(content, options.selected.as_ref());
 
@@ -242,6 +248,7 @@ pub(crate) fn extract_placements(
                 .get("is_cluster")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
+            step: None,
         });
     }
     Ok(placements)

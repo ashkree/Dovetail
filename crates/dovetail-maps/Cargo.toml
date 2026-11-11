@@ -16,6 +16,9 @@ thiserror.workspace = true
 # notice must ship) but contained here: dovetail-tui never depends on this crate. Pinned because
 # merman is pre-1.0 and 0.10 is in alpha.
 merman = { version = "=0.9.3", default-features = false, features = ["diagram-flowchart", "layout-elk", "png"] }
+# M15 (f): rasterises the swimlane map's SVG (decision 23e: Dovetail draws swimlanes itself). No
+# new crates: the same version and features merman's PNG export already pulls in.
+resvg = { version = "=0.47.0", default-features = false, features = ["text", "system-fonts"] }
 
 [dev-dependencies]
 insta.workspace = true

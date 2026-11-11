@@ -1,4 +1,6 @@
-use dovetail_api::map::{Connection, Group, MapContent, MapKind, Node, NodeId, NodeKind};
+use dovetail_api::map::{
+    Connection, Flow, FlowStep, Group, Lane, LaneId, MapContent, MapKind, Node, NodeId, NodeKind,
+};
 
 use crate::render::extract_placements;
 use crate::{MapRenderer, RenderError, RenderOptions};
@@ -296,7 +298,7 @@ fn fit_box_limits_the_png_size() {
 }
 
 #[test]
-fn swimlane_and_empty_maps_are_refused() {
+fn a_swimlane_without_a_flow_and_an_empty_map_are_refused() {
     let renderer = MapRenderer::new();
     let swim = MapContent {
         kind: MapKind::Swimlane,
@@ -304,7 +306,7 @@ fn swimlane_and_empty_maps_are_refused() {
     };
     assert!(matches!(
         renderer.render(&swim, &RenderOptions::default()),
-        Err(RenderError::NotStructure("swimlane"))
+        Err(RenderError::Layout(_))
     ));
     let empty = MapContent {
         nodes: vec![],
@@ -316,4 +318,67 @@ fn swimlane_and_empty_maps_are_refused() {
         renderer.render(&empty, &RenderOptions::default()),
         Err(RenderError::Empty)
     ));
+}
+
+/// The user's request goes to the api and back: two lanes, three steps.
+fn swimlane() -> MapContent {
+    let lane = |l: &str| Lane {
+        id: LaneId(l.into()),
+        label: l.into(),
+        node: None,
+    };
+    let step = |n: &str, l: &str| FlowStep {
+        node: id(n),
+        connection: None,
+        arrow: Some("then".into()),
+        note: String::new(),
+        lane: Some(LaneId(l.into())),
+    };
+    MapContent {
+        title: "Request".into(),
+        kind: MapKind::Swimlane,
+        nodes: vec![
+            node("user", NodeKind::Actor, "User <&>"),
+            node("api", NodeKind::Endpoint, "POST /tasks"),
+        ],
+        groups: vec![],
+        connections: vec![],
+        flows: vec![Flow {
+            name: "request".into(),
+            steps: vec![
+                step("user", "you"),
+                step("api", "server"),
+                step("user", "you"),
+            ],
+        }],
+        lanes: vec![lane("you"), lane("server")],
+    }
+}
+
+#[test]
+fn a_swimlane_renders_with_one_box_per_step_inside_the_picture() {
+    let map = MapRenderer::new()
+        .render(
+            &swimlane(),
+            &RenderOptions {
+                selected: None,
+                fit: Some((800, 600)),
+            },
+        )
+        .expect("a valid swimlane renders");
+    assert!(map.png.starts_with(b"\x89PNG"));
+    assert!(map.width <= 800 && map.height <= 600);
+    let steps: Vec<Option<usize>> = map.nodes.iter().map(|n| n.step).collect();
+    assert_eq!(steps, vec![Some(0), Some(1), Some(2)]);
+    for n in &map.nodes {
+        assert!(n.rect.x >= 0.0 && n.rect.x + n.rect.width <= f64::from(map.width));
+        assert!(n.rect.y >= 0.0 && n.rect.y + n.rect.height <= f64::from(map.height));
+    }
+    // The api's box is in the second lane, below the user's.
+    assert!(map.nodes[1].rect.y > map.nodes[0].rect.y);
+    let (cx, cy) = (
+        map.nodes[1].rect.x + map.nodes[1].rect.width / 2.0,
+        map.nodes[1].rect.y + map.nodes[1].rect.height / 2.0,
+    );
+    assert_eq!(map.hit_test(cx, cy), Some(&id("api")));
 }
