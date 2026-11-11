@@ -28,3 +28,22 @@ impl Mode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_is_the_default_mode() {
+        assert_eq!(Mode::default(), Mode::Normal);
+    }
+
+    #[test]
+    fn every_mode_has_its_own_status_bar_label() {
+        let labels: Vec<_> = [Mode::Normal, Mode::Insert, Mode::Command, Mode::Map]
+            .into_iter()
+            .map(Mode::label)
+            .collect();
+        assert_eq!(labels, ["NORMAL", "INSERT", "COMMAND", "MAP"]);
+    }
+}

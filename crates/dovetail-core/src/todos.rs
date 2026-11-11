@@ -538,6 +538,25 @@ mod tests {
     }
 
     #[test]
+    fn whitespace_a_partial_last_line_and_trailing_junk_do_not_parse() {
+        assert!(parse_task_file("  \n").is_err());
+        // A complete object followed by the start of a second write.
+        assert!(parse_task_file(&format!("{ITEM}\n{{\"id\": \"3\"")).is_err());
+        assert!(parse_task_file(&format!("{ITEM}\n{ITEM}")).is_err());
+        // A missing status is an unusable file, not an item with a default.
+        assert!(parse_task_file(r#"{"id":"1","subject":"x"}"#).is_err());
+    }
+
+    #[test]
+    fn an_empty_file_is_unreadable_not_an_empty_list() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("1.json"), "").unwrap();
+        let read = read_list(dir.path());
+        assert!(read.items.is_empty());
+        assert_eq!(read.unreadable, vec!["1".to_string()]);
+    }
+
+    #[test]
     fn a_file_caught_mid_write_is_unreadable_then_read_on_the_next_try() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
