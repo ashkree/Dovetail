@@ -28,6 +28,20 @@ use crate::service::{COORDINATOR, Core};
 use capture::{Capture, Outcome};
 use files::ResearchDirError;
 
+/// Why research content could not be loaded.
+#[derive(Debug, thiserror::Error)]
+enum LoadError {
+    /// No such task, round, finding, source or report.
+    #[error("{0}")]
+    Missing(String),
+    /// The research folder is unknown.
+    #[error(transparent)]
+    Dir(#[from] ResearchDirError),
+    /// Storage failed.
+    #[error(transparent)]
+    Db(#[from] DbError),
+}
+
 /// What the core keeps about research between events.
 #[derive(Debug, Default)]
 pub(crate) struct Research {
@@ -167,19 +181,14 @@ impl Core {
         &self,
         task: TaskId,
         what: &ResearchWhat,
-    ) -> Result<ResearchContent, String> {
+    ) -> Result<ResearchContent, LoadError> {
+        let missing = |what: String| LoadError::Missing(format!("task #{} {what}", task.0));
         let t = self
             .task(task)
             .await
-            .ok_or_else(|| format!("there is no task #{}", task.0))?;
-        let dir = self
-            .research_dir(task, &t.title)
-            .map_err(|e| e.to_string())?;
-        let r = self
-            .db
-            .task_research(task)
-            .await
-            .map_err(|e| e.to_string())?;
+            .ok_or_else(|| LoadError::Missing(format!("there is no task #{}", task.0)))?;
+        let dir = self.research_dir(task, &t.title)?;
+        let r = self.db.task_research(task).await?;
         let doc = |path: Option<String>, markdown: String| {
             ResearchContent::Document(ResearchDocument {
                 path: path.map(|p| dir.join(p)),
@@ -193,7 +202,7 @@ impl Core {
                     .rounds
                     .iter()
                     .find(|x| x.n == *round)
-                    .ok_or_else(|| format!("task #{} has no round {round}", task.0))?;
+                    .ok_or_else(|| missing(format!("has no round {round}")))?;
                 doc(
                     Some(files::brief_path(round)),
                     files::brief_md(task, &t.title, round),
@@ -204,7 +213,7 @@ impl Core {
                     .findings
                     .iter()
                     .find(|f| f.id == *id)
-                    .ok_or_else(|| format!("task #{} has no finding F{}", task.0, id.0))?;
+                    .ok_or_else(|| missing(format!("has no finding F{}", id.0)))?;
                 doc(Some(f.path.clone()), files::finding_md(f, &r.sources))
             }
             ResearchWhat::Source(id) => {
@@ -212,14 +221,14 @@ impl Core {
                     .sources
                     .iter()
                     .find(|s| s.id == *id)
-                    .ok_or_else(|| format!("task #{} cites no source S{}", task.0, id.0))?;
+                    .ok_or_else(|| missing(format!("cites no source S{}", id.0)))?;
                 doc(files::source_path(s), files::source_md(s))
             }
             ResearchWhat::Report => {
                 let (_, body) = r
                     .report
                     .clone()
-                    .ok_or_else(|| format!("task #{} has no report yet", task.0))?;
+                    .ok_or_else(|| missing("has no report yet".into()))?;
                 doc(Some("report.md".into()), body)
             }
         })

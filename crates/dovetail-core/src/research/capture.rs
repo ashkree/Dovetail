@@ -700,6 +700,89 @@ mod tests {
         assert_eq!(report_from_output_file(&dir.path().join("missing")), None);
     }
 
+    /// Feeds stream lines to `capture`, routing as the core does; returns the outcomes.
+    fn feed(capture: &mut Capture, lines: &[&str]) -> Vec<Outcome> {
+        let mut out = Vec::new();
+        for line in lines {
+            for event in dovetail_driver::parse::map_line(line) {
+                if let Some(key) = event.origin().and_then(|o| o.parent_tool_use_id.clone()) {
+                    capture.subagent_event(&key, &event);
+                    continue;
+                }
+                match &event {
+                    DriverEvent::Task(t) => out.extend(capture.task_event(t)),
+                    DriverEvent::ToolResult(r) if capture.watches(&r.tool_use_id) => {
+                        out.extend(capture.agent_result(r));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        out
+    }
+
+    fn launch(capture: &mut Capture, key: &str, round: Option<i64>) {
+        capture.launched(
+            &AgentId("slice-a".into()),
+            AgentId(format!("slice-a:{key}")),
+            key,
+            &serde_json::json!({"description": "Look it up"}),
+            TaskId(5),
+            round,
+            0,
+        );
+    }
+
+    const SEARCH: &[&str] = &[
+        r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"w1","name":"WebSearch","input":{"query":"q"}}]},"parent_tool_use_id":"k"}"#,
+        r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"w1","content":"Web search results for query: \"q\"\n\nLinks: [{\"title\":\"A\",\"url\":\"https://a.example\"}]\n\nProse."}]},"parent_tool_use_id":"k"}"#,
+        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Found A."}]},"parent_tool_use_id":"k"}"#,
+        r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"k","content":"Found A."}]},"parent_tool_use_id":null}"#,
+    ];
+
+    #[test]
+    fn a_research_shaped_subagent_with_no_round_is_a_quick_finding() {
+        let mut c = Capture::default();
+        launch(&mut c, "k", None);
+        let out = feed(&mut c, SEARCH);
+        let [Outcome::File { finding, from, .. }] = out.as_slice() else {
+            panic!("{out:?}");
+        };
+        assert_eq!(finding.round, None);
+        assert_eq!(finding.task, TaskId(5));
+        assert_eq!(*from, BodyFrom::AgentResult);
+        assert_eq!(finding.body, "Found A.");
+        let kinds: Vec<(SourceKind, &str)> = finding
+            .sources
+            .iter()
+            .map(|s| (s.kind, s.locator.as_str()))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (SourceKind::Web, "https://a.example"),
+                (SourceKind::Search, "q")
+            ]
+        );
+        assert!(!c.watches("k"));
+    }
+
+    #[test]
+    fn a_subagent_that_only_reads_files_with_no_round_is_not_filed() {
+        let mut c = Capture::default();
+        launch(&mut c, "k", None);
+        let out = feed(
+            &mut c,
+            &[
+                r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"r1","name":"Read","input":{"file_path":"/x"}}]},"parent_tool_use_id":"k"}"#,
+                r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r1","content":"1\tx"}]},"parent_tool_use_id":"k"}"#,
+                r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"k","content":"ok"}]},"parent_tool_use_id":null}"#,
+            ],
+        );
+        assert!(out.is_empty(), "{out:?}");
+        assert!(!c.watches("k"));
+    }
+
     #[test]
     fn a_better_body_replaces_a_worse_one_but_not_the_reverse() {
         let mut c = Capture::default();
