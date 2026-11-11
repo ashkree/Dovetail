@@ -17,6 +17,11 @@ const MESSAGING_BLOCKERS: [&str; 4] = [
     "DISABLE_GROWTHBOOK",
 ];
 
+/// Why `claude --version` gave nothing.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct VersionError(String);
+
 /// How long `claude --version` may take.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -77,7 +82,7 @@ pub(crate) fn parse_version(output: &str) -> Option<[u32; 3]> {
 }
 
 /// What `claude --version` gave: its output, or why it could not run.
-pub(crate) fn claude_version(output: Result<String, String>) -> Option<Warning> {
+pub(crate) fn claude_version(output: Result<String, VersionError>) -> Option<Warning> {
     let min = MIN_CLAUDE.map(|n| n.to_string()).join(".");
     match output {
         Err(why) => Some(warning(
@@ -102,19 +107,19 @@ pub(crate) fn claude_version(output: Result<String, String>) -> Option<Warning> 
 }
 
 /// Runs `program --version` with a time limit.
-pub(crate) async fn run_claude_version(program: &OsStr) -> Result<String, String> {
+pub(crate) async fn run_claude_version(program: &OsStr) -> Result<String, VersionError> {
     let run = tokio::process::Command::new(program)
         .arg("--version")
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
         .output();
     match tokio::time::timeout(VERSION_TIMEOUT, run).await {
-        Err(_) => Err("timed out".into()),
-        Ok(Err(e)) => Err(e.to_string()),
+        Err(_) => Err(VersionError("timed out".into())),
+        Ok(Err(e)) => Err(VersionError(e.to_string())),
         Ok(Ok(out)) if out.status.success() => {
             Ok(String::from_utf8_lossy(&out.stdout).into_owned())
         }
-        Ok(Ok(out)) => Err(format!("exit {}", out.status)),
+        Ok(Ok(out)) => Err(VersionError(format!("exit {}", out.status))),
     }
 }
 
@@ -132,7 +137,7 @@ mod tests {
         let old = claude_version(Ok("2.1.223 (Claude Code)".into())).unwrap();
         assert!(old.text.contains("older than 2.1.224"), "{}", old.text);
         assert!(claude_version(Ok("hello".into())).is_some());
-        assert!(claude_version(Err("not found".into())).is_some());
+        assert!(claude_version(Err(VersionError("not found".into()))).is_some());
     }
 
     #[test]
