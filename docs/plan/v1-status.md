@@ -21,13 +21,13 @@ State of `main` after the night of 2026-11-10/11 (wave-4 review merged). Source 
 
 ## Left for v1
 
-Overnight 2026-11-10/11: the three build sessions (map canvas, hardening, follow-ups) did not start, so nothing of theirs landed: no branch, worktree or PR. The wave-4 review ran and merged (`docs/reviews/wave-4.md`). The research docs PR #43 is open and waiting for you.
+Overnight 2026-11-10/11 the three build sessions stalled on a permission prompt; they were rerun on 2026-11-11 and merged as PRs #45, #46 and #47. The wave-4 review merged as PR #44 (`docs/reviews/wave-4.md`). The research docs PR #43 is open and waiting for you.
 
 | Item | Who | Status |
 | --- | --- | --- |
 | M15 (f): kitty canvas, MAP mode, mouse only in MAP mode | agent | **Done**, PR #47; mouse capture proven by a test. Left for you: the look in kitty (below) |
 | M15: the canvas in kitty, the outline elsewhere | you | open: see "Try the map canvas" |
-| M16: activity feed events moved from M7 (permission answers, coordinator start and exit, task changes, PR and CI), startup warnings audit, RSS measurement | agent | **Built on branch `claude/m16-activity`** (this PR): activity items for permission answers, coordinator start/exit, task changes and PR changes; startup warnings for Claude Code version and missing recipe; memory caps; `scripts/rss-check.sh` measures 67 MB for the UI over 10 000 streamed turns. CI events are not emitted (no observed source; question in the PR) |
+| M16: activity feed events moved from M7 (permission answers, coordinator start and exit, task changes, PR and CI), startup warnings audit, RSS measurement | agent | **Done**, PR #46: activity items for permission answers, coordinator start/exit, task changes and PR changes; startup warnings for Claude Code version and missing recipe; memory caps; `scripts/rss-check.sh` measures 67 MB for the UI over 10 000 streamed turns. CI events are not emitted (no observed source; question in the PR) |
 | Follow-ups #3 (attach an image from a pasted or dropped path) and #8 (clean up saved paste attachments); the digest's v1 roadmap audit | agent | **Done**: PR #45; the audit is the section below |
 | Wave-4 code review from `review-wave-3` | agent (Opus) | **Done**: `docs/reviews/wave-4.md`, six questions for you |
 | `/retro` for wave 4, then the `review-wave-4` tag | you | after reading the review |
