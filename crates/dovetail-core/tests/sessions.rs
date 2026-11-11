@@ -4162,6 +4162,62 @@ fn the_first_open_of_a_new_day_starts_a_fresh_coordinator_and_y_goes_back() {
     h.quit();
 }
 
+#[test]
+fn a_day_that_was_never_closed_keeps_its_coordinator_and_says_so() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "hello");
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+    let old = fake.started_specs()[0].session_id.clone();
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    // The coordinator was used two days ago and never closed; the newest journal is older.
+    let db = rusqlite::Connection::open(paths.state_db("p")).expect("state db");
+    db.execute(
+        "UPDATE conversation_entries SET at_ms = at_ms - 86400000 * 2",
+        [],
+    )
+    .expect("backdate");
+    drop(db);
+    let dir = paths.data.join("projects/p/journal");
+    std::fs::create_dir_all(&dir).expect("journal dir");
+    let file = dir.join(format!("{}.md", local_date(4)));
+    std::fs::write(&file, "# Handoff\n\nThe day before.\n").expect("old handoff");
+    std::fs::File::options()
+        .write(true)
+        .open(&file)
+        .and_then(|f| {
+            f.set_modified(std::time::SystemTime::now() - Duration::from_secs(4 * 86_400))
+        })
+        .expect("backdate the file");
+    let used_on = jiff::Zoned::now()
+        .checked_sub(jiff::Span::new().days(2))
+        .expect("date")
+        .strftime("%A")
+        .to_string();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    let unclosed = format!("{used_on} wasn't closed; kept that coordinator. `:eod` to close it.");
+    h.wait_for("the unclosed-day item", |s| {
+        s.inbox
+            .iter()
+            .any(|i| matches!(&i.kind, InboxKind::Error { text } if *text == unclosed))
+    });
+    // The same session resumes, with no fresh seed and no keep-yesterday item.
+    wait_started(&fake, 1);
+    let specs = fake.started_specs();
+    assert_eq!(specs.len(), 1);
+    assert!(specs[0].resume);
+    assert_eq!(specs[0].session_id, old);
+    assert!(h.snap.inbox.iter().all(|i| !matches!(
+        &i.kind,
+        InboxKind::Permission { tool, .. } if tool == dovetail_api::KEEP_COORDINATOR_PERMISSION
+    )));
+    h.quit();
+}
+
 // --- :upgrade (ADR 0014) ---
 
 mod upgrade {
