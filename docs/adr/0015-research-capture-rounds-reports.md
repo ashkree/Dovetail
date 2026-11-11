@@ -1,0 +1,24 @@
+# Research capture, rounds, reports and file locations
+
+New beyond the v1 design; spec in [`docs/research.md`](../research.md). Refines the hard constraint "nothing in user repos" (AGENTS.md, README design principles) with one explicit opt-in exception, extends [ADR 0003](0003-decision-log-in-v1.md) (decision log) with evidence links, and relies on [ADR 0005](0005-explicit-projects-any-folder.md) (explicit projects, any folder). No numbered Decision in the frozen baseline is superseded.
+
+Why: much of the user's work is research (business opportunities, whole features, specific questions). Subagents report to the coordinator, the user reads what the coordinator surfaces, and full findings, sources, ideas and decisions get lost on the way. The goal is decisions backed by sources, at macro and micro scale, with nothing lost.
+
+**Decision:**
+
+1. **Capture is automatic and out of context.** Dovetail stores every research subagent's full output and the sources it actually fetched or read, taken from tool calls in the headless stream (`WebFetch`, `WebSearch`, `Read` inputs and their results), not from links the model claims. Nothing is fed back into the coordinator's context.
+2. **Five kinds, one home each:** Source, Finding, Report, Idea, Decision (table in `docs/research.md`). Ideas and decisions never live inside reports; reports link to them.
+3. **A research effort is a task, not a session.** Each fan-out of subagents is a **round**; a task has many rounds across days. Each round keeps the user's criteria as `brief.md`. Subagents the coordinator spawns while a round is open are filed under that round.
+4. **Routing rule for ideas:** same question, deeper or narrower, is a new round on the same task; a different question is a new task in Unsorted marked "follow-up of" (`tasks.follow_up_of` already exists); not research is an ordinary task. The test: would the answer change this report's conclusion?
+5. **Reports** (`report.md`) are rewritten each round with a "What changed in round N" note; history lives in `rounds/`. Tasks marked as decisions use a fixed template (recommendation, confidence, labelled key figures, options, what would change this, open questions). Citations must resolve to real findings or sources; uncited claims and unlabelled figures are flagged.
+6. **Altitude and size are separate axes.** Altitude (macro or micro) decides where research lives: macro at project level or in a research-only project, micro on a task in the code project. Size decides how it runs: a quick question is one subagent and one finding on the current task, with no round, promotable to a round later; deep work is a task with rounds.
+7. **Files.** Default `~/.local/share/dovetail/projects/<project-id>/research/`. A project may set its own research folder in its config under `~/.config/dovetail/projects/<id>.toml`; that is an explicit opt-in. **This is the one exception to "nothing in your repos"**: Dovetail's own `config/projects/dovetail.toml` sets it to `docs/research/`, so its research sits in git next to `docs/adr/`. Dovetail writes only under that folder, creates it only when a first round or finding exists, and never touches other repo paths. The exception covers research files only, not hooks, settings, role prompts or worktrees.
+8. **Decision evidence extends ADR 0003.** `log_decision` and the `decisions` table stay as they are; decisions proposed through `research_propose` additionally carry finding and source ids (`decision_evidence` table), and the decision log shows the links. A decision of kind `decision` from the research suite without evidence is refused.
+
+**Open points flagged, not resolved:**
+
+- **Research-only projects.** ADR 0005 lets any folder be a project, git or not, with slices sharing the folder and no worktrees. A research-only project that has a folder (say `~/research/market-sizing`) therefore fits today: register it, use the default or an opt-in research folder. A project with **no folder at all** does not fit: `registry.db`'s `projects` table has `repo_path TEXT NOT NULL` and `git_common_dir TEXT NOT NULL UNIQUE`, and `projects::resolve` finds a project from the folder `dovetail` is started in. Either such a project gets a synthetic folder under `~/.local/share/dovetail/projects/<id>/` (no schema change) or the columns become nullable (a registry migration). Which one is the user's call; the spec assumes the first.
+- **Fidelity of "cached copy".** `WebFetch` returns a model-summarised view of a page, not the raw bytes. A Source's cached copy is what the tool returned to the agent, which is what the agent actually read; saying so in the UI avoids implying an archive. Verified by spike S7 (`docs/plan/research-sessions.md`).
+- **Task notes** (v1.1) overlap with `report.md` as "a markdown file per task". They stay separate: notes are the user's, reports the coordinator's. See the spec.
+
+Approved by the user in the grilling session of 2026-11-10 (claude.ai).
