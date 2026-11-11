@@ -27,7 +27,7 @@ Overnight 2026-11-10/11: the three build sessions (map canvas, hardening, follow
 | --- | --- | --- |
 | M15 (f): kitty canvas, MAP mode, mouse only in MAP mode | agent | **Not done**: the overnight session did not run; reschedule |
 | M16: activity feed events moved from M7 (permission answers, coordinator start and exit, task changes, PR and CI), startup warnings audit, RSS measurement | agent | **Not done**: the overnight session did not run; reschedule |
-| Follow-ups #3 (attach an image from a pasted or dropped path) and #8 (clean up saved paste attachments); the digest's v1 roadmap audit | agent | **Done**: PR #PRNUM; the audit is the section below. Only the M15 canvas is partial |
+| Follow-ups #3 (attach an image from a pasted or dropped path) and #8 (clean up saved paste attachments); the digest's v1 roadmap audit | agent | **Done**: PR #45; the audit is the section below. Only the M15 canvas is partial |
 | Wave-4 code review from `review-wave-3` | agent (Opus) | **Done**: `docs/reviews/wave-4.md`, six questions for you |
 | `/retro` for wave 4, then the `review-wave-4` tag | you | after reading the review |
 | Answer the review's six questions (blocking `systemctl`, editor path check, `update_task` and Now, morning coordinator day rule, `<leader>y`, side chat read-only) | you | open |
