@@ -45,6 +45,8 @@ pub struct Theme {
     /// The ring around the selected node on the map canvas: the yellow of the Mermaid
     /// `<kind>Sel` classes, so both renderers' selections look alike.
     pub map_ring: Color,
+    /// Citation markers (`[3]`, `[F3]`, `[S2]`) in research text.
+    pub cite: Color,
     /// Image attachment chips (`[image 1 · 412 KB]`), foreground only.
     pub chip: Color,
     /// Your name in a message header rule.
@@ -84,6 +86,7 @@ impl Theme {
             // Under `ink` text like the others, well above 7:1.
             mode_map: Color::Rgb(0x69, 0xb2, 0xa4),
             map_ring: Color::Rgb(0xff, 0xd8, 0x4a),
+            cite: Color::Rgb(0xd9, 0x8c, 0xb3),
             chip: Color::Rgb(0x88, 0xab, 0xca),
             speaker_you: Color::Rgb(0x5e, 0x9e, 0xde),
             speaker_agent: Color::Rgb(0xc7, 0x9d, 0x5a),

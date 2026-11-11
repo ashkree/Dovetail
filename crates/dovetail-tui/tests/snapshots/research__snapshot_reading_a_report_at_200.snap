@@ -1,0 +1,34 @@
+---
+source: crates/dovetail-tui/tests/research.rs
+expression: "render(&mut app, 200, 30)"
+---
+ folder /src/business
+┌ task · #1 · report ──────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────────────────────────────────────────┐
+│ Per seat or flat?                                                                                                        ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get… 10:15 │
+│                                                                                                                          ││   ? slice-4  Which route prefix should the handler use?            10:12 │
+│ Recommendation: per seat [F1][S1]. Confidence: medium.                                                                   ││   ✓ slice-4  Handler wired; tests next.                            10:09 │
+│                                                                                                                          ││                                                                          │
+│ Evidence                                                                                                                 ││                                                                          │
+│                                                                                                                          ││                                                                          │
+│ • Churn is lower on seat plans [F1, S2].                                                                                 ││                                                                          │
+│                                                                                                                          ││                                                                          │
+│ • Flat plans leave money behind [3].                                                                                     ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
+│                                                                                                                          │└──────────────────────────────────────────────────────────────────────────┘
+│ A long paragraph so that the reading column has something to wrap at narrow widths: pricing research is mostly reading,  │┌ tasks · business ────────────────────────────────────────────────────────┐
+│ and reading wants calm lines of text that do not run across a whole wide terminal.                                       ││ ◐ ◆ coordinator                                       working 1.2G $3.10 │
+│                                                                                                                          ││ ▾ Now (2)                                                                │
+│                                                                                                                          ││ ▾ ⚠ business surface P1                                         PR #1231 │
+│                                                                                                                          ││   ▾ ◐ ◆ slice-4  edits                            working 412M 71% $1.84 │
+│                                                                                                                          ││         ⎇ dovetail/slice-4                                               │
+│                                                                                                                          ││         ✓ write route tests                                              │
+│                                                                                                                          ││         ◐ wire handler to registry                                       │
+│                                                                                                                          ││         ○ update OpenAPI spec ⊘ blocked                                  │
+│                                                                                                                          ││       ✓ ◇ rebase                                              done $0.21 │
+│                                                                                                                          ││       ◐ ◇ explore callers                                12 tools · Grep │
+│                                                                                                                          ││ ▾ ⚠ get_decision 500 P0                                                  │
+│                                                                                                                          ││   ▾ ⚠ ◆ slice-7  manual                         needs you 388M 85% $0.92 │
+│                                                                                                                          ││         ⎇ dovetail/slice-7                                               │
+│                                                                                                                          ││ ▾ Next (1)                                                               │
+│ j k scroll · gg G · e edit file · / search · esc back                                                                    ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command
