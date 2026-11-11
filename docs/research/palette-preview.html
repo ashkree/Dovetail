@@ -1,0 +1,581 @@
+<title>Dovetail Palette Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layout: a quiet control strip, then the terminal preview(s) as the stage, then the role legend
+   and editor. Single dark look by choice: the page imitates a dark desk around a terminal. */
+:root {
+  color-scheme: dark;
+  --page: #100f17;
+  --panel: #18171f;
+  --edge: #2b2935;
+  --ink: #d9d6e4;
+  --ink-soft: #a8a5b8;
+  --accent: #c9b6f2;
+  --bad: #ff9a88;
+  --warn: #f2c46e;
+  --good: #8fe0bd;
+  --ui: "Atkinson Hyperlegible", "Noto Sans", system-ui, sans-serif;
+  --mono: "Hack Nerd Font Mono", "Hack Nerd Font", "Hack", "JetBrains Mono", ui-monospace, monospace;
+  --term-size: 13px;
+}
+html, body { background: var(--page); color: var(--ink); }
+body {
+  font: 15px/1.5 var(--ui);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+h1 { font-size: 1.35rem; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+h2 { font-size: 1.05rem; margin: 0 0 .5rem; text-wrap: balance; }
+.sub { color: var(--ink-soft); margin: .2rem 0 0; max-width: 70ch; }
+.wrap { max-width: 1960px; margin: 0 auto; display: grid; gap: 18px; }
+
+/* Controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; padding: 12px 14px; }
+.group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.group > .lab { color: var(--ink-soft); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; margin-right: 4px; }
+button, select, input[type=text] {
+  font: inherit; color: var(--ink); background: #201f29; border: 1px solid var(--edge);
+  border-radius: 6px; padding: 5px 10px; }
+button { cursor: pointer; }
+button:hover { border-color: #4a4658; }
+button[aria-pressed="true"] { border-color: var(--accent); color: #f1ecff; background: #2b2640; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tab { display: inline-flex; gap: 7px; align-items: center; }
+.tab .dots { display: inline-flex; gap: 2px; }
+.tab .dots i { width: 8px; height: 8px; border-radius: 2px; display: block; }
+kbd { font-family: var(--mono); font-size: .8em; color: var(--ink-soft); border: 1px solid var(--edge); border-radius: 4px; padding: 0 4px; }
+input[type=range] { accent-color: var(--accent); width: 140px; }
+.num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: .9rem; }
+
+/* Stage */
+.stage { display: flex; flex-wrap: wrap; gap: 18px; }
+.shot { display: grid; gap: 6px; min-width: 0; max-width: 100%; }
+.shot-label { display: flex; gap: 10px; align-items: baseline; color: var(--ink-soft); font-size: .9rem; }
+.shot-label b { color: var(--ink); }
+.scroller { overflow-x: auto; max-width: 100%; border-radius: 6px; }
+.term {
+  position: relative; font-family: var(--mono); font-size: var(--term-size); line-height: 1.24;
+  width: max-content; border-radius: 6px; overflow: hidden; isolation: isolate;
+}
+.term .wall, .term .glass { position: absolute; inset: 0; z-index: -1; }
+.term .wall.normal {
+  background:
+    radial-gradient(ellipse 22% 30% at 27% 57%, rgba(232,160,80,.26), rgba(232,160,80,.08) 55%, transparent 75%),
+    radial-gradient(circle at 24% 55%, rgba(255,200,120,.18) 0 1.2%, transparent 1.6%),
+    radial-gradient(circle at 30% 60%, rgba(255,200,120,.15) 0 1%, transparent 1.4%),
+    linear-gradient(90deg, transparent 63%, rgba(110,140,200,.10) 66%, rgba(170,195,235,.16) 68%, rgba(110,140,200,.08) 71%, transparent 74%),
+    linear-gradient(180deg, #0d0c1a 0%, #19162e 48%, #2a2744 100%);
+}
+.term .wall.lantern {
+  background:
+    radial-gradient(circle at 18% 30%, #fff1d0 0 3%, transparent 9%),
+    radial-gradient(circle at 46% 64%, #ffe6b8 0 3%, transparent 10%),
+    radial-gradient(circle at 78% 40%, #ffe0a8 0 2.5%, transparent 9%),
+    radial-gradient(ellipse 80% 90% at 45% 50%, #f0cfa0 0%, #e2b47c 60%, #c9925a 100%);
+}
+.term .glass { background: #171b23; }
+.screen { white-space: pre; padding: 6px 8px; }
+.row { display: block; height: 1.24em; white-space: pre; }
+.cvd-protan .screen { filter: url(#protan); }
+.cvd-deutan .screen { filter: url(#deutan); }
+.cvd-tritan .screen { filter: url(#tritan); }
+
+/* Terminal roles */
+.term { color: var(--body); }
+.b { color: var(--body); }
+.bo { color: var(--bold); font-weight: 700; }
+.hd { color: var(--bold); font-weight: 700; }
+.it { color: var(--italic); font-style: italic; }
+.cd { color: var(--code); }
+.ok { color: var(--code); }
+.ln { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+.dm { color: var(--dim); }
+.fc { color: var(--focus); }
+.fcb { color: var(--focus); font-weight: 700; }
+.er { color: var(--error); }
+.wn { color: var(--warning); }
+.wnb { color: var(--warning); font-weight: 700; }
+.you { color: var(--link); font-weight: 700; }
+.ag { color: var(--bold); font-weight: 700; }
+.line { color: color-mix(in srgb, var(--dim) 60%, transparent); }
+.mode { background: var(--warning); color: #15171c; font-weight: 700; }
+.tabon { color: var(--focus); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Legend + editor */
+.lower { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 1100px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; padding: 14px; min-width: 0; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--edge); vertical-align: middle; white-space: nowrap; }
+th { color: var(--ink-soft); font-weight: 400; font-size: .82rem; letter-spacing: .06em; text-transform: uppercase; }
+td.use { white-space: normal; color: var(--ink-soft); font-size: .88rem; min-width: 14ch; }
+th.cur, td.cur { background: #211f2c; }
+.sw { display: inline-flex; gap: 3px; vertical-align: middle; }
+.sw i { width: 22px; height: 22px; border-radius: 4px; display: block; border: 1px solid #0006; }
+.hexin { display: inline-flex; gap: 6px; align-items: center; }
+.hexin input[type=color] { width: 30px; height: 28px; padding: 0; border: 1px solid var(--edge); border-radius: 5px; background: none; cursor: pointer; }
+.hexin input[type=text] { width: 9ch; font-family: var(--mono); font-size: .9rem; padding: 3px 6px; }
+.hexin input.invalid { border-color: var(--bad); }
+.ratio { font-family: var(--mono); font-size: .92rem; }
+.pill { display: inline-block; font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; border-radius: 99px; padding: 1px 7px; margin-left: 6px; font-family: var(--ui); }
+.pill.low { color: #1a0f0d; background: var(--bad); }
+.pill.ok { color: #0d1a14; background: var(--good); }
+.sample { font-family: var(--mono); font-size: 14px; padding: 2px 8px; border-radius: 4px; }
+.notes { color: var(--ink-soft); font-size: .88rem; margin: .6rem 0 0; display: grid; gap: .3rem; max-width: 80ch; }
+.pairs { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.pairs li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pairs .de { font-family: var(--mono); min-width: 7ch; }
+.de.close { color: var(--bad); } .de.near { color: var(--warn); } .de.far { color: var(--good); }
+pre.out { background: #0c0b12; border: 1px solid var(--edge); border-radius: 6px; padding: 10px; overflow-x: auto;
+  font-family: var(--mono); font-size: .85rem; color: var(--ink); margin: .6rem 0 0; max-height: 360px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toast { color: var(--good); font-size: .9rem; }
+@media (prefers-reduced-motion: no-preference) { button { transition: border-color .12s, background .12s; } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- Machado, Oliveira & Fernandes (2009), severity 1.0; feColorMatrix runs in linear RGB by default. -->
+  <filter id="protan"><feColorMatrix type="matrix" values="0.152286 1.052583 -0.204868 0 0  0.114503 0.786281 0.099216 0 0  -0.003882 -0.048116 1.051998 0 0  0 0 0 1 0"/></filter>
+  <filter id="deutan"><feColorMatrix type="matrix" values="0.367322 0.860646 -0.227968 0 0  0.280085 0.672501 0.047413 0 0  -0.011820 0.042940 0.968881 0 0  0 0 0 1 0"/></filter>
+  <filter id="tritan"><feColorMatrix type="matrix" values="1.255528 -0.076749 -0.178779 0 0  -0.078411 0.930809 0.147602 0 0  0.004733 0.691367 0.303900 0 0  0 0 0 1 0"/></filter>
+</svg>
+
+<div class="wrap">
+  <header>
+    <h1>Dovetail Palette Bench</h1>
+    <p class="sub">Each palette drawn on a 120×35 Dovetail screen through kitty's glass. Contrast uses the measured backdrop: 35 % wallpaper plus the glass at the opacity set below.</p>
+  </header>
+
+  <div class="controls" role="toolbar" aria-label="Preview controls">
+    <div class="group" id="tabs" role="group" aria-label="Palette"><span class="lab">Palette</span></div>
+    <div class="group" role="group" aria-label="View">
+      <span class="lab">View</span>
+      <button id="split" aria-pressed="false" title="Now beside the candidate (s)">Now vs candidate <kbd>s</kbd></button>
+    </div>
+    <div class="group" role="group" aria-label="Backdrop">
+      <span class="lab">Backdrop</span>
+      <button id="bg-normal" aria-pressed="true">Normal</button>
+      <button id="bg-lantern" aria-pressed="false">Over the lanterns <kbd>l</kbd></button>
+    </div>
+    <div class="group">
+      <label class="lab" for="opacity">Glass</label>
+      <input type="range" id="opacity" min="0.5" max="1" step="0.01" value="0.65">
+      <span class="num" id="opacity-out">0.65</span>
+    </div>
+    <div class="group">
+      <label class="lab" for="cvd">Colour vision</label>
+      <select id="cvd">
+        <option value="none">Typical</option>
+        <option value="protan">Protanopia</option>
+        <option value="deutan">Deuteranopia</option>
+        <option value="tritan">Tritanopia</option>
+      </select>
+    </div>
+    <div class="group">
+      <label class="lab" for="zoom">Size</label>
+      <select id="zoom">
+        <option value="13">13 px (kitty)</option>
+        <option value="15">15 px</option>
+        <option value="17">17 px</option>
+      </select>
+    </div>
+  </div>
+
+  <section class="stage" id="stage" aria-label="Terminal previews"></section>
+
+  <section class="lower">
+    <div class="card">
+      <h2 id="legend-title">Roles</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr>
+            <th>Role</th><th>Used for</th><th>Colour</th><th>Hex</th>
+            <th id="th-normal">On normal <span class="num" id="bgn-hex"></span></th>
+            <th id="th-lantern">Over lanterns <span class="num" id="bgl-hex"></span></th>
+            <th>Needs</th>
+          </tr></thead>
+          <tbody id="legend"></tbody>
+        </table>
+      </div>
+      <div class="notes">
+        <span>Reading roles (body, bold, italic, code, link) need 4.5:1. Chrome and markers (dim, focus, error, warning) need 3:1. The shaded column is the backdrop shown above.</span>
+        <span>With a colour-vision mode on, the second swatch shows how each colour reads under it.</span>
+        <span id="note-extra"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Closest role pairs</h2>
+      <p class="notes" style="margin-top:0">Colour distance (ΔE, CIELAB) between roles that should look different, under the colour-vision mode chosen above. Under 12 is hard to tell apart; under 22 needs a second look. Roles that share a hex on purpose are left out.</p>
+      <ul class="pairs" id="pairs"></ul>
+      <h2 style="margin-top:1.1rem">Export</h2>
+      <div class="row-actions">
+        <button id="copy">Copy as Rust theme struct</button>
+        <button id="reset">Reset this palette</button>
+        <span class="toast" id="toast" role="status"></span>
+      </div>
+      <pre class="out" id="rust"></pre>
+    </div>
+  </section>
+</div>
+
+<script>
+const ROLES = [
+  { key: 'body', label: 'body', use: 'Body text', min: 4.5 },
+  { key: 'bold', label: 'bold', use: 'Bold, headings, agent name', min: 4.5 },
+  { key: 'italic', label: 'italic', use: 'Italic, blockquote', min: 4.5 },
+  { key: 'code', label: 'code', use: 'Inline code, paths, code blocks, done ✓', min: 4.5 },
+  { key: 'link', label: 'link', use: 'Links, your name, working agents', min: 4.5 },
+  { key: 'dim', label: 'dim', use: 'Hints, rules, tool lines, figures', min: 3 },
+  { key: 'focus', label: 'focus', use: 'Focus border, prompt, active tab, questions', min: 3 },
+  { key: 'error', label: 'error', use: 'Errors, ✗', min: 3 },
+  { key: 'warning', label: 'warning', use: 'Needs you, ▲, NORMAL badge', min: 3 },
+];
+
+const BASE = {
+  A: { name: 'Iris & gold', c: { body:'#e2def2', bold:'#f5c069', italic:'#c4aef5', code:'#6edbb0', link:'#70b8f0', dim:'#9a9bb2', focus:'#a48fd4', error:'#f08a78', warning:'#f5c069' } },
+  B: { name: 'Mist', c: { body:'#d0d6f2', bold:'#b4befe', italic:'#f5c2e7', code:'#a6e3a1', link:'#89b4fa', dim:'#9a9bb2', focus:'#b4befe', error:'#f38ba8', warning:'#f9e2af' } },
+  C: { name: 'Lantern', c: { body:'#e6dff0', bold:'#f0b86e', italic:'#e8a0bf', code:'#7fd6c0', link:'#8fb8f5', dim:'#9a9bb2', focus:'#a48fd4', error:'#e8806e', warning:'#f0b86e' } },
+  D: { name: 'High contrast', c: { body:'#ebe6fa', bold:'#ffd28a', italic:'#d6c4ff', code:'#8ff0cf', link:'#9cc8ff', dim:'#a9aac0', focus:'#b9a4e8', error:'#ff9a88', warning:'#ffd28a' } },
+  Now: { name: 'Now', c: { body:'#d6d2e8', bold:'#e0b878', italic:'#b9a4e8', code:'#7fd6c0', link:'#b9a4e8', dim:'#8d8ea6', focus:'#a48fd4', error:'#ed726a', warning:'#df7e3a' } },
+};
+const ORDER = ['Now', 'A', 'B', 'C', 'D'];
+
+// Wallpaper behind the glass, solved from the research numbers: 65 % #171b23 + 35 % W gives
+// #26292e on average and #595c61 over the brightest lantern pixels.
+const GLASS = [0x17, 0x1b, 0x23];
+const WALL = { normal: [65.9, 67.0, 66.4], lantern: [210.9, 212.7, 212.1] };
+
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+const pal = structuredClone(BASE);
+const saved = store.get('dovetail-palette-edits');
+if (saved) for (const id of ORDER) if (saved[id]) Object.assign(pal[id].c, saved[id]);
+
+const state = Object.assign(
+  { current: 'A', split: false, backdrop: 'normal', opacity: 0.65, cvd: 'none', zoom: '13' },
+  store.get('dovetail-palette-view') || {}
+);
+
+/* ---------- colour maths ---------- */
+const hexOk = h => /^#[0-9a-f]{6}$/i.test(h);
+const toRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const toHex = rgb => '#' + rgb.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+const lin = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+const unlin = v => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
+const lum = rgb => { const [r, g, b] = rgb.map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+const backdrop = which => GLASS.map((g, i) => state.opacity * g + (1 - state.opacity) * WALL[which][i]);
+
+const CVD = {
+  protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+  tritan: [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.303900]],
+};
+function simulate(rgb, mode) {
+  if (mode === 'none') return rgb;
+  const l = rgb.map(lin), m = CVD[mode];
+  return m.map(row => unlin(Math.max(0, Math.min(1, row[0] * l[0] + row[1] * l[1] + row[2] * l[2]))));
+}
+function lab(rgb) {
+  const [r, g, b] = rgb.map(lin);
+  const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+  const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+  const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+const deltaE = (a, b) => Math.hypot(...lab(a).map((v, i) => v - lab(b)[i]));
+
+/* ---------- the screen: 120 columns x 35 rows ---------- */
+const COLS = 120, ROWS = 35, LW = 72, RW = 48;
+
+const len = segs => segs.reduce((n, [t]) => n + [...t].length, 0);
+function fit(segs, w) {
+  const n = len(segs);
+  if (n > w) console.warn('row too wide', n, w, segs.map(s => s[0]).join(''));
+  return n < w ? [...segs, [' '.repeat(w - n), '']] : segs;
+}
+function box(w, h, title, lines, border, titleCls) {
+  const inner = w - 2;
+  const head = [['╭─ ', border], [title, titleCls], [' ' + '─'.repeat(inner - 3 - [...title].length) + '╮', border]];
+  const out = [head];
+  for (let i = 0; i < h - 2; i++) out.push([['│', border], ...fit(lines[i] || [], inner), ['│', border]]);
+  out.push([['╰' + '─'.repeat(inner) + '╯', border]]);
+  return out;
+}
+const rule = (name, cls, time, w) =>
+  [['── ', 'line'], [name, cls], [' ' + '─'.repeat(w - 5 - name.length - time.length) + ' ', 'line'], [time, 'dm']];
+
+const conv = [
+  rule('You', 'you', '14:02', 70),
+  [['Wire the new palette into theme.rs and keep Dusk as a fallback.', 'b']],
+  [],
+  rule('coordinator', 'ag', '14:02', 70),
+  [['I\'ll split this in two. The ', 'b'], ['theme', 'bo'], [' change is small; the ', 'b'], ['risky', 'it'], [' part', 'b']],
+  [['is ', 'b'], ['render/markdown.rs', 'cd'], [', which reads colours at draw time. See ', 'b'], ['ADR 0016', 'ln'], ['.', 'b']],
+  [],
+  [['## Plan', 'hd']],
+  [['1. Add a ', 'b'], ['link', 'cd'], [' field to ', 'b'], ['Theme', 'cd'], [' and a ', 'b'], ['lantern()', 'cd'], [' constructor.', 'b']],
+  [['2. Route ', 'b'], ['headings', 'bo'], [' through ', 'b'], ['accent()', 'cd'], [' and links through ', 'b'], ['link', 'cd'], ['.', 'b']],
+  [['3. Keep ', 'b'], ['Dusk', 'it'], [' behind ', 'b'], ['theme = "dusk"', 'cd'], [' in config.toml.', 'b']],
+  [],
+  [['  ```rust', 'dm']],
+  [['  │ ', 'line'], ['pub fn lantern() -> Self {', 'cd']],
+  [['  │ ', 'line'], ['    Self { body: Color::Rgb(0xe6, 0xdf, 0xf0), ..Self::dusk() }', 'cd']],
+  [['  │ ', 'line'], ['}', 'cd']],
+  [['  ```', 'dm']],
+  [],
+  [['▎ ', 'fc'], ['The TUI paints no backgrounds, so contrast is measured through', 'it']],
+  [['▎ ', 'fc'], ['the glass, never against a solid fill.', 'it']],
+  [],
+  [['… 21 more lines · zo to show', 'dm']],
+  [['▪ Edit ', 'dm'], ['crates/dovetail-tui/src/theme.rs', 'cd'], ['  +42 −6', 'dm']],
+  [['▪ Bash cargo test -p dovetail-tui  ', 'dm'], ['✓ 118 passed', 'ok']],
+  [['✗ clippy: unused import ', 'er'], ['Modifier', 'cd'], [' in render/markdown.rs:12', 'er']],
+  [],
+  [['● ', 'ln'], ['working', 'dm'], [' · 38s · ctx 41 %', 'dm']],
+  [],
+];
+
+const inbox = [
+  [['▲ ', 'wnb'], ['slice-theme', 'bo'], ['  Bash ', 'dm'], ['cargo fmt --all', 'cd']],
+  [['  y allow · A always · d deny', 'dm']],
+  [['? ', 'fcb'], ['coordinator', 'ag'], ['  Which palette is the default?', 'b']],
+  [['  1 Iris & gold · 2 High contrast · 3 other', 'dm']],
+  [['▲ ', 'wnb'], ['slice-maps', 'bo'], ['  Edit ', 'dm'], ['maps/src/ring.rs', 'cd']],
+  [['  y allow · A always · d deny', 'dm']],
+  [['✗ ', 'er'], ['slice-maps', 'bo'], ['  test failed: ', 'er'], ['canvas::ring', 'cd']],
+  [['✓ ', 'ok'], ['slice-docs', 'bo'], ['  PR #66 ready for review', 'b']],
+  [['3 need you · 1 failed · 1 done', 'dm']],
+];
+
+const tree = [
+  [['NEEDS YOU', 'hd']],
+  [['▾ ', 'dm'], ['Theme colours', 'b'], ['                  ', ''], ['needs you', 'wn']],
+  [['╭' + '─'.repeat(44) + '╮', 'fc']],
+  [['│', 'fc'], ...fit([[' ● ', 'ln'], ['slice-theme', 'b'], [' edits ', 'bo'], ['  412M  $0.84 ', 'dm'], ['needs you', 'wn']], 44), ['│', 'fc']],
+  [['╰' + '─'.repeat(44) + '╯', 'fc']],
+  [['    ◦ ', 'dm'], ['explore', 'b'], ['  ', ''], ['read-only', 'ln'], ['         96M  $0.06', 'dm']],
+  [],
+  [['IN PROGRESS', 'hd']],
+  [['▾ ', 'dm'], ['Maps stage 1', 'b'], ['                     ', ''], ['working', 'ln']],
+  [['  ● ', 'ln'], ['slice-maps  ', 'b'], [' edits ', 'bo'], ['  388M  $1.92 ', 'dm'], ['needs you', 'wn']],
+  [['  ● ', 'ln'], ['slice-docs  ', 'b'], [' read-only ', 'ln'], [' 120M  $0.31', 'dm']],
+  [],
+  [['DONE', 'hd']],
+  [['✓ ', 'ok'], ['Docs drift cleanup', 'b'], ['                    $0.44', 'dm']],
+  [['✓ ', 'ok'], ['Project add recipe', 'b'], ['                    $1.10', 'dm']],
+  [],
+  [['4 agents · 1.0 GB · $4.67 today', 'dm']],
+];
+
+function buildRows() {
+  const left = box(LW, 30, 'conversation · coordinator', conv, 'line', 'bo');
+  const right = [...box(RW, 11, 'inbox · 3', inbox, 'line', 'bo'), ...box(RW, 19, 'tasks', tree, 'fc', 'fcb')];
+  const rows = [];
+  rows.push(fit([[' <leader> ', 'dm'], ['│', 'line'], [' ', ''], ['s session', 'tabon'], [' ', ''], ['│', 'line'], [' r research ', 'dm'], ['│', 'line'], [' w worktrees', 'dm']], COLS));
+  for (let i = 0; i < 30; i++) rows.push([...left[i], ...right[i]]);
+  const chat = box(COLS, 3, 'message coordinator', [[['› ', 'fcb'], ['make the dim colour a touch brighter over the lanterns', 'b'], ['▏', 'fc']]], 'line', 'dm');
+  rows.push(...chat);
+  rows.push(fit([[' NORMAL ', 'mode'], [' ', ''], ['dovetail', 'bo'], [' · main · coordinator · ', 'dm'], ['ctx 41 %', 'b'], [' · ', 'dm'], ['$4.67', 'b'], [' today · 4 agents · ', 'dm'], ['3 need you', 'wn'], [' · ? help', 'dm']], COLS));
+  return rows;
+}
+const ROWS_DATA = buildRows();
+if (ROWS_DATA.length !== ROWS) console.warn('rows', ROWS_DATA.length);
+
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const screenHtml = ROWS_DATA.map(r => '<div class="row">' + r.map(([t, c]) => c ? `<span class="${c}">${esc(t)}</span>` : esc(t)).join('') + '</div>').join('');
+
+/* ---------- rendering ---------- */
+const $ = id => document.getElementById(id);
+const stage = $('stage');
+
+function termVars(id) {
+  return ROLES.map(r => `--${r.key}:${pal[id].c[r.key]}`).join(';');
+}
+function shot(id, tag) {
+  const p = pal[id];
+  return `<figure class="shot" style="margin:0">
+    <figcaption class="shot-label"><b>${id === 'Now' ? 'Now' : id + ' · ' + esc(p.name)}</b><span>${tag}</span></figcaption>
+    <div class="scroller"><div class="term cvd-${state.cvd}" style="${termVars(id)};--term-size:${state.zoom}px" role="img"
+      aria-label="Dovetail screen in the ${esc(p.name)} palette">
+      <div class="wall ${state.backdrop}"></div><div class="glass" style="opacity:${state.opacity}"></div>
+      <div class="screen">${screenHtml}</div></div></div></figure>`;
+}
+function renderStage() {
+  const cand = state.current === 'Now' ? 'A' : state.current;
+  stage.innerHTML = state.split
+    ? shot('Now', 'current theme') + shot(cand, 'candidate')
+    : shot(state.current, state.backdrop === 'lantern' ? 'over the lanterns' : 'normal backdrop');
+}
+
+function renderTabs() {
+  const g = $('tabs');
+  g.querySelectorAll('button').forEach(b => b.remove());
+  ORDER.forEach((id, i) => {
+    const b = document.createElement('button');
+    b.className = 'tab';
+    b.setAttribute('aria-pressed', String(state.current === id));
+    b.title = `Show ${pal[id].name} (${i + 1})`;
+    const dots = ['body', 'bold', 'italic', 'code', 'link'].map(k => `<i style="background:${pal[id].c[k]}"></i>`).join('');
+    b.innerHTML = `<span class="dots">${dots}</span>${id === 'Now' ? 'Now' : id + ' ' + esc(pal[id].name)} <kbd>${i + 1}</kbd>`;
+    b.onclick = () => { state.current = id; update(); };
+    g.appendChild(b);
+  });
+}
+
+function legendPalette() { return state.split && state.current === 'Now' ? 'A' : state.current; }
+
+function renderLegend() {
+  const id = legendPalette();
+  const bgN = backdrop('normal'), bgL = backdrop('lantern');
+  $('legend-title').textContent = `Roles · ${id === 'Now' ? 'Now' : id + ' ' + pal[id].name}`;
+  $('bgn-hex').textContent = toHex(bgN);
+  $('bgl-hex').textContent = toHex(bgL);
+  $('th-normal').className = state.backdrop === 'normal' ? 'cur' : '';
+  $('th-lantern').className = state.backdrop === 'lantern' ? 'cur' : '';
+  const tb = $('legend');
+  // Rebuild only when the palette changed, so a hex input keeps focus while typing.
+  if (tb.dataset.pal !== id) {
+    tb.dataset.pal = id;
+    tb.innerHTML = ROLES.map(r => `<tr data-role="${r.key}">
+      <td><span class="sample" id="smp-${r.key}">${r.label}</span></td>
+      <td class="use">${esc(r.use)}</td>
+      <td><span class="sw"><i id="sw-${r.key}"></i><i id="swc-${r.key}" hidden></i></span></td>
+      <td><span class="hexin"><input type="color" id="pick-${r.key}" aria-label="${r.label} colour picker"><input type="text" id="hex-${r.key}" aria-label="${r.label} hex" spellcheck="false" maxlength="7"></span></td>
+      <td class="ratio" id="rn-${r.key}"></td><td class="ratio" id="rl-${r.key}"></td>
+      <td class="num">${r.min}:1</td></tr>`).join('');
+    for (const r of ROLES) {
+      const set = v => {
+        if (!hexOk(v)) return false;
+        pal[id].c[r.key] = v.toLowerCase();
+        saveEdits(); update(true);
+        return true;
+      };
+      $('pick-' + r.key).oninput = e => { $('hex-' + r.key).value = e.target.value; set(e.target.value); };
+      $('hex-' + r.key).oninput = e => {
+        let v = e.target.value.trim(); if (v && v[0] !== '#') v = '#' + v;
+        e.target.classList.toggle('invalid', !set(v));
+      };
+    }
+  }
+  for (const r of ROLES) {
+    const hex = pal[id].c[r.key], rgb = toRgb(hex);
+    const sim = toHex(simulate(rgb, state.cvd));
+    $('sw-' + r.key).style.background = hex;
+    const swc = $('swc-' + r.key);
+    swc.hidden = state.cvd === 'none'; swc.style.background = sim; swc.title = 'simulated ' + sim;
+    $('pick-' + r.key).value = hex;
+    const hx = $('hex-' + r.key);
+    if (document.activeElement !== hx) { hx.value = hex; hx.classList.remove('invalid'); }
+    const bgNow = state.backdrop === 'normal' ? bgN : bgL;
+    const smp = $('smp-' + r.key);
+    smp.style.color = hex; smp.style.background = toHex(bgNow);
+    smp.style.fontWeight = r.key === 'bold' || r.key === 'warning' ? 700 : 400;
+    smp.style.fontStyle = r.key === 'italic' ? 'italic' : 'normal';
+    for (const [cell, bg, which] of [['rn-', bgN, 'normal'], ['rl-', bgL, 'lantern']]) {
+      const c = contrast(rgb, bg), low = c < r.min;
+      const el = $(cell + r.key);
+      el.className = 'ratio' + (state.backdrop === which ? ' cur' : '');
+      el.innerHTML = `${c.toFixed(2)}:1<span class="pill ${low ? 'low' : 'ok'}">${low ? 'low' : 'pass'}</span>`;
+    }
+  }
+  $('note-extra').textContent = id === 'Now'
+    ? 'Now has no error or warning colour of its own yet; these are Dusk\'s error and needs_you from theme.rs on main.'
+    : 'Done markers (✓) use the code colour: none of the palettes defines a separate success colour.';
+}
+
+function renderPairs() {
+  const id = legendPalette(), c = pal[id].c, list = [];
+  for (let i = 0; i < ROLES.length; i++) for (let j = i + 1; j < ROLES.length; j++) {
+    const a = ROLES[i].key, b = ROLES[j].key;
+    if (c[a].toLowerCase() === c[b].toLowerCase()) continue;
+    list.push([a, b, deltaE(simulate(toRgb(c[a]), state.cvd), simulate(toRgb(c[b]), state.cvd))]);
+  }
+  list.sort((x, y) => x[2] - y[2]);
+  $('pairs').innerHTML = list.slice(0, 6).map(([a, b, d]) => {
+    const cls = d < 12 ? 'close' : d < 22 ? 'near' : 'far';
+    const sa = toHex(simulate(toRgb(c[a]), state.cvd)), sb = toHex(simulate(toRgb(c[b]), state.cvd));
+    return `<li><span class="de ${cls}">ΔE ${d.toFixed(1)}</span><span class="sw"><i style="background:${sa}"></i><i style="background:${sb}"></i></span><span>${a} / ${b}</span></li>`;
+  }).join('');
+}
+
+function rustOut() {
+  const id = legendPalette(), c = pal[id].c;
+  const fn = id === 'Now' ? 'now' : pal[id].name.toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '');
+  const rgb = h => { const [r, g, b] = toRgb(h); return `Color::Rgb(0x${h.slice(1, 3)}, 0x${h.slice(3, 5)}, 0x${h.slice(5, 7)})`; };
+  const f = (field, key, note) => `            ${field}: ${rgb(c[key])},${note ? ' // ' + note : ''}`;
+  return [
+    `    /// ${id === 'Now' ? 'Now' : 'Palette ' + id + ': ' + pal[id].name}.`,
+    `    pub fn ${fn}() -> Self {`,
+    `        Self {`,
+    f('body', 'body'), f('bold', 'bold'), f('italic', 'italic'), f('code', 'code'),
+    f('link', 'link', 'new field'), f('dim', 'dim'), f('focus', 'focus'), f('error', 'error'),
+    f('needs_you', 'warning', 'warning'), f('mode_normal', 'warning'),
+    f('working', 'link'), f('speaker_you', 'link'), f('speaker_agent', 'bold'),
+    `            ..Self::dusk()`,
+    `        }`,
+    `    }`,
+  ].join('\n');
+}
+
+function saveEdits() {
+  const diff = {};
+  for (const id of ORDER) for (const r of ROLES)
+    if (pal[id].c[r.key] !== BASE[id].c[r.key]) (diff[id] ||= {})[r.key] = pal[id].c[r.key];
+  store.set('dovetail-palette-edits', diff);
+}
+
+function update(fromEdit) {
+  store.set('dovetail-palette-view', state);
+  $('split').setAttribute('aria-pressed', String(state.split));
+  $('bg-normal').setAttribute('aria-pressed', String(state.backdrop === 'normal'));
+  $('bg-lantern').setAttribute('aria-pressed', String(state.backdrop === 'lantern'));
+  $('opacity').value = state.opacity; $('opacity-out').textContent = (+state.opacity).toFixed(2);
+  $('cvd').value = state.cvd; $('zoom').value = state.zoom;
+  renderTabs(); renderStage(); renderLegend(); renderPairs();
+  $('rust').textContent = rustOut();
+}
+
+$('split').onclick = () => { state.split = !state.split; update(); };
+$('bg-normal').onclick = () => { state.backdrop = 'normal'; update(); };
+$('bg-lantern').onclick = () => { state.backdrop = 'lantern'; update(); };
+$('opacity').oninput = e => { state.opacity = +e.target.value; update(); };
+$('cvd').onchange = e => { state.cvd = e.target.value; update(); };
+$('zoom').onchange = e => { state.zoom = e.target.value; update(); };
+$('reset').onclick = () => {
+  const id = legendPalette();
+  pal[id].c = { ...BASE[id].c }; saveEdits();
+  $('legend').dataset.pal = ''; update();
+  flash('Reset ' + (id === 'Now' ? 'Now' : id));
+};
+$('copy').onclick = () => {
+  const text = rustOut();
+  navigator.clipboard.writeText(text).then(() => flash('Copied'), () => {
+    const sel = getSelection(), range = document.createRange();
+    range.selectNodeContents($('rust')); sel.removeAllRanges(); sel.addRange(range);
+    flash('Selected; press Ctrl+C');
+  });
+};
+let flashT;
+function flash(msg) { $('toast').textContent = msg; clearTimeout(flashT); flashT = setTimeout(() => $('toast').textContent = '', 2200); }
+
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+  const n = +e.key;
+  if (n >= 1 && n <= ORDER.length) { state.current = ORDER[n - 1]; update(); }
+  else if (e.key === 's') { state.split = !state.split; update(); }
+  else if (e.key === 'l') { state.backdrop = state.backdrop === 'lantern' ? 'normal' : 'lantern'; update(); }
+});
+
+update();
+</script>

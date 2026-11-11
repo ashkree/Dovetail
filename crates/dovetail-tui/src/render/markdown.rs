@@ -252,7 +252,7 @@ impl<'t> Renderer<'t> {
                 self.link = Some(dest_url.to_string());
                 self.push_style(
                     Style::new()
-                        .fg(theme.code)
+                        .fg(theme.link)
                         .add_modifier(Modifier::UNDERLINED),
                 );
             }
