@@ -59,7 +59,8 @@ impl App {
         let resolution = Resolution::Registered(Project {
             id: "p".into(),
             name: "work".into(),
-            repo_path: repo.to_path_buf(),
+            kind: dovetail_api::ProjectKind::Code,
+            repo_path: Some(repo.to_path_buf()),
             git_common_dir: None,
             last_opened_ms: None,
         });

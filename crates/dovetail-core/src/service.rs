@@ -30,7 +30,7 @@ use crate::config::Config;
 use crate::db::{AgentRow, Db, DbError, Pending, now_ms};
 use crate::inbox::Waiter;
 use crate::paths::Paths;
-use crate::projects::{Project, Resolution};
+use crate::projects::Resolution;
 use crate::registration::ProjectState;
 use crate::session::Live;
 use crate::shutdown::CoreHandle;
@@ -153,6 +153,8 @@ pub fn spawn(
 
     let restart = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let restart_flag = restart.clone();
+    let switch_to: Arc<std::sync::Mutex<Option<String>>> = Arc::default();
+    let switch_slot = switch_to.clone();
     let thread = std::thread::Builder::new()
         .name("dovetail-core".into())
         .spawn(move || {
@@ -183,6 +185,7 @@ pub fn spawn(
                     input_tx,
                 );
                 core.upgrade.restart = restart_flag;
+                core.switch_to = switch_slot;
                 core.run(input_rx).await
             });
             sockets.extend(more);
@@ -197,7 +200,11 @@ pub fn spawn(
             commands: command_tx,
             messages: message_rx,
         },
-        CoreHandle { thread, restart },
+        CoreHandle {
+            thread,
+            restart,
+            switch_to,
+        },
     ))
 }
 
@@ -429,6 +436,8 @@ pub(crate) struct Core {
     pub(crate) revert_coordinator: Option<(Option<String>, Option<PathBuf>)>,
     /// `:upgrade`: the background build, the "Upgrade ready" item, the wait for idle (ADR 0014).
     pub(crate) upgrade: crate::upgrade::flow::UpgradeState,
+    /// The project the user picked to open next (B24); the binary reads it once the core stopped.
+    pub(crate) switch_to: Arc<std::sync::Mutex<Option<String>>>,
     /// Research capture: the open round and the subagents being watched (R1, `research`).
     pub(crate) research: crate::research::Research,
 }
@@ -519,6 +528,7 @@ impl Core {
             closing: None,
             revert_coordinator: None,
             upgrade: Default::default(),
+            switch_to: Default::default(),
             research: Default::default(),
         }
     }
@@ -796,8 +806,10 @@ impl Core {
                     .filter(|r| !self.paths.role_prompt(r).exists())
                     .collect::<Vec<_>>(),
             ),
+            // A research project has no worktrees, so no recipe to miss.
             self.project
                 .registered()
+                .filter(|p| !p.is_research())
                 .and_then(|p| crate::startup::recipe(&p.id, self.paths.recipe(&p.id).exists())),
         ];
         self.warnings.extend(checks.into_iter().flatten());
@@ -819,7 +831,7 @@ impl Core {
                 Snapshot {
                     seq: self.seq,
                     now_ms: now_ms(),
-                    project: Some(self.project.summary()),
+                    project: Some(self.project.summary(&self.paths)),
                     usage: self.current_usage(),
                     profile: self.profile_name(),
                     ..Snapshot::default()
@@ -841,8 +853,8 @@ impl Core {
         let mut snapshot = Snapshot {
             seq: self.seq,
             now_ms: now_ms(),
-            project: Some(self.project.summary()),
-            projects: projects.iter().map(Project::summary).collect(),
+            project: Some(self.project.summary(&self.paths)),
+            projects: projects.iter().map(|p| p.summary(&self.paths)).collect(),
             tasks,
             research,
             decisions: self.db.load_decisions().await?,
@@ -1331,7 +1343,7 @@ impl Core {
             }
             Command::RegisterProject { path } => {
                 let wanted = path.canonicalize().unwrap_or(path);
-                if !wanted.as_os_str().is_empty() && wanted != self.project.repo_path() {
+                if !wanted.as_os_str().is_empty() && wanted != self.project.folder(&self.paths) {
                     self.fail("only the open folder can be added as a project");
                     return;
                 }
@@ -1372,9 +1384,8 @@ impl Core {
             Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
             Command::TakeOver { agent } => self.take_over(agent).await,
-            Command::OpenProject { .. } => {
-                self.fail("switching projects: quit and open dovetail in the other folder");
-            }
+            Command::OpenProject { id } => self.open_other_project(id).await,
+            Command::NewResearchProject { name } => self.new_research_project(name).await,
             // Quit is handled by the loop.
             Command::Quit { .. } => {}
         }
@@ -1411,11 +1422,14 @@ impl Core {
             .get(&agent)
             .and_then(|r| r.agent.worktree.as_ref())
             .map(|w| w.path.clone())
-            .unwrap_or_else(|| self.project.repo_path().to_path_buf());
+            .unwrap_or_else(|| self.project.folder(&self.paths));
         let inputs = self.inputs.clone();
+        // A research project has no repo: no git, just the folder listing as it is typed.
+        let git = !self.project.is_research();
         tokio::task::spawn_blocking(move || {
             let paths = match dir.as_deref() {
-                None => crate::completion::tree(&root),
+                None if git => crate::completion::tree(&root),
+                None => Vec::new(),
                 Some(d) => crate::completion::dir(&root, d),
             };
             let _ = inputs.send(Input::PathsListed { agent, dir, paths });

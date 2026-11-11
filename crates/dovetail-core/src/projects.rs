@@ -13,19 +13,23 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use dovetail_api::{ProjectId, ProjectSummary};
+use dovetail_api::{ProjectId, ProjectKind, ProjectSummary};
 
 use crate::db::{Db, DbError};
+use crate::paths::Paths;
 
 /// A registered project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
-    /// Slug of the folder, numbered on collision.
+    /// Slug of the folder (or of a research project's name), numbered on collision.
     pub id: String,
-    /// Display name: the folder's name.
+    /// Display name: the folder's name, or the name a research project was given.
     pub name: String,
-    /// The main checkout, or the folder of a project without git.
-    pub repo_path: PathBuf,
+    /// Code or research. Code paths check this, never whether a folder exists.
+    pub kind: ProjectKind,
+    /// The main checkout, or the folder of a project without git; `None` for a research
+    /// project, which has no repo.
+    pub repo_path: Option<PathBuf>,
     /// The repo's git common dir, which identifies it; `None` for a folder without git.
     pub git_common_dir: Option<PathBuf>,
     /// When it was last opened, in Unix milliseconds.
@@ -33,12 +37,27 @@ pub struct Project {
 }
 
 impl Project {
+    /// A research project: no repo, no worktrees, no slices, no git.
+    pub fn is_research(&self) -> bool {
+        self.kind == ProjectKind::Research
+    }
+
+    /// The folder its sessions run in: the repo or folder, or for a research project its own
+    /// state folder (`Paths::project_dir`).
+    pub fn folder(&self, paths: &Paths) -> PathBuf {
+        match &self.repo_path {
+            Some(repo) if !self.is_research() => repo.clone(),
+            _ => paths.project_dir(&self.id),
+        }
+    }
+
     /// The project as the UI sees it.
-    pub fn summary(&self) -> ProjectSummary {
+    pub fn summary(&self, paths: &Paths) -> ProjectSummary {
         ProjectSummary {
             id: ProjectId(self.id.clone()),
             name: self.name.clone(),
-            repo_path: self.repo_path.clone(),
+            repo_path: self.folder(paths),
+            kind: self.kind,
         }
     }
 }
@@ -66,6 +85,7 @@ impl Candidate {
             id: ProjectId(self.slug()),
             name: self.name.clone(),
             repo_path: self.repo_path.clone(),
+            kind: ProjectKind::Code,
         }
     }
 }
@@ -102,6 +122,23 @@ pub enum ProjectError {
          or ask the coordinator to add it"
     )]
     NotRegistered(PathBuf),
+    /// No registered project has this id (`dovetail --project <id>`).
+    #[error("there is no project `{0}`; open dovetail and pick one with <leader>pp")]
+    UnknownId(String),
+    /// A research project needs a name.
+    #[error("a research project needs a name: :project new <name> --research")]
+    NoName,
+    /// A research project of this name exists already.
+    #[error("there is already a research project named `{0}`")]
+    NameTaken(String),
+    /// A research project's state folder could not be made.
+    #[error("creating {path}: {source}")]
+    Folder {
+        /// The folder.
+        path: PathBuf,
+        /// The cause.
+        source: std::io::Error,
+    },
     /// The registry failed.
     #[error(transparent)]
     Db(#[from] DbError),
@@ -195,12 +232,17 @@ pub fn locate(db: &Db, dir: &Path) -> Result<Resolution, ProjectError> {
                 }
             },
         },
+        // Research projects have no folder of the user's, so a directory never belongs to one.
         Err(ProjectError::NotARepo(_)) => db
             .list_projects()
             .wait()?
             .into_iter()
-            .filter(|p| dir.starts_with(&p.repo_path))
-            .max_by_key(|p| p.repo_path.components().count()),
+            .filter_map(|p| {
+                let depth = p.repo_path.as_ref().filter(|r| dir.starts_with(r))?;
+                Some((depth.components().count(), p))
+            })
+            .max_by_key(|(depth, _)| *depth)
+            .map(|(_, p)| p),
         Err(other) => return Err(other),
     };
     match found {
@@ -234,6 +276,17 @@ pub fn register(db: &Db, candidate: &Candidate) -> Result<Project, ProjectError>
             candidate.git_common_dir.clone(),
         )
         .wait()?)
+}
+
+/// The registered project `id`, marked as opened now (`dovetail --project <id>`, and the
+/// project switcher, which starts the app again on it).
+pub fn open(db: &Db, id: &str) -> Result<Project, ProjectError> {
+    let project = db
+        .get_project(id.to_owned())
+        .wait()?
+        .ok_or_else(|| ProjectError::UnknownId(id.to_owned()))?;
+    db.touch_project(project.id.clone()).wait()?;
+    Ok(project)
 }
 
 /// Every registered project, most recently opened first.

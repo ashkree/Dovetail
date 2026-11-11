@@ -306,7 +306,7 @@ impl Core {
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         match row.agent.kind {
             AgentKind::Coordinator => {
-                let cwd = self.project.repo_path().to_path_buf();
+                let cwd = self.project.folder(&self.paths);
                 self.launch(id, cwd, None)?;
                 // Signals held while it could not be woken, unless its last turn was cut off:
                 // then they wait for the user's next message (decision 1: never continue).
@@ -665,7 +665,7 @@ impl Core {
                 .cwd
                 .as_deref()
                 .map(PathBuf::from)
-                .unwrap_or_else(|| self.project.repo_path().to_path_buf());
+                .unwrap_or_else(|| self.project.folder(&self.paths));
             let session_id = self
                 .agents
                 .get(agent)

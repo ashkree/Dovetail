@@ -39,6 +39,10 @@ pub fn run(args: Vec<String>) -> Result<()> {
     let registry = Db::open(&paths, None).context("opening the project registry")?;
     let project = projects::require(&registry, &cwd)?;
     drop(registry);
+    // A folder never resolves to a research project, but say so rather than assume it.
+    let Some(repo) = project.repo_path.clone().filter(|_| !project.is_research()) else {
+        bail!("{} is a research project: it has no repo to build from", project.id);
+    };
 
     let install = install_path()?;
     let exe = std::env::current_exe().context("finding the dovetail binary")?;
@@ -65,7 +69,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
 
     let staging = Staging::new(&paths);
     let request = BuildRequest {
-        repo: project.repo_path.clone(),
+        repo,
         source,
         config_dir: paths.config.clone(),
         recipe: Some(paths.recipe(&project.id)),

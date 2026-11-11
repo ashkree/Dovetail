@@ -32,7 +32,7 @@ impl Core {
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
-        let cwd = self.project.repo_path().to_path_buf();
+        let cwd = self.project.folder(&self.paths);
         if let Err(e) = self.launch(&id, cwd, None) {
             self.closed(&id);
             self.fail(e);

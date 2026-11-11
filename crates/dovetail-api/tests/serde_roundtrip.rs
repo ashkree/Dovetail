@@ -334,12 +334,19 @@ fn hello_and_a_full_snapshot_roundtrip() {
         id: ProjectId("dovetail".into()),
         name: "Dovetail".into(),
         repo_path: "/home/user/src/dovetail".into(),
+        kind: ProjectKind::Code,
+    };
+    let research = ProjectSummary {
+        id: ProjectId("market-sizing".into()),
+        name: "Market sizing".into(),
+        repo_path: "/home/user/.local/share/dovetail/projects/market-sizing".into(),
+        kind: ProjectKind::Research,
     };
     let snapshot = Snapshot {
         seq: 42,
         now_ms: 1_700_000_000_000,
         project: Some(project.clone()),
-        projects: vec![project],
+        projects: vec![project, research],
         tasks: vec![task()],
         agents: vec![subagent()],
         todos: vec![todo()],
@@ -453,6 +460,9 @@ fn every_event_roundtrips() {
             latest: None,
             closing: true,
         }),
+        Event::OpeningProject {
+            id: ProjectId("market-sizing".into()),
+        },
     ]
     .into_iter()
     .chain(inbox_items().into_iter().map(Event::InboxUpserted))
@@ -564,6 +574,9 @@ fn every_command_roundtrips() {
         },
         Command::OpenProject {
             id: ProjectId("dovetail".into()),
+        },
+        Command::NewResearchProject {
+            name: "Market sizing".into(),
         },
         Command::RegisterProject {
             path: "/home/user/src/other".into(),

@@ -17,6 +17,7 @@ use anyhow::{Context, Result, bail};
 use dovetail_mock::{MockConfig, MockCore};
 
 const USAGE: &str = "usage: dovetail                     open the TUI for the repo you're in
+       dovetail --project <id>      open a registered project by id (research projects too)
        dovetail add \"title !p1 @now\"  capture a task
        dovetail login <profile>     sign a Claude profile in (--list: show profiles)
        dovetail upgrade [--local]   build origin/main (or this checkout) and install it
@@ -36,6 +37,7 @@ struct Args {
     seed: Option<u64>,
     count: Option<usize>,
     speed: Option<f64>,
+    project: Option<String>,
 }
 
 fn parse_args(raw: impl IntoIterator<Item = String>) -> Result<Args> {
@@ -45,6 +47,9 @@ fn parse_args(raw: impl IntoIterator<Item = String>) -> Result<Args> {
         match arg.as_str() {
             "--mock" => args.mock = true,
             "--dump" => args.dump = true,
+            "--project" => {
+                args.project = Some(raw.next().context("--project needs a project id")?);
+            }
             "--seed" => {
                 let value = raw.next().context("--seed needs a number")?;
                 args.seed = Some(
@@ -117,6 +122,7 @@ fn main() -> Result<()> {
     }
     let args = parse_args(raw)?;
     match (args.mock, args.dump) {
+        (true, _) if args.project.is_some() => bail!("--project does not go with --mock"),
         (true, true) => match dump(args.seed.unwrap_or(1), args.count.unwrap_or(200)) {
             // Piped into `head` or `cmp`: the reader has seen enough.
             Err(e) if is_broken_pipe(&e) => Ok(()),
@@ -129,7 +135,7 @@ fn main() -> Result<()> {
         }
         (false, false) => {
             logging::init();
-            tui::run_real()
+            tui::run_real(args.project.as_deref())
         }
     }
 }

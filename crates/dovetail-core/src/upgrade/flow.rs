@@ -79,6 +79,10 @@ impl Core {
         let Some(options) = &self.options.upgrade else {
             return Some("upgrade is not available in this run".into());
         };
+        // The build runs in the open project's repo, and a research project has none.
+        if self.project.is_research() {
+            return Some("a research project has no repo to build from: :upgrade in a code project".into());
+        }
         if is_installed_binary(&self.options.exe, &options.install) {
             None
         } else {
@@ -104,7 +108,7 @@ impl Core {
             return;
         };
         let request = BuildRequest {
-            repo: self.project.repo_path().to_owned(),
+            repo: self.project.folder(&self.paths),
             source: if local {
                 Source::Local
             } else {

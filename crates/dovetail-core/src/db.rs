@@ -55,6 +55,7 @@ macro_rules! migration {
 const REGISTRY_MIGRATIONS: &[Migration] = &[
     migration!("registry", "0001_init.sql"),
     migration!("registry", "0002_optional_git.sql"),
+    migration!("registry", "0003_project_kind.sql"),
 ];
 /// Migrations of a project's `state.db`, in order.
 const STATE_MIGRATIONS: &[Migration] = &[
@@ -234,6 +235,17 @@ impl Db {
                 now,
             )
         })
+    }
+
+    /// Registers a research project named `name` under id `slug` (numbered when taken). `None`
+    /// when a research project of that name exists already.
+    pub fn register_research(&self, slug: String, name: String) -> Pending<Option<Project>> {
+        self.run(move |c, now| registry::register_research(&mut c.registry, &slug, &name, now))
+    }
+
+    /// The project with this id, if registered.
+    pub fn get_project(&self, id: String) -> Pending<Option<Project>> {
+        self.run(move |c, _| registry::get(&c.registry, &id))
     }
 
     /// Every registered project, most recently opened first.

@@ -351,12 +351,13 @@ impl Core {
 
     /// Checks the subagent's worktree `name` on a blocking task and removes it if unchanged.
     fn clean_subagent_worktree(&mut self, id: &AgentId, name: String) {
-        if worktree::validate_name(&name).is_err() {
+        // A research project has no repo to have made a worktree in: no git calls.
+        if self.project.is_research() || worktree::validate_name(&name).is_err() {
             return;
         }
         let paths = self.paths.clone();
         let key = self.project.key().to_owned();
-        let repo = self.project.repo_path().to_path_buf();
+        let repo = self.project.folder(&self.paths);
         let inputs = self.inputs.clone();
         let agent = id.clone();
         tokio::task::spawn_blocking(move || {

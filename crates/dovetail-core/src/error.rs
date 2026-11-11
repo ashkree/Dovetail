@@ -78,6 +78,12 @@ pub enum SliceError {
     /// The task does not exist.
     #[error("there is no task #{0}; create it first with `create_task`")]
     NoTask(i64),
+    /// The open project is a research project: it has no repo, so no slices.
+    #[error(
+        "this is a research project: it has no repo, so it runs no slices. Use research rounds \
+         and subagents here; code work belongs in a code project"
+    )]
+    ResearchProject,
     /// `archive_slice` named the coordinator.
     #[error("the coordinator cannot be archived")]
     ArchiveCoordinator,

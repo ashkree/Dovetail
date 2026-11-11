@@ -744,7 +744,7 @@ impl Core {
     pub(crate) fn session_cwd(&self, agent: &dovetail_api::Agent) -> PathBuf {
         match (agent.kind, &agent.worktree) {
             (AgentKind::Slice, Some(w)) => w.path.clone(),
-            _ => self.project.repo_path().to_path_buf(),
+            _ => self.project.folder(&self.paths),
         }
     }
 }

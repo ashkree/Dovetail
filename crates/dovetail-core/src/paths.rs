@@ -79,9 +79,15 @@ impl Paths {
         self.data.join("registry.db")
     }
 
+    /// A project's own state folder, `<data>/projects/<id>/`: its `state.db`, journal, default
+    /// research folder and worktrees. A research project's sessions run here.
+    pub fn project_dir(&self, project: &str) -> PathBuf {
+        self.data.join("projects").join(project)
+    }
+
     /// A project's `state.db`.
     pub fn state_db(&self, project: &str) -> PathBuf {
-        self.data.join("projects").join(project).join("state.db")
+        self.project_dir(project).join("state.db")
     }
 
     /// Default parent of new Claude profiles made by `dovetail login`: `<data>/profiles/` (ADR
