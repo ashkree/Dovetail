@@ -66,10 +66,14 @@ pub enum Action {
     NextTurn,
     /// Jump to the previous turn.
     PrevTurn,
-    /// Fold the turn at the top of the view to one line.
+    /// Fold the whole turn under the cursor to one line (`zC`; the reader's `zc`).
     FoldTurn,
-    /// Unfold the turn at the top of the view and show its long replies in full.
+    /// Unfold the whole turn under the cursor and show its long replies in full (`zO`; the reader's `zo`).
     UnfoldTurn,
+    /// Cut the long entry under the cursor to its first lines (`zc`); on a folded turn, nothing.
+    FoldEntry,
+    /// Show the entry under the cursor in full (`zo`); on a folded turn, unfold the turn.
+    UnfoldEntry,
     /// Leave the chat bar for the conversation above it, keeping the draft and its cursor.
     LeaveChatBar,
     /// Ctrl-V in a chat bar: attach the clipboard's image, or paste its text at the cursor.

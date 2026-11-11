@@ -408,6 +408,8 @@ fn agent_preview(
             streaming: None,
             folded: &folded,
             expanded: &expanded,
+            collapsed: &HashSet::new(),
+            newest: transcript::newest_reply(&tail.entries[from..]),
         };
         out.extend(transcript::build(&tail.entries[from..], &params, &mut Cache::default()).lines);
     }

@@ -31,6 +31,6 @@ expression: screen
 │                                                                         ││         ⎇ dovetail/slice-7                │
 └─────────────────────────────────────────────────────────────────────────┘│ ▾ Next (1)                                │
 ┌ chat › coordinator ─────────────────────────────────────────────────────┐│   ○ idea: eval key flow P2                │
-│   › i or ^j to type · ]] [[ turns · zc zo fold · gg G                   ││ ⏎ open · o fold · dd archive              │
+│   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn       ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 4 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

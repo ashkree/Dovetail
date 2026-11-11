@@ -29,6 +29,36 @@ pub struct Turn {
     pub entries: Vec<EntryId>,
 }
 
+/// The lines one entry occupies, its header and trailing blank rows included, so a row of the
+/// view maps to the entry under it. A folded turn's "entries folded" line belongs to the turn's
+/// first entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntrySpan {
+    /// The entry.
+    pub id: EntryId,
+    /// First line.
+    pub start: usize,
+    /// One past the last line.
+    pub end: usize,
+}
+
+/// The entry whose lines include `row` (the last entry when `row` is past the end).
+pub fn entry_at(spans: &[EntrySpan], row: usize) -> Option<EntryId> {
+    spans
+        .iter()
+        .find(|s| row >= s.start && row < s.end)
+        .or(spans.last())
+        .map(|s| s.id)
+}
+
+/// The reply a reader is on: the last assistant entry. The length rule never cuts it.
+pub fn newest_reply(entries: &[ConversationEntry]) -> Option<EntryId> {
+    entries
+        .iter()
+        .rfind(|e| e.kind == EntryKind::Assistant)
+        .map(|e| e.id)
+}
+
 /// A rendered conversation.
 #[derive(Debug, Default)]
 pub struct Transcript {
@@ -36,6 +66,8 @@ pub struct Transcript {
     pub lines: Vec<Line<'static>>,
     /// The turns, oldest first.
     pub turns: Vec<Turn>,
+    /// Which lines belong to which entry, oldest first.
+    pub spans: Vec<EntrySpan>,
 }
 
 struct Cached {
@@ -113,6 +145,10 @@ pub struct Params<'a> {
     pub folded: &'a HashSet<EntryId>,
     /// Replies shown in full despite their length.
     pub expanded: &'a HashSet<EntryId>,
+    /// Replies the user cut with `zc`, even the newest one or a shorter one.
+    pub collapsed: &'a HashSet<EntryId>,
+    /// The reply being read ([`newest_reply`]); only the user's `zc` cuts it.
+    pub newest: Option<EntryId>,
 }
 
 /// Renders `entries`.
@@ -145,6 +181,12 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
         let folded = p.folded.contains(&first.id);
         let older = index < last;
         for (at, entry) in group.iter().enumerate() {
+            // The turn's leading blank row belongs to its first entry.
+            let start = if at == 0 {
+                out.lines.len() - 1
+            } else {
+                out.lines.len()
+            };
             if folded && entry.kind != EntryKind::User {
                 let hidden = group.iter().filter(|e| e.kind != EntryKind::User).count();
                 if hidden > 0 {
@@ -153,6 +195,16 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
                         p.theme.dim(),
                     )));
                     out.lines.push(Line::default());
+                }
+                // The fold line joins the span of the prompt above it.
+                let end = out.lines.len();
+                match out.spans.last_mut().filter(|_| at > 0) {
+                    Some(span) => span.end = end,
+                    None => out.spans.push(EntrySpan {
+                        id: entry.id,
+                        start,
+                        end,
+                    }),
                 }
                 break;
             }
@@ -179,6 +231,11 @@ pub fn build(entries: &[ConversationEntry], p: &Params, cache: &mut Cache) -> Tr
             }
             out.lines.append(&mut lines);
             out.lines.push(Line::default());
+            out.spans.push(EntrySpan {
+                id: entry.id,
+                start,
+                end: out.lines.len(),
+            });
         }
     }
     cache.end_build();
@@ -308,9 +365,12 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
 }
 
 /// The shared fold rule: a body longer than [`MAX_ENTRY_LINES`] is cut to [`KEEP_LINES`] plus a
-/// dim "show more" line, unless the entry is in `p.expanded` (keyed by entry id).
+/// dim "show more" line, unless the entry is in `p.expanded` (keyed by entry id) or is the newest
+/// reply (`p.newest`). An entry in `p.collapsed` is cut from [`KEEP_LINES`] on, newest or not.
 fn fold_long(body: &mut Vec<Line<'static>>, id: EntryId, p: &Params) {
-    if body.len() <= MAX_ENTRY_LINES || p.expanded.contains(&id) {
+    let forced = p.collapsed.contains(&id);
+    let limit = if forced { KEEP_LINES } else { MAX_ENTRY_LINES };
+    if body.len() <= limit || p.expanded.contains(&id) || (!forced && p.newest == Some(id)) {
         return;
     }
     let more = body.len() - KEEP_LINES;
@@ -385,6 +445,8 @@ mod tests {
             streaming: None,
             folded: &folded,
             expanded: &expanded,
+            collapsed: &HashSet::new(),
+            newest: None,
         };
         mutate(&mut p);
         build(entries, &p, &mut Cache::default())
@@ -546,6 +608,8 @@ mod tests {
             streaming: None,
             folded: &folded,
             expanded: &expanded,
+            collapsed: &HashSet::new(),
+            newest: None,
         };
         let t = build(&entries, &p, &mut Cache::default());
         assert_eq!(
@@ -593,6 +657,8 @@ mod tests {
             streaming: None,
             folded: &folded,
             expanded: &expanded,
+            collapsed: &HashSet::new(),
+            newest: None,
         };
         let full = texts(&build(&entries, &p, &mut Cache::default()));
         assert!(full.iter().any(|l| l == "line 99"));
@@ -623,6 +689,8 @@ mod tests {
             streaming: None,
             folded: &none,
             expanded: &expanded,
+            collapsed: &HashSet::new(),
+            newest: None,
         };
         let full = texts(&build(&entries, &p, &mut Cache::default()));
         assert_eq!(full[3], "finding 0");
@@ -662,6 +730,8 @@ mod tests {
             streaming: None,
             folded: &folded,
             expanded: &expanded,
+            collapsed: &HashSet::new(),
+            newest: None,
         };
         let mut cache = Cache::default();
         let entries: Vec<_> = (1..=10)
