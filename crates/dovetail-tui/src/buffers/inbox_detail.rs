@@ -11,7 +11,7 @@ use ratatui::widgets::Paragraph;
 use super::inbox::{
     answer_action, input_summary, item_label, kind_color, last_message, source_name,
 };
-use super::{Buffer, Effect, ViewCx, footer, pane, title};
+use super::{Buffer, Effect, ViewCx, footer, pane, title, unfiled_title};
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
@@ -106,6 +106,16 @@ fn lines(cx: &ViewCx, item: &InboxItem, width: usize) -> Vec<Line<'static>> {
             out.extend(markdown::render(text, width, theme));
         }
         InboxKind::Error { text } => plain(&mut out, text, theme.fg(theme.error)),
+        InboxKind::UnfiledFinding { .. } => {
+            plain(&mut out, &unfiled_title(&item.kind), theme.body());
+            plain(
+                &mut out,
+                "A subagent of the coordinator researched something while no round was open, so \
+                 the finding belongs to no task yet. Filing it moves it, with its sources, to \
+                 that task's research folder; dropping it deletes it.",
+                theme.dim(),
+            );
+        }
         InboxKind::Proposal {
             task,
             text,
@@ -166,6 +176,10 @@ fn hints(item: &InboxItem) -> &'static [&'static str] {
             "y task · A round · d drop · esc back",
         ],
         InboxKind::Proposal { .. } => &["y accept · d drop · esc back", "y accept · d drop"],
+        InboxKind::UnfiledFinding { .. } => &[
+            "y or ⏎ file under a task · d drop · esc back",
+            "y file · d drop · esc back",
+        ],
     }
 }
 
@@ -234,6 +248,10 @@ impl Buffer for InboxDetailBuffer {
             return true;
         };
         match action {
+            Action::InboxOpen if matches!(item.kind, InboxKind::UnfiledFinding { .. }) => {
+                effects.push(Effect::PickFileTarget(item.id));
+                true
+            }
             Action::InboxOpen => {
                 effects.push(Effect::OpenAgent(item.agent.clone()));
                 true

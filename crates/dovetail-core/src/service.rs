@@ -1380,6 +1380,9 @@ impl Core {
             },
             Command::StartRound { task, brief } => self.start_round(task, brief).await,
             Command::CloseRound { task } => self.close_round(task).await,
+            Command::DropRound { task, round } => self.drop_round(task, round).await,
+            Command::SetResearchKind { task, kind } => self.set_research_kind(task, kind).await,
+            Command::FileUnfiled { item, task } => self.file_unfiled(item, task).await,
             Command::LoadResearch { task, what } => self.load_research_content(task, what).await,
             Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
@@ -1484,6 +1487,9 @@ impl Core {
         for slice in slices {
             self.close_slice(slice, false);
         }
+        // The user was asked about an open or queued research round (the UI's confirmation); the
+        // round closes with its findings kept, and queued ones are dropped.
+        self.release_research_for_archive(id).await;
         self.update_task(id, vec![TaskChange::Status(TaskStatus::Archived)])
             .await;
         let dropped: Vec<i64> = self

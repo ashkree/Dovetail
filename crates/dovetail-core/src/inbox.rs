@@ -55,6 +55,9 @@ pub(crate) enum Waiter {
     /// A `research_propose` call (ADR 0015): the call already returned `pending`; `y` writes
     /// it, `d` drops it, and the coordinator gets a message either way.
     Proposal,
+    /// An unfiled coordinator finding (stored in `state.db` with no task): `y` files it under a
+    /// task the user picks ([`dovetail_api::Command::FileUnfiled`]), `d` deletes it.
+    UnfiledFinding { finding: i64 },
 }
 
 impl Waiter {
@@ -440,6 +443,7 @@ impl Core {
                 }
             }
             Waiter::UpgradeReady => self.upgrade_item_gone(),
+            Waiter::UnfiledFinding { finding } => self.drop_unfiled_finding(finding).await,
             Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }
     }

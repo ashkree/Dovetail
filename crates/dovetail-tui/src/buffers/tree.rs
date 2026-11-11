@@ -729,7 +729,19 @@ impl Buffer for TreeBuffer {
                 match slice {
                     Some(agent) => effects.push(Effect::Command(Command::CloseSlice { agent })),
                     None => self.task_action(cx, effects, |t| {
-                        Effect::Command(Command::ArchiveTask { id: t.id })
+                        let archive = Command::ArchiveTask { id: t.id };
+                        // An open or queued research round is closed or dropped by archiving
+                        // (findings are kept): ask first, like unsaved work.
+                        match super::blocking_round(cx.snap, t.id) {
+                            Some(round) => Effect::Confirm {
+                                prompt: format!(
+                                    "Task #{} has {round}. Close it and archive? y/n",
+                                    t.id.0
+                                ),
+                                then: vec![archive],
+                            },
+                            None => Effect::Command(archive),
+                        }
                     }),
                 }
             }

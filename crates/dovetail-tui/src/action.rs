@@ -145,6 +145,10 @@ pub enum Action {
     /// Open the research row under the cursor (report, round brief, finding, source) in the
     /// task detail's reading view (R3).
     ResearchOpen,
+    /// Task detail `Tab`: select the next research row (the one `Enter` opens and `e` edits).
+    ResearchNext,
+    /// Task detail `Shift-Tab`: select the previous research row.
+    ResearchPrev,
     // --- tree ---
     /// Open the selected agent's conversation, or the selected task's detail.
     TreeOpen,

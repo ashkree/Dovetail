@@ -27,7 +27,9 @@ pub fn ordered(snap: &Snapshot) -> Vec<&InboxItem> {
 
 fn rank(kind: &InboxKind) -> u8 {
     match kind {
-        InboxKind::Permission { .. } | InboxKind::Proposal { .. } => 0,
+        InboxKind::Permission { .. }
+        | InboxKind::Proposal { .. }
+        | InboxKind::UnfiledFinding { .. } => 0,
         InboxKind::Question { .. } => 1,
         InboxKind::Error { .. } => 2,
         InboxKind::FinishedTurn { .. } => 3,
@@ -213,6 +215,7 @@ pub(crate) fn item_label(item: &InboxItem) -> (&'static str, String) {
         InboxKind::Permission { tool, .. } => ("⚠", tool.clone()),
         InboxKind::Question { .. } => ("?", "Question".into()),
         InboxKind::Proposal { kind, .. } => ("⚑", format!("Proposed {}", kind.as_str())),
+        InboxKind::UnfiledFinding { .. } => ("⚑", "Unfiled finding".into()),
         InboxKind::FinishedTurn { .. } => ("✓", "Finished turn".into()),
         InboxKind::Error { .. } => ("✗", "Error".into()),
     }
@@ -229,9 +232,10 @@ pub(crate) fn source_name<'a>(snap: &'a Snapshot, item: &'a InboxItem) -> &'a st
 /// The colour of an item's glyph and source.
 pub(crate) fn kind_color(item: &InboxItem, theme: &crate::theme::Theme) -> ratatui::style::Color {
     match &item.kind {
-        InboxKind::Permission { .. } | InboxKind::Question { .. } | InboxKind::Proposal { .. } => {
-            theme.needs_you
-        }
+        InboxKind::Permission { .. }
+        | InboxKind::Question { .. }
+        | InboxKind::Proposal { .. }
+        | InboxKind::UnfiledFinding { .. } => theme.needs_you,
         InboxKind::FinishedTurn { .. } => theme.ok,
         InboxKind::Error { .. } => theme.error,
     }
@@ -254,6 +258,18 @@ pub(crate) fn row_title(snap: &Snapshot, item: &InboxItem) -> String {
         | InboxKind::FinishedTurn { preview: text }
         | InboxKind::Proposal { text, .. }
         | InboxKind::Error { text } => first_sentence(text),
+        InboxKind::UnfiledFinding { .. } => unfiled_title(&item.kind),
+    }
+}
+
+/// `Unfiled finding: 'pricing pages' (3 sources)`.
+pub(crate) fn unfiled_title(kind: &InboxKind) -> String {
+    match kind {
+        InboxKind::UnfiledFinding { label, sources, .. } => format!(
+            "Unfiled finding: '{label}' ({sources} source{})",
+            if *sources == 1 { "" } else { "s" }
+        ),
+        _ => String::new(),
     }
 }
 
@@ -319,6 +335,13 @@ pub(crate) fn answer_action(action: Action, item: &InboxItem, effects: &mut Vec<
                     "A opens a new round; it applies to ideas".into(),
                 ));
             }
+        }
+        // An unfiled finding: `y` (or Enter) picks the task to file it under, `d` deletes it.
+        (Action::InboxAllow | Action::InboxOpen, InboxKind::UnfiledFinding { .. }) => {
+            effects.push(Effect::PickFileTarget(item.id));
+        }
+        (Action::InboxDeny, InboxKind::UnfiledFinding { .. }) => {
+            effects.push(Effect::Command(Command::DismissInbox { item: item.id }));
         }
         (Action::InboxAllow | Action::InboxAllowAlways | Action::InboxDeny, _)
         | (Action::InboxDenyWithReason, _) => {
@@ -461,6 +484,9 @@ impl Buffer for InboxBuffer {
             (Action::InboxOpen, InboxKind::FinishedTurn { .. }) => {
                 effects.push(Effect::OpenAgent(item.agent.clone()))
             }
+            (Action::InboxOpen, InboxKind::UnfiledFinding { .. }) => {
+                effects.push(Effect::PickFileTarget(item.id))
+            }
             (Action::InboxOpen, _) => effects.push(Effect::OpenInboxItem(item.id)),
             _ => return answer_action(action, item, effects),
         }
@@ -480,6 +506,7 @@ impl Buffer for InboxBuffer {
                     InboxKind::Question { text, .. } | InboxKind::Error { text } => text.clone(),
                     InboxKind::FinishedTurn { preview } => preview.clone(),
                     InboxKind::Proposal { text, .. } => text.clone(),
+                    kind @ InboxKind::UnfiledFinding { .. } => unfiled_title(kind),
                 };
                 format!("{name} {label} {body}")
             })

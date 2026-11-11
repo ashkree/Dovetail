@@ -12,6 +12,7 @@ mod map_shelf;
 mod side_panel;
 pub mod task_detail;
 mod task_research;
+pub(crate) use task_research::blocking_round;
 mod tree;
 mod worktrees;
 
@@ -30,8 +31,8 @@ use unicode_width::UnicodeWidthStr;
 pub use board::{BoardBuffer, COLUMNS as BOARD_COLUMNS};
 pub use conversation::ConversationBuffer;
 pub use feed::{ActivityBuffer, MessagesBuffer};
-pub(crate) use inbox::input_summary;
 pub use inbox::{InboxBuffer, ordered as inbox_order};
+pub(crate) use inbox::{input_summary, unfiled_title};
 pub use inbox_detail::InboxDetailBuffer;
 pub use map_canvas::Canvas as MapCanvas;
 pub use map_outline::{MapOutlineBuffer, MouseKind as MapMouse, Reaction as MapReaction};
@@ -113,6 +114,15 @@ pub enum Effect {
     },
     /// Open the picker to relate this task to another.
     PickRelated(TaskId),
+    /// Ask `prompt` (y/n) and send `then` on `y`.
+    Confirm {
+        /// The question.
+        prompt: String,
+        /// What `y` sends.
+        then: Vec<Command>,
+    },
+    /// Open the picker of tasks to file an unfiled finding (this inbox item) under.
+    PickFileTarget(InboxId),
     /// A one-line note for the status bar.
     Note(String),
     /// Let go of the terminal and have the core open this path in the user's editor

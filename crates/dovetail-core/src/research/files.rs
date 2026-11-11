@@ -101,6 +101,12 @@ pub(crate) fn write_atomic(path: &Path, content: &str) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+/// The folder of findings nobody has filed under a task yet: `<root>/unfiled/`, laid out like a
+/// task folder (`findings/<id>-<label>.md`, `sources/<id>.md`).
+pub(crate) fn unfiled_dir(root: &Path) -> PathBuf {
+    root.join("unfiled")
+}
+
 /// A source's cached copy, relative to the task folder.
 pub(crate) fn source_path(source: &SourceRow) -> Option<String> {
     source.cached.then(|| format!("sources/{}.md", source.id.0))
@@ -151,9 +157,15 @@ pub(crate) fn brief_md(task: TaskId, title: &str, round: &RoundRow) -> String {
 
 /// A finding's file: front matter, the sources it reached, then its report.
 pub(crate) fn finding_md(finding: &FindingRow, sources: &[SourceRow]) -> String {
+    // Task 0 is no task: a finding nobody has filed yet.
+    let unfiled = finding.task.0 == 0;
     let mut out = String::from("---\n");
-    out.push_str(&format!("finding: F{}\n", finding.id.0));
-    out.push_str(&format!("task: {}\n", finding.task.0));
+    if unfiled {
+        out.push_str(&format!("finding: unfiled-{}\ntask: none\n", finding.id.0));
+    } else {
+        out.push_str(&format!("finding: F{}\n", finding.id.0));
+        out.push_str(&format!("task: {}\n", finding.task.0));
+    }
     match finding.round {
         Some(n) => out.push_str(&format!("round: {n}\n")),
         None => out.push_str("round: none\n"),
@@ -180,7 +192,11 @@ pub(crate) fn finding_md(finding: &FindingRow, sources: &[SourceRow]) -> String 
         .collect();
     out.push_str(&format!("sources: [{}]\n---\n\n", ids.join(", ")));
     let title = finding.description.as_deref().unwrap_or(&finding.label);
-    out.push_str(&format!("# F{} — {title}\n\n## Sources\n\n", finding.id.0));
+    if unfiled {
+        out.push_str(&format!("# Unfiled — {title}\n\n## Sources\n\n"));
+    } else {
+        out.push_str(&format!("# F{} — {title}\n\n## Sources\n\n", finding.id.0));
+    }
     if finding.sources.is_empty() {
         out.push_str("None: the subagent fetched and read nothing.\n\n");
     }

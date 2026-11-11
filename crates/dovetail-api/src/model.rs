@@ -494,6 +494,16 @@ pub enum InboxKind {
         /// What went wrong.
         text: String,
     },
+    /// A research finding of a coordinator subagent that ran with no round open, stored with no
+    /// task until the user files it (`y`) or drops it (`d`).
+    UnfiledFinding {
+        /// The stored finding (its own id sequence until it is filed).
+        finding: i64,
+        /// Its label, from the subagent's description.
+        label: String,
+        /// How many sources it fetched or read.
+        sources: u32,
+    },
     /// A `research_propose` call: an idea or a decision the coordinator wants the user to accept
     /// (ADR 0015). Nothing is written until `y`.
     Proposal {

@@ -49,6 +49,6 @@ expression: "render(&mut app, 120, 50)"
 │                                                                         ││                                           │
 │                                                                         ││                                           │
 │                                                                         ││                                           │
-│ j k pick · ⏎ read · s b p cycle · R relate · a decision · esc back      ││ ⏎ open · o fold · dd archive              │
+│ j k scroll · ⇥ row · ⏎ read · e edit · R relate · a decision · esc back ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

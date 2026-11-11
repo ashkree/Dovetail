@@ -80,7 +80,9 @@ struct Call {
 struct Candidate {
     parent: AgentId,
     agent: AgentId,
-    task: TaskId,
+    /// The task it belongs to; `None`: the coordinator's subagent with no round open, filed
+    /// unfiled if it turns out research-shaped.
+    task: Option<TaskId>,
     /// The round's row id; `None`: a quick finding, filed only if research-shaped.
     round: Option<i64>,
     description: Option<String>,
@@ -181,8 +183,8 @@ pub(crate) enum Outcome {
     Upgrade {
         /// The finding.
         finding: FindingId,
-        /// Its task.
-        task: TaskId,
+        /// Its task; `None`: an unfiled finding.
+        task: Option<TaskId>,
         /// The new body.
         body: String,
         /// Where it came from.
@@ -200,7 +202,8 @@ pub(crate) struct Capture {
 
 impl Capture {
     /// The parent's `Agent` call `key` with `input` launched a subagent `agent` that belongs to
-    /// `task` (and to `round`, when one is open for this parent).
+    /// `task` (and to `round`, when one is open for this parent); with no task it is the
+    /// coordinator's, and is filed unfiled if research-shaped.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn launched(
         &mut self,
@@ -208,7 +211,7 @@ impl Capture {
         agent: AgentId,
         key: &str,
         input: &Value,
-        task: TaskId,
+        task: Option<TaskId>,
         round: Option<i64>,
         now_ms: i64,
     ) {
@@ -727,7 +730,7 @@ mod tests {
             AgentId(format!("slice-a:{key}")),
             key,
             &serde_json::json!({"description": "Look it up"}),
-            TaskId(5),
+            Some(TaskId(5)),
             round,
             0,
         );
@@ -749,7 +752,7 @@ mod tests {
             panic!("{out:?}");
         };
         assert_eq!(finding.round, None);
-        assert_eq!(finding.task, TaskId(5));
+        assert_eq!(finding.task, Some(TaskId(5)));
         assert_eq!(*from, BodyFrom::AgentResult);
         assert_eq!(finding.body, "Found A.");
         let kinds: Vec<(SourceKind, &str)> = finding
@@ -765,6 +768,26 @@ mod tests {
             ]
         );
         assert!(!c.watches("k"));
+    }
+
+    #[test]
+    fn the_coordinators_research_subagent_with_no_round_is_unfiled() {
+        let mut c = Capture::default();
+        c.launched(
+            &AgentId("coordinator".into()),
+            AgentId("coordinator:k".into()),
+            "k",
+            &serde_json::json!({"description": "Look it up"}),
+            None,
+            None,
+            0,
+        );
+        let out = feed(&mut c, SEARCH);
+        let [Outcome::File { finding, .. }] = out.as_slice() else {
+            panic!("{out:?}");
+        };
+        assert_eq!((finding.task, finding.round), (None, None));
+        assert_eq!(finding.sources.len(), 2);
     }
 
     #[test]
@@ -792,7 +815,7 @@ mod tests {
             AgentId("coordinator:k".into()),
             "k",
             &Value::Null,
-            TaskId(1),
+            Some(TaskId(1)),
             Some(1),
             0,
         );

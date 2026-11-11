@@ -21,6 +21,8 @@ fn research_summary() -> research::ResearchSummary {
         task: TaskId(4),
         dir: "/data/projects/p/research/4-pricing".into(),
         rounds: vec![research::RoundSummary {
+            id: 7,
+            queued: true,
             n: 1,
             brief: "per seat or flat?".into(),
             dir: "rounds/01-2026-11-11".into(),
@@ -32,6 +34,7 @@ fn research_summary() -> research::ResearchSummary {
         quick_findings: 1,
         sources: 5,
         report_ms: None,
+        kind: Some(research::ResearchKind::Decision),
     }
 }
 
@@ -564,6 +567,18 @@ fn every_command_roundtrips() {
             ],
         },
         Command::ArchiveTask { id: TaskId(3) },
+        Command::DropRound {
+            task: TaskId(3),
+            round: Some(2),
+        },
+        Command::SetResearchKind {
+            task: TaskId(3),
+            kind: research::ResearchKind::Question,
+        },
+        Command::FileUnfiled {
+            item: InboxId(4),
+            task: TaskId(3),
+        },
         Command::ReorderTask {
             id: TaskId(3),
             delta: -1,
@@ -721,6 +736,11 @@ fn a_research_proposal_and_its_evidence_survive_json() {
         alternatives: vec![],
     };
     roundtrip(&kind);
+    roundtrip(&InboxKind::UnfiledFinding {
+        finding: 3,
+        label: "pricing-pages".into(),
+        sources: 2,
+    });
     // Evidence is written as the id the report cites.
     assert_eq!(
         serde_json::to_value(Evidence::Finding(FindingId(3))).unwrap(),

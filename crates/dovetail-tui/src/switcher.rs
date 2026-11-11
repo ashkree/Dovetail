@@ -247,6 +247,12 @@ pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem>
                 format!("Proposed {}", kind.as_str()),
                 text.clone(),
             ),
+            kind @ InboxKind::UnfiledFinding { .. } => (
+                "⚑",
+                theme.needs_you,
+                "Unfiled finding".into(),
+                crate::buffers::unfiled_title(kind),
+            ),
         };
         PickerItem {
             key: PickerKey::Inbox(item.id),
@@ -491,6 +497,10 @@ fn inbox_preview(
         InboxKind::Proposal { kind, text, .. } => {
             (format!("{name} proposes a {}", kind.as_str()), text.clone())
         }
+        kind @ InboxKind::UnfiledFinding { .. } => (
+            format!("{name}'s subagent found something with no round open"),
+            crate::buffers::unfiled_title(kind),
+        ),
     };
     let mut out = vec![
         Line::from(Span::styled(head, theme.accent())),
