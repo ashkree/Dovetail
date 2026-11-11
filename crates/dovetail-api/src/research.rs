@@ -39,30 +39,103 @@ pub struct ResearchSummary {
     pub sources: u32,
     /// When the latest `report.md` was written, in Unix milliseconds; `None` before the first.
     pub report_ms: Option<i64>,
+    /// Whether the task asks a question or makes a decision (`tasks.research_kind`); a decision
+    /// is held to the decision template (`docs/research.md` §7). `None` until set.
+    #[serde(default)]
+    pub kind: Option<ResearchKind>,
 }
 
 impl ResearchSummary {
-    /// The round still open, if any.
+    /// The round open now, if any (a queued round is not open).
     pub fn open_round(&self) -> Option<&RoundSummary> {
-        self.rounds.iter().find(|r| r.closed_ms.is_none())
+        self.rounds
+            .iter()
+            .find(|r| r.closed_ms.is_none() && !r.queued)
     }
+
+    /// The rounds waiting for the open one to close, oldest request first.
+    pub fn queued_rounds(&self) -> impl Iterator<Item = &RoundSummary> {
+        self.rounds.iter().filter(|r| r.queued)
+    }
+}
+
+/// What a research task is for (`tasks.research_kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchKind {
+    /// A plain question: an ordinary report.
+    Question,
+    /// A decision: the report follows the decision template and is checked against it.
+    Decision,
+}
+
+impl ResearchKind {
+    /// The stored and wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Question => "question",
+            Self::Decision => "decision",
+        }
+    }
+
+    /// Reads the stored spelling.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "question" => Some(Self::Question),
+            "decision" => Some(Self::Decision),
+            _ => None,
+        }
+    }
+}
+
+/// Where a queued round stands among all queued rounds of the project, counting the round open
+/// now as 1st (so the first round waiting is 2nd in line); `None` when it is not queued.
+pub fn queue_position(research: &[ResearchSummary], task: TaskId, round: u32) -> Option<usize> {
+    let mut queued: Vec<(i64, TaskId, u32)> = research
+        .iter()
+        .flat_map(|s| s.queued_rounds().map(|r| (r.id, s.task, r.n)))
+        .collect();
+    queued.sort_unstable();
+    queued
+        .iter()
+        .position(|(_, t, n)| *t == task && *n == round)
+        .map(|i| i + 2)
+}
+
+/// `1st`, `2nd`, `3rd`, `4th`, ...
+pub fn ordinal(n: usize) -> String {
+    let suffix = match (n % 10, n % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
 }
 
 /// One round: a fan-out of subagents under one brief.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoundSummary {
+    /// Row id; queued rounds open in this order.
+    #[serde(default)]
+    pub id: i64,
     /// 1-based within the task.
     pub n: u32,
     /// The user's criteria, as given when it was opened.
     pub brief: String,
     /// The round's folder, `rounds/01-2026-11-10`, relative to [`ResearchSummary::dir`].
     pub dir: PathBuf,
-    /// When it was opened, in Unix milliseconds.
+    /// When it was opened (a queued round: requested), in Unix milliseconds.
     pub opened_ms: i64,
-    /// When it was closed; `None` while open.
+    /// When it was closed; `None` while open or queued.
     pub closed_ms: Option<i64>,
     /// Findings filed under it.
     pub findings: u32,
+    /// Requested while another round was open and waiting its turn: `brief.md` exists, nothing
+    /// is filed under it yet.
+    #[serde(default)]
+    pub queued: bool,
 }
 
 /// What [`crate::Command::LoadResearch`] asks for.

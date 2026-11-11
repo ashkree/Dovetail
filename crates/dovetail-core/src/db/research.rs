@@ -26,6 +26,8 @@ pub struct RoundRow {
     pub brief: String,
     /// `rounds/01-2026-11-10`, relative to the task's folder.
     pub dir: String,
+    /// Requested while another round was open; opens when it closes.
+    pub queued: bool,
 }
 
 /// A source as stored.
@@ -112,8 +114,8 @@ pub struct NewSource {
 /// A finding to file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewFinding {
-    /// The task.
-    pub task: TaskId,
+    /// The task; `None`: an unfiled finding (a coordinator subagent with no round open).
+    pub task: Option<TaskId>,
     /// The round's row id; `None` for a quick finding.
     pub round: Option<i64>,
     /// The subagent.
@@ -164,9 +166,11 @@ pub struct SummaryRow {
     pub sources: u32,
     /// The latest report's time.
     pub report_ms: Option<i64>,
+    /// `tasks.research_kind`.
+    pub kind: Option<String>,
 }
 
-const ROUND_COLUMNS: &str = "id, task_id, n, opened_ms, closed_ms, brief, dir";
+const ROUND_COLUMNS: &str = "id, task_id, n, opened_ms, closed_ms, brief, dir, queued";
 
 fn round(row: &Row<'_>) -> rusqlite::Result<RoundRow> {
     Ok(RoundRow {
@@ -177,6 +181,7 @@ fn round(row: &Row<'_>) -> rusqlite::Result<RoundRow> {
         closed_ms: row.get(4)?,
         brief: row.get(5)?,
         dir: row.get(6)?,
+        queued: row.get(7)?,
     })
 }
 
@@ -232,15 +237,17 @@ fn finding(row: &Row<'_>) -> rusqlite::Result<FindingRow> {
 pub(super) fn open_round(conn: &Connection) -> Result<Option<RoundRow>, DbError> {
     Ok(conn
         .query_row(
-            &format!("SELECT {ROUND_COLUMNS} FROM research_rounds WHERE closed_ms IS NULL"),
+            &format!(
+                "SELECT {ROUND_COLUMNS} FROM research_rounds WHERE closed_ms IS NULL AND queued = 0"
+            ),
             [],
             round,
         )
         .optional()?)
 }
 
-/// Opens round `n + 1` of `task`. Refused for an unknown or archived task, an empty brief, or
-/// while any round is open.
+/// Requests round `n + 1` of `task`: open at once, or queued (`queued` on the row) while any
+/// round is open or waiting. Refused for an unknown or archived task or an empty brief.
 pub(super) fn start_round(
     conn: &mut Connection,
     task: TaskId,
@@ -264,12 +271,11 @@ pub(super) fn start_round(
         }
         Some(_) => {}
     }
-    if let Some(open) = open_round(&tx)? {
-        return Err(DbError::Refused(format!(
-            "round {} of task #{} is still open; close it first (:round close)",
-            open.n, open.task.0
-        )));
-    }
+    let queued: bool = tx.query_row(
+        "SELECT EXISTS (SELECT 1 FROM research_rounds WHERE closed_ms IS NULL)",
+        [],
+        |r| r.get(0),
+    )?;
     let n: u32 = tx.query_row(
         "SELECT COALESCE(MAX(n), 0) + 1 FROM research_rounds WHERE task_id = ?1",
         [task.0],
@@ -280,8 +286,9 @@ pub(super) fn start_round(
         .unwrap_or_else(|| "undated".into());
     let dir = format!("rounds/{n:02}-{date}");
     tx.execute(
-        "INSERT INTO research_rounds (task_id, n, opened_ms, brief, dir) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![task.0, n, now, brief, dir],
+        "INSERT INTO research_rounds (task_id, n, opened_ms, brief, dir, queued) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![task.0, n, now, brief, dir, queued],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
@@ -293,22 +300,104 @@ pub(super) fn start_round(
         closed_ms: None,
         brief: brief.to_owned(),
         dir,
+        queued,
     })
 }
 
-/// Closes the open round of `task`.
-pub(super) fn close_round(conn: &Connection, task: TaskId, now: i64) -> Result<RoundRow, DbError> {
-    let open = open_round(conn)?
+/// The rounds waiting for the open one, oldest request first.
+pub(super) fn queued_rounds(conn: &Connection) -> Result<Vec<RoundRow>, DbError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {ROUND_COLUMNS} FROM research_rounds WHERE queued = 1 AND closed_ms IS NULL \
+         ORDER BY id"
+    ))?;
+    Ok(stmt
+        .query_map([], round)?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Closes the open round of `task` and opens the next queued one, if any. Resolves to the closed
+/// round and the one that opened.
+pub(super) fn close_round(
+    conn: &mut Connection,
+    task: TaskId,
+    now: i64,
+) -> Result<(RoundRow, Option<RoundRow>), DbError> {
+    let tx = conn.transaction()?;
+    let open = open_round(&tx)?
         .filter(|r| r.task == task)
         .ok_or_else(|| DbError::NotFound(format!("task #{} has no open round", task.0)))?;
-    conn.execute(
+    tx.execute(
         "UPDATE research_rounds SET closed_ms = ?2 WHERE id = ?1",
         params![open.id, now],
     )?;
-    Ok(RoundRow {
-        closed_ms: Some(now),
-        ..open
-    })
+    let next = promote_next(&tx, now)?;
+    tx.commit()?;
+    Ok((
+        RoundRow {
+            closed_ms: Some(now),
+            ..open
+        },
+        next,
+    ))
+}
+
+/// Opens the oldest queued round, when no round is open.
+fn promote_next(conn: &Connection, now: i64) -> Result<Option<RoundRow>, DbError> {
+    if open_round(conn)?.is_some() {
+        return Ok(None);
+    }
+    let Some(next) = queued_rounds(conn)?.into_iter().next() else {
+        return Ok(None);
+    };
+    conn.execute(
+        "UPDATE research_rounds SET queued = 0, opened_ms = ?2 WHERE id = ?1",
+        params![next.id, now],
+    )?;
+    Ok(Some(RoundRow {
+        queued: false,
+        opened_ms: now,
+        ..next
+    }))
+}
+
+/// Deletes a queued round of `task`: round `n`, or the one requested last.
+pub(super) fn drop_round(
+    conn: &Connection,
+    task: TaskId,
+    n: Option<u32>,
+) -> Result<RoundRow, DbError> {
+    let mut queued: Vec<RoundRow> = queued_rounds(conn)?
+        .into_iter()
+        .filter(|r| r.task == task)
+        .collect();
+    let found = match n {
+        Some(n) => match queued.iter().position(|r| r.n == n) {
+            Some(i) => queued.swap_remove(i),
+            None => {
+                return Err(DbError::NotFound(format!(
+                    "round {n} of task #{} is not queued (only a queued round can be dropped)",
+                    task.0
+                )));
+            }
+        },
+        None => queued.pop().ok_or_else(|| {
+            DbError::NotFound(format!("task #{} has no queued round", task.0))
+        })?,
+    };
+    conn.execute("DELETE FROM research_rounds WHERE id = ?1", [found.id])?;
+    Ok(found)
+}
+
+/// Deletes every queued round of `task` (archiving it). Resolves to them.
+pub(super) fn drop_queued_for(conn: &Connection, task: TaskId) -> Result<Vec<RoundRow>, DbError> {
+    let mine: Vec<RoundRow> = queued_rounds(conn)?
+        .into_iter()
+        .filter(|r| r.task == task)
+        .collect();
+    for r in &mine {
+        conn.execute("DELETE FROM research_rounds WHERE id = ?1", [r.id])?;
+    }
+    Ok(mine)
 }
 
 /// Files a finding: the row, its sources (one row per locator and content, shared by every
@@ -319,6 +408,9 @@ pub(super) fn file_finding(
     new: NewFinding,
     now: i64,
 ) -> Result<(FindingRow, Vec<SourceRow>), DbError> {
+    let Some(task) = new.task else {
+        return Err(DbError::Refused("a finding for a task needs the task".into()));
+    };
     let tx = conn.transaction()?;
     let (round_n, round_dir): (Option<u32>, Option<String>) = match new.round {
         Some(id) => {
@@ -333,7 +425,7 @@ pub(super) fn file_finding(
     };
     let n: u32 = tx.query_row(
         "SELECT COALESCE(MAX(n), 0) + 1 FROM findings WHERE task_id = ?1 AND round_id IS ?2",
-        params![new.task.0, new.round],
+        params![task.0, new.round],
         |r| r.get(0),
     )?;
     let file = format!("findings/{n:02}-{}.md", new.label);
@@ -346,7 +438,7 @@ pub(super) fn file_finding(
          subagent_type, started_ms, created_ms, tokens, description) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
-            new.task.0,
+            task.0,
             new.round,
             n,
             new.agent.0,
@@ -362,49 +454,18 @@ pub(super) fn file_finding(
         ],
     )?;
     let id = FindingId(tx.last_insert_rowid());
-    let mut ids = Vec::new();
-    for s in &new.sources {
-        tx.execute(
-            "INSERT OR IGNORE INTO sources (kind, locator, tool, query, content, cached, is_error, \
-             content_hash, fetched_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                s.kind.as_str(),
-                s.locator,
-                s.tool,
-                s.query,
-                s.content,
-                s.cached,
-                s.is_error,
-                s.content_hash,
-                now
-            ],
-        )?;
-        let source: i64 = tx.query_row(
-            "SELECT id FROM sources WHERE locator = ?1 AND content_hash = ?2",
-            params![s.locator, s.content_hash],
-            |r| r.get(0),
-        )?;
+    let (ids, sources) = store_sources(&tx, &new.sources, now, |source, tool_use_id| {
         tx.execute(
             "INSERT OR IGNORE INTO finding_sources (finding_id, source_id, tool_use_id) \
              VALUES (?1, ?2, ?3)",
-            params![id.0, source, s.tool_use_id],
-        )?;
-        if !ids.contains(&SourceId(source)) {
-            ids.push(SourceId(source));
-        }
-    }
-    let mut sources = Vec::new();
-    for sid in &ids {
-        sources.push(tx.query_row(
-            &format!("SELECT {SOURCE_COLUMNS} FROM sources s WHERE s.id = ?1"),
-            [sid.0],
-            source,
-        )?);
-    }
+            params![id.0, source, tool_use_id],
+        )
+        .map(drop)
+    })?;
     tx.commit()?;
     let row = FindingRow {
         id,
-        task: new.task,
+        task,
         round: round_n,
         n,
         agent: new.agent,
@@ -422,6 +483,53 @@ pub(super) fn file_finding(
     Ok((row, sources))
 }
 
+/// Stores a finding's sources (one row per locator and content, shared by every finding that
+/// reached the same thing), links each through `link(source id, tool use id)`, and resolves to
+/// the distinct source ids in order and their rows.
+fn store_sources(
+    conn: &Connection,
+    new: &[NewSource],
+    now: i64,
+    link: impl Fn(i64, &str) -> rusqlite::Result<()>,
+) -> Result<(Vec<SourceId>, Vec<SourceRow>), DbError> {
+    let mut ids = Vec::new();
+    for s in new {
+        conn.execute(
+            "INSERT OR IGNORE INTO sources (kind, locator, tool, query, content, cached, is_error, \
+             content_hash, fetched_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                s.kind.as_str(),
+                s.locator,
+                s.tool,
+                s.query,
+                s.content,
+                s.cached,
+                s.is_error,
+                s.content_hash,
+                now
+            ],
+        )?;
+        let id: i64 = conn.query_row(
+            "SELECT id FROM sources WHERE locator = ?1 AND content_hash = ?2",
+            params![s.locator, s.content_hash],
+            |r| r.get(0),
+        )?;
+        link(id, &s.tool_use_id)?;
+        if !ids.contains(&SourceId(id)) {
+            ids.push(SourceId(id));
+        }
+    }
+    let mut rows = Vec::new();
+    for sid in &ids {
+        rows.push(conn.query_row(
+            &format!("SELECT {SOURCE_COLUMNS} FROM sources s WHERE s.id = ?1"),
+            [sid.0],
+            source,
+        )?);
+    }
+    Ok((ids, rows))
+}
+
 /// Replaces a finding's body with one from a better source.
 pub(super) fn set_finding_body(
     conn: &Connection,
@@ -436,11 +544,12 @@ pub(super) fn set_finding_body(
     Ok(())
 }
 
-/// Ids of the tasks that have any research, in id order.
+/// Ids of the tasks that have any research (or a research kind), in id order.
 fn research_tasks(conn: &Connection) -> Result<Vec<TaskId>, DbError> {
     let mut stmt = conn.prepare(
         "SELECT task_id FROM research_rounds UNION SELECT task_id FROM findings \
-         UNION SELECT task_id FROM reports ORDER BY 1",
+         UNION SELECT task_id FROM reports \
+         UNION SELECT id FROM tasks WHERE research_kind IS NOT NULL ORDER BY 1",
     )?;
     let rows = stmt.query_map([], |r| r.get(0).map(TaskId))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -461,7 +570,7 @@ pub(super) fn load_summary(conn: &Connection, task: TaskId) -> Result<SummaryRow
          FROM research_rounds r WHERE task_id = ?1 ORDER BY n"
     ))?;
     let rounds = stmt
-        .query_map([task.0], |r| Ok((round(r)?, r.get::<_, u32>(7)?)))?
+        .query_map([task.0], |r| Ok((round(r)?, r.get::<_, u32>(8)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let (findings, quick_findings): (u32, u32) = conn.query_row(
         "SELECT COUNT(*), COUNT(*) - COUNT(round_id) FROM findings WHERE task_id = ?1",
@@ -479,6 +588,7 @@ pub(super) fn load_summary(conn: &Connection, task: TaskId) -> Result<SummaryRow
         [task.0],
         |r| r.get(0),
     )?;
+    let kind = research_kind(conn, task)?;
     Ok(SummaryRow {
         task,
         rounds,
@@ -486,6 +596,7 @@ pub(super) fn load_summary(conn: &Connection, task: TaskId) -> Result<SummaryRow
         quick_findings,
         sources,
         report_ms,
+        kind,
     })
 }
 
@@ -588,4 +699,278 @@ pub(super) fn set_research_kind(
         return Err(DbError::NotFound(format!("there is no task #{}", task.0)));
     }
     Ok(())
+}
+
+// --- unfiled findings -------------------------------------------------------------------------
+
+/// The columns of `unfiled_findings`, in [`unfiled`]'s order.
+const UNFILED_COLUMNS: &str = "id, agent_id, label, path, body, body_from, subagent_type, \
+     started_ms, created_ms, tokens, description";
+
+/// An unfiled finding as a [`FindingRow`] with `task` 0 (no task), no round and `n` 0.
+fn unfiled(row: &Row<'_>) -> rusqlite::Result<FindingRow> {
+    Ok(FindingRow {
+        id: FindingId(row.get(0)?),
+        task: TaskId(0),
+        round: None,
+        n: 0,
+        agent: AgentId(row.get(1)?),
+        label: row.get(2)?,
+        path: row.get(3)?,
+        body: row.get(4)?,
+        body_from: row.get(5)?,
+        subagent_type: row.get(6)?,
+        started_ms: row.get(7)?,
+        created_ms: row.get(8)?,
+        tokens: row.get::<_, Option<i64>>(9)?.map(|t| t.max(0) as u64),
+        description: row.get(10)?,
+        sources: Vec::new(),
+    })
+}
+
+/// The sources of unfiled finding `id`, in the order it reached them.
+fn unfiled_sources(
+    conn: &Connection,
+    id: i64,
+) -> Result<(Vec<SourceId>, Vec<SourceRow>), DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT source_id FROM unfiled_finding_sources WHERE finding_id = ?1 ORDER BY rowid",
+    )?;
+    let mut ids: Vec<SourceId> = Vec::new();
+    for sid in stmt.query_map([id], |r| r.get(0).map(SourceId))? {
+        let sid = sid?;
+        if !ids.contains(&sid) {
+            ids.push(sid);
+        }
+    }
+    let mut rows = Vec::new();
+    for sid in &ids {
+        rows.push(conn.query_row(
+            &format!("SELECT {SOURCE_COLUMNS} FROM sources s WHERE s.id = ?1"),
+            [sid.0],
+            source,
+        )?);
+    }
+    Ok((ids, rows))
+}
+
+/// Stores a finding with no task (`new.task` is ignored). Its file goes to
+/// `findings/<id>-<label>.md` under the research root's `unfiled/` folder.
+pub(super) fn file_unfiled(
+    conn: &mut Connection,
+    new: NewFinding,
+    now: i64,
+) -> Result<(FindingRow, Vec<SourceRow>), DbError> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT INTO unfiled_findings (agent_id, label, description, path, body, body_from, \
+         subagent_type, started_ms, created_ms, tokens) \
+         VALUES (?1, ?2, ?3, '', ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            new.agent.0,
+            new.label,
+            new.description,
+            new.body,
+            new.body_from,
+            new.subagent_type,
+            new.started_ms,
+            now,
+            new.tokens.map(|t| t as i64),
+        ],
+    )?;
+    let id = tx.last_insert_rowid();
+    let path = format!("findings/{id:02}-{}.md", new.label);
+    tx.execute(
+        "UPDATE unfiled_findings SET path = ?2 WHERE id = ?1",
+        params![id, path],
+    )?;
+    let (ids, sources) = store_sources(&tx, &new.sources, now, |source, tool_use_id| {
+        tx.execute(
+            "INSERT OR IGNORE INTO unfiled_finding_sources (finding_id, source_id, tool_use_id) \
+             VALUES (?1, ?2, ?3)",
+            params![id, source, tool_use_id],
+        )
+        .map(drop)
+    })?;
+    tx.commit()?;
+    let row = FindingRow {
+        id: FindingId(id),
+        task: TaskId(0),
+        round: None,
+        n: 0,
+        agent: new.agent,
+        label: new.label,
+        description: new.description,
+        path,
+        body: new.body,
+        body_from: new.body_from,
+        subagent_type: new.subagent_type,
+        started_ms: new.started_ms,
+        created_ms: now,
+        tokens: new.tokens,
+        sources: ids,
+    };
+    Ok((row, sources))
+}
+
+/// One unfiled finding with its sources; `None` when it is gone (filed or dropped).
+pub(super) fn load_unfiled(
+    conn: &Connection,
+    id: i64,
+) -> Result<Option<(FindingRow, Vec<SourceRow>)>, DbError> {
+    let found = conn
+        .query_row(
+            &format!("SELECT {UNFILED_COLUMNS} FROM unfiled_findings WHERE id = ?1"),
+            [id],
+            unfiled,
+        )
+        .optional()?;
+    let Some(mut row) = found else {
+        return Ok(None);
+    };
+    let (ids, sources) = unfiled_sources(conn, id)?;
+    row.sources = ids;
+    Ok(Some((row, sources)))
+}
+
+/// Every unfiled finding with its sources, for rebuilding missing files at start.
+pub(super) fn load_all_unfiled(
+    conn: &Connection,
+) -> Result<Vec<(FindingRow, Vec<SourceRow>)>, DbError> {
+    let ids: Vec<i64> = {
+        let mut stmt = conn.prepare("SELECT id FROM unfiled_findings ORDER BY id")?;
+        stmt.query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?
+    };
+    let mut out = Vec::new();
+    for id in ids {
+        if let Some(found) = load_unfiled(conn, id)? {
+            out.push(found);
+        }
+    }
+    Ok(out)
+}
+
+/// Replaces an unfiled finding's body with one from a better source. Resolves to whether it was
+/// still there (it may have been filed or dropped meanwhile).
+pub(super) fn set_unfiled_body(
+    conn: &Connection,
+    id: i64,
+    body: &str,
+    from: &str,
+) -> Result<bool, DbError> {
+    let changed = conn.execute(
+        "UPDATE unfiled_findings SET body = ?2, body_from = ?3 WHERE id = ?1",
+        params![id, body, from],
+    )?;
+    Ok(changed > 0)
+}
+
+/// What leaves the database when an unfiled finding is filed or dropped: the finding, and the
+/// sources no other unfiled finding still cites (their files under `unfiled/` can go).
+#[derive(Debug)]
+pub struct Removed {
+    /// The finding as it was.
+    pub finding: FindingRow,
+    /// Sources only it cited.
+    pub orphans: Vec<SourceRow>,
+}
+
+fn remove_unfiled(conn: &Connection, id: i64) -> Result<Option<Removed>, DbError> {
+    let Some((finding, sources)) = load_unfiled(conn, id)? else {
+        return Ok(None);
+    };
+    conn.execute(
+        "DELETE FROM unfiled_finding_sources WHERE finding_id = ?1",
+        [id],
+    )?;
+    conn.execute("DELETE FROM unfiled_findings WHERE id = ?1", [id])?;
+    let mut orphans = Vec::new();
+    for s in sources {
+        let others: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM unfiled_finding_sources WHERE source_id = ?1)",
+            [s.id.0],
+            |r| r.get(0),
+        )?;
+        if !others {
+            orphans.push(s);
+        }
+    }
+    Ok(Some(Removed { finding, orphans }))
+}
+
+/// Deletes an unfiled finding (`d`). `None` when it is already gone.
+pub(super) fn drop_unfiled(conn: &mut Connection, id: i64) -> Result<Option<Removed>, DbError> {
+    let tx = conn.transaction()?;
+    let removed = remove_unfiled(&tx, id)?;
+    tx.commit()?;
+    Ok(removed)
+}
+
+/// Files an unfiled finding under `task` as a quick finding: a `findings` row with the same
+/// body and sources and a new id, the unfiled row gone. Resolves to the new finding, its sources
+/// and what was removed from `unfiled/`.
+pub(super) fn file_unfiled_to_task(
+    conn: &mut Connection,
+    id: i64,
+    task: TaskId,
+) -> Result<(FindingRow, Vec<SourceRow>, Removed), DbError> {
+    let tx = conn.transaction()?;
+    let status: Option<String> = tx
+        .query_row("SELECT status FROM tasks WHERE id = ?1", [task.0], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    match status.as_deref() {
+        None => return Err(DbError::NotFound(format!("there is no task #{}", task.0))),
+        Some("archived") => {
+            return Err(DbError::Refused(format!("task #{} is archived", task.0)));
+        }
+        Some(_) => {}
+    }
+    let (old, sources) = load_unfiled(&tx, id)?
+        .ok_or_else(|| DbError::NotFound("that finding is already filed or dropped".into()))?;
+    let n: u32 = tx.query_row(
+        "SELECT COALESCE(MAX(n), 0) + 1 FROM findings WHERE task_id = ?1 AND round_id IS NULL",
+        [task.0],
+        |r| r.get(0),
+    )?;
+    let path = format!("findings/{n:02}-{}.md", old.label);
+    tx.execute(
+        "INSERT INTO findings (task_id, round_id, n, agent_id, label, path, body, body_from, \
+         subagent_type, started_ms, created_ms, tokens, description) \
+         VALUES (?1, NULL, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            task.0,
+            n,
+            old.agent.0,
+            old.label,
+            path,
+            old.body,
+            old.body_from,
+            old.subagent_type,
+            old.started_ms,
+            old.created_ms,
+            old.tokens.map(|t| t as i64),
+            old.description,
+        ],
+    )?;
+    let new_id = tx.last_insert_rowid();
+    tx.execute(
+        "INSERT OR IGNORE INTO finding_sources (finding_id, source_id, tool_use_id) \
+         SELECT ?1, source_id, tool_use_id FROM unfiled_finding_sources WHERE finding_id = ?2",
+        params![new_id, id],
+    )?;
+    let removed = remove_unfiled(&tx, id)?
+        .ok_or_else(|| DbError::NotFound("that finding is already filed or dropped".into()))?;
+    tx.commit()?;
+    let row = FindingRow {
+        id: FindingId(new_id),
+        task,
+        round: None,
+        n,
+        path,
+        ..old
+    };
+    Ok((row, sources, removed))
 }

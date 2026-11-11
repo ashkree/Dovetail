@@ -72,29 +72,36 @@ impl Core {
         if let Err(refused) = self.live_task(task).await {
             return refused;
         }
-        if let Some(open) = &self.research.open {
-            return error(if open.task == task {
-                format!(
-                    "a round is already open for task #{} (round {}): close it first, or call \
-                     research_write_report, which closes it",
-                    task.0, open.n
-                )
-            } else {
-                format!(
-                    "round {} of task #{} is still open, and only one round can be open at a \
-                     time: close it first (research_write_report on that task closes it)",
-                    open.n, open.task.0
-                )
-            });
+        if let Some(kind) = args.kind
+            && let Err(e) = self
+                .db
+                .set_research_kind(task, Some(kind.as_str().into()))
+                .await
+        {
+            return error(format!("could not set the research kind: {e}"));
         }
         match self.open_round_for(task, args.brief).await {
-            Ok(round) => {
+            Ok((round, None)) => {
                 let head = json!({ "round": round.n, "dir": round.dir, "status": "open" });
                 ok(format!(
                     "{head}\nRound {} is open: the subagents you launch now are filed under it, \
                      with their sources. Write the report with research_write_report when they \
                      are done.",
                     round.n
+                ))
+            }
+            Ok((round, Some(position))) => {
+                let head = json!({
+                    "round": round.n, "dir": round.dir, "status": "queued", "position": position
+                });
+                ok(format!(
+                    "{head}\nRound {} is queued ({} in line): another round is open, and its \
+                     brief is saved. Do not launch its subagents yet; when it opens you get the \
+                     message \"Round {} for #{} is now open; send its subagents.\"",
+                    round.n,
+                    dovetail_api::research::ordinal(position),
+                    round.n,
+                    task.0
                 ))
             }
             Err(e) => error(e.to_string()),
@@ -115,8 +122,8 @@ impl Core {
             Ok(r) => r,
             Err(e) => return error(format!("could not read the research: {e}")),
         };
-        let open = r.rounds.iter().find(|x| x.closed_ms.is_none());
-        if open.is_none() && r.rounds.is_empty() {
+        let open = r.rounds.iter().find(|x| x.closed_ms.is_none() && !x.queued);
+        if open.is_none() && r.rounds.iter().all(|x| x.queued) {
             return error(format!(
                 "task #{} has no open round and no earlier round, so there is nothing to \
                  report on: open one with research_start_round first",
@@ -138,7 +145,9 @@ impl Core {
             Err(e) => return error(e.to_string()),
         };
         // The round this report closes, or else the latest one.
-        let round_id = open.or(r.rounds.last()).map(|x| x.id);
+        let round_id = open
+            .or(r.rounds.iter().rfind(|x| !x.queued))
+            .map(|x| x.id);
         let flags = (
             u32::try_from(checked.uncited.len()).unwrap_or(u32::MAX),
             u32::try_from(checked.unlabelled_figures.len()).unwrap_or(u32::MAX),
@@ -312,10 +321,20 @@ impl Core {
             }
             (PermissionAnswer::AllowAlways, ProposalKind::Idea) => {
                 match self.open_round_for(task, text).await {
-                    Ok(round) => format!(
+                    Ok((round, None)) => format!(
                         "research_propose accepted: round {} is open on task #{} with your idea \
                          as its brief; launch the subagents",
                         round.n, task.0
+                    ),
+                    Ok((round, Some(position))) => format!(
+                        "research_propose accepted: round {} on task #{} is queued ({} in line) \
+                         with your idea as its brief; wait for \"Round {} for #{} is now open\" \
+                         before you launch its subagents",
+                        round.n,
+                        task.0,
+                        dovetail_api::research::ordinal(position),
+                        round.n,
+                        task.0
                     ),
                     Err(e) => format!(
                         "research_propose accepted \"{shown}\" as a new round, but it could not \

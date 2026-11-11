@@ -527,13 +527,18 @@ fn tool_defs() -> Vec<ToolDef> {
                 the user's criteria. Call it before you launch research subagents; while it is \
                 open, Dovetail files each subagent's full report and the sources it actually \
                 fetched or read, outside your context. Put the user's criteria in `brief`, \
-                verbatim where you can. One round is open at a time: `research_write_report` \
-                closes it. Returns `{round, dir, status}`. Errors: unknown or archived task, an \
-                empty brief, a round already open.",
+                verbatim where you can. Set `kind` to `decision` when the user wants a recommendation \
+                to choose by, `question` for a plain question. One round is open at a time: a \
+                round requested while another is open is queued, and you are told when it \
+                opens. `research_write_report` closes the open one. Returns \
+                `{round, dir, status}` with status `open`, or `{round, status: \"queued\", \
+                position}`: then wait for the message \"Round N for #T is now open\" before \
+                you launch its subagents. Errors: unknown or archived task, an empty brief.",
             schema: || {
                 json!({"type": "object", "properties": {
                     "task": {"type": "integer", "description": "Id of an existing task (the question)."},
-                    "brief": {"type": "string", "description": "The user's criteria for this round, verbatim where possible."}
+                    "brief": {"type": "string", "description": "The user's criteria for this round, verbatim where possible."},
+                    "kind": {"type": "string", "enum": ["decision", "question"], "description": "Whether the task makes a decision (report follows the decision template) or asks a question. Optional."}
                 }, "required": ["task", "brief"]})
             },
         },

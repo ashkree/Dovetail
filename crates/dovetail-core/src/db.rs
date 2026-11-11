@@ -72,6 +72,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0012_maps.sql"),
     migration!("state", "0013_research.sql"),
     migration!("state", "0014_decision_evidence.sql"),
+    migration!("state", "0015_research_followups.sql"),
 ];
 
 /// Errors from the database layer.
@@ -360,14 +361,76 @@ impl Db {
         self.run(|c, _| research::open_round(c.state()?))
     }
 
-    /// Opens the next round of `task`.
+    /// Requests the next round of `task`: open, or queued behind the open one.
     pub fn start_round(&self, task: TaskId, brief: String) -> Pending<research::RoundRow> {
         self.run(move |c, now| research::start_round(c.state()?, task, &brief, now))
     }
 
-    /// Closes the open round of `task`.
-    pub fn close_round(&self, task: TaskId) -> Pending<research::RoundRow> {
+    /// Closes the open round of `task` and opens the next queued one, if any.
+    pub fn close_round(
+        &self,
+        task: TaskId,
+    ) -> Pending<(research::RoundRow, Option<research::RoundRow>)> {
         self.run(move |c, now| research::close_round(c.state()?, task, now))
+    }
+
+    /// The queued rounds, oldest request first.
+    pub fn queued_rounds(&self) -> Pending<Vec<research::RoundRow>> {
+        self.run(|c, _| research::queued_rounds(c.state()?))
+    }
+
+    /// Deletes a queued round of `task` (round `n`, or the one requested last).
+    pub fn drop_round(&self, task: TaskId, n: Option<u32>) -> Pending<research::RoundRow> {
+        self.run(move |c, _| research::drop_round(c.state()?, task, n))
+    }
+
+    /// Deletes every queued round of `task`.
+    pub fn drop_queued_for(&self, task: TaskId) -> Pending<Vec<research::RoundRow>> {
+        self.run(move |c, _| research::drop_queued_for(c.state()?, task))
+    }
+
+    /// Stores a finding that has no task yet.
+    pub fn file_unfiled(
+        &self,
+        new: research::NewFinding,
+    ) -> Pending<(research::FindingRow, Vec<research::SourceRow>)> {
+        self.run(move |c, now| research::file_unfiled(c.state()?, new, now))
+    }
+
+    /// One unfiled finding with its sources.
+    pub fn unfiled_finding(
+        &self,
+        id: i64,
+    ) -> Pending<Option<(research::FindingRow, Vec<research::SourceRow>)>> {
+        self.run(move |c, _| research::load_unfiled(c.state()?, id))
+    }
+
+    /// Every unfiled finding with its sources.
+    pub fn all_unfiled(&self) -> Pending<Vec<(research::FindingRow, Vec<research::SourceRow>)>> {
+        self.run(|c, _| research::load_all_unfiled(c.state()?))
+    }
+
+    /// Replaces an unfiled finding's body; resolves to whether it still existed.
+    pub fn set_unfiled_body(&self, id: i64, body: String, from: &'static str) -> Pending<bool> {
+        self.run(move |c, _| research::set_unfiled_body(c.state()?, id, &body, from))
+    }
+
+    /// Deletes an unfiled finding; `None` when it is already gone.
+    pub fn drop_unfiled(&self, id: i64) -> Pending<Option<research::Removed>> {
+        self.run(move |c, _| research::drop_unfiled(c.state()?, id))
+    }
+
+    /// Files an unfiled finding under `task` as a quick finding.
+    pub fn file_unfiled_to_task(
+        &self,
+        id: i64,
+        task: TaskId,
+    ) -> Pending<(
+        research::FindingRow,
+        Vec<research::SourceRow>,
+        research::Removed,
+    )> {
+        self.run(move |c, _| research::file_unfiled_to_task(c.state()?, id, task))
     }
 
     /// Files a finding with its sources.
