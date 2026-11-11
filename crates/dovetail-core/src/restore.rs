@@ -3,7 +3,7 @@
 //! - **Cut-off turns.** An agent stored as working, needing you or setting up was cut off. It
 //!   gets one Needs-you item with its last prompt; it is never continued automatically.
 //! - **In-flight items.** A pending permission request died with its session: it leaves Needs
-//!   you and becomes an Activity note. A pending `ask_user` question stays; answering it sends the
+//!   you and becomes an Activity note. A pending `core_ask_user` question stays; answering it sends the
 //!   agent a normal message. Finished turns and errors stay as they were.
 //! - **Restore.** The coordinator's session resumes at once (if it has run before); slices resume
 //!   when first touched (`ensure_live`).
@@ -182,7 +182,7 @@ impl Core {
                     if tool == START_SLICE_PERMISSION {
                         let name = input.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                         self.tell_coordinator(format!(
-                            "start_slice {name} expired at restart; call it again if still needed"
+                            "project_start_slice {name} expired at restart; call it again if still needed"
                         ));
                         continue;
                     }

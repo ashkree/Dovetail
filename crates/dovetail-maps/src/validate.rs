@@ -1,4 +1,4 @@
-//! `draw_map` input validation (design 23i): every problem found, each saying how to fix it.
+//! `maps_draw` input validation (design 23i): every problem found, each saying how to fix it.
 
 use std::collections::{HashMap, HashSet};
 
@@ -64,7 +64,7 @@ pub mod limits {
 
 use limits::*;
 
-/// One problem with a `draw_map` input. `at` names where it is, e.g. `nodes[3] ("api")`.
+/// One problem with a `maps_draw` input. `at` names where it is, e.g. `nodes[3] ("api")`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MapError {
     /// The map has no nodes at all.
@@ -335,11 +335,11 @@ fn is_id_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '-'
 }
 
-/// The text a `draw_map` call returns when validation fails: every problem, one per line, up to
+/// The text a `maps_draw` call returns when validation fails: every problem, one per line, up to
 /// [`limits::MAX_REPORTED_ERRORS`].
 pub fn report(errors: &[MapError]) -> String {
     let mut text = format!(
-        "The map was not saved: {} problem{} to fix. Fix them and call draw_map again with the \
+        "The map was not saved: {} problem{} to fix. Fix them and call maps_draw again with the \
          whole map.",
         errors.len(),
         if errors.len() == 1 { "" } else { "s" }
@@ -356,7 +356,7 @@ pub fn report(errors: &[MapError]) -> String {
     text
 }
 
-/// Checks a `draw_map` input and builds the map, or returns every problem found.
+/// Checks a `maps_draw` input and builds the map, or returns every problem found.
 pub fn validate(input: &DrawMapInput) -> Result<ValidMap, Vec<MapError>> {
     let mut v = Validator::default();
 

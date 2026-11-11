@@ -113,10 +113,18 @@ check_mcp() {
   local out
   out="$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
     '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | DOVETAIL_ROLE=slice timeout 5 "$DT" mcp)"
-  [[ "$out" == *ask_user* && "$out" != *start_slice* && "$out" != *add_project* ]] \
-    && pass "mcp: a slice sees no coordinator tools" || fail "mcp: $out"
+  [[ "$out" == *core_ask_user* && "$out" != *project_start_slice* && "$out" != *project_add* \
+    && "$out" != *'"start_slice"'* && "$out" != *tasks_* ]] \
+    && pass "mcp: a slice sees no coordinator tools (Core, Coordination, Maps)" || fail "mcp: $out"
+  # ADR 0016: for one release the old names are listed too, pointing at the new ones.
+  [[ "$out" == *'"name":"ask_user"'* && "$out" == *'Call `core_ask_user` instead'* ]] \
+    && pass "mcp: old names still listed as deprecated aliases" || fail "mcp: $out"
+  out="$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | DOVETAIL_ROLE=side-chat DOVETAIL_SUITES=core timeout 5 "$DT" mcp)"
+  [[ "$out" == *core_log_decision* && "$out" != *maps_draw* && "$out" != *research_* ]] \
+    && pass "mcp: a side chat sees Core only" || fail "mcp: $out"
   # Stdin stays open a moment: on end of input the bridge exits without waiting for its answer.
-  out="$({ printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_status","arguments":{"status":"x"}}}'; sleep 1; } |
+  out="$({ printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"core_report_status","arguments":{"status":"x"}}}'; sleep 1; } |
     DOVETAIL_ROLE=coordinator DOVETAIL_SOCKET="$ROOT/none.sock" timeout 5 "$DT" mcp)"
   [[ "$out" == *"not running"* ]] && pass "mcp: app absent gives a clear error, no hang" || fail "mcp: $out"
 }
@@ -134,10 +142,10 @@ check_app() {
    3. i, "Run sleep 30 with Bash", then <leader>sx (interrupt): "Interrupted" appears.     (M6)
    4. <leader>sm to manual. i, "Create a.txt with the Write tool": a Permission item
       appears; answer y. Ask for two writes in one message; answer the second first.      (M7)
-   5. "Call ask_user: which colour?": it shows in the chat and Needs you; reply r.  (ADR 0007)
-   6. "Call report_status with 'testing'": the line shows in the tree.                    (M9)
-   7. "Create a task 'demo' with create_task, then start_slice on it named demo-1 with
-      brief 'reply ok'": Permission item (manual mode); y; slice sets up; the coordinator
+   5. "Call core_ask_user: which colour?": in the chat and Needs you; reply r.            (ADR 0007)
+   6. "Call core_report_status with 'testing'": the line shows in the tree.               (M9)
+   7. "Create a task 'demo' with tasks_create, then project_start_slice on it named
+      demo-1 with brief 'reply ok'": Permission item (manual mode); y; slice sets up; the coordinator
       gets "slice demo-1 ready".                                                          (M8, ADR 0004)
    8. Coordinator: "SendMessage to demo-1: say hi back". Message timeline (<leader>m) shows
       both directions.                                                                    (M8)

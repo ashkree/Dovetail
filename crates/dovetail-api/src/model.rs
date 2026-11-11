@@ -298,7 +298,7 @@ pub struct Agent {
     pub worktree: Option<WorktreeRef>,
     /// What it is doing.
     pub status: AgentStatus,
-    /// One-line status text, from `report_status` or the stream.
+    /// One-line status text, from `core_report_status` or the stream.
     pub status_line: String,
     /// Memory use in MB (sessions only).
     pub memory_mb: Option<u32>,
@@ -479,7 +479,7 @@ pub enum InboxKind {
         /// Rules offered for "always allow".
         suggestions: Vec<RuleSuggestion>,
     },
-    /// An `ask_user` question.
+    /// A `core_ask_user` question.
     Question {
         /// The question.
         text: String,
@@ -524,7 +524,7 @@ pub enum InboxKind {
     },
 }
 
-/// The `tool` of the Permission item Dovetail raises itself for a `start_slice` that needs
+/// The `tool` of the Permission item Dovetail raises itself for a `project_start_slice` that needs
 /// approval (ADR 0004). Its input is `{task, name, brief}`.
 pub const START_SLICE_PERMISSION: &str = "start_slice";
 
@@ -843,7 +843,7 @@ pub struct Alternative {
 pub enum DecisionAuthor {
     /// The user, by hand.
     User,
-    /// An agent, through `log_decision`.
+    /// An agent, through `core_log_decision`.
     Agent(AgentId),
 }
 

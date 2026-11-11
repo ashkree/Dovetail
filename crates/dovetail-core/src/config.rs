@@ -12,6 +12,10 @@
 //! [profiles]                 # Claude Code accounts, by name (ADR 0009, `profile`)
 //! walid = "~/.claude"
 //! maveron = "~/.local/share/dovetail/profiles/maveron"
+//! [suites]                   # tool suites per role (ADR 0016); a role left out keeps its default
+//! coordinator = ["core", "tasks", "project", "coordination", "research", "maps"]
+//! slice = ["core", "coordination", "maps"]
+//! side_chat = ["core"]
 //! ```
 //!
 //! Every field is optional.
@@ -19,6 +23,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use dovetail_api::tools::{Role, Suite};
 use serde::Deserialize;
 
 use crate::paths::Paths;
@@ -41,6 +46,42 @@ pub struct Config {
     pub memory: MemoryCaps,
     /// Claude Code config directories by profile name; a project picks one in its recipe.
     pub profiles: BTreeMap<String, String>,
+    /// The tool suites each role gets.
+    pub suites: RoleSuites,
+}
+
+/// The `[suites]` table: the tool suites each role gets (ADR 0016). `--allowedTools`, the
+/// bridge's tool list and the core's check on each call all follow it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct RoleSuites {
+    /// The coordinator's suites.
+    pub coordinator: Vec<Suite>,
+    /// Each slice's suites.
+    pub slice: Vec<Suite>,
+    /// Each side chat's suites.
+    pub side_chat: Vec<Suite>,
+}
+
+impl Default for RoleSuites {
+    fn default() -> Self {
+        Self {
+            coordinator: Role::Coordinator.default_suites().to_vec(),
+            slice: Role::Slice.default_suites().to_vec(),
+            side_chat: Role::SideChat.default_suites().to_vec(),
+        }
+    }
+}
+
+impl RoleSuites {
+    /// The suites of a session with `role`.
+    pub fn for_role(&self, role: Role) -> &[Suite] {
+        match role {
+            Role::Coordinator => &self.coordinator,
+            Role::Slice => &self.slice,
+            Role::SideChat => &self.side_chat,
+        }
+    }
 }
 
 /// The `[memory]` table: cgroup caps for sessions, in gigabytes.
@@ -63,6 +104,7 @@ impl Default for Config {
             max_slices: 3,
             memory: MemoryCaps::default(),
             profiles: BTreeMap::new(),
+            suites: RoleSuites::default(),
         }
     }
 }
@@ -148,6 +190,23 @@ mod tests {
         assert_eq!(home.dir, PathBuf::from("/p/maveron"));
         assert!(config.claude_home(Some("missing")).is_err());
         assert!(Config::parse("").unwrap().profiles.is_empty());
+    }
+
+    #[test]
+    fn suites_default_per_role_and_parse_per_key() {
+        let defaults = Config::parse("").unwrap().suites;
+        assert_eq!(defaults.for_role(Role::Coordinator), Suite::ALL);
+        assert_eq!(
+            defaults.for_role(Role::Slice),
+            [Suite::Core, Suite::Coordination, Suite::Maps]
+        );
+        assert_eq!(defaults.for_role(Role::SideChat), [Suite::Core]);
+        let partial = Config::parse("[suites]\nslice = [\"core\"]\n")
+            .unwrap()
+            .suites;
+        assert_eq!(partial.for_role(Role::Slice), [Suite::Core]);
+        assert_eq!(partial.for_role(Role::Coordinator), Suite::ALL);
+        assert!(Config::parse("[suites]\nslice = [\"everything\"]\n").is_err());
     }
 
     #[test]

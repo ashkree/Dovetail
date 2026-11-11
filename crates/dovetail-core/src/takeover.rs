@@ -27,10 +27,10 @@
 //! lock stays stored, and the next open checks it as after a crash.
 //!
 //! **Tools from native.** Native gets the same MCP config, so its tool calls reach this core
-//! under the session's agent id. None waits on the UI: `ask_user` raises its question and
+//! under the session's agent id. None waits on the UI: `core_ask_user` raises its question and
 //! returns at once (ADR 0007), and the answer goes to the session as a message once headless
 //! is back (answering while the lock holds is refused and the question stays open);
-//! `start_slice` starts or queues the slice, or raises its approval and returns `pending`; the
+//! `project_start_slice` starts or queues the slice, or raises its approval and returns `pending`; the
 //! coordinator's signals (slice ready, approvals) are held and sent when headless resumes.
 //!
 //! **Memory caps.** Native runs in the agent's own scope unit, so its cap holds there too. The

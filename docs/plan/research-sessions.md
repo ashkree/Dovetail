@@ -134,11 +134,11 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
 - **Prompt (copy-paste):**
   > Implement ADR 0016 using the user's G1 decisions recorded in its "Open" notes (update the ADR first if they differ). Add suite membership to the tool table in `dovetail-api/src/tools.rs`, role config listing suites (`config.toml` and the role defaults), `allowed_tools` and the bridge tool list derived from suites, prefixed names, and for one release old names served as aliases by the same handler with a `tracing::warn!` and a one-line deprecation note in the tool result. Update `config/roles/*.md`, `scripts/live-checks.sh`, the hand-written `mcp__dovetail__` strings in tests and `dovetail-driver/src/claude.rs`, and the docs that describe current behaviour (not historical ADRs/spikes). Note `claim`/`release` are v1.1 Claims and not built; the Coordination suite is empty until then. Check that a resumed session whose transcript used the old name still works. Update `bootstrap.sh` notes and say `--force` is needed.
 - **Validation:**
-  - [ ] Roles get exactly their suites (assert the lists in a test)
-  - [ ] Old names still answer, with a logged deprecation
-  - [ ] No role prompt, script or test references a removed name
-  - [ ] A resumed v1 conversation using an old name works
-  - [ ] `scripts/check.sh` passes
+  - [x] Roles get exactly their suites (assert the lists in a test) — `session::launch::tests::roles_get_exactly_their_suites` (`--allowedTools` per role), `mcp::tests::tools_list_shows_the_suites_tools_then_their_old_names` (bridge), `config` suites test; `scripts/live-checks.sh mcp` passes (slice and side-chat lists from the real bridge)
+  - [x] Old names still answer, with a logged deprecation — `socket.rs` `tracing::warn!` plus the result note; `sessions::a_resumed_conversation_calling_an_old_tool_name_still_works`, `serde_roundtrip::old_tool_names_parse_as_the_new_tools`
+  - [x] No role prompt, script or test references a removed name — no name is removed yet; prompts, `live-checks.sh` and tests use the new names, old names appear only in the alias tests and the recorded stream fixtures (captures of v1 runs, left as recorded)
+  - [x] A resumed v1 conversation using an old name works — `sessions::a_resumed_conversation_calling_an_old_tool_name_still_works` (FakeDriver: resume, the stream's `mcp__dovetail__report_status` tool use, the call by the old name answered with the note)
+  - [x] `scripts/check.sh` passes
 
 ### M21 — R5 Reading mode (ADR 0018)
 - **Model:** Opus — a second layout preset against the single-layout assumption in TUI code; kitty graphics fallback

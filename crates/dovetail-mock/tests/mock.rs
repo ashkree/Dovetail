@@ -531,7 +531,7 @@ fn eod_closes_the_day_with_the_mock_clocks_date() {
     );
 }
 
-/// A stored map as the `draw_map` input that would draw it again.
+/// A stored map as the `maps_draw` input that would draw it again.
 fn as_input(map: &dovetail_maps::Map) -> dovetail_maps::DrawMapInput {
     use dovetail_maps::*;
     let c = &map.content;

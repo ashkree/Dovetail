@@ -137,6 +137,7 @@ impl Core {
             agent_id: id.0.clone(),
             name: row.agent.name.clone(),
             role,
+            suites: self.config.suites.for_role(role).to_vec(),
             session_id,
             resume,
             cwd,

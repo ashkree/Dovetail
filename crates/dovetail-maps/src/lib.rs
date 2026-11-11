@@ -1,4 +1,4 @@
-//! Dovetail's visual maps (decision 23): validation of `draw_map` input into the map model.
+//! Dovetail's visual maps (decision 23): validation of `maps_draw` input into the map model.
 //!
 //! An agent sends a [`DrawMapInput`]; [`validate`] checks it and returns either a [`ValidMap`]
 //! or every problem it found as [`MapError`]s, each worded so the agent can fix its input.

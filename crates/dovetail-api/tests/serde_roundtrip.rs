@@ -642,12 +642,44 @@ fn every_command_roundtrips() {
     }
 }
 
+/// ADR 0016: each renamed tool still parses by its old name, as the new tool, both from the
+/// bridge (`Tool::parse`) and on the socket (an old bridge sends the old name).
+#[test]
+fn old_tool_names_parse_as_the_new_tools() {
+    use dovetail_api::socket::{SocketRequest, SocketRequestBody};
+    use dovetail_api::tools::{TOOLS, Tool, deprecated_alias, deprecation_note, tool_spec};
+    let renamed: Vec<_> = TOOLS.iter().filter(|t| t.old_name.is_some()).collect();
+    assert_eq!(renamed.len(), 12);
+    for spec in renamed {
+        let old = spec.old_name.unwrap_or_default();
+        assert!(
+            spec.name.starts_with(spec.suite.as_str()),
+            "{} lacks its prefix",
+            spec.name
+        );
+        assert_eq!(tool_spec(old), Some(spec));
+        assert_eq!(deprecated_alias(old), Some(spec));
+        assert_eq!(deprecated_alias(spec.name), None);
+        assert!(deprecation_note(spec).contains(&format!("call `{}` instead", spec.name)));
+    }
+    let new = Tool::parse("tasks_list", json!({})).expect("new name");
+    assert_eq!(Tool::parse("list_tasks", json!({})), Ok(new.clone()));
+    // An old bridge's request: `"tool": "list_tasks"`, no `called_as`.
+    let line = json!({"id": 1, "body": {"kind": "tool_call", "agent": "a", "tool_use_id": null,
+        "call": {"tool": "list_tasks", "input": {}}}});
+    let request: SocketRequest = serde_json::from_value(line).expect("old wire name parses");
+    assert!(matches!(
+        request.body,
+        SocketRequestBody::ToolCall { call, called_as: None, .. } if call == new
+    ));
+}
+
 #[test]
 fn an_old_blocking_ask_user_and_inbox_payload_still_parse() {
     use dovetail_api::tools::{AskUser, Tool};
-    // `ask_user` never blocks (ADR 0007): an old caller's `blocking` is ignored, not refused.
+    // `core_ask_user` never blocks (ADR 0007): an old caller's `blocking` is ignored, not refused.
     let tool = Tool::parse(
-        "ask_user",
+        "core_ask_user",
         json!({"question": "Which port?", "blocking": true}),
     );
     assert_eq!(
@@ -671,7 +703,7 @@ fn an_old_blocking_ask_user_and_inbox_payload_still_parse() {
 #[test]
 fn update_task_tells_an_absent_priority_from_a_null_one_and_survives_the_socket() {
     use dovetail_api::tools::{BucketFilter, Role, Tool, ToolError};
-    let parse = |args| match Tool::parse("update_task", args) {
+    let parse = |args| match Tool::parse("tasks_update", args) {
         Ok(Tool::UpdateTask(u)) => u,
         other => panic!("{other:?}"),
     };
@@ -688,7 +720,7 @@ fn update_task_tells_an_absent_priority_from_a_null_one_and_survives_the_socket(
     }
 
     let refused = |args| {
-        Tool::parse("update_task", args)
+        Tool::parse("tasks_update", args)
             .expect("parses")
             .validate(Role::Coordinator)
     };

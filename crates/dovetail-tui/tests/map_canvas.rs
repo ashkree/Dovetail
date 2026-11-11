@@ -372,7 +372,7 @@ fn u_sends_the_coordinator_a_redraw_request_after_a_yes() {
         panic!("one prompt: {commands:?}");
     };
     assert!(
-        text.contains("`sample`") && text.contains("draw_map"),
+        text.contains("`sample`") && text.contains("maps_draw"),
         "{text}"
     );
 }

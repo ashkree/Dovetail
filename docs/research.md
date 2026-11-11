@@ -134,7 +134,7 @@ Fake-driver coverage: S7's `research_round_foreground.ndjson` and `research_roun
 
 ## 6. Tools
 
-Served by `dovetail mcp` under the Research suite, coordinator only (ADR 0016). Handlers live in `dovetail-core/src/tools/research.rs`. Errors are specific strings in `isError` results, as `draw_map` does.
+Served by `dovetail mcp` under the Research suite, coordinator only (ADR 0016). Handlers live in `dovetail-core/src/tools/research.rs`. Errors are specific strings in `isError` results, as `maps_draw` does.
 
 ### `research_start_round`
 
@@ -171,7 +171,7 @@ Validation (section 7) runs before anything is written. Returns `{written: true,
 }, "required": ["task", "kind", "text"]}
 ```
 
-Never writes directly: creates an inbox proposal item (new `InboxKind::Proposal { kind, text, evidence }`, Needs you). `y` accepts: an idea becomes a follow-up task in Unsorted or a new round brief (the item offers both, routing rule in ADR 0015); a decision is written through the existing `log_decision` path with `decision_evidence` rows. `d` drops it. The call returns at once, `pending`, as `start_slice` does; the answer reaches the coordinator as a short user message. Errors: **kind `decision` with no `evidence`**; an evidence id that does not resolve; unknown task; no `why` is allowed.
+Never writes directly: creates an inbox proposal item (new `InboxKind::Proposal { kind, text, evidence }`, Needs you). `y` accepts: an idea becomes a follow-up task in Unsorted or a new round brief (the item offers both, routing rule in ADR 0015); a decision is written through the existing `core_log_decision` path with `decision_evidence` rows. `d` drops it. The call returns at once, `pending`, as `project_start_slice` does; the answer reaches the coordinator as a short user message. Errors: **kind `decision` with no `evidence`**; an evidence id that does not resolve; unknown task; no `why` is allowed.
 
 Read helpers (Research suite, coordinator and the Ask column's subagent): `research_get(task, what)` where `what` is `report`, `round:N`, `finding:N`, `source:N`. Needed so the coordinator can cite without keeping content in context; kept small.
 

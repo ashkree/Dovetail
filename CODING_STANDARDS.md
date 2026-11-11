@@ -33,7 +33,7 @@ The rules a review checks code against. The hard constraints in `AGENTS.md` appl
 
 When tests are due is in `AGENTS.md` ("Which skill when"). What they cover:
 
-- Unit tests: mode state machine, keymap resolution (`gg`, `dd`, `]]`, `<leader>ss`, timeouts, ambiguity), reducer, quick-capture parser, `draw_map` validation, task-list JSON parsing (including mid-write parse errors).
+- Unit tests: mode state machine, keymap resolution (`gg`, `dd`, `]]`, `<leader>ss`, timeouts, ambiguity), reducer, quick-capture parser, `maps_draw` validation, task-list JSON parsing (including mid-write parse errors).
 - Snapshot tests: ratatui `TestBackend` + `insta`, from deterministic mock data (seeded, time-free).
 - Driver/core tests: replay recorded NDJSON fixtures from `tests/fixtures/` through the fake driver (subagent routing, double `result`, concurrent permission requests).
 - Storage tests: temp-dir databases, migrations up from empty.

@@ -17,11 +17,14 @@
 //!
 //! * `DOVETAIL_AGENT_ID`: the session's agent id.
 //! * `DOVETAIL_SOCKET`: path of the app's unix socket.
-//! * `DOVETAIL_ROLE`: `coordinator` or `slice`; decides which tools `tools/list` shows.
+//! * `DOVETAIL_ROLE`: `coordinator`, `slice` or `side-chat`; the rules `validate` applies.
+//! * `DOVETAIL_SUITES`: the session's tool suites, comma-separated (ADR 0016); decides which
+//!   tools `tools/list` shows. Without it, the role's defaults.
 //!
 //! # What the core passes to Claude Code (wave 2)
 //!
-//! Per session, in the file given to `--mcp-config` (without `--strict-mcp-config`, so the user's own MCP servers still load; plan B28):
+//! Per session, in the file given to `--mcp-config` (without `--strict-mcp-config`, so the user's
+//! own MCP servers still load; plan B28):
 //!
 //! ```json
 //! {"mcpServers": {"dovetail": {
@@ -30,25 +33,26 @@
 //!   "env": {
 //!     "DOVETAIL_AGENT_ID": "<agent id>",
 //!     "DOVETAIL_SOCKET": "<$XDG_RUNTIME_DIR/dovetail/<project-id>.sock>",
-//!     "DOVETAIL_ROLE": "coordinator"
+//!     "DOVETAIL_ROLE": "coordinator",
+//!     "DOVETAIL_SUITES": "core,tasks,project,coordination,research,maps"
 //!   }
 //! }}}
 //! ```
 //!
-//! With the server named `dovetail`, Claude Code sees the tools as `mcp__dovetail__<tool>`:
+//! With the server named `dovetail`, Claude Code sees the tools as `mcp__dovetail__<tool>`, each
+//! named `<suite>_<verb>` (`core_ask_user`, `tasks_create`, `maps_draw`; the table is
+//! `dovetail_api::tools::TOOLS`). By default the coordinator gets every suite, slices Core,
+//! Coordination and Maps, and side chats Core.
 //!
-//! * both roles: `mcp__dovetail__ask_user`, `mcp__dovetail__report_status`,
-//!   `mcp__dovetail__log_decision`, `mcp__dovetail__draw_map`
-//! * coordinator only: `mcp__dovetail__create_task`, `mcp__dovetail__start_slice`,
-//!   `mcp__dovetail__add_project`, `mcp__dovetail__archive_slice`, `mcp__dovetail__archive_task`,
-//!   `mcp__dovetail__list_tasks`, `mcp__dovetail__get_task`, `mcp__dovetail__update_task`,
-//!   `mcp__dovetail__research_start_round`, `mcp__dovetail__research_write_report`,
-//!   `mcp__dovetail__research_propose`, `mcp__dovetail__research_get`
+//! For one release each renamed tool is also listed under its old name (`ask_user`), with an
+//! open schema and a description naming the new tool, so a resumed conversation that calls it
+//! still works: the call is forwarded with `called_as`, and the app logs it and adds a note
+//! naming the new tool to the result.
 //!
-//! The core passes these to `--allowedTools` (`dovetail_core::session::launch`). The `tool`
-//! field forwarded to the app is the bare name (`ask_user`). Subagents reach the tools through
-//! `ToolSearch`. A connection the app closed (it quit or restarted) is replaced once before a
-//! call fails.
+//! The core passes the same names to `--allowedTools` (`dovetail_core::session::launch`). The
+//! `tool` field forwarded to the app is the bare new name (`core_ask_user`). Subagents reach the
+//! tools through `ToolSearch`. A connection the app closed (it quit or restarted) is replaced
+//! once before a call fails.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -61,7 +65,7 @@ use std::thread;
 use anyhow::Result;
 use dovetail_api::AgentId;
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
-use dovetail_api::tools::{Role, Tool, env};
+use dovetail_api::tools::{Role, Suite, Tool, ToolSpec, deprecated_alias, env, tools_in};
 use serde_json::{Value, json};
 
 const PROTOCOL_FALLBACK: &str = "2025-06-18";
@@ -81,6 +85,7 @@ struct Bridge {
     agent: AgentId,
     socket: Option<String>,
     role: Role,
+    suites: Vec<Suite>,
     next_id: AtomicU64,
     conn: Mutex<Option<Conn>>,
     out: Mutex<std::io::Stdout>,
@@ -94,10 +99,15 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// Run the subcommand with the arguments after its name.
 pub fn run(_args: Vec<String>) -> Result<()> {
     let role = Role::from_env_value(&std::env::var(env::ROLE).unwrap_or_default());
+    let suites = match std::env::var(env::SUITES) {
+        Ok(list) => Suite::parse_list(&list),
+        Err(_) => role.default_suites().to_vec(),
+    };
     let bridge = Arc::new(Bridge {
         agent: AgentId(std::env::var(env::AGENT_ID).unwrap_or_default()),
         socket: std::env::var(env::SOCKET).ok(),
         role,
+        suites,
         next_id: AtomicU64::new(1),
         conn: Mutex::new(None),
         out: Mutex::new(std::io::stdout()),
@@ -157,17 +167,7 @@ impl Bridge {
                 ));
             }
             "tools/list" => {
-                let tools: Vec<Value> = tool_defs()
-                    .into_iter()
-                    .filter(|t| Tool::allowed(t.name, self.role))
-                    .map(|t| {
-                        json!({
-                            "name": t.name,
-                            "description": t.description,
-                            "inputSchema": (t.schema)(),
-                        })
-                    })
-                    .collect();
+                let tools = tools_list(&self.suites);
                 self.send(&rpc_result(id, json!({"tools": tools})));
             }
             "tools/call" => {
@@ -189,7 +189,7 @@ impl Bridge {
         let Some(name) = msg.pointer("/params/name").and_then(Value::as_str) else {
             return tool_error("tools/call needs a tool name");
         };
-        if !Tool::allowed(name, self.role) {
+        if !Tool::allowed(name, &self.suites) {
             return tool_error(&format!("unknown tool `{name}` for this session"));
         }
         let arguments = msg
@@ -212,6 +212,7 @@ impl Bridge {
             agent: self.agent.clone(),
             tool_use_id,
             call,
+            called_as: deprecated_alias(name).map(|_| name.to_owned()),
         };
         match self.roundtrip(body) {
             Ok(SocketResponseBody::ToolResult { text, is_error }) => text_result(&text, is_error),
@@ -334,6 +335,33 @@ fn tool_error(text: &str) -> Value {
     text_result(text, true)
 }
 
+/// The `tools/list` entries of `suites`: each tool in table order, then, for one release, each
+/// renamed tool's old name with an open schema and a description naming the new tool.
+fn tools_list(suites: &[Suite]) -> Vec<Value> {
+    let defs = tool_defs();
+    let current = tools_in(suites).filter_map(|spec| {
+        let def = defs.iter().find(|d| d.name == spec.name)?;
+        Some(json!({
+            "name": def.name,
+            "description": def.description,
+            "inputSchema": (def.schema)(),
+        }))
+    });
+    let old = tools_in(suites).filter_map(|spec: &ToolSpec| {
+        let old = spec.old_name?;
+        Some(json!({
+            "name": old,
+            "description": format!(
+                "Deprecated: the old name of `{}`, kept for conversations from before the \
+                 rename. Call `{}` instead; it takes the same arguments.",
+                spec.name, spec.name
+            ),
+            "inputSchema": {"type": "object"},
+        }))
+    });
+    current.chain(old).collect()
+}
+
 struct ToolDef {
     name: &'static str,
     description: &'static str,
@@ -343,7 +371,7 @@ struct ToolDef {
 fn tool_defs() -> Vec<ToolDef> {
     vec![
         ToolDef {
-            name: "ask_user",
+            name: "core_ask_user",
             description: "Ask the user a question and get the answer through Dovetail's inbox. \
                 Use this for questions that must wait while the user is away, or for what only \
                 the user can give, such as credentials or access; questions for a user who is in \
@@ -359,7 +387,7 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "report_status",
+            name: "core_report_status",
             description: "Set your one-line status, shown next to you in Dovetail's task tree. \
                 Call it when you start, when your focus changes, and when you finish. Plain \
                 words, present tense, at most 120 characters (longer text is cut).",
@@ -370,13 +398,13 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "create_task",
+            name: "tasks_create",
             description: "Create a task in the user's task list. Use it to file work you have \
                 split out of the feature, or follow-ups you notice, instead of only mentioning \
                 them in chat. The task lands in Unsorted (or the bucket you give), flagged as \
                 coordinator-created until the user has seen it; it never goes straight into \
-                Now. Returns the new task's id; pass that id to `start_slice` or \
-                `log_decision`.",
+                Now. Returns the new task's id; pass that id to `project_start_slice` or \
+                `core_log_decision`.",
             schema: || {
                 json!({"type": "object", "properties": {
                     "title": {"type": "string", "description": "Short imperative title."},
@@ -389,7 +417,7 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "log_decision",
+            name: "core_log_decision",
             description: "Record a decision in the task's decision log, so it outlives this \
                 conversation. Use it when you or the user settle a design choice, scope cut or \
                 approach, in one line, with the reason and the alternatives that lost. Entries \
@@ -410,12 +438,12 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "start_slice",
+            name: "project_start_slice",
             description: "Start a slice session (its own git worktree) on an existing task. \
-                For new work call `create_task` first. Returns at once with `started`, \
+                For new work call `tasks_create` first. Returns at once with `started`, \
                 `queued` (the maximum number of slices is running; it starts when one is \
                 archived), `denied`, or `pending` (the user is asked to approve; the answer \
-                arrives later as a message, \"start_slice <name> approved\" or \"... \
+                arrives later as a message, \"project_start_slice <name> approved\" or \"... \
                 denied\"). Do not message the slice until Dovetail sends you \"slice <name> \
                 ready\"; a setup failure arrives the same way. The brief becomes the slice's \
                 first prompt, so make it complete: goal, scope, files, checks to run.",
@@ -428,7 +456,7 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "add_project",
+            name: "project_add",
             description: "Make the folder you run in a Dovetail project, so its tasks, inbox \
                 and this conversation are kept. Call it only when the user asks for that. Until \
                 then everything lives in memory and is lost when Dovetail quits. Takes no \
@@ -436,7 +464,7 @@ fn tool_defs() -> Vec<ToolDef> {
             schema: || json!({"type": "object", "properties": {}}),
         },
         ToolDef {
-            name: "archive_slice",
+            name: "project_archive_slice",
             description: "Archive a slice once its work is done, normally right after its PR \
                 is merged and you have pulled. It stops the slice's session and removes its \
                 worktree and `dovetail/*` branch, freeing a place for a queued slice. Returns \
@@ -446,14 +474,14 @@ fn tool_defs() -> Vec<ToolDef> {
                 kept\"). Fails for an unknown or already archived name.",
             schema: || {
                 json!({"type": "object", "properties": {
-                    "name": {"type": "string", "description": "The slice's name, as given to `start_slice`."}
+                    "name": {"type": "string", "description": "The slice's name, as given to `project_start_slice`."}
                 }, "required": ["name"]})
             },
         },
         ToolDef {
-            name: "archive_task",
+            name: "tasks_archive",
             description: "Archive a finished task. Its live slices are archived first, with \
-                `archive_slice`'s rules (unsaved work waits for the user), and its queued \
+                `project_archive_slice`'s rules (unsaved work waits for the user), and its queued \
                 slice starts are dropped. Returns `archived`, or `waiting_for_user` if a slice \
                 still waits for the user.",
             schema: || {
@@ -463,10 +491,10 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "list_tasks",
+            name: "tasks_list",
             description: "Find tasks: one line each with id, status, bucket, priority, title \
                 and live slice, ordered Now, Next, Unsorted, Later, then by priority. Archived \
-                tasks are left out unless asked for. Use `get_task` for one task's notes and \
+                tasks are left out unless asked for. Use `tasks_get` for one task's notes and \
                 decisions.",
             schema: || {
                 json!({"type": "object", "properties": {
@@ -477,7 +505,7 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "get_task",
+            name: "tasks_get",
             description: "Read one task in full: status, bucket, priority, notes, \
                 follow-up and related ids, its live slices, and its decision log oldest \
                 first (text, why, rejected alternatives, what superseded what, user or agent). \
@@ -489,13 +517,13 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "update_task",
+            name: "tasks_update",
             description: "Change a task's status, bucket, priority, title or notes; only the \
                 fields you give change. Use it to mark a task `done` once its slice's PR is \
                 merged, or to re-sort and re-prioritise the list. A task moves into Now only \
                 when a slice starts on it, so `bucket` cannot be `now`; moving a task out of \
-                Now is fine. To archive a task use `archive_task`. Returns the task's new \
-                `list_tasks` line. Fails for an unknown or archived task.",
+                Now is fine. To archive a task use `tasks_archive`. Returns the task's new \
+                `tasks_list` line. Fails for an unknown or archived task.",
             schema: || {
                 json!({"type": "object", "properties": {
                     "id": {"type": "integer", "description": "The task's id."},
@@ -508,7 +536,7 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
-            name: "draw_map",
+            name: "maps_draw",
             description: "Draw a map the user can explore in Dovetail, to explain structure, \
                 flow or architecture instead of drawing ASCII diagrams. A `structure` map shows \
                 what exists and how it connects: nodes of nine kinds with plain-English \
@@ -568,7 +596,7 @@ fn tool_defs() -> Vec<ToolDef> {
                 task in Unsorted (or a new round), and a decision is logged with its evidence; \
                 either way the answer arrives later as a message. A `decision` needs \
                 `evidence`: the finding and source ids it rests on, like [\"F3\", \"S12\"]. Use \
-                this instead of settling a research question in prose or with `log_decision`.",
+                this instead of settling a research question in prose or with `core_log_decision`.",
             schema: || {
                 json!({"type": "object", "properties": {
                     "task": {"type": "integer", "description": "Id of the research task."},
@@ -609,8 +637,10 @@ mod tests {
     #[test]
     fn every_tool_has_one_definition_with_an_object_schema() {
         let defs = tool_defs();
-        let names: Vec<&str> = defs.iter().map(|d| d.name).collect();
-        let shared: Vec<&str> = TOOLS.iter().map(|t| t.name).collect();
+        let mut names: Vec<&str> = defs.iter().map(|d| d.name).collect();
+        let mut shared: Vec<&str> = TOOLS.iter().map(|t| t.name).collect();
+        names.sort_unstable();
+        shared.sort_unstable();
         assert_eq!(
             names, shared,
             "tool_defs() must follow dovetail_api::tools::TOOLS"
@@ -618,5 +648,44 @@ mod tests {
         for def in defs {
             assert_eq!((def.schema)()["type"], "object", "{}", def.name);
         }
+    }
+
+    #[test]
+    fn tools_list_shows_the_suites_tools_then_their_old_names() {
+        let names = |suites: &[Suite]| -> Vec<String> {
+            tools_list(suites)
+                .iter()
+                .map(|t| t["name"].as_str().unwrap_or_default().to_owned())
+                .collect()
+        };
+        assert_eq!(
+            names(Role::SideChat.default_suites()),
+            [
+                "core_ask_user",
+                "core_report_status",
+                "core_log_decision",
+                "ask_user",
+                "report_status",
+                "log_decision"
+            ]
+        );
+        let slice = names(Role::Slice.default_suites());
+        assert!(slice.contains(&"maps_draw".to_owned()) && slice.contains(&"draw_map".to_owned()));
+        assert!(
+            !slice
+                .iter()
+                .any(|n| n.contains("slice") || n.starts_with("tasks_"))
+        );
+        let coordinator = names(Role::Coordinator.default_suites());
+        assert_eq!(coordinator.len(), TOOLS.len() + 12, "{coordinator:?}");
+        let alias = tools_list(&[Suite::Project])
+            .into_iter()
+            .find(|t| t["name"] == "start_slice")
+            .expect("the old name is listed");
+        assert!(
+            alias["description"]
+                .as_str()
+                .is_some_and(|d| d.contains("`project_start_slice`"))
+        );
     }
 }

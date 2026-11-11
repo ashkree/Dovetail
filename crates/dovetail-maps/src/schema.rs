@@ -1,4 +1,4 @@
-//! The `draw_map` tool's JSON schema, as `tools/list` shows it (design 23i).
+//! The `maps_draw` tool's JSON schema, as `tools/list` shows it (design 23i).
 //!
 //! Written by hand to carry the descriptions an agent reads, and kept in step with
 //! [`crate::DrawMapInput`] by a test that compares every object's fields with the input types'.

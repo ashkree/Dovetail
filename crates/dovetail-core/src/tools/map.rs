@@ -1,4 +1,4 @@
-//! `draw_map` (M15, design 23i): validate, check lane links across maps, store a version.
+//! `maps_draw` (M15, design 23i): validate, check lane links across maps, store a version.
 
 use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::{AgentId, Event};
@@ -10,7 +10,7 @@ use crate::db::{Drawn, NewMapVersion};
 use crate::service::Core;
 
 impl Core {
-    /// Answers `draw_map`: the agent-readable report when the map is refused, else
+    /// Answers `maps_draw`: the agent-readable report when the map is refused, else
     /// `{"id", "version"}` and a line saying how to redraw it.
     pub(super) async fn draw_map(
         &mut self,
@@ -21,8 +21,8 @@ impl Core {
             Ok(input) => input,
             Err(e) => {
                 return error(format!(
-                    "The map was not saved: the input does not fit draw_map's schema ({e}). Fix \
-                     it and call draw_map again with the whole map."
+                    "The map was not saved: the input does not fit maps_draw's schema ({e}). Fix \
+                     it and call maps_draw again with the whole map."
                 ));
             }
         };
@@ -65,7 +65,7 @@ impl Core {
             format!("version {} of map", saved.version)
         };
         let text = format!(
-            "{head}\nSaved {what} \"{}\" ({}). To change it, call draw_map again with \"id\": \
+            "{head}\nSaved {what} \"{}\" ({}). To change it, call maps_draw again with \"id\": \
              \"{}\" and the whole map.",
             saved.title,
             saved.kind.as_str(),

@@ -12,7 +12,7 @@ From M10 on, the rest of the build runs inside Dovetail: the installed release d
 ## Daily flow
 
 - Open `dovetail` in the repo. The coordinator's session resumes at once; slices resume when you first open or message them.
-- Plan with the coordinator. It files tasks (`create_task`) and starts slices (`start_slice`). Outside auto mode each start asks you first, in Needs you.
+- Plan with the coordinator. It files tasks (`tasks_create`) and starts slices (`project_start_slice`). Outside auto mode each start asks you first, in Needs you.
 - Slices push a branch and open a PR. On your yes, the coordinator merges it and pulls `main`.
 - Archive a slice with `dd` on its row, or archive its task. Dovetail asks before removing a worktree with uncommitted or unpushed work.
 - Quit with `:q`, or `Ctrl-C` twice. Either asks first if a turn is running. Every session ends with the app, and nothing runs in the background.
@@ -25,7 +25,7 @@ Whatever was running when the app quit, was killed or crashed is reported on the
 
 - **A cut-off turn** raises "*agent*'s turn was cut off by a restart" in Needs you, with the last prompt. The agent is never continued for you. Message it to carry on.
 - **A permission request** that was waiting is gone with its session. It shows in Activity as "*tool target*: request expired at restart". The agent asks again if it still needs to.
-- **An `ask_user` question** stays in Needs you. Your answer reaches the agent as a message.
+- **A `core_ask_user` question** stays in Needs you. Your answer reaches the agent as a message.
 - **A slice whose worktree is gone** is archived, with a note in Activity.
 - **A worktree no slice owns** raises one "Remove worktree" item. `y` removes it, and `d` keeps it for good. Nothing is deleted without your `y`.
 

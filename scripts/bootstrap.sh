@@ -4,6 +4,7 @@
 #
 #   scripts/bootstrap.sh            # set up dirs, install role prompts, check tools
 #   scripts/bootstrap.sh --force    # also overwrite installed role prompts and the recipe
+#                                   # (needed after a prompt change, e.g. the tool rename of ADR 0016)
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,6 +33,11 @@ for f in "$repo_root"/config/roles/*.md; do
     else warn "$(basename "$f") differs from the repo's copy; kept yours (--force to replace)"; fi
   else
     cp "$f" "$dest"; ok "$(basename "$f") installed"
+  fi
+  # ADR 0016 renamed the tools (`ask_user` is `core_ask_user`, ...). The old names still answer
+  # for one release, with a deprecation note; a prompt that still uses them needs --force.
+  if grep -qE '`(ask_user|report_status|log_decision|create_task|start_slice|add_project|draw_map)`' "$dest"; then
+    warn "$(basename "$f") still names the old tools (ADR 0016); run scripts/bootstrap.sh --force to install the renamed ones"
   fi
 done
 

@@ -33,7 +33,7 @@ use crate::worktree::{self, SUBAGENT_PREFIX, WorktreeError};
 const SETUP_TIMEOUT: Duration = Duration::from_secs(16 * 60);
 const SETUP_POLL: Duration = Duration::from_millis(500);
 
-/// A request to start a slice, from `<leader>sn` or `start_slice`.
+/// A request to start a slice, from `<leader>sn` or `project_start_slice`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SliceRequest {
     pub(crate) task: Option<TaskId>,
@@ -51,7 +51,7 @@ pub(crate) enum SliceStart {
     Queued(String),
 }
 
-/// An `archive_slice` or `archive_task` call whose answer waits for its slices' outcomes
+/// A `project_archive_slice` or `tasks_archive` call whose answer waits for its slices' outcomes
 /// (task #9): each slice ends archived, waiting for the user, or failed.
 pub(crate) struct ArchiveCall {
     /// Slices with no outcome yet.
@@ -59,7 +59,7 @@ pub(crate) struct ArchiveCall {
     pub(crate) archived: Vec<String>,
     pub(crate) waiting: Vec<String>,
     pub(crate) failed: Vec<String>,
-    /// The task, for `archive_task`.
+    /// The task, for `tasks_archive`.
     pub(crate) task: Option<TaskId>,
     pub(crate) reply: oneshot::Sender<SocketResponseBody>,
 }
@@ -518,7 +518,7 @@ impl Core {
         }
     }
 
-    /// Finds the slice an `archive_slice` call names, refusing the coordinator.
+    /// Finds the slice a `project_archive_slice` call names, refusing the coordinator.
     pub(crate) fn slice_named(&self, name: &str) -> Result<AgentId, SliceError> {
         let name = name.trim();
         if name == COORDINATOR {
@@ -609,7 +609,7 @@ impl Core {
     }
 
     /// A slice taken over in a native terminal is never archived and its worktree never removed
-    /// (M14): native runs in it. Says so, to the user and to any `archive_slice` call waiting.
+    /// (M14): native runs in it. Says so, to the user and to any `project_archive_slice` call waiting.
     fn refuse_while_taken_over(&mut self, agent: &AgentId) -> bool {
         if !self.locked(agent) {
             return false;
