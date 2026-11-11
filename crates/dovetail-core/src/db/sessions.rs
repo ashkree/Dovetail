@@ -408,6 +408,7 @@ pub(super) fn insert_inbox(conn: &mut Connection, item: &InboxItem) -> Result<()
         InboxKind::Question { .. } => ("question", false),
         InboxKind::FinishedTurn { .. } => ("finished_turn", false),
         InboxKind::Error { .. } => ("error", false),
+        InboxKind::Proposal { .. } => ("proposal", false),
     };
     let payload = serde_json::to_string(&item.kind).map_err(|e| DbError::Corrupt(e.to_string()))?;
     conn.execute(

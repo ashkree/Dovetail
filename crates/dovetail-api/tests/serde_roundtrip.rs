@@ -271,6 +271,7 @@ fn decision() -> Decision {
             why_not: None,
         }],
         supersedes: Some(DecisionId(2)),
+        evidence: Vec::new(),
     }
 }
 
@@ -690,4 +691,34 @@ fn a_usage_status_word_this_version_does_not_know_parses_as_unknown() {
         UsageStatus::AllowedWarning
     );
     assert_eq!(UsageStatus::from_word(""), UsageStatus::Unknown);
+}
+
+#[test]
+fn a_research_proposal_and_its_evidence_survive_json() {
+    use research::{Evidence, FindingId, ProposalKind, SourceId};
+    let kind = InboxKind::Proposal {
+        task: TaskId(4),
+        kind: ProposalKind::Decision,
+        text: "Flat pricing".into(),
+        evidence: vec![
+            Evidence::Finding(FindingId(3)),
+            Evidence::Source(SourceId(12)),
+        ],
+        why: Some("simpler".into()),
+        alternatives: vec![],
+    };
+    roundtrip(&kind);
+    // Evidence is written as the id the report cites.
+    assert_eq!(
+        serde_json::to_value(Evidence::Finding(FindingId(3))).unwrap(),
+        json!("F3")
+    );
+    assert_eq!(
+        Evidence::parse("[S12]"),
+        Some(Evidence::Source(SourceId(12)))
+    );
+    for bad in ["", "F", "F0", "f3", "X3", "F-1", "F3x", "3"] {
+        assert_eq!(Evidence::parse(bad), None, "{bad:?}");
+    }
+    assert!(serde_json::from_value::<Evidence>(json!("nope")).is_err());
 }

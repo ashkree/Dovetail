@@ -1323,6 +1323,7 @@ impl MockCore {
             why: new.why,
             alternatives: new.alternatives,
             supersedes: new.supersedes,
+            evidence: Vec::new(),
         }));
     }
 

@@ -12,6 +12,7 @@
 
 pub(crate) mod capture;
 pub(crate) mod files;
+pub(crate) mod report;
 
 use std::path::PathBuf;
 
@@ -30,7 +31,7 @@ use files::ResearchDirError;
 
 /// Why research content could not be loaded.
 #[derive(Debug, thiserror::Error)]
-enum LoadError {
+pub(crate) enum LoadError {
     /// No such task, round, finding, source or report.
     #[error("{0}")]
     Missing(String),
@@ -38,6 +39,20 @@ enum LoadError {
     #[error(transparent)]
     Dir(#[from] ResearchDirError),
     /// Storage failed.
+    #[error(transparent)]
+    Db(#[from] DbError),
+}
+
+/// Why a round could not be opened or closed.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum RoundError {
+    /// No such task.
+    #[error("there is no task #{}", .0.0)]
+    NoTask(TaskId),
+    /// The research folder is unknown.
+    #[error(transparent)]
+    Dir(#[from] ResearchDirError),
+    /// Storage refused or failed.
     #[error(transparent)]
     Db(#[from] DbError),
 }
@@ -53,7 +68,7 @@ pub(crate) struct Research {
 
 impl Core {
     /// The project's research root, from its recipe.
-    fn research_root(&self) -> Result<PathBuf, ResearchDirError> {
+    pub(crate) fn research_root(&self) -> Result<PathBuf, ResearchDirError> {
         let project = self
             .project
             .registered()
@@ -68,7 +83,11 @@ impl Core {
     }
 
     /// The research folder of `task` (absolute), given its title.
-    fn research_dir(&self, task: TaskId, title: &str) -> Result<PathBuf, ResearchDirError> {
+    pub(crate) fn research_dir(
+        &self,
+        task: TaskId,
+        title: &str,
+    ) -> Result<PathBuf, ResearchDirError> {
         Ok(files::task_dir(&self.research_root()?, task, title))
     }
 
@@ -102,7 +121,7 @@ impl Core {
     }
 
     /// Sends the task's summary as it is now.
-    async fn emit_research(&mut self, task: TaskId, title: &str) {
+    pub(crate) async fn emit_research(&mut self, task: TaskId, title: &str) {
         let Ok(dir) = self.research_dir(task, title) else {
             return;
         };
@@ -114,24 +133,22 @@ impl Core {
 
     /// `Command::StartRound`: the row, `brief.md`, and the round open for the coordinator.
     pub(crate) async fn start_round(&mut self, task: TaskId, brief: String) {
-        let Some(t) = self.task(task).await else {
-            self.fail(format!("there is no task #{}", task.0));
-            return;
-        };
-        let dir = match self.research_dir(task, &t.title) {
-            Ok(dir) => dir,
-            Err(e) => {
-                self.fail(e.to_string());
-                return;
-            }
-        };
-        let round = match self.db.start_round(task, brief).await {
-            Ok(round) => round,
-            Err(e) => {
-                self.fail(e.to_string());
-                return;
-            }
-        };
+        if let Err(message) = self.open_round_for(task, brief).await {
+            self.fail(message);
+        }
+    }
+
+    /// Opens the next round of `task`: the one path under `Command::StartRound`,
+    /// `research_start_round` and an accepted follow-up round. Resolves to the round, or what to
+    /// tell whoever asked.
+    pub(crate) async fn open_round_for(
+        &mut self,
+        task: TaskId,
+        brief: String,
+    ) -> Result<RoundRow, RoundError> {
+        let t = self.task(task).await.ok_or(RoundError::NoTask(task))?;
+        let dir = self.research_dir(task, &t.title)?;
+        let round = self.db.start_round(task, brief).await?;
         let path = dir.join(files::brief_path(&round));
         if let Err(e) = files::write_atomic(&path, &files::brief_md(task, &t.title, &round)) {
             self.fail(format!("research: writing {}: {e}", path.display()));
@@ -144,25 +161,30 @@ impl Core {
                 round.n, task.0, t.title
             ),
         );
-        self.research.open = Some(round);
+        self.research.open = Some(round.clone());
         self.emit_research(task, &t.title).await;
+        Ok(round)
     }
 
     /// `Command::CloseRound`. Subagents already launched in it are still filed under it.
     pub(crate) async fn close_round(&mut self, task: TaskId) {
-        match self.db.close_round(task).await {
-            Ok(round) => {
-                self.research.open = None;
-                let title = self.task(task).await.map(|t| t.title).unwrap_or_default();
-                self.activity(
-                    ActivityKind::Task,
-                    None,
-                    format!("research round {} closed on #{} {title}", round.n, task.0),
-                );
-                self.emit_research(task, &title).await;
-            }
-            Err(e) => self.fail(e.to_string()),
+        if let Err(message) = self.close_round_for(task).await {
+            self.fail(message);
         }
+    }
+
+    /// Closes the open round of `task` (also `research_write_report`'s last step).
+    pub(crate) async fn close_round_for(&mut self, task: TaskId) -> Result<RoundRow, RoundError> {
+        let round = self.db.close_round(task).await?;
+        self.research.open = None;
+        let title = self.task(task).await.map(|t| t.title).unwrap_or_default();
+        self.activity(
+            ActivityKind::Task,
+            None,
+            format!("research round {} closed on #{} {title}", round.n, task.0),
+        );
+        self.emit_research(task, &title).await;
+        Ok(round)
     }
 
     /// `Command::LoadResearch`.
@@ -177,7 +199,7 @@ impl Core {
         }
     }
 
-    async fn research_content(
+    pub(crate) async fn research_content(
         &self,
         task: TaskId,
         what: &ResearchWhat,

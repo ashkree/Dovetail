@@ -252,6 +252,14 @@ fn decision_lines(
             out.push(Line::from(Span::styled(format!("  {line}"), theme.dim())));
         }
     }
+    // The findings and sources a research decision rests on (ADR 0015).
+    if !d.evidence.is_empty() {
+        let ids: Vec<String> = d.evidence.iter().map(|e| format!("[{e}]")).collect();
+        out.push(Line::from(Span::styled(
+            format!("  evidence: {}", ids.join(" ")),
+            theme.accent(),
+        )));
+    }
     out.push(Line::default());
 }
 

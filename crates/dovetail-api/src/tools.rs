@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::research::{Evidence, FindingId, ProposalKind, ResearchWhat, SourceId};
 use crate::{Alternative, Bucket, DecisionId, PLevel, TaskId, TaskStatus};
 
 /// Names of the environment variables Dovetail passes to the processes it launches.
@@ -132,6 +133,14 @@ tools! {
     UpdateTask(UpdateTask) = "update_task", CoordinatorOnly;
     /// `draw_map`, for the coordinator and slices (decision 25, M15).
     DrawMap(DrawMap) = "draw_map", Everyone;
+    /// `research_start_round`, coordinator only (ADR 0015).
+    ResearchStartRound(ResearchStartRound) = "research_start_round", CoordinatorOnly;
+    /// `research_write_report`, coordinator only (ADR 0015).
+    ResearchWriteReport(ResearchWriteReport) = "research_write_report", CoordinatorOnly;
+    /// `research_propose`, coordinator only (ADR 0015).
+    ResearchPropose(ResearchPropose) = "research_propose", CoordinatorOnly;
+    /// `research_get`, coordinator only until the Ask column (R5) gets it too.
+    ResearchGet(ResearchGet) = "research_get", CoordinatorOnly;
 }
 
 /// The row of [`TOOLS`] named `name`.
@@ -174,6 +183,12 @@ pub enum ToolError {
     UpdateToArchived,
     /// `update_task` named no field to change.
     NothingToUpdate,
+    /// `research_propose` of a decision with no evidence (ADR 0015).
+    DecisionNeedsEvidence,
+    /// An `evidence` entry is not `F<id>` or `S<id>`.
+    BadEvidence(String),
+    /// `research_get`'s `what` is none of `report`, `round:N`, `finding:N`, `source:N`.
+    BadWhat(String),
 }
 
 impl std::fmt::Display for ToolError {
@@ -204,6 +219,18 @@ impl std::fmt::Display for ToolError {
             ToolError::NothingToUpdate => f.write_str(
                 "give at least one field to change: `status`, `bucket`, `p_level`, `title` or \
                  `notes`",
+            ),
+            ToolError::DecisionNeedsEvidence => f.write_str(
+                "a decision needs `evidence`: the finding and source ids it rests on, like \
+                 [\"F3\", \"S12\"]. Propose it as an `idea` if nothing backs it yet",
+            ),
+            ToolError::BadEvidence(text) => write!(
+                f,
+                "evidence `{text}` is not a finding or source id: write F<id> or S<id>, like                  F3 or S12"
+            ),
+            ToolError::BadWhat(text) => write!(
+                f,
+                "`what` must be `report`, `round:N`, `finding:N` or `source:N`, not `{text}`"
             ),
         }
     }
@@ -283,6 +310,27 @@ impl Tool {
             // Checked whole by `dovetail_maps::validate` in the core, so every problem comes
             // back in one report.
             Tool::DrawMap(_) => Ok(()),
+            Tool::ResearchStartRound(r) => {
+                id("task", r.task)?;
+                text("brief", &r.brief)
+            }
+            Tool::ResearchWriteReport(r) => {
+                id("task", r.task)?;
+                text("body", &r.body)
+            }
+            Tool::ResearchPropose(p) => {
+                id("task", p.task)?;
+                text("text", &p.text)?;
+                p.parsed_evidence()?;
+                if p.kind == ProposalKind::Decision && p.evidence.is_empty() {
+                    return Err(ToolError::DecisionNeedsEvidence);
+                }
+                Ok(())
+            }
+            Tool::ResearchGet(g) => {
+                id("task", g.task)?;
+                g.target().map(|_| ())
+            }
             Tool::UpdateTask(u) => {
                 id("id", u.id)?;
                 if let Some(title) = &u.title {
@@ -480,6 +528,91 @@ impl UpdateTask {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct DrawMap(pub serde_json::Value);
+
+/// `research_start_round`: open the next round of a research task under the user's criteria
+/// (`docs/research.md` §6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResearchStartRound {
+    /// An existing task (the question).
+    pub task: TaskId,
+    /// The user's criteria for this round, verbatim where possible.
+    pub brief: String,
+}
+
+/// `research_write_report`: store the report of a task, closing its open round.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResearchWriteReport {
+    /// The research task.
+    pub task: TaskId,
+    /// The whole report in markdown, citing `[F3]` findings and `[S12]` sources.
+    pub body: String,
+}
+
+/// `research_propose`: an idea or decision for the user to accept from Needs you.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResearchPropose {
+    /// The research task.
+    pub task: TaskId,
+    /// `idea` or `decision`.
+    pub kind: ProposalKind,
+    /// The idea, or the decision in one line.
+    pub text: String,
+    /// Finding and source ids, like `F3`, `S12`. Required for a decision.
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    /// Why, if any.
+    pub why: Option<String>,
+    /// Options considered and rejected.
+    #[serde(default)]
+    pub alternatives: Vec<Alternative>,
+}
+
+impl ResearchPropose {
+    /// The `evidence` strings as ids, without duplicates, in the order given.
+    pub fn parsed_evidence(&self) -> Result<Vec<Evidence>, ToolError> {
+        let mut out = Vec::new();
+        for text in &self.evidence {
+            let e = Evidence::parse(text).ok_or_else(|| ToolError::BadEvidence(text.clone()))?;
+            if !out.contains(&e) {
+                out.push(e);
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// `research_get`: read one stored research document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResearchGet {
+    /// The research task.
+    pub task: TaskId,
+    /// `report`, `round:N` (its brief), `finding:N` or `source:N` (the `F`/`S` ids).
+    pub what: String,
+}
+
+impl ResearchGet {
+    /// What `what` asks for.
+    pub fn target(&self) -> Result<ResearchWhat, ToolError> {
+        let bad = || ToolError::BadWhat(self.what.clone());
+        let what = self.what.trim();
+        if what == "report" {
+            return Ok(ResearchWhat::Report);
+        }
+        let (kind, n) = what.split_once(':').ok_or_else(bad)?;
+        let n = n.trim();
+        // `finding:F3` and `finding:3` both work: the ids are the ones the report cites.
+        let n = n.trim_start_matches(['F', 'S']);
+        let n: i64 = n.parse().ok().filter(|n| *n > 0).ok_or_else(bad)?;
+        match kind.trim() {
+            "round" => Ok(ResearchWhat::Brief {
+                round: u32::try_from(n).map_err(|_| bad())?,
+            }),
+            "finding" => Ok(ResearchWhat::Finding(FindingId(n))),
+            "source" => Ok(ResearchWhat::Source(SourceId(n))),
+            _ => Err(bad()),
+        }
+    }
+}
 
 /// Deserializes a field that is present, so `null` becomes `Some(None)`; only an absent field
 /// (through `#[serde(default)]`) stays `None`.

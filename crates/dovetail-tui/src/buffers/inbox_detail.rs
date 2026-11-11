@@ -1,6 +1,7 @@
 //! One inbox item in full, opened with Enter from the inbox: the whole question, error or
 //! permission input in the reading column, with the inbox's answer keys.
 
+use dovetail_api::research::ProposalKind;
 use dovetail_api::{InboxId, InboxItem, InboxKind, START_SLICE_PERMISSION, Snapshot};
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -105,6 +106,35 @@ fn lines(cx: &ViewCx, item: &InboxItem, width: usize) -> Vec<Line<'static>> {
             out.extend(markdown::render(text, width, theme));
         }
         InboxKind::Error { text } => plain(&mut out, text, theme.fg(theme.error)),
+        InboxKind::Proposal {
+            task,
+            text,
+            evidence,
+            why,
+            alternatives,
+            ..
+        } => {
+            plain(&mut out, text, theme.body());
+            plain(&mut out, &format!("research task #{}", task.0), theme.dim());
+            if let Some(why) = why {
+                plain(&mut out, &format!("Why: {why}"), theme.body());
+            }
+            for alt in alternatives {
+                let line = match &alt.why_not {
+                    Some(why_not) => format!("Rejected: {}, because {why_not}", alt.option),
+                    None => format!("Rejected: {}", alt.option),
+                };
+                plain(&mut out, &line, theme.dim());
+            }
+            if !evidence.is_empty() {
+                let ids: Vec<String> = evidence.iter().map(ToString::to_string).collect();
+                plain(
+                    &mut out,
+                    &format!("Evidence: {}", ids.join(" ")),
+                    theme.accent(),
+                );
+            }
+        }
     }
     while out.last().is_some_and(|l| l.spans.is_empty()) {
         out.pop();
@@ -128,6 +158,14 @@ fn hints(item: &InboxItem) -> &'static [&'static str] {
             "x dismiss · ⏎ open agent · esc back",
             "x dismiss · esc back",
         ],
+        InboxKind::Proposal {
+            kind: ProposalKind::Idea,
+            ..
+        } => &[
+            "y follow-up task · A new round · d drop · esc back",
+            "y task · A round · d drop · esc back",
+        ],
+        InboxKind::Proposal { .. } => &["y accept · d drop · esc back", "y accept · d drop"],
     }
 }
 

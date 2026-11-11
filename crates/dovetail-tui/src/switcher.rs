@@ -241,6 +241,12 @@ pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem>
                 ("✓", theme.ok, "Finished turn".into(), preview.clone())
             }
             InboxKind::Error { text } => ("✗", theme.error, "Error".into(), text.clone()),
+            InboxKind::Proposal { kind, text, .. } => (
+                "⚑",
+                theme.needs_you,
+                format!("Proposed {}", kind.as_str()),
+                text.clone(),
+            ),
         };
         PickerItem {
             key: PickerKey::Inbox(item.id),
@@ -416,6 +422,9 @@ fn inbox_preview(
         InboxKind::Question { text } => (format!("{name} asks"), text.clone()),
         InboxKind::FinishedTurn { preview } => (format!("{name} finished a turn"), preview.clone()),
         InboxKind::Error { text } => (format!("{name} hit an error"), text.clone()),
+        InboxKind::Proposal { kind, text, .. } => {
+            (format!("{name} proposes a {}", kind.as_str()), text.clone())
+        }
     };
     let mut out = vec![
         Line::from(Span::styled(head, theme.accent())),

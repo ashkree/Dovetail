@@ -20,6 +20,7 @@ use crate::socket::ToolCall;
 
 mod map;
 mod read;
+mod research;
 
 /// Most characters of a status line (B17).
 const STATUS_MAX: usize = 120;
@@ -347,6 +348,10 @@ impl Core {
             },
             Tool::UpdateTask(update) => self.update_task_tool(update).await,
             Tool::DrawMap(draw) => self.draw_map(&agent, draw.0).await,
+            Tool::ResearchStartRound(args) => self.research_start_round(args).await,
+            Tool::ResearchWriteReport(args) => self.research_write_report(args).await,
+            Tool::ResearchPropose(args) => self.research_propose(&agent, args).await,
+            Tool::ResearchGet(args) => self.research_get(args).await,
         };
         let _ = reply.send(answer);
     }

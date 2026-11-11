@@ -628,6 +628,7 @@ fn decisions(now_ms: i64) -> Vec<Decision> {
         why: Some("The brief says so.".into()),
         alternatives: vec![],
         supersedes: None,
+        evidence: Vec::new(),
     };
     let second = Decision {
         id: DecisionId(2),
@@ -647,6 +648,7 @@ fn decisions(now_ms: i64) -> Vec<Decision> {
             },
         ],
         supersedes: Some(DecisionId(1)),
+        evidence: Vec::new(),
     };
     vec![first, second]
 }

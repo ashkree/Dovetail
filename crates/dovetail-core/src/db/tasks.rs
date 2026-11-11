@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use dovetail_api::research::{Evidence, FindingId, SourceId};
 use dovetail_api::{
     Alternative, Bucket, Decision, DecisionAuthor, DecisionId, NewDecision, NewTask, PLevel, Task,
     TaskChange, TaskId, TaskStatus,
@@ -345,6 +346,7 @@ pub(super) fn log_decision(
     conn: &mut Connection,
     new: NewDecision,
     by: DecisionAuthor,
+    evidence: Vec<Evidence>,
     now_ms: i64,
 ) -> Result<Decision, DbError> {
     let tx = conn.transaction()?;
@@ -367,6 +369,17 @@ pub(super) fn log_decision(
         ],
     )?;
     let id = DecisionId(tx.last_insert_rowid() as u64);
+    for e in &evidence {
+        let (kind, ref_id) = match e {
+            Evidence::Finding(f) => ("finding", f.0),
+            Evidence::Source(s) => ("source", s.0),
+        };
+        tx.execute(
+            "INSERT OR IGNORE INTO decision_evidence (decision_id, kind, ref_id) \
+             VALUES (?1, ?2, ?3)",
+            params![id.0 as i64, kind, ref_id],
+        )?;
+    }
     tx.commit()?;
     Ok(Decision {
         id,
@@ -377,6 +390,7 @@ pub(super) fn log_decision(
         why: new.why,
         alternatives: new.alternatives,
         supersedes: new.supersedes,
+        evidence,
     })
 }
 
@@ -415,7 +429,29 @@ pub(super) fn load_decisions(
             why,
             alternatives,
             supersedes: supersedes.map(|d| DecisionId(d as u64)),
+            evidence: Vec::new(),
         });
+    }
+    let mut stmt = conn.prepare(
+        "SELECT kind, ref_id FROM decision_evidence WHERE decision_id = ?1 ORDER BY rowid",
+    )?;
+    for d in &mut out {
+        let rows = stmt.query_map([d.id.0 as i64], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        for row in rows {
+            let (kind, id) = row?;
+            d.evidence.push(match kind.as_str() {
+                "finding" => Evidence::Finding(FindingId(id)),
+                "source" => Evidence::Source(SourceId(id)),
+                other => {
+                    return Err(DbError::Corrupt(format!(
+                        "decision {} evidence kind {other:?}",
+                        d.id.0
+                    )));
+                }
+            });
+        }
     }
     Ok(out)
 }
