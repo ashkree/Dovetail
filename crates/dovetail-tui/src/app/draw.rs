@@ -12,12 +12,16 @@ use ratatui::widgets::{Block, Clear};
 
 use super::overlay::Overlay;
 use super::{App, HINTS, HINTS_SHORT};
+
+/// Hints on the right of the status bar in reading mode (ADR 0018).
+const READING_HINTS: &str = "]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave";
+const READING_HINTS_SHORT: &str = "gd open · gx browser · i ask · ⎋ leave";
 use crate::buffers::{self, InputTarget, ViewCx, spread_fit};
 use crate::capture::{self, Capture};
 use crate::fmt;
 use crate::keymap::Key;
 use crate::mode::Mode;
-use crate::region::{RegionId, layout};
+use crate::region::{RegionId, layout, reading_layout};
 use crate::switcher;
 use crate::usage;
 
@@ -29,6 +33,10 @@ impl App {
         // ends focus mode, so the focused region is always on screen.
         if self.focus_mode && self.regions.focus().is_side() {
             self.toggle_focus_mode();
+        }
+        if self.reading_mode() {
+            self.draw_reading(frame, prompting);
+            return;
         }
         let screen = frame.area();
         self.buffers
@@ -54,6 +62,33 @@ impl App {
             (RegionId::SideBottom, areas.side_bottom),
             (RegionId::Main, areas.main),
         ] {
+            if area.width == 0 {
+                continue;
+            }
+            let focused = self.regions.focus() == region;
+            self.buffers
+                .get_mut(self.regions.buffer(region))
+                .render(&cx, frame, area, focused);
+        }
+        self.draw_status(frame, areas.status);
+        if let Some(area) = areas.prompt {
+            self.draw_prompt(frame, area);
+        }
+        self.draw_overlay(frame);
+    }
+
+    /// Reading mode: library, reading column and Ask, between the header and the status bar.
+    fn draw_reading(&mut self, frame: &mut Frame, prompting: bool) {
+        let areas = reading_layout(frame.area(), prompting);
+        self.draw_header(frame, areas.header);
+        let cx = ViewCx {
+            snap: &self.snap,
+            theme: &self.theme,
+            now_ms: self.now_ms,
+            tz: &self.tz,
+        };
+        for region in RegionId::READING {
+            let area = areas.of(region);
             if area.width == 0 {
                 continue;
             }
@@ -310,6 +345,18 @@ impl App {
         {
             left.push(Span::styled(format!(" · ctx {pct}%"), theme.context(pct)));
         }
+        if self.reading_mode() {
+            left.push(Span::raw("  "));
+            left.push(Span::styled(
+                " READING ",
+                theme
+                    .badge(theme.cite)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ));
+            if let Some(cite) = self.buffers.reader.citation_label() {
+                left.push(Span::styled(format!(" {cite}"), theme.fg(theme.cite)));
+            }
+        }
         if !self.resolver.pending().is_empty() {
             left.push(Span::styled(
                 format!("  {} …", pending_label(self.resolver.pending())),
@@ -329,6 +376,10 @@ impl App {
         }
         let rights = match &self.note {
             Some(note) => vec![vec![Span::styled(note.clone(), theme.fg(theme.needs_you))]],
+            None if self.reading_mode() => vec![
+                vec![Span::styled(READING_HINTS, theme.dim())],
+                vec![Span::styled(READING_HINTS_SHORT, theme.dim())],
+            ],
             None => vec![
                 vec![Span::styled(HINTS, theme.dim())],
                 vec![Span::styled(HINTS_SHORT, theme.dim())],

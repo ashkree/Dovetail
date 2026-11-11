@@ -4,7 +4,7 @@ use dovetail_api::{
     AgentId, AgentKind, AgentStatus, Command, InboxId, PermissionMode, SessionLock, TaskId,
 };
 
-use super::{App, Confirm, Then};
+use super::{App, ChatSite, Confirm, Then};
 use crate::action::Action;
 use crate::buffers::InputTarget;
 use crate::mode::Mode;
@@ -90,19 +90,23 @@ impl App {
     pub(super) fn start_chat(&mut self, agent: AgentId) {
         // In the side panel, the panel's own chat bar: the main region stays as it is.
         if self.chats_in_panel(&agent) {
-            if !self.chat_in_panel {
-                self.buffers.conversation.park_chat();
+            if self.chat_site != ChatSite::Panel {
+                self.chat_view_mut().park_chat();
             }
-            self.chat_in_panel = true;
+            self.chat_site = ChatSite::Panel;
             self.clear_finished_turn(&agent);
             self.buffers.panel.conversation_mut().begin_chat(agent);
             self.input = None;
             self.mode = Mode::Insert;
             return;
         }
-        if self.chat_in_panel {
-            self.buffers.panel.conversation_mut().park_chat();
-            self.chat_in_panel = false;
+        if self.chat_site != ChatSite::Main {
+            self.chat_view_mut().park_chat();
+            self.chat_site = ChatSite::Main;
+        }
+        // The main region's chat bar is in Layout B.
+        if self.reading_mode() {
+            self.leave_reading_mode();
         }
         self.show_agent(agent.clone());
         self.buffers.conversation.begin_chat(agent);
@@ -136,6 +140,8 @@ impl App {
                 .worktrees
                 .selected_agent(&self.snap)
                 .and_then(|id| task_of(&id)),
+            BufferKind::Library => self.buffers.library.selected_task(),
+            BufferKind::Reader | BufferKind::Ask => self.buffers.reader.task(),
             // Side chats have no task.
             BufferKind::Activity
             | BufferKind::Messages
@@ -149,6 +155,9 @@ impl App {
     /// `from_board`: opened from a board card, so `Esc` goes back to the board. Every other
     /// way in (tree, picker, quick capture) goes back to the conversation.
     pub(super) fn open_task(&mut self, id: TaskId, from_board: bool) {
+        if self.reading_mode() {
+            self.leave_reading_mode();
+        }
         self.detail_from_board = from_board;
         self.buffers.task_detail.show(id);
         self.regions.show(RegionId::Main, BufferKind::TaskDetail);
@@ -168,6 +177,9 @@ impl App {
 
     /// Shows an inbox item in full in the main region; the inbox keeps it selected.
     pub(super) fn open_inbox_item(&mut self, id: InboxId) {
+        if self.reading_mode() {
+            self.leave_reading_mode();
+        }
         self.buffers.inbox.select_item(&self.snap, id);
         self.buffers.inbox_detail.show(id);
         self.regions.show(RegionId::Main, BufferKind::InboxDetail);

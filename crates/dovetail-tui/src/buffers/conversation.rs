@@ -128,6 +128,15 @@ impl ConversationBuffer {
         }
     }
 
+    /// The conversation view of reading mode's Ask column: its answers' citation markers are
+    /// coloured as in the reading column.
+    pub fn for_ask() -> Self {
+        Self {
+            kind: BufferKind::Ask,
+            ..Self::default()
+        }
+    }
+
     /// Text added to the pane title, after the agent's.
     pub fn set_heading_suffix(&mut self, suffix: Option<String>) {
         self.heading_suffix = suffix;
@@ -589,7 +598,9 @@ impl Buffer for ConversationBuffer {
                 .and_then(|a| self.views.get(a))
                 .map(|v| v.draft.lines().next().unwrap_or("").trim())
                 .unwrap_or("");
-            let text = if draft.is_empty() && self.kind == BufferKind::SidePanel {
+            let text = if draft.is_empty() && self.kind == BufferKind::Ask {
+                "› i to ask · ]s [s cite · gd open · dd close".to_string()
+            } else if draft.is_empty() && self.kind == BufferKind::SidePanel {
                 "› i or ^j to type · ⇥ next chat · dd close · ␣? hide".to_string()
             } else if draft.is_empty() {
                 "› i or ^j to type · ]] [[ turns · zc zo fold · gg G".to_string()
@@ -628,6 +639,9 @@ impl Buffer for ConversationBuffer {
             expanded: &view.expanded,
         };
         let mut built = transcript::build(entries, &params, &mut view.cache);
+        if self.kind == BufferKind::Ask {
+            built.lines = crate::render::citations::colour(built.lines, theme);
+        }
         if older.is_some() {
             let note = Line::from(Span::styled(
                 "↑ older history · k or gg at the top loads it",

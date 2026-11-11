@@ -100,6 +100,33 @@ pub enum Action {
     PrevSideChat,
     /// Close the side chat shown in the panel (`dd`): its session stops.
     CloseSideChat,
+    // --- reading mode (ADR 0018) ---
+    /// Reading mode on or off (`<leader>r`): library, reading column and Ask, in place of
+    /// Layout B, which comes back as it was.
+    ToggleReadingMode,
+    /// `Esc` in Normal mode inside reading mode: leave it.
+    LeaveReadingMode,
+    /// Open the library row under the cursor in the reading column, or fold or unfold it.
+    LibraryOpen,
+    /// Fold or unfold the library row under the cursor.
+    LibraryToggleFold,
+    /// Select the next citation id in the reading column (`]s`), or in Ask's latest answer.
+    NextCitation,
+    /// Select the previous citation id (`[s`).
+    PrevCitation,
+    /// Open the selected citation's finding or source in the reading column (`gd`).
+    OpenCitation,
+    /// Open the selected citation's web source in the browser (`gx`), through the core.
+    BrowseCitation,
+    /// Go back to the document read before the last `gd` (`Ctrl-o`).
+    ReaderBack,
+    /// `i` in the reading column or Ask: type a question about the open report in Ask.
+    AskAboutReport,
+    /// Close the open report's Ask session (`dd` in Ask): its session stops.
+    CloseAsk,
+    /// A key that does nothing in its scope, on purpose, so a global binding on the same key
+    /// does not run there (`i` in the library).
+    Ignore,
     /// Pick one of the session's slash commands or skills (`:skills`); it goes into the chat
     /// bar as `/name `.
     PickCommand,

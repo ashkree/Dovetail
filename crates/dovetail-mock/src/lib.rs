@@ -1062,8 +1062,11 @@ impl MockCore {
             .map_or(0.0, |w| w.utilization);
         let usage = world::usage(self.state.now_ms, ((used + 0.01) * 100.0).round() / 100.0);
         self.emit(Event::UsageChanged(usage));
+        // Reading mode's Ask answers in its column: no finished-turn item (ADR 0018).
         if !self.running_background_children(agent)
-            && self.agent(agent).is_some_and(|a| a.kind.is_session())
+            && self
+                .agent(agent)
+                .is_some_and(|a| a.kind.is_session() && a.kind != AgentKind::Ask)
         {
             let old: Vec<InboxId> = self
                 .state

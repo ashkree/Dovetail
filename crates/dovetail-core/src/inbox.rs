@@ -177,6 +177,14 @@ impl Core {
         for id in old {
             self.resolve(id, None);
         }
+        // Reading mode's Ask answers in the column the user asked in (ADR 0018).
+        let ask = self
+            .agents
+            .get(agent)
+            .is_some_and(|r| r.agent.kind == dovetail_api::AgentKind::Ask);
+        if ask {
+            return;
+        }
         self.raise(agent, InboxKind::FinishedTurn { preview }, Waiter::None);
     }
 

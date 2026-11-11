@@ -1,14 +1,17 @@
 //! Buffers: every view is one. A region shows a buffer; the buffer owns its state, draws itself
 //! and handles its buffer-local actions.
 
+mod ask;
 mod board;
 mod conversation;
 mod feed;
 mod inbox;
 mod inbox_detail;
+pub mod library;
 mod map_canvas;
 mod map_outline;
 mod map_shelf;
+pub mod reader;
 mod side_panel;
 pub mod task_detail;
 mod task_research;
@@ -28,15 +31,19 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
+pub use crate::canvas::kitty::Figure;
+pub use ask::{AskBuffer, ask_agent};
 pub use board::{BoardBuffer, COLUMNS as BOARD_COLUMNS};
 pub use conversation::ConversationBuffer;
 pub use feed::{ActivityBuffer, MessagesBuffer};
 pub use inbox::{InboxBuffer, ordered as inbox_order};
 pub(crate) use inbox::{input_summary, unfiled_title};
 pub use inbox_detail::InboxDetailBuffer;
+pub use library::LibraryBuffer;
 pub use map_canvas::Canvas as MapCanvas;
 pub use map_outline::{MapOutlineBuffer, MouseKind as MapMouse, Reaction as MapReaction};
 pub use map_shelf::MapShelfBuffer;
+pub use reader::{ReadTarget, ReaderBuffer};
 pub use side_panel::{SidePanelBuffer, side_chats};
 pub use task_detail::TaskDetailBuffer;
 pub use tree::{TreeBuffer, p_label};
@@ -128,6 +135,29 @@ pub enum Effect {
     /// Let go of the terminal and have the core open this path in the user's editor
     /// ([`Command::OpenEditor`]); the terminal comes back on `Event::TerminalReturned`.
     OpenEditor(std::path::PathBuf),
+    /// Show a document in reading mode's reading column (fetching it from the core first, for
+    /// research documents and docs).
+    Read {
+        /// What to show.
+        target: ReadTarget,
+        /// The research task its citations belong to.
+        task: Option<TaskId>,
+        /// Pane title part.
+        title: String,
+    },
+    /// Follow a citation (`gd`), or open its web source in the browser (`gx`).
+    Cite {
+        /// The research task the ids belong to; `None` when the document is not research.
+        task: Option<TaskId>,
+        /// The id; `None` when there is none in view.
+        evidence: Option<dovetail_api::research::Evidence>,
+        /// `gx`: the browser, not the reading column.
+        browse: bool,
+        /// The document it was pressed in (`gx` with no citation opens a web source's own page).
+        from: ReadTarget,
+    },
+    /// Ask to open another project (B24), as the project switcher does.
+    OpenProject(dovetail_api::ProjectId),
 }
 
 /// A view with its own state and buffer-local keys.
@@ -183,6 +213,12 @@ pub struct Buffers {
     pub map_outline: MapOutlineBuffer,
     /// The side panel: side chats beside the conversation.
     pub panel: SidePanelBuffer,
+    /// Reading mode's library.
+    pub library: LibraryBuffer,
+    /// Reading mode's reading column.
+    pub reader: ReaderBuffer,
+    /// Reading mode's Ask column.
+    pub ask: AskBuffer,
 }
 
 impl Buffers {
@@ -201,6 +237,9 @@ impl Buffers {
             map_shelf: MapShelfBuffer::default(),
             map_outline: MapOutlineBuffer::default(),
             panel: SidePanelBuffer::default(),
+            library: LibraryBuffer::default(),
+            reader: ReaderBuffer::default(),
+            ask: AskBuffer::default(),
         }
     }
 
@@ -219,6 +258,9 @@ impl Buffers {
             BufferKind::MapShelf => &mut self.map_shelf,
             BufferKind::MapOutline => &mut self.map_outline,
             BufferKind::SidePanel => &mut self.panel,
+            BufferKind::Library => &mut self.library,
+            BufferKind::Reader => &mut self.reader,
+            BufferKind::Ask => &mut self.ask,
         }
     }
 }
