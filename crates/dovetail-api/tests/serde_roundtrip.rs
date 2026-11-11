@@ -862,6 +862,34 @@ fn a_usage_status_word_this_version_does_not_know_parses_as_unknown() {
 }
 
 #[test]
+fn an_agent_message_entry_roundtrips_and_old_kinds_still_read() {
+    let entry = ConversationEntry {
+        id: EntryId(4),
+        at_ms: 9,
+        kind: EntryKind::AgentMessage,
+        text: agent_message_text("scout", true, "report\nmore"),
+        attachments: Vec::new(),
+    };
+    roundtrip(&entry);
+    assert_eq!(
+        serde_json::to_value(&entry).unwrap()["kind"],
+        "agent_message"
+    );
+    let parts = entry.agent_message().unwrap();
+    assert_eq!(
+        (parts.from, parts.subagent, parts.body),
+        ("scout", true, "report\nmore")
+    );
+    // An entry stored before the kind existed.
+    let old: ConversationEntry = serde_json::from_value(
+        json!({"id": 1, "at_ms": 0, "kind": "notice", "text": "Message from x: y"}),
+    )
+    .unwrap();
+    assert_eq!(old.kind, EntryKind::Notice);
+    assert_eq!(old.agent_message(), None);
+}
+
+#[test]
 fn a_research_proposal_and_its_evidence_survive_json() {
     use research::{Evidence, FindingId, ProposalKind, SourceId};
     let kind = InboxKind::Proposal {

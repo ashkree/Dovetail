@@ -642,7 +642,12 @@ impl Core {
             } => {
                 if let Some(peer) = PeerMessage::from_origin(&origin) {
                     let from = self.agent_by_name(&peer.name);
-                    self.notice(&agent, format!("Message from {}: {}", peer.name, peer.body));
+                    let subagent = self
+                        .agents
+                        .get(&from)
+                        .is_some_and(|r| matches!(r.agent.kind, AgentKind::Subagent { .. }));
+                    let text = dovetail_api::agent_message_text(&peer.name, subagent, &peer.body);
+                    self.add_entry(&agent, EntryKind::AgentMessage, text);
                     self.message(from, agent.clone(), peer.body, peer.msg_id);
                 }
             }

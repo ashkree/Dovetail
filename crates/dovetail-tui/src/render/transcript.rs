@@ -276,13 +276,8 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
         EntryKind::Assistant => {
             let streaming = p.streaming == Some(entry.id);
             let mut body: Vec<Line<'static>> = cache.markdown(entry, width, theme).to_vec();
-            if !streaming && body.len() > MAX_ENTRY_LINES && !p.expanded.contains(&entry.id) {
-                let more = body.len() - KEEP_LINES;
-                body.truncate(KEEP_LINES);
-                body.push(Line::from(Span::styled(
-                    format!("… {more} more lines · zo to show"),
-                    theme.dim(),
-                )));
+            if !streaming {
+                fold_long(&mut body, entry.id, p);
             }
             if streaming {
                 let cursor = Span::styled("▌", theme.fg(theme.working));
@@ -300,6 +295,7 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
                 .map(Line::from)
                 .collect()
         }
+        EntryKind::AgentMessage => agent_message_lines(entry, width, p),
         EntryKind::Notice => {
             let style = theme.dim().add_modifier(Modifier::ITALIC);
             let spans = [Span::styled(format!("· {}", entry.text), style)];
@@ -309,6 +305,46 @@ fn entry_lines(entry: &ConversationEntry, p: &Params, cache: &mut Cache) -> Vec<
                 .collect()
         }
     }
+}
+
+/// The shared fold rule: a body longer than [`MAX_ENTRY_LINES`] is cut to [`KEEP_LINES`] plus a
+/// dim "show more" line, unless the entry is in `p.expanded` (keyed by entry id).
+fn fold_long(body: &mut Vec<Line<'static>>, id: EntryId, p: &Params) {
+    if body.len() <= MAX_ENTRY_LINES || p.expanded.contains(&id) {
+        return;
+    }
+    let more = body.len() - KEEP_LINES;
+    body.truncate(KEEP_LINES);
+    body.push(Line::from(Span::styled(
+        format!("… {more} more lines · zo to show"),
+        p.theme.dim(),
+    )));
+}
+
+/// A message from another agent: always one dim line until the entry is in `p.expanded`
+/// (`zo`), then its whole text in the same dim italic style. `zc` removes it from the set.
+fn agent_message_lines(entry: &ConversationEntry, width: usize, p: &Params) -> Vec<Line<'static>> {
+    let style = p.theme.dim().add_modifier(Modifier::ITALIC);
+    let Some(msg) = entry.agent_message() else {
+        return Vec::new();
+    };
+    let wrap = |text: String| -> Vec<Line<'static>> {
+        wrap_spans(&[Span::styled(text, style)], width)
+            .into_iter()
+            .map(Line::from)
+            .collect()
+    };
+    if !p.expanded.contains(&entry.id) {
+        return wrap(if msg.subagent {
+            format!("· subagent {} finished · zo to show", msg.from)
+        } else {
+            format!("· message from {} · zo to show", msg.from)
+        });
+    }
+    msg.body
+        .split('\n')
+        .flat_map(|text| wrap(text.to_string()))
+        .collect()
 }
 
 /// Older turns recede: every span loses its colour for the dim one but keeps bold and italic.
@@ -560,6 +596,45 @@ mod tests {
         };
         let full = texts(&build(&entries, &p, &mut Cache::default()));
         assert!(full.iter().any(|l| l == "line 99"));
+    }
+
+    #[test]
+    fn an_agent_message_is_one_line_until_expanded() {
+        let report = (0..100)
+            .map(|i| format!("finding {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let entries = [entry(
+            1,
+            EntryKind::AgentMessage,
+            &dovetail_api::agent_message_text("scout", true, &report),
+        )];
+        let folded = texts(&run(&entries, |_| {}));
+        assert_eq!(folded[3], "· subagent scout finished · zo to show");
+        assert!(!folded.iter().any(|l| l.contains("finding")));
+        let theme = Theme::dusk();
+        let none = HashSet::new();
+        let expanded = HashSet::from([EntryId(1)]);
+        let p = Params {
+            width: 60,
+            theme: &theme,
+            tz: &TimeZone::UTC,
+            agent: "coordinator",
+            streaming: None,
+            folded: &none,
+            expanded: &expanded,
+        };
+        let full = texts(&build(&entries, &p, &mut Cache::default()));
+        assert_eq!(full[3], "finding 0");
+        assert!(full.iter().any(|l| l == "finding 99"));
+    }
+
+    #[test]
+    fn a_message_from_a_peer_names_the_sender() {
+        let text = dovetail_api::agent_message_text("slice-7", false, "hello");
+        let entries = [entry(1, EntryKind::AgentMessage, &text)];
+        let t = texts(&run(&entries, |_| {}));
+        assert_eq!(t[3], "· message from slice-7 · zo to show");
     }
 
     #[test]

@@ -805,6 +805,59 @@ pub enum EntryKind {
     ToolSummary,
     /// A note from Dovetail, such as "interrupted".
     Notice,
+    /// A message another agent sent this one, such as a subagent's hand-back. The text is the
+    /// header line from [`agent_message_text`] and then the body; read it with
+    /// [`ConversationEntry::agent_message`].
+    AgentMessage,
+}
+
+/// The text of an [`EntryKind::AgentMessage`] entry: a header line naming the sender
+/// (`subagent <name>` or `agent <name>`), then the message body.
+pub fn agent_message_text(from: &str, subagent: bool, body: &str) -> String {
+    let who = if subagent { "subagent" } else { "agent" };
+    format!("{who} {from}\n{body}")
+}
+
+/// A parsed [`EntryKind::AgentMessage`] entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AgentMessageParts<'a> {
+    /// Name of the sending agent.
+    pub from: &'a str,
+    /// Whether the sender is a subagent.
+    pub subagent: bool,
+    /// The message itself.
+    pub body: &'a str,
+}
+
+impl ConversationEntry {
+    /// The sender and body of an agent message; `None` for every other kind. A text without
+    /// the header line reads as a message from an unknown agent.
+    pub fn agent_message(&self) -> Option<AgentMessageParts<'_>> {
+        if self.kind != EntryKind::AgentMessage {
+            return None;
+        }
+        let unknown = AgentMessageParts {
+            from: "agent",
+            subagent: false,
+            body: &self.text,
+        };
+        let Some((head, body)) = self.text.split_once('\n') else {
+            return Some(unknown);
+        };
+        Some(match head.split_once(' ') {
+            Some(("subagent", from)) => AgentMessageParts {
+                from,
+                subagent: true,
+                body,
+            },
+            Some(("agent", from)) => AgentMessageParts {
+                from,
+                subagent: false,
+                body,
+            },
+            _ => unknown,
+        })
+    }
 }
 
 /// Status-bar totals.
