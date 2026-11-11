@@ -307,6 +307,12 @@ pub enum Command {
     /// journal file with it and Dovetail's facts. The core answers with
     /// [`Event::JournalChanged`]: `closing` while it waits, then the new `latest`.
     EndOfDay,
+    /// A mid-day fresh start (`:fresh`, ADR 0012 amendment): ask the coordinator for the same
+    /// handoff as [`Command::EndOfDay`], append it to today's journal file as a "Handoff (fresh
+    /// start HH:MM)" section, and start a new coordinator session seeded with it and the open
+    /// tasks. Refused with an error while a turn runs. The previous session stays resumable
+    /// through a Needs-you item.
+    FreshStart,
     /// Open a side chat with `question` as its first prompt (ADR 0011).
     NewSideChat {
         /// The first prompt.

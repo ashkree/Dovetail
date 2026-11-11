@@ -3824,6 +3824,143 @@ fn eod_asks_the_coordinator_and_writes_its_reply_and_the_facts() {
     h.quit();
 }
 
+/// Two turns of the coordinator: "first", then a handoff reply. `pause_before` holds the replay
+/// before that line of the script.
+fn fresh_fixture(pause_before: usize) -> FakeDriver {
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"first"},"parent_tool_use_id":null,"isReplay":true}"#,
+        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"one"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"one","total_cost_usd":0.01}"#,
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"fresh"},"parent_tool_use_id":null,"isReplay":true}"#,
+        r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"Open: PR 20 waits on review."}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"Open: PR 20 waits on review.","total_cost_usd":0.02}"#,
+    ];
+    FakeDriver::from_ndjson(&lines.join("\n"))
+        .expect("fixture")
+        .with_options(ReplayOptions {
+            pause_before: vec![pause_before],
+            ..ReplayOptions::default()
+        })
+}
+
+#[test]
+fn fresh_appends_the_handoff_seeds_a_new_coordinator_and_y_goes_back() {
+    let fake = fresh_fixture(4);
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    // A journal file for today already exists: `:fresh` adds to it.
+    let dir = h.paths.data.join("projects/p/journal");
+    std::fs::create_dir_all(&dir).expect("journal dir");
+    let today = local_date(0);
+    let path = dir.join(format!("{today}.md"));
+    std::fs::write(&path, "Hand-written notes\n").expect("a day's file");
+    h.send(Command::CreateTask(NewTask {
+        title: "ship the journal".into(),
+        p_level: None,
+        bucket: Some(Bucket::Now),
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: Vec::new(),
+    }));
+    prompt(&h, "first");
+    h.wait_for("the first reply", |s| finished_turns(s) == 1);
+    let old = fake.started_specs()[0].session_id.clone();
+
+    h.send(Command::FreshStart);
+    h.wait_for("the handoff request", |s| journal(s).closing);
+    fake.resume();
+    let keep_item = |s: &Snapshot| {
+        s.inbox.iter().find_map(|i| match &i.kind {
+            InboxKind::Permission { tool, input, .. }
+                if tool == dovetail_api::FRESH_COORDINATOR_PERMISSION =>
+            {
+                Some((i.id, input.clone()))
+            }
+            _ => None,
+        })
+    };
+    h.wait_for("the fresh-start item", |s| keep_item(s).is_some());
+
+    // The day's file was added to, not replaced.
+    let text = std::fs::read_to_string(&path).expect("the journal file");
+    assert!(text.starts_with("Hand-written notes\n\n---\n\n"), "{text}");
+    assert!(text.contains("## Handoff (fresh start "), "{text}");
+    assert!(text.contains("Open: PR 20 waits on review."), "{text}");
+    assert!(text.contains("**Now**\n\n- #1 ship the journal"), "{text}");
+
+    // A new session (not `--resume`), seeded with the handoff and the open tasks.
+    let specs = fake.started_specs();
+    assert_eq!(specs.len(), 2);
+    assert!(!specs[1].resume);
+    assert_ne!(specs[1].session_id, old);
+    let seed = fake
+        .sent()
+        .into_iter()
+        .filter_map(|s| match s {
+            Sent::User(text) => Some(text),
+            _ => None,
+        })
+        .find(|t| t.contains("This is a fresh coordinator session, started at"))
+        .expect("the seed prompt");
+    assert!(seed.contains("Open: PR 20 waits on review."), "{seed}");
+    assert!(seed.contains("# Open tasks"), "{seed}");
+    assert!(seed.contains("#1 ship the journal"), "{seed}");
+    let (item, input) = keep_item(&h.snap).expect("item");
+    assert_eq!(input["session_id"], old.as_str());
+
+    // `y`: the fresh session stops and the previous one resumes.
+    h.send(Command::AnswerPermission {
+        item,
+        answer: PermissionAnswer::Allow,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < 3 {
+        assert!(Instant::now() < deadline, "the old session never resumed");
+        // The new session replays the script too, and stops at the same line.
+        fake.resume();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let back = &fake.started_specs()[2];
+    assert!(back.resume);
+    assert_eq!(back.session_id, old);
+    h.quit();
+}
+
+#[test]
+fn fresh_is_refused_while_a_turn_runs() {
+    // Held before the `result`: the first turn is still running.
+    let fake = fresh_fixture(3);
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "first");
+    h.wait_for("the reply text", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|c| {
+                c.entries
+                    .iter()
+                    .any(|e| e.kind == EntryKind::Assistant && e.text == "one")
+            })
+    });
+    h.send(Command::FreshStart);
+    h.drain(Duration::from_millis(300));
+    assert_eq!(
+        h.failures,
+        vec!["turn running; try again when it finishes".to_owned()]
+    );
+    assert!(!journal(&h.snap).closing);
+    assert_eq!(fake.started_specs().len(), 1);
+    let file = h
+        .paths
+        .data
+        .join("projects/p/journal")
+        .join(format!("{}.md", local_date(0)));
+    assert!(!file.exists());
+    fake.resume();
+    h.quit();
+}
+
 #[test]
 fn eod_with_a_coordinator_that_never_ran_writes_the_facts_alone() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());

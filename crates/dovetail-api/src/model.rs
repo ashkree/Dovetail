@@ -539,6 +539,13 @@ pub const REMOVE_WORKTREE_PERMISSION: &str = "Remove worktree";
 /// of a day (ADR 0012): `y` goes back to yesterday's session, `d` keeps the fresh one. Its input
 /// is `{journal, session_id, transcript_path}`: the handoff's date and the old session.
 pub const KEEP_COORDINATOR_PERMISSION: &str = "Keep yesterday's coordinator";
+
+/// The `tool` of the Permission item raised when `:fresh` started a new coordinator mid-day
+/// (ADR 0012, amendment): `y` goes back to the previous session, `d` keeps the fresh one. Its
+/// input is `{journal, session_id, transcript_path}`, as for [`KEEP_COORDINATOR_PERMISSION`];
+/// `journal` is the date of the file holding the handoff.
+pub const FRESH_COORDINATOR_PERMISSION: &str = "Fresh coordinator started";
+
 /// The `tool` of the Permission item raised at open when a session's take-over lock was left by
 /// a crash and Dovetail cannot tell whether its native `claude` still runs (M14). `y` releases
 /// the lock, `d` keeps it. Its input is `{session, reason}`.

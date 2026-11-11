@@ -439,6 +439,8 @@ pub(crate) struct Core {
     /// Yesterday's coordinator session (id, transcript), asked back with `y`: it resumes once
     /// the fresh session has exited (ADR 0012).
     pub(crate) revert_coordinator: Option<(Option<String>, Option<PathBuf>)>,
+    /// A `:fresh` whose handoff is written: the new coordinator starts once the old exits.
+    pub(crate) pending_fresh: Option<crate::journal::PendingFresh>,
     /// `:upgrade`: the background build, the "Upgrade ready" item, the wait for idle (ADR 0014).
     pub(crate) upgrade: crate::upgrade::flow::UpgradeState,
     /// The project the user picked to open next (B24); the binary reads it once the core stopped.
@@ -532,6 +534,7 @@ impl Core {
             oom: Default::default(),
             closing: None,
             revert_coordinator: None,
+            pending_fresh: None,
             upgrade: Default::default(),
             switch_to: Default::default(),
             research: Default::default(),
@@ -1311,6 +1314,7 @@ impl Core {
             Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
             Command::NewSideChat { question } => self.start_side_chat(question),
             Command::EndOfDay => self.end_of_day(),
+            Command::FreshStart => self.fresh_start(),
             Command::Upgrade { local } => self.start_upgrade(local),
             Command::NewSlice { task, name, brief } => {
                 let request = SliceRequest {
