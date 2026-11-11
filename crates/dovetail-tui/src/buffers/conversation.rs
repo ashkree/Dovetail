@@ -83,7 +83,7 @@ pub struct ConversationBuffer {
     previous: Option<AgentId>,
     views: HashMap<AgentId, AgentView>,
     chat: Option<TextInput>,
-    /// Images attached to the message being typed, shown as chips above the input.
+    /// Images attached to the message being typed; their markers are in the input's text.
     images: Vec<Attachment>,
     /// The `/` and `@` popup over the chat input.
     completion: Completion,
@@ -176,9 +176,14 @@ impl ConversationBuffer {
         self.completion.reset();
     }
 
-    /// How many images the message being typed carries.
+    /// How many images the message being typed carries: those whose marker is still in the text.
     pub fn attachment_count(&self) -> usize {
-        self.images.len()
+        let text = self.chat.as_ref().map_or("", |c| c.text());
+        self.images
+            .iter()
+            .enumerate()
+            .filter(|(i, a)| text.contains(&marker(*i, a)))
+            .count()
     }
 
     /// Puts the core's answer to a Ctrl-V into `agent`'s message: at the cursor while its chat
@@ -204,15 +209,40 @@ impl ConversationBuffer {
                 None
             }
             Paste::Image(image) => {
-                let images = if live {
-                    &mut self.images
+                // The marker is part of the text, so it sits where the cursor was and the
+                // bar wraps and grows around it like any other words.
+                let (images, text) = if live {
+                    (
+                        &self.images[..],
+                        self.chat.as_ref().map_or("", |c| c.text()),
+                    )
                 } else {
-                    &mut self.views.entry(agent.clone()).or_default().draft_images
+                    let view = self.views.get(agent);
+                    (
+                        view.map_or(&[][..], |v| v.draft_images.as_slice()),
+                        view.map_or("", |v| v.draft.as_str()),
+                    )
                 };
-                if images.len() >= MAX_ATTACHMENTS {
+                let present = images
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, a)| text.contains(&marker(*i, a)))
+                    .count();
+                if present >= MAX_ATTACHMENTS {
                     return Some(full);
                 }
-                images.push(image);
+                // Numbers are never reused, so a marker names one image for as long as it lives.
+                let tag = format!("{} ", marker(images.len(), &image));
+                if live {
+                    self.images.push(image);
+                    if let Some(chat) = self.chat.as_mut() {
+                        chat.insert_str(&tag);
+                    }
+                } else {
+                    let view = self.views.entry(agent.clone()).or_default();
+                    view.draft_images.push(image);
+                    view.draft.push_str(&tag);
+                }
                 None
             }
         }
@@ -223,11 +253,30 @@ impl ConversationBuffer {
         self.chat.is_some()
     }
 
-    /// Drops the last image chip when the chat input is open and empty
-    /// ([`Action::DropLastAttachment`]). Returns whether one was dropped.
+    /// Deletes a whole image marker when the cursor sits right after one (and the space pasted
+    /// with it) ([`Action::DropLastAttachment`]). Returns whether one was deleted.
     pub fn drop_last_attachment(&mut self) -> bool {
-        let empty = self.chat.as_ref().is_some_and(|c| c.text().is_empty());
-        empty && self.images.pop().is_some()
+        let Some(chat) = self.chat.as_mut() else {
+            return false;
+        };
+        let end = chat.cursor();
+        let before = chat.before_cursor();
+        let bare = before.strip_suffix(' ').unwrap_or(before);
+        let found = self.images.iter().enumerate().find_map(|(i, a)| {
+            let tag = marker(i, a);
+            [before, bare]
+                .into_iter()
+                .any(|b| b.ends_with(&tag))
+                .then_some(tag)
+        });
+        let Some(tag) = found else { return false };
+        let tail = if before.ends_with(&format!("{tag} ")) {
+            tag.len() + 1
+        } else {
+            tag.len()
+        };
+        chat.replace(end - tail..end, "");
+        true
     }
 
     /// Applies a key to the chat input. `Enter` returns the prompt and its images to send;
@@ -257,9 +306,8 @@ impl ConversationBuffer {
         let chat = self.chat.as_mut()?;
         match outcome {
             InputOutcome::Submit => {
-                let text = chat.text().trim().to_string();
+                let (text, images) = take_markers(chat.text(), std::mem::take(&mut self.images));
                 self.chat = None;
-                let images = std::mem::take(&mut self.images);
                 let view = self.views.entry(agent.clone()).or_default();
                 if text.is_empty() && images.is_empty() {
                     return None;
@@ -425,6 +473,12 @@ impl ConversationBuffer {
         let rows = chat.rows(text_width);
         let (cursor_row, cursor_col) = chat.cursor_position(text_width);
         let first = (cursor_row + 1).saturating_sub(usize::from(area.height));
+        let markers: Vec<String> = self
+            .images
+            .iter()
+            .enumerate()
+            .map(|(i, a)| marker(i, a))
+            .collect();
         for (n, range) in rows
             .iter()
             .skip(first)
@@ -432,10 +486,9 @@ impl ConversationBuffer {
             .enumerate()
         {
             let prefix = if first + n == 0 { "› " } else { "  " };
-            let line = Line::from(vec![
-                Span::styled(prefix, theme.accent()),
-                Span::styled(chat.text()[range.clone()].to_string(), theme.body()),
-            ]);
+            let mut spans = vec![Span::styled(prefix, theme.accent())];
+            spans.extend(input_spans(&chat.text()[range.clone()], &markers, theme));
+            let line = Line::from(spans);
             let rect = Rect {
                 y: area.y + n as u16,
                 height: 1,
@@ -450,24 +503,51 @@ impl ConversationBuffer {
     }
 }
 
-/// The chip row(s) for pending images, indented under the `› ` prompt and wrapped to `width`.
-fn chip_rows(
-    images: &[Attachment],
-    width: usize,
-    theme: &crate::theme::Theme,
-) -> Vec<Line<'static>> {
-    let chips: Vec<Span<'static>> = images
-        .iter()
-        .enumerate()
-        .map(|(i, a)| Span::styled(fmt::image_chip(i + 1, a.size), theme.chip()))
-        .collect();
-    let mut rows = Vec::new();
-    for line in crate::render::transcript::chip_lines(chips, width) {
-        let mut spans = vec![Span::raw("  ")];
-        spans.extend(line.spans);
-        rows.push(Line::from(spans));
+/// The text that stands for image number `index` in the chat bar: `[image 1 · 412 KB]`.
+fn marker(index: usize, image: &Attachment) -> String {
+    fmt::image_chip(index + 1, image.size)
+}
+
+/// Splits the typed text from its image markers: the markers (and the space pasted after each)
+/// come out of the text, and only the images whose marker is still there are sent, in order.
+fn take_markers(text: &str, images: Vec<Attachment>) -> (String, Vec<Attachment>) {
+    let mut text = text.to_string();
+    let mut kept = Vec::new();
+    for (i, image) in images.into_iter().enumerate() {
+        let tag = marker(i, &image);
+        let Some(at) = text.find(&tag) else { continue };
+        let end = at + tag.len();
+        let end = if text[end..].starts_with(' ') {
+            end + 1
+        } else {
+            end
+        };
+        text.replace_range(at..end, "");
+        kept.push(image);
     }
-    rows
+    (text.trim().to_string(), kept)
+}
+
+/// A row of the input as spans, with image markers in the chip style.
+fn input_spans(row: &str, markers: &[String], theme: &crate::theme::Theme) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut rest = row;
+    while !rest.is_empty() {
+        let next = markers
+            .iter()
+            .filter_map(|m| rest.find(m.as_str()).map(|at| (at, m.len())))
+            .min();
+        let Some((at, len)) = next else {
+            spans.push(Span::styled(rest.to_string(), theme.body()));
+            break;
+        };
+        if at > 0 {
+            spans.push(Span::styled(rest[..at].to_string(), theme.body()));
+        }
+        spans.push(Span::styled(rest[at..at + len].to_string(), theme.chip()));
+        rest = &rest[at + len..];
+    }
+    spans
 }
 
 impl Buffer for ConversationBuffer {
@@ -505,12 +585,7 @@ impl Buffer for ConversationBuffer {
             c.set_wrap_width(text_width);
             c.rows(text_width).len().clamp(1, MAX_INPUT_ROWS)
         });
-        let chips = if chatting && !self.images.is_empty() {
-            chip_rows(&self.images, text_width, theme)
-        } else {
-            Vec::new()
-        };
-        let chat_height = (2 + chips.len() as u16 + input_rows as u16).min(area.height / 2);
+        let chat_height = (2 + input_rows as u16).min(area.height / 2);
         let conversation_area = Rect {
             height: area.height - chat_height,
             ..area
@@ -550,27 +625,7 @@ impl Buffer for ConversationBuffer {
             width: chat_inner.width.saturating_sub(2 * pad),
             ..chat_inner
         };
-        let chip_area = Rect {
-            height: (chips.len() as u16).min(chat_inner.height),
-            ..chat_inner
-        };
-        let input_area = Rect {
-            y: chip_area.y + chip_area.height,
-            height: chat_inner.height - chip_area.height,
-            ..chat_inner
-        };
-        for (n, line) in chips
-            .into_iter()
-            .take(usize::from(chip_area.height))
-            .enumerate()
-        {
-            let rect = Rect {
-                y: chip_area.y + n as u16,
-                height: 1,
-                ..chip_area
-            };
-            frame.render_widget(Paragraph::new(line), rect);
-        }
+        let input_area = chat_inner;
         if chatting {
             self.render_input(frame, input_area, cx);
         } else if input_area.height > 0 {

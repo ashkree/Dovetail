@@ -290,7 +290,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(Mode::Insert, CONVERSATION, "<PageUp>", Action::PageUp),
     // The chat bar only: not quick capture, task notes or inbox answers (task #1).
     bind(Mode::Insert, CONVERSATION, "<C-v>", Action::PasteClipboard),
-    // Backspace on an empty chat input drops the last image chip; otherwise it deletes text.
+    // Backspace right after an image marker deletes the whole marker; otherwise it deletes text.
     bind(
         Mode::Insert,
         CONVERSATION,

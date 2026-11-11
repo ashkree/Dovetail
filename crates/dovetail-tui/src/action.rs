@@ -74,8 +74,8 @@ pub enum Action {
     LeaveChatBar,
     /// Ctrl-V in a chat bar: attach the clipboard's image, or paste its text at the cursor.
     PasteClipboard,
-    /// Backspace on an empty chat input: drop the last image chip. With text typed, or no chip,
-    /// the key edits text as usual.
+    /// Backspace right after an image marker in a chat input: delete the whole marker (and with
+    /// it the image). Anywhere else the key edits text as usual.
     DropLastAttachment,
     /// Focus mode: hide the side column and read the conversation alone (`<leader>z`).
     ToggleFocusMode,

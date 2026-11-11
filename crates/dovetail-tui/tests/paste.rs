@@ -59,11 +59,11 @@ fn a_pasted_image_shows_as_a_chip_and_goes_out_with_the_prompt() {
     paste(&mut app, 11, image(2));
     let screen = render(&mut app, 100, 30);
     assert!(
-        screen.contains("[image 1 · 1 KB]  [image 2 · 1 KB]"),
+        screen.contains("› [image 1 · 1 KB] [image 2 · 1 KB]"),
         "{screen}"
     );
 
-    // Backspace on an empty input drops the last chip, then a third paste adds one back.
+    // Backspace right after a marker drops it, then a third paste adds one back.
     app.on_key(backspace(), 12);
     assert!(!render(&mut app, 100, 30).contains("[image 2"));
     paste(&mut app, 13, image(3));
@@ -301,4 +301,61 @@ fn pasted_text_elsewhere_is_typed_on_one_line_or_ignored() {
     app.on_paste("tasks\nsecond line", 2);
     assert!(app.take_commands().is_empty());
     assert!(render(&mut app, 100, 30).contains(":tasks"));
+}
+
+/// Task #15: the marker lands in the text at the cursor, inside the chat bar, and what is typed
+/// after it follows on the same line.
+#[test]
+fn a_pasted_marker_sits_in_the_text_where_the_cursor_was() {
+    let mut app = app_with(world());
+    press(&mut app, "i");
+    type_keys(&mut app, "look at  now");
+    for _ in 0.." now".len() {
+        app.on_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), 1);
+    }
+    paste(&mut app, 2, image(1));
+    type_keys(&mut app, "!");
+    let screen = render(&mut app, 100, 30);
+    assert!(
+        screen.contains("› look at [image 1 · 1 KB] ! now"),
+        "{screen}"
+    );
+    // The marker is on the bar's own input line, directly under its title.
+    let bar = screen
+        .lines()
+        .position(|l| l.contains("chat › "))
+        .expect("the chat pane");
+    assert!(screen.lines().nth(bar + 1).unwrap().contains("› look at"));
+
+    app.on_key(enter(), 3);
+    let commands = app.take_commands();
+    let [
+        Command::Prompt {
+            text, attachments, ..
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("one prompt: {commands:?}");
+    };
+    assert_eq!(text, "look at ! now");
+    assert_eq!(attachments.len(), 1);
+}
+
+#[test]
+fn a_marker_edited_by_hand_loses_its_image() {
+    let mut app = app_with(world());
+    press(&mut app, "i");
+    paste(&mut app, 1, image(1));
+    // Into the marker, then a plain delete breaks it.
+    for _ in 0..3 {
+        app.on_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), 2);
+    }
+    app.on_key(backspace(), 3);
+    type_keys(&mut app, "hi");
+    app.on_key(enter(), 4);
+    let commands = app.take_commands();
+    let [Command::Prompt { attachments, .. }] = commands.as_slice() else {
+        panic!("one prompt: {commands:?}");
+    };
+    assert!(attachments.is_empty(), "{commands:?}");
 }
