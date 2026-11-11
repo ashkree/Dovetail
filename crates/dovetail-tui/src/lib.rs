@@ -21,6 +21,7 @@ pub mod picker;
 pub mod region;
 pub mod render;
 pub mod switcher;
+pub mod tabs;
 pub mod theme;
 pub mod usage;
 

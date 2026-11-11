@@ -82,14 +82,14 @@ fn leader_b_opens_the_board_focused_and_again_goes_back() {
     let screen = render(&mut app, 160, 40);
     assert!(screen.contains("board · business · 4 open"), "{screen}");
     leader(&mut app, "b");
-    assert!(!render(&mut app, 160, 40).contains("board ·"));
+    assert!(!render(&mut app, 160, 40).contains("board · business"));
 }
 
 #[test]
 fn esc_goes_back_to_the_conversation() {
     let mut app = board();
     app.on_key(esc(), 5);
-    assert!(!render(&mut app, 160, 40).contains("board ·"));
+    assert!(!render(&mut app, 160, 40).contains("board · business"));
 }
 
 // --- H and L: status ---
@@ -286,7 +286,7 @@ fn enter_opens_the_task_detail_and_esc_returns_to_the_board() {
     app.on_key(enter(), 5);
     let screen = render(&mut app, 160, 40);
     assert!(screen.contains("idea: eval key flow"));
-    assert!(!screen.contains("board ·"), "{screen}");
+    assert!(!screen.contains("board · business"), "{screen}");
     app.on_key(esc(), 6);
     assert!(render(&mut app, 160, 40).contains("board · business"));
 }
@@ -299,10 +299,10 @@ fn a_task_opened_from_the_picker_over_the_board_goes_back_to_the_conversation() 
     app.on_key(enter(), 50);
     let screen = render(&mut app, 160, 40);
     assert!(screen.contains("docs sweep"), "{screen}");
-    assert!(!screen.contains("board ·"), "{screen}");
+    assert!(!screen.contains("board · business"), "{screen}");
     app.on_key(esc(), 51);
     let screen = render(&mut app, 160, 40);
-    assert!(!screen.contains("board ·"), "{screen}");
+    assert!(!screen.contains("board · business"), "{screen}");
 }
 
 #[test]

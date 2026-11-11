@@ -26,6 +26,7 @@ use crate::keymap::Key;
 use crate::mode::Mode;
 use crate::region::{RegionId, layout, reading_layout};
 use crate::switcher;
+use crate::tabs;
 use crate::usage;
 
 impl App {
@@ -52,12 +53,15 @@ impl App {
         self.buffers
             .map_outline
             .set_map_mode(self.mode == Mode::Map);
-        let mut areas = layout(screen, prompting);
-        // MAP mode gives the map the whole width, as focus mode does the conversation.
-        if self.focus_mode || self.mode == Mode::Map {
+        // MAP mode gives the map the whole width, as focus mode does the conversation; neither
+        // shows the tab row.
+        let full = self.focus_mode || self.mode == Mode::Map;
+        let mut areas = layout(screen, prompting, !full);
+        if full {
             areas = areas.focused();
         }
         self.draw_header(frame, areas.header);
+        self.draw_tabs(frame, areas.tabs);
         let cx = ViewCx {
             snap: &self.snap,
             theme: &self.theme,
@@ -89,6 +93,7 @@ impl App {
     fn draw_reading(&mut self, frame: &mut Frame, prompting: bool) {
         let areas = reading_layout(frame.area(), prompting);
         self.draw_header(frame, areas.header);
+        self.draw_tabs(frame, areas.tabs);
         let cx = ViewCx {
             snap: &self.snap,
             theme: &self.theme,
@@ -298,6 +303,23 @@ impl App {
             Paragraph::new(spread_fit(left, &rights, usize::from(area.width))),
             area,
         );
+    }
+
+    /// The view-tab row (task #20); the tab table and its marking live in [`tabs`].
+    fn draw_tabs(&self, frame: &mut Frame, area: Rect) {
+        if area.height == 0 {
+            return;
+        }
+        let view = tabs::ViewState {
+            main: self.regions.buffer(RegionId::Main),
+            reading: self.reading_mode(),
+            research_list: matches!(
+                &self.overlay,
+                Some(Overlay::Picker(picker, Purpose::Open)) if picker.title() == "Research"
+            ),
+        };
+        let spans = tabs::spans(&view, &self.theme, usize::from(area.width));
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 
     fn draw_status(&self, frame: &mut Frame, area: Rect) {

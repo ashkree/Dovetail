@@ -3,18 +3,18 @@ source: crates/dovetail-tui/tests/fold_cursor.rs
 expression: "render(&mut app, 80, 24)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ coordinator · ○ idle · 1.2G · $3.10 ─┐┌ inbox · needs you (3) ───────────────┐
 │                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │                                      ││   ? slice-4  Which route pref… 10:12 │
 │   ── You · 10:14 ─────────────────   ││   ✓ slice-4  Handler wired; t… 10:09 │
 │                                      ││                                      │
 │   what changed?                      ││                                      │
-│                                      ││                                      │
 │                                      ││ y allow · d deny · r reply · x dism… │
-│  ▎── coordinator · 10:14 ─────────   │└──────────────────────────────────────┘
-│                                      │┌ tasks · business ────────────────────┐
-│  ▎Two things.                        ││ ○ ◆ coordinator      idle 1.2G $3.10 │
-│                                      ││ ▾ Now (2)                            │
+│                                      │└──────────────────────────────────────┘
+│  ▎── coordinator · 10:14 ─────────   │┌ tasks · business ────────────────────┐
+│                                      ││ ○ ◆ coordinator      idle 1.2G $3.10 │
+│  ▎Two things.                        ││ ▾ Now (2)                            │
 │                                      ││ ▾ ⚠ business surface P1     PR #1231 │
 │                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
 │                                      ││         ⎇ dovetail/slice-4           │

@@ -206,7 +206,7 @@ fn double_bracket_jumps_between_turns() {
     let screen = render(&mut app, 100, 30);
     let first_row = screen
         .lines()
-        .nth(4)
+        .nth(5)
         .expect("header row below the turn's blank row");
     assert!(first_row.contains("── You · "), "{first_row}");
     assert!(screen.contains("question 1"), "{screen}");

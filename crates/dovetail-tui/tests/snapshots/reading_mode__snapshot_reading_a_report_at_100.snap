@@ -1,9 +1,9 @@
 ---
 source: crates/dovetail-tui/tests/reading_mode.rs
-assertion_line: 543
 expression: "snapshot_at(100, 30)"
 ---
  folder /home/you/src/dovetail   maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ library ─────────────┐┌ reading · #3 report ─────────────────────────┐┌ ask ─────────────────────┐
 │ ▾ Dovetail · open    ││                                              ││ › i to ask about #3's    │
 │   ▾ #3 Fuzzy picker  ││    Which fuzzy matcher for the picker?       ││ report. A read-only      │
@@ -27,7 +27,6 @@ expression: "snapshot_at(100, 30)"
 │                      ││                                              ││                          │
 │                      ││    If non-ASCII paths score badly in         ││                          │
 │                      ││    round 2 [S2], revisit.                    ││                          │
-│                      ││                                              ││                          │
 │                      ││                                              ││                          │
 │                      ││    end · ]s [s · gd · gx · i ask             ││                          │
 │ ⏎ read · o fold      ││                                              ││                          │

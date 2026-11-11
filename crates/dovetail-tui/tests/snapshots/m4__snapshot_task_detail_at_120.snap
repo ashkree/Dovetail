@@ -3,6 +3,7 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 120, 32)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ task · #1 ──────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │ business surface                                                        ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
 │ P1 · Now · in progress · PR #1231                                       ││   ? slice-4  Which route prefix sh… 10:12 │
@@ -30,7 +31,6 @@ expression: "render(&mut app, 120, 32)"
 │                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                         ││         ⎇ dovetail/slice-7                │
 │                                                                         ││ ▾ Next (1)                                │
-│                                                                         ││   ○ idea: eval key flow P2                │
 │ s b p cycle · R relate · a decision · esc back                          ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

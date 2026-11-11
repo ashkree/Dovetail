@@ -3,6 +3,7 @@ source: crates/dovetail-tui/tests/layout_b.rs
 expression: screen
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ inbox item ─────────────────────────────────────────────────────────────┐┌ inbox · needs you (4) ────────────────────┐
 │ ? slice-4  Question  10:14                                              ││   ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:13 │
 │                                                                         ││ ▸ ? slice-4  Should the new route … 10:14 │
@@ -30,7 +31,6 @@ expression: screen
 │                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                         ││         ⎇ dovetail/slice-7                │
 │                                                                         ││ ▾ Next (1)                                │
-│                                                                         ││   ○ idea: eval key flow P2                │
 │ r reply · ⏎ open agent · esc back                                       ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 4 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command

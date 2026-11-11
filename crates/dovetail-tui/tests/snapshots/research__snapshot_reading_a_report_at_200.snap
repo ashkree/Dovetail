@@ -1,9 +1,9 @@
 ---
 source: crates/dovetail-tui/tests/research.rs
-assertion_line: 443
 expression: "render(&mut app, 200, 30)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ task · #1 · report ──────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────────────────────────────────────────┐
 │                                                                                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get… 10:15 │
 │             Per seat or flat?                                                                                            ││   ? slice-4  Which route prefix should the handler use?            10:12 │
@@ -29,7 +29,6 @@ expression: "render(&mut app, 200, 30)"
 │                                                                                                                          ││ ▾ ⚠ get_decision 500 P0                                                  │
 │                                                                                                                          ││   ▾ ⚠ ◆ slice-7  manual                         needs you 388M 85% $0.92 │
 │                                                                                                                          ││         ⎇ dovetail/slice-7                                               │
-│                                                                                                                          ││ ▾ Next (1)                                                               │
 │ j k scroll · gg G · e edit file · / search · esc back                                                                    ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command
