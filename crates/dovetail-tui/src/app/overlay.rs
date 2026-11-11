@@ -1,8 +1,10 @@
 //! Overlays: the pickers and quick capture float over the layout and take every key until they
 //! close.
 
+use std::path::PathBuf;
+
 use crossterm::event::KeyEvent;
-use dovetail_api::{Command, InboxId, TaskChange, TaskId};
+use dovetail_api::{Command, InboxId, ProjectId, TaskChange, TaskId};
 
 use super::App;
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
@@ -26,6 +28,18 @@ pub(super) enum Purpose {
     StartTangent(TaskId),
     /// Attach this tangent to the chosen task of the open project.
     AttachTangent(TaskId),
+    /// Set the chosen profile in the starter recipe `:project add` just wrote (task #31).
+    Profile {
+        /// The project just added.
+        project: ProjectId,
+        /// Its starter recipe.
+        path: PathBuf,
+    },
+}
+
+/// The note when the profile picker keeps the default (task #31).
+fn no_profile_note(path: &std::path::Path) -> String {
+    format!("default profile kept; starter recipe at {}", path.display())
 }
 
 /// What floats over the layout.
@@ -129,7 +143,12 @@ impl App {
         match overlay {
             Overlay::Picker(mut picker, purpose) => match picker.key(event) {
                 PickerOutcome::Pending => self.overlay = Some(Overlay::Picker(picker, purpose)),
-                PickerOutcome::Closed => self.close_overlay(),
+                PickerOutcome::Closed => {
+                    self.close_overlay();
+                    if let Purpose::Profile { path, .. } = purpose {
+                        self.note = Some(no_profile_note(&path));
+                    }
+                }
                 PickerOutcome::Chosen(key) => {
                     self.close_overlay();
                     match (purpose, key) {
@@ -153,6 +172,19 @@ impl App {
                         (Purpose::AttachTangent(tangent), PickerKey::Task(task)) => {
                             self.note = Some(format!("attaching the tangent to #{}", task.0));
                             self.outbox.push(Command::AttachTangent { tangent, task });
+                        }
+                        (Purpose::Profile { project, path }, PickerKey::Profile(profile)) => {
+                            match profile {
+                                Some(profile) => {
+                                    self.note = Some(format!(
+                                        "profile {profile} set in {}",
+                                        path.display()
+                                    ));
+                                    self.outbox
+                                        .push(Command::SetRecipeProfile { project, profile });
+                                }
+                                None => self.note = Some(no_profile_note(&path)),
+                            }
                         }
                         (_, key) => self.choose(key),
                     }
@@ -195,9 +227,31 @@ impl App {
         });
     }
 
+    /// `:project add` wrote a starter recipe (task #31): offer config.toml's profiles, the
+    /// default first. No profiles: just say where the recipe is.
+    pub(super) fn offer_profile(
+        &mut self,
+        project: ProjectId,
+        name: &str,
+        path: PathBuf,
+        profiles: &[String],
+    ) {
+        if profiles.is_empty() {
+            self.note = Some(format!("starter recipe written: {}", path.display()));
+            return;
+        }
+        let items = switcher::profile_items(profiles, &self.theme);
+        self.open_overlay(Overlay::Picker(
+            Picker::new(format!("Profile for {name}"), items),
+            Purpose::Profile { project, path },
+        ));
+    }
+
     /// Opens what a picker row stands for.
     fn choose(&mut self, key: PickerKey) {
         match key {
+            // Only the profile picker has these rows, and it is handled above.
+            PickerKey::Profile(_) => {}
             PickerKey::Agent(id) => self.open_agent_in_main(id),
             PickerKey::Task(id) => self.open_task(id, false),
             PickerKey::Project(id) => self.pick_project(id),

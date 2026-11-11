@@ -628,6 +628,7 @@ impl MockCore {
             Command::Upgrade { .. }
             | Command::RemoveWorktree { .. }
             | Command::RegisterProject { .. }
+            | Command::SetRecipeProfile { .. }
             | Command::StartRound { .. }
             | Command::CloseRound { .. }
             | Command::DropRound { .. }

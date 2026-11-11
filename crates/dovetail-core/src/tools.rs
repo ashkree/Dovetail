@@ -272,14 +272,27 @@ impl Core {
             Tool::AddProject(_) => {
                 let before = self.project.registered().map(|p| p.id.clone());
                 match self.register_project().await {
-                    Ok(project) if before.is_some() => ok(format!(
+                    Ok((project, _)) if before.is_some() => ok(format!(
                         "This folder is already the Dovetail project `{}`.",
                         project.id
                     )),
-                    Ok(project) => {
+                    Ok((project, starter)) => {
+                        // The profile stays commented out: no picker from a tool call (task
+                        // #31, decision #74).
+                        let recipe = match starter {
+                            Some(path) => format!(
+                                " A starter recipe is at `{}`: set `profile` and the worktree \
+                                 setup there.",
+                                path.display()
+                            ),
+                            None => format!(
+                                " Its recipe `{}` was already there and is unchanged.",
+                                self.paths.recipe(&project.id).display()
+                            ),
+                        };
                         let text = format!(
                             "Added `{}` as the Dovetail project `{}`. Its tasks, inbox and this \
-                             conversation are now kept.",
+                             conversation are now kept.{recipe}",
                             project.folder(&self.paths).display(),
                             project.id
                         );

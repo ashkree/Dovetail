@@ -493,6 +493,12 @@ fn every_event_roundtrips() {
         Event::OpeningProject {
             id: ProjectId("market-sizing".into()),
         },
+        Event::RecipeStarted {
+            project: ProjectId("other".into()),
+            name: "other".into(),
+            path: "/home/user/.config/dovetail/projects/other.toml".into(),
+            profiles: vec!["work".into()],
+        },
         Event::DocsListed {
             docs: vec![research::DocEntry {
                 path: "adr/0018-reading-mode-layout.md".into(),
@@ -657,6 +663,10 @@ fn every_command_roundtrips() {
         },
         Command::RegisterProject {
             path: "/home/user/src/other".into(),
+        },
+        Command::SetRecipeProfile {
+            project: ProjectId("other".into()),
+            profile: "work".into(),
         },
         Command::LoadConversation {
             agent: id("slice-a"),

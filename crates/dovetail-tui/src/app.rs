@@ -460,6 +460,15 @@ impl App {
                     Event::AgentUpserted(a) if a.kind == AgentKind::Ask => Some(event.clone()),
                     _ => None,
                 };
+                let recipe = match &event {
+                    Event::RecipeStarted {
+                        project,
+                        name,
+                        path,
+                        profiles,
+                    } => Some((project.clone(), name.clone(), path.clone(), profiles.clone())),
+                    _ => None,
+                };
                 // Every agent is idle and the user said so (ADR 0014): quit without asking, so
                 // the binary can swap the new build in and start it.
                 // Likewise when the user picked another project (B24) and said yes.
@@ -495,6 +504,9 @@ impl App {
                         }
                         if let Some(event) = ask {
                             self.reading_settle(&event);
+                        }
+                        if let Some((project, name, path, profiles)) = recipe {
+                            self.offer_profile(project, &name, path, &profiles);
                         }
                     }
                     ApplyResult::Gap { expected, got } => {

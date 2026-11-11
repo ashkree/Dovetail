@@ -215,3 +215,55 @@ fn a_research_project_has_no_worktree_view() {
         Some("a research project has no repo, so no worktrees")
     );
 }
+
+fn recipe_started(profiles: &[&str]) -> ServerMsg {
+    ServerMsg::Event {
+        seq: 1,
+        event: Event::RecipeStarted {
+            project: ProjectId("business".into()),
+            name: "business".into(),
+            path: "/home/you/.config/dovetail/projects/business.toml".into(),
+            profiles: profiles.iter().map(|p| p.to_string()).collect(),
+        },
+    }
+}
+
+#[test]
+fn a_starter_recipe_offers_the_profiles_default_first() {
+    let mut app = app_with(with_projects(false));
+    app.on_server(recipe_started(&["maveron", "work"]));
+    let screen = screen(&mut app);
+    assert!(screen.contains("Profile for business"), "{screen}");
+    let at = |needle: &str| screen.find(needle).expect(needle);
+    assert!(
+        at(dovetail_tui::switcher::NO_PROFILE) < at("maveron"),
+        "{screen}"
+    );
+    // Enter on the first row keeps the default: nothing to send.
+    app.on_key(enter(), 90);
+    assert!(app.take_commands().is_empty());
+    assert!(app.note().is_some_and(|n| n.contains("business.toml")));
+}
+
+#[test]
+fn picking_a_profile_sends_it_for_the_recipe() {
+    let mut app = app_with(with_projects(false));
+    app.on_server(recipe_started(&["maveron", "work"]));
+    type_keys(&mut app, "work");
+    app.on_key(enter(), 90);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::SetRecipeProfile {
+            project: ProjectId("business".into()),
+            profile: "work".into(),
+        }]
+    );
+}
+
+#[test]
+fn no_profiles_means_no_picker() {
+    let mut app = app_with(with_projects(false));
+    app.on_server(recipe_started(&[]));
+    assert!(!screen(&mut app).contains("Profile for"));
+    assert!(app.note().is_some_and(|n| n.contains("business.toml")));
+}

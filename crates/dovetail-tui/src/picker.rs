@@ -29,6 +29,8 @@ pub enum PickerKey {
     Command(String),
     /// A registered project (the project switcher).
     Project(ProjectId),
+    /// A Claude profile from config.toml, or `None` for the default (after `:project add`).
+    Profile(Option<String>),
 }
 
 /// One row.
@@ -71,7 +73,7 @@ struct Shown {
 
 /// A picker over a fixed list of items.
 pub struct Picker {
-    title: &'static str,
+    title: String,
     items: Vec<PickerItem>,
     query: TextInput,
     shown: Vec<Shown>,
@@ -81,9 +83,9 @@ pub struct Picker {
 
 impl Picker {
     /// A picker over `items`, in the order they should show for an empty query.
-    pub fn new(title: &'static str, items: Vec<PickerItem>) -> Self {
+    pub fn new(title: impl Into<String>, items: Vec<PickerItem>) -> Self {
         let mut picker = Self {
-            title,
+            title: title.into(),
             items,
             query: TextInput::line(""),
             shown: Vec::new(),

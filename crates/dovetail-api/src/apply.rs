@@ -126,7 +126,8 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         | Event::TerminalReturned { .. }
         | Event::LendTerminal
         | Event::UpgradeRestarting
-        | Event::OpeningProject { .. } => {}
+        | Event::OpeningProject { .. }
+        | Event::RecipeStarted { .. } => {}
     }
     ApplyResult::Applied
 }
