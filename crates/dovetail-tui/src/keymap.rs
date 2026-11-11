@@ -279,8 +279,10 @@ pub const BINDINGS: &[Binding] = &[
     // Conversation: reading keys (the brief's "Reading keys").
     bind(N, CONVERSATION, "]]", Action::NextTurn),
     bind(N, CONVERSATION, "[[", Action::PrevTurn),
-    bind(N, CONVERSATION, "zc", Action::FoldTurn),
-    bind(N, CONVERSATION, "zo", Action::UnfoldTurn),
+    bind(N, CONVERSATION, "zc", Action::FoldEntry),
+    bind(N, CONVERSATION, "zo", Action::UnfoldEntry),
+    bind(N, CONVERSATION, "zC", Action::FoldTurn),
+    bind(N, CONVERSATION, "zO", Action::UnfoldTurn),
     // The chat bar and the conversation above it are two stops: `Ctrl-k` goes up to read with
     // the draft kept, `Ctrl-j` (or `i`) comes back down to it. `PageUp`/`PageDown` scroll
     // without leaving the chat bar.
@@ -301,8 +303,10 @@ pub const BINDINGS: &[Binding] = &[
     // Its chat bar takes the conversation's Insert-mode keys (`App::input_key`).
     bind(N, SIDE_PANEL, "]]", Action::NextTurn),
     bind(N, SIDE_PANEL, "[[", Action::PrevTurn),
-    bind(N, SIDE_PANEL, "zc", Action::FoldTurn),
-    bind(N, SIDE_PANEL, "zo", Action::UnfoldTurn),
+    bind(N, SIDE_PANEL, "zc", Action::FoldEntry),
+    bind(N, SIDE_PANEL, "zo", Action::UnfoldEntry),
+    bind(N, SIDE_PANEL, "zC", Action::FoldTurn),
+    bind(N, SIDE_PANEL, "zO", Action::UnfoldTurn),
     bind(N, SIDE_PANEL, "<C-j>", Action::EnterInsert),
     bind(Mode::Insert, SIDE_PANEL, "<PageDown>", Action::PageDown),
     bind(Mode::Insert, SIDE_PANEL, "<PageUp>", Action::PageUp),

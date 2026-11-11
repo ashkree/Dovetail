@@ -1,0 +1,28 @@
+---
+source: crates/dovetail-tui/tests/fold_cursor.rs
+expression: "render(&mut app, 80, 24)"
+---
+ folder /src/business
+┌ coordinator · ○ idle · 1.2G · $3.10 ─┐┌ inbox · needs you (3) ───────────────┐
+│                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
+│                                      ││   ? slice-4  Which route pref… 10:12 │
+│   ── You · 10:14 ─────────────────   ││   ✓ slice-4  Handler wired; t… 10:09 │
+│                                      ││                                      │
+│   what changed?                      ││                                      │
+│                                      ││                                      │
+│                                      ││ y allow · d deny · r reply · x dism… │
+│  ▎── coordinator · 10:14 ─────────   │└──────────────────────────────────────┘
+│                                      │┌ tasks · business ────────────────────┐
+│  ▎Two things.                        ││ ○ ◆ coordinator      idle 1.2G $3.10 │
+│                                      ││ ▾ Now (2)                            │
+│                                      ││ ▾ ⚠ business surface P1     PR #1231 │
+│                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│                                      ││         ⎇ dovetail/slice-4           │
+│                                      ││         ✓ write route tests          │
+│                                      ││         ◐ wire handler to registry   │
+│                                      ││         ○ update OpenAPI spec ⊘ blo… │
+└──────────────────────────────────────┘│       ✓ ◇ rebase          done $0.21 │
+┌ chat › coordinator ──────────────────┐│       ◐ ◇ explore c… 12 tools · Grep │
+│   › i or ^j to type · ]] [[ turns…   ││ ⏎ open · o fold · dd archive         │
+└──────────────────────────────────────┘└──────────────────────────────────────┘
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ ·… i chat · ␣ss switch · : command
