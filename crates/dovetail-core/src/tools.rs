@@ -372,14 +372,13 @@ impl Core {
     /// `archived`. A task moved into Now is marked unseen, so the user notices it.
     async fn update_task_tool(&mut self, update: UpdateTask) -> SocketResponseBody {
         let id = update.id;
-        let was_in_now;
-        match self.task(id).await {
+        let was_in_now = match self.task(id).await {
             None => return error(format!("there is no task #{}", id.0)),
             Some(t) if t.status == TaskStatus::Archived => {
                 return error(format!("task #{} is archived", id.0));
             }
-            Some(t) => was_in_now = t.bucket == Some(dovetail_api::Bucket::Now),
-        }
+            Some(t) => t.bucket == Some(dovetail_api::Bucket::Now),
+        };
         let mut patch = Vec::new();
         if let Some(status) = update.status {
             patch.push(TaskChange::Status(status));
