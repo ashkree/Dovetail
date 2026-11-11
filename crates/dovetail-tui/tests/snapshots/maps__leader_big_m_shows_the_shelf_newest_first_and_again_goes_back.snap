@@ -25,4 +25,4 @@ expression: "render(&mut app, 120, 24)"
 │                                                                         ││         ◐ Sort by P-level within a bucket │
 │ ⏎ open in the outline · / search · Esc back                             ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%                           i chat · ␣ss switch · : command
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%                               ⏎ open · ⎋ back · : command

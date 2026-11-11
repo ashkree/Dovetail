@@ -31,4 +31,4 @@ expression: "render(&mut app, 80, 30)"
 │                                      ││         ⎇ dovetail/slice-7           │
 │ j k scroll · e edit · esc back       ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ ·… i chat · ␣ss switch · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx… s status · : command

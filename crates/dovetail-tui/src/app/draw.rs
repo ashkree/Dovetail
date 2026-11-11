@@ -10,20 +10,19 @@ use ratatui::widgets::Paragraph;
 
 use ratatui::widgets::{Block, Clear};
 
+use super::App;
 use super::overlay::{Overlay, Purpose};
-use super::{App, HINTS, HINTS_SHORT};
 
-/// Hints on the right of the status bar in reading mode (ADR 0018).
 /// The coordinator context fill above which the status bar hints at `:fresh`.
 const FRESH_HINT_PCT: u8 = 80;
 
-const READING_HINTS: &str = "]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave";
-const READING_HINTS_SHORT: &str = "gd open · gx browser · i ask · ⎋ leave";
 use crate::buffers::{self, InputTarget, ViewCx, spread_fit};
 use crate::capture::{self, Capture};
 use crate::fmt;
+use crate::help;
 use crate::keymap::Key;
 use crate::mode::Mode;
+use crate::picker::{PickerItem, PickerKey};
 use crate::region::{RegionId, layout, reading_layout};
 use crate::switcher;
 use crate::tabs;
@@ -86,6 +85,7 @@ impl App {
         if let Some(area) = areas.prompt {
             self.draw_prompt(frame, area);
         }
+        self.draw_which_key(frame, areas.status);
         self.draw_overlay(frame);
     }
 
@@ -115,7 +115,18 @@ impl App {
         if let Some(area) = areas.prompt {
             self.draw_prompt(frame, area);
         }
+        self.draw_which_key(frame, areas.status);
         self.draw_overlay(frame);
+    }
+
+    /// The which-key popup, while a half-typed sequence waits (task #19): bottom-right, above the
+    /// status bar, listing what can come next.
+    fn draw_which_key(&self, frame: &mut Frame, status: Rect) {
+        let rows = self.which_key();
+        if !rows.is_empty() {
+            let pending = pending_label(self.resolver.pending());
+            help::render_which_key(frame, status, &pending, &rows, &self.theme);
+        }
     }
 
     /// The picker or quick-capture box, floating over everything else.
@@ -133,6 +144,16 @@ impl App {
                     (Some(item), Purpose::Profile { path, .. }) => (
                         "Profile",
                         switcher::profile_preview(&item.key, path, width, &self.theme),
+                    ),
+                    (
+                        Some(PickerItem {
+                            key: PickerKey::Action(action),
+                            ..
+                        }),
+                        _,
+                    ) => (
+                        "Keys",
+                        help::keys_preview(&self.keymap, &self.scopes(), *action, &self.theme),
                     ),
                     (Some(item), _) => {
                         switcher::preview(&self.snap, &item.key, width, &self.theme, &self.tz)
@@ -430,14 +451,14 @@ impl App {
         }
         let rights = match &self.note {
             Some(note) => vec![vec![Span::styled(note.clone(), theme.fg(theme.needs_you))]],
-            None if self.reading_mode() => vec![
-                vec![Span::styled(READING_HINTS, theme.dim())],
-                vec![Span::styled(READING_HINTS_SHORT, theme.dim())],
-            ],
-            None => vec![
-                vec![Span::styled(HINTS, theme.dim())],
-                vec![Span::styled(HINTS_SHORT, theme.dim())],
-            ],
+            // The keys of the view in focus, read from the keymap (`help::view_hints`).
+            None => help::hint_variants(
+                &self.keymap,
+                self.mode,
+                self.regions.focused_buffer(),
+                &self.scopes(),
+                theme,
+            ),
         };
         frame.render_widget(
             Paragraph::new(spread_fit(left, &rights, usize::from(area.width))),

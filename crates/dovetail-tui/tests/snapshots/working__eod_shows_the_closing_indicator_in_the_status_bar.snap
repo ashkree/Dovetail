@@ -2,4 +2,4 @@
 source: crates/dovetail-tui/tests/working.rs
 expression: bar
 ---
- NORMAL   ⠦ Closing the day… 12s  business · 4 tasks · 3 agents · 3… i chat · ␣ss switch · : command
+ NORMAL   ⠦ Closing the day… 12s  business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · c… ⏎ open · : command

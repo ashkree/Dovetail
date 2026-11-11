@@ -41,4 +41,4 @@ expression: "render(&mut app, 120, 40)"
 │                                                                         ││         ⎇ dovetail/picker                 │
 │ ␣v map mode · f next flow · ]] [[ walk the flow · / search · Esc shelf  ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%                           i chat · ␣ss switch · : command
+ NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%       ␣v map mode · o fold · f flow · ]] step · : command

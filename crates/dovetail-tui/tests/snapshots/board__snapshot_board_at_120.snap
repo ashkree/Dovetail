@@ -35,4 +35,4 @@ expression: "render(&mut app, 120, 34)"
 │                                                                         ││ ▸ Later (1)                               │
 │ j/k card · ⇥ column · H/L move · < > reorder · ⏎ open · a add           ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                           i chat · ␣ss switch · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%        ⇥ column · H L move card · < > reorder · : command

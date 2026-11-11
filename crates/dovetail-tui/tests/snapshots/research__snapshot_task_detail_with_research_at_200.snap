@@ -51,4 +51,4 @@ expression: "render(&mut app, 200, 50)"
 │                                                                                                                          ││                                                                          │
 │ j k scroll · ⇥ research row · ⏎ read · e edit/notes · s b p · R relate · a decision · esc back                           ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                                                                        i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                                                                             s status · e notes · a decide · R relate · ⎋ back · : command

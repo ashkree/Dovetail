@@ -41,4 +41,4 @@ expression: "render(&mut reading_app(), 80, 40)"
 ┌ chat › coordinator ──────────────────┐│                                      │
 │   › i or ^j to type · ]] [[ turns…   ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ ·… i chat · ␣ss switch · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 6… i chat · : command

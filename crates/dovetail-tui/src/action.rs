@@ -148,6 +148,9 @@ pub enum Action {
     AskAboutReport,
     /// Close the open report's Ask session (`dd` in Ask): its session stops.
     CloseAsk,
+    /// List every key and `:` command with a description (`:keys`); choosing one runs it when it
+    /// can run from here.
+    ShowKeys,
     /// A key that does nothing in its scope, on purpose, so a global binding on the same key
     /// does not run there (`i` in the library).
     Ignore,
@@ -307,4 +310,237 @@ pub enum Action {
     InboxDismiss,
     /// Open the item in full (a finished turn: its agent); from the item, open its agent.
     InboxOpen,
+}
+
+/// What an action is for: the which-key popup and `:keys` group by it, in this order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Group {
+    /// Moving the cursor and the focus.
+    Move,
+    /// Talking to an agent and reading a conversation.
+    Chat,
+    /// Switching what the main region shows.
+    Views,
+    /// Starting, switching and steering agents.
+    Agents,
+    /// The task tree, the board and the task detail.
+    Tasks,
+    /// Projects.
+    Projects,
+    /// Reading mode, citations and tangents.
+    Reading,
+    /// Maps.
+    Maps,
+    /// Answering the inbox.
+    Inbox,
+    /// The app itself: quitting, the day, upgrades, help.
+    App,
+}
+
+impl Group {
+    /// The heading shown for the group.
+    pub fn name(self) -> &'static str {
+        match self {
+            Group::Move => "Move",
+            Group::Chat => "Chat",
+            Group::Views => "Views",
+            Group::Agents => "Agents",
+            Group::Tasks => "Tasks",
+            Group::Projects => "Projects",
+            Group::Reading => "Reading",
+            Group::Maps => "Maps",
+            Group::Inbox => "Inbox",
+            Group::App => "App",
+        }
+    }
+}
+
+/// The registry: one line per action with its group and one-line description. [`Action::ALL`] and
+/// the exhaustive `match` behind [`Action::describe`] both come from these lines, so an action
+/// added to the enum without a line here does not compile.
+macro_rules! registry {
+    ($($variant:ident: $group:ident, $text:literal;)*) => {
+        impl Action {
+            /// Every action, in registry order (`DebugPanic` is left out: it only exists in
+            /// debug builds and is not for users).
+            pub const ALL: &'static [Action] = &[$(Action::$variant),*];
+
+            fn entry(self) -> (Group, &'static str) {
+                match self {
+                    $(Action::$variant => (Group::$group, $text),)*
+                    #[cfg(debug_assertions)]
+                    Action::DebugPanic => (Group::App, "panic on purpose (debug builds)"),
+                }
+            }
+        }
+    };
+}
+
+registry! {
+    MoveDown: Move, "move down one row";
+    MoveUp: Move, "move up one row";
+    PageDown: Move, "scroll down a page";
+    PageUp: Move, "scroll up a page";
+    GoTop: Move, "jump to the top";
+    GoBottom: Move, "jump to the bottom";
+    FocusLeft: Move, "focus the conversation (left)";
+    FocusRight: Move, "focus the side column (right)";
+    FocusDown: Move, "focus the region below";
+    FocusUp: Move, "focus the region above";
+    FocusInbox: Move, "focus the inbox";
+    EnterCommand: App, "type a : command";
+    Quit: App, "quit (asks first while a turn runs)";
+    ForceQuit: App, "quit without asking";
+    QuitOnRepeat: App, "quit: press twice";
+    EndOfDay: App, "close the day: handoff and journal";
+    FreshStart: App, "fresh coordinator with a handoff";
+    Upgrade: App, "build the next Dovetail (--local: this checkout)";
+    StartRound: Reading, "open or close a research round on a task";
+    ListResearch: Views, "list tasks that have research";
+    EnterInsert: Chat, "chat with the agent in view";
+    FocusCoordinator: Agents, "show the coordinator";
+    AlternateAgent: Agents, "back to the previous agent";
+    NextTurn: Chat, "next turn";
+    PrevTurn: Chat, "previous turn";
+    FoldTurn: Chat, "fold the turn under the cursor";
+    UnfoldTurn: Chat, "unfold the turn, long replies in full";
+    FoldEntry: Chat, "cut the long entry to its first lines";
+    UnfoldEntry: Chat, "show the entry in full";
+    LeaveChatBar: Chat, "leave the chat bar, keep the draft";
+    PasteClipboard: Chat, "paste the clipboard (image or text)";
+    DropLastAttachment: Chat, "delete the image marker before the cursor";
+    ToggleFocusMode: Views, "focus mode: hide the side column";
+    QuickCapture: Tasks, "capture a task";
+    Search: Move, "search in this view";
+    SearchNext: Move, "next search match";
+    SearchPrev: Move, "previous search match";
+    PickAgent: Agents, "switch agent";
+    NewSideChat: Agents, "ask a side question";
+    ToggleSidePanel: Views, "show or hide the side chats";
+    NextSideChat: Chat, "next side chat";
+    PrevSideChat: Chat, "previous side chat";
+    CloseSideChat: Chat, "close this side chat";
+    NewTangent: Reading, "ask a tangent (a question outside this project)";
+    AttachTangent: Reading, "attach the tangent to a task";
+    ShowTangents: Reading, "list tangents to triage";
+    TangentOpen: Reading, "read the tangent's latest answer";
+    TangentFile: Reading, "file the tangent into a project";
+    TangentStart: Reading, "start a task from the tangent";
+    TangentDrop: Reading, "drop the tangent";
+    ToggleReadingMode: Views, "reading mode: library, reader and Ask";
+    LeaveReadingMode: Reading, "leave reading mode";
+    LibraryOpen: Reading, "open the library row";
+    LibraryToggleFold: Reading, "fold or unfold the library row";
+    BrowseProjectLibrary: Reading, "browse another project's library";
+    NextCitation: Reading, "next citation";
+    PrevCitation: Reading, "previous citation";
+    OpenCitation: Reading, "open the citation's finding or source";
+    BrowseCitation: Reading, "open the citation's web page";
+    ReaderBack: Reading, "back to the previous document";
+    AskAboutReport: Reading, "ask about the open report";
+    CloseAsk: Reading, "close this Ask session";
+    ShowKeys: App, "every key and command (this list)";
+    Ignore: App, "does nothing here, on purpose";
+    PickCommand: Chat, "pick a slash command or skill";
+    PickAny: Move, "find any task, agent or inbox item";
+    ShowActivity: Views, "activity feed";
+    ShowMessages: Views, "message timeline";
+    ShowBoard: Views, "task board";
+    ShowWorktrees: Views, "worktrees";
+    ShowMaps: Views, "maps";
+    BackToConversation: Views, "back to the conversation";
+    FeedOpen: Views, "open the item's agent";
+    NewSlice: Agents, "start a slice (name, then brief)";
+    Interrupt: Agents, "interrupt the agent's turn";
+    CyclePermissionMode: Agents, "cycle permission mode: auto, acceptEdits, manual";
+    TakeOver: Agents, "take the session over in this terminal";
+    SwitchProject: Projects, "switch project";
+    RegisterProject: Projects, "register this folder as a project";
+    NewProject: Projects, "create a project (--research for a research one)";
+    TaskEditNotes: Tasks, "edit the task's notes in $EDITOR";
+    TaskRelate: Tasks, "relate to another task";
+    TaskAddDecision: Tasks, "add to the task's decision log";
+    ResearchOpen: Tasks, "read the research row";
+    ResearchNext: Tasks, "next research row";
+    ResearchPrev: Tasks, "previous research row";
+    TreeOpen: Tasks, "open the agent or task";
+    TreeToggleFold: Tasks, "fold or unfold";
+    TaskEditTitle: Tasks, "edit the task's title";
+    TaskCycleStatus: Tasks, "cycle status: todo, in progress, done";
+    TaskCycleBucket: Tasks, "cycle bucket";
+    TaskCyclePLevel: Tasks, "cycle P-level";
+    TreeMoveDown: Tasks, "move the task down within Now";
+    TreeMoveUp: Tasks, "move the task up within Now";
+    TaskArchive: Tasks, "archive the task";
+    BoardColumnLeft: Tasks, "board: column to the left";
+    BoardColumnRight: Tasks, "board: column to the right";
+    BoardMoveCardLeft: Tasks, "board: move the card to the previous status";
+    BoardMoveCardRight: Tasks, "board: move the card to the next status";
+    BoardCardUp: Tasks, "board: move the card up";
+    BoardCardDown: Tasks, "board: move the card down";
+    BoardOpen: Tasks, "board: open the card's task";
+    WorktreeOpen: Views, "worktrees: open the slice conversation";
+    WorktreeEdit: Views, "worktrees: open in the editor";
+    WorktreeCopyPath: Views, "worktrees: copy the path";
+    WorktreeRemove: Views, "worktrees: remove (archives the slice)";
+    MapOpen: Maps, "open the map";
+    MapToggleFold: Maps, "fold or unfold the group";
+    MapNextFlow: Maps, "next flow";
+    MapNextStep: Maps, "next step of the flow";
+    MapPrevStep: Maps, "previous step of the flow";
+    MapMode: Maps, "MAP mode: the map full screen";
+    LeaveMapMode: Maps, "leave MAP mode";
+    MapSelectLeft: Maps, "select the node to the left";
+    MapSelectDown: Maps, "select the node below";
+    MapSelectUp: Maps, "select the node above";
+    MapSelectRight: Maps, "select the node to the right";
+    MapFollow: Maps, "follow the first outgoing connection";
+    MapFollowBack: Maps, "follow the first incoming connection";
+    MapDrillIn: Maps, "drill into the group";
+    MapDrillOut: Maps, "back up a level";
+    MapZoomIn: Maps, "zoom in";
+    MapZoomOut: Maps, "zoom out";
+    MapZoomFit: Maps, "fit the whole map";
+    MapPanLeft: Maps, "pan left";
+    MapPanDown: Maps, "pan down";
+    MapPanUp: Maps, "pan up";
+    MapPanRight: Maps, "pan right";
+    MapToggleOutline: Maps, "show or hide the outline";
+    MapRedraw: Maps, "ask for the map to be redrawn";
+    InboxAllow: Inbox, "allow once";
+    InboxAllowAlways: Inbox, "allow and add the offered rule";
+    InboxDeny: Inbox, "deny";
+    InboxDenyWithReason: Inbox, "deny with a reason";
+    InboxReply: Inbox, "reply";
+    InboxDismiss: Inbox, "dismiss";
+    InboxOpen: Inbox, "open the item in full";
+}
+
+impl Action {
+    /// One line saying what the action does.
+    pub fn describe(self) -> &'static str {
+        self.entry().1
+    }
+
+    /// The group the action is listed under.
+    pub fn group(self) -> Group {
+        self.entry().0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_action_has_a_description_and_is_listed_once() {
+        let mut seen = std::collections::HashSet::new();
+        for action in Action::ALL {
+            assert!(
+                !action.describe().trim().is_empty(),
+                "{action:?} has no description"
+            );
+            assert!(seen.insert(*action), "{action:?} is listed twice");
+        }
+    }
 }

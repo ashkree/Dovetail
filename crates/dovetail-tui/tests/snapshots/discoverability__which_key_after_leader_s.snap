@@ -1,0 +1,10 @@
+---
+source: crates/dovetail-tui/tests/discoverability.rs
+expression: "popup_text(&CONVERSATION, \"<leader>s\")"
+---
+[Agents] s    switch agent
+[Agents] n    start a slice (name, then brief)
+[Agents] q    ask a side question
+[Agents] x    interrupt the agent's turn
+[Agents] m    cycle permission mode: auto, acceptEdits, manual
+[Agents] t    take the session over in this terminal

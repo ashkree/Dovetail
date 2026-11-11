@@ -313,6 +313,8 @@ pub fn preview(
         ),
         // Previewed by `profile_preview`, which knows the recipe path.
         PickerKey::Profile(_) => ("Profile", Vec::new()),
+        // Previewed by `help::keys_preview`, which knows the keymap.
+        PickerKey::Action(_) => ("Keys", Vec::new()),
         PickerKey::Inbox(id) => (
             "Inbox item",
             snap.inbox

@@ -40,7 +40,7 @@ use crate::canvas::view::CellPx;
 use crate::canvas::{PaintJob, Painted};
 use crate::command;
 use crate::input::{InputOutcome, TextInput};
-use crate::keymap::{Key, Keymap, Resolved, Resolver, Scope};
+use crate::keymap::{Key, Keymap, Resolved, Resolver};
 use crate::mode::Mode;
 use crate::region::{BufferKind, RegionId, Regions};
 use crate::theme::Theme;
@@ -48,10 +48,6 @@ use overlay::Overlay;
 
 /// How long the "Press Ctrl-C again to exit" hint waits for the second press.
 pub const EXIT_CONFIRM_MS: u64 = 2000;
-
-/// Hints on the right of the status bar.
-const HINTS: &str = "i chat · ␣ss switch · ␣t capture · / search · ␣n inbox · : command";
-const HINTS_SHORT: &str = "i chat · ␣ss switch · : command";
 
 /// A signal the event loop caught.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -332,10 +328,28 @@ impl App {
     /// When the unfinished key sequence gives up, on the loop's monotonic clock. `None` when
     /// nothing is pending, so an idle UI has no deadline and sleeps.
     pub fn next_deadline_ms(&self) -> Option<u64> {
-        match (self.resolver.deadline_ms(), self.exit_armed_until) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
+        [
+            self.resolver.deadline_ms(),
+            self.resolver.hint_deadline_ms(),
+            self.exit_armed_until,
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+    }
+
+    /// The keys the which-key popup lists, when it is open: what can follow the pending keys in
+    /// the focused buffer's scope. Empty when it is closed.
+    pub fn which_key(&self) -> Vec<crate::help::WhichKeyRow> {
+        if !self.resolver.hint_shown() || self.overlay.is_some() {
+            return Vec::new();
         }
+        crate::help::which_key(
+            &self.keymap,
+            self.mode,
+            &self.scopes(),
+            self.resolver.pending(),
+        )
     }
 
     /// The loop's deadline passed: run an ambiguous shorter binding or drop the sequence.
@@ -343,6 +357,15 @@ impl App {
         if self.exit_armed_until.is_some_and(|d| d <= now_ms) {
             self.exit_armed_until = None;
             self.note = None;
+            self.dirty = true;
+        }
+        // One shot: the popup opens and the hint deadline is gone until the next key.
+        if self
+            .resolver
+            .hint_deadline_ms()
+            .is_some_and(|d| d <= now_ms)
+        {
+            self.resolver.show_hint();
             self.dirty = true;
         }
         if self.resolver.deadline_ms().is_some_and(|d| d <= now_ms) {
@@ -710,7 +733,7 @@ impl App {
 
     /// Normal and MAP mode keys go through the keymap; MAP mode has its own rows.
     fn normal_key(&mut self, event: KeyEvent, mono_ms: u64) {
-        let scopes = [Scope::Buffer(self.regions.focused_buffer()), Scope::Global];
+        let scopes = self.scopes();
         let resolved = self.resolver.feed(
             &self.keymap,
             self.mode,
@@ -1146,6 +1169,7 @@ impl App {
                 None => self.note = Some("no previous agent".into()),
             },
             Action::ListResearch => self.open_research_list(),
+            Action::ShowKeys => self.open_keys_picker(),
             Action::ToggleFocusMode => self.toggle_focus_mode(),
             Action::ToggleReadingMode => self.toggle_reading_mode(),
             Action::LeaveReadingMode => self.leave_reading_mode(),

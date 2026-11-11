@@ -31,6 +31,8 @@ pub enum PickerKey {
     Project(ProjectId),
     /// A Claude profile from config.toml, or `None` for the default (after `:project add`).
     Profile(Option<String>),
+    /// An action in the `:keys` list.
+    Action(crate::action::Action),
 }
 
 /// One row.

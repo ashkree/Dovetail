@@ -25,4 +25,4 @@ expression: "render(&mut app, 100, 24)"
 │                                                          ││       ◐ ◇ explore c… 12 tools · Grep │
 │ ⏎ open agent · / search · esc back                       ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%       i chat · ␣ss switch · : command
+ NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%           ⏎ open · ⎋ back · : command
