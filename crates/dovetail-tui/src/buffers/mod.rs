@@ -10,6 +10,7 @@ mod map_canvas;
 mod map_outline;
 mod map_shelf;
 pub mod task_detail;
+mod task_research;
 mod tree;
 mod worktrees;
 
@@ -92,6 +93,15 @@ pub enum Effect {
     OpenInboxItem(InboxId),
     /// Fetch a map and show it in the outline.
     OpenMap(MapId),
+    /// Fetch a research document of a task and read it in the task detail.
+    OpenResearch {
+        /// The task.
+        task: TaskId,
+        /// Which document.
+        what: dovetail_api::research::ResearchWhat,
+        /// Short name for the pane title.
+        title: String,
+    },
     /// Open the prompt row.
     StartInput {
         /// What the text is for.

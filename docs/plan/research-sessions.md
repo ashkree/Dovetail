@@ -113,10 +113,10 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
 - **Prompt (copy-paste):**
   > Implement milestone R3 of `docs/research.md` §10. In `dovetail-tui` (depends only on `dovetail-api`) list a task's report, rounds, findings and sources in the task detail, open one with `Enter` in a read-only buffer using the existing reading column and markdown renderer (`render/{markdown,reading_column}.rs`), colour `[Fn]`/`[Sn]` citation markers, `e` hands the file to nvim through the existing editor hand-off (core side). No new layout, no new keys beyond the task-detail scope. Also add `:research` to list research tasks. Add the actions to the keymap table (`keymap.rs`) in the `TaskDetail` scope only; do not touch `<leader>` bindings. Snapshot tests at 80, 120, 200 columns.
 - **Validation:**
-  - [ ] Every stored artifact (report, brief, finding, source) opens from the task detail and renders in the reading column
-  - [ ] `[n]` markers are coloured; `e` opens the real file in nvim and returns cleanly
-  - [ ] No change to Layout B, no new global keys
-  - [ ] `scripts/check.sh` passes
+  - [x] Every stored artifact (report, brief, finding, source) opens from the task detail and renders in the reading column (`dovetail-tui/tests/research.rs`: `every_row_opens_its_document_in_the_reading_view` covers all four kinds; snapshots at 80, 120, 200; the mock round trip in `dovetail-mock/tests/mock.rs`). Report: shown as "no report yet" when `report_ms` is `None`; not yet tried against M18's real report
+  - [ ] `[n]` markers are coloured (done: `the_reading_view_colours_citation_markers_and_nothing_else`, `render::citations` tests); `e` opens the real file in nvim and returns cleanly (the UI hands over `Command::OpenEditor { path }` with the document's absolute path, tested in `e_hands_the_documents_file_to_the_editor…`, through the existing, already tested lend-and-reclaim of the terminal; an interactive run in a real terminal is left to the user: `dovetail --mock` has no editor)
+  - [x] No change to Layout B, no new global keys (the keymap gains one row, `<CR>` in the `DETAIL` scope; `:research` is a command; no `<leader>` binding touched)
+  - [x] `scripts/check.sh` passes
 
 ### S8 — Research role-prompt reliability (extends S6)
 - **Model:** Sonnet — runs trials; the user reviews

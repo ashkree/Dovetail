@@ -661,6 +661,17 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
 - **Done when:** the M17 validation list in `docs/plan/research-sessions.md`.
 - **Tests:** `dovetail-core/tests/research.rs` (both S7 recordings through `FakeDriver`, a page fetched twice, restart with files rebuilt, the opt-in folder, no round), `research::capture` unit tests (quick findings, WebSearch links, the output file), `dovetail-tui/tests/research.rs` (`:round`).
 
+### R3. Rough reading (TUI) — M19 of `docs/plan/research-sessions.md`
+- **Scope:** `docs/research.md` §9–§10. Read a task's research inside Dovetail: the report, round briefs, findings and sources, rendered in the existing reading column. No new layout, no new buffer kind and no `<leader>` change: it all lives in the task detail (`BufferKind::TaskDetail`).
+- **Built (branch `dovetail/m19-research-reading`):**
+  - `buffers/task_research.rs`: the "Research" section of the task detail (counts, report row or "no report yet", each round with its brief and findings, quick findings, sources) from `Snapshot::research` plus the listing the UI asks for with `LoadResearch { Listing }` when a task with research is opened (and again on `ResearchUpserted` for the open task).
+  - `buffers/task_detail.rs`: with research rows present `j`/`k` move a selection between them (the view follows); `PageUp`/`PageDown`/`gg`/`G` scroll or jump; `Enter` (`Action::ResearchOpen`, `DETAIL` scope only) sends `LoadResearch { what }` and, when `ResearchLoaded` answers, the same buffer shows the document through `render/markdown.rs` in `render/reading_column.rs` (120 columns, centred, solid background follows `<leader>B`). `Esc` goes back to the detail first, then out as before. In the document, `e` (already bound in the `DETAIL` scope) hands the file to the editor through `Effect::OpenEditor` / `Command::OpenEditor`, the existing core hand-off; a listed-but-not-cached source says it has no file.
+  - `render/citations.rs`: `[3]`, `[F3]`, `[S2]` and lists of them (`[F1, S2]`) coloured with the new `Theme::cite`, also when the renderer splits a marker over spans.
+  - `:research` (`Action::ListResearch`): a picker over the tasks that have research; choosing one opens its detail.
+  - Mock: task #3 is seeded with two rounds, three findings (one quick), three sources and a report, and `LoadResearch` is answered (`dovetail-mock/src/research.rs`), so `dovetail --mock` shows everything.
+- **Done when:** the M19 validation list in `docs/plan/research-sessions.md`.
+- **Tests:** `dovetail-tui/tests/research.rs` (rows listed, every artifact kind opens, coloured markers, `Esc`, `e` hand-off, `:research`, snapshots of the detail and of a report at 80, 120 and 200 columns), `render::citations` unit tests, `dovetail-mock/tests/mock.rs` (every listed document loads).
+
 ### Daily-driver fixes (after M10)
 Fixes from the first days of building Dovetail inside Dovetail, one slice and PR each, all merged on 2026-11-09. They come ahead of M11 and count towards M16's "fixing what hurts"; no milestone box is ticked by them.
 
