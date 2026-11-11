@@ -564,6 +564,22 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
             .iter()
             .any(|i| i.kind == InboxKind::NewTangents { count: 1 })
     });
+    app.quit();
+
+    // A restart keeps the open item (not raised twice).
+    let db = Db::open(&paths, None).expect("registry");
+    let again = projects::open(&db, &project.id).expect("open");
+    drop(db);
+    let mut app = App::start(&fake, &paths, again);
+    app.drain(Duration::from_millis(100));
+    let items: Vec<_> = app
+        .snap
+        .inbox
+        .iter()
+        .filter(|i| matches!(i.kind, InboxKind::NewTangents { .. }))
+        .collect();
+    assert_eq!(items.len(), 1, "{:?}", app.snap.inbox);
+    assert_eq!(items[0].kind, InboxKind::NewTangents { count: 1 });
     app.send(Command::StartFromTangent {
         tangent: two,
         project: ProjectId(project.id.clone()),

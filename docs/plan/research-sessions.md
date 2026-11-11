@@ -2,7 +2,7 @@
 
 Written 2026-11-11 against `main` at `cf15fe2`. Spec: [`docs/research.md`](../research.md); decisions: ADRs [0015](../adr/0015-research-capture-rounds-reports.md) to [0018](../adr/0018-reading-mode-layout.md). Source of truth for v1 order of work stays `docs/implementation-plan.md`; `docs/plan/v1-status.md` is the user-facing summary of the same ground and was written the evening before this file.
 
-**Update 2026-11-11 (grill with the user):** M17 to M21 and the follow-ups are built and merged (M17 to M19 earlier; M20 PR #55, M21 PR #56; follow-ups PRs #52 to #54, #57, #58). G1 to G3 are decided. Only M22 (tangents) and S8 are left. Sections 1 to 3 below are the state at the time of writing, kept as the record; the M22 prompt is rewritten.
+**Update 2026-11-11 (grill with the user):** M17 to M21 and the follow-ups are built and merged (M17 to M19 earlier; M20 PR #55, M21 PR #56; follow-ups PRs #52 to #54, #57, #58). G1 to G3 are decided. M22 (tangents) is built too (`dovetail/m22-tangents`); only S8 is left. Sections 1 to 3 below are the state at the time of writing, kept as the record; the M22 prompt is rewritten.
 
 ## 1. Status report
 
@@ -156,7 +156,7 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
   - [x] `scripts/check.sh` passes
 
 ### M22 — R6 Tangents (ADR 0017, amended 2026-11-11)
-- **Status:** not built. The side panel it needs (PR #52, `<leader>?`), the research-only project kind (PR #54) and the unfiled-findings flow (PR #53) exist.
+- **Status:** built (branch `dovetail/m22-tangents`; `docs/implementation-plan.md` §6 "R6"). It used the side panel (PR #52, `<leader>?`), the research-only project kind (PR #54) and the R1 capture pipeline.
 - **Model:** Opus — a built-in project that is always present, plus the morning item
 - **Depends on:** M21 (done), G3 (decided)
 - **What the merged PRs say tangents need:**
@@ -166,11 +166,11 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
 - **Prompt (copy-paste):**
   > Implement milestone R6 of `docs/research.md` §10 and ADR 0017 as amended 2026-11-11. **Tangents is a built-in research project:** created on first start with a fixed id (`tangents`), always present, pinned last in the project switcher with its own marker, cannot be archived (refuse `dd`, `tasks_archive` and the registry removal). It uses the research-only kind from PR #54, so its files are under `<data>/projects/tangents/` and there is no `tangents` table or `tangents.db`. A tangent is a task in its Unsorted list; its question, answer and sources are captured as in R1 (the side chat's answer is stored as a finding on that task). `<leader>?`, `<leader>sq` and `:ask` stay as built; add a way to ask a tangent (a side chat that is not tied to the open project) and the answer destinations: attach to the current task as a finding, or Tangents (the default). Raise one Needs-you item, "new tangents", in the morning (when ADR 0012's fresh start runs); from it each tangent can be filed into a project (moves its finding to a task), started as a task, or dropped. Add the Tangents section to the reading-mode library. Update `docs/implementation-plan.md`, the glossary only if a term changes, and ADR 0017's "not built" note.
 - **Validation:**
-  - [ ] A tangent asked from any project is saved in Tangents with its sources
-  - [ ] Tangents cannot be archived and is last in the switcher
-  - [ ] The morning item lists new tangents; filing creates the finding or task in the chosen project
-  - [ ] State is restored after restart
-  - [ ] `scripts/check.sh` passes
+  - [x] A tangent asked from any project is saved in Tangents with its sources (`dovetail-core/tests/tangents.rs`: `a_tangent_runs_read_only_in_tangents_and_is_saved_there_with_its_sources`, asked from the research project "Market sizing": the task in Tangents' Unsorted list, its answer and its subagent's finding with sources in Tangents' `state.db` and folder, nothing in the open project)
+  - [x] Tangents cannot be archived and is last in the switcher (`tangents_is_a_built_in_research_project_whose_id_nobody_else_gets`: registered at every start, its id reserved; v1 has no project archive or removal at all; `dovetail-tui/tests/tangents.rs`: `the_switcher_pins_tangents_last_with_its_own_marker`)
+  - [x] The morning item lists new tangents; filing creates the finding or task in the chosen project (`the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged`; `a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops`: findings on the task, a task with findings and sources in another project, a linked task; TUI `the_morning_item_opens_the_list_to_file_start_or_drop_each_tangent`)
+  - [x] State is restored after restart (the same core test reopens the project: the tangent, its research and its session are back; the morning item survives a restart with its count brought up to date)
+  - [x] `scripts/check.sh` passes
 
 ### Follow-ups decided 2026-11-11 (all merged)
 

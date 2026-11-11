@@ -40,7 +40,7 @@ Overnight 2026-11-10/11 the three build sessions stalled on a permission prompt;
 
 ## Since then (2026-11-11)
 
-Merged after the table above was written: the research feature through reading mode and its follow-ups (PRs #48 to #51, #53, #54, #56), the side panel (#52), tool suites (#55), `:fresh` (#57) and the small fixes (#58). This is v1.1 work: its progress and what remains (tangents, the automatic 80 % fresh start, async `launch`, CI events, parallel rounds) is in `docs/plan/v1.1-brief.md`. The v1 list above is unchanged. Tool names in the audit table are the pre-rename ones (`ask_user` is now `core_ask_user`, and so on).
+Merged after the table above was written: the research feature through reading mode and its follow-ups (PRs #48 to #51, #53, #54, #56), the side panel (#52), tool suites (#55), `:fresh` (#57) and the small fixes (#58), and tangents (M22, branch `dovetail/m22-tangents`). This is v1.1 work: its progress and what remains (the automatic 80 % fresh start, async `launch`, CI events, parallel rounds) is in `docs/plan/v1.1-brief.md`. The v1 list above is unchanged. Tool names in the audit table are the pre-rename ones (`ask_user` is now `core_ask_user`, and so on).
 
 Agents update this file's "Left for v1" table when their work lands.
 

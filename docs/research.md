@@ -2,7 +2,7 @@
 
 Spec for v1.1's first milestone. Decisions: [ADR 0015](adr/0015-research-capture-rounds-reports.md) (capture, rounds, reports, files), [0016](adr/0016-tool-suites.md) (tool suites), [0017](adr/0017-tangents-and-side-panel.md) (tangents, side panel), [0018](adr/0018-reading-mode-layout.md) (reading mode). Order of work: [`docs/plan/research-sessions.md`](plan/research-sessions.md). Where this file and an ADR differ, the ADR wins. Items marked **open** wait for the user's call.
 
-**Status (2026-11-11):** R1 to R5 are built (PRs #49, #51, #50, #55, #56), with the follow-ups of PRs #52 to #54, #57 and #58; only R6 (tangents) and R7 are left. The user's decisions of 2026-11-11 are in the ADRs' "Amended" paragraphs; where this file still describes the pre-decision design (marked below) the ADR wins.
+**Status (2026-11-11):** R1 to R5 are built (PRs #49, #51, #50, #55, #56), with the follow-ups of PRs #52 to #54, #57 and #58; R6 (tangents) is built too (branch `dovetail/m22-tangents`); only R7 is left. The user's decisions of 2026-11-11 are in the ADRs' "Amended" paragraphs; where this file still describes the pre-decision design (marked below) the ADR wins.
 
 ## 1. Purpose
 
@@ -90,7 +90,7 @@ CREATE TABLE decision_evidence (
 
 -- tangents: SUPERSEDED (2026-11-11, ADR 0017). Tangents is a built-in research-only project, so a
 -- tangent is a task in its Unsorted list with ordinary findings and sources; there is no tangents
--- table and no tangents.db. Not built (R6).
+-- table and no tangents.db. Built (R6): a tangent's answer is a quick finding labelled `answer`.
 
 -- unfiled coordinator findings (built, PR #53): own table `unfiled_findings` (no task), filed or
 -- dropped from Needs you; filing gives the finding a new F id
@@ -116,7 +116,7 @@ research/<task-id>-<slug>/
 
 - **Default root:** `~/.local/share/dovetail/projects/<project-id>/research/`. (The brief writes `~/.local/share/dovetail/<project>/research/`; the existing layout puts projects under `projects/<id>/`, so the same place is used.)
 - **Opt-in root:** `research_dir = "docs/research"` in the project's recipe, `~/.config/dovetail/projects/<id>.toml`, relative to the repo root, or absolute. Dovetail's own `config/projects/dovetail.toml` sets it to `docs/research/` (ADR 0015). Slices and the coordinator never write there themselves; Dovetail does. Quick findings (no round) go to `research/<task-id>-<slug>/findings/` directly.
-- **Tangents:** the built-in research project's folder, `~/.local/share/dovetail/projects/tangents/research/<task-id>-<slug>/` (ADR 0017, amended 2026-11-11; not built). A research-only project's root is `~/.local/share/dovetail/projects/<id>/research/` (built, PR #54).
+- **Tangents:** the built-in research project's folder, `~/.local/share/dovetail/projects/tangents/research/<task-id>-<slug>/` (ADR 0017, amended 2026-11-11; built, R6). Each turn of a tangent's session is filed there as a quick finding labelled `answer`, with the sources its own tool calls reached; its research subagents are quick findings of the same task. A research-only project's root is `~/.local/share/dovetail/projects/<id>/research/` (built, PR #54).
 - Files are written by the core after the database row, atomically (temp file and rename). The database is the source of truth; the files are a readable copy and can be rebuilt.
 
 ## 5. Capture pipeline
@@ -256,7 +256,7 @@ Inbox keys, the leader and which-key are unchanged.
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-As built in M21 (ADR 0018, "Decided 2026-11-11"): no Tangents section until tangents exist (R6); Ask is a read-only session (`AgentKind::Ask`), not a subagent.
+As built in M21 (ADR 0018, "Decided 2026-11-11"), with R6's Tangents section (every tangent, its answers, findings and sources; `gd`/`gx` resolve against the tangent's own sources); Ask is a read-only session (`AgentKind::Ask`), not a subagent.
 
 120-column centred reading column, solid background on, citations as coloured `[n]` markers. Ask is a read-only subagent started on `i`, its context the open report and the sources it cites (loaded by the core from the research folder), answers citing with the same markers. Layout rules: ADR 0018.
 
@@ -269,5 +269,5 @@ Each ends with `scripts/check.sh` passing. "Done when" boxes are ticked by the i
 - **R3 Rough reading. Done, PR #50.** Reports, rounds and findings open in existing buffers (task detail lists them; `Enter` opens one in the conversation-style reader or `e` hands it to nvim). Done when: each stored artifact is reachable from the task detail and renders with the reading column; `[n]` markers are coloured; no new layout.
 - **R4 Tool suites and rename (ADR 0016). Done, PR #55.** Done when: roles list suites; old names answer with a deprecation for one release; role prompts, `live-checks.sh` and tests updated; `allowed_tools` derived from suites.
 - **R5 Reading mode. Done, PR #56.** Three-column layout, citations, `]s` `[s` `gd` `gx`, Ask column. Done when: `<leader>r` toggles and `Esc` leaves; `gx` opens a source (browser launched by the core); `gd` opens the cited finding; the Ask subagent's answers carry markers that resolve; HTML converts to markdown; layout snapshots at 100, 160 and 220 columns; the side panel key decision is applied.
-- **R6 Tangents and the side panel.** The side panel is done (PR #52). Left (not built): Tangents as a built-in research project (always present, last in the switcher with its own marker, cannot be archived, tangents as tasks in Unsorted), answer destinations (attach to the current task as a finding, or Tangents), the "new tangents" morning item (file into a project, start a task, drop). Done when: a tangent is saved in Tangents with its sources and shows in the next morning's "new tangents" item; filing it into a project creates the finding or task; Tangents cannot be archived. (`<leader>y` was removed.)
+- **R6 Tangents and the side panel. Done (side panel PR #52; tangents branch `dovetail/m22-tangents`, `docs/implementation-plan.md` §6 "R6").** Tangents is a built-in research project (always registered, its id `tangents` reserved, last in the switcher and the library with `↗`; v1 has no project archive). A tangent (`T` in the side panel, `:tangent [question]`) is a task in its Unsorted list with a read-only session in its folder; its answers and sources are filed there. Destinations: attach to a task of the open project (`a`), or Tangents (the default). The "N new tangents" item on the first open of a day, and `:tangents` any time, list them to file into a project (`f`), start a task (`s`) or drop (`d`). Done when: a tangent is saved in Tangents with its sources and shows in the next morning's "new tangents" item; filing it into a project creates the finding or task; Tangents cannot be archived. (`<leader>y` was removed.)
 - **R7 Role-prompt reliability.** *(Not run; the user's.)* Extends S6: does the coordinator, given a short role prompt, call the research suite (start a round before fanning out, write a cited report, propose instead of deciding)? Done when: 3 of 3 runs per case in a scratch repo with tiny prompts, recorded in `docs/spikes/`.
