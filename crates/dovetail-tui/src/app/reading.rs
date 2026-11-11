@@ -119,12 +119,39 @@ impl App {
                     task: summary.task,
                     what: ResearchWhat::Listing,
                 });
+                // A new report replaces the one being read.
+                let before = self
+                    .snap
+                    .research
+                    .iter()
+                    .find(|r| r.task == summary.task)
+                    .and_then(|r| r.report_ms);
+                let reading_it = self.buffers.reader.opened().is_some_and(|o| {
+                    o.target
+                        == ReadTarget::Research {
+                            task: summary.task,
+                            what: ResearchWhat::Report,
+                        }
+                });
+                if reading_it && summary.report_ms.is_some() && summary.report_ms != before {
+                    let title = format!("#{} report", summary.task.0);
+                    self.read(
+                        ReadTarget::Research {
+                            task: summary.task,
+                            what: ResearchWhat::Report,
+                        },
+                        Some(summary.task),
+                        title,
+                    );
+                }
             }
             _ => {}
         }
         if self.buffers.reader.on_event(event) {
             self.note = None;
-            if self.reading_mode() {
+            // Not out of Ask's chat bar while typing there.
+            let typing = self.chat_site == ChatSite::Ask && self.mode == Mode::Insert;
+            if self.reading_mode() && !typing {
                 self.regions.set_focus(RegionId::Reader);
             }
         }
