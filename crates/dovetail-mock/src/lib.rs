@@ -248,9 +248,8 @@ impl MockCore {
             // The mock touches nothing outside itself: no clipboard, no editor and no native
             // claude. The answer still comes, so the UI takes its terminal back.
             Command::CopyToClipboard { .. } => {}
-            Command::OpenEditor { .. } => self.emit(Event::TerminalReturned {
-                error: Some("the mock core opens no editor".into()),
-            }),
+            Command::OpenEditor { .. } => self.fail("the mock core opens no editor".into()),
+            Command::TerminalReleased => {}
             Command::TakeOver { .. } => self.emit(Event::TerminalReturned {
                 error: Some("the mock core runs no native claude".into()),
             }),
@@ -563,6 +562,7 @@ impl MockCore {
                         TaskChange::Deps(deps) => task.deps = deps,
                         TaskChange::Pr(pr) => task.pr = pr,
                         TaskChange::Seen => task.coordinator_created = false,
+                        TaskChange::Unseen => task.coordinator_created = true,
                         TaskChange::Relate(other) | TaskChange::Unrelate(other) => {
                             relations.push((other, matches!(change, TaskChange::Relate(_))));
                         }

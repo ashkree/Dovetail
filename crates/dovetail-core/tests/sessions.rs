@@ -50,6 +50,8 @@ struct Harness {
     repo: PathBuf,
     /// `TerminalReturned` events, in order: the error each carried.
     returned: Vec<Option<String>>,
+    /// How many `LendTerminal` events came.
+    lent: usize,
     /// `CommandFailed` messages, in order.
     failures: Vec<String>,
     _dir: TempDir,
@@ -127,6 +129,7 @@ impl Harness {
             paths,
             repo,
             returned: Vec::new(),
+            lent: 0,
             failures: Vec::new(),
             _dir: dir,
             _run: run,
@@ -160,6 +163,7 @@ impl Harness {
         match &event {
             dovetail_api::Event::TerminalReturned { error } => self.returned.push(error.clone()),
             dovetail_api::Event::CommandFailed { message } => self.failures.push(message.clone()),
+            dovetail_api::Event::LendTerminal => self.lent += 1,
             _ => {}
         }
         apply(&mut self.snap, seq, event);
@@ -305,6 +309,37 @@ fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result()
 
 fn s_util(w: &Option<dovetail_api::UsageWindow>) -> Option<f64> {
     w.as_ref().map(|w| w.utilization)
+}
+
+#[test]
+fn the_core_checks_the_editors_path_before_asking_the_ui_to_let_go() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let missing = h.repo.join("no-such-folder");
+    h.send(Command::OpenEditor {
+        path: missing.clone(),
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(h.lent, 0, "the UI was told to let go of the terminal");
+    assert_eq!(h.returned, Vec::<Option<String>>::new());
+    assert_eq!(
+        h.failures,
+        vec![format!("{} does not exist", missing.display())]
+    );
+
+    // A path that exists is accepted; until the UI answers, a second request is refused and a
+    // stray release does nothing.
+    h.send(Command::OpenEditor {
+        path: h.repo.clone(),
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(h.lent, 1);
+    h.send(Command::OpenEditor {
+        path: h.repo.clone(),
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(h.lent, 1);
+    assert_eq!(h.failures.len(), 2);
+    assert_eq!(h.failures[1], "the terminal is already lent out");
 }
 
 #[test]
@@ -537,6 +572,7 @@ impl Harness {
             paths,
             repo,
             returned: Vec::new(),
+            lent: 0,
             failures: Vec::new(),
             _dir: dir,
             _run: run,
@@ -2419,7 +2455,7 @@ fn update(id: i64) -> UpdateTask {
 }
 
 #[test]
-fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
+fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     for title in ["one", "two"] {
         h.send(Command::CreateTask(NewTask {
@@ -2500,6 +2536,16 @@ fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
         })
     });
 
+    // Into Now is allowed, and the task is flagged as new until the user sees it.
+    h.send(Command::UpdateTask {
+        id: TaskId(1),
+        patch: vec![dovetail_api::TaskChange::Seen],
+    });
+    h.wait_for("task 1 seen", |s| {
+        s.tasks
+            .iter()
+            .any(|t| t.id == TaskId(1) && !t.coordinator_created)
+    });
     let (text, is_error) = call(
         COORDINATOR,
         UpdateTask {
@@ -2507,9 +2553,39 @@ fn update_task_changes_only_the_given_fields_and_never_moves_into_now() {
             ..update(1)
         },
     );
+    assert!(!is_error, "{text}");
+    assert!(text.starts_with("#1 [done · now]"), "{text}");
+    h.wait_for("task 1 unseen in Now", |s| {
+        s.tasks
+            .iter()
+            .any(|t| t.id == TaskId(1) && t.bucket == Some(Bucket::Now) && t.coordinator_created)
+    });
+    // Already in Now: a later update does not flag it again once the user has looked.
+    h.send(Command::UpdateTask {
+        id: TaskId(1),
+        patch: vec![dovetail_api::TaskChange::Seen],
+    });
+    h.wait_for("task 1 seen again", |s| {
+        s.tasks
+            .iter()
+            .any(|t| t.id == TaskId(1) && !t.coordinator_created)
+    });
+    let (_, is_error) = call(
+        COORDINATOR,
+        UpdateTask {
+            bucket: Some(BucketFilter::Now),
+            p_level: Some(Some(PLevel::P1)),
+            ..update(1)
+        },
+    );
+    assert!(!is_error);
+    h.drain(Duration::from_millis(100));
     assert!(
-        is_error && text.contains("cannot be `now`") && text.contains("project_start_slice"),
-        "{text}"
+        h.snap
+            .tasks
+            .iter()
+            .any(|t| t.id == TaskId(1) && !t.coordinator_created),
+        "a task already in Now was flagged again"
     );
 
     // Out of Now is fine, and leaves the slice running.
@@ -4086,6 +4162,62 @@ fn the_first_open_of_a_new_day_starts_a_fresh_coordinator_and_y_goes_back() {
     h.quit();
 }
 
+#[test]
+fn a_day_that_was_never_closed_keeps_its_coordinator_and_says_so() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "hello");
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+    let old = fake.started_specs()[0].session_id.clone();
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    // The coordinator was used two days ago and never closed; the newest journal is older.
+    let db = rusqlite::Connection::open(paths.state_db("p")).expect("state db");
+    db.execute(
+        "UPDATE conversation_entries SET at_ms = at_ms - 86400000 * 2",
+        [],
+    )
+    .expect("backdate");
+    drop(db);
+    let dir = paths.data.join("projects/p/journal");
+    std::fs::create_dir_all(&dir).expect("journal dir");
+    let file = dir.join(format!("{}.md", local_date(4)));
+    std::fs::write(&file, "# Handoff\n\nThe day before.\n").expect("old handoff");
+    std::fs::File::options()
+        .write(true)
+        .open(&file)
+        .and_then(|f| {
+            f.set_modified(std::time::SystemTime::now() - Duration::from_secs(4 * 86_400))
+        })
+        .expect("backdate the file");
+    let used_on = jiff::Zoned::now()
+        .checked_sub(jiff::Span::new().days(2))
+        .expect("date")
+        .strftime("%A")
+        .to_string();
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    let unclosed = format!("{used_on} wasn't closed; kept that coordinator. `:eod` to close it.");
+    h.wait_for("the unclosed-day item", |s| {
+        s.inbox
+            .iter()
+            .any(|i| matches!(&i.kind, InboxKind::Error { text } if *text == unclosed))
+    });
+    // The same session resumes, with no fresh seed and no keep-yesterday item.
+    wait_started(&fake, 1);
+    let specs = fake.started_specs();
+    assert_eq!(specs.len(), 1);
+    assert!(specs[0].resume);
+    assert_eq!(specs[0].session_id, old);
+    assert!(h.snap.inbox.iter().all(|i| !matches!(
+        &i.kind,
+        InboxKind::Permission { tool, .. } if tool == dovetail_api::KEEP_COORDINATOR_PERMISSION
+    )));
+    h.quit();
+}
+
 // --- :upgrade (ADR 0014) ---
 
 mod upgrade {
@@ -4360,6 +4492,38 @@ mod upgrade {
 }
 
 #[test]
+fn a_side_chat_gets_only_the_core_suite_whatever_the_config_says() {
+    let fake = fixture("plain_turn");
+    let mut config = Config::default();
+    config.suites.side_chat = dovetail_api::tools::Suite::ALL.to_vec();
+    let mut h = Harness::start(fake.clone(), true, config);
+    h.send(Command::NewSideChat {
+        question: "what does the reducer do?".into(),
+    });
+    h.wait_for("the side chat", |s| {
+        s.agents.iter().any(|a| a.name == "side-1")
+    });
+    wait_started(&fake, 1);
+    let spec = fake
+        .started_specs()
+        .into_iter()
+        .find(|s| s.name.as_deref() == Some("side-1"))
+        .expect("side chat spec");
+    let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
+    assert!(mcp.contains(r#""DOVETAIL_SUITES": "core""#), "{mcp}");
+    // The config's list is reported once, as a warning.
+    assert!(
+        h.snap
+            .warnings
+            .iter()
+            .any(|w| w.id.0 == "config-suites" && w.text.contains("ignored")),
+        "{:?}",
+        h.snap.warnings
+    );
+    h.quit();
+}
+
+#[test]
 fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
     let fake = fixture("plain_turn");
     let mut h = Harness::start(fake.clone(), true, Config::default());
@@ -4390,7 +4554,7 @@ fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
     for rule in [
         "Bash(git log *)",
         "Bash(rg *)",
-        "Bash(cargo tree *)",
+        "Bash(cargo tree --locked *)",
         "WebFetch",
     ] {
         assert!(allowed.contains(rule), "{rule} in {allowed}");

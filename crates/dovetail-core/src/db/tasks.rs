@@ -267,6 +267,12 @@ pub(super) fn update_task(
                     [id.0],
                 )?;
             }
+            TaskChange::Unseen => {
+                tx.execute(
+                    "UPDATE tasks SET coordinator_created = 1 WHERE id = ?1",
+                    [id.0],
+                )?;
+            }
             TaskChange::Relate(other) => {
                 if relate(&tx, id, other, true)? {
                     touched.push(other);

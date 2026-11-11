@@ -64,12 +64,79 @@ pub(crate) fn latest(dir: &Path) -> Option<Date> {
         .max()
 }
 
-/// Whether the first open of `today` starts a fresh coordinator: there is a journal file from
-/// an earlier day, and the coordinator was used, but not yet today.
-pub(crate) fn fresh_day(latest: Option<Date>, last_used: Option<Date>, today: Date) -> bool {
-    match (latest, last_used) {
-        (Some(latest), Some(used)) => latest < today && used < today,
-        _ => false,
+/// [`latest`] with when its file was last written. `None` when the time cannot be read, so a
+/// file whose age is unknown is not trusted to start a fresh session.
+pub(crate) fn newest(dir: &Path) -> Option<Newest> {
+    let date = latest(dir)?;
+    let written = std::fs::metadata(file(dir, date)).ok()?.modified().ok()?;
+    let written_ms = i64::try_from(
+        written
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis(),
+    )
+    .ok()?;
+    Some(Newest { date, written_ms })
+}
+
+/// How long after the coordinator's last real work a journal file still counts as closing it.
+/// The handoff's own tool summary can land after the file is written, a hand-written file is
+/// followed by "done", and a `:fresh` seed is answered a moment after its block is written.
+pub(crate) const CLOSE_GRACE_MS: i64 = 10 * 60 * 1000;
+
+/// When the coordinator was last used, read before anything is added to its conversation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct LastUse {
+    /// The local date of its newest entry of any kind: the day it was last open.
+    pub(crate) date: Option<Date>,
+    /// The start of its newest entry that is not a Dovetail notice: when the user and the
+    /// coordinator last worked, in Unix milliseconds.
+    pub(crate) work_ms: Option<i64>,
+}
+
+/// The newest journal file: its day and when it was last written, in Unix milliseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Newest {
+    pub(crate) date: Date,
+    pub(crate) written_ms: i64,
+}
+
+/// What the first open of `today` does with the coordinator (ADR 0012 and its 2026-11-11
+/// amendment).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Morning {
+    /// Resume the session as before: nothing to decide.
+    Resume,
+    /// A new session seeded with the journal of this day.
+    Fresh(Date),
+    /// The coordinator was used on this day and the newest journal is older than that use:
+    /// the day was never closed, so its session is kept and the user is told.
+    Unclosed(Date),
+}
+
+/// Decides the first open of `today`. A fresh coordinator needs a journal file from an earlier
+/// day, a coordinator last used before today, and the file at least as new as that use (within
+/// [`CLOSE_GRACE_MS`]). With an older file the day was not closed, and starting from it would
+/// lose that day.
+pub(crate) fn morning(newest: Option<Newest>, used: LastUse, today: Date) -> Morning {
+    let (Some(newest), Some(date)) = (newest, used.date) else {
+        return Morning::Resume;
+    };
+    if newest.date >= today || date >= today {
+        return Morning::Resume;
+    }
+    match used.work_ms {
+        Some(work) if newest.written_ms + CLOSE_GRACE_MS < work => Morning::Unclosed(date),
+        _ => Morning::Fresh(newest.date),
+    }
+}
+
+/// `day` as a person says it: its weekday, with the date when that would be ambiguous.
+fn day_name(day: Date, today: Date) -> String {
+    if today.since(day).is_ok_and(|s| s.get_days() < 7) {
+        day.strftime("%A").to_string()
+    } else {
+        day.strftime("%A %-d %B").to_string()
     }
 }
 
@@ -563,24 +630,54 @@ impl Core {
         }
     }
 
-    /// The local date of the coordinator's newest conversation entry: when it was last used.
-    pub(crate) fn coordinator_last_used(&self) -> Option<Date> {
+    /// When the coordinator was last used, from its newest conversation entries.
+    pub(crate) fn coordinator_last_used(&self) -> LastUse {
         let id = AgentId(COORDINATOR.into());
-        let last = self.tails.get(&id)?.entries.last()?;
-        date_of(last.at_ms)
+        let Some(tail) = self.tails.get(&id) else {
+            return LastUse::default();
+        };
+        LastUse {
+            date: tail.entries.last().and_then(|e| date_of(e.at_ms)),
+            work_ms: tail
+                .entries
+                .iter()
+                .rev()
+                .find(|e| e.kind != EntryKind::Notice)
+                .map(|e| e.at_ms),
+        }
     }
 
-    /// Starts the coordinator for the day. On the first open of a new day (see [`fresh_day`])
-    /// it gets a new session seeded with the newest journal file; otherwise yesterday's session
-    /// resumes as before. `last_used` is read before anything was added to its conversation.
-    pub(crate) async fn start_coordinator(&mut self, last_used: Option<Date>) {
+    /// Starts the coordinator for the day. On the first open of a new day (see [`morning`]) it
+    /// gets a new session seeded with the newest journal file, or, when that file is older than
+    /// the coordinator's last use, keeps its session and says in Needs you that the day was not
+    /// closed. Otherwise yesterday's session resumes as before. `last_used` is read before
+    /// anything was added to its conversation.
+    pub(crate) async fn start_coordinator(&mut self, last_used: LastUse) {
         let id = AgentId(COORDINATOR.into());
         let today = today();
-        let newest = self.journal_dir().and_then(|dir| {
-            let date = latest(&dir).filter(|d| fresh_day(Some(*d), last_used, today))?;
-            Some((date, file(&dir, date)))
-        });
-        let Some((date, path)) = newest else {
+        let newest = self.journal_dir().and_then(|dir| newest(&dir));
+        let fresh = match morning(newest, last_used, today) {
+            Morning::Fresh(date) => Some(date),
+            Morning::Unclosed(day) => {
+                let text = format!(
+                    "{} wasn't closed; kept that coordinator. `:eod` to close it.",
+                    day_name(day, today)
+                );
+                let open = self
+                    .inbox
+                    .values()
+                    .any(|p| matches!(&p.item.kind, InboxKind::Error { text: t } if *t == text));
+                if !open {
+                    self.raise(&id, InboxKind::Error { text }, Waiter::None);
+                }
+                None
+            }
+            Morning::Resume => None,
+        };
+        let Some((date, path)) = fresh
+            .zip(self.journal_dir())
+            .map(|(d, dir)| (d, file(&dir, d)))
+        else {
             if let Err(e) = self.ensure_live(&id) {
                 self.fail(e);
             }
@@ -729,36 +826,106 @@ mod tests {
         s.parse().unwrap()
     }
 
+    const HOUR: i64 = 60 * 60 * 1000;
+
+    fn ms(day: &str, hour: i64) -> i64 {
+        d(day)
+            .at(0, 0, 0, 0)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .unwrap()
+            .timestamp()
+            .as_millisecond()
+            + hour * HOUR
+    }
+
+    fn newest(day: &str, hour: i64) -> Option<Newest> {
+        Some(Newest {
+            date: d(day),
+            written_ms: ms(day, hour),
+        })
+    }
+
+    fn used(day: &str, hour: i64) -> LastUse {
+        LastUse {
+            date: Some(d(day)),
+            work_ms: Some(ms(day, hour)),
+        }
+    }
+
     #[test]
-    fn a_new_day_needs_an_older_journal_and_a_coordinator_last_used_before_today() {
+    fn a_new_day_needs_an_older_journal_written_after_the_last_use() {
         let today = d("2026-11-11");
-        // The morning after the hand-written handoff.
-        assert!(fresh_day(
-            Some(d("2026-11-10")),
-            Some(d("2026-11-10")),
-            today
-        ));
+        // The morning after `:eod`: the file was written after the last work.
+        assert_eq!(
+            morning(newest("2026-11-10", 18), used("2026-11-10", 17), today),
+            Morning::Fresh(d("2026-11-10"))
+        );
         // Opened again later the same day: the fresh one carries on.
-        assert!(!fresh_day(
-            Some(d("2026-11-10")),
-            Some(d("2026-11-11")),
-            today
-        ));
+        assert_eq!(
+            morning(newest("2026-11-10", 18), used("2026-11-11", 9), today),
+            Morning::Resume
+        );
         // Closed today already (an `:eod` and a restart).
-        assert!(!fresh_day(
-            Some(d("2026-11-11")),
-            Some(d("2026-11-10")),
-            today
-        ));
+        assert_eq!(
+            morning(newest("2026-11-11", 8), used("2026-11-10", 17), today),
+            Morning::Resume
+        );
         // No journal, or a coordinator that never talked.
-        assert!(!fresh_day(None, Some(d("2026-11-09")), today));
-        assert!(!fresh_day(Some(d("2026-11-09")), None, today));
+        assert_eq!(
+            morning(None, used("2026-11-09", 12), today),
+            Morning::Resume
+        );
+        assert_eq!(
+            morning(newest("2026-11-09", 12), LastUse::default(), today),
+            Morning::Resume
+        );
         // Several days away: the newest journal still seeds it.
-        assert!(fresh_day(
-            Some(d("2026-11-06")),
-            Some(d("2026-11-07")),
-            today
-        ));
+        assert_eq!(
+            morning(newest("2026-11-06", 18), used("2026-11-06", 17), today),
+            Morning::Fresh(d("2026-11-06"))
+        );
+    }
+
+    #[test]
+    fn a_day_that_was_never_closed_keeps_its_coordinator() {
+        let today = d("2026-11-11");
+        // Used Monday without `:eod`; the newest journal is Friday's.
+        assert_eq!(
+            morning(newest("2026-11-06", 18), used("2026-11-09", 15), today),
+            Morning::Unclosed(d("2026-11-09"))
+        );
+        // The same day, closed by hand a little after the last message.
+        assert_eq!(
+            morning(newest("2026-11-09", 15), used("2026-11-09", 15), today),
+            Morning::Fresh(d("2026-11-09"))
+        );
+    }
+
+    #[test]
+    fn a_fresh_start_closes_the_day_only_until_the_work_goes_on() {
+        let today = d("2026-11-11");
+        // `:fresh` at 12 wrote a block; the seed's notice and its reply came right after.
+        let at_noon = newest("2026-11-10", 12);
+        let seed_reply = LastUse {
+            date: Some(d("2026-11-10")),
+            work_ms: Some(ms("2026-11-10", 12) + 30_000),
+        };
+        assert_eq!(
+            morning(at_noon, seed_reply, today),
+            Morning::Fresh(d("2026-11-10"))
+        );
+        // The afternoon's work went on without `:eod`: that handoff is stale.
+        assert_eq!(
+            morning(at_noon, used("2026-11-10", 17), today),
+            Morning::Unclosed(d("2026-11-10"))
+        );
+    }
+
+    #[test]
+    fn a_day_is_named_by_its_weekday_when_that_is_unambiguous() {
+        let today = d("2026-11-11");
+        assert_eq!(day_name(d("2026-11-09"), today), "Monday");
+        assert_eq!(day_name(d("2026-11-02"), today), "Monday 2 November");
     }
 
     #[test]

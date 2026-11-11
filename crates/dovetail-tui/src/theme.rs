@@ -32,7 +32,7 @@ pub struct Theme {
     pub selection: Color,
     /// Text on a coloured badge.
     pub ink: Color,
-    /// Solid background of the reading column, when switched on.
+    /// Solid background of the reading column in reading views (reading mode, a research document).
     pub reading_bg: Color,
     /// Status-bar mode badge in Normal mode.
     pub mode_normal: Color,

@@ -31,6 +31,8 @@ pub const RECORD_ENV: &str = "DOVETAIL_RECORD_STREAMS";
 
 /// The Bash commands a side chat may run, each with any arguments: they read and never write.
 /// In `dontAsk` mode every other command is denied without asking (decided 2026-11-11).
+/// `cargo tree` and `cargo metadata` are allowed only with `--locked` (they could otherwise
+/// rewrite `Cargo.lock` or fetch), so a call that leaves it out is denied.
 pub const SIDE_CHAT_BASH: &[&str] = &[
     "git log",
     "git show",
@@ -45,8 +47,8 @@ pub const SIDE_CHAT_BASH: &[&str] = &[
     "tail",
     "wc",
     "find",
-    "cargo tree",
-    "cargo metadata",
+    "cargo tree --locked",
+    "cargo metadata --locked",
 ];
 
 /// Options of [`SIDE_CHAT_BASH`] commands that write files or run other commands, denied even
@@ -293,14 +295,18 @@ mod tests {
             "Bash(tail *)",
             "Bash(wc *)",
             "Bash(find *)",
-            "Bash(cargo tree *)",
-            "Bash(cargo metadata *)",
+            "Bash(cargo tree --locked *)",
+            "Bash(cargo metadata --locked *)",
             "WebSearch",
             "WebFetch",
         ] {
             assert!(allowed.contains(&rule.to_string()), "{rule}");
         }
         assert_eq!(allowed.len(), 17, "nothing else is allowed: {allowed:?}");
+        // Without `--locked` they could rewrite the lockfile or fetch.
+        for bare in ["Bash(cargo tree *)", "Bash(cargo metadata *)"] {
+            assert!(!allowed.contains(&bare.to_string()), "{bare}");
+        }
         let denied = side_chat_disallowed();
         for rule in [
             "Edit",

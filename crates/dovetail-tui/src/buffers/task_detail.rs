@@ -283,8 +283,6 @@ pub struct TaskDetailBuffer {
     awaiting: Option<(TaskId, ResearchWhat, String)>,
     /// The document being read, in place of the detail.
     reading: Option<Reading>,
-    /// Solid background behind the reading column, as in the conversation.
-    solid: bool,
 }
 
 /// A document open in the reading view.
@@ -322,11 +320,6 @@ impl TaskDetailBuffer {
     /// Closes the document and shows the detail again.
     pub fn close_reading(&mut self) {
         self.reading = None;
-    }
-
-    /// Mirrors the conversation's solid reading background.
-    pub fn set_solid(&mut self, solid: bool) {
-        self.solid = solid;
     }
 
     /// Notes that `what` was asked for, so its answer opens the reading view.
@@ -381,7 +374,6 @@ impl TaskDetailBuffer {
 
     fn render_reading(&mut self, cx: &ViewCx, frame: &mut Frame, inner: Rect) {
         let theme = cx.theme;
-        let solid = self.solid;
         let Some(reading) = self.reading.as_mut() else {
             return;
         };
@@ -418,13 +410,12 @@ impl TaskDetailBuffer {
             };
             frame.render_widget(Paragraph::new(line.clone()), rect);
         }
-        if solid {
-            reading_column::paint_background(
-                frame.buffer_mut(),
-                column,
-                Style::new().bg(theme.reading_bg),
-            );
-        }
+        // A document in the reading column is read on a solid background, as in reading mode.
+        reading_column::paint_background(
+            frame.buffer_mut(),
+            column,
+            Style::new().bg(theme.reading_bg),
+        );
         footer(
             frame,
             inner,

@@ -284,8 +284,6 @@ pub enum ToolError {
     BucketNow,
     /// The coordinator logged a decision without naming its task.
     DecisionNeedsTask,
-    /// `tasks_update` asked for Now: only starting a slice moves a task there (task #25).
-    UpdateIntoNow,
     /// `tasks_update` asked for `archived`, which is `tasks_archive`'s job.
     UpdateToArchived,
     /// `tasks_update` named no field to change.
@@ -315,10 +313,6 @@ impl std::fmt::Display for ToolError {
             ToolError::DecisionNeedsTask => {
                 f.write_str("the coordinator must name the `task` this decision belongs to")
             }
-            ToolError::UpdateIntoNow => f.write_str(
-                "`bucket` cannot be `now`: a task moves into Now only when a slice starts on it \
-                 (`project_start_slice`). Use `next`, `later` or `unsorted`",
-            ),
             ToolError::UpdateToArchived => f.write_str(
                 "`status` must be `todo`, `in_progress` or `done`: archive a task with \
                  `tasks_archive`",
@@ -440,9 +434,6 @@ impl Tool {
                 id("id", u.id)?;
                 if let Some(title) = &u.title {
                     text("title", title)?;
-                }
-                if u.bucket == Some(BucketFilter::Now) {
-                    return Err(ToolError::UpdateIntoNow);
                 }
                 if u.status == Some(TaskStatus::Archived) {
                     return Err(ToolError::UpdateToArchived);
@@ -597,7 +588,8 @@ pub struct UpdateTask {
     /// `todo`, `in_progress` or `done`; `archived` fails [`Tool::validate`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<TaskStatus>,
-    /// `next`, `later` or `unsorted`; `now` fails [`Tool::validate`].
+    /// `now`, `next`, `later` or `unsorted`. A task the coordinator moves into Now is marked
+    /// unseen until the user sees it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bucket: Option<BucketFilter>,
     /// Absent: unchanged; `null`: no priority; a level: that level.

@@ -127,6 +127,12 @@ pub struct App {
     handoff: Option<Command>,
     /// The terminal is lent out until the core sends [`Event::TerminalReturned`].
     terminal_away: bool,
+    /// `OpenEditor` is out and the core has not answered yet: the loop keeps the terminal and
+    /// reads no key until it does ([`App::awaiting_lend`]).
+    awaiting_lend: bool,
+    /// The name of a research project `:project new` asked the core to make: once the snapshot
+    /// lists it, the app asks whether to open it.
+    new_project: Option<String>,
     /// A resync was requested and its snapshot has not arrived yet.
     resyncing: bool,
     /// The agent whose conversation had focus at the last settle, so focusing it counts as
@@ -178,6 +184,8 @@ impl App {
             outbox: Vec::new(),
             handoff: None,
             terminal_away: false,
+            awaiting_lend: false,
+            new_project: None,
             resyncing: false,
             reading: None,
             quit: false,
@@ -249,6 +257,7 @@ impl App {
         self.dirty = true;
         // Nobody is left to hand the terminal back.
         self.terminal_away = false;
+        self.awaiting_lend = false;
         self.note = Some("core disconnected; :q to quit".into());
     }
 
@@ -274,12 +283,16 @@ impl App {
         command
     }
 
-    /// The hand-off could not start (its path is gone), so the terminal was never lent out:
-    /// shows why and carries on.
-    pub fn handoff_refused(&mut self, why: String) {
-        self.terminal_away = false;
-        self.note = Some(why);
-        self.dirty = true;
+    /// Whether a hand-off waits to be taken ([`App::take_handoff`]).
+    pub fn has_handoff(&self) -> bool {
+        self.handoff.is_some()
+    }
+
+    /// Whether the core has yet to say if it will take the terminal (it checks the editor's
+    /// path first). The loop keeps the terminal and reads no key meanwhile; the answer is
+    /// either a hand-off ([`Event::LendTerminal`]) or a note ([`Event::CommandFailed`]).
+    pub fn awaiting_lend(&self) -> bool {
+        self.awaiting_lend
     }
 
     /// Whether the terminal is lent out: the loop neither draws nor reads keys until it returns.
@@ -352,12 +365,16 @@ impl App {
                 self.now_ms = self.now_ms.max(snapshot.now_ms);
                 self.snap = snapshot;
                 self.resyncing = false;
+                self.offer_new_project();
             }
             ServerMsg::Event { seq, event } => {
                 let failure = match &event {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
                 };
+                if failure.is_some() {
+                    self.new_project = None;
+                }
                 match self.buffers.map_outline.on_event(&event) {
                     Some(MapReaction::Show) => {
                         self.regions.show(RegionId::Main, BufferKind::MapOutline);
@@ -384,6 +401,16 @@ impl App {
                 }
                 if let Some(note) = self.buffers.worktrees.on_event(&event) {
                     self.note = Some(note);
+                }
+                if self.awaiting_lend {
+                    match &event {
+                        Event::LendTerminal => {
+                            self.awaiting_lend = false;
+                            self.handoff = Some(Command::TerminalReleased);
+                        }
+                        Event::CommandFailed { .. } => self.awaiting_lend = false,
+                        _ => {}
+                    }
                 }
                 if let Event::TerminalReturned { error } = &event {
                     self.terminal_away = false;
@@ -1066,12 +1093,6 @@ impl App {
                 Some(id) => self.open_agent_in_main(id),
                 None => self.note = Some("no previous agent".into()),
             },
-            Action::ToggleSolidBackground => {
-                self.buffers.conversation.toggle_solid();
-                self.buffers
-                    .task_detail
-                    .set_solid(self.buffers.conversation.solid());
-            }
             Action::ListResearch => self.open_research_list(),
             Action::ToggleFocusMode => self.toggle_focus_mode(),
             Action::ToggleReadingMode => self.toggle_reading_mode(),
@@ -1221,7 +1242,11 @@ impl App {
                 });
             }
             Effect::Note(text) => self.note = Some(text),
-            Effect::OpenEditor(path) => self.handoff = Some(Command::OpenEditor { path }),
+            Effect::OpenEditor(path) => {
+                // The core checks the path before the terminal is let go of.
+                self.outbox.push(Command::OpenEditor { path });
+                self.awaiting_lend = true;
+            }
             Effect::Read {
                 target,
                 task,

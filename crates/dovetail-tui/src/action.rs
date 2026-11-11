@@ -77,8 +77,6 @@ pub enum Action {
     /// Backspace on an empty chat input: drop the last image chip. With text typed, or no chip,
     /// the key edits text as usual.
     DropLastAttachment,
-    /// Give the reading column a solid background, or take it away.
-    ToggleSolidBackground,
     /// Focus mode: hide the side column and read the conversation alone (`<leader>z`).
     ToggleFocusMode,
     /// Open quick capture.

@@ -18,7 +18,7 @@ use dovetail_mock::{MockConfig, MockCore};
 
 const USAGE: &str = "usage: dovetail                     open the TUI for the repo you're in
        dovetail --project <id>      open a registered project by id (research projects too)
-       dovetail add \"title !p1 @now\"  capture a task
+       dovetail add [--project <id>] \"title !p1 @now\"  capture a task
        dovetail login <profile>     sign a Claude profile in (--list: show profiles)
        dovetail upgrade [--local]   build origin/main (or this checkout) and install it
        dovetail --mock [--seed N] [--speed X]

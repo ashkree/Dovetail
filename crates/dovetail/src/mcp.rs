@@ -520,15 +520,14 @@ fn tool_defs() -> Vec<ToolDef> {
             name: "tasks_update",
             description: "Change a task's status, bucket, priority, title or notes; only the \
                 fields you give change. Use it to mark a task `done` once its slice's PR is \
-                merged, or to re-sort and re-prioritise the list. A task moves into Now only \
-                when a slice starts on it, so `bucket` cannot be `now`; moving a task out of \
-                Now is fine. To archive a task use `tasks_archive`. Returns the task's new \
+                merged, or to re-sort and re-prioritise the list. Moving a task \
+                into Now is allowed; the user sees it flagged as new until they look at it. To archive a task use `tasks_archive`. Returns the task's new \
                 `tasks_list` line. Fails for an unknown or archived task.",
             schema: || {
                 json!({"type": "object", "properties": {
                     "id": {"type": "integer", "description": "The task's id."},
                     "status": {"type": "string", "enum": ["todo", "in_progress", "done"], "description": "New status."},
-                    "bucket": {"type": "string", "enum": ["next", "later", "unsorted"], "description": "New bucket; `unsorted` clears it. Never `now`."},
+                    "bucket": {"type": "string", "enum": ["now", "next", "later", "unsorted"], "description": "New bucket; `unsorted` clears it."},
                     "p_level": {"type": ["string", "null"], "enum": ["P0", "P1", "P2", "P3", null], "description": "New priority, P0 highest; null clears it."},
                     "title": {"type": "string", "description": "New short imperative title."},
                     "notes": {"type": "string", "description": "New notes; they replace the old ones, so include what should stay."}

@@ -461,6 +461,7 @@ fn every_event_roundtrips() {
         Event::CommandFailed {
             message: "no such agent".into(),
         },
+        Event::LendTerminal,
         Event::TerminalReturned { error: None },
         Event::TerminalReturned {
             error: Some("nvim exited with status 1".into()),
@@ -579,6 +580,7 @@ fn every_command_roundtrips() {
                 TaskChange::Pr(None),
                 TaskChange::Pr(Some(7)),
                 TaskChange::Seen,
+                TaskChange::Unseen,
                 TaskChange::Relate(TaskId(2)),
                 TaskChange::Unrelate(TaskId(2)),
             ],
@@ -632,6 +634,7 @@ fn every_command_roundtrips() {
         Command::OpenEditor {
             path: "/tmp/wt".into(),
         },
+        Command::TerminalReleased,
         Command::StartRound {
             task: TaskId(4),
             brief: "per seat or flat?".into(),
@@ -749,10 +752,7 @@ fn update_task_tells_an_absent_priority_from_a_null_one_and_survives_the_socket(
             .expect("parses")
             .validate(Role::Coordinator)
     };
-    assert_eq!(
-        refused(json!({"id": 1, "bucket": "now"})),
-        Err(ToolError::UpdateIntoNow)
-    );
+    assert_eq!(refused(json!({"id": 1, "bucket": "now"})), Ok(()));
     assert_eq!(
         refused(json!({"id": 1, "status": "archived"})),
         Err(ToolError::UpdateToArchived)

@@ -180,6 +180,22 @@ fn open_report(app: &mut App) {
 }
 
 #[test]
+fn a_document_in_the_task_details_reading_view_is_on_a_solid_background() {
+    let mut app = detail(true);
+    let probe = |app: &mut App| {
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        // Inside the 120-column reading column, away from the borders.
+        let buffer = terminal.backend().buffer().clone();
+        buffer[(60, 12)].bg
+    };
+    // The detail itself paints no background.
+    assert_eq!(probe(&mut app), ratatui::style::Color::Reset);
+    open_report(&mut app);
+    assert_eq!(probe(&mut app), dovetail_tui::Theme::dusk().reading_bg);
+}
+
+#[test]
 fn the_task_detail_lists_report_rounds_findings_and_sources() {
     let mut app = detail(true);
     let screen = render(&mut app, 120, 60);
@@ -317,11 +333,13 @@ fn e_hands_the_documents_file_to_the_editor_and_a_listed_source_has_none() {
     open_report(&mut app);
     app.on_key(key('e'), 3);
     assert_eq!(
-        app.take_handoff(),
-        Some(Command::OpenEditor {
+        app.take_commands(),
+        vec![Command::OpenEditor {
             path: "/data/research/1-pricing/report.md".into()
-        })
+        }]
     );
+    deliver(&mut app, Event::LendTerminal);
+    assert_eq!(app.take_handoff(), Some(Command::TerminalReleased));
     deliver(&mut app, Event::TerminalReturned { error: None });
     // A source that was listed but not cached has no file.
     app.on_key(esc(), 4);
@@ -550,11 +568,13 @@ fn e_on_a_selected_research_row_opens_that_file_in_the_editor() {
     }
     app.on_key(key('e'), 2);
     assert_eq!(
-        app.take_handoff(),
-        Some(Command::OpenEditor {
+        app.take_commands(),
+        vec![Command::OpenEditor {
             path: "/data/research/1-pricing/findings/1-seat-plans.md".into()
-        })
+        }]
     );
+    deliver(&mut app, Event::LendTerminal);
+    assert_eq!(app.take_handoff(), Some(Command::TerminalReleased));
     deliver(&mut app, Event::TerminalReturned { error: None });
 }
 

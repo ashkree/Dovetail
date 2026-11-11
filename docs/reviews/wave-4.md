@@ -42,6 +42,15 @@ Most ticked boxes for M11–M15 and the ADR 0009–0014 behaviour check out agai
 5. `<leader>y`: the whole answer since your last message, or the last block?
 6. Side chats: enforce read-only, or change the wording?
 
+## Answers (2026-11-11)
+
+1. Blocking `systemctl` on the launch path: left for v1.1; `launch` becomes async then.
+2. Editor hand-off path check: moved to the core. `Command::OpenEditor` is now a request; the core checks the path and answers `Event::LendTerminal` (the UI lets go and sends `Command::TerminalReleased`) or `Event::CommandFailed` (the UI keeps the terminal, no flicker). The TUI does no filesystem check.
+3. `update_task` into Now: allowed. Starting a slice still moves its task there; a task the coordinator moves into Now is marked unseen (the `coordinator_created` marker) until the user lands on it.
+4. Morning coordinator: a fresh one only if the newest journal file is at least as new as the coordinator's last use; otherwise the coordinator is kept and Needs you gets "<Day> wasn't closed; kept that coordinator. `:eod` to close it." Written into ADR 0012 as an amendment.
+5. `<leader>y`: removed (already out of the code with the side panel); no "whole answer" gathering needed.
+6. Side chats: kept read-only with the Bash allow-list (`cargo tree` and `cargo metadata` only with `--locked`), and they hold to the core suite whatever `[suites]` says.
+
 ## Retro
 
 To be filled in with `/retro`, then tag `review-wave-4`.

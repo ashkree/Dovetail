@@ -397,3 +397,38 @@ fn new_research_project_registers_it_and_opening_it_quits_for_the_switch() {
         "the core quit on its own"
     );
 }
+
+#[test]
+fn a_task_is_captured_into_a_research_project_by_id_without_opening_it() {
+    let (dir, run) = dirs();
+    let paths = paths(dir.path(), run.path());
+    register(&paths);
+    let registry = Db::open(&paths, None).expect("registry");
+    let before = projects::find(&registry, "market-sizing").expect("registered");
+    assert_eq!(before.kind, ProjectKind::Research);
+    assert!(matches!(
+        projects::find(&registry, "nope"),
+        Err(projects::ProjectError::UnknownId(id)) if id == "nope"
+    ));
+    // `dovetail add --project market-sizing` with no app running writes to the project's db.
+    let db = Db::open(&paths, Some(&before.id)).expect("project db");
+    let created = db
+        .create_task(
+            dovetail_api::NewTask {
+                title: "size the market".into(),
+                p_level: None,
+                bucket: None,
+                notes: String::new(),
+                follow_up_of: None,
+                pr: None,
+                related: Vec::new(),
+            },
+            false,
+        )
+        .wait()
+        .expect("created");
+    assert_eq!(created[0].title, "size the market");
+    // Finding it did not count as opening it.
+    let after = projects::find(&registry, "market-sizing").expect("registered");
+    assert_eq!(after, before);
+}
