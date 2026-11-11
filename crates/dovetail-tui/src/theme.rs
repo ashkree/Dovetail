@@ -1,5 +1,6 @@
-//! The one struct holding every colour (Decision 16). Purple is the default (task #13); Dusk
-//! stays as the cool-slate alternative.
+//! The one struct holding every colour (Decision 16). Mist is the default (chosen 2026-11-11 from
+//! the palette bench in `docs/research/palette-preview.html`); Purple and Dusk stay as
+//! alternatives.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -9,12 +10,14 @@ use ratatui::style::{Color, Modifier, Style};
 pub struct Theme {
     /// Body text: off-white, never pure white.
     pub body: Color,
-    /// Bold text, speaker labels and headings: the warm accent.
+    /// Bold text, speaker labels and headings: the accent.
     pub bold: Color,
     /// Italic text.
     pub italic: Color,
     /// Inline code and file paths.
     pub code: Color,
+    /// Links in markdown.
+    pub link: Color,
     /// Tool summaries, hints, older turns.
     pub dim: Color,
     /// Working agents.
@@ -59,6 +62,48 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// Mist: cool blue-white text with a hue per role (close to Catppuccin Mocha). Every
+    /// foreground is at least 6:1 against the kitty glass `#171b23`; over the brightest lantern
+    /// pixels of the wallpaper bold, italic and link drop under 4.5:1 and dim and error under 3:1.
+    pub fn mist() -> Self {
+        Self {
+            body: Color::Rgb(0xd0, 0xd6, 0xf2),
+            // Lavender.
+            bold: Color::Rgb(0xb4, 0xbe, 0xfe),
+            // Pink.
+            italic: Color::Rgb(0xf5, 0xc2, 0xe7),
+            // Green.
+            code: Color::Rgb(0xa6, 0xe3, 0xa1),
+            // Blue.
+            link: Color::Rgb(0x89, 0xb4, 0xfa),
+            dim: Color::Rgb(0x9a, 0x9b, 0xb2),
+            working: Color::Rgb(0x89, 0xb4, 0xfa),
+            // Yellow.
+            needs_you: Color::Rgb(0xf9, 0xe2, 0xaf),
+            ok: Color::Rgb(0xa6, 0xe3, 0xa1),
+            // Red.
+            error: Color::Rgb(0xf3, 0x8b, 0xa8),
+            focus: Color::Rgb(0xb4, 0xbe, 0xfe),
+            line: Color::Rgb(0x4f, 0x50, 0x66),
+            selection: Color::Rgb(0x2c, 0x2e, 0x3e),
+            ink: Color::Rgb(0x13, 0x14, 0x1a),
+            mode_normal: Color::Rgb(0xf9, 0xe2, 0xaf),
+            mode_insert: Color::Rgb(0xa6, 0xe3, 0xa1),
+            mode_command: Color::Rgb(0xf5, 0xc2, 0xe7),
+            // Teal.
+            mode_map: Color::Rgb(0x94, 0xe2, 0xd5),
+            map_ring: Color::Rgb(0xff, 0xd8, 0x4a),
+            // Peach.
+            cite: Color::Rgb(0xfa, 0xb3, 0x87),
+            chip: Color::Rgb(0xa6, 0xad, 0xc8),
+            speaker_you: Color::Rgb(0x89, 0xb4, 0xfa),
+            speaker_agent: Color::Rgb(0xb4, 0xbe, 0xfe),
+            // The name colours at ~55 %, over the glass.
+            speaker_you_rule: Color::Rgb(0x55, 0x6f, 0x99),
+            speaker_agent_rule: Color::Rgb(0x6d, 0x75, 0x9b),
+        }
+    }
+
     /// Purple: the AGS desktop palette (`~/.config/theme/theme.conf`) on a dark translucent
     /// terminal. Text colours are the AGS ones lifted for contrast: every foreground is at least
     /// 6:1 against the kitty glass `#171b23`; `dim` (chrome only) is 5.4:1.
@@ -72,6 +117,7 @@ impl Theme {
             italic: Color::Rgb(0xb9, 0xa4, 0xe8),
             // success #6edbb0, softened.
             code: Color::Rgb(0x7f, 0xd6, 0xc0),
+            link: Color::Rgb(0x7f, 0xd6, 0xc0),
             // text-secondary #9293aa, lifted a little.
             dim: Color::Rgb(0x8d, 0x8e, 0xa6),
             // info #70b8f0.
@@ -110,6 +156,7 @@ impl Theme {
             bold: Color::Rgb(0xc7, 0x9d, 0x5a),
             italic: Color::Rgb(0xa7, 0x90, 0xc3),
             code: Color::Rgb(0x69, 0xb2, 0xa4),
+            link: Color::Rgb(0x69, 0xb2, 0xa4),
             dim: Color::Rgb(0x80, 0x8a, 0x96),
             working: Color::Rgb(0x64, 0xa9, 0xed),
             needs_you: Color::Rgb(0xdf, 0x7e, 0x3a),
@@ -196,7 +243,7 @@ impl Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::purple()
+        Self::mist()
     }
 }
 
@@ -255,14 +302,20 @@ mod tests {
     }
 
     #[test]
-    fn purple_text_is_readable_on_the_glass() {
-        let t = Theme::purple();
+    fn text_is_readable_on_the_glass() {
+        for t in [Theme::mist(), Theme::purple()] {
+            readable_on_the_glass(&t);
+        }
+    }
+
+    fn readable_on_the_glass(t: &Theme) {
         let glass = [0x17, 0x1b, 0x23];
         assert!(contrast(t.body, glass) >= 10.0);
         for c in [
             t.bold,
             t.italic,
             t.code,
+            t.link,
             t.working,
             t.needs_you,
             t.ok,
