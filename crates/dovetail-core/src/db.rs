@@ -962,6 +962,99 @@ mod tests {
         assert_eq!(loaded, vec![old, new]);
     }
 
+    /// Every state migration, in order, from an empty file: the schema a fresh install gets.
+    #[test]
+    fn a_state_db_built_from_empty_has_the_final_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.db");
+        let conn = open_connection(&path, STATE_MIGRATIONS).unwrap();
+
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version as usize, STATE_MIGRATIONS.len());
+
+        let tables: std::collections::BTreeSet<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for table in [
+            "agents",
+            "conversation_entries",
+            "inbox_items",
+            "activity",
+            "messages",
+            "slice_queue",
+            "coordinator_notes",
+            "kept_worktrees",
+            "tasks",
+            "task_deps",
+            "task_related",
+            "decisions",
+            "decision_evidence",
+            "todo_items",
+            "maps",
+            "map_versions",
+            "research_rounds",
+            "findings",
+            "sources",
+            "finding_sources",
+            "reports",
+            "unfiled_findings",
+            "unfiled_finding_sources",
+        ] {
+            assert!(tables.contains(table), "missing table {table}: {tables:?}");
+        }
+
+        let columns = |table: &str| -> Vec<String> {
+            conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        // Columns added by later `ALTER TABLE` steps, which only a full run produces.
+        let agents = columns("agents");
+        for column in ["progress", "subagent_tokens", "claude_home", "takeover"] {
+            assert!(agents.iter().any(|c| c == column), "agents.{column}");
+        }
+        assert!(
+            columns("conversation_entries")
+                .iter()
+                .any(|c| c == "attachments")
+        );
+        let tasks = columns("tasks");
+        for column in ["research_kind", "altitude"] {
+            assert!(tasks.iter().any(|c| c == column), "tasks.{column}");
+        }
+        assert!(columns("research_rounds").iter().any(|c| c == "queued"));
+        assert!(!columns("map_versions").is_empty());
+        assert!(!columns("maps").is_empty());
+    }
+
+    /// The same for the registry, which has its own list.
+    #[test]
+    fn a_registry_db_built_from_empty_is_at_the_last_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_connection(&dir.path().join("registry.db"), REGISTRY_MIGRATIONS).unwrap();
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version as usize, REGISTRY_MIGRATIONS.len());
+        let kind_column: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('projects') WHERE name = 'kind'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(kind_column, 1, "projects.kind comes from migration 0003");
+    }
+
     #[test]
     fn todo_owners_migrate_up_from_empty_and_round_trip() {
         let dir = tempfile::tempdir().unwrap();

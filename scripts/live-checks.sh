@@ -6,6 +6,8 @@
 #   DOVETAIL_LIVE_TESTS=1 scripts/live-checks.sh driver mcp # some
 #
 # Checks: driver, permissions, hook, resume, mcp, app (slices, messaging and archive run in app).
+# Not covered yet (suggested, by hand in `app`): research rounds and findings, tangents
+# (side chats), reading mode, maps, take-over, profiles.
 # Everything uses separate XDG dirs under the scratch root, never your real Dovetail state, and
 # streams are recorded (DOVETAIL_RECORD_STREAMS=1) so new fixtures can be cut from them.
 # Each check prints PASS, FAIL or LOOK (needs your eyes). Logs stay in $ROOT for review.

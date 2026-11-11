@@ -2834,6 +2834,41 @@ fn items_with_no_known_creator_sit_under_the_session_whose_list_it_is() {
     h.quit();
 }
 
+/// M11: a task file caught mid-write (truncated, empty) keeps its last good version on screen,
+/// the rest of the list still updates, and the file is read again once it is whole.
+#[test]
+fn a_todo_file_caught_mid_write_keeps_its_last_version_until_it_is_whole() {
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let list = tasks_dir(&h.paths).join("dovetail-p-coordinator");
+    write_item(&list, "1", "alpha", "pending");
+    write_item(&list, "2", "beta", "pending");
+    prompt(&h, "hello");
+    h.wait_for("both items", |s| {
+        todo(s, "1").is_some() && todo(s, "2").is_some()
+    });
+
+    // Item 2 is rewritten and read half way; item 3 arrives whole in the same window.
+    std::fs::write(list.join("2.json"), "{\"id\": \"2\", \"subject\": \"be").expect("truncate");
+    write_item(&list, "3", "gamma", "pending");
+    h.wait_for("the whole item", |s| todo(s, "3").is_some());
+    let kept = todo(&h.snap, "2").expect("the last good version stays");
+    assert_eq!(kept.subject, "beta");
+    assert_eq!(kept.status, dovetail_api::TodoStatus::Pending);
+
+    // An empty file is the same state (a writer that truncates first).
+    std::fs::write(list.join("1.json"), "").expect("empty");
+    write_item(&list, "4", "delta", "pending");
+    h.wait_for("the next item", |s| todo(s, "4").is_some());
+    assert_eq!(todo(&h.snap, "1").map(|t| t.subject), Some("alpha".into()));
+
+    // Once the writer finishes, the new content shows.
+    write_item(&list, "2", "beta", "in_progress");
+    h.wait_for("the finished write", |s| {
+        todo(s, "2").map(|t| t.status) == Some(dovetail_api::TodoStatus::InProgress)
+    });
+    h.quit();
+}
+
 #[test]
 fn archiving_a_task_deletes_its_todo_list() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
