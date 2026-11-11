@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{AgentId, TaskId};
+use crate::model::{AgentId, Decision, ProjectId, ProjectSummary, Task, TaskId};
 
 /// Identifies a finding: the `findings.id` row id. Shown to agents as `F<id>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -295,6 +295,58 @@ pub struct DocEntry {
     pub path: PathBuf,
     /// Its first `# ` heading, else the file name.
     pub title: String,
+}
+
+/// Another project's library, loaded read-only for reading mode's `<leader>fr` (ADR 0018,
+/// decided 2026-11-11 later), in answer to [`crate::Command::BrowseProject`]. A copy taken when
+/// asked: it is not kept up to date.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BrowsedProject {
+    /// The project browsed.
+    pub project: ProjectSummary,
+    /// Its tasks, archived ones included (for research task titles and decision tasks).
+    pub tasks: Vec<Task>,
+    /// Its decision log, oldest first.
+    pub decisions: Vec<Decision>,
+    /// Each task's research, for tasks that have any.
+    pub research: Vec<ResearchSummary>,
+    /// Each research task's findings and sources.
+    pub listings: Vec<BrowsedListing>,
+    /// Markdown under its repo's `docs/`, sorted by path; empty for a research project.
+    pub docs: Vec<DocEntry>,
+}
+
+/// One task's findings and sources in a [`BrowsedProject`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowsedListing {
+    /// The task.
+    pub task: TaskId,
+    /// Its findings and sources.
+    pub listing: ResearchListing,
+}
+
+/// A document of a browsed project, for [`crate::Command::LoadBrowsed`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowseWhat {
+    /// A research document (not [`ResearchWhat::Listing`]: listings come with the project).
+    Research {
+        /// The task, in that project.
+        task: TaskId,
+        /// Which document.
+        what: ResearchWhat,
+    },
+    /// A repo doc, as [`DocEntry::path`] names it.
+    Doc(PathBuf),
+}
+
+/// Names a browsed project's document in [`crate::Event::BrowsedLoaded`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowsedDoc {
+    /// The project.
+    pub project: ProjectId,
+    /// The document.
+    pub what: BrowseWhat,
 }
 
 /// A finding or source cited as evidence, written `F<id>` or `S<id>` (no brackets) on the wire.

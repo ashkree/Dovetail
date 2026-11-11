@@ -1102,6 +1102,7 @@ impl App {
             Action::ToggleFocusMode => self.toggle_focus_mode(),
             Action::ToggleReadingMode => self.toggle_reading_mode(),
             Action::LeaveReadingMode => self.leave_reading_mode(),
+            Action::BrowseProjectLibrary => self.open_browse_picker(),
             Action::AskAboutReport => self.ask_about_report(),
             Action::Ignore => {}
             Action::PasteClipboard => self.paste_clipboard(),
@@ -1265,7 +1266,7 @@ impl App {
                 browse,
                 from,
             } => self.follow_citation(task, evidence, browse, from),
-            Effect::OpenProject(id) => self.pick_project(id),
+            Effect::BrowseProject(id) => self.browse_project(id),
             Effect::OpenTangents => self.show_tangents(),
             Effect::ReadTangent(tangent) => self.read_tangent(tangent),
             Effect::PickTangentProject { tangent, start } => {

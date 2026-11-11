@@ -10,7 +10,7 @@ use ratatui::widgets::Paragraph;
 
 use ratatui::widgets::{Block, Clear};
 
-use super::overlay::Overlay;
+use super::overlay::{Overlay, Purpose};
 use super::{App, HINTS, HINTS_SHORT};
 
 /// Hints on the right of the status bar in reading mode (ADR 0018).
@@ -111,11 +111,14 @@ impl App {
     fn draw_overlay(&self, frame: &mut Frame) {
         let screen = frame.area();
         match &self.overlay {
-            Some(Overlay::Picker(picker, _)) => {
+            Some(Overlay::Picker(picker, purpose)) => {
                 // The preview pane is the right 55 % of a box at most 130 wide, less its border.
                 let width = (usize::from(screen.width.saturating_sub(4).min(130)) * 55 / 100)
                     .saturating_sub(4);
                 let (title, lines) = match picker.selected() {
+                    Some(item) if matches!(purpose, Purpose::Browse) => {
+                        switcher::browse_preview(&self.snap, &item.key, width, &self.theme)
+                    }
                     Some(item) => {
                         switcher::preview(&self.snap, &item.key, width, &self.theme, &self.tz)
                     }

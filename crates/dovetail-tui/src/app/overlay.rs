@@ -18,6 +18,8 @@ pub(super) enum Purpose {
     Relate(TaskId),
     /// File this unfiled finding (an inbox item) under the chosen task.
     FileUnfiled(InboxId),
+    /// Browse the chosen project's library in reading mode (`<leader>fr`).
+    Browse,
     /// File this tangent into the chosen project (ADR 0017).
     FileTangent(TaskId),
     /// Start a task from this tangent in the chosen project.
@@ -134,6 +136,7 @@ impl App {
                         (Purpose::Relate(task), PickerKey::Task(other)) => {
                             self.toggle_related(task, other)
                         }
+                        (Purpose::Browse, PickerKey::Project(id)) => self.browse_project(id),
                         (Purpose::FileUnfiled(item), PickerKey::Task(task)) => {
                             self.outbox.push(Command::FileUnfiled { item, task });
                             self.note = Some(format!("filing the finding under #{}", task.0));

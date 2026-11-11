@@ -432,3 +432,160 @@ fn a_task_is_captured_into_a_research_project_by_id_without_opening_it() {
     let after = projects::find(&registry, "market-sizing").expect("registered");
     assert_eq!(after, before);
 }
+
+/// `<leader>fr` (ADR 0018, decided 2026-11-11 later): another project's library is read from
+/// its `state.db` opened read-only, while a different project is open, and nothing of it is
+/// written.
+#[test]
+fn another_projects_library_is_loaded_read_only() {
+    use dovetail_api::research::{BrowseWhat, ResearchWhat};
+    let (dir, run) = dirs();
+    let paths = paths(dir.path(), run.path());
+    // The browsed project, with a task, a round, a report and a decision, written as its own
+    // Dovetail would.
+    let browsed = register(&paths);
+    {
+        let db = Db::open(&paths, Some(&browsed.id)).expect("project db");
+        let task = db
+            .create_task(
+                NewTask {
+                    title: "size the market".into(),
+                    p_level: None,
+                    bucket: None,
+                    notes: String::new(),
+                    follow_up_of: None,
+                    pr: None,
+                    related: Vec::new(),
+                },
+                false,
+            )
+            .wait()
+            .expect("created")[0]
+            .id;
+        db.start_round(task, "Count the teams.".into())
+            .wait()
+            .expect("round");
+        db.insert_report(
+            task,
+            None,
+            "# EU market\n\nAbout 40k teams.\n".into(),
+            (0, 0),
+        )
+        .wait()
+        .expect("report");
+        db.log_decision(
+            dovetail_api::NewDecision {
+                task,
+                text: "Size by teams".into(),
+                why: None,
+                alternatives: Vec::new(),
+                supersedes: None,
+            },
+            dovetail_api::DecisionAuthor::User,
+        )
+        .wait()
+        .expect("decision");
+    }
+    let state_db = paths.state_db(&browsed.id);
+    // The DB thread closes its connection (checkpointing the WAL into the file) after the
+    // handle is dropped: wait for that, so the file is final.
+    let wal = state_db.with_extension("db-wal");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while wal.exists() {
+        assert!(Instant::now() < deadline, "the writer never closed");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let before = std::fs::read(&state_db).expect("its state.db");
+
+    // The open project: another research project.
+    let registry = Db::open(&paths, None).expect("registry");
+    let made = registry
+        .register_research("pricing-study".into(), "Pricing study".into())
+        .wait()
+        .expect("register")
+        .expect("new");
+    let open = projects::open(&registry, &made.id).expect("open");
+    drop(registry);
+    let fake = fixture("plain_turn");
+    let mut app = App::start(&fake, &paths, open);
+
+    app.send(Command::BrowseProject {
+        id: ProjectId("market-sizing".into()),
+    });
+    app.wait_until("the browsed library", |a| {
+        !a.failures.is_empty()
+            || a.events
+                .iter()
+                .any(|e| matches!(e, Event::ProjectBrowsed(_)))
+    });
+    assert!(app.failures.is_empty(), "{:?}", app.failures);
+    let library = app
+        .events
+        .iter()
+        .find_map(|e| match e {
+            Event::ProjectBrowsed(b) => Some(b.clone()),
+            _ => None,
+        })
+        .expect("browsed");
+    assert_eq!(library.project.id, ProjectId("market-sizing".into()));
+    assert_eq!(library.tasks[0].title, "size the market");
+    assert_eq!(library.decisions[0].text, "Size by teams");
+    assert_eq!(library.research.len(), 1);
+    assert_eq!(library.research[0].rounds[0].brief, "Count the teams.");
+    assert!(library.research[0].report_ms.is_some());
+    assert_eq!(library.listings.len(), 1);
+    assert!(
+        library.docs.is_empty(),
+        "a research project has no repo docs"
+    );
+    // The open project is still the open one, and its own snapshot is untouched.
+    assert_eq!(
+        app.snap.project.as_ref().map(|p| p.id.0.as_str()),
+        Some("pricing-study")
+    );
+    assert!(app.snap.research.is_empty());
+    assert!(app.snap.decisions.is_empty());
+
+    let task = library.tasks[0].id;
+    app.send(Command::LoadBrowsed {
+        project: ProjectId("market-sizing".into()),
+        what: BrowseWhat::Research {
+            task,
+            what: ResearchWhat::Report,
+        },
+    });
+    app.wait_until("the browsed report", |a| {
+        !a.failures.is_empty()
+            || a.events
+                .iter()
+                .any(|e| matches!(e, Event::BrowsedLoaded { .. }))
+    });
+    assert!(app.failures.is_empty(), "{:?}", app.failures);
+    let report = app
+        .events
+        .iter()
+        .find_map(|e| match e {
+            Event::BrowsedLoaded { document, .. } => Some(document.markdown.clone()),
+            _ => None,
+        })
+        .expect("loaded");
+    assert!(report.contains("About 40k teams."), "{report}");
+
+    // An unknown project is refused.
+    app.send(Command::BrowseProject {
+        id: ProjectId("nope".into()),
+    });
+    app.wait_until("the refusal", |a| !a.failures.is_empty());
+    assert!(app.failures[0].contains("nope"), "{:?}", app.failures);
+
+    app.quit();
+    // Nothing of the browsed project was written.
+    assert!(
+        std::fs::read(&state_db).expect("its state.db") == before,
+        "the browsed state.db changed"
+    );
+    // SQLite may leave an empty `-wal` beside the file after a reader on a WAL database: no
+    // frames, so nothing was written.
+    let wal_len = std::fs::metadata(&wal).map_or(0, |m| m.len());
+    assert_eq!(wal_len, 0, "browsing wrote to the WAL");
+}

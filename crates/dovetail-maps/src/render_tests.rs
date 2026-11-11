@@ -225,7 +225,9 @@ fn yellow_pixels(png_bytes: &[u8]) -> usize {
     let info = reader.next_frame(&mut buf).unwrap();
     assert_eq!(info.color_type, png::ColorType::Rgba);
     buf[..info.buffer_size()]
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|p| {
             p[0].abs_diff(0xff) < 30 && p[1].abs_diff(0xd8) < 30 && p[2].abs_diff(0x4a) < 30
         })

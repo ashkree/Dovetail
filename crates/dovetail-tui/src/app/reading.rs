@@ -7,16 +7,23 @@
 //! page is the core's job (`Command::OpenExternal`).
 
 use dovetail_api::research::{
-    Evidence, ResearchContent, ResearchDocument, ResearchWhat, SourceKind,
+    BrowseWhat, Evidence, ResearchContent, ResearchDocument, ResearchWhat, SourceKind,
 };
-use dovetail_api::{AgentId, AgentKind, Command, Event, ProjectKind, TaskId};
+use dovetail_api::{AgentId, AgentKind, Command, Event, ProjectId, ProjectKind, TaskId};
 
+use super::overlay::{Overlay, Purpose};
 use super::{App, ChatSite};
 use crate::buffers::library::decision_markdown;
 use crate::buffers::reader::Opened;
 use crate::buffers::{ReadTarget, ask_agent};
 use crate::mode::Mode;
+use crate::picker::Picker;
 use crate::region::{Preset, RegionId};
+use crate::switcher;
+
+/// What `i` says while another project is browsed: Ask reads the open project only.
+pub(crate) const ASK_OFF_WHILE_BROWSING: &str =
+    "Ask works in the open project; switch with <leader>pp to ask about this.";
 
 impl App {
     /// Whether reading mode is on.
@@ -36,6 +43,10 @@ impl App {
     pub(super) fn enter_reading_mode(&mut self) {
         // The task in focus in Layout B, to open its report straight away.
         let focused = self.focused_task();
+        // Browsing is not remembered: reading mode starts on the open project.
+        let open = self.snap.project.as_ref().map(|p| p.id.clone());
+        self.buffers.library.stop_browsing(open.as_ref());
+        self.buffers.reader.forget_elsewhere();
         self.park_chat();
         self.focus_mode = false;
         self.regions.set_preset(Preset::Reading);
@@ -118,10 +129,58 @@ impl App {
         }
     }
 
+    /// `<leader>fr`: every registered project, as `<leader>pp` lists them; the one picked is
+    /// browsed (ADR 0018, decided 2026-11-11 later).
+    pub(super) fn open_browse_picker(&mut self) {
+        let items = switcher::project_items(&self.snap, &self.theme);
+        if items.is_empty() {
+            self.note = Some("no other projects to browse".into());
+            return;
+        }
+        self.open_overlay(Overlay::Picker(
+            Picker::new("Browse library", items),
+            Purpose::Browse,
+        ));
+    }
+
+    /// Shows `id`'s library, read-only, loaded now (a project browsed again is loaded again);
+    /// the open project's comes back. The open project never changes: `<leader>pp` does that.
+    pub(super) fn browse_project(&mut self, id: ProjectId) {
+        if self.snap.project.as_ref().is_some_and(|p| p.id == id) {
+            self.buffers.library.stop_browsing(Some(&id));
+            self.note = None;
+        } else {
+            let Some(project) = self.snap.projects.iter().find(|p| p.id == id) else {
+                return;
+            };
+            self.note = Some(format!("loading {}…", project.name));
+            self.buffers
+                .library
+                .browse(id.clone(), project.name.clone());
+            self.outbox.push(Command::BrowseProject { id });
+        }
+        self.regions.set_focus(RegionId::Library);
+    }
+
     /// Core answers reading mode uses: listings, docs, documents, and a new Ask session.
     /// Called before the event is applied.
     pub(super) fn reading_event(&mut self, event: &Event) {
         match event {
+            Event::ProjectBrowsed(browsed) => {
+                self.buffers.library.receive_browsed(browsed);
+                if self
+                    .note
+                    .as_deref()
+                    .is_some_and(|n| n.starts_with("loading "))
+                {
+                    self.note = None;
+                }
+            }
+            // A browse that failed goes back to the open project; the failure is shown.
+            Event::CommandFailed { .. } if self.buffers.library.browse_loading() => {
+                let open = self.snap.project.as_ref().map(|p| p.id.clone());
+                self.buffers.library.stop_browsing(open.as_ref());
+            }
             Event::ResearchLoaded {
                 task,
                 content: ResearchContent::Listing(listing),
@@ -232,19 +291,57 @@ impl App {
                 self.note = Some("loading…".into());
             }
             ReadTarget::Decision(id) => {
-                let Some(markdown) = decision_markdown(&self.snap, *id, &self.tz) else {
-                    self.note = Some("that decision is gone".into());
-                    return;
+                let markdown =
+                    decision_markdown(&self.snap.decisions, &self.snap.tasks, *id, &self.tz);
+                self.show_decision(target, task, title, markdown);
+            }
+            ReadTarget::Elsewhere(project, inner) => {
+                let what = match inner.as_ref() {
+                    ReadTarget::Research { task, what } => BrowseWhat::Research {
+                        task: *task,
+                        what: what.clone(),
+                    },
+                    ReadTarget::Doc(path) => BrowseWhat::Doc(path.clone()),
+                    ReadTarget::Decision(id) => {
+                        let markdown = self
+                            .buffers
+                            .library
+                            .browsed_decision(project, *id, &self.tz);
+                        self.show_decision(target.clone(), task, title, markdown);
+                        return;
+                    }
+                    // Tangents are never browsed: they show whatever the library shows.
+                    ReadTarget::Elsewhere(..) | ReadTarget::Tangent { .. } => return,
                 };
-                self.buffers.reader.open(Opened {
-                    target,
-                    task,
-                    title,
-                    document: ResearchDocument::text(None, markdown),
+                self.outbox.push(Command::LoadBrowsed {
+                    project: project.clone(),
+                    what,
                 });
-                self.regions.set_focus(RegionId::Reader);
+                self.buffers.reader.await_target(target, task, title);
+                self.note = Some("loading…".into());
             }
         }
+    }
+
+    /// A decision-log entry, written out here rather than fetched.
+    fn show_decision(
+        &mut self,
+        target: ReadTarget,
+        task: Option<TaskId>,
+        title: String,
+        markdown: Option<String>,
+    ) {
+        let Some(markdown) = markdown else {
+            self.note = Some("that decision is gone".into());
+            return;
+        };
+        self.buffers.reader.open(Opened {
+            target,
+            task,
+            title,
+            document: ResearchDocument::text(None, markdown),
+        });
+        self.regions.set_focus(RegionId::Reader);
     }
 
     /// `gd` and `gx`: open the cited finding or source, or the web source in the browser.
@@ -265,7 +362,20 @@ impl App {
                 Some("this document is not research: it cites nothing Dovetail keeps".into());
             return;
         };
-        let listing = self.buffers.library.listing(task);
+        // A browsed project's document cites that project's findings and sources.
+        let elsewhere = from.elsewhere().cloned();
+        let from = match from {
+            ReadTarget::Elsewhere(_, inner) => *inner,
+            from => from,
+        };
+        let there = |target: ReadTarget| match &elsewhere {
+            Some(project) => ReadTarget::Elsewhere(project.clone(), Box::new(target)),
+            None => target,
+        };
+        let listing = match &elsewhere {
+            Some(project) => self.buffers.library.browsed_listing(project, task),
+            None => self.buffers.library.listing(task),
+        };
         let Some(evidence) = evidence else {
             // `gx` on a web source with no citation in view opens the page itself.
             if browse
@@ -296,16 +406,14 @@ impl App {
                     ));
                     return;
                 }
-                let label = self
-                    .buffers
-                    .library
-                    .finding(task, id)
+                let label = listing
+                    .and_then(|l| l.findings.iter().find(|f| f.id == id))
                     .map_or_else(String::new, |f| format!(" · {}", f.label));
                 self.read(
-                    ReadTarget::Research {
+                    there(ReadTarget::Research {
                         task,
                         what: ResearchWhat::Finding(id),
-                    },
+                    }),
                     Some(task),
                     format!("F{}{label}", id.0),
                 );
@@ -337,10 +445,10 @@ impl App {
                 }
                 let locator = source.map_or_else(String::new, |s| format!(" · {}", s.locator));
                 self.read(
-                    ReadTarget::Research {
+                    there(ReadTarget::Research {
                         task,
                         what: ResearchWhat::Source(id),
-                    },
+                    }),
                     Some(task),
                     format!("S{}{locator}", id.0),
                 );
@@ -356,6 +464,16 @@ impl App {
 
     /// `i` in the reading column or Ask: type a question about the open report.
     pub(super) fn ask_about_report(&mut self) {
+        let foreign = self.buffers.library.browsing().is_some()
+            || self
+                .buffers
+                .reader
+                .opened()
+                .is_some_and(|o| o.target.elsewhere().is_some());
+        if foreign {
+            self.note = Some(ASK_OFF_WHILE_BROWSING.into());
+            return;
+        }
         let Some(task) = self.buffers.reader.task().or(self.buffers.ask.task()) else {
             self.note = Some("open a report first: ⏎ on one in the library".into());
             return;
@@ -402,7 +520,13 @@ impl App {
     pub(super) fn settle_reading(&mut self) {
         let typing = self.chat_site == ChatSite::Ask && self.mode == Mode::Insert;
         if !typing {
-            let task = self.buffers.reader.task();
+            // A browsed project's task is not the open project's task of that number.
+            let task = self
+                .buffers
+                .reader
+                .opened()
+                .filter(|o| o.target.elsewhere().is_none())
+                .and_then(|o| o.task);
             self.buffers.ask.follow(task, &self.snap);
         }
     }

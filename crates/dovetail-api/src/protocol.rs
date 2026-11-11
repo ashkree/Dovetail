@@ -12,7 +12,10 @@ use crate::model::{
     SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals, UsageLimits,
     Warning, WarningId, WorktreeInfo,
 };
-use crate::research::{DocEntry, ResearchContent, ResearchDocument, ResearchSummary, ResearchWhat};
+use crate::research::{
+    BrowseWhat, BrowsedDoc, BrowsedProject, DocEntry, ResearchContent, ResearchDocument,
+    ResearchSummary, ResearchWhat,
+};
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -151,6 +154,17 @@ pub enum Event {
     DocLoaded {
         /// The doc, as [`DocEntry::path`] names it.
         path: PathBuf,
+        /// Its text; HTML is left as it is, for the UI to convert.
+        document: ResearchDocument,
+    },
+    /// Another project's library, in answer to [`Command::BrowseProject`]. Changes nothing in
+    /// the snapshot.
+    ProjectBrowsed(Box<BrowsedProject>),
+    /// A browsed project's document, in answer to [`Command::LoadBrowsed`]. Changes nothing in
+    /// the snapshot.
+    BrowsedLoaded {
+        /// Which project's document.
+        doc: BrowsedDoc,
         /// Its text; HTML is left as it is, for the UI to convert.
         document: ResearchDocument,
     },
@@ -548,6 +562,23 @@ pub enum Command {
     LoadDoc {
         /// As [`DocEntry::path`] names it.
         path: PathBuf,
+    },
+    /// Load another registered project's library read-only (`<leader>fr` in reading mode, ADR
+    /// 0018 decided 2026-11-11 later): its research, decision log and docs, from its
+    /// `state.db` opened read-only and its files. Nothing of that project is written and the
+    /// open project does not change. The core answers with [`Event::ProjectBrowsed`], or
+    /// [`Event::CommandFailed`].
+    BrowseProject {
+        /// The project.
+        id: ProjectId,
+    },
+    /// Fetch one document of a browsed project, read-only. The core answers with
+    /// [`Event::BrowsedLoaded`], or [`Event::CommandFailed`] when there is no such thing.
+    LoadBrowsed {
+        /// The project.
+        project: ProjectId,
+        /// The document.
+        what: BrowseWhat,
     },
     /// Send a fresh snapshot (after a [`crate::ApplyResult::Gap`]).
     Resync,

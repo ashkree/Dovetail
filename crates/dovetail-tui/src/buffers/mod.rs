@@ -160,8 +160,9 @@ pub enum Effect {
         /// The document it was pressed in (`gx` with no citation opens a web source's own page).
         from: ReadTarget,
     },
-    /// Ask to open another project (B24), as the project switcher does.
-    OpenProject(dovetail_api::ProjectId),
+    /// Show a project's library in reading mode, read-only: another project is browsed, the
+    /// open one comes back (ADR 0018, decided 2026-11-11 later).
+    BrowseProject(dovetail_api::ProjectId),
     /// Show the tangents list (ADR 0017).
     OpenTangents,
     /// Read a tangent's latest answer in reading mode.

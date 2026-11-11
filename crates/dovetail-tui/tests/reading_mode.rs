@@ -6,7 +6,7 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::research::{DocImage, ResearchDocument, ResearchWhat};
+use dovetail_api::research::{BrowseWhat, DocImage, ResearchDocument, ResearchWhat};
 use dovetail_api::*;
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;
@@ -551,4 +551,214 @@ fn snapshot_reading_a_report_at_160() {
 #[test]
 fn snapshot_reading_a_report_at_220() {
     insta::assert_snapshot!(snapshot_at(220, 50));
+}
+
+/// `<leader>fr` with the picker filtered to `name`, picked.
+fn browse(app: &mut App, name: &str) {
+    keys(app, " fr");
+    for c in name.chars() {
+        app.on_key(key(c), 0);
+    }
+    app.on_key(enter(), 0);
+}
+
+/// Hands every command the app has to the core, then the answers to the app.
+fn hand_over(core: &mut MockCore, app: &mut App) {
+    for command in app.take_commands() {
+        core.handle(command);
+    }
+    deliver(core, app);
+}
+
+#[test]
+fn reading_text_is_96_columns_padded_centred_and_transparent() {
+    let (_core, mut app) = report();
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    let mut terminal = Terminal::new(TestBackend::new(320, 50)).expect("terminal");
+    terminal.draw(|f| app.draw(f)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    let reader = dovetail_tui::region::reading_layout(buffer.area, false).reader;
+    // The pane's border and its one-column inset, then the reading column.
+    let inner = ratatui::layout::Rect::new(
+        reader.x + 2,
+        reader.y + 1,
+        reader.width - 4,
+        reader.height - 2,
+    );
+    let text = dovetail_tui::render::reading_column::reading_text(inner);
+    assert_eq!(text.width, 96);
+    assert_eq!(text.y, inner.y + 1, "one row of padding on top");
+    // Centred: 96 + 3 a side.
+    assert_eq!(text.x - inner.x, (inner.width - 102) / 2 + 3);
+    let mut leftmost = u16::MAX;
+    for y in inner.y..inner.y + inner.height {
+        for x in inner.x..inner.x + inner.width {
+            let cell = &buffer[(x, y)];
+            assert_eq!(
+                cell.bg,
+                ratatui::style::Color::Reset,
+                "no background at ({x}, {y})"
+            );
+            if cell.symbol() != " " {
+                assert!(
+                    (text.x..text.x + 96).contains(&x),
+                    "text outside the column at ({x}, {y})"
+                );
+                leftmost = leftmost.min(x);
+            }
+        }
+    }
+    assert_eq!(
+        leftmost, text.x,
+        "the text starts at the column's padded edge"
+    );
+}
+
+#[test]
+fn leader_fr_browses_another_projects_library_read_only() {
+    let (mut core, mut app) = reading();
+    browse(&mut app, "Market");
+    let commands = app.take_commands();
+    assert_eq!(
+        commands,
+        [Command::BrowseProject {
+            id: ProjectId("market-sizing".into())
+        }]
+    );
+    for command in commands {
+        core.handle(command);
+    }
+    deliver(&mut core, &mut app);
+    let screen = render(&mut app, 160, 40);
+    assert!(
+        render(&mut app, 240, 40).contains("library · Market sizing · not open"),
+        "{screen}"
+    );
+    assert!(screen.contains("EU market size"), "{screen}");
+    assert!(
+        screen.contains("Decisions (1)"),
+        "its decision log: {screen}"
+    );
+    assert!(
+        !screen.contains("Fuzzy picker"),
+        "not the open project's research: {screen}"
+    );
+    assert!(
+        !screen.contains("Docs · ADRs"),
+        "a research project has no docs"
+    );
+    assert_eq!(
+        app.snapshot().project.as_ref().map(|p| p.id.0.as_str()),
+        Some("dovetail"),
+        "the open project does not change"
+    );
+
+    // Its report comes from that project, read-only.
+    pick(&mut app, "#3");
+    app.on_key(enter(), 0);
+    let load = Command::LoadBrowsed {
+        project: ProjectId("market-sizing".into()),
+        what: BrowseWhat::Research {
+            task: TaskId(3),
+            what: ResearchWhat::Report,
+        },
+    };
+    assert_eq!(app.take_commands(), std::slice::from_ref(&load));
+    core.handle(load);
+    deliver(&mut core, &mut app);
+    let screen = render(&mut app, 160, 40);
+    assert!(screen.contains("about 40k teams"), "{screen}");
+    assert!(screen.contains("Market sizing · #3 report"), "{screen}");
+
+    // Picking the open project comes back to it, asking nothing of the core.
+    browse(&mut app, "Dovetail");
+    assert!(app.take_commands().is_empty());
+    let screen = render(&mut app, 160, 40);
+    assert!(!screen.contains("not open"), "{screen}");
+    assert!(screen.contains("Fuzzy picker"), "{screen}");
+}
+
+#[test]
+fn enter_on_a_project_row_browses_it_instead_of_switching() {
+    let (mut core, mut app) = reading();
+    pick(&mut app, "notes-site");
+    app.on_key(enter(), 0);
+    let commands = app.take_commands();
+    assert_eq!(
+        commands,
+        [Command::BrowseProject {
+            id: ProjectId("notes-site".into())
+        }]
+    );
+    for command in commands {
+        core.handle(command);
+    }
+    deliver(&mut core, &mut app);
+    let screen = render(&mut app, 160, 40);
+    assert!(
+        render(&mut app, 240, 40).contains("library · notes-site · not open"),
+        "{screen}"
+    );
+    assert!(screen.contains("Docs · ADRs (1)"), "its docs: {screen}");
+
+    // Its doc is read from that project.
+    pick(&mut app, "Docs · ADRs");
+    keys(&mut app, "o");
+    pick(&mut app, "intro.md");
+    app.on_key(enter(), 0);
+    assert_eq!(
+        app.take_commands(),
+        [Command::LoadBrowsed {
+            project: ProjectId("notes-site".into()),
+            what: BrowseWhat::Doc("intro.md".into()),
+        }]
+    );
+
+    // Enter on the open project's row comes back; nothing switches projects.
+    pick(&mut app, "Dovetail");
+    app.on_key(enter(), 0);
+    let commands = app.take_commands();
+    assert!(
+        !commands
+            .iter()
+            .any(|c| matches!(c, Command::OpenProject { .. })),
+        "{commands:?}"
+    );
+    assert!(
+        !render(&mut app, 160, 40).contains("sessions stop"),
+        "no offer to switch"
+    );
+    assert!(!render(&mut app, 160, 40).contains("not open"));
+}
+
+#[test]
+fn ask_is_off_while_browsing_and_browsing_is_not_remembered() {
+    let (mut core, mut app) = reading();
+    browse(&mut app, "Market");
+    hand_over(&mut core, &mut app);
+    pick(&mut app, "#3");
+    app.on_key(enter(), 0);
+    hand_over(&mut core, &mut app);
+    assert_eq!(app.focus(), RegionId::Reader);
+    keys(&mut app, "i");
+    assert!(
+        !app.take_commands()
+            .iter()
+            .any(|c| matches!(c, Command::StartAsk { .. })),
+        "no Ask about another project"
+    );
+    assert_eq!(app.mode(), Mode::Normal);
+    assert_eq!(
+        app.note(),
+        Some("Ask works in the open project; switch with <leader>pp to ask about this.")
+    );
+
+    // Leaving and coming back starts on the open project, with its own documents only.
+    app.on_key(esc(), 0);
+    assert!(!app.reading_mode());
+    keys(&mut app, " r");
+    let screen = render(&mut app, 160, 40);
+    assert!(!screen.contains("not open"), "{screen}");
+    assert!(!screen.contains("about 40k teams"), "{screen}");
 }

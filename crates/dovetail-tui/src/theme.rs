@@ -32,8 +32,6 @@ pub struct Theme {
     pub selection: Color,
     /// Text on a coloured badge.
     pub ink: Color,
-    /// Solid background of the reading column in reading views (reading mode, a research document).
-    pub reading_bg: Color,
     /// Status-bar mode badge in Normal mode.
     pub mode_normal: Color,
     /// Status-bar mode badge in Insert mode.
@@ -76,7 +74,6 @@ impl Theme {
             line: Color::Rgb(0x4a, 0x52, 0x5e),
             selection: Color::Rgb(0x2a, 0x32, 0x40),
             ink: Color::Rgb(0x15, 0x17, 0x1c),
-            reading_bg: Color::Rgb(0x1b, 0x20, 0x28),
             // Mode badges are backgrounds under `ink` text: softened like the text colours, but
             // never below 7:1 contrast with `ink` (WCAG AAA). Normal and Insert take the full
             // ~13 % (7.2:1 and 8.8:1); Command only ~7 %, as 13 % would leave 6.3:1.
@@ -183,6 +180,10 @@ impl Padding {
 
 /// Padding inside the coordinator chat pane.
 pub const CHAT_PADDING: Padding = Padding { x: 2, y: 1 };
+
+/// Padding inside reading mode's reading column, around its text (ADR 0018, decided
+/// 2026-11-11 later).
+pub const READING_PADDING: Padding = Padding { x: 3, y: 1 };
 
 #[cfg(test)]
 mod tests {
