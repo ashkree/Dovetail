@@ -459,6 +459,24 @@ pub enum InboxKind {
         /// What went wrong.
         text: String,
     },
+    /// A `research_propose` call: an idea or a decision the coordinator wants the user to accept
+    /// (ADR 0015). Nothing is written until `y`.
+    Proposal {
+        /// The research task (the question).
+        task: TaskId,
+        /// Idea or decision.
+        kind: crate::research::ProposalKind,
+        /// The idea, or the decision in one line.
+        text: String,
+        /// The findings and sources behind it; never empty for a decision.
+        evidence: Vec<crate::research::Evidence>,
+        /// Why, if given.
+        #[serde(default)]
+        why: Option<String>,
+        /// Options considered and not taken (decisions).
+        #[serde(default)]
+        alternatives: Vec<Alternative>,
+    },
 }
 
 /// The `tool` of the Permission item Dovetail raises itself for a `start_slice` that needs
@@ -760,6 +778,9 @@ pub struct Decision {
     pub alternatives: Vec<Alternative>,
     /// The earlier entry this one replaces.
     pub supersedes: Option<DecisionId>,
+    /// The findings and sources it rests on (decisions accepted from `research_propose`).
+    #[serde(default)]
+    pub evidence: Vec<crate::research::Evidence>,
 }
 
 /// An option considered for a decision and not taken.

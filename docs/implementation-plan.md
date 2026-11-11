@@ -431,7 +431,8 @@ CREATE TABLE map_versions (map_id TEXT NOT NULL REFERENCES maps(id), version INT
 - Task #27 `0010_agent_claude_home` (`agents.claude_home`, the Claude config folder a session ran under; ADR 0009)
 - M14 `0011_agent_takeover` (`agents.takeover`, a session's take-over lock as JSON, task #32)
 - M15 `0012_maps`
-- R1 (M17 in `docs/plan/research-sessions.md`) `0013_research`: `research_rounds`, `findings`, `sources`, `finding_sources`, `reports` (written from R2), `tasks.research_kind` and `tasks.altitude` (`docs/research.md` §3). R2's `decision_evidence` is next, `0014`.
+- R1 (M17 in `docs/plan/research-sessions.md`) `0013_research`: `research_rounds`, `findings`, `sources`, `finding_sources`, `reports` (written from R2), `tasks.research_kind` and `tasks.altitude` (`docs/research.md` §3). R2's `decision_evidence` is `0014`.
+- R2 (M18) `0014_decision_evidence`: `decision_evidence (decision_id, kind, ref_id)`, the findings and sources an accepted `research_propose` decision rests on (ADR 0015); `decisions` itself is unchanged (ADR 0003).
 
 Tables arrive with the milestone that uses them, so no unused tables sit around.
 
@@ -660,6 +661,17 @@ From M5, milestones are built in waves, gated once per wave (Opus `code-review`,
   - Files: default root `<data>/projects/<id>/research/`, or the recipe's `research_dir` (relative to the repo root, no `..`; or absolute). `config/projects/dovetail.toml` sets `docs/research`; `scripts/bootstrap.sh` reports whether the installed recipe has it.
 - **Done when:** the M17 validation list in `docs/plan/research-sessions.md`.
 - **Tests:** `dovetail-core/tests/research.rs` (both S7 recordings through `FakeDriver`, a page fetched twice, restart with files rebuilt, the opt-in folder, no round), `research::capture` unit tests (quick findings, WebSearch links, the output file), `dovetail-tui/tests/research.rs` (`:round`).
+
+### R2. Research suite tools — M18 of `docs/plan/research-sessions.md`
+- **Scope:** `docs/research.md` §6–§7 and ADR 0015. Four coordinator-only tools served by `dovetail mcp` with the `research_` names as written (the suite rename is M20): `research_start_round`, `research_write_report`, `research_propose`, `research_get`.
+- **Built (branch `dovetail/m18-research-tools`):**
+  - API: the four tools in `dovetail-api/src/tools.rs` (`ResearchStartRound`, `ResearchWriteReport`, `ResearchPropose`, `ResearchGet`; a decision without `evidence`, a malformed id or a bad `what` fail `Tool::validate`); `research::{Evidence, ProposalKind}` (`Evidence` is written `F3`/`S12` on the wire); `InboxKind::Proposal { task, kind, text, evidence, why, alternatives }`; `Decision::evidence`.
+  - Core: `tools/research.rs` (handlers and the answer to a proposal), `research/report.rs` (report validation: unresolved citations and a decision report without its sections refuse; uncited claims and unlabelled figures flag; the `Evidence: N sources, M independent` line is rewritten from the cited sources, searches excluded, independence by registrable domain or file path), `Core::open_round_for`/`close_round_for` (the one path under `Command::StartRound`/`CloseRound` and the tools), `Waiter::Proposal`. Migration `0014_decision_evidence`; `Db::{insert_report, research_kind, set_research_kind, log_decision_with_evidence}`.
+  - `research_propose` returns `pending` at once and writes nothing. `y` (`PermissionAnswer::Allow`): an idea becomes a follow-up task in Unsorted (`follow_up_of` the research task, not marked coordinator-created), a decision goes through the `log_decision` storage path with its evidence rows. `A` (`AllowAlways`) on an idea opens a new round with the idea as its brief. `d` and `x` drop it. The coordinator is told by a user message either way (as `start_slice`); a proposal pending at a restart expires with a message, like `start_slice`.
+  - TUI (minimum): the Proposal item in Needs you (row, detail, switcher; `y`/`A`/`d`) and `evidence: [F3] [S12]` under a decision in the task detail.
+  - `config/roles/coordinator.md` gained two research lines (18 lines); the installed copy needs `scripts/bootstrap.sh --force`.
+- **Done when:** the M18 validation list in `docs/plan/research-sessions.md`.
+- **Tests:** `dovetail-core/tests/research_tools.rs` (round and report through the socket and `FakeDriver`, the specified errors, accept and drop, the idea routes, restart), `research::report` unit tests, `dovetail-api` serde test for `Proposal` and `Evidence`.
 
 ### Daily-driver fixes (after M10)
 Fixes from the first days of building Dovetail inside Dovetail, one slice and PR each, all merged on 2026-11-09. They come ahead of M11 and count towards M16's "fixing what hurts"; no milestone box is ticked by them.

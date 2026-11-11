@@ -41,7 +41,9 @@
 //!   `mcp__dovetail__log_decision`, `mcp__dovetail__draw_map`
 //! * coordinator only: `mcp__dovetail__create_task`, `mcp__dovetail__start_slice`,
 //!   `mcp__dovetail__add_project`, `mcp__dovetail__archive_slice`, `mcp__dovetail__archive_task`,
-//!   `mcp__dovetail__list_tasks`, `mcp__dovetail__get_task`, `mcp__dovetail__update_task`
+//!   `mcp__dovetail__list_tasks`, `mcp__dovetail__get_task`, `mcp__dovetail__update_task`,
+//!   `mcp__dovetail__research_start_round`, `mcp__dovetail__research_write_report`,
+//!   `mcp__dovetail__research_propose`, `mcp__dovetail__research_get`
 //!
 //! The core passes these to `--allowedTools` (`dovetail_core::session::launch`). The `tool`
 //! field forwarded to the app is the bare name (`ask_user`). Subagents reach the tools through
@@ -518,6 +520,77 @@ fn tool_defs() -> Vec<ToolDef> {
                 to redraw the map as a new version; a new subject is a new map. Maps are kept \
                 per project and linked to your task.",
             schema: dovetail_maps::input_schema,
+        },
+        ToolDef {
+            name: "research_start_round",
+            description: "Open the next round of a research task: a fan-out of subagents under \
+                the user's criteria. Call it before you launch research subagents; while it is \
+                open, Dovetail files each subagent's full report and the sources it actually \
+                fetched or read, outside your context. Put the user's criteria in `brief`, \
+                verbatim where you can. One round is open at a time: `research_write_report` \
+                closes it. Returns `{round, dir, status}`. Errors: unknown or archived task, an \
+                empty brief, a round already open.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "task": {"type": "integer", "description": "Id of an existing task (the question)."},
+                    "brief": {"type": "string", "description": "The user's criteria for this round, verbatim where possible."}
+                }, "required": ["task", "brief"]})
+            },
+        },
+        ToolDef {
+            name: "research_write_report",
+            description: "Store the report of a research task and close its open round. Send the \
+                whole report each time; it replaces the last one. Cite findings as [F3] and \
+                sources as [S12], using the ids Dovetail shows; a citation that does not exist \
+                refuses the write and the error lists the ids that do. Dovetail also flags \
+                factual claims without a citation and key figures without a label (Sourced, \
+                Derived or Estimate) in the result, and writes the \"Evidence: N sources, M \
+                independent\" line itself. A task marked as a decision needs the template \
+                sections (Key figures, Options, What would change this, Open questions). \
+                Returns `{written, uncited, unlabelled_figures, citations_resolved}`.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "task": {"type": "integer", "description": "Id of the research task."},
+                    "body": {"type": "string", "description": "The whole report in markdown, citing findings as [F3] and sources as [S12]. Rewrites the previous report."}
+                }, "required": ["task", "body"]})
+            },
+        },
+        ToolDef {
+            name: "research_propose",
+            description: "Propose an idea or a decision from research to the user. It never \
+                writes anything itself: the proposal goes to the user's inbox, and the call \
+                returns `pending` at once. If the user accepts, an idea becomes a follow-up \
+                task in Unsorted (or a new round), and a decision is logged with its evidence; \
+                either way the answer arrives later as a message. A `decision` needs \
+                `evidence`: the finding and source ids it rests on, like [\"F3\", \"S12\"]. Use \
+                this instead of settling a research question in prose or with `log_decision`.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "task": {"type": "integer", "description": "Id of the research task."},
+                    "kind": {"type": "string", "enum": ["idea", "decision"]},
+                    "text": {"type": "string", "description": "The idea, or the decision in one line."},
+                    "evidence": {"type": "array", "items": {"type": "string"}, "description": "Finding and source ids, e.g. [\"F3\", \"S12\"]. Required for a decision."},
+                    "why": {"type": "string"},
+                    "alternatives": {"type": "array", "items": {
+                        "type": "object", "properties": {
+                            "option": {"type": "string"},
+                            "why_not": {"type": "string"}
+                        }, "required": ["option"]}}
+                }, "required": ["task", "kind", "text"]})
+            },
+        },
+        ToolDef {
+            name: "research_get",
+            description: "Read one stored research document, so you can cite it without keeping \
+                it in context: the latest `report`, a round's brief (`round:N`), a `finding:N` \
+                or a `source:N` (the numbers in [F3] and [S12]). Long documents are cut, with \
+                the file's path at the end.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "task": {"type": "integer", "description": "Id of the research task."},
+                    "what": {"type": "string", "description": "`report`, `round:N`, `finding:N` or `source:N`."}
+                }, "required": ["task", "what"]})
+            },
         },
     ]
 }

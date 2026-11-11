@@ -183,6 +183,10 @@ pub(crate) fn task_detail(task: &Task, slices: &[&Agent], decisions: &[Decision]
         if let Some(why) = d.why.as_deref().filter(|w| !w.trim().is_empty()) {
             let _ = writeln!(out, "  Why: {why}");
         }
+        if !d.evidence.is_empty() {
+            let ids: Vec<String> = d.evidence.iter().map(ToString::to_string).collect();
+            let _ = writeln!(out, "  Evidence: {}", ids.join(", "));
+        }
         for alt in &d.alternatives {
             match alt.why_not.as_deref().filter(|w| !w.trim().is_empty()) {
                 Some(why_not) => {
@@ -306,6 +310,7 @@ mod tests {
                     why_not: Some("slow".into()),
                 }],
                 supersedes: None,
+                evidence: Vec::new(),
             },
             Decision {
                 id: DecisionId(2),
@@ -316,6 +321,7 @@ mod tests {
                 why: None,
                 alternatives: vec![],
                 supersedes: Some(DecisionId(1)),
+                evidence: Vec::new(),
             },
         ];
         let text = task_detail(&t, &[], &decisions);

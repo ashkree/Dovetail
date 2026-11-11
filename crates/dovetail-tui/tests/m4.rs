@@ -1011,6 +1011,7 @@ fn with_decisions() -> Snapshot {
             why: None,
             alternatives: vec![],
             supersedes: None,
+            evidence: Vec::new(),
         },
         Decision {
             id: DecisionId(2),
@@ -1024,6 +1025,7 @@ fn with_decisions() -> Snapshot {
                 why_not: Some("J and K would do nothing".into()),
             }],
             supersedes: Some(DecisionId(1)),
+            evidence: Vec::new(),
         },
     ];
     snap

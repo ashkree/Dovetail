@@ -535,6 +535,7 @@ fn a_decision_is_added_once() {
         why: None,
         alternatives: vec![],
         supersedes: None,
+        evidence: Vec::new(),
     };
     run(
         &mut state,

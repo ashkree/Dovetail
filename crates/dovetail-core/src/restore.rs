@@ -221,6 +221,21 @@ impl Core {
                 InboxKind::FinishedTurn { .. } | InboxKind::Error { .. } => {
                     self.restore_item(item, Waiter::None);
                 }
+                // The call returned `pending` and nothing was written: say so, so it is
+                // proposed again if still wanted.
+                InboxKind::Proposal { kind, text, .. } => {
+                    self.persist(
+                        "an expired proposal",
+                        self.db
+                            .resolve_inbox(item.id, Some("expired at restart".into())),
+                    );
+                    let first = text.lines().next().unwrap_or("");
+                    self.tell_coordinator(format!(
+                        "research_propose expired at restart: your {} \"{first}\" was not \
+                         written; propose it again if still needed",
+                        kind.as_str()
+                    ));
+                }
             }
         }
         for (agent, status) in restored.cut_off {

@@ -544,3 +544,48 @@ pub(super) fn load_all(conn: &Connection) -> Result<Vec<(TaskId, TaskResearch)>,
         .map(|t| Ok((t, load_task(conn, t)?)))
         .collect()
 }
+
+/// Stores a report (`research_write_report`). The latest by time is the task's `report.md`.
+pub(super) fn insert_report(
+    conn: &Connection,
+    task: TaskId,
+    round: Option<i64>,
+    body: &str,
+    flags: (u32, u32),
+    now: i64,
+) -> Result<(), DbError> {
+    conn.execute(
+        "INSERT INTO reports (task_id, round_id, at_ms, body, uncited, unlabelled_figures) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![task.0, round, now, body, flags.0, flags.1],
+    )?;
+    Ok(())
+}
+
+/// The task's `research_kind`: `question`, `decision` or none.
+pub(super) fn research_kind(conn: &Connection, task: TaskId) -> Result<Option<String>, DbError> {
+    Ok(conn
+        .query_row(
+            "SELECT research_kind FROM tasks WHERE id = ?1",
+            [task.0],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+/// Sets the task's `research_kind`.
+pub(super) fn set_research_kind(
+    conn: &Connection,
+    task: TaskId,
+    kind: Option<&str>,
+) -> Result<(), DbError> {
+    let changed = conn.execute(
+        "UPDATE tasks SET research_kind = ?2 WHERE id = ?1",
+        params![task.0, kind],
+    )?;
+    if changed == 0 {
+        return Err(DbError::NotFound(format!("there is no task #{}", task.0)));
+    }
+    Ok(())
+}

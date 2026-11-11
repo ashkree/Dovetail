@@ -52,6 +52,9 @@ pub(crate) enum Waiter {
     /// A staged upgrade (ADR 0014): `y` restarts once every agent is idle, `d` keeps the build
     /// for the next ordinary quit.
     UpgradeReady,
+    /// A `research_propose` call (ADR 0015): the call already returned `pending`; `y` writes
+    /// it, `d` drops it, and the coordinator gets a message either way.
+    Proposal,
 }
 
 impl Waiter {
@@ -239,6 +242,11 @@ impl Core {
             self.fail(format!("no inbox item {}", id.0));
             return;
         };
+        // A research proposal is answered with the same `y` and `d` (ADR 0015).
+        if matches!(entry.waiter, Waiter::Proposal) {
+            self.answer_proposal(id, answer).await;
+            return;
+        }
         if !matches!(entry.item.kind, InboxKind::Permission { .. }) {
             self.fail("that item is not a permission request");
             return;
@@ -422,6 +430,15 @@ impl Core {
             Waiter::RemoveOrphan { found } => self.keep_orphan(found),
             Waiter::KeepCoordinator { .. } => self.kept_fresh_coordinator(),
             Waiter::ReleaseLock => {}
+            Waiter::Proposal => {
+                if let InboxKind::Proposal { kind, text, .. } = &entry.item.kind {
+                    self.tell_coordinator(format!(
+                        "research_propose dropped: the user dismissed your {} \"{}\"",
+                        kind.as_str(),
+                        text.lines().next().unwrap_or("")
+                    ));
+                }
+            }
             Waiter::UpgradeReady => self.upgrade_item_gone(),
             Waiter::None | Waiter::Question { .. } | Waiter::RestoredQuestion { .. } => {}
         }

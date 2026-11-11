@@ -238,6 +238,9 @@ pub(crate) fn facts(tasks: &[Task], agents: &[&Agent], inbox: &[&InboxItem]) -> 
                 format!("finished turn: {}", first_line(preview))
             }
             InboxKind::Error { text } => format!("error: {}", first_line(text)),
+            InboxKind::Proposal { kind, text, .. } => {
+                format!("{} proposal: {}", kind.as_str(), first_line(text))
+            }
         };
         out.push_str(&format!("- {}, {what}\n", name(&item.agent)));
     }

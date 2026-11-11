@@ -71,6 +71,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0011_agent_takeover.sql"),
     migration!("state", "0012_maps.sql"),
     migration!("state", "0013_research.sql"),
+    migration!("state", "0014_decision_evidence.sql"),
 ];
 
 /// Errors from the database layer.
@@ -317,7 +318,17 @@ impl Db {
 
     /// Appends to a task's decision log.
     pub fn log_decision(&self, new: NewDecision, by: DecisionAuthor) -> Pending<Decision> {
-        self.run(move |c, now| tasks::log_decision(c.state()?, new, by, now))
+        self.run(move |c, now| tasks::log_decision(c.state()?, new, by, Vec::new(), now))
+    }
+
+    /// Appends to a task's decision log with the findings and sources it rests on (R2).
+    pub fn log_decision_with_evidence(
+        &self,
+        new: NewDecision,
+        by: DecisionAuthor,
+        evidence: Vec<dovetail_api::research::Evidence>,
+    ) -> Pending<Decision> {
+        self.run(move |c, now| tasks::log_decision(c.state()?, new, by, evidence, now))
     }
 
     // --- maps (M15) ---
@@ -375,6 +386,28 @@ impl Db {
         from: &'static str,
     ) -> Pending<()> {
         self.run(move |c, _| research::set_finding_body(c.state()?, id, &body, from))
+    }
+
+    /// Stores a report: the task, the round it closes or last closed, the body as written to
+    /// `report.md`, and how many claims and figures were flagged.
+    pub fn insert_report(
+        &self,
+        task: TaskId,
+        round: Option<i64>,
+        body: String,
+        flags: (u32, u32),
+    ) -> Pending<()> {
+        self.run(move |c, now| research::insert_report(c.state()?, task, round, &body, flags, now))
+    }
+
+    /// The task's research kind: `question`, `decision` or none.
+    pub fn research_kind(&self, task: TaskId) -> Pending<Option<String>> {
+        self.run(move |c, _| research::research_kind(c.state()?, task))
+    }
+
+    /// Sets the task's research kind (`question`, `decision`, or none).
+    pub fn set_research_kind(&self, task: TaskId, kind: Option<String>) -> Pending<()> {
+        self.run(move |c, _| research::set_research_kind(c.state()?, task, kind.as_deref()))
     }
 
     /// Summary counts of every task with research.

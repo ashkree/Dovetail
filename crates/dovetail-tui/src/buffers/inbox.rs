@@ -1,6 +1,7 @@
 //! Needs you: permission requests, questions, finished turns and errors, one line each. Enter
 //! opens an item's full text in the inbox detail.
 
+use dovetail_api::research::ProposalKind;
 use dovetail_api::{
     AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, KEEP_COORDINATOR_PERMISSION,
     PermissionAnswer, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
@@ -26,7 +27,7 @@ pub fn ordered(snap: &Snapshot) -> Vec<&InboxItem> {
 
 fn rank(kind: &InboxKind) -> u8 {
     match kind {
-        InboxKind::Permission { .. } => 0,
+        InboxKind::Permission { .. } | InboxKind::Proposal { .. } => 0,
         InboxKind::Question { .. } => 1,
         InboxKind::Error { .. } => 2,
         InboxKind::FinishedTurn { .. } => 3,
@@ -211,6 +212,7 @@ pub(crate) fn item_label(item: &InboxItem) -> (&'static str, String) {
         }
         InboxKind::Permission { tool, .. } => ("⚠", tool.clone()),
         InboxKind::Question { .. } => ("?", "Question".into()),
+        InboxKind::Proposal { kind, .. } => ("⚑", format!("Proposed {}", kind.as_str())),
         InboxKind::FinishedTurn { .. } => ("✓", "Finished turn".into()),
         InboxKind::Error { .. } => ("✗", "Error".into()),
     }
@@ -227,7 +229,9 @@ pub(crate) fn source_name<'a>(snap: &'a Snapshot, item: &'a InboxItem) -> &'a st
 /// The colour of an item's glyph and source.
 pub(crate) fn kind_color(item: &InboxItem, theme: &crate::theme::Theme) -> ratatui::style::Color {
     match &item.kind {
-        InboxKind::Permission { .. } | InboxKind::Question { .. } => theme.needs_you,
+        InboxKind::Permission { .. } | InboxKind::Question { .. } | InboxKind::Proposal { .. } => {
+            theme.needs_you
+        }
         InboxKind::FinishedTurn { .. } => theme.ok,
         InboxKind::Error { .. } => theme.error,
     }
@@ -248,6 +252,7 @@ pub(crate) fn row_title(snap: &Snapshot, item: &InboxItem) -> String {
         }
         InboxKind::Question { text }
         | InboxKind::FinishedTurn { preview: text }
+        | InboxKind::Proposal { text, .. }
         | InboxKind::Error { text } => first_sentence(text),
     }
 }
@@ -297,6 +302,23 @@ pub(crate) fn answer_action(action: Action, item: &InboxItem, effects: &mut Vec<
                 target: InputTarget::Reason(item.id),
                 initial: String::new(),
             });
+        }
+        // A research proposal (ADR 0015): `y` accepts, `d` drops; for an idea `A` accepts it as
+        // a new round instead of a follow-up task.
+        (Action::InboxAllow, InboxKind::Proposal { .. }) => {
+            effects.push(answer(item.id, PermissionAnswer::Allow));
+        }
+        (Action::InboxDeny, InboxKind::Proposal { .. }) => {
+            effects.push(answer(item.id, PermissionAnswer::Deny { message: None }));
+        }
+        (Action::InboxAllowAlways, InboxKind::Proposal { kind, .. }) => {
+            if *kind == ProposalKind::Idea {
+                effects.push(answer(item.id, PermissionAnswer::AllowAlways));
+            } else {
+                effects.push(Effect::Note(
+                    "A opens a new round; it applies to ideas".into(),
+                ));
+            }
         }
         (Action::InboxAllow | Action::InboxAllowAlways | Action::InboxDeny, _)
         | (Action::InboxDenyWithReason, _) => {
@@ -457,6 +479,7 @@ impl Buffer for InboxBuffer {
                     }
                     InboxKind::Question { text, .. } | InboxKind::Error { text } => text.clone(),
                     InboxKind::FinishedTurn { preview } => preview.clone(),
+                    InboxKind::Proposal { text, .. } => text.clone(),
                 };
                 format!("{name} {label} {body}")
             })

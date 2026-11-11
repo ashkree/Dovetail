@@ -186,3 +186,96 @@ pub struct ResearchDocument {
     /// The file's content, from the database (the files are a readable copy).
     pub markdown: String,
 }
+
+/// A finding or source cited as evidence, written `F<id>` or `S<id>` (no brackets) on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum Evidence {
+    /// A finding, `F<id>`.
+    Finding(FindingId),
+    /// A source, `S<id>`.
+    Source(SourceId),
+}
+
+impl Evidence {
+    /// Reads `F3`, `S12` or `[F3]`; `None` for anything else (a lower-case letter, no digits,
+    /// a sign, a zero id).
+    pub fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        let text = text
+            .strip_prefix('[')
+            .and_then(|t| t.strip_suffix(']'))
+            .unwrap_or(text);
+        let mut chars = text.chars();
+        let letter = chars.next()?;
+        let digits = chars.as_str();
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let id: i64 = digits.parse().ok().filter(|id| *id > 0)?;
+        match letter {
+            'F' => Some(Self::Finding(FindingId(id))),
+            'S' => Some(Self::Source(SourceId(id))),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Evidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Finding(id) => write!(f, "F{}", id.0),
+            Self::Source(id) => write!(f, "S{}", id.0),
+        }
+    }
+}
+
+impl From<Evidence> for String {
+    fn from(e: Evidence) -> String {
+        e.to_string()
+    }
+}
+
+/// Text that is not an [`Evidence`] id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotEvidence(pub String);
+
+impl std::fmt::Display for NotEvidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "`{}` is not a finding or source id (like F3 or S12)",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for NotEvidence {}
+
+impl TryFrom<String> for Evidence {
+    type Error = NotEvidence;
+
+    fn try_from(text: String) -> Result<Self, NotEvidence> {
+        Self::parse(&text).ok_or(NotEvidence(text))
+    }
+}
+
+/// What `research_propose` proposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalKind {
+    /// An idea: accepting it files a follow-up task or opens a new round (ADR 0015).
+    Idea,
+    /// A decision: accepting it writes it to the decision log with its evidence.
+    Decision,
+}
+
+impl ProposalKind {
+    /// The wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Idea => "idea",
+            Self::Decision => "decision",
+        }
+    }
+}

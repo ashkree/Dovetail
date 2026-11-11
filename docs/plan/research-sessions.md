@@ -100,12 +100,12 @@ Every prompt below assumes the standing rules of `AGENTS.md`: read it and `CODIN
 - **Prompt (copy-paste):**
   > Implement milestone R2 of `docs/research.md` §10. Add `research_start_round`, `research_write_report`, `research_propose` and `research_get` to `crates/dovetail/src/mcp.rs` and `dovetail-api/src/tools.rs` (schemas exactly as §6, coordinator role only, with the `research_` names as written), handlers in `dovetail-core/src/tools/research.rs`. Report validation per §7 (citations must resolve and refuse otherwise; uncited claims and unlabelled figures flag; Dovetail rewrites the "Evidence: N sources, M independent" line). `research_propose` creates a new `InboxKind::Proposal` in Needs you; `y` accepts (idea: follow-up task in Unsorted or a new round, per ADR 0015; decision: through the existing `log_decision` path plus `decision_evidence`, migration `0014_decision_evidence`), `d` drops, the call returns `pending` at once and the answer arrives as a user message (as `start_slice` does). A `decision` without `evidence` is an error. Add short research lines to `config/roles/coordinator.md` (keep the file under ~20 lines; trim elsewhere if needed) and say `scripts/bootstrap.sh --force` is needed. Show evidence links in the task detail's decision log. Tests: the three error cases, citation resolution, the accept and drop flows.
 - **Validation:**
-  - [ ] Fake-driver flow writes `brief.md` and `report.md`; every `[n]` resolves
-  - [ ] No open round, an unresolved citation, and a decision without evidence each return the specified error
-  - [ ] An accepted decision shows its finding and source links in the task detail
-  - [ ] `research_propose` never writes without `y`
-  - [ ] Coordinator prompt still under ~20 lines; `bootstrap.sh` copies it
-  - [ ] `scripts/check.sh` passes
+  - [x] Fake-driver flow writes `brief.md` and `report.md`; every `[n]` resolves (`research_tools.rs`: `a_round_by_tool_and_a_report_write_brief_and_report_and_every_citation_resolves`)
+  - [x] No open round, an unresolved citation, and a decision without evidence each return the specified error (`the_specified_errors_are_returned_and_nothing_is_written`)
+  - [x] An accepted decision shows its finding and source links in the task detail (stored in `decision_evidence`, in `Decision::evidence`, `get_task`, and an `evidence: [F3] [S12]` line in the TUI task detail; `an_accepted_decision_is_logged_with_its_evidence_and_never_before`)
+  - [x] `research_propose` never writes without `y` (`an_accepted_decision_...` checks nothing is logged before `y`; `a_dropped_proposal_writes_nothing_...` for `d`)
+  - [x] Coordinator prompt still under ~20 lines; `bootstrap.sh` copies it (18 lines; the script copies `config/roles/*.md`; `--force` is needed to replace an installed copy)
+  - [x] `scripts/check.sh` passes
 
 ### M19 — R3 Rough reading
 - **Model:** Sonnet — views over existing buffers
