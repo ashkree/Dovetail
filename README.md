@@ -117,9 +117,9 @@ All design decisions are made; the full design and decision log live in the desi
 
 - `crates/dovetail-api/` — plain-data protocol between core and UI: `Snapshot`, `Event`, `Command` and the `apply()` reducer
 - `crates/dovetail-mock/` — `MockCore`, a seeded stand-in for the core that speaks the same protocol
-- `crates/dovetail-core/` — sessions, storage, worktrees and MCP tool handlers 
-- `crates/dovetail-driver/` — runs headless Claude Code sessions ; recorded stream fixtures in `tests/fixtures/`
-- `crates/dovetail-tui/` — the terminal UI ; depends only on `dovetail-api`
+- `crates/dovetail-core/` — sessions, storage, worktrees and MCP tool handlers
+- `crates/dovetail-driver/` — runs headless Claude Code sessions; recorded stream fixtures in `tests/fixtures/`
+- `crates/dovetail-tui/` — the terminal UI; depends only on `dovetail-api`
 - `crates/dovetail-maps/` — `maps_draw` input, validation and the `MapRenderer` (merman) behind it
 - `crates/dovetail/` — the `dovetail` binary (TUI, `add`, `mcp`, `hook`, `upgrade`)
 - `scripts/` — `bootstrap.sh`, `install.sh`, `check.sh`, `live-checks.sh`, `rss-check.sh`
