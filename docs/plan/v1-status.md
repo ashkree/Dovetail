@@ -15,7 +15,7 @@ State of `main` after the night of 2026-11-10/11 (wave-4 review merged). Source 
 | Board, worktree view | M12 | Done | — |
 | Memory caps, context fill | M13 | Done | PR #31, `docs/spikes/cgroup.md` |
 | Take-over | M14 | Built; the real round trip is yours to try | PR #34 |
-| Maps stage 1 | M15 | All six slices merged: (a) model, (b) tool and storage, (c) merman renderer, (d) swimlane layout, (e) shelf and outline, (f) kitty canvas and MAP mode. "Works in kitty" and "a real agent draws both map types" are yours to try | PRs #32, #35, #39, #38, #42, #PRNUM |
+| Maps stage 1 | M15 | All six slices merged: (a) model, (b) tool and storage, (c) merman renderer, (d) swimlane layout, (e) shelf and outline, (f) kitty canvas and MAP mode. "Works in kitty" and "a real agent draws both map types" are yours to try | PRs #32, #35, #39, #38, #42, #47 |
 
 **Built beyond the original list:** non-blocking `ask_user` (ADR 0007), inbox over the tree (0008), a Claude account per project (0009), chat bar keys and completion (0010), side chats (0011), end of day and a morning coordinator (0012), focus mode (0013, pulled from M16), `:upgrade` / `dovetail upgrade` (0014, PR #41), the decision log and `log_decision` (0003), `create_task`, `start_slice`, `list_tasks`, `get_task` and `update_task` (PRs #20, #25), archive tools, usage limits in the header, daily-driver fixes #1–#17, and the review-wave-4 cleanup (PR #40).
 
@@ -25,7 +25,7 @@ Overnight 2026-11-10/11: the three build sessions (map canvas, hardening, follow
 
 | Item | Who | Status |
 | --- | --- | --- |
-| M15 (f): kitty canvas, MAP mode, mouse only in MAP mode | agent | **Done**, PR #PRNUM; mouse capture proven by a test. Left for you: the look in kitty (below) |
+| M15 (f): kitty canvas, MAP mode, mouse only in MAP mode | agent | **Done**, PR #47; mouse capture proven by a test. Left for you: the look in kitty (below) |
 | M15: the canvas in kitty, the outline elsewhere | you | open: see "Try the map canvas" |
 | M16: activity feed events moved from M7 (permission answers, coordinator start and exit, task changes, PR and CI), startup warnings audit, RSS measurement | agent | **Built on branch `claude/m16-activity`** (this PR): activity items for permission answers, coordinator start/exit, task changes and PR changes; startup warnings for Claude Code version and missing recipe; memory caps; `scripts/rss-check.sh` measures 67 MB for the UI over 10 000 streamed turns. CI events are not emitted (no observed source; question in the PR) |
 | Follow-ups #3 (attach an image from a pasted or dropped path) and #8 (clean up saved paste attachments); the digest's v1 roadmap audit | agent | **Done**: PR #45; the audit is the section below |
@@ -62,7 +62,7 @@ Each item of the digest's §12 v1 list checked against `main` on 2026-11-11. **S
 | 4 | Buffers in the fixed layout | Shipped | `region.rs`, `buffers/{conversation,tree,inbox,inbox_detail,board,feed,task_detail,worktrees,map_shelf,map_outline}.rs`; layout per ADR 0006/0008 | none |
 | 5 | Normal/Insert/Command, hardcoded keymap through the action registry, `nucleo` picker | Shipped | `mode.rs`, `keymap.rs` + `action.rs` (one table), `command.rs`, `picker.rs`, `switcher.rs` | none |
 | 6 | Two-tier inbox with inline approvals | Shipped | `core/inbox.rs`, `buffers/inbox.rs`, `inbox_detail.rs` (Needs-you / Finished tiers, Permission items answered in place) | none |
-| 7 | Maps stage 1 | Shipped, look in kitty unchecked | Model, `draw_map`/`read_map` tools, storage, merman renderer, swimlane layout, shelf and outline (`dovetail-maps`, `buffers/map_*.rs`, PRs #32/#35/#38/#39/#42); the kitty canvas and MAP mode with mouse (`canvas/`, `buffers/map_canvas.rs`, PR #PRNUM). "Works in kitty" and "a real agent draws both map types" are yours | none |
+| 7 | Maps stage 1 | Shipped, look in kitty unchecked | Model, `draw_map`/`read_map` tools, storage, merman renderer, swimlane layout, shelf and outline (`dovetail-maps`, `buffers/map_*.rs`, PRs #32/#35/#38/#39/#42); the kitty canvas and MAP mode with mouse (`canvas/`, `buffers/map_canvas.rs`, PR #47). "Works in kitty" and "a real agent draws both map types" are yours | none |
 | 8 | Context fill display | Shipped | `core/context.rs`; `context_pct` in `buffers/tree.rs`, coloured by `theme.context`; header limits (decision #25) | none |
 | 9 | Quick capture + `dovetail add` + `create_task` | Shipped | `capture.rs` (`<leader>t`, `a`), `crates/dovetail/src/add.rs`, `create_task` in `core/tools.rs` (ADR 0002) | none |
 | 10 | Readability | Shipped | `render/markdown.rs` (pulldown-cmark), `render/wrap.rs` (word wrap), `render/reading_column.rs`, `theme.rs` (softened colours, transparent background), collapsed finished turns (ADR 0001), message headers | none. No syntax highlighting (v1.1) |
@@ -76,7 +76,7 @@ Each item of the digest's §12 v1 list checked against `main` on 2026-11-11. **S
 | 18 | `ask_user`, `report_status` | Shipped | `core/tools.rs`, `crates/dovetail/src/mcp.rs`; `ask_user` never blocks (ADR 0007) | none |
 | 19 | Role prompts | Shipped | `config/roles/{coordinator,slice,side-chat}.md`, installed by `scripts/bootstrap.sh` | none. S6 (wording reliability) is still open |
 
-**Missing or partial:** none since PR #PRNUM landed the canvas (item 7). Items 14 and 15 are done but never exercised against a real session.
+**Missing or partial:** none since PR #47 landed the canvas (item 7). Items 14 and 15 are done but never exercised against a real session.
 
 **Not on the list but promised for v1 by the plan (M16):** activity feed events (permission answers, coordinator start/exit, task changes, PR and CI), the startup-warnings audit and the RSS measurement are in progress in another session. They are unfinished until that lands.
 
