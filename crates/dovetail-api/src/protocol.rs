@@ -12,12 +12,16 @@ use crate::model::{
     SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals, UsageLimits,
     Warning, WarningId, WorktreeInfo,
 };
+use crate::research::{ResearchContent, ResearchSummary, ResearchWhat};
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// Everything the core sends: a hello, then a snapshot, then numbered events.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+// One snapshot per connection or resync against many events: boxing it would only add an
+// allocation to every match on the stream.
+#[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerMsg {
     /// First message on a connection.
@@ -109,6 +113,18 @@ pub enum Event {
     /// A map version's content, in answer to [`Command::LoadMap`]. Changes nothing in the
     /// snapshot; the UI keeps what it shows.
     MapLoaded(Map),
+    /// A task's research changed: a round opened or closed, a finding was filed.
+    ResearchUpserted(ResearchSummary),
+    /// Research content, in answer to [`Command::LoadResearch`]. Changes nothing in the
+    /// snapshot.
+    ResearchLoaded {
+        /// The task.
+        task: TaskId,
+        /// What was asked for.
+        what: ResearchWhat,
+        /// The answer.
+        content: ResearchContent,
+    },
     /// A command could not be carried out; the UI shows the message.
     CommandFailed {
         /// What went wrong.
@@ -349,6 +365,29 @@ pub enum Command {
         id: MapId,
         /// The version; `None` means the latest.
         version: Option<u32>,
+    },
+    /// Open a research round on a task (`:round <task> <brief>`, `docs/research.md` §5.1):
+    /// subagents the coordinator spawns while it is open are filed under it. Refused while
+    /// another round is open, for an unknown or archived task, an empty brief, or a folder that
+    /// is not a project yet; the refusal comes back as [`Event::CommandFailed`].
+    StartRound {
+        /// The task (the question).
+        task: TaskId,
+        /// The user's criteria, written to the round's `brief.md`.
+        brief: String,
+    },
+    /// Close the open research round of a task (`:round close`).
+    CloseRound {
+        /// The task.
+        task: TaskId,
+    },
+    /// Fetch research content. The core answers with [`Event::ResearchLoaded`], or
+    /// [`Event::CommandFailed`] when there is no such thing.
+    LoadResearch {
+        /// The task.
+        task: TaskId,
+        /// What to fetch.
+        what: ResearchWhat,
     },
     /// Send a fresh snapshot (after a [`crate::ApplyResult::Gap`]).
     Resync,

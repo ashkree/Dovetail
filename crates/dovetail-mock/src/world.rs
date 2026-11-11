@@ -416,6 +416,8 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         commands: BTreeMap::from([(agent_id(COORDINATOR), commands())]),
         // No journal, so quitting the mock never asks to close the day; `:eod` still works.
         journal: None,
+        // No research in the mock yet (R1 is core-only); R3 seeds some.
+        research: vec![],
     };
     snapshot.totals = totals_of(&snapshot);
     snapshot

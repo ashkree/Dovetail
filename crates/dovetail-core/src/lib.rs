@@ -20,6 +20,7 @@ pub mod profile;
 pub mod projects;
 pub mod recipe;
 mod registration;
+mod research;
 mod restore;
 pub mod service;
 pub mod session;

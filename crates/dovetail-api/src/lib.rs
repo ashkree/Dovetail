@@ -11,6 +11,7 @@ mod apply;
 pub mod map;
 mod model;
 mod protocol;
+pub mod research;
 pub mod socket;
 pub mod tools;
 

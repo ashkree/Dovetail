@@ -527,6 +527,8 @@ impl Core {
         if self.live.get(&agent).map(|l| l.generation) != Some(generation) {
             return; // an earlier process of this agent
         }
+        // Research capture watches every origin and sends nothing to any session (R1).
+        self.research_event(&agent, &event).await;
         // To-do items are attributed from any origin, foreground subagents included.
         self.track_todos(&agent, &event);
         // Rule 1: a subagent's events are its own: routed to its node, never into the parent's

@@ -16,6 +16,49 @@ fn id(s: &str) -> AgentId {
     AgentId(s.into())
 }
 
+fn research_summary() -> research::ResearchSummary {
+    research::ResearchSummary {
+        task: TaskId(4),
+        dir: "/data/projects/p/research/4-pricing".into(),
+        rounds: vec![research::RoundSummary {
+            n: 1,
+            brief: "per seat or flat?".into(),
+            dir: "rounds/01-2026-11-11".into(),
+            opened_ms: 1,
+            closed_ms: None,
+            findings: 2,
+        }],
+        findings: 3,
+        quick_findings: 1,
+        sources: 5,
+        report_ms: None,
+    }
+}
+
+fn research_listing() -> research::ResearchListing {
+    research::ResearchListing {
+        findings: vec![research::FindingSummary {
+            id: research::FindingId(3),
+            round: Some(1),
+            n: 1,
+            agent: id("coordinator:toolu_1"),
+            label: "fetch-page".into(),
+            path: "/r/4-pricing/rounds/01-2026-11-11/findings/01-fetch-page.md".into(),
+            created_ms: 2,
+            sources: vec![research::SourceId(1)],
+        }],
+        sources: vec![research::SourceSummary {
+            id: research::SourceId(1),
+            kind: research::SourceKind::Web,
+            locator: "https://example.com".into(),
+            tool: "WebFetch".into(),
+            path: Some("/r/4-pricing/sources/1.md".into()),
+            is_error: false,
+            fetched_ms: 2,
+        }],
+    }
+}
+
 fn map_summary() -> map::MapSummary {
     map::MapSummary {
         id: map::MapId("checkout".into()),
@@ -341,6 +384,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
             closing: false,
         }),
         maps: vec![map_summary()],
+        research: vec![research_summary()],
     };
     roundtrip(&ServerMsg::Hello {
         protocol: PROTOCOL_VERSION,
@@ -379,6 +423,20 @@ fn every_event_roundtrips() {
         Event::DecisionAdded(decision()),
         Event::MapUpserted(map_summary()),
         Event::MapLoaded(map()),
+        Event::ResearchUpserted(research_summary()),
+        Event::ResearchLoaded {
+            task: TaskId(4),
+            what: research::ResearchWhat::Listing,
+            content: research::ResearchContent::Listing(research_listing()),
+        },
+        Event::ResearchLoaded {
+            task: TaskId(4),
+            what: research::ResearchWhat::Source(research::SourceId(1)),
+            content: research::ResearchContent::Document(research::ResearchDocument {
+                path: None,
+                markdown: "# S1".into(),
+            }),
+        },
         Event::TotalsChanged(totals()),
         Event::UsageChanged(UsageLimits::default()),
         Event::WarningSet(warning()),
@@ -527,6 +585,23 @@ fn every_command_roundtrips() {
         },
         Command::OpenEditor {
             path: "/tmp/wt".into(),
+        },
+        Command::StartRound {
+            task: TaskId(4),
+            brief: "per seat or flat?".into(),
+        },
+        Command::CloseRound { task: TaskId(4) },
+        Command::LoadResearch {
+            task: TaskId(4),
+            what: research::ResearchWhat::Brief { round: 1 },
+        },
+        Command::LoadResearch {
+            task: TaskId(4),
+            what: research::ResearchWhat::Finding(research::FindingId(3)),
+        },
+        Command::LoadResearch {
+            task: TaskId(4),
+            what: research::ResearchWhat::Report,
         },
         Command::Resync,
         Command::Quit {

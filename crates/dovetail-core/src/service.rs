@@ -429,6 +429,8 @@ pub(crate) struct Core {
     pub(crate) revert_coordinator: Option<(Option<String>, Option<PathBuf>)>,
     /// `:upgrade`: the background build, the "Upgrade ready" item, the wait for idle (ADR 0014).
     pub(crate) upgrade: crate::upgrade::flow::UpgradeState,
+    /// Research capture: the open round and the subagents being watched (R1, `research`).
+    pub(crate) research: crate::research::Research,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -517,6 +519,7 @@ impl Core {
             closing: None,
             revert_coordinator: None,
             upgrade: Default::default(),
+            research: Default::default(),
         }
     }
 
@@ -533,6 +536,7 @@ impl Core {
         self.startup_warnings();
         self.send_snapshot(true).await;
         self.sweep_attachments();
+        self.rebuild_research_files().await;
         // After the first snapshot, so a slow user systemd never holds up the UI; before
         // anything can start a session (restore, the queue, commands), so every session gets
         // the probe's answer.
@@ -739,6 +743,7 @@ impl Core {
         }
         // The native lists as they are on disk now, with their owners.
         self.load_todos().await?;
+        self.load_research().await?;
         Ok(restored)
     }
 
@@ -831,12 +836,15 @@ impl Core {
 
     async fn snapshot(&mut self) -> Result<Snapshot, DbError> {
         let projects = self.db.list_projects().await?;
+        let tasks = self.db.load_tasks().await?;
+        let research = self.research_summaries(&tasks).await?;
         let mut snapshot = Snapshot {
             seq: self.seq,
             now_ms: now_ms(),
             project: Some(self.project.summary()),
             projects: projects.iter().map(Project::summary).collect(),
-            tasks: self.db.load_tasks().await?,
+            tasks,
+            research,
             decisions: self.db.load_decisions().await?,
             maps: self.db.load_maps().await?,
             agents: self.agents.values().map(|r| r.agent.clone()).collect(),
@@ -1358,6 +1366,9 @@ impl Core {
                 }),
                 Err(e) => self.fail(e.to_string()),
             },
+            Command::StartRound { task, brief } => self.start_round(task, brief).await,
+            Command::CloseRound { task } => self.close_round(task).await,
+            Command::LoadResearch { task, what } => self.load_research_content(task, what).await,
             Command::RefreshWorktrees => self.refresh_worktrees(),
             Command::Resync => self.send_snapshot(false).await,
             Command::TakeOver { agent } => self.take_over(agent).await,

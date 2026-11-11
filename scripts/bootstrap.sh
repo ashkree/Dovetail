@@ -49,6 +49,12 @@ else
   cp "$repo_root/config/projects/dovetail.toml" "$recipe"
   ok "installed $recipe (project id: $project_id)"
 fi
+# R1 (ADR 0015): Dovetail's research goes to docs/research/ only when the installed recipe says so.
+if grep -qE '^\s*research_dir\s*=' "$recipe" 2>/dev/null; then
+  ok "research_dir set: $(grep -E '^\s*research_dir\s*=' "$recipe" | head -1 | sed -E 's/^[^=]*=\s*//')"
+else
+  warn "no research_dir in $recipe: research goes to $data/projects/$project_id/research/ (--force installs the repo's: docs/research)"
+fi
 
 echo "Claude profiles"
 # A profile is a Claude account per project (ADR 0009). Bootstrap never creates one: that needs a
