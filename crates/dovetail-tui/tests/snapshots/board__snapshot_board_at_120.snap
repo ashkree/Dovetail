@@ -3,6 +3,7 @@ source: crates/dovetail-tui/tests/board.rs
 expression: "render(&mut app, 120, 34)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ board · business · 4 open ──────────────────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
 │ ○ Todo 2                ◐ In progress 2         ✓ Done 1                ││   ? slice-4  Which route prefix sh… 10:12 │
@@ -13,11 +14,10 @@ expression: "render(&mut app, 120, 34)"
 │ │ P2                 │  │ P1 · ◆ slice-4     │  │ P2                 │  ││                                           │
 │ └────────────────────┘  └────────────────────┘  └────────────────────┘  ││                                           │
 │                                                                         ││                                           │
-│ ┌────────────────────┐  ┌────────────────────┐                          ││                                           │
-│ │ #4 docs sweep      │  │ ⚠ #2 get_decision… │                          ││ y allow · d deny · r reply · x dismiss    │
-│ │ P0                 │  │ P0 · ◆ slice-7     │                          │└───────────────────────────────────────────┘
-│ └────────────────────┘  └────────────────────┘                          │┌ tasks · business ─────────────────────────┐
-│                                                                         ││ ◐ ◆ coordinator        working 1.2G $3.10 │
+│ ┌────────────────────┐  ┌────────────────────┐                          ││ y allow · d deny · r reply · x dismiss    │
+│ │ #4 docs sweep      │  │ ⚠ #2 get_decision… │                          │└───────────────────────────────────────────┘
+│ │ P0                 │  │ P0 · ◆ slice-7     │                          │┌ tasks · business ─────────────────────────┐
+│ └────────────────────┘  └────────────────────┘                          ││ ◐ ◆ coordinator        working 1.2G $3.10 │
 │                                                                         ││ ▾ Now (2)                                 │
 │                                                                         ││ ▾ ⚠ business surface P1          PR #1231 │
 │                                                                         ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │

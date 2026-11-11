@@ -3,9 +3,9 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 120, 34)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
-│                                                                         ││   ? slice-4  Which route prefix sh… 10:12 │
 │ ┌ Switch ──────────────────────────────────────────┐┌ Preview ─────────────────────────────────────────────────────┐ │
 │ │›                                              5/5││ ◐ slice-4                                                    │ │
 │ │                                                  ││ slice · dovetail/slice-4 · 412M · working                    │ │

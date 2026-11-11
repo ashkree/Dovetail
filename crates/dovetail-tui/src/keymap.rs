@@ -248,6 +248,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>b", Action::ShowBoard),
     bind(N, G, "<leader>g", Action::ShowWorktrees),
     bind(N, G, "<leader>M", Action::ShowMaps),
+    bind(N, G, "<leader>R", Action::ListResearch),
     bind(N, G, "<leader>v", Action::MapMode),
     bind(N, G, "<leader>sn", Action::NewSlice),
     bind(N, G, "<leader>sq", Action::NewSideChat),
@@ -886,6 +887,10 @@ mod tests {
         assert_eq!(
             resolve(&[G], "<leader>M"),
             Resolved::Action(Action::ShowMaps)
+        );
+        assert_eq!(
+            resolve(&[G], "<leader>R"),
+            Resolved::Action(Action::ListResearch)
         );
         assert_eq!(resolve(&shelf, "<CR>"), Resolved::Action(Action::MapOpen));
         assert_eq!(

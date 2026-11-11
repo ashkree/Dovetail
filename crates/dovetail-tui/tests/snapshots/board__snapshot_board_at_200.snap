@@ -3,6 +3,7 @@ source: crates/dovetail-tui/tests/board.rs
 expression: "render(&mut app, 200, 34)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ board · business · 4 open ───────────────────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────────────────────────────────────────┐
 │                                                                                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get… 10:15 │
 │ ○ Todo 2                                ◐ In progress 2                         ✓ Done 1                                 ││   ? slice-4  Which route prefix should the handler use?            10:12 │
@@ -13,11 +14,10 @@ expression: "render(&mut app, 200, 34)"
 │ │ P2                                 │  │ P1 · ◆ slice-4                     │  │ P2                                 │   ││                                                                          │
 │ └────────────────────────────────────┘  └────────────────────────────────────┘  └────────────────────────────────────┘   ││                                                                          │
 │                                                                                                                          ││                                                                          │
-│ ┌────────────────────────────────────┐  ┌────────────────────────────────────┐                                           ││                                                                          │
-│ │ #4 docs sweep                      │  │ ⚠ #2 get_decision 500              │                                           ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
-│ │ P0                                 │  │ P0 · ◆ slice-7                     │                                           │└──────────────────────────────────────────────────────────────────────────┘
-│ └────────────────────────────────────┘  └────────────────────────────────────┘                                           │┌ tasks · business ────────────────────────────────────────────────────────┐
-│                                                                                                                          ││ ◐ ◆ coordinator                                       working 1.2G $3.10 │
+│ ┌────────────────────────────────────┐  ┌────────────────────────────────────┐                                           ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
+│ │ #4 docs sweep                      │  │ ⚠ #2 get_decision 500              │                                           │└──────────────────────────────────────────────────────────────────────────┘
+│ │ P0                                 │  │ P0 · ◆ slice-7                     │                                           │┌ tasks · business ────────────────────────────────────────────────────────┐
+│ └────────────────────────────────────┘  └────────────────────────────────────┘                                           ││ ◐ ◆ coordinator                                       working 1.2G $3.10 │
 │                                                                                                                          ││ ▾ Now (2)                                                                │
 │                                                                                                                          ││ ▾ ⚠ business surface P1                                         PR #1231 │
 │                                                                                                                          ││   ▾ ◐ ◆ slice-4  edits                            working 412M 71% $1.84 │

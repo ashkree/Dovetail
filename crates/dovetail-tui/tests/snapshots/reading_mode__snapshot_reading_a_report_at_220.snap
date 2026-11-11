@@ -1,9 +1,9 @@
 ---
 source: crates/dovetail-tui/tests/reading_mode.rs
-assertion_line: 553
 expression: "snapshot_at(220, 50)"
 ---
  folder /home/you/src/dovetail                                                                                                                           maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ library ────────────────────────────┐┌ reading · #3 report ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ ask ─────────────────────────────────────────────┐
 │ ▾ Dovetail · open                   ││                                                                                                                               ││ › i to ask about #3's report. A read-only        │
 │   ▾ #3 Fuzzy picker                 ││               Which fuzzy matcher for the picker?                                                                             ││ session answers from the report and its sources, │
@@ -21,7 +21,6 @@ expression: "snapshot_at(220, 50)"
 │ ▸ Decisions (3)                     ││               What would change this                                                                                          ││                                                  │
 │ ▸ Docs · ADRs (2)                   ││                                                                                                                               ││                                                  │
 │                                     ││               If non-ASCII paths score badly in round 2 [S2], revisit.                                                        ││                                                  │
-│                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │

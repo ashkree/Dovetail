@@ -3,6 +3,7 @@ source: crates/dovetail-tui/tests/maps.rs
 expression: "render(&mut app, 120, 40)"
 ---
  folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ Dovetail at a glance · structure · v2 ──────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │   ◉ You  actor                                                          ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
 │ ▾ ▣ dovetail-tui  part                                                  ││   ↗ coordinator  2 new tangents · … 08:58 │
@@ -37,8 +38,7 @@ expression: "render(&mut app, 120, 40)"
 │                                                                         ││         ⎇ dovetail/inbox-keys             │
 │   4 dovetail-driver — The driver writes a user message.                 ││ ▾ ◐ Fuzzy picker P3 ≠                     │
 │                                                                         ││   ▾ ◌ ◆ picker         setting up 190M 0% │
-│   5 Claude Code — Claude Code streams its reply back.                   ││         ⎇ dovetail/picker                 │
-│                                                                         ││ ▾ Next (2)                                │
+│                                                                         ││         ⎇ dovetail/picker                 │
 │ ␣v map · o fold · f flow · ]] [[ steps · Esc shelf                      ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
  NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%                           i chat · ␣ss switch · : command

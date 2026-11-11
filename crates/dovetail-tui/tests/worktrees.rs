@@ -80,7 +80,7 @@ fn leader_g_opens_the_view_focused_asks_for_a_refresh_and_again_goes_back() {
     leader(&mut app, "g");
     let back = app.take_commands();
     assert!(!back.contains(&Command::RefreshWorktrees), "{back:?}");
-    assert!(!render(&mut app, 160, 40).contains("worktrees ·"));
+    assert!(!render(&mut app, 160, 40).contains("worktrees · Dovetail"));
 }
 
 #[test]
@@ -90,9 +90,9 @@ fn the_worktrees_command_opens_it_and_esc_goes_back() {
     type_keys(&mut app, "worktrees");
     app.on_key(enter(), 50);
     assert_eq!(app.take_commands(), vec![Command::RefreshWorktrees]);
-    assert!(render(&mut app, 160, 40).contains("worktrees ·"));
+    assert!(render(&mut app, 160, 40).contains("worktrees · Dovetail"));
     app.on_key(esc(), 60);
-    assert!(!render(&mut app, 160, 40).contains("worktrees ·"));
+    assert!(!render(&mut app, 160, 40).contains("worktrees · Dovetail"));
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn enter_opens_the_slice_conversation() {
     app.on_key(enter(), 10);
     assert_eq!(app.open_agent(), Some(&agent_id("picker")));
     assert_eq!(app.focus(), RegionId::Main);
-    assert!(!render(&mut app, 160, 40).contains("worktrees ·"));
+    assert!(!render(&mut app, 160, 40).contains("worktrees · Dovetail"));
 }
 
 #[test]

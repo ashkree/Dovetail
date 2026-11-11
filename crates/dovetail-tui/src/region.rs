@@ -236,6 +236,8 @@ impl Regions {
 pub struct ReadingAreas {
     /// Header row, as in Layout B.
     pub header: Rect,
+    /// The view-tab row (task #20).
+    pub tabs: Rect,
     /// The library, left.
     pub library: Rect,
     /// The reading column, middle: everything the side columns leave.
@@ -265,6 +267,7 @@ impl ReadingAreas {
 pub fn reading_layout(screen: Rect, with_prompt: bool) -> ReadingAreas {
     let rows = RatLayout::vertical([
         Constraint::Length(1),
+        Constraint::Length(1),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(u16::from(with_prompt)),
@@ -278,14 +281,15 @@ pub fn reading_layout(screen: Rect, with_prompt: bool) -> ReadingAreas {
         Constraint::Min(10),
         Constraint::Length(ask),
     ])
-    .split(rows[1]);
+    .split(rows[2]);
     ReadingAreas {
         header: rows[0],
+        tabs: rows[1],
         library: columns[0],
         reader: columns[1],
         ask: columns[2],
-        status: rows[2],
-        prompt: with_prompt.then_some(rows[3]),
+        status: rows[3],
+        prompt: with_prompt.then_some(rows[4]),
     }
 }
 
@@ -294,6 +298,8 @@ pub fn reading_layout(screen: Rect, with_prompt: bool) -> ReadingAreas {
 pub struct Areas {
     /// Header row: the folder in view, and whether it is a project.
     pub header: Rect,
+    /// The view-tab row (task #20); no height while hidden.
+    pub tabs: Rect,
     /// Side column, top (the inbox by default).
     pub side_top: Rect,
     /// Side column, bottom (the task tree by default).
@@ -330,9 +336,10 @@ impl Areas {
 /// Splits the screen. The side column (right) is about 38 % wide but never narrower than 40
 /// columns (when the screen allows) so tree rows stay readable; the top region (inbox) takes
 /// 40 % of it and the bottom region (tree) the rest (ADR 0008). The conversation takes the rest, on the left.
-pub fn layout(screen: Rect, with_prompt: bool) -> Areas {
+pub fn layout(screen: Rect, with_prompt: bool, with_tabs: bool) -> Areas {
     let rows = RatLayout::vertical([
         Constraint::Length(1),
+        Constraint::Length(u16::from(with_tabs)),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(u16::from(with_prompt)),
@@ -340,16 +347,17 @@ pub fn layout(screen: Rect, with_prompt: bool) -> Areas {
     .split(screen);
     let side_width = (screen.width * 38 / 100).max(40).min(screen.width / 2);
     let columns =
-        RatLayout::horizontal([Constraint::Min(10), Constraint::Length(side_width)]).split(rows[1]);
+        RatLayout::horizontal([Constraint::Min(10), Constraint::Length(side_width)]).split(rows[2]);
     let left = RatLayout::vertical([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(columns[1]);
     Areas {
         header: rows[0],
+        tabs: rows[1],
         side_top: left[0],
         side_bottom: left[1],
         main: columns[0],
-        status: rows[2],
-        prompt: with_prompt.then_some(rows[3]),
+        status: rows[3],
+        prompt: with_prompt.then_some(rows[4]),
     }
 }
 
@@ -421,14 +429,18 @@ mod tests {
     #[test]
     fn layout_fills_the_screen_and_reserves_the_header_and_prompt_rows() {
         let screen = Rect::new(0, 0, 100, 30);
-        let a = layout(screen, false);
+        let a = layout(screen, false, true);
         assert_eq!(a.header.y, 0);
-        assert_eq!(a.main.y, 1);
-        assert_eq!(a.side_top.height + a.side_bottom.height, 28);
-        assert_eq!(a.main.height, 28);
+        assert_eq!((a.tabs.y, a.tabs.height), (1, 1));
+        assert_eq!(a.main.y, 2);
+        assert_eq!(a.side_top.height + a.side_bottom.height, 27);
+        assert_eq!(a.main.height, 27);
         assert_eq!(a.prompt, None);
-        let b = layout(screen, true);
-        assert_eq!(b.main.height, 27);
+        let b = layout(screen, true, true);
+        assert_eq!(b.main.height, 26);
         assert_eq!(b.prompt.map(|p| p.y), Some(29));
+        // Hidden tabs give the row back.
+        let c = layout(screen, false, false);
+        assert_eq!((c.tabs.height, c.main.y, c.main.height), (0, 1, 28));
     }
 }

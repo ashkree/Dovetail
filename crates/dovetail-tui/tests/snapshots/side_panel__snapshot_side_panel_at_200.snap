@@ -3,6 +3,7 @@ source: crates/dovetail-tui/tests/side_panel.rs
 expression: "render(&mut app, 200, 40)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ coordinator · ◐ working · 1.2G · $3.10 ──────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────────────────────────────────────────┐
 │                                                                                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get… 10:15 │
 │                                                                                                                          ││   ? slice-4  Which route prefix should the handler use?            10:12 │
@@ -31,7 +32,6 @@ expression: "render(&mut app, 200, 40)"
 │                                                                                                                          ││  ▎A gap means an event was lost. apply returns Gap instead of            │
 │                                                                                                                          ││  ▎guessing, and the UI asks for a resync                                 │
 │                                                                                                                          ││  ▎(crates/dovetail-api/src/apply.rs).                                    │
-│                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │

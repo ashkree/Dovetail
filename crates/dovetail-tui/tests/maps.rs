@@ -131,12 +131,13 @@ fn square_brackets_walk_the_flow_and_unfold_what_hides_the_step() {
     // Fold tui, then walk: user -> tui -> core (tui has no hidden step), cursor follows.
     press_seq(&mut app, "jo");
     press_seq(&mut app, "gg]]");
-    let at_tui = render(&mut app, 120, 40);
+    let at_tui = render(&mut app, 120, 41);
     assert!(at_tui.contains("▸ 2 dovetail-tui"), "{at_tui}");
     press_seq(&mut app, "]]");
-    assert!(render(&mut app, 120, 40).contains("▸ 3 dovetail-core"));
+    let at_core = render(&mut app, 120, 41);
+    assert!(at_core.contains("▸ 3 dovetail-core"), "{at_core}");
     press_seq(&mut app, "[[[[");
-    assert!(render(&mut app, 120, 40).contains("▸ 1 You"));
+    assert!(render(&mut app, 120, 41).contains("▸ 1 You"));
     // Before the first step: a note, not a wrap.
     press_seq(&mut app, "[[");
     assert!(app.note().is_some_and(|n| n.contains("first step")));

@@ -3,6 +3,7 @@ source: crates/dovetail-tui/tests/worktrees.rs
 expression: "render(&mut app, 120, 34)"
 ---
  folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ worktrees · Dovetail · 3 · refreshing… ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │ slice         branch               sync  changes  unpushed  PR  setup   ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
 │ ⚠ inbox-keys  dovetail/inbox-keys  —     —        —         —   —       ││   ↗ coordinator  2 new tangents · … 08:58 │
@@ -13,14 +14,13 @@ expression: "render(&mut app, 120, 34)"
 │                                                                         ││                                           │
 │ inbox-keys  ⎇ dovetail/inbox-keys                                       ││                                           │
 │ path     /home/you/.local/share/dovetail/projects/dovetail/worktrees/i… ││                                           │
-│ base     —                                                              ││                                           │
-│ sync     —                                                              ││ y allow · d deny · r reply · x dismiss    │
-│ changes  —                                                              │└───────────────────────────────────────────┘
-│ unpushed —                                                              │┌ tasks · Dovetail ─────────────────────────┐
-│ PR       —                                                              ││ ○ ◆ coordinator  plannin… idle 245M $0.84 │
-│ setup    —                                                              ││ ○ ◆ side-1  read-only     idle 210M $0.03 │
-│ checked  —                                                              ││ ▾ Unsorted (1)                            │
-│                                                                         ││   ○ Check the kitty graphics fallback ✦ … │
+│ base     —                                                              ││ y allow · d deny · r reply · x dismiss    │
+│ sync     —                                                              │└───────────────────────────────────────────┘
+│ changes  —                                                              │┌ tasks · Dovetail ─────────────────────────┐
+│ unpushed —                                                              ││ ○ ◆ coordinator  plannin… idle 245M $0.84 │
+│ PR       —                                                              ││ ○ ◆ side-1  read-only     idle 210M $0.03 │
+│ setup    —                                                              ││ ▾ Unsorted (1)                            │
+│ checked  —                                                              ││   ○ Check the kitty graphics fallback ✦ … │
 │                                                                         ││ ▾ Now (3)                                 │
 │                                                                         ││ ▾ ◐ Task tree with bucket group… PR #1231 │
 │                                                                         ││   ▾ ◐ ◆ tree-view  working 232M 34% $0.41 │

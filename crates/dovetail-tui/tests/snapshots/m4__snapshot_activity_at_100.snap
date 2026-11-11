@@ -3,11 +3,11 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 24)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ activity · today ────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────┐
 │ 10:10  ·   morning review applied                        ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │ 10:03  CI  slice-4  #1231 CI passed                      ││   ? slice-4  Which route pref… 10:12 │
 │ 09:45  PR  slice-4  pushed to #1231                      ││   ✓ slice-4  Handler wired; t… 10:09 │
-│                                                          ││                                      │
 │                                                          ││                                      │
 │                                                          ││                                      │
 │                                                          ││ y allow · d deny · r reply · x dism… │

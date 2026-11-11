@@ -82,6 +82,11 @@ pub struct Picker {
 }
 
 impl Picker {
+    /// The title shown on the box.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
     /// A picker over `items`, in the order they should show for an empty query.
     pub fn new(title: impl Into<String>, items: Vec<PickerItem>) -> Self {
         let mut picker = Self {

@@ -1,9 +1,9 @@
 ---
 source: crates/dovetail-tui/tests/research.rs
-assertion_line: 429
 expression: "render(&mut app, 80, 30)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ task · #1 · report ──────────────────┐┌ inbox · needs you (3) ───────────────┐
 │                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │    Per seat or flat?                 ││   ? slice-4  Which route pref… 10:12 │
@@ -29,7 +29,6 @@ expression: "render(&mut app, 80, 30)"
 │    terminal.                         ││ ▾ ⚠ get_decision 500 P0              │
 │                                      ││   ▾ ⚠ ◆ slice-7  manual    needs you │
 │                                      ││         ⎇ dovetail/slice-7           │
-│                                      ││ ▾ Next (1)                           │
 │ j k scroll · e edit · esc back       ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ ·… i chat · ␣ss switch · : command

@@ -3,11 +3,11 @@ source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 24)"
 ---
  folder /src/business
+ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ messages between agents ─────────────────────────────────┐┌ inbox · needs you (3) ───────────────┐
 │ 10:07  slice-4 → coordinator  Understood; working on th… ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │ 09:55  coordinator → slice-4  Stay out of src/decision.… ││   ? slice-4  Which route pref… 10:12 │
 │                                                          ││   ✓ slice-4  Handler wired; t… 10:09 │
-│                                                          ││                                      │
 │                                                          ││                                      │
 │                                                          ││                                      │
 │                                                          ││ y allow · d deny · r reply · x dism… │

@@ -3,15 +3,15 @@ source: crates/dovetail-tui/tests/maps.rs
 expression: "render(&mut app, 70, 24)"
 ---
  folder /home/you/src/dovetail maveron · opus-5-5 · 5h 34% · week 18%
+ ␣c ␣b ␣g ␣M ␣R ␣r
 ┌ Dovetail at a glance · structure┐┌ inbox · needs you (3) ──────────┐
 │   ◉ You  actor                  ││ ▸ ⚠ inbox-keys  Bash · c… 08:59 │
 │ ▾ ▣ dovetail-tui  part          ││   ↗ coordinator  2 new t… 08:58 │
 │     ▤ keymap.rs  file           ││   ✓ coordinator  M2 spli… 08:58 │
 │ ▾ ▣ dovetail-api  part          ││                                 │
 │     ƒ apply()  logic            ││                                 │
-│   ▣ dovetail-core  part         ││                                 │
-│   ▥ state.db  data              ││ y allow · d deny · r reply · x… │
-│   ▣ dovetail-driver  part       │└─────────────────────────────────┘
+│   ▣ dovetail-core  part         ││ y allow · d deny · r reply · x… │
+│   ▥ state.db  data              │└─────────────────────────────────┘
 │                                 │┌ tasks · Dovetail ───────────────┐
 │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││ ○ ◆ coordinator idle 245M $0.84 │
 │                                 ││ ○ ◆ side-1  read-only      idle │
