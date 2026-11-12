@@ -30,6 +30,9 @@ echo "scratch root: $ROOT (model $MODEL)"
 (cd "$repo_root" && cargo build -q -p dovetail) || { echo "build failed"; exit 1; }
 DT="$repo_root/target/debug/dovetail"
 
+# uuidgen is missing on some minimal systems; the kernel gives the same.
+command -v uuidgen >/dev/null || uuidgen() { cat /proc/sys/kernel/random/uuid; }
+
 pass() { printf '\033[32mPASS\033[0m %s\n' "$*"; }
 fail() { printf '\033[31mFAIL\033[0m %s\n' "$*"; }
 look() { printf '\033[33mLOOK\033[0m %s\n' "$*"; }
@@ -141,7 +144,8 @@ check_app() {
   Then, and note each result:
    1. Status bar says "not a Dovetail project yet". Run :project add; the warning goes.   (ADR 0005)
    2. i, "Reply with the word pong", Enter: the reply streams in.                          (M6)
-   3. i, "Run sleep 30 with Bash", then <leader>sx (interrupt): "Interrupted" appears.     (M6)
+   3. i, "Write a 1500-word essay about rivers", then <leader>sx while it streams:
+      "Interrupted" appears. (Claude Code blocks a bare sleep, so a long reply stands in.)  (M6)
    4. <leader>sm to manual. i, "Create a.txt with the Write tool": a Permission item
       appears; answer y. Ask for two writes in one message; answer the second first.      (M7)
    5. "Call core_ask_user: which colour?": in the chat and Needs you; reply r.            (ADR 0007)

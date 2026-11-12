@@ -33,7 +33,7 @@ Overnight 2026-11-10/11 the three build sessions stalled on a permission prompt;
 | `/retro` for wave 4, then the `review-wave-4` tag | you | after reading the review |
 | Answer the review's six questions (blocking `systemctl`, editor path check, `update_task` and Now, morning coordinator day rule, `<leader>y`, side chat read-only) | you | **Answered 2026-11-11**, built in PR `dovetail/small-fixes`: (1) `systemctl` left for v1.1 (`launch` goes async then); (2) the path check moved to the core (`OpenEditor` asks, the core answers `LendTerminal` or `CommandFailed`, no flicker); (3) `tasks_update` may move a task into Now, and marks it unseen; (4) day rule: fresh only when the newest journal is at least as new as the last use, else the coordinator is kept and Needs you says the day wasn't closed (ADR 0012 amendment); (5) `<leader>y` stays removed; (6) side chats: Bash allow-list with `--locked` on `cargo tree`/`cargo metadata`, and the core suite only whatever `[suites]` says |
 | Research docs PR #43 (ADRs 0015–0018) and its conflict list | you | **Merged**; conflicts decided 2026-11-11 (ADR amendments) |
-| Live checks M6–M9, M11, M14 round trip, M15 "a real agent draws both map types" | you | run `scripts/live-checks.sh`; real sessions cost money, so agents don't run them |
+| Live checks M6–M9, M11, M14 round trip, M15 "a real agent draws both map types" | agent, at your request | **Run 2026-11-12**, all passed: `docs/reviews/live-checks-2026-11-12.md`. Still open: M6 non-auto init warning, M7 concurrent requests across two sessions (Claude Code queues requests within one session), M10 repeat on this repo |
 | S6 (`ask_user` role-prompt reliability), now also covering the research suite | you review | open |
 | S5 look in kitty, and the canvas look (M15 f has landed) | you | open: see "Try the map canvas" |
 | M16: a full working week in place of tmux; RSS under 100 MB after a day; cutting anything in the v1 roadmap | you | open |
@@ -84,6 +84,6 @@ Each item of the digest's §12 v1 list checked against `main` on 2026-11-11. **S
 
 **Not on the list but promised for v1 by the plan (M16):** activity feed events (permission answers, coordinator start/exit, task changes, PR and CI), the startup-warnings audit and the RSS measurement are in progress in another session. They are unfinished until that lands.
 
-**Live checks still unticked** (need real sessions and money, so yours): M6 (streaming, interrupt, reaping), M7 (manual-mode request answered, concurrent requests, mode switch), M8 (hook-created worktree, 15-minute hook, `gh pr merge` ask rule, archive), M9 (`ask_user` round trip, status lines, `create_task` marking, S6), M10 (repeat on this repo), M11, M14, M15.
+**Live checks still unticked** after the 2026-11-12 run (`docs/reviews/live-checks-2026-11-12.md`): M6 (non-auto init warning), M7 (concurrent requests across two sessions), M9 (S6), M10 (repeat on this repo), M15 (look in kitty).
 
 **Candidates to cut or defer, for you:** none of the 19 items is a clear cut.
