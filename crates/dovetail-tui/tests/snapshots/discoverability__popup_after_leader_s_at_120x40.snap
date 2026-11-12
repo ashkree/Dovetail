@@ -31,14 +31,14 @@ expression: "render(&mut app, 120, 40)"
 │                                                                         ││       ✓ ◇ rebase               done $0.21 │
 │                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
 │                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
+│                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                ┌ ␣s ─────────────────────────────────────────────────┐
 │                                                                │ Agents                                              │
 │                                                                │ s  switch agent                                     │
-│                                                                │ n  start a slice (name, then brief)                 │
-│   ⠋ Mortising… 0s                                              │ q  ask a side question                              │
-│                                                                │ x  interrupt the agent's turn                       │
-└────────────────────────────────────────────────────────────────│ m  cycle permission mode: auto, acceptEdits, manual │
-┌ chat › coordinator ────────────────────────────────────────────│ M  pick the session's model and effort              │
+│   ⠋ Mortising… 0s                                              │ n  start a slice (name, then brief)                 │
+│                                                                │ q  ask a side question                              │
+└────────────────────────────────────────────────────────────────│ x  interrupt the agent's turn                       │
+┌ chat › coordinator ────────────────────────────────────────────│ m  cycle permission mode: auto, acceptEdits, manual │
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO tu│ t  take the session over in this terminal           │
 └────────────────────────────────────────────────────────────────└─────────────────────────────────────────────────────┘
  NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%  ␣s …      ⏎ open · o fold · s status · a add · : command

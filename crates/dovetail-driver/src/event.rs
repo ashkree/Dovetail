@@ -482,9 +482,11 @@ pub enum DriverEvent {
         /// The `response` payload (or error text).
         response: Value,
     },
-    /// The model and effort Claude Code says it applies (`get_settings`' `applied`): sent
-    /// once at start and at the end of each [`crate::Session::set_model`].
+    /// The model and effort Claude Code says it applies (`get_settings`' `applied`): read
+    /// once at start (`switch` is `None`) and at the end of each [`crate::Session::set_model`].
     ModelSettings {
+        /// The switch this confirms; `None` for the start-up read.
+        switch: Option<SwitchId>,
         /// The full model name (`claude-sonnet-5-5`).
         model: Option<String>,
         /// The effort; `None` when the model has none or the level is not one we know.
@@ -493,6 +495,8 @@ pub enum DriverEvent {
     /// A [`crate::Session::set_model`] was refused (unknown model, say); the old model is
     /// still in use and nothing else was changed.
     ModelSwitchFailed {
+        /// The switch refused.
+        switch: SwitchId,
         /// Claude Code's reason.
         error: String,
     },
@@ -541,3 +545,7 @@ pub struct ModelInfo {
     /// The effort levels it accepts; empty when it has no effort setting.
     pub efforts: Vec<dovetail_api::Effort>,
 }
+
+/// Names one [`crate::Session::set_model`] call, so its answer is never taken for another's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SwitchId(pub u64);

@@ -4,13 +4,32 @@
 //!
 //! A running session switches through the driver and the agent changes only when Claude Code
 //! confirms (`DriverEvent::ModelSettings`), never optimistically. A refused switch keeps the old
-//! model and is reported; nothing restarts.
+//! model and is reported; nothing restarts. Every answer names its switch, and only the answer
+//! to the session's latest request counts ([`is_current`]): a late start-up read or an earlier
+//! switch's answer never confirms another switch. One switch at a time: another is refused until
+//! the first is confirmed or refused.
 
 use dovetail_api::{AgentId, AgentKind, Effort, Event, ModelOption};
-use dovetail_driver::ModelInfo;
+use dovetail_driver::{ModelInfo, SwitchId};
 
 use crate::db::{AgentRow, ModelChoice};
 use crate::service::Core;
+
+/// A switch sent to a live session and not yet answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PendingSwitch {
+    /// The driver's id for it.
+    pub(crate) id: SwitchId,
+    /// What the user picked.
+    pub(crate) choice: ModelChoice,
+}
+
+/// Whether a settings answer for `answer` (`None`: the start-up read) is the answer to the
+/// session's latest request, `latest` being its latest switch (`None`: none sent yet). An older
+/// answer, arriving out of order, says nothing about the session now.
+pub(crate) fn is_current(latest: Option<SwitchId>, answer: Option<SwitchId>) -> bool {
+    latest == answer
+}
 
 impl Core {
     /// `Command::SetModel`: switch `id`'s session (a subagent's parent, since subagents share
@@ -29,9 +48,12 @@ impl Core {
             (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
             _ => id.clone(),
         };
-        let Some(name) = self.agents.get(&target).map(|r| r.agent.name.clone()) else {
+        let Some(row) = self.agents.get(&target) else {
             return;
         };
+        let name = row.agent.name.clone();
+        // Only the effort changes: no `set_model` (spike note).
+        let keep_model = self.runs_model(row, &model);
         let choice = ModelChoice { model, effort };
         let Some(live) = self.live.get_mut(&target) else {
             // Not running (or taken over): the choice is used when it next starts.
@@ -45,55 +67,97 @@ impl Core {
             );
             return;
         };
-        if let Err(e) = live.session.set_model(&choice.model, choice.effort) {
-            self.fail(format!("Could not switch {name}'s model: {e}"));
+        if let Some(pending) = &live.switching {
+            let waiting = describe(&pending.choice.model, pending.choice.effort);
+            self.fail(format!(
+                "{name} is still switching to {waiting}: try again once it has answered"
+            ));
             return;
         }
-        live.switching = Some(choice);
+        let model = (!keep_model).then_some(choice.model.as_str());
+        match live.session.set_model(model, choice.effort) {
+            Ok(id) => {
+                live.last_switch = Some(id);
+                live.switching = Some(PendingSwitch { id, choice });
+            }
+            Err(e) => self.fail(format!("Could not switch {name}'s model: {e}")),
+        }
     }
 
-    /// `get_settings`' answer: at start, or at the end of a switch.
+    /// Whether `row`'s session already runs `model` (an alias or a full name).
+    fn runs_model(&self, row: &AgentRow, model: &str) -> bool {
+        let Some(running) = row.agent.model.as_deref() else {
+            return false;
+        };
+        running == model
+            || self
+                .model_catalog
+                .iter()
+                .any(|m| m.value == model && m.resolved.as_deref() == Some(running))
+    }
+
+    /// `get_settings`' answer: the start-up read (`switch` is `None`) or the end of a switch.
     pub(crate) fn on_model_settings(
         &mut self,
         agent: &AgentId,
+        switch: Option<SwitchId>,
         model: Option<String>,
         effort: Option<Effort>,
     ) {
-        let asked = self.live.get_mut(agent).and_then(|l| l.switching.take());
+        let Some(live) = self.live.get_mut(agent) else {
+            return;
+        };
+        if !is_current(live.last_switch, switch) {
+            tracing::debug!(agent = %agent.0, ?switch, "an older settings answer, ignored");
+            return;
+        }
+        let asked = live.switching.take_if(|p| Some(p.id) == switch);
         self.set_model(agent, model.as_deref());
         self.update_agent(agent, |row| row.agent.effort = effort);
-        let Some(mut asked) = asked else {
+        let Some(PendingSwitch { mut choice, .. }) = asked else {
             return;
         };
         // `apply_flag_settings` accepts a level the model lacks and ignores it: only the
         // effort read back counts.
-        if let Some(wanted) = asked.effort
+        if let Some(wanted) = choice.effort
             && effort != Some(wanted)
         {
             let name = self.agent_name(agent);
             self.fail(format!(
                 "{name} switched to {} but kept effort {}: the model did not take {}",
-                asked.model,
+                choice.model,
                 effort.map_or("none", Effort::as_str),
                 wanted.as_str()
             ));
-            asked.effort = effort;
+            choice.effort = effort;
         }
-        self.update_agent(agent, |row| row.model_choice = Some(asked));
+        self.update_agent(agent, |row| row.model_choice = Some(choice));
     }
 
-    /// A switch was refused: the old model is still in use.
-    pub(crate) fn on_model_switch_failed(&mut self, agent: &AgentId, error: &str) {
-        let asked = self.live.get_mut(agent).and_then(|l| l.switching.take());
+    /// Switch `switch` was refused: the old model is still in use.
+    pub(crate) fn on_model_switch_failed(
+        &mut self,
+        agent: &AgentId,
+        switch: SwitchId,
+        error: &str,
+    ) {
+        let asked = self
+            .live
+            .get_mut(agent)
+            .and_then(|l| l.switching.take_if(|p| p.id == switch));
+        let Some(asked) = asked else {
+            tracing::debug!(agent = %agent.0, ?switch, "a refusal for no pending switch, ignored");
+            return;
+        };
         let name = self.agent_name(agent);
         let old = self
             .agents
             .get(agent)
             .and_then(|r| r.agent.model.clone())
             .unwrap_or_else(|| "its model".into());
-        let what = asked.map_or_else(|| "another model".into(), |c| c.model);
         self.fail(format!(
-            "Could not switch {name} to {what}: {error}. It keeps {old}."
+            "Could not switch {name} to {}: {error}. It keeps {old}.",
+            asked.choice.model
         ));
     }
 

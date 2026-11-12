@@ -7,5 +7,4 @@ expression: "popup_text(&CONVERSATION, \"<leader>s\")"
 [Agents] q    ask a side question
 [Agents] x    interrupt the agent's turn
 [Agents] m    cycle permission mode: auto, acceptEdits, manual
-[Agents] M    pick the session's model and effort
 [Agents] t    take the session over in this terminal

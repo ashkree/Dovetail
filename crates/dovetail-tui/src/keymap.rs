@@ -265,8 +265,6 @@ pub const BINDINGS: &[Binding] = &[
     bind(N, G, "<leader>?", Action::ToggleSidePanel),
     bind(N, G, "<leader>sx", Action::Interrupt),
     bind(N, G, "<leader>sm", Action::CyclePermissionMode),
-    // The model selector's one key (task #39); `<leader>m` stays the message timeline.
-    bind(N, G, "<leader>sM", Action::PickModel),
     bind(N, G, "<leader>st", Action::TakeOver),
     bind(N, G, "<leader>pp", Action::SwitchProject),
     bind(N, G, "<leader>pr", Action::RegisterProject),

@@ -88,7 +88,7 @@ impl App {
         self.open_overlay(Overlay::Picker(Picker::new("Skills", items), Purpose::Open));
     }
 
-    /// `<leader>sM`, `:model [name]`, `/model [name]`: the focused session's model and effort
+    /// `:model [name]`, `/model [name]`: the focused session's model and effort
     /// (task #39). A subagent's is its session's.
     pub(super) fn open_model_selector(&mut self, preselect: Option<&str>) {
         let Some((session, _)) = self.focused_agent().and_then(|id| self.session_of(&id)) else {

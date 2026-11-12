@@ -90,7 +90,9 @@ pub(crate) struct Live {
     /// Tokens the context held after the latest main-thread API call (decision #22).
     pub(crate) context_tokens: Option<u64>,
     /// A model switch sent and not yet confirmed or refused (task #39).
-    pub(crate) switching: Option<crate::db::ModelChoice>,
+    pub(crate) switching: Option<model::PendingSwitch>,
+    /// The latest switch sent; only answers to it count (task #39).
+    pub(crate) last_switch: Option<dovetail_driver::SwitchId>,
 }
 
 impl Core {
@@ -273,6 +275,7 @@ impl Core {
                 oom_watched: false,
                 context_tokens: None,
                 switching: None,
+                last_switch: None,
             },
         );
         self.save_agent(id);
@@ -686,11 +689,13 @@ impl Core {
             DriverEvent::ControlRequest { raw, .. } => {
                 tracing::warn!(agent = %agent.0, "unhandled control request: {raw}");
             }
-            DriverEvent::ModelSettings { model, effort } => {
-                self.on_model_settings(&agent, model, effort);
-            }
-            DriverEvent::ModelSwitchFailed { error } => {
-                self.on_model_switch_failed(&agent, &error);
+            DriverEvent::ModelSettings {
+                switch,
+                model,
+                effort,
+            } => self.on_model_settings(&agent, switch, model, effort),
+            DriverEvent::ModelSwitchFailed { switch, error } => {
+                self.on_model_switch_failed(&agent, switch, &error);
             }
             DriverEvent::Models(models) => self.on_models_listed(models),
             DriverEvent::RateLimit(info) => self.on_rate_limit(&agent, &info),

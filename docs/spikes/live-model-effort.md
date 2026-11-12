@@ -22,7 +22,7 @@ Control responses do not come back in request order (`apply_flag_settings` answe
 
 ## What Dovetail does with it
 
-- The driver's `Session::set_model` sends `set_model` (if the model changes), then on success `apply_flag_settings {effortLevel}` (if an effort was picked), then `get_settings`, each step after the previous answer. The `applied` model and effort from `get_settings` are the confirmed state (`DriverEvent::ModelSettings`); a `set_model` error ends the chain (`DriverEvent::ModelSwitchFailed`) and nothing else is sent.
+- The driver's `Session::set_model` sends `set_model` (only when the model changes: the core passes no model when the session already runs the one picked), then on success `apply_flag_settings {effortLevel}` (if an effort was picked), then `get_settings`, each step after the previous answer. The `applied` model and effort from `get_settings` are the confirmed state (`DriverEvent::ModelSettings`); a `set_model` error ends the chain (`DriverEvent::ModelSwitchFailed`) and nothing else is sent. Both events carry the switch's id, and the core takes only the answer to its latest switch; a second switch is refused while one is unanswered.
 - Because a bad effort is accepted silently, the core compares the effort it asked for with `applied.effort` and reports a mismatch as an error.
-- At start the driver also sends `get_settings` (to show the launch effort before any switch) and `list_models` (so the selector can gray out levels a model does not list).
+- At start, once `initialize` has been answered, the driver also sends `get_settings` (to show the launch effort before any switch) and `list_models` (so the selector can gray out levels a model does not list). That read is not a switch: it reports with no switch id, is ignored if a switch was sent meanwhile, and a failure of it is only logged.
 - The chosen model and effort are stored on the session row and passed as `--model`/`--effort` on the next start or resume.

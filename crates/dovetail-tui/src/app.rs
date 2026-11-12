@@ -901,12 +901,19 @@ impl App {
             let chatting = view.is_chatting();
             // `/model` is Dovetail's selector, never a prompt for Claude Code (task #39).
             if let Some((agent, text, attachments)) = &sent
-                && attachments.is_empty()
                 && let Some(arg) = model_command(text)
             {
                 let agent = agent.clone();
                 let arg = arg.to_owned();
+                let dropped = attachments.len();
                 self.open_model_selector_for(agent, (!arg.is_empty()).then_some(&arg));
+                if dropped > 0 {
+                    // The selector may have set its own note; this one matters more.
+                    self.note = Some(format!(
+                        "/model opens the model selector; {dropped} attached image{} not sent",
+                        if dropped == 1 { " was" } else { "s were" }
+                    ));
+                }
                 return;
             }
             if let Some((agent, text, attachments)) = sent {

@@ -526,7 +526,7 @@ impl Effort {
 }
 
 /// The models the selector always offers, before `config.toml`'s `extra_models` (task #39).
-pub const BUILTIN_MODELS: [&str; 3] = ["opus", "sonnet", "haiku"];
+pub const BUILTIN_MODELS: [&str; 4] = ["opus", "sonnet", "haiku", "fable"];
 
 /// A model the selector offers (task #39): the built-in aliases, then `config.toml`'s
 /// `extra_models`.

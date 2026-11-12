@@ -74,6 +74,7 @@ pub(crate) fn models() -> Vec<ModelOption> {
         listed("opus", "claude-opus-5-5", &Effort::ALL),
         listed("sonnet", "claude-sonnet-5-5", &Effort::ALL),
         listed("haiku", "claude-haiku-5-5", &Effort::ALL),
+        listed("fable", "claude-fable-5-2", &Effort::ALL),
         listed(
             "claude-haiku-4-5-20251001",
             "claude-haiku-4-5-20251001",

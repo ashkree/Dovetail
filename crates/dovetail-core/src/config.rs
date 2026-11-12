@@ -5,7 +5,7 @@
 //! claude = "/usr/bin/claude" # default: `claude` on PATH
 //! default_model = "opus"     # default: whatever Claude Code picks
 //! side_chat_model = "sonnet" # model of side chats (ADR 0011); default: sonnet
-//! extra_models = ["fable"]   # offered by the model selector after opus, sonnet, haiku
+//! extra_models = ["claude-sonnet-5"] # offered by the model selector after the built-in ones
 //! max_slices = 3             # running slices at once
 //! [memory]
 //! coordinator_gb = 4         # cgroup cap for the coordinator session
@@ -262,7 +262,7 @@ mod tests {
     fn the_selector_offers_the_builtin_models_then_the_extra_ones_once() {
         assert_eq!(
             Config::parse("").unwrap().model_names(),
-            ["opus", "sonnet", "haiku"]
+            ["opus", "sonnet", "haiku", "fable"]
         );
         let config =
             Config::parse("extra_models = [\"fable\", \"opus\", \" \", \"claude-sonnet-5\"]\n")

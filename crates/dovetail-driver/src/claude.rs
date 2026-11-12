@@ -124,12 +124,6 @@ impl SessionDriver for ClaudeDriver {
             "request_id": crate::parse::INITIALIZE_ID,
             "request": {"subtype": "initialize"},
         })));
-        // The launch model and effort, for the usage row before any switch, and what each model
-        // accepts, for the model selector (task #39). Neither makes a model call.
-        if let Ok(mut s) = switches.lock() {
-            let _ = writer_tx.send(WriterMsg::Line(s.read_settings()));
-        }
-        let _ = writer_tx.send(WriterMsg::Line(crate::switch::list_models()));
         Ok(Box::new(ClaudeSession {
             session_id: spec.session_id,
             pid,
@@ -215,6 +209,20 @@ struct Reader {
 }
 
 impl Reader {
+    /// Once `initialize` is answered: read the launch model and effort, for the usage row before
+    /// any switch, and what each model accepts, for the selector (task #39). Neither makes a
+    /// model call.
+    fn after_initialize(&self) {
+        let lines = self
+            .switches
+            .lock()
+            .map(|mut s| s.after_initialize())
+            .unwrap_or_default();
+        for line in lines {
+            let _ = self.writer.send(WriterMsg::Line(line));
+        }
+    }
+
     /// A switch step's answer becomes the next request or the switch's result; any other event
     /// passes through.
     fn route(&self, ev: DriverEvent) -> Option<DriverEvent> {
@@ -263,6 +271,9 @@ async fn read_stdout(stdout: tokio::process::ChildStdout, reader: Reader) {
         if let Some(l) = &log {
             let msg = serde_json::from_str(&line).unwrap_or_else(|_| json!({"_non_json": line}));
             l.write("out", msg);
+        }
+        if parse::is_initialize_answer(&line) {
+            reader.after_initialize();
         }
         for ev in parse::map_line(&line) {
             let Some(ev) = reader.route(ev) else {
@@ -414,13 +425,18 @@ impl Session for ClaudeSession {
         self.control(json!({"subtype": "set_permission_mode", "mode": mode.as_cli()}))
     }
 
-    fn set_model(&self, model: &str, effort: Option<Effort>) -> Result<(), DriverError> {
-        let line = self
+    fn set_model(
+        &self,
+        model: Option<&str>,
+        effort: Option<Effort>,
+    ) -> Result<SwitchId, DriverError> {
+        let (switch, line) = self
             .switches
             .lock()
             .map_err(|_| DriverError::SessionClosed)?
             .begin(model, effort);
-        self.write(line)
+        self.write(line)?;
+        Ok(switch)
     }
 
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError> {

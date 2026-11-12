@@ -1,4 +1,4 @@
-//! Task #39: the model selector. `<leader>sM`, `:model` and `/model` open it on the focused
+//! Task #39: the model selector. `:model` and `/model` open it on the focused
 //! session; `j`/`k`/`h`/`l` pick, Enter sends one `SetModel` and Esc sends nothing.
 
 mod support;
@@ -48,7 +48,7 @@ fn coordinator(app: &App) -> dovetail_api::AgentId {
 }
 
 #[test]
-fn leader_s_shift_m_and_colon_model_name_the_selector() {
+fn only_colon_model_names_the_selector() {
     let map = Keymap::default_map();
     let label = |keys: &str| {
         let keys = Key::parse_sequence(keys).expect("keys");
@@ -56,7 +56,8 @@ fn leader_s_shift_m_and_colon_model_name_the_selector() {
     };
     assert_eq!(
         map.bindings_of(Action::PickModel),
-        vec![(Mode::Normal, Scope::Global, label("<leader>sM"))]
+        Vec::<(Mode, Scope, String)>::new(),
+        "no key: :model and /model only"
     );
     // `<leader>m` stays the message timeline.
     assert!(map.bindings_of(Action::ShowMessages).contains(&(
@@ -95,7 +96,8 @@ fn enter_applies_the_pick_to_the_focused_session() {
 #[test]
 fn esc_closes_the_selector_without_sending() {
     let mut app = app_with(world_with_models());
-    type_keys(&mut app, " sM");
+    type_keys(&mut app, ":model");
+    app.on_key(enter(), 50);
     assert!(render(&mut app, 120, 40).contains("model · coordinator"));
     press(&mut app, "jjhh");
     app.on_key(esc(), 100);
