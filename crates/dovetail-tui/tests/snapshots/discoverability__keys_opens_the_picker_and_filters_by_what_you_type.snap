@@ -7,7 +7,7 @@ expression: filtered
 ┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
 │ ┌ Keys ────────────────────────────────────────────┐┌ Keys ────────────────────────────────────────────────────────┐ │
-│ │› worktrees                                  6/137││ worktrees                                                    │ │
+│ │› worktrees                                  6/138││ worktrees                                                    │ │
 │ │                                                  ││ Views                                                        │ │
 │ │▌▸ worktrees                         ␣g :worktrees││                                                              │ │
 │ │ · back to the conversation            Activity: ⎋││ here                                                         │ │

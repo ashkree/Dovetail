@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use dovetail_api::{
-    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, EntryId,
-    InboxId, InboxItem, InboxKind, SessionLock, SubagentProgress, TaskId, WorktreeRef,
+    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, Effort,
+    EntryId, InboxId, InboxItem, InboxKind, SessionLock, SubagentProgress, TaskId, WorktreeRef,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -34,6 +34,18 @@ pub struct AgentRow {
     /// Its take-over lock while the user works in native `claude` (M14); `agent.lock` says
     /// `TakenOver` exactly when this is set.
     pub takeover: Option<crate::takeover::TakeoverLock>,
+    /// The model and effort picked in the model selector (task #39), used from the next start;
+    /// `None` until the user picks: `config.toml`'s default applies.
+    pub model_choice: Option<ModelChoice>,
+}
+
+/// A model and effort the user picked for a session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelChoice {
+    /// `--model`: an alias or a full model name.
+    pub model: String,
+    /// `--effort`; `None` leaves Claude Code's default.
+    pub effort: Option<Effort>,
 }
 
 fn kind_to_text(kind: AgentKind) -> &'static str {
@@ -112,14 +124,15 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
         "INSERT INTO agents (id, kind, name, parent_id, task_id, session_id, transcript_path, \
          task_list_id, worktree_path, branch, status, status_line, permission_mode, cost_usd, \
          created_ms, last_activity_ms, tool_use_id, output_file, progress, subagent_tokens, \
-         claude_home, takeover) \
+         claude_home, takeover, chosen_model, chosen_effort) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22) \
+         ?18, ?19, ?20, ?21, ?22, ?23, ?24) \
          ON CONFLICT(id) DO UPDATE SET kind = ?2, name = ?3, parent_id = ?4, task_id = ?5, \
          session_id = ?6, transcript_path = ?7, task_list_id = ?8, worktree_path = ?9, \
          branch = ?10, status = ?11, status_line = ?12, permission_mode = ?13, cost_usd = ?14, \
          last_activity_ms = ?16, tool_use_id = ?17, output_file = ?18, progress = ?19, \
-         subagent_tokens = ?20, claude_home = ?21, takeover = ?22, closed_ms = NULL",
+         subagent_tokens = ?20, claude_home = ?21, takeover = ?22, chosen_model = ?23, \
+         chosen_effort = ?24, closed_ms = NULL",
         params![
             a.id.0,
             kind_to_text(a.kind),
@@ -148,6 +161,11 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
             i64::try_from(a.subagent_tokens).unwrap_or(i64::MAX),
             path_text(&row.claude_home),
             takeover_text(&row.takeover)?,
+            row.model_choice.as_ref().map(|c| c.model.clone()),
+            row.model_choice
+                .as_ref()
+                .and_then(|c| c.effort)
+                .map(Effort::as_str),
         ],
     )?;
     Ok(())
@@ -157,7 +175,8 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
     let mut stmt = conn.prepare(
         "SELECT id, kind, name, parent_id, task_id, session_id, transcript_path, task_list_id, \
          worktree_path, branch, status, status_line, permission_mode, cost_usd, created_ms, \
-         last_activity_ms, tool_use_id, progress, subagent_tokens, claude_home, takeover FROM agents \
+         last_activity_ms, tool_use_id, progress, subagent_tokens, claude_home, takeover, \
+         chosen_model, chosen_effort FROM agents \
          WHERE closed_ms IS NULL \
          ORDER BY created_ms, id",
     )?;
@@ -188,6 +207,10 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 r.get::<_, Option<String>>(19)?,
                 r.get::<_, Option<String>>(20)?,
             ),
+            (
+                r.get::<_, Option<String>>(21)?,
+                r.get::<_, Option<String>>(22)?,
+            ),
         ))
     })?;
     let mut out = Vec::new();
@@ -209,7 +232,15 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             created,
             last,
             (tool_use_id, progress, subagent_tokens, claude_home, takeover),
+            (chosen_model, chosen_effort),
         ) = row?;
+        let chosen_effort = chosen_effort
+            .map(|e| Effort::parse(&e).ok_or_else(|| DbError::Corrupt(format!("effort {e:?}"))))
+            .transpose()?;
+        let model_choice = chosen_model.map(|model| ModelChoice {
+            model,
+            effort: chosen_effort,
+        });
         let takeover = takeover
             .map(|t| {
                 serde_json::from_str::<crate::takeover::TakeoverLock>(&t)
@@ -251,6 +282,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                     SessionLock::Headless
                 },
                 model: None,
+                effort: None,
                 subagent_tokens: u64::try_from(subagent_tokens).unwrap_or(0),
                 tool: None,
             },
@@ -261,6 +293,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             tool_use_id,
             claude_home: claude_home.map(PathBuf::from),
             takeover,
+            model_choice,
         });
     }
     Ok(out)

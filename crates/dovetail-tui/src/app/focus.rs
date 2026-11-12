@@ -200,7 +200,7 @@ impl App {
 
     /// The session a command about "this agent" applies to. A subagent has no session of its
     /// own, so it is its parent's (plan B20); the flag says it was redirected.
-    fn session_of(&self, id: &AgentId) -> Option<(AgentId, bool)> {
+    pub(super) fn session_of(&self, id: &AgentId) -> Option<(AgentId, bool)> {
         let agent = self.snap.agents.iter().find(|a| &a.id == id)?;
         match (&agent.kind, &agent.parent) {
             (AgentKind::Subagent { .. }, Some(parent)) => Some((parent.clone(), true)),
@@ -234,6 +234,7 @@ impl App {
             }
             Action::Upgrade => self.note = Some("usage: :upgrade [--local]".into()),
             Action::StartRound => self.round(arg),
+            Action::PickModel => self.open_model_selector((!arg.is_empty()).then_some(arg)),
             Action::NewProject => self.new_project(arg),
             Action::ListResearch if arg.split_whitespace().next() == Some("kind") => {
                 self.research_kind(arg);

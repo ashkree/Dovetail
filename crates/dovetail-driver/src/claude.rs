@@ -3,9 +3,11 @@
 
 use crate::event::*;
 use crate::parse;
+use crate::switch::Switches;
 use crate::{
     ControlAnswer, DriverError, PermissionMode, Session, SessionDriver, SessionSpec, UserInput,
 };
+use dovetail_api::Effort;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
@@ -92,13 +94,18 @@ impl SessionDriver for ClaudeDriver {
         let (writer_tx, writer_rx) = unbounded_channel();
         let (ctl_tx, ctl_rx) = unbounded_channel();
         let pending: Arc<Mutex<HashMap<String, Value>>> = Arc::default();
+        let switches: Arc<Mutex<Switches>> = Arc::default();
 
         tokio::spawn(write_stdin(stdin, writer_rx, log.clone()));
         let reader = tokio::spawn(read_stdout(
             stdout,
-            events_tx.clone(),
-            pending.clone(),
-            log.clone(),
+            Reader {
+                events: events_tx.clone(),
+                writer: writer_tx.clone(),
+                pending: pending.clone(),
+                switches: switches.clone(),
+                log: log.clone(),
+            },
         ));
         let stderr_task = tokio::spawn(read_stderr(stderr, log));
         tokio::spawn(supervise(
@@ -124,6 +131,7 @@ impl SessionDriver for ClaudeDriver {
             ctl: ctl_tx,
             events: Some(events_rx),
             pending,
+            switches,
             counter: AtomicU64::new(0),
         }))
     }
@@ -190,14 +198,66 @@ async fn write_stdin(
     let _ = stdin.shutdown().await;
 }
 
+/// What the stdout reader shares with the session handle.
+struct Reader {
+    events: UnboundedSender<DriverEvent>,
+    /// For the next request of a model switch, sent when the previous one is answered.
+    writer: UnboundedSender<WriterMsg>,
+    pending: Arc<Mutex<HashMap<String, Value>>>,
+    switches: Arc<Mutex<Switches>>,
+    log: Option<Arc<Log>>,
+}
+
+impl Reader {
+    /// Once `initialize` is answered: read the launch model and effort, for the usage row before
+    /// any switch, and what each model accepts, for the selector (task #39). Neither makes a
+    /// model call.
+    fn after_initialize(&self) {
+        let lines = self
+            .switches
+            .lock()
+            .map(|mut s| s.after_initialize())
+            .unwrap_or_default();
+        for line in lines {
+            let _ = self.writer.send(WriterMsg::Line(line));
+        }
+    }
+
+    /// A switch step's answer becomes the next request or the switch's result; any other event
+    /// passes through.
+    fn route(&self, ev: DriverEvent) -> Option<DriverEvent> {
+        let DriverEvent::ControlResponse {
+            request_id,
+            success,
+            response,
+        } = &ev
+        else {
+            return Some(ev);
+        };
+        let outcome = self
+            .switches
+            .lock()
+            .ok()
+            .and_then(|mut s| s.answer(request_id, *success, response));
+        let Some(outcome) = outcome else {
+            return Some(ev);
+        };
+        if let Some(line) = outcome.send {
+            let _ = self.writer.send(WriterMsg::Line(line));
+        }
+        outcome.event
+    }
+}
+
 /// Never awaits anything but the next line and an unbounded send, so a held permission request
 /// cannot stall the stream.
-async fn read_stdout(
-    stdout: tokio::process::ChildStdout,
-    tx: UnboundedSender<DriverEvent>,
-    pending: Arc<Mutex<HashMap<String, Value>>>,
-    log: Option<Arc<Log>>,
-) {
+async fn read_stdout(stdout: tokio::process::ChildStdout, reader: Reader) {
+    let Reader {
+        events: ref tx,
+        ref pending,
+        ref log,
+        ..
+    } = reader;
     let mut lines = BufReader::new(stdout).lines();
     loop {
         let line = match lines.next_line().await {
@@ -212,7 +272,13 @@ async fn read_stdout(
             let msg = serde_json::from_str(&line).unwrap_or_else(|_| json!({"_non_json": line}));
             l.write("out", msg);
         }
+        if parse::is_initialize_answer(&line) {
+            reader.after_initialize();
+        }
         for ev in parse::map_line(&line) {
+            let Some(ev) = reader.route(ev) else {
+                continue;
+            };
             if let DriverEvent::PermissionRequest(req) = &ev
                 && let Ok(mut map) = pending.lock()
             {
@@ -313,6 +379,8 @@ struct ClaudeSession {
     events: Option<UnboundedReceiver<DriverEvent>>,
     /// Inputs of pending `can_use_tool` requests, to echo back when the answer has none.
     pending: Arc<Mutex<HashMap<String, Value>>>,
+    /// Model switches in flight; the stdout reader finishes them.
+    switches: Arc<Mutex<Switches>>,
     counter: AtomicU64,
 }
 
@@ -355,6 +423,20 @@ impl Session for ClaudeSession {
 
     fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), DriverError> {
         self.control(json!({"subtype": "set_permission_mode", "mode": mode.as_cli()}))
+    }
+
+    fn set_model(
+        &self,
+        model: Option<&str>,
+        effort: Option<Effort>,
+    ) -> Result<SwitchId, DriverError> {
+        let (switch, line) = self
+            .switches
+            .lock()
+            .map_err(|_| DriverError::SessionClosed)?
+            .begin(model, effort);
+        self.write(line)?;
+        Ok(switch)
     }
 
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError> {

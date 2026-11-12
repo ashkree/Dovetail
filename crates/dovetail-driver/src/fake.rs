@@ -86,6 +86,13 @@ pub enum Sent {
     Interrupt,
     /// A permission-mode switch.
     Mode(PermissionMode),
+    /// A model switch.
+    Model {
+        /// The model asked for; `None` keeps it.
+        model: Option<String>,
+        /// The effort asked for.
+        effort: Option<dovetail_api::Effort>,
+    },
     /// `shutdown(grace)`.
     Shutdown(Duration),
     /// `kill()`.
@@ -104,6 +111,12 @@ struct Recorder {
     specs: Mutex<Vec<SessionSpec>>,
     /// The stream-json line each user message would have been written as.
     user_lines: Mutex<Vec<Value>>,
+    /// Model switch answers are held, not sent ([`FakeDriver::hold_model_answers`]).
+    hold_models: std::sync::atomic::AtomicBool,
+    /// Held model switch answers, in the order the switches were asked.
+    held: Mutex<Vec<DriverEvent>>,
+    /// The latest session's event stream, for [`FakeDriver::send_event`].
+    latest: Mutex<Option<UnboundedSender<DriverEvent>>>,
 }
 
 /// Replays a fixture as the event stream of every session it starts, and records what it is
@@ -188,6 +201,43 @@ impl FakeDriver {
             .unwrap_or_default()
     }
 
+    /// From now on, model switch answers are held until [`FakeDriver::release_model_answers`],
+    /// so a test can order them against other answers.
+    pub fn hold_model_answers(&self) {
+        self.recorder
+            .hold_models
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Sends the held model switch answers, in `order` (indexes into the held list, oldest
+    /// switch 0), and stops holding.
+    pub fn release_model_answers(&self, order: &[usize]) {
+        self.recorder
+            .hold_models
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let held = self
+            .recorder
+            .held
+            .lock()
+            .map(|mut h| std::mem::take(&mut *h))
+            .unwrap_or_default();
+        for &i in order {
+            if let Some(event) = held.get(i) {
+                self.send_event(event.clone());
+            }
+        }
+    }
+
+    /// Sends `event` on the latest session's stream, as if the process had produced it (a late
+    /// or stale answer, say).
+    pub fn send_event(&self, event: DriverEvent) {
+        if let Ok(tx) = self.recorder.latest.lock()
+            && let Some(tx) = tx.as_ref()
+        {
+            let _ = tx.send(event);
+        }
+    }
+
     /// Release a replay paused by [`ReplayOptions::pause_before`] (one pause per call).
     pub fn resume(&self) {
         self.gate.notify_one();
@@ -205,17 +255,21 @@ impl SessionDriver for FakeDriver {
             }
         }
         let (tx, rx) = unbounded_channel();
+        if let Ok(mut latest) = self.recorder.latest.lock() {
+            *latest = Some(tx.clone());
+        }
         let shared = Arc::new(Shared::default());
         handle.spawn(replay(
             self.lines.clone(),
             options,
-            tx,
+            tx.clone(),
             shared.clone(),
             self.gate.clone(),
         ));
         Ok(Box::new(FakeSession {
             session_id: spec.session_id,
             events: Some(rx),
+            events_tx: tx,
             recorder: self.recorder.clone(),
             shared,
         }))
@@ -325,6 +379,8 @@ fn is_permission_request(msg: &Value) -> bool {
 struct FakeSession {
     session_id: String,
     events: Option<UnboundedReceiver<DriverEvent>>,
+    /// For answering a model switch, which no fixture records.
+    events_tx: UnboundedSender<DriverEvent>,
     recorder: Arc<Recorder>,
     shared: Arc<Shared>,
 }
@@ -375,6 +431,50 @@ impl Session for FakeSession {
     fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), DriverError> {
         self.record(Sent::Mode(mode));
         Ok(())
+    }
+
+    /// Records the switch and confirms it at once with exactly what was asked, except a model
+    /// named `bogus…`, which is refused as Claude Code refuses an unknown model.
+    fn set_model(
+        &self,
+        model: Option<&str>,
+        effort: Option<dovetail_api::Effort>,
+    ) -> Result<SwitchId, DriverError> {
+        // Numbered across the fake's sessions; only distinctness matters.
+        let switch = SwitchId(
+            self.recorder
+                .sent
+                .lock()
+                .map(|s| s.iter().filter(|s| matches!(s, Sent::Model { .. })).count() as u64)
+                .unwrap_or(0),
+        );
+        self.record(Sent::Model {
+            model: model.map(str::to_owned),
+            effort,
+        });
+        let event = match model {
+            Some(m) if m.starts_with("bogus") => DriverEvent::ModelSwitchFailed {
+                switch,
+                error: format!("Model '{m}' not found"),
+            },
+            _ => DriverEvent::ModelSettings {
+                switch: Some(switch),
+                model: model.map(str::to_owned),
+                effort,
+            },
+        };
+        if self
+            .recorder
+            .hold_models
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            if let Ok(mut held) = self.recorder.held.lock() {
+                held.push(event);
+            }
+        } else {
+            let _ = self.events_tx.send(event);
+        }
+        Ok(switch)
     }
 
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError> {

@@ -41,6 +41,16 @@ pub fn map_line(line: &str) -> Vec<DriverEvent> {
 /// learn its slash commands.
 pub const INITIALIZE_ID: &str = "dt_initialize";
 
+/// Whether `line` is Claude Code's answer to the `initialize` request (success or not). Cheap
+/// for every other line: only one naming the id is parsed.
+pub fn is_initialize_answer(line: &str) -> bool {
+    line.contains(INITIALIZE_ID)
+        && serde_json::from_str::<Value>(line).is_ok_and(|v| {
+            v.get("type").and_then(Value::as_str) == Some("control_response")
+                && v.pointer("/response/request_id").and_then(Value::as_str) == Some(INITIALIZE_ID)
+        })
+}
+
 /// `[{name, description, argumentHint}]`, first of each name kept (Claude Code lists a skill
 /// once per alias).
 fn commands_of(list: &Value) -> Vec<CommandInfo> {
@@ -84,6 +94,12 @@ pub fn map_value(v: Value) -> Vec<DriverEvent> {
                 // completion, so it is not an error for the user.
                 return match r.pointer("/response/commands") {
                     Some(list) => vec![DriverEvent::Commands(commands_of(list))],
+                    None => vec![DriverEvent::Unknown(v)],
+                };
+            }
+            if str_of(&r, "request_id").as_deref() == Some(crate::switch::LIST_MODELS_ID) {
+                return match r.get("response") {
+                    Some(body) => vec![DriverEvent::Models(crate::switch::models_of(body))],
                     None => vec![DriverEvent::Unknown(v)],
                 };
             }
@@ -435,6 +451,19 @@ fn map_control_request(v: Value) -> DriverEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_initialize_answer_counts_as_one() {
+        let ok = r#"{"type":"control_response","response":{"subtype":"success","request_id":"dt_initialize","response":{}}}"#;
+        let refused = r#"{"type":"control_response","response":{"subtype":"error","request_id":"dt_initialize","error":"no"}}"#;
+        let other =
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"dt_3"}}"#;
+        let mention = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"dt_initialize"}]}}"#;
+        assert!(is_initialize_answer(ok));
+        assert!(is_initialize_answer(refused));
+        assert!(!is_initialize_answer(other));
+        assert!(!is_initialize_answer(mention));
+    }
 
     #[test]
     fn the_initialize_answer_and_commands_changed_give_one_deduplicated_list() {

@@ -37,6 +37,7 @@ mod event;
 mod fake;
 pub mod parse;
 mod spec;
+mod switch;
 pub mod transcript;
 
 pub use claude::ClaudeDriver;
@@ -91,6 +92,16 @@ pub trait Session: Send {
     fn interrupt(&self) -> Result<(), DriverError>;
     /// Switch permission mode on the live process (control request `set_permission_mode`).
     fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), DriverError>;
+    /// Switch model (`None`: keep it) and, if given, effort on the live process (task #39):
+    /// `set_model`, then `apply_flag_settings`, then `get_settings`, each after the previous
+    /// answer. Ends in [`DriverEvent::ModelSettings`] with what Claude Code applied, or
+    /// [`DriverEvent::ModelSwitchFailed`] when the model is refused (nothing is changed then);
+    /// both carry the returned id.
+    fn set_model(
+        &self,
+        model: Option<&str>,
+        effort: Option<dovetail_api::Effort>,
+    ) -> Result<SwitchId, DriverError>;
     /// Answer a pending [`DriverEvent::PermissionRequest`], in any order.
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError>;
     /// Take the event stream. Call once; later calls return an already-closed receiver. The

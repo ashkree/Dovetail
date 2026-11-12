@@ -111,6 +111,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::CommandsChanged { agent, commands } => {
             state.commands.insert(agent, commands);
         }
+        Event::ModelsChanged(models) => state.models = models,
         Event::JournalChanged(journal) => state.journal = Some(journal),
         Event::UpgradeBuilding(on) => state.upgrade_building = on,
         // Nothing to store: the UI shows the message as the event passes through.

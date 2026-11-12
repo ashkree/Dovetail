@@ -176,6 +176,7 @@ fn subagent() -> Agent {
         last_activity_ms: 1_700_000_000_000,
         lock: SessionLock::TakenOver,
         model: Some("claude-opus-5-5".into()),
+        effort: Some(Effort::Xhigh),
         subagent_tokens: 12_345,
         tool: None,
     }
@@ -412,6 +413,14 @@ fn hello_and_a_full_snapshot_roundtrip() {
         maps: vec![map_summary()],
         research: vec![research_summary()],
         tangents: vec![tangent()],
+        models: vec![
+            ModelOption::named("opus"),
+            ModelOption {
+                name: "claude-haiku-4-5-20251001".into(),
+                resolved: Some("claude-haiku-4-5-20251001".into()),
+                efforts: Some(vec![]),
+            },
+        ],
     };
     roundtrip(&ServerMsg::Hello {
         protocol: PROTOCOL_VERSION,
@@ -481,6 +490,7 @@ fn every_event_roundtrips() {
         Event::UsageChanged(UsageLimits::default()),
         Event::WarningSet(warning()),
         Event::WarningCleared(WarningId("mode".into())),
+        Event::ModelsChanged(vec![ModelOption::named("fable")]),
         Event::CommandFailed {
             message: "no such agent".into(),
         },
@@ -590,6 +600,11 @@ fn every_command_roundtrips() {
             text: "8080".into(),
         },
         Command::DismissInbox { item: InboxId(3) },
+        Command::SetModel {
+            agent: id("slice-a"),
+            model: "sonnet".into(),
+            effort: Some(Effort::Max),
+        },
         Command::CyclePermissionMode {
             agent: id("slice-a"),
         },

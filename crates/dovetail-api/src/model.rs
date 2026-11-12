@@ -125,6 +125,9 @@ pub struct Snapshot {
     /// archived, oldest first. Content is fetched with [`crate::Command::LoadTangent`].
     #[serde(default)]
     pub tangents: Vec<TangentSummary>,
+    /// The models the model selector offers, in order (task #39).
+    #[serde(default)]
+    pub models: Vec<ModelOption>,
 }
 
 /// A tangent: a question that did not belong to the project it was asked from, saved as a task
@@ -361,6 +364,10 @@ pub struct Agent {
     /// the session reports it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// The session's reasoning effort, as Claude Code last confirmed it; `None` until it does,
+    /// or when its model has no effort levels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<Effort>,
     /// Tokens its subagents used, summed from their `task_*` events (sessions only; digest §3:
     /// the final `result` undercounts). Includes subagents whose nodes are gone.
     #[serde(default)]
@@ -473,6 +480,92 @@ pub struct SubagentProgress {
     /// The file Claude Code writes its transcript to, once known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_file: Option<PathBuf>,
+}
+
+/// How hard a session's model thinks: Claude Code's effort levels (`--effort`), lowest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+    /// `low`.
+    Low,
+    /// `medium`.
+    Medium,
+    /// `high`.
+    High,
+    /// `xhigh`.
+    Xhigh,
+    /// `max`.
+    Max,
+}
+
+impl Effort {
+    /// Every level, lowest first.
+    pub const ALL: [Effort; 5] = [
+        Effort::Low,
+        Effort::Medium,
+        Effort::High,
+        Effort::Xhigh,
+        Effort::Max,
+    ];
+
+    /// The name Claude Code uses, for `--effort` and the `effortLevel` setting.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Effort::Low => "low",
+            Effort::Medium => "medium",
+            Effort::High => "high",
+            Effort::Xhigh => "xhigh",
+            Effort::Max => "max",
+        }
+    }
+
+    /// Parse Claude Code's name.
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|e| e.as_str() == s)
+    }
+}
+
+/// The models the selector always offers, before `config.toml`'s `extra_models` (task #39).
+pub const BUILTIN_MODELS: [&str; 4] = ["opus", "sonnet", "haiku", "fable"];
+
+/// A model the selector offers (task #39): the built-in aliases, then `config.toml`'s
+/// `extra_models`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelOption {
+    /// The name passed to Claude Code (`opus`, `claude-haiku-4-5-20251001`).
+    pub name: String,
+    /// The full model name it stands for (`claude-opus-5-5`), once a session has listed it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<String>,
+    /// The effort levels it accepts, once a session has listed it; `None` means not known yet,
+    /// so every level is offered. Empty: the model has no effort setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub efforts: Option<Vec<Effort>>,
+}
+
+impl ModelOption {
+    /// An option nothing is known about yet.
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            resolved: None,
+            efforts: None,
+        }
+    }
+
+    /// Whether the model accepts `effort`.
+    pub fn supports(&self, effort: Effort) -> bool {
+        self.efforts.as_ref().is_none_or(|e| e.contains(&effort))
+    }
+}
+
+/// The index in `options` of the model a session reports running (`claude-opus-5-5`): the
+/// option named so or resolving to it, else the first alias the name contains (`opus`).
+pub fn model_option_index(options: &[ModelOption], running: &str) -> Option<usize> {
+    options
+        .iter()
+        .position(|o| o.name == running || o.resolved.as_deref() == Some(running))
+        .or_else(|| options.iter().position(|o| running.contains(&o.name)))
 }
 
 /// Whether Dovetail or a native terminal drives a session.

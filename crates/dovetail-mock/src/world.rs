@@ -56,9 +56,31 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
         last_activity_ms: now_ms,
         lock: SessionLock::Headless,
         model: Some("claude-opus-5-5".into()),
+        effort: Some(Effort::High),
         subagent_tokens: 0,
         tool: None,
     }
+}
+
+/// The model selector's choices (task #39): the built-in aliases as a session lists them, and
+/// one extra older model with no effort levels, so the selector shows them grayed.
+pub(crate) fn models() -> Vec<ModelOption> {
+    let listed = |name: &str, resolved: &str, efforts: &[Effort]| ModelOption {
+        name: name.into(),
+        resolved: Some(resolved.into()),
+        efforts: Some(efforts.to_vec()),
+    };
+    vec![
+        listed("opus", "claude-opus-5-5", &Effort::ALL),
+        listed("sonnet", "claude-sonnet-5-5", &Effort::ALL),
+        listed("haiku", "claude-haiku-5-5", &Effort::ALL),
+        listed("fable", "claude-fable-5-2", &Effort::ALL),
+        listed(
+            "claude-haiku-4-5-20251001",
+            "claude-haiku-4-5-20251001",
+            &[],
+        ),
+    ]
 }
 
 /// Reading mode's Ask for a research task: read-only, like a side chat, about the task's report.
@@ -123,6 +145,7 @@ pub(crate) fn subagent(id: &str, parent: &Agent, background: bool, now_ms: i64) 
         last_activity_ms: now_ms,
         lock: SessionLock::Headless,
         model: None,
+        effort: None,
         subagent_tokens: 0,
         tool: None,
     }
@@ -537,6 +560,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
             .map(|(shelf, _)| shelf)
             .collect(),
         commands: BTreeMap::from([(agent_id(COORDINATOR), commands())]),
+        models: models(),
         // No journal, so quitting the mock never asks to close the day; `:eod` still works.
         journal: None,
         upgrade_building: false,

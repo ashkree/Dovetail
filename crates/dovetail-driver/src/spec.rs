@@ -111,6 +111,8 @@ pub struct SessionSpec {
     pub cwd: PathBuf,
     /// Model alias or id (`--model`).
     pub model: Option<String>,
+    /// Reasoning effort (`--effort`); `None` leaves Claude Code's default.
+    pub effort: Option<dovetail_api::Effort>,
     /// Starting permission mode.
     pub permission_mode: PermissionMode,
     /// `--settings` file (hooks live here).
@@ -149,6 +151,7 @@ impl SessionSpec {
             name: None,
             cwd: cwd.into(),
             model: None,
+            effort: None,
             permission_mode: PermissionMode::Auto,
             settings_path: None,
             mcp_config_path: None,
@@ -218,6 +221,7 @@ impl SessionSpec {
         let optional = [
             ("--name", self.name.clone()),
             ("--model", self.model.clone()),
+            ("--effort", self.effort.map(|e| e.as_str().to_owned())),
             ("--settings", self.settings_path.as_deref().map(lossy)),
             ("--mcp-config", self.mcp_config_path.as_deref().map(lossy)),
             (

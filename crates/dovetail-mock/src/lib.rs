@@ -332,6 +332,33 @@ impl MockCore {
                 }
                 self.resolve(item);
             }
+            Command::SetModel {
+                agent,
+                model,
+                effort,
+            } => {
+                // Like the core: a subagent's switch goes to the session it runs in, and an
+                // unknown model is refused with the old one kept.
+                let Some(found) = self.agent(&agent) else {
+                    return self.fail(format!("no agent {}", agent.0));
+                };
+                let target = match (found.kind, &found.parent) {
+                    (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
+                    _ => agent.clone(),
+                };
+                let option = self.state.models.iter().find(|o| o.name == model).cloned();
+                let Some(option) = option else {
+                    return self.fail(format!(
+                        "Could not switch {} to {model}: Model '{model}' not found",
+                        target.0
+                    ));
+                };
+                let effort = effort.filter(|e| option.supports(*e));
+                self.update_agent(&target, |a| {
+                    a.model = Some(option.resolved.clone().unwrap_or(option.name.clone()));
+                    a.effort = effort;
+                });
+            }
             Command::CyclePermissionMode { agent } => {
                 let Some(found) = self.agent(&agent) else {
                     return self.fail(format!("no agent {}", agent.0));

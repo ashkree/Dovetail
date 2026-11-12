@@ -18,6 +18,7 @@ pub mod help;
 pub mod input;
 pub mod keymap;
 pub mod mode;
+pub mod model_select;
 pub mod picker;
 pub mod region;
 pub mod render;

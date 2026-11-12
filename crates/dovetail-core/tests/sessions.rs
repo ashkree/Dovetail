@@ -1696,6 +1696,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             last_activity_ms: 0,
             lock: dovetail_api::SessionLock::Headless,
             model: None,
+            effort: None,
             subagent_tokens: 0,
             tool: None,
         };
@@ -1709,6 +1710,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             tool_use_id: None,
             claude_home: None,
             takeover: None,
+            model_choice: None,
         })
         .wait()
         .expect("agent");
@@ -2147,6 +2149,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             last_activity_ms: 0,
             lock: dovetail_api::SessionLock::Headless,
             model: None,
+            effort: None,
             subagent_tokens: 0,
             tool: None,
         };
@@ -2159,6 +2162,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             tool_use_id: None,
             claude_home: None,
             takeover: None,
+            model_choice: None,
         })
         .wait()
         .expect("agent");
@@ -3357,6 +3361,7 @@ fn session_row(
             last_activity_ms: 0,
             lock: dovetail_api::SessionLock::Headless,
             model: None,
+            effort: None,
             subagent_tokens: 0,
             tool: None,
         },
@@ -3367,6 +3372,7 @@ fn session_row(
         tool_use_id: None,
         claude_home: Some(home.to_path_buf()),
         takeover,
+        model_choice: None,
     }
 }
 
@@ -4689,5 +4695,168 @@ fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
         .find(|a| a.name == "side-1")
         .expect("side-1");
     assert_eq!(side.permission_mode, PermissionMode::Manual);
+    h.quit();
+}
+
+/// The model selector (task #39): a live switch changes the agent only once the session
+/// confirms it, a refused one keeps the old model and says why, and the choice is what the
+/// next start passes as `--model`/`--effort`.
+#[test]
+fn a_model_switch_is_confirmed_live_refused_safely_and_used_on_the_next_start() {
+    use dovetail_api::Effort;
+    // Paused before the first line, so the session stays live and reports nothing itself.
+    let fake = fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![0],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    let coordinator = AgentId(COORDINATOR.into());
+    prompt(&h, "hi");
+    h.wait_for("the selector's models", |s| {
+        s.models.len() == dovetail_api::BUILTIN_MODELS.len()
+    });
+    h.send(Command::SetModel {
+        agent: coordinator.clone(),
+        model: "sonnet".into(),
+        effort: Some(Effort::High),
+    });
+    h.wait_for("the confirmed model", |s| {
+        let c = coordinator_of(s);
+        c.model.as_deref() == Some("sonnet") && c.effort == Some(Effort::High)
+    });
+    assert!(fake.sent().contains(&Sent::Model {
+        model: Some("sonnet".into()),
+        effort: Some(Effort::High),
+    }));
+    // The same model at another effort: no `set_model`, only the effort.
+    h.send(Command::SetModel {
+        agent: coordinator.clone(),
+        model: "sonnet".into(),
+        effort: Some(Effort::Low),
+    });
+    h.wait_for("the new effort", |s| {
+        coordinator_of(s).effort == Some(Effort::Low)
+    });
+    assert!(fake.sent().contains(&Sent::Model {
+        model: None,
+        effort: Some(Effort::Low),
+    }));
+
+    h.send(Command::SetModel {
+        agent: coordinator.clone(),
+        model: "bogus-model".into(),
+        effort: None,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !h.failures.iter().any(|f| f.contains("bogus-model")) {
+        assert!(Instant::now() < deadline, "no failure: {:?}", h.failures);
+        h.drain(Duration::from_millis(20));
+    }
+    let failure = h.failures.iter().find(|f| f.contains("bogus-model"));
+    assert!(
+        failure.is_some_and(|f| f.contains("keeps sonnet")),
+        "{failure:?}"
+    );
+    assert_eq!(coordinator_of(&h.snap).model.as_deref(), Some("sonnet"));
+
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let fake = fixture("plain_turn");
+    let h = Harness::start_on(fake.clone(), paths);
+    prompt(&h, "again");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().is_empty() {
+        assert!(Instant::now() < deadline, "never restarted");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let spec = &fake.started_specs()[0];
+    assert_eq!(spec.model.as_deref(), Some("sonnet"));
+    assert_eq!(spec.effort, Some(Effort::Low));
+    h.quit();
+}
+
+/// Review of task #39: a settings answer confirms only its own switch. A late start-up read, or
+/// an earlier switch's answer arriving out of order, changes nothing; and a second switch is
+/// refused while the first waits for its answer.
+#[test]
+fn a_stale_or_out_of_order_settings_answer_does_not_confirm_a_switch() {
+    use dovetail_api::Effort;
+    use dovetail_driver::{DriverEvent, SwitchId};
+    let fake = fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![0],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    let coordinator = AgentId(COORDINATOR.into());
+    prompt(&h, "hi");
+    h.wait_for("the session started", |_| !fake.started_specs().is_empty());
+    fake.hold_model_answers();
+    let set = |model: &str, effort| Command::SetModel {
+        agent: coordinator.clone(),
+        model: model.into(),
+        effort: Some(effort),
+    };
+    let models = |f: &FakeDriver| {
+        f.sent()
+            .iter()
+            .filter(|s| matches!(s, Sent::Model { .. }))
+            .count()
+    };
+    // A held switch makes no event, so poll for it.
+    let wait_sent = |h: &mut Harness, n: usize| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while models(&fake) < n {
+            assert!(Instant::now() < deadline, "switch {n} never sent");
+            h.drain(Duration::from_millis(20));
+        }
+    };
+    h.send(set("sonnet", Effort::High));
+    wait_sent(&mut h, 1);
+
+    // A second switch while the first is unanswered is refused, and never sent.
+    h.send(set("haiku", Effort::Max));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !h.failures.iter().any(|f| f.contains("still switching")) {
+        assert!(Instant::now() < deadline, "no refusal: {:?}", h.failures);
+        h.drain(Duration::from_millis(20));
+    }
+    assert_eq!(models(&fake), 1);
+
+    // The start-up read answers late, after the switch was sent: ignored.
+    fake.send_event(DriverEvent::ModelSettings {
+        switch: None,
+        model: Some("claude-opus-5-5".into()),
+        effort: Some(Effort::Low),
+    });
+    h.drain(Duration::from_millis(200));
+    let c = coordinator_of(&h.snap);
+    assert_eq!((c.model.as_deref(), c.effort), (None, None));
+
+    // The switch's own answer confirms it.
+    fake.release_model_answers(&[0]);
+    h.wait_for("the confirmed switch", |s| {
+        coordinator_of(s).effort == Some(Effort::High)
+    });
+
+    // A later switch, held; then the first switch's answer again, out of order: ignored.
+    fake.hold_model_answers();
+    h.send(set("sonnet", Effort::Max));
+    wait_sent(&mut h, 2);
+    fake.send_event(DriverEvent::ModelSettings {
+        switch: Some(SwitchId(0)),
+        model: Some("sonnet".into()),
+        effort: Some(Effort::Low),
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(coordinator_of(&h.snap).effort, Some(Effort::High));
+    assert!(
+        !h.failures.iter().any(|f| f.contains("kept effort")),
+        "{:?}",
+        h.failures
+    );
+    fake.release_model_answers(&[0]);
+    h.wait_for("the second switch confirmed", |s| {
+        coordinator_of(s).effort == Some(Effort::Max)
+    });
     h.quit();
 }

@@ -482,6 +482,26 @@ pub enum DriverEvent {
         /// The `response` payload (or error text).
         response: Value,
     },
+    /// The model and effort Claude Code says it applies (`get_settings`' `applied`): read
+    /// once at start (`switch` is `None`) and at the end of each [`crate::Session::set_model`].
+    ModelSettings {
+        /// The switch this confirms; `None` for the start-up read.
+        switch: Option<SwitchId>,
+        /// The full model name (`claude-sonnet-5-5`).
+        model: Option<String>,
+        /// The effort; `None` when the model has none or the level is not one we know.
+        effort: Option<dovetail_api::Effort>,
+    },
+    /// A [`crate::Session::set_model`] was refused (unknown model, say); the old model is
+    /// still in use and nothing else was changed.
+    ModelSwitchFailed {
+        /// The switch refused.
+        switch: SwitchId,
+        /// Claude Code's reason.
+        error: String,
+    },
+    /// The models the session can switch to (`list_models`, asked at start).
+    Models(Vec<ModelInfo>),
     /// `system/permission_denied`: a request was auto-denied (no prompt tool, or classifier).
     PermissionDenied {
         /// Tool name.
@@ -512,3 +532,20 @@ impl DriverEvent {
         }
     }
 }
+
+/// One model in a `list_models` answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelInfo {
+    /// The name to pass to `set_model` or `--model` (`opus`, `claude-haiku-4-5-20251001`).
+    pub value: String,
+    /// The full model name it resolves to.
+    pub resolved: Option<String>,
+    /// Claude Code's display name (`Opus 5.5`).
+    pub display_name: Option<String>,
+    /// The effort levels it accepts; empty when it has no effort setting.
+    pub efforts: Vec<dovetail_api::Effort>,
+}
+
+/// Names one [`crate::Session::set_model`] call, so its answer is never taken for another's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SwitchId(pub u64);

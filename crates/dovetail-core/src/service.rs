@@ -457,6 +457,8 @@ pub(crate) struct Core {
     pub(crate) research: crate::research::Research,
     /// Tangents' database (ADR 0017, `tangents`), or why tangents are off.
     pub(crate) tangents: Result<Db, crate::tangents::TangentError>,
+    /// The models sessions last listed (`list_models`), for the selector's effort levels.
+    pub(crate) model_catalog: Vec<dovetail_driver::ModelInfo>,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -550,6 +552,7 @@ impl Core {
             switch_to: Default::default(),
             research: Default::default(),
             tangents: Err(crate::tangents::TangentError::Off("not opened".into())),
+            model_catalog: Vec::new(),
         }
     }
 
@@ -768,6 +771,7 @@ impl Core {
                 tool_use_id: None,
                 claude_home: None,
                 takeover: None,
+                model_choice: None,
             };
             self.db.upsert_agent(row.clone()).await?;
             self.agents.insert(coordinator, row);
@@ -901,6 +905,7 @@ impl Core {
             journal: self.journal_state(),
             upgrade_building: self.upgrade.building.is_some(),
             tangents: self.tangent_summaries().await,
+            models: self.model_options(),
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1334,6 +1339,11 @@ impl Core {
             Command::AnswerQuestion { item, text } => self.answer_question(item, text).await,
             Command::DismissInbox { item } => self.dismiss(item).await,
             Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
+            Command::SetModel {
+                agent,
+                model,
+                effort,
+            } => self.switch_model(&agent, model, effort),
             Command::NewSideChat { question } => self.start_side_chat(question),
             Command::NewTangent { question } => self.start_tangent(question).await,
             Command::AttachTangent { tangent, task } => self.attach_tangent(tangent, task).await,
@@ -1651,6 +1661,7 @@ pub(crate) fn new_agent(id: AgentId, name: String, kind: AgentKind, task: Option
         last_activity_ms: now_ms(),
         lock: SessionLock::Headless,
         model: None,
+        effort: None,
         subagent_tokens: 0,
         tool: None,
     }

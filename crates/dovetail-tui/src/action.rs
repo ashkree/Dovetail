@@ -180,6 +180,9 @@ pub enum Action {
     Interrupt,
     /// Cycle the focused session's permission mode: auto, acceptEdits, manual.
     CyclePermissionMode,
+    /// Pick the focused session's model and effort (task #39): `:model`, and `/model` in the
+    /// chat bar. No key, by the user's choice.
+    PickModel,
     /// Take the focused session over: native `claude` on it in this terminal, headless again
     /// when it exits (a subagent's goes to its session).
     TakeOver,
@@ -453,6 +456,7 @@ registry! {
     NewSlice: Agents, "start a slice (name, then brief)";
     Interrupt: Agents, "interrupt the agent's turn";
     CyclePermissionMode: Agents, "cycle permission mode: auto, acceptEdits, manual";
+    PickModel: Agents, "pick the session's model and effort";
     TakeOver: Agents, "take the session over in this terminal";
     SwitchProject: Projects, "switch project";
     RegisterProject: Projects, "register this folder as a project";

@@ -163,6 +163,14 @@ impl App {
                 picker.render(frame, screen, &self.theme, title, &lines);
             }
             Some(Overlay::Capture(capture)) => self.draw_capture(frame, screen, capture),
+            // Above the status bar, at the bottom left: where the chat bar is.
+            Some(Overlay::Model(selector, _)) => {
+                let above = Rect {
+                    height: screen.height.saturating_sub(1),
+                    ..screen
+                };
+                selector.render(frame, above, &self.theme);
+            }
             None => {}
         }
     }
@@ -299,6 +307,7 @@ impl App {
             &snap.usage,
             snap.profile.as_deref(),
             in_view.and_then(|a| a.model.as_deref()),
+            in_view.and_then(|a| a.effort),
             self.now_ms,
             &self.tz,
             theme,
