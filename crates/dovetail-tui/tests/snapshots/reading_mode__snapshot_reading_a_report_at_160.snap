@@ -2,7 +2,7 @@
 source: crates/dovetail-tui/tests/reading_mode.rs
 expression: "snapshot_at(160, 40)"
 ---
- folder /home/you/src/dovetail                                                               maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+ folder /home/you/src/dovetail                                                          maveron · opus-5-5 high · 5h 34% (resets 11:20) · week 18% (resets Wed)
  ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ library ─────────────────┐┌ reading · #3 report ───────────────────────────────────────────────────────────────────────┐┌ ask ───────────────────────────────┐
 │ ▾ Dovetail · open        ││                                                                                            ││ › i to ask about #3's report. A    │

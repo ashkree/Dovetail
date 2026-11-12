@@ -2,7 +2,7 @@
 source: crates/dovetail-tui/tests/maps.rs
 expression: "render(&mut app, 120, 40)"
 ---
- folder /home/you/src/dovetail                       maveron · opus-5-5 · 5h 34% (resets 11:20) · week 18% (resets Wed)
+ folder /home/you/src/dovetail                  maveron · opus-5-5 high · 5h 34% (resets 11:20) · week 18% (resets Wed)
  ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
 ┌ Dovetail at a glance · structure · v2 ──────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
 │   ◉ You  actor                                                          ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │

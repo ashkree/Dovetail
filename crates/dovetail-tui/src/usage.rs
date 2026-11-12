@@ -1,11 +1,12 @@
 //! The usage indicator on the right of the header row (task #16):
-//! `maveron · opus-5-5 · 5h 34% (resets 14:20) · week 18% (resets Thu)`.
+//! `maveron · opus-5-5 high · 5h 34% (resets 14:20) · week 18% (resets Thu)`. The model's
+//! effort follows it once the session has confirmed one (task #39).
 //!
 //! The project's Claude profile leads (ADR 0009): limits are per account, so the figures are that
 //! profile's. Parts drop as the row narrows: the reset times, then the profile and model, then the
 //! week; the 5-hour figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
 
-use dovetail_api::{UsageLimits, UsageWindow};
+use dovetail_api::{Effort, UsageLimits, UsageWindow};
 use jiff::{Timestamp, tz::TimeZone};
 use ratatui::text::Span;
 
@@ -88,6 +89,7 @@ pub fn variants(
     usage: &UsageLimits,
     profile: Option<&str>,
     model: Option<&str>,
+    effort: Option<Effort>,
     now_ms: i64,
     tz: &TimeZone,
     theme: &Theme,
@@ -96,7 +98,10 @@ pub fn variants(
     let known = usage.five_hour.is_some() || usage.seven_day.is_some();
     let five = known.then(|| part("5h", usage.five_hour.as_ref(), now_ms, tz));
     let week = known.then(|| part("week", usage.seven_day.as_ref(), now_ms, tz));
-    let model = model.map(short_model);
+    let model = model.map(|m| match effort {
+        Some(e) => format!("{} {}", short_model(m), e.as_str()),
+        None => short_model(m).to_owned(),
+    });
     let build = |lead: bool, with_week: bool, resets: bool| {
         let mut items: Vec<Span<'static>> = Vec::new();
         let mut push = |spans: Vec<Span<'static>>| {
@@ -105,7 +110,11 @@ pub fn variants(
             }
             items.extend(spans);
         };
-        for name in [profile, model].into_iter().flatten().filter(|_| lead) {
+        for name in [profile, model.as_deref()]
+            .into_iter()
+            .flatten()
+            .filter(|_| lead)
+        {
             push(vec![Span::styled(name.to_owned(), theme.dim())]);
         }
         for p in [five.as_ref(), week.as_ref().filter(|_| with_week)]
@@ -180,6 +189,7 @@ mod tests {
             &usage(0.34, 0.18, NOW_S),
             None,
             Some("claude-opus-5-5"),
+            None,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -203,6 +213,7 @@ mod tests {
             &usage(0.34, 0.18, NOW_S),
             Some("maveron"),
             Some("claude-opus-5-5"),
+            None,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -213,10 +224,26 @@ mod tests {
     }
 
     #[test]
+    fn the_effort_follows_the_model_once_confirmed() {
+        let theme = Theme::default();
+        let v = variants(
+            &UsageLimits::default(),
+            None,
+            Some("claude-sonnet-5-5"),
+            Some(Effort::Xhigh),
+            NOW_S * 1_000,
+            &TimeZone::UTC,
+            &theme,
+        );
+        assert_eq!(text(&v[0]), "sonnet-5-5 xhigh ");
+    }
+
+    #[test]
     fn limits_are_coloured_by_threshold() {
         let theme = Theme::default();
         let v = variants(
             &usage(0.72, 0.95, NOW_S),
+            None,
             None,
             None,
             NOW_S * 1_000,
@@ -234,6 +261,7 @@ mod tests {
             &usage(0.1, 0.1, NOW_S),
             None,
             None,
+            None,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -249,6 +277,7 @@ mod tests {
             &usage(0.34, 0.18, NOW_S),
             None,
             None,
+            None,
             later,
             &TimeZone::UTC,
             &theme,
@@ -256,6 +285,7 @@ mod tests {
         assert_eq!(text(&v[0]), "5h — · week 18% (resets Thu) ");
         let none = variants(
             &UsageLimits::default(),
+            None,
             None,
             None,
             later,
@@ -267,6 +297,7 @@ mod tests {
             &UsageLimits::default(),
             None,
             Some("claude-opus-5-5"),
+            None,
             later,
             &TimeZone::UTC,
             &theme,
@@ -280,7 +311,7 @@ mod tests {
         let theme = Theme::default();
         let mut u = usage(0.34, 0.06, NOW_S);
         u.five_hour = None;
-        let v = variants(&u, None, None, NOW_S * 1_000, &TimeZone::UTC, &theme);
+        let v = variants(&u, None, None, None, NOW_S * 1_000, &TimeZone::UTC, &theme);
         let texts: Vec<String> = v.iter().map(|s| text(s)).collect();
         assert_eq!(
             texts,

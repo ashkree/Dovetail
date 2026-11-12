@@ -899,6 +899,16 @@ impl App {
             let sent = view.chat_key(event, commands);
             let paths = view.take_path_request();
             let chatting = view.is_chatting();
+            // `/model` is Dovetail's selector, never a prompt for Claude Code (task #39).
+            if let Some((agent, text, attachments)) = &sent
+                && attachments.is_empty()
+                && let Some(arg) = model_command(text)
+            {
+                let agent = agent.clone();
+                let arg = arg.to_owned();
+                self.open_model_selector_for(agent, (!arg.is_empty()).then_some(&arg));
+                return;
+            }
             if let Some((agent, text, attachments)) = sent {
                 self.outbox.push(Command::Prompt {
                     agent,
@@ -1233,6 +1243,7 @@ impl App {
             Action::ShowTangents => self.show_tangents(),
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
+            Action::PickModel => self.open_model_selector(None),
             Action::TakeOver => self.take_over(),
             Action::RegisterProject => {
                 // The open folder (ADR 0005); the core refuses any other.
@@ -1406,4 +1417,10 @@ pub(crate) fn commands_for<'a>(snap: &'a Snapshot, agent: &AgentId) -> &'a [Slas
         .get(agent)
         .or_else(|| snap.commands.values().find(|c| !c.is_empty()))
         .map_or(&[], Vec::as_slice)
+}
+
+/// The argument of a `/model` chat line (empty for none); `None` for any other line.
+fn model_command(text: &str) -> Option<&str> {
+    let rest = text.trim().strip_prefix("/model")?;
+    (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim())
 }

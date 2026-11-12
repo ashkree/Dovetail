@@ -4,13 +4,14 @@
 use std::path::PathBuf;
 
 use crossterm::event::KeyEvent;
-use dovetail_api::{Command, InboxId, ProjectId, TaskChange, TaskId};
+use dovetail_api::{AgentId, Command, InboxId, ProjectId, TaskChange, TaskId};
 
 use super::App;
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
 use crate::help;
 use crate::keymap::Scope;
 use crate::mode::Mode;
+use crate::model_select::{ModelSelector, SelectorOutcome};
 use crate::picker::{Picker, PickerKey, PickerOutcome};
 use crate::switcher;
 
@@ -50,6 +51,8 @@ pub(super) enum Overlay {
     Picker(Picker, Purpose),
     /// Quick capture.
     Capture(Capture),
+    /// The model selector, and the mode to go back to (Insert when opened from the chat bar).
+    Model(ModelSelector, Mode),
 }
 
 impl App {
@@ -83,6 +86,39 @@ impl App {
         }
         let items = switcher::command_items(commands, &self.theme);
         self.open_overlay(Overlay::Picker(Picker::new("Skills", items), Purpose::Open));
+    }
+
+    /// `<leader>sM`, `:model [name]`, `/model [name]`: the focused session's model and effort
+    /// (task #39). A subagent's is its session's.
+    pub(super) fn open_model_selector(&mut self, preselect: Option<&str>) {
+        let Some((session, _)) = self.focused_agent().and_then(|id| self.session_of(&id)) else {
+            self.note = Some("no session to switch".into());
+            return;
+        };
+        self.open_model_selector_for(session, preselect);
+    }
+
+    /// The selector for `session`.
+    pub(super) fn open_model_selector_for(&mut self, session: AgentId, preselect: Option<&str>) {
+        let Some(agent) = self.snap.agents.iter().find(|a| a.id == session) else {
+            return;
+        };
+        if self.snap.models.is_empty() {
+            self.note = Some("no models to offer yet".into());
+            return;
+        }
+        let selector = ModelSelector::new(
+            session.clone(),
+            agent.name.clone(),
+            self.snap.models.clone(),
+            agent.model.as_deref(),
+            agent.effort,
+            preselect,
+        );
+        let back = self.mode;
+        self.open_overlay(Overlay::Model(selector, back));
+        // It takes keys, not text: the status bar keeps the mode it came from.
+        self.mode = back;
     }
 
     /// `<leader><leader>`: tasks, agents and inbox items.
@@ -201,6 +237,29 @@ impl App {
                         }
                         (_, key) => self.choose(key),
                     }
+                }
+            },
+            Overlay::Model(mut selector, back) => match selector.key(event) {
+                SelectorOutcome::Pending => self.overlay = Some(Overlay::Model(selector, back)),
+                SelectorOutcome::Cancel => {
+                    self.close_overlay();
+                    self.mode = back;
+                }
+                SelectorOutcome::Apply {
+                    agent,
+                    model,
+                    effort,
+                } => {
+                    self.close_overlay();
+                    self.mode = back;
+                    let level =
+                        effort.map_or(String::new(), |e| format!(" at {} effort", e.as_str()));
+                    self.note = Some(format!("switching to {model}{level}…"));
+                    self.outbox.push(Command::SetModel {
+                        agent,
+                        model,
+                        effort,
+                    });
                 }
             },
             Overlay::Capture(mut capture) => match capture.key(event) {
