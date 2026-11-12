@@ -86,6 +86,13 @@ pub enum Sent {
     Interrupt,
     /// A permission-mode switch.
     Mode(PermissionMode),
+    /// A model switch.
+    Model {
+        /// The model asked for.
+        model: String,
+        /// The effort asked for.
+        effort: Option<dovetail_api::Effort>,
+    },
     /// `shutdown(grace)`.
     Shutdown(Duration),
     /// `kill()`.
@@ -209,13 +216,14 @@ impl SessionDriver for FakeDriver {
         handle.spawn(replay(
             self.lines.clone(),
             options,
-            tx,
+            tx.clone(),
             shared.clone(),
             self.gate.clone(),
         ));
         Ok(Box::new(FakeSession {
             session_id: spec.session_id,
             events: Some(rx),
+            events_tx: tx,
             recorder: self.recorder.clone(),
             shared,
         }))
@@ -325,6 +333,8 @@ fn is_permission_request(msg: &Value) -> bool {
 struct FakeSession {
     session_id: String,
     events: Option<UnboundedReceiver<DriverEvent>>,
+    /// For answering a model switch, which no fixture records.
+    events_tx: UnboundedSender<DriverEvent>,
     recorder: Arc<Recorder>,
     shared: Arc<Shared>,
 }
@@ -374,6 +384,31 @@ impl Session for FakeSession {
 
     fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), DriverError> {
         self.record(Sent::Mode(mode));
+        Ok(())
+    }
+
+    /// Records the switch and confirms it at once with exactly what was asked, except a model
+    /// named `bogus…`, which is refused as Claude Code refuses an unknown model.
+    fn set_model(
+        &self,
+        model: &str,
+        effort: Option<dovetail_api::Effort>,
+    ) -> Result<(), DriverError> {
+        self.record(Sent::Model {
+            model: model.to_owned(),
+            effort,
+        });
+        let event = if model.starts_with("bogus") {
+            DriverEvent::ModelSwitchFailed {
+                error: format!("Model '{model}' not found"),
+            }
+        } else {
+            DriverEvent::ModelSettings {
+                model: Some(model.to_owned()),
+                effort,
+            }
+        };
+        let _ = self.events_tx.send(event);
         Ok(())
     }
 

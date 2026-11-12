@@ -120,6 +120,8 @@ pub struct Launch {
     pub exe: PathBuf,
     /// `--model`.
     pub model: Option<String>,
+    /// `--effort`.
+    pub effort: Option<dovetail_api::Effort>,
     /// Extra environment (a slice's recipe `[env]`).
     pub env: Vec<(String, String)>,
     /// `CLAUDE_CONFIG_DIR`: the project's profile folder; `None` to inherit Dovetail's own.
@@ -182,6 +184,7 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     spec.resume = launch.resume;
     spec.name = Some(launch.name.clone());
     spec.model = launch.model.clone();
+    spec.effort = launch.effort;
     spec.permission_mode = launch.mode;
     spec.settings_path = Some(settings_path);
     spec.mcp_config_path = Some(mcp_path);

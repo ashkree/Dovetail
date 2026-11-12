@@ -36,6 +36,7 @@ pub fn agent(id: &str, kind: AgentKind, status: AgentStatus, task: Option<i64>) 
         last_activity_ms: NOW_MS,
         lock: SessionLock::Headless,
         model: None,
+        effort: None,
         subagent_tokens: 0,
         tool: None,
     }

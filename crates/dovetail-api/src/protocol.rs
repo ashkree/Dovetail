@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::map::{Map, MapId, MapSummary};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
-    Decision, DecisionId, EntryId, InboxId, InboxItem, JournalState, PLevel, ProjectId,
-    SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals, UsageLimits,
-    Warning, WarningId, WorktreeInfo,
+    Decision, DecisionId, Effort, EntryId, InboxId, InboxItem, JournalState, ModelOption, PLevel,
+    ProjectId, SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals,
+    UsageLimits, Warning, WarningId, WorktreeInfo,
 };
 use crate::research::{
     BrowseWhat, BrowsedDoc, BrowsedProject, DocEntry, ResearchContent, ResearchDocument,
@@ -168,6 +168,9 @@ pub enum Event {
         /// Its text; HTML is left as it is, for the UI to convert.
         document: ResearchDocument,
     },
+    /// The models the selector offers changed: config was read, or a session listed what its
+    /// models accept.
+    ModelsChanged(Vec<ModelOption>),
     /// A command could not be carried out; the UI shows the message.
     CommandFailed {
         /// What went wrong.
@@ -337,6 +340,18 @@ pub enum Command {
     DismissInbox {
         /// The inbox item.
         item: InboxId,
+    },
+    /// Switch a session's model and effort (task #39). A running session switches live and the
+    /// core answers with [`Event::AgentUpserted`] once Claude Code confirms, or
+    /// [`Event::CommandFailed`] with the old model kept. Either way the choice is used from the
+    /// session's next start.
+    SetModel {
+        /// The session.
+        agent: AgentId,
+        /// The model, as [`ModelOption::name`].
+        model: String,
+        /// The effort; `None` leaves it to the model's default (a model with no levels).
+        effort: Option<Effort>,
     },
     /// Move a session to its next permission mode.
     CyclePermissionMode {

@@ -87,6 +87,12 @@ pub fn map_value(v: Value) -> Vec<DriverEvent> {
                     None => vec![DriverEvent::Unknown(v)],
                 };
             }
+            if str_of(&r, "request_id").as_deref() == Some(crate::switch::LIST_MODELS_ID) {
+                return match r.get("response") {
+                    Some(body) => vec![DriverEvent::Models(crate::switch::models_of(body))],
+                    None => vec![DriverEvent::Unknown(v)],
+                };
+            }
             vec![DriverEvent::ControlResponse {
                 request_id: str_of(&r, "request_id").unwrap_or_default(),
                 success: r.get("subtype").and_then(Value::as_str) == Some("success"),

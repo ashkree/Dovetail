@@ -5,6 +5,7 @@
 //! claude = "/usr/bin/claude" # default: `claude` on PATH
 //! default_model = "opus"     # default: whatever Claude Code picks
 //! side_chat_model = "sonnet" # model of side chats (ADR 0011); default: sonnet
+//! extra_models = ["fable"]   # offered by the model selector after opus, sonnet, haiku
 //! max_slices = 3             # running slices at once
 //! [memory]
 //! coordinator_gb = 4         # cgroup cap for the coordinator session
@@ -40,6 +41,9 @@ pub struct Config {
     pub default_model: Option<String>,
     /// Model passed to side chats, faster than the coordinator's (ADR 0011).
     pub side_chat_model: Option<String>,
+    /// Models the model selector offers after [`dovetail_api::BUILTIN_MODELS`] (task #39):
+    /// Claude Code aliases or full model names.
+    pub extra_models: Vec<String>,
     /// Most slice sessions running at once.
     pub max_slices: u32,
     /// Memory caps.
@@ -110,11 +114,30 @@ impl Default for Config {
             claude: None,
             default_model: None,
             side_chat_model: Some("sonnet".into()),
+            extra_models: Vec::new(),
             max_slices: 3,
             memory: MemoryCaps::default(),
             profiles: BTreeMap::new(),
             suites: RoleSuites::default(),
         }
+    }
+}
+
+impl Config {
+    /// The models the selector offers, in order: the built-in aliases, then `extra_models`
+    /// without repeats.
+    pub fn model_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = dovetail_api::BUILTIN_MODELS
+            .iter()
+            .map(|m| (*m).to_owned())
+            .collect();
+        for extra in &self.extra_models {
+            let extra = extra.trim();
+            if !extra.is_empty() && !names.iter().any(|n| n == extra) {
+                names.push(extra.to_owned());
+            }
+        }
+        names
     }
 }
 
@@ -233,6 +256,21 @@ mod tests {
         let less = Config::parse("[suites]\nside_chat = []\n").unwrap().suites;
         assert_eq!(less.for_role(Role::SideChat), [Suite::Core]);
         assert!(less.side_chat_override().is_some());
+    }
+
+    #[test]
+    fn the_selector_offers_the_builtin_models_then_the_extra_ones_once() {
+        assert_eq!(
+            Config::parse("").unwrap().model_names(),
+            ["opus", "sonnet", "haiku"]
+        );
+        let config =
+            Config::parse("extra_models = [\"fable\", \"opus\", \" \", \"claude-sonnet-5\"]\n")
+                .unwrap();
+        assert_eq!(
+            config.model_names(),
+            ["opus", "sonnet", "haiku", "fable", "claude-sonnet-5"]
+        );
     }
 
     #[test]

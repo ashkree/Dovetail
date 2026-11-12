@@ -17,7 +17,7 @@ mod sessions;
 mod tasks;
 
 pub use maps::{Drawn, NewMapVersion};
-pub use sessions::{AgentRow, QueuedSlice};
+pub use sessions::{AgentRow, ModelChoice, QueuedSlice};
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -74,6 +74,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0013_research.sql"),
     migration!("state", "0014_decision_evidence.sql"),
     migration!("state", "0015_research_followups.sql"),
+    migration!("state", "0016_agent_model_choice.sql"),
 ];
 
 /// Errors from the database layer.
@@ -887,6 +888,7 @@ mod tests {
             tool_use_id: None,
             claude_home: None,
             takeover: None,
+            model_choice: None,
         };
         let entry = |n: u64, name: &str| ConversationEntry {
             id: EntryId(n),
@@ -939,6 +941,7 @@ mod tests {
             tool_use_id: None,
             claude_home: None,
             takeover: None,
+            model_choice: None,
         })
         .wait()
         .unwrap();

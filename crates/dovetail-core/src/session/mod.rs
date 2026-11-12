@@ -9,6 +9,7 @@
 //! - session ids and transcript paths are recorded by Dovetail itself.
 
 pub mod launch;
+mod model;
 pub mod state;
 pub(crate) mod subagent;
 
@@ -88,6 +89,8 @@ pub(crate) struct Live {
     pub(crate) oom_watched: bool,
     /// Tokens the context held after the latest main-thread API call (decision #22).
     pub(crate) context_tokens: Option<u64>,
+    /// A model switch sent and not yet confirmed or refused (task #39).
+    pub(crate) switching: Option<crate::db::ModelChoice>,
 }
 
 impl Core {
@@ -137,6 +140,7 @@ impl Core {
         } else {
             Vec::new()
         };
+        let (model, effort) = self.launch_model(row);
         let launch = launch::Launch {
             project_key: self.project.key().to_owned(),
             agent_id: id.0.clone(),
@@ -155,14 +159,8 @@ impl Core {
                 .unwrap_or_else(|| self.task_list_id(row.agent.task, &row.agent.name)),
             socket: self.socket.clone(),
             exe: self.options.exe.clone(),
-            model: if matches!(
-                row.agent.kind,
-                AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent
-            ) {
-                self.config.side_chat_model.clone()
-            } else {
-                self.config.default_model.clone()
-            },
+            model,
+            effort,
             env,
             claude_config_dir: home.explicit.then(|| home.dir.clone()),
         };
@@ -274,6 +272,7 @@ impl Core {
                 oom_seen: None,
                 oom_watched: false,
                 context_tokens: None,
+                switching: None,
             },
         );
         self.save_agent(id);
@@ -687,6 +686,13 @@ impl Core {
             DriverEvent::ControlRequest { raw, .. } => {
                 tracing::warn!(agent = %agent.0, "unhandled control request: {raw}");
             }
+            DriverEvent::ModelSettings { model, effort } => {
+                self.on_model_settings(&agent, model, effort);
+            }
+            DriverEvent::ModelSwitchFailed { error } => {
+                self.on_model_switch_failed(&agent, &error);
+            }
+            DriverEvent::Models(models) => self.on_models_listed(models),
             DriverEvent::RateLimit(info) => self.on_rate_limit(&agent, &info),
             DriverEvent::Exited(info) => self.on_exit(&agent, info),
             _ => {}

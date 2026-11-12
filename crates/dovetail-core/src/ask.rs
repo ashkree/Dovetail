@@ -70,6 +70,7 @@ impl Core {
             tool_use_id: None,
             claude_home: None,
             takeover: None,
+            model_choice: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
