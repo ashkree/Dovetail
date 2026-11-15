@@ -655,7 +655,7 @@ function act(a: string, arg?: unknown): void {
     case 'toggleSide': S.sideCollapsed = !S.sideCollapsed; if (S.sideCollapsed && (S.zone === 'inbox' || S.zone === 'tree')) S.zone = 'chat'; break;
     case 'focusTree': setZone('tree'); break;
     case 'pickEffort': picker('Switch effort', EFFORTS.map(e => ({ text: e.name + ' ' + e.kind, html: `${tagHtml(e.id)}<span class="t dim">${esc(e.goal)}</span>`, id: e.id })), it => switchEffort(it.id)); break;
-    case 'newEffort': S.modal = { type: 'form', html: formHtml('New effort in Shop', [['Kind', 'feature · fix · cleanup · research · experiment'], ['Question or goal', 'e.g. Does a 10 % first-order coupon raise sign-ups?'], ['Acceptance criteria', 'one per line; ticked only after you approve them in the inbox'], ['Canvas framework', 'question tree · options compare · free board · none']]) }; break;
+    case 'newEffort': S.modal = { type: 'form', html: formHtml('New effort in Shop', [['Name', 'Dark mode  →  saved as dark-mode (typed names become lower kebab case)'], ['Kind', 'feature · fix · cleanup · research · experiment'], ['Question or goal', 'e.g. Does a 10 % first-order coupon raise sign-ups?'], ['Acceptance criteria', 'one per line; ticked only after you approve them in the inbox'], ['Canvas framework', 'question tree · options compare · free board · none']]) }; break;
     case 'criteria': act('wwi'); return;
     case 'openCanvas': S.main = 'canvas'; S.zone = 'main'; break;
     case 'openViewer': S.main = 'viewer'; S.zone = 'main'; break;

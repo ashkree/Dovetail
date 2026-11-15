@@ -57,6 +57,11 @@ const DESIGN: DesignSlot[] = [
     { id: 'popup', label: 'Pop-up in the middle' },
     { id: 'tree', label: 'Under the effort in the tree' },
   ] },
+  { level: 'Component', id: 'tabs', name: 'View tabs', options: [
+    { id: 'underline', label: 'Plain words, line under the open one' },
+    { id: 'text', label: 'Plain words, open one bright and bold' },
+    { id: 'soft', label: 'Open one on a soft filled shape' },
+  ] },
   { level: 'Component', id: 'speakers', name: 'You vs coordinator', options: [
     { id: 'color', label: 'Own colours: you blue, coordinator warm' },
     { id: 'bar', label: 'Own colours and a bar beside each message' },
