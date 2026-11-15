@@ -167,7 +167,9 @@ Two files. All access goes through the DB thread: callers use typed methods such
        └── research/                  readable copies of findings
 ```
 
-### What hangs off what in `state.db` (version 16)
+### What hangs off what in `state.db`
+
+This is the shape up to version 16. Version 17, added with this guide, puts `efforts` and `criteria` above `tasks`; see Part 2, "Work model".
 
 ```
  tasks ─┬─◄ task_deps            (this task waits for that one)

@@ -4889,3 +4889,247 @@ fn a_stale_or_out_of_order_settings_answer_does_not_confirm_a_switch() {
     });
     h.quit();
 }
+
+// --- efforts (docs/design-v2.md §4) ---
+
+fn effort_named<'a>(s: &'a Snapshot, name: &str) -> Option<&'a dovetail_api::Effort> {
+    s.efforts.iter().find(|e| e.name == name)
+}
+
+fn create_effort(h: &mut Harness, typed: &str, stored: &str) -> dovetail_api::EffortId {
+    h.send(Command::CreateEffort(dovetail_api::NewEffort {
+        name: typed.into(),
+        kind: dovetail_api::EffortKind::Feature,
+        question_or_goal: " A buyer can pay without an account ".into(),
+    }));
+    h.wait_for("the effort", |s| effort_named(s, stored).is_some());
+    effort_named(&h.snap, stored).expect("effort").id
+}
+
+fn wait_sent_containing(fake: &FakeDriver, wanted: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fake
+        .sent()
+        .iter()
+        .any(|s| matches!(s, Sent::User(text) if text.contains(wanted)))
+    {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Commands are handled in order, so once a later command's effect shows, an earlier one that
+/// was refused has reported its failure.
+#[test]
+fn an_effort_is_named_in_kebab_case_and_its_criterion_goes_claimed_then_met() {
+    use dovetail_api::{CriterionState, EffortChange, EffortKind, UNSORTED_EFFORT, WhereWasI};
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    h.wait_for("the first snapshot", |s| !s.efforts.is_empty());
+    assert_eq!(h.snap.efforts[0].id, UNSORTED_EFFORT);
+
+    let id = create_effort(&mut h, "Guest Checkout!", "guest-checkout");
+    let effort = effort_named(&h.snap, "guest-checkout").expect("effort");
+    assert_eq!(
+        effort.question_or_goal,
+        "A buyer can pay without an account"
+    );
+
+    // The same name typed another way is the same name: refused. So is renaming Unsorted.
+    h.send(Command::CreateEffort(dovetail_api::NewEffort {
+        name: "guest_checkout".into(),
+        kind: EffortKind::Fix,
+        question_or_goal: String::new(),
+    }));
+    h.send(Command::RenameEffort {
+        id: UNSORTED_EFFORT,
+        name: "misc".into(),
+    });
+    h.send(Command::RenameEffort {
+        id,
+        name: "Guest Pay".into(),
+    });
+    h.wait_for("the rename", |s| effort_named(s, "guest-pay").is_some());
+    assert_eq!(
+        h.failures,
+        vec![
+            "there is already an effort named guest-checkout".to_string(),
+            "Unsorted cannot be renamed".to_string(),
+        ]
+    );
+    assert_eq!(h.snap.efforts.len(), 2);
+
+    let card = WhereWasI {
+        last_done: "API endpoint merged (PR #41)".into(),
+        waits_on_you: "Approve merge of PR #42".into(),
+        next_step: "Order email".into(),
+    };
+    h.send(Command::SetWhereWasI {
+        id,
+        where_was_i: card.clone(),
+    });
+    h.send(Command::UpdateEffort {
+        id,
+        patch: vec![EffortChange::Kind(EffortKind::Experiment)],
+    });
+    h.send(Command::AddCriterion {
+        effort: id,
+        text: "pay as guest end to end".into(),
+    });
+    h.wait_for("the criterion", |s| {
+        effort_named(s, "guest-pay").is_some_and(|e| !e.criteria.is_empty())
+    });
+    let effort = effort_named(&h.snap, "guest-pay").expect("effort").clone();
+    assert_eq!(effort.where_was_i, card);
+    assert_eq!(effort.kind, EffortKind::Experiment);
+    let criterion = effort.criteria[0].id;
+    assert_eq!(effort.criteria[0].state, CriterionState::Open);
+
+    let state_of = move |s: &Snapshot| effort_named(s, "guest-pay").map(|e| e.criteria[0].state);
+    h.send(Command::ClaimCriterion {
+        id: criterion,
+        evidence: "PR #41".into(),
+    });
+    h.wait_for("the claim", |s| {
+        state_of(s) == Some(CriterionState::Claimed)
+    });
+    // A claim alone tells the coordinator nothing and ticks nothing.
+    assert!(fake.sent().is_empty(), "{:?}", fake.sent());
+
+    h.send(Command::ReturnCriterion {
+        id: criterion,
+        reason: Some("the order email is missing".into()),
+    });
+    h.wait_for("the return", |s| state_of(s) == Some(CriterionState::Open));
+    wait_sent_containing(
+        &fake,
+        "sent criterion 1 of effort guest-pay back as not met (\"pay as guest end to end\"): \
+         the order email is missing",
+    );
+
+    h.send(Command::ClaimCriterion {
+        id: criterion,
+        evidence: "PR #44".into(),
+    });
+    h.send(Command::ApproveCriterion { id: criterion });
+    h.wait_for("the approval", |s| state_of(s) == Some(CriterionState::Met));
+    wait_sent_containing(&fake, "approved criterion 1 of effort guest-pay");
+    let met = effort_named(&h.snap, "guest-pay").expect("effort").clone();
+    assert_eq!(met.criteria[0].evidence.as_deref(), Some("PR #44"));
+
+    // Reopen: efforts, the card and the criterion come back in the first snapshot.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let mut h = Harness::start_on(fixture("plain_turn"), paths);
+    h.wait_for("the efforts", |s| s.efforts.len() == 2);
+    assert_eq!(effort_named(&h.snap, "guest-pay"), Some(&met));
+    h.quit();
+}
+
+#[test]
+fn a_task_is_created_in_unsorted_and_moved_to_an_effort_and_its_criterion() {
+    use dovetail_api::{NewTask, UNSORTED_EFFORT};
+
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let effort = create_effort(&mut h, "providers", "providers");
+    h.send(Command::AddCriterion {
+        effort,
+        text: "fees compared".into(),
+    });
+    h.send(Command::CreateTask(NewTask {
+        title: "Compare three providers".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: Vec::new(),
+        effort: None,
+        criterion: None,
+    }));
+    h.wait_for("the task", |s| !s.tasks.is_empty());
+    let task = h.snap.tasks[0].clone();
+    assert_eq!(task.effort, UNSORTED_EFFORT);
+    let criterion = effort_named(&h.snap, "providers").expect("effort").criteria[0].id;
+
+    // A criterion of another effort is refused; the right pair goes through.
+    h.send(Command::MoveTask {
+        id: task.id,
+        effort: UNSORTED_EFFORT,
+        criterion: Some(criterion),
+    });
+    h.send(Command::MoveTask {
+        id: task.id,
+        effort,
+        criterion: Some(criterion),
+    });
+    h.wait_for("the move", |s| s.tasks[0].effort == effort);
+    assert_eq!(h.snap.tasks[0].criterion, Some(criterion));
+    assert_eq!(
+        h.failures,
+        vec!["criterion 1 belongs to effort 2, not effort 1".to_string()]
+    );
+    assert_eq!(h.snap.tasks[0].title, task.title);
+    h.quit();
+}
+
+#[test]
+fn a_tagged_message_tags_the_reply_and_the_tag_survives_a_restart() {
+    use dovetail_api::EffortId;
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    let effort = create_effort(&mut h, "providers", "providers");
+
+    // An effort this project does not have: nothing is sent.
+    h.send(Command::Prompt {
+        agent: AgentId(COORDINATOR.into()),
+        text: "lost".into(),
+        attachments: Vec::new(),
+        effort: Some(EffortId(99)),
+    });
+    h.send(Command::Prompt {
+        agent: AgentId(COORDINATOR.into()),
+        text: "Reply with exactly the word: alpha".into(),
+        attachments: Vec::new(),
+        effort: Some(effort),
+    });
+    h.wait_for("the reply", |s| finished_turns(s) == 1);
+    assert_eq!(h.failures, vec!["no effort 99".to_string()]);
+    assert_eq!(
+        fake.sent(),
+        vec![Sent::User("Reply with exactly the word: alpha".into())]
+    );
+    let tags = |s: &Snapshot| -> Vec<(EntryKind, Option<EffortId>)> {
+        s.conversations[&AgentId(COORDINATOR.into())]
+            .entries
+            .iter()
+            .map(|e| (e.kind, e.effort))
+            .collect()
+    };
+    let before = tags(&h.snap);
+    assert_eq!(before[0], (EntryKind::User, Some(effort)));
+    assert!(before.contains(&(EntryKind::Assistant, Some(effort))));
+    // Dovetail's own notices carry no tag.
+    assert!(
+        before
+            .iter()
+            .all(|(kind, tag)| *kind != EntryKind::Notice || tag.is_none())
+    );
+
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let mut h = Harness::start_on(fixture("plain_turn"), paths);
+    h.wait_for("the conversation", |s| {
+        s.conversations.contains_key(&AgentId(COORDINATOR.into()))
+    });
+    assert_eq!(tags(&h.snap), before);
+
+    // An untagged message after the restart is untagged; the thread's tag does not leak onto it.
+    prompt(&h, "Reply with exactly the word: alpha");
+    h.wait_for("the untagged message", |s| {
+        tags(s).contains(&(EntryKind::User, None))
+    });
+    h.quit();
+}

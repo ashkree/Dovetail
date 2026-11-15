@@ -44,6 +44,30 @@ _Avoid_: background task
 A piece of the user's own work tracked in Dovetail, with or without agents attached. It is done when marked done in Dovetail, whatever its to-do items say.
 _Avoid_: subtask, ticket, to-do
 
+**Effort**:
+One line of work in a project: a feature, fix, cleanup, research question or experiment, with a defining question or goal and acceptance criteria. Every task belongs to exactly one.
+_Avoid_: epic, project, workstream, thread; "effort" for how hard a model thinks (that is reasoning effort)
+
+**Unsorted**:
+The effort every project starts with, holding the tasks nobody has put in an effort yet. It cannot be renamed or closed.
+_Avoid_: inbox, backlog, default effort
+
+**Acceptance criterion**:
+One thing that must be true for an effort to be done. It is open, claimed (an agent says it is met and gave evidence) or met (the user approved it).
+_Avoid_: requirement, checklist item, definition of done
+
+**Effort tag**:
+The effort a chat line belongs to. A line with none shows only under "All".
+_Avoid_: label, channel, thread id
+
+**"Where was I" card**:
+An effort's short note for the user coming back to it: what was last done, what waits on them, what comes next.
+_Avoid_: summary, status, handoff (which one coordinator writes for the next)
+
+**Reasoning effort**:
+How hard a session's model thinks, from low to max; a setting of the session, unrelated to efforts.
+_Avoid_: effort
+
 **Related task**:
 A task linked to another both ways, with no effect on either one's order or status. Quick capture relates the new task to the task in focus unless told not to.
 _Avoid_: subtask, child task, linked task
@@ -69,7 +93,7 @@ How important a task is, from P0 to P3.
 _Avoid_: priority, severity
 
 **Bucket**:
-When the user will do a task: Now, Next or Later. A task with no bucket sits in Unsorted.
+When the user will do a task: Now, Next or Later. A task with no bucket sits in the Unsorted list, which is not the Unsorted effort.
 _Avoid_: priority, status, column
 
 **Journal**:
