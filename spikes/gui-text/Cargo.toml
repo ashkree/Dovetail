@@ -1,0 +1,19 @@
+[package]
+name = "gui-text-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Throwaway spike (ADR 0020, `gui-text`). Not a workspace member: the root workspace excludes
+# `spikes`, and this empty table keeps cargo from looking upward.
+[workspace]
+
+[dependencies]
+# Both renderers, so the run can compare their memory (`--renderer glow|wgpu`). No accesskit,
+# system fonts or default fonts: the spike loads its own fonts from disk.
+eframe = { version = "=0.37.0", default-features = false, features = ["glow", "wgpu", "wayland", "x11", "clipboard"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
