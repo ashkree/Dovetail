@@ -36,7 +36,6 @@
 .zone-title.focus, .focus > .zone-title { color: var(--ink); }
 .main-body { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 
-.toast { position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%); z-index: 60; background: var(--raise); border: 1px solid var(--edge-hi); padding: 7px 16px; border-radius: 8px; }
 
 /* Sidebar frame (filled in by sidebar.css) */
 .sidebar { display: grid; grid-template-rows: auto 1fr; position: relative; gap: 8px; min-height: 0; min-width: 0; }
