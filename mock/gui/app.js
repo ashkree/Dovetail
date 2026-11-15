@@ -143,9 +143,9 @@ function renderHomeScreen() {
 function renderWorkspace() {
   const nomain = !S.main;
   return header(true) + `<div class="ws ${nomain ? 'nomain' : ''}">
-    ${renderSidebar()}
-    ${nomain ? '' : renderMain()}
     ${renderChat()}
+    ${nomain ? '' : renderMain()}
+    ${renderSidebar()}
   </div>` + statusBar();
 }
 
@@ -345,7 +345,7 @@ function renderOverlay() {
       <div class="ov-box"><h3>Sequences and special keys here</h3>${seqs.map(b => `<div><kbd>${esc(b[0])}</kbd> ${esc(b[2])}</div>`).join('') || '<div class="dim">none</div>'}</div>
       <div class="ov-box"><h3>Space leader</h3><div class="leader-tree">${leaderTree}</div></div>
       <div class="ov-box"><h3>Zones</h3>
-        <div><kbd>h</kbd>/<kbd>l</kbd> move between sidebar, main view and chat where the view has no use for them; <kbd>Ctrl-h</kbd>/<kbd>Ctrl-l</kbd> always do (also in the canvas and while typing).</div>
+        <div><kbd>h</kbd>/<kbd>l</kbd> move between chat, main view and sidebar (left to right) where the view has no use for them; <kbd>Ctrl-h</kbd>/<kbd>Ctrl-l</kbd> always do (also in the canvas and while typing).</div>
         <div><kbd>Ctrl-j</kbd>/<kbd>Ctrl-k</kbd> inbox ⇄ efforts tree, canvas ⇄ incoming strip.</div>
         <div><kbd>]e</kbd>/<kbd>[e</kbd> next or previous effort from anywhere; the "where was I" card comes up.</div>
         <div>Mouse: everything is clickable, nothing needs it.</div></div>
@@ -408,7 +408,7 @@ function afterRender() {
 }
 
 /* ---------------- actions ---------------- */
-const ZONES_H = () => S.main ? ['side', 'main', 'chat'] : ['side', 'chat'];
+const ZONES_H = () => S.main ? ['chat', 'main', 'side'] : ['chat', 'side'];
 function zoneKey() { return S.zone === 'inbox' || S.zone === 'tree' ? 'side' : S.zone; }
 function setZone(z) { if (z === 'side') z = S.side; if (z === 'inbox' || z === 'tree') S.side = z; S.zone = z; S.chatCur = z === 'chat' ? S.chatCur : S.chatCur; }
 

@@ -79,8 +79,8 @@ table.projects tr.sel td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .badge-n { color: var(--warn); font-weight: 650; }
 
 /* ---------- workspace ---------- */
-.ws { display: grid; grid-template-columns: 320px 1fr 440px; min-height: 0; }
-.ws.nomain { grid-template-columns: 320px 1fr; }
+.ws { display: grid; grid-template-columns: 440px 1fr 330px; min-height: 0; }
+.ws.nomain { grid-template-columns: 1fr 330px; }
 .zone { min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-right: 1px solid var(--edge); position: relative; }
 .zone:last-child { border-right: 0; }
 .zone-title { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: .82em; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); border-bottom: 1px solid var(--edge); }
