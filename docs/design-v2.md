@@ -243,6 +243,16 @@ Order of work: the GUI shell for the daily loop first, project-management data a
 | AGENTS.md: transparent terminals | Hard constraint | Applies only to the frozen TUI |
 | v1 open checks | All of them | Only core checks stay: worktree cleanup, out-of-memory recovery, subagent cost. M16 working week dropped |
 
+### v2 against ADR 0020
+
+ADR 0020 was approved the morning of 2026-11-15, before the v2 grill, which ran without knowing about it. The user has since seen the conflict and confirmed v2's choices.
+
+- **Toolkit:** Tauri 2 + React replaces egui. Why: after ADR 0020 the user asked for in-app web UI previews, which need a browser engine egui cannot provide; one web technology then serves chat, canvas and viewer. Consequence: the `gui-text` spike's egui result (216 MB, accepted) no longer applies; the 500 MB budget needs its own spike.
+- **Process model:** the GUI process hosts the core (confirmed 2026-11-15, after seeing ADR 0020's `dovetail serve`). `dovetail serve` is dropped for now. Consequences: closing a project's window stops its sessions, which resume on open as in v1; a second window for another project is a second process with its own core.
+- **TUI:** frozen as built, not cut to a remote kit. SSH and tmux are parked; the user decides later whether it catches up.
+- **Layout:** not Layout B carried over; settled in the mock session.
+- **Kept from ADR 0020:** keyboard-first with one keymap table shared through `Action`s; mouse never the only way; its reasons for a GUI (readable text, density).
+
 ### Kept
 
 - Core and UI talk only by message-passing: `Snapshot` and events out, `Command`s in, `apply()`.
@@ -391,6 +401,10 @@ Not made in this change.
 - Architecture rules: crate list gains the Tauri app crate and the web frontend; core hosted in the GUI process.
 - Dogfooding: role prompts must describe efforts, effort tags, "where was I" cards and the multi-repo coordinator.
 - Scope: target is v2's first GUI release, not v1.
+
+**`docs/implementation-plan.md`**
+
+- The "GUI track" G1–G7 was written for egui and `dovetail serve`; redo it in the v2 implementation plan.
 
 **`docs/design-digest.md`**
 
