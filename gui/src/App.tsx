@@ -6,6 +6,7 @@ import { KeyboardOverlay } from './components/overlays/KeyboardOverlay';
 import { Picker } from './components/overlays/Picker';
 import { Toast } from './components/overlays/Toast';
 import { useKeys } from './keys/useKeys';
+import { WhereWasIPopup } from './components/main/WhereWasI';
 import { Home } from './components/home/Home';
 import { useUi } from './state/ui';
 
@@ -17,6 +18,7 @@ export function App() {
       <TopBar />
       {screen === 'home' ? <Home /> : <Workspace />}
       <BottomBar />
+      <WhereWasIPopup />
       <WhichKey />
       <KeyboardOverlay />
       <Picker />

@@ -24,6 +24,7 @@ export function applyHash(hash: string): void {
     const i = Math.max(0, snapshotStore.get().projects.findIndex(p => p.id === project));
     dispatch('openProject', i);
   }
+  if (typeof patch.effort === 'string' && !('tag' in patch)) patch.tag = patch.effort;
   setUi(patch as Partial<Ui>);
 }
 

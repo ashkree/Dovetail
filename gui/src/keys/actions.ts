@@ -67,7 +67,7 @@ export function effortCanvas(s: Snapshot, effort: Id | null) {
 function switchEffort(id: Id, quiet = false): void {
   const e = effortById(snap(), id);
   if (!e) return;
-  setUi(u => ({ effort: id, tag: id, wwi: true, filter: u.filter === 'all' ? 'all' : id }));
+  setUi(u => ({ effort: id, tag: id, wwi: true, wwiFlash: 0, filter: u.filter === 'all' ? 'all' : id }));
   if (!quiet) toast(`Effort: **${e.name}** · next message is tagged with it`);
 }
 
@@ -294,8 +294,7 @@ export function dispatch(a: Action, arg?: unknown): void {
         })));
       });
       return;
-    case 'wwi': setUi(x => ({ wwi: true, zone: x.zone === 'tree' ? 'tree' : x.zone })); return;
-    case 'criteria': setUi({ wwi: true }); return;
+    case 'wwi': case 'criteria': setUi(x => ({ wwi: true, wwiFlash: x.wwiFlash + 1 })); return;
 
     // ---- lists
     case 'down': case 'up': {

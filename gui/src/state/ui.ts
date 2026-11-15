@@ -54,6 +54,8 @@ export interface Ui {
   filter: 'all' | Id;
   /** The "where was I" pop-up is up. */
   wwi: boolean;
+  /** Counts "bring it back" requests; the card flashes when it is above 0. */
+  wwiFlash: number;
   inboxSel: number;
   treeSel: number;
   folded: Record<Id, boolean>;
@@ -85,7 +87,7 @@ export const initialUi: Ui = {
   screen: 'home', homeSel: 0,
   zone: 'chat', side: 'inbox', main: null, mainItem: null,
   mode: 'normal', pending: '', leader: null,
-  effort: null, filter: 'all', wwi: false,
+  effort: null, filter: 'all', wwi: false, wwiFlash: 0,
   inboxSel: 0, treeSel: 0, folded: { search: true, coupon: true },
   chatCur: -1, openReports: [],
   draft: '', tag: null,
