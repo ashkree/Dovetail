@@ -285,3 +285,20 @@ table.projects tr.sel td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .sidebar .part, .list { min-width: 0; overflow-x: hidden; }
 .sidebar .list { overflow-y: auto; }
 .row { min-width: 0; }
+
+/* ---------- design variants (mock tooling) ---------- */
+html[data-theme="d"] { --ink: #ebe6fa; --bold: #ffd28a; --italic: #d6c4ff; --code: #8ff0cf; --link: #9cc8ff; --dim: #a9aac0; --accent: #b9a4e8; --bad: #ff9a88; --warn: #ffd28a; }
+html[data-fs="17"] { --fs: 17px; } html[data-fs="18"] { --fs: 18px; }
+html[data-chatw="360"] .ws:not(.nomain) { grid-template-columns: 360px 1fr 330px; }
+html[data-chatw="520"] .ws:not(.nomain) { grid-template-columns: 520px 1fr 330px; }
+html[data-inbox="fit"] .sidebar { grid-template-rows: auto 1fr; }
+html[data-inbox="fit"] .sidebar .part:first-child .list { max-height: 34vh; flex: none; }
+.vpanel.design { z-index: 35; max-height: 80vh; border-color: var(--accent); }
+.wwi-pop { position: fixed; inset: 0; background: #0b081099; z-index: 34; display: grid; place-items: center; }
+.wwi-pop .wwi { width: min(620px, 90vw); box-shadow: 0 20px 60px #000c; }
+.wwi-main { padding: 0 14px; }
+.wwi-main .wwi { margin: 10px 0; }
+.wwi-tree { padding: 0 10px 0 24px; font-size: .9em; }
+.wwi-tree .wwi { margin: 4px 0 8px; padding: 10px 12px; }
+.wwi-tree .wwi dl { grid-template-columns: 1fr; gap: 2px; }
+.wwi-tree .wwi dt { padding-top: 6px; }

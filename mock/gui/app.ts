@@ -85,9 +85,18 @@ function treeRows() {
 /* ---------------- render ---------------- */
 function render() {
   const app = $('#app');
-  app.innerHTML = S.screen === 'home' ? renderHomeScreen() : renderWorkspace();
+  applyDesign();
+  const pop = S.screen === 'ws' && S.wwi && D('wwi') === 'popup' ? `<div class="wwi-pop">${wwiCard(effortById(S.effort))}</div>` : '';
+  app.innerHTML = (S.screen === 'home' ? renderHomeScreen() : renderWorkspace()) + pop + renderDesignPanel();
   renderOverlay(); renderWhichKey(); renderModal();
   afterRender();
+}
+
+function limitText(n: number, over: boolean): string {
+  const v = D('limit');
+  if (v === 'b') return `${n} running · limit ${MACHINE_LIMIT}`;
+  if (v === 'c') return `${over ? '▲ ' : ''}${n} of ${MACHINE_LIMIT} efforts running`;
+  return `efforts ${n} / ${MACHINE_LIMIT}${over ? ' ▲' : ''}`;
 }
 
 function header(inWs) {
@@ -98,7 +107,7 @@ function header(inWs) {
       <span class="chip repo">shop-api</span><span class="chip repo">shop-web</span>
       <span class="chip">account · work</span>` : `<span class="crumb">Projects</span>`}
     <span class="spacer"></span>
-    ${inWs ? `<span class="limit ${over ? 'over' : ''}" title="Running efforts on this machine against the soft limit">efforts ${running()} / ${MACHINE_LIMIT}${over ? ' ▲' : ''}</span>` : `<span class="limit">running efforts, all projects: 8 / ${MACHINE_LIMIT} ▲</span>`}
+    ${inWs ? `<span class="limit ${over ? 'over' : ''}" title="Running efforts on this machine against the soft limit">${limitText(running(), over)}</span>` : `<span class="limit">running efforts, all projects: 8 / ${MACHINE_LIMIT} ▲</span>`}
     <span class="usage">opus-5-5 · 5h 34% · week 18%</span>
   </div>`;
 }
@@ -112,7 +121,7 @@ function statusBar() {
     <span class="pending">${esc(S.leader ? 'Space ' + S.leader.join(' ') : S.pending)}</span>
     <span>${scope ? esc(scope.name) : ''}</span>
     ${S.screen === 'ws' ? `<span>next message → ${tagHtml(S.tag)}</span><span>${S.inbox.length} need you</span>` : ''}
-    <span class="hint"><kbd>?</kbd> keyboard map · <kbd>Space</kbd> leader · <kbd>:</kbd> command</span>
+    <button class="chip" data-a="designToggle" title="Design variants for this mock (F2)">◐ design</button><span class="hint"><kbd>?</kbd> keyboard map · <kbd>Space</kbd> leader · <kbd>:</kbd> command</span>
   </div>`;
 }
 
@@ -162,7 +171,7 @@ function renderSidebar() {
       const done = r.e.criteria.filter(c => c.state === 'done').length;
       return `<div class="row effort-row ${sel} ${r.e.id === S.effort ? 'current' : ''}" data-a="selTree" data-i="${i}">
         <span class="dim">${S.folded[r.e.id] ? '▸' : '▾'}</span><span class="dot" style="background:${r.e.hue}"></span>
-        <span class="t">${esc(r.e.name)}</span><span class="kind" title="${r.e.kind}">${KINDS[r.e.kind].glyph}</span><span class="tm">☑ ${done}/${r.e.criteria.length}</span></div>`;
+        <span class="t">${esc(r.e.name)}</span><span class="kind" title="${r.e.kind}">${KINDS[r.e.kind].glyph}</span><span class="tm">☑ ${done}/${r.e.criteria.length}</span></div>${S.wwi && D('wwi') === 'tree' && r.e.id === S.effort ? `<div class="wwi-tree">${wwiCard(r.e, true)}</div>` : ''}`;
     }
     if (r.type === 'task') return `<div class="row indent1 ${sel}" data-a="selTree" data-i="${i}"><span class="t">${esc(r.t.title)}</span><span class="status-pill st-${r.t.status.split(' ')[0]}">${r.t.status}</span></div>`;
     if (r.type === 'agent') return `<div class="row indent2 ${sel}" data-a="selTree" data-i="${i}"><span class="${r.a.state === 'needs' ? 'needs' : 'agent-g'}">${r.a.state === 'needs' ? '⚠' : '◐'}</span><span>◆ ${esc(r.a.name)}</span><span class="branch t">${esc(r.a.branch)}</span></div>`;
@@ -186,6 +195,7 @@ function renderMain() {
   else if (S.main === 'item') body = renderItem();
   return `<div class="zone ${S.zone === 'main' ? 'focus' : ''}">
     <div class="zone-title" data-a="zone" data-z="main"><span class="main-tabs">${t}</span><span class="spacer"></span><button class="dim" data-a="closeMain" title="Close the view; the chat takes the space">✕ close <kbd>Space v x</kbd></button></div>
+    ${S.wwi && D('wwi') === 'main' ? `<div class="wwi-main">${wwiCard(effortById(S.effort), true)}</div>` : ''}
     <div class="main-body">${body}</div></div>`;
 }
 
@@ -252,6 +262,17 @@ function renderItem() {
   </article></div>`;
 }
 
+function wwiCard(e: Effort, compact = false): string {
+  return `<div class="wwi" id="wwi">
+      <h3><span class="dot" style="background:${e.hue}"></span>Where was I · ${esc(e.name)} <span class="kind">${KINDS[e.kind].glyph} ${e.kind}</span></h3>
+      ${compact ? '' : `<div class="goal">${esc(e.goal)}</div>`}
+      <dl><dt>Last done</dt><dd>${e.wwi.last}</dd>
+        <dt>Waits on you</dt><dd>${e.wwi.waits}</dd>
+        <dt>Next step</dt><dd>${e.wwi.next}</dd>
+        ${compact ? '' : `<dt>Criteria</dt><dd><ul class="crit">${e.criteria.map(c => `<li>${c.state === 'done' ? '<span class="g-accept">☑</span>' : c.state === 'review' ? '<span class="g-question">◔</span>' : '<span class="dim">☐</span>'} ${esc(c.text)}${c.state === 'review' ? ' <span class="dim">· in your inbox</span>' : ''}</li>`).join('')}</ul></dd>`}</dl>
+      <div class="foot"><kbd>Esc</kbd> hide · <kbd>w</kbd> in the tree or <kbd>Space e w</kbd> brings it back</div></div>`;
+}
+
 function renderChat() {
   const e = effortById(S.effort);
   const vis = visibleChat();
@@ -264,14 +285,7 @@ function renderChat() {
     }
     return `<div class="msg ${cur}" data-vi="${vi}"><div class="msg-h"><span class="who ${m.who === 'You' ? 'you' : ''}">${esc(m.who)}</span>${S.filter === 'all' ? tagHtml(m.effort) : ''}<span class="rule"></span><span class="time">${m.time}</span></div><div class="msg-body">${md(m.text)}</div></div>`;
   }).join('');
-  const wwi = S.wwi ? `<div class="wwi" id="wwi">
-      <h3><span class="dot" style="background:${e.hue}"></span>Where was I · ${esc(e.name)} <span class="kind">${KINDS[e.kind].glyph} ${e.kind}</span></h3>
-      <div class="goal">${esc(e.goal)}</div>
-      <dl><dt>Last done</dt><dd>${e.wwi.last}</dd>
-        <dt>Waits on you</dt><dd>${e.wwi.waits}</dd>
-        <dt>Next step</dt><dd>${e.wwi.next}</dd>
-        <dt>Criteria</dt><dd><ul class="crit">${e.criteria.map(c => `<li>${c.state === 'done' ? '<span class="g-accept">☑</span>' : c.state === 'review' ? '<span class="g-question">◔</span>' : '<span class="dim">☐</span>'} ${esc(c.text)}${c.state === 'review' ? ' <span class="dim">· in your inbox</span>' : ''}</li>`).join('')}</ul></dd></dl>
-      <div class="foot"><kbd>Esc</kbd> hide · <kbd>w</kbd> in the tree or <kbd>Space e w</kbd> brings it back</div></div>` : '';
+  const wwi = S.wwi && (D('wwi') === 'chat' || (D('wwi') === 'main' && !S.main)) ? wwiCard(e) : '';
   const filters = [['all', '<b style="color:inherit">All</b>']].concat(EFFORTS.map(x => [x.id, `<span class="dot" style="background:${x.hue}"></span>${esc(x.name)}`]))
     .map(([id, l]) => `<button class="fbtn ${S.filter === id ? 'on' : ''}" data-a="setFilter" data-f="${id}">${l}</button>`).join('');
   return `<div class="zone ${S.zone === 'chat' ? 'focus' : ''}">
@@ -398,6 +412,13 @@ function afterRender() {
   if (r) { const hs = r.querySelectorAll('[data-h]'); hs.forEach((h, i) => h.classList.toggle('cur', i === S.readHead)); if (hs[S.readHead] && S.readHead > 0) hs[S.readHead].scrollIntoView({ block: 'start' }); }
   const sel = document.querySelector('.canvas .card.sel'); if (sel) sel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   document.querySelectorAll('.list .row.sel').forEach(el => el.scrollIntoView({ block: 'nearest' }));
+  const dp = $('#designpanel [data-dragdesign]');
+  if (dp) dp.onmousedown = ev => {
+    const p = $('#designpanel'); const r = p.getBoundingClientRect(); const sx = ev.clientX - r.left, sy = ev.clientY - r.top;
+    const mv = e2 => { DS.pos = { x: e2.clientX - sx, y: e2.clientY - sy }; p.style.left = DS.pos.x + 'px'; p.style.top = DS.pos.y + 'px'; p.style.bottom = 'auto'; };
+    const up = () => { saveDesign(); removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+  };
   const vp = $('#vpanel [data-drag]');
   if (vp && S.panel === 'detached') vp.onmousedown = ev => {
     const sx = ev.clientX - S.panelPos.x, sy = ev.clientY - S.panelPos.y;
@@ -492,6 +513,7 @@ function act(a: string, arg?: unknown): void {
     case 'normal': S.mode = 'normal'; break;
     case 'leaveBar': S.mode = 'normal'; S.zone = 'chat'; break;
     case 'escape':
+      if (S.wwi && D('wwi') !== 'chat') { S.wwi = false; break; }
       if (S.zone === 'main' && S.main === 'item') { S.main = null; S.zone = 'inbox'; }
       else if (S.zone === 'main' && S.main === 'reading') { S.main = 'canvas'; }
       else if (S.wwi && S.zone === 'chat') S.wwi = false;
@@ -662,6 +684,7 @@ function tok(e: KeyboardEvent): string | null {
 }
 
 function onKey(e: KeyboardEvent): void {
+  if (e.key === 'F2') { e.preventDefault(); DS.open = !DS.open; saveDesign(); render(); return; }
   const k = tok(e); if (!k) return;
   // modal
   if (S.modal) {
@@ -748,6 +771,9 @@ document.addEventListener('click', e => {
     case 'ovUp': S.ovLeader.pop(); break;
     case 'pickRow': { const it = pickerItems()[+el.dataset.i]; const f = S.modal.onPick; S.modal = null; f(it); break; }
     case 'openProject': return act('openProject', el.dataset.i);
+    case 'designPick': DS.choice[el.dataset.s] = el.dataset.o; saveDesign(); break;
+    case 'designClose': case 'designToggle': DS.open = !DS.open; saveDesign(); break;
+    case 'designKeep': { const t = designCombo(); navigator.clipboard?.writeText(t).catch(() => {}); toast('Copied: paste it in the chat to keep this combination'); return; }
     default: return act(a);
   }
   render();
