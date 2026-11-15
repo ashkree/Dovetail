@@ -271,6 +271,29 @@ Not decided yet. Do not build on a guess.
 10. **Code landscape tool**: its MCP name, suite and output shape.
 11. **Memory spike**: procedure and pass/fail for the 500 MB budget.
 
+### Proposed: brainstorming on the canvas (not decided)
+
+The user wants brainstorming in Dovetail to work like the grilling session that produced this design, with diagrams central to following a design. These are proposals, not decisions. Items 1 and 5 go beyond what was agreed: a new framework and a new card kind.
+
+1. **"Decision rounds" framework** (new, a fourth framework). Question cards, each with the agent's recommended answer and a state: open, settled, needs explanation, parked. Questions are asked in rounds. A partial answer moves a question to the next round without blocking the rest. Answers may reshape later questions.
+2. **Settled column.** It fills as questions close, and doubles as the effort's "where was I" card.
+3. **"Explain" on a question card.** The agent attaches a diagram and one worked example to that card.
+4. **Glossary card.** Pinned on every canvas, created at the start, holding the agreed keywords.
+5. **Diagram card kind** (new). Shows today vs proposed; where the subject is code, the "today" side is drawn from the code landscape tool.
+6. **"Write this up" on the settled column.** Starts a cheaper session with the settled summary as its brief.
+
+```
+round 2                                         settled
+┌ Q: one chat per effort? ────────┐             ┌──────────────────────────┐
+│ recommend: one per project      │             │ ✓ project holds 0..n repos│
+│ state: needs explanation  [explain]           │ ✓ inbox per project       │
+└─────────────────────────────────┘             │ ...                       │
+┌ Q: task status by hand? ────────┐             └── [write this up] ────────┘
+│ recommend: Dovetail sets it     │
+│ state: open                     │             glossary (pinned)
+└─────────────────────────────────┘             effort · repo · slice · ...
+```
+
 ### Edits other docs will need
 
 Not made in this change.
