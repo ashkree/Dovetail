@@ -16,7 +16,7 @@ const S: any = {
   cards: CARDS.map(c => ({ ...c })), edges: EDGES.slice(), incoming: INCOMING.slice(),
   cardSel: 'Q3', canvasPart: 'cards', incSel: 0, zoom: 0.85,
   slot: 2, choice: [0, 0, 0, 0, 0], kept: [0, 0, 0, 0, 0], panel: 'docked', panelPos: { x: 0, y: 0 },
-  readHead: 0, sideW: 330,
+  readHead: 0, sideW: 330, sideCollapsed: false,
   overlay: false, ovScope: 'chat', ovLayer: 'plain', ovLeader: [],
   modal: null,
 };
@@ -161,7 +161,7 @@ function renderHomeScreen() {
 
 function renderWorkspace() {
   const nomain = !S.main;
-  return header(true) + `<div class="ws ${nomain ? 'nomain' : ''} ${D('density') === 'focus' && S.zone !== 'inbox' && S.zone !== 'tree' ? 'railed"' : `" style="--side-w:${S.sideW}px"`}>
+  return header(true) + `<div class="ws ${nomain ? 'nomain' : ''} ${S.sideCollapsed ? 'railed"' : `" style="--side-w:${S.sideW}px"`}>
     ${renderChat()}
     ${nomain ? '' : renderMain()}
     ${renderSidebar()}
@@ -188,14 +188,14 @@ function renderSidebar() {
     return `<div class="row indent3 ${sel}" data-a="selTree" data-i="${i}"><span class="${r.a.state === 'done' ? 'g-accept' : 'agent-g'}">${r.a.state === 'done' ? '✓' : '◐'}</span><span class="t">◇ ${esc(r.a.name)}</span></div>`;
   }).join('');
   const fz = z => S.zone === z ? 'focus' : '';
-  if (D('density') === 'focus' && S.zone !== 'inbox' && S.zone !== 'tree') {
+  if (S.sideCollapsed) {
     return `<div class="zone sidebar rail">
       <button class="rail-inbox" data-a="focusInbox" title="Inbox (Space n)">${S.inbox.length ? `<span class="needs">⚠</span> ${S.inbox.length}` : '✓'}</button>
       ${EFFORTS.map(e => `<button class="rail-effort ${e.id === S.effort ? 'current' : ''}" data-a="railEffort" data-id="${e.id}" title="${esc(e.name)}"><span class="dot" style="background:${e.hue}"></span></button>`).join('')}
-      <span class="spacer"></span><button class="dim" data-a="focusTree" title="Efforts tree (Space t)">☰</button></div>`;
+      <span class="spacer"></span><button class="dim" data-a="toggleSide" title="Expand the sidebar (Space z)">⇤</button></div>`;
   }
   return `<div class="zone sidebar"><div class="side-handle" id="sidehandle" title="Drag to widen"></div>
-    <div class="part ${fz('inbox')}"><div class="zone-title ${fz('inbox')}" data-a="zone" data-z="inbox">Inbox · ${S.inbox.length}</div><div class="list">${inboxRows}</div></div>
+    <div class="part ${fz('inbox')}"><div class="zone-title ${fz('inbox')}" data-a="zone" data-z="inbox">Inbox · ${S.inbox.length}<span class="spacer"></span><button class="dim collapse-btn" data-a="toggleSide" title="Collapse the sidebar (Space z)">⇥</button></div><div class="list">${inboxRows}</div></div>
     <div class="part ${fz('tree')}"><div class="zone-title ${fz('tree')}" data-a="zone" data-z="tree">Efforts</div><div class="list">${rows}</div></div>
   </div>`;
 }
@@ -299,7 +299,7 @@ function renderChat() {
       return `<div class="msg ${cur}" data-vi="${vi}"><div class="report" data-a="toggleReport" data-i="${i}"><span>${open ? '▾' : '▸'}</span>${tagHtml(m.effort)}<span class="from">${esc(m.from)}</span><span class="t">${esc(m.text)}</span><span class="spacer"></span><span>${m.time}</span></div>
         ${open ? `<div class="report-open">${md('**' + m.from + ' reports:** ' + m.text + '.\n\nFull report: `Enter` on its card, or `Space v r`.')}</div>` : ''}</div>`;
     }
-    return `<div class="msg ${cur}" data-vi="${vi}"><div class="msg-h"><span class="who ${m.who === 'You' ? 'you' : ''}">${esc(m.who)}</span>${S.filter === 'all' ? (D('density') !== 'full' ? tagDot(m.effort) : tagHtml(m.effort)) : ''}<span class="rule"></span><span class="time">${m.time}</span></div><div class="msg-body">${md(m.text)}</div></div>`;
+    return `<div class="msg ${m.who === 'You' ? 'by-you' : 'by-agent'} ${cur}" data-vi="${vi}"><div class="msg-h"><span class="who ${m.who === 'You' ? 'you' : ''}">${esc(m.who)}</span>${S.filter === 'all' ? (D('density') !== 'full' ? tagDot(m.effort) : tagHtml(m.effort)) : ''}<span class="rule"></span><span class="time">${m.time}</span></div><div class="msg-body">${md(m.text)}</div></div>`;
   }).join('');
   const wwi = S.wwi && (D('wwi') === 'chat' || (D('wwi') === 'main' && !S.main)) ? wwiCard(e) : '';
   const filters = [['all', '<b style="color:inherit">All</b>']].concat(EFFORTS.map(x => [x.id, `<span class="dot" style="background:${x.hue}"></span>${esc(x.name)}`]))
@@ -455,7 +455,7 @@ function afterRender() {
 /* ---------------- actions ---------------- */
 const ZONES_H = () => S.main ? ['chat', 'main', 'side'] : ['chat', 'side'];
 function zoneKey() { return S.zone === 'inbox' || S.zone === 'tree' ? 'side' : S.zone; }
-function setZone(z) { if (z === 'side') z = S.side; if (z === 'inbox' || z === 'tree') S.side = z; S.zone = z; S.chatCur = z === 'chat' ? S.chatCur : S.chatCur; }
+function setZone(z) { if (z === 'side') z = S.side; if (z === 'inbox' || z === 'tree') { S.side = z; S.sideCollapsed = false; } S.zone = z; S.chatCur = z === 'chat' ? S.chatCur : S.chatCur; }
 
 function switchEffort(id, quiet) {
   S.effort = id; S.tag = id; S.wwi = true;
@@ -651,6 +651,7 @@ function act(a: string, arg?: unknown): void {
     ], it => it.go()); break;
     case 'focusChat': S.zone = 'chat'; break;
     case 'focusInbox': setZone('inbox'); break;
+    case 'toggleSide': S.sideCollapsed = !S.sideCollapsed; if (S.sideCollapsed && (S.zone === 'inbox' || S.zone === 'tree')) S.zone = 'chat'; break;
     case 'focusTree': setZone('tree'); break;
     case 'pickEffort': picker('Switch effort', EFFORTS.map(e => ({ text: e.name + ' ' + e.kind, html: `${tagHtml(e.id)}<span class="t dim">${esc(e.goal)}</span>`, id: e.id })), it => switchEffort(it.id)); break;
     case 'newEffort': S.modal = { type: 'form', html: formHtml('New effort in Shop', [['Kind', 'feature · fix · cleanup · research · experiment'], ['Question or goal', 'e.g. Does a 10 % first-order coupon raise sign-ups?'], ['Acceptance criteria', 'one per line; ticked only after you approve them in the inbox'], ['Canvas framework', 'question tree · options compare · free board · none']]) }; break;
@@ -808,7 +809,7 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', onKey);
 
 // Keep where you were across the dev server's auto-reload (per tab, best effort).
-const KEEP = ['screen', 'zone', 'side', 'main', 'mainItem', 'effort', 'filter', 'tag', 'wwi', 'cardSel', 'zoom', 'slot', 'choice', 'kept', 'panel', 'panelPos', 'homeSel', 'sideW'];
+const KEEP = ['screen', 'zone', 'side', 'main', 'mainItem', 'effort', 'filter', 'tag', 'wwi', 'cardSel', 'zoom', 'slot', 'choice', 'kept', 'panel', 'panelPos', 'homeSel', 'sideW', 'sideCollapsed'];
 try { const saved = JSON.parse(sessionStorage.getItem('dovetail-mock') || '{}'); for (const k of KEEP) if (k in saved) S[k] = saved[k]; } catch { /* no storage */ }
 addEventListener('beforeunload', () => { try { sessionStorage.setItem('dovetail-mock', JSON.stringify(Object.fromEntries(KEEP.map(k => [k, S[k]])))); } catch { /* no storage */ } });
 render();

@@ -168,6 +168,7 @@ const LEADER: Record<string, LeaderLeaf | LeaderGroup> = {
   c: ['focusChat', 'chat (coordinator)'],
   n: ['focusInbox', 'inbox'],
   t: ['focusTree', 'efforts tree'],
+  z: ['toggleSide', 'sidebar: collapse / expand'],
   e: { name: 'effort', keys: {
     e: ['pickEffort', 'switch effort'],
     n: ['newEffort', 'new effort'],

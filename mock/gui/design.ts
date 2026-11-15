@@ -20,8 +20,12 @@ const DESIGN: DesignSlot[] = [
   ] },
   { level: 'Global', id: 'density', name: 'Busyness', options: [
     { id: 'panels', label: 'Panels · rounded framed regions, less inside' },
-    { id: 'focus', label: 'Panels, sidebar folds to a rail' },
     { id: 'full', label: 'Full · the first version' },
+  ] },
+  { level: 'Global', id: 'corners', name: 'Corners', options: [
+    { id: '6', label: '6 px · slightly soft' },
+    { id: '4', label: '4 px · nearly square' },
+    { id: '9', label: '9 px · soft' },
   ] },
   { level: 'Global', id: 'fs', name: 'Text size', options: [
     { id: '16', label: '16 px' },
@@ -33,6 +37,11 @@ const DESIGN: DesignSlot[] = [
     { id: 'main', label: 'Banner on top of the main view' },
     { id: 'popup', label: 'Pop-up in the middle' },
     { id: 'tree', label: 'Under the effort in the tree' },
+  ] },
+  { level: 'Component', id: 'speakers', name: 'You vs coordinator', options: [
+    { id: 'color', label: 'Own colours: you blue, coordinator warm' },
+    { id: 'bar', label: 'Own colours and a bar beside each message' },
+    { id: 'bubble', label: 'Own colours, your messages in a tinted box' },
   ] },
   { level: 'Component', id: 'chatw', name: 'Chat width (view open)', options: [
     { id: '440', label: '440 px' },

@@ -1,5 +1,7 @@
 /* Dovetail GUI mock. Palette A "Iris & gold" (docs/research colour report) on a deep purple. */
 :root {
+  --you: var(--link); --agent: var(--tag-gold);
+  --r: 6px; --r-sm: 4px;
   --bg: #15111d;
   --panel: #1a1524;
   --panel-2: #211a2e;
@@ -121,8 +123,8 @@ table.projects tr.sel td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .ws.nomain .chat-scroll > *, .ws.nomain .chatbar-inner { max-width: 820px; margin-left: auto; margin-right: auto; }
 .msg { margin-top: 18px; }
 .msg-h { display: flex; align-items: center; gap: 10px; font-size: .9em; }
-.msg-h .who { font-weight: 700; color: var(--accent); }
-.msg-h .who.you { color: var(--link); }
+.msg-h .who { font-weight: 700; color: var(--agent); }
+.msg-h .who.you { color: var(--you); }
 .msg-h .rule { flex: 1; height: 1px; background: var(--edge); }
 .msg-h .time { color: var(--dim); }
 .msg-body { font-size: 1.04em; line-height: 1.65; }
@@ -327,16 +329,16 @@ html[data-theme="graphite-warm"] { --bg: #262624; --panel: #1f1e1d; --panel-2: #
 /* Panels and Focus: every region is a rounded, framed panel on the page background,
    with less inside it (no chips, hints or uppercase titles). Focus = accent frame. */
 html:not([data-density="full"]) .ws { gap: 8px; padding: 0 8px; }
-html:not([data-density="full"]) .zone { border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); }
+html:not([data-density="full"]) .zone { border: 1px solid var(--edge); border-radius: var(--r); background: var(--panel); }
 html:not([data-density="full"]) .zone.focus { border-color: var(--accent); }
 html:not([data-density="full"]) .sidebar { border: 0; background: none; gap: 8px; }
-html:not([data-density="full"]) .sidebar .part { border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); overflow: hidden; }
+html:not([data-density="full"]) .sidebar .part { border: 1px solid var(--edge); border-radius: var(--r); background: var(--panel); overflow: hidden; }
 html:not([data-density="full"]) .sidebar .part + .part { border-top: 1px solid var(--edge); }
 html:not([data-density="full"]) .sidebar .part.focus { border-color: var(--accent); }
 html:not([data-density="full"]) .sidebar.rail { border: 1px solid var(--edge); background: var(--panel); }
 html:not([data-density="full"]) .zone-title { text-transform: none; letter-spacing: 0; font-size: .92em; font-weight: 600; padding: 9px 16px; border-bottom: 1px solid var(--edge); }
 html:not([data-density="full"]) .zone-title.focus, html:not([data-density="full"]) .focus > .zone-title { box-shadow: none; color: var(--ink); }
-html:not([data-density="full"]) .row { margin: 1px 6px; padding: 5px 10px; border-radius: 7px; }
+html:not([data-density="full"]) .row { margin: 1px 6px; padding: 5px 10px; border-radius: var(--r-sm); }
 html:not([data-density="full"]) .row.indent1 { padding-left: 26px; } html:not([data-density="full"]) .row.indent2 { padding-left: 44px; } html:not([data-density="full"]) .row.indent3 { padding-left: 62px; }
 html:not([data-density="full"]) .row.sel { box-shadow: none; background: var(--sel-solid); }
 html:not([data-density="full"]) .zone:not(.focus) .row.sel, html:not([data-density="full"]) .part:not(.focus) .row.sel { box-shadow: none; background: color-mix(in srgb, var(--sel-solid) 55%, transparent); }
@@ -344,19 +346,19 @@ html:not([data-density="full"]) .header { border-bottom: 0; }
 html:not([data-density="full"]) .status { border-top: 0; }
 html:not([data-density="full"]) .status .hint, html:not([data-density="full"]) .tag-hint { display: none; }
 html:not([data-density="full"]) .msg { margin-top: 22px; }
-html:not([data-density="full"]) .report { font-size: .9em; border-radius: 8px; }
+html:not([data-density="full"]) .report { font-size: .9em; border-radius: var(--r-sm); }
 html:not([data-density="full"]) .report .tag { display: none; }
 html:not([data-density="full"]) .chatbar { border-top: 0; }
-html:not([data-density="full"]) .chatbar-inner { border-radius: 12px; border-color: var(--edge-hi); background: var(--panel-2); }
+html:not([data-density="full"]) .chatbar-inner { border-radius: var(--r); border-color: var(--edge-hi); background: var(--panel-2); }
 html:not([data-density="full"]) .status-pill { border: 0; padding: 0; }
 html:not([data-density="full"]) .effort-row .kind, html:not([data-density="full"]) .effort-row:not(.current) .tm { display: none; }
 html:not([data-density="full"]) .card .refbtn { visibility: hidden; }
 html:not([data-density="full"]) .card:hover .refbtn, html:not([data-density="full"]) .card.sel .refbtn { visibility: visible; }
-html:not([data-density="full"]) .card { border-color: var(--edge); border-radius: 12px; }
+html:not([data-density="full"]) .card { border-color: var(--edge); border-radius: var(--r); }
 html:not([data-density="full"]) .framework { opacity: .7; }
 html:not([data-density="full"]) .incoming { border-top: 1px solid var(--edge); }
-html:not([data-density="full"]) .wwi { border-radius: 14px; }
-html:not([data-density="full"]) .preview, html:not([data-density="full"]) .vpanel { border-radius: 12px; }
+html:not([data-density="full"]) .wwi { border-radius: var(--r); }
+html:not([data-density="full"]) .preview, html:not([data-density="full"]) .vpanel { border-radius: var(--r); }
 .tagdot { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: .85em; }
 .filter-min { display: flex; gap: 10px; align-items: center; padding: 2px 16px 6px; font-size: .9em; }
 .filter-min button { color: var(--dim); display: inline-flex; gap: 6px; align-items: center; }
@@ -388,3 +390,14 @@ html[data-theme="mist"] {
   --tag-blue: #89b4fa; --tag-coral: #f38ba8; --tag-lilac: #cba6f7; --tag-mint: #94e2d5; --tag-gold: #f9e2af;
 }
 .report .from, .report > span:last-child { white-space: nowrap; }
+
+/* Corners */
+html[data-corners="4"] { --r: 4px; --r-sm: 3px; }
+html[data-corners="9"] { --r: 9px; --r-sm: 6px; }
+/* Who is speaking: own colour per speaker, rule tinted to match */
+.msg.by-you .msg-h .rule { background: color-mix(in srgb, var(--you) 45%, transparent); }
+.msg.by-agent .msg-h .rule { background: color-mix(in srgb, var(--agent) 40%, transparent); }
+html[data-speakers="bar"] .msg.by-you, html[data-speakers="bar"] .msg.by-agent { padding-left: 12px; border-left: 3px solid var(--agent); }
+html[data-speakers="bar"] .msg.by-you { border-left-color: var(--you); }
+html[data-speakers="bubble"] .msg.by-you { background: color-mix(in srgb, var(--you) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--you) 25%, transparent); border-radius: var(--r); padding: 8px 14px 4px; }
+.collapse-btn { font-size: 1.1em; text-transform: none; }
