@@ -1,6 +1,19 @@
 // Fake data for the Dovetail GUI mock. Nothing here is real.
 
-const PROJECTS = [
+type Kind = 'feature' | 'fix' | 'cleanup' | 'research' | 'experiment';
+type TaskStatus = 'To do' | 'In progress' | 'Review' | 'Done';
+interface Project { id: string; name: string; repos: string[]; account: string; efforts: number; running: number; inbox: number; opened: string; note: string }
+interface Criterion { text: string; state: 'open' | 'review' | 'done' }
+interface Agent { name: string; kind?: 'slice'; state: string; branch?: string; subs: Agent[] }
+interface Task { title: string; status: TaskStatus; agents: Agent[] }
+interface Effort { id: string; name: string; kind: Kind; hue: string; running: boolean; goal: string; criteria: Criterion[]; wwi: { last: string; waits: string; next: string }; tasks: Task[] }
+interface InboxItem { id: string; kind: 'perm' | 'accept' | 'question' | 'done'; glyph: string; effort: string; from: string; title: string; time: string; body: string }
+interface ChatEntry { who?: string; report?: boolean; from?: string; time: string; effort: string; text: string }
+type CardType = 'question' | 'finding' | 'source' | 'idea' | 'decision' | 'map';
+interface Card { id: string; type: CardType; x?: number; y?: number; title: string; body: string; src?: string; long?: boolean; under?: string }
+interface VariantSlot { level: 'Global' | 'Component' | 'Content'; slot: string; options: string[] }
+
+const PROJECTS: Project[] = [
   { id: 'shop', name: 'Shop', repos: ['shop-api', 'shop-web'], account: 'work', efforts: 5, running: 5, inbox: 4, opened: 'today 09:12', note: 'Payments, login fix, dark mode' },
   { id: 'dovetail', name: 'Dovetail', repos: ['dovetail'], account: 'personal', efforts: 3, running: 2, inbox: 1, opened: 'yesterday', note: 'GUI rework' },
   { id: 'garden', name: 'Garden planner', repos: ['garden-app', 'garden-data'], account: 'personal', efforts: 2, running: 0, inbox: 0, opened: '12 Nov', note: 'Planting calendar' },
@@ -8,9 +21,9 @@ const PROJECTS = [
   { id: 'homelab', name: 'Home lab', repos: ['infra', 'dotfiles', 'backups'], account: 'personal', efforts: 1, running: 0, inbox: 0, opened: '28 Oct', note: 'Backups to the NAS' },
 ];
 
-const MACHINE_LIMIT = 4; // soft limit on running efforts on this machine
+const MACHINE_LIMIT: number = 4; // soft limit on running efforts on this machine
 
-const KINDS = {
+const KINDS: Record<Kind, { glyph: string; label: string }> = {
   feature: { glyph: '✦', label: 'feature' },
   fix: { glyph: '⚒', label: 'fix' },
   cleanup: { glyph: '⌫', label: 'cleanup' },
@@ -18,7 +31,7 @@ const KINDS = {
   experiment: { glyph: '⚗', label: 'experiment' },
 };
 
-const EFFORTS = [
+const EFFORTS: Effort[] = [
   {
     id: 'pay', name: 'Payment providers', kind: 'research', hue: 'var(--tag-blue)', running: true,
     goal: 'Which payment provider should Shop use for the EU and the US?',
@@ -92,7 +105,7 @@ const EFFORTS = [
   },
 ];
 
-const INBOX = [
+const INBOX: InboxItem[] = [
   { id: 'i1', kind: 'perm', glyph: '⚠', effort: 'login', from: 'login-fix', title: 'Bash · npm run e2e -- --browser safari', time: '2m',
     body: '**login-fix** wants to run a command in `~/…/worktrees/shop-api/fix-login-safari`:\n\n```\nnpm run e2e -- --browser safari\n```\n\nIt runs the e2e suite against a local Safari WebDriver. No network beyond localhost.' },
   { id: 'i2', kind: 'accept', glyph: '☑', effort: 'login', from: 'login-fix', title: 'Criterion · Fix passes in Safari and Chrome', time: '2m',
@@ -103,7 +116,7 @@ const INBOX = [
     body: 'dark-mode built three header variants, two footers and three hero lines. Open the viewer to mix and match.' },
 ];
 
-const CHAT = [
+const CHAT: ChatEntry[] = [
   { who: 'You', time: '09:14', effort: 'login', text: 'What is left on the Safari logout?' },
   { who: 'coordinator', time: '09:14', effort: 'login', text: '**login-fix** found it: the refresh cookie had `SameSite=Lax`, so Safari dropped it on the cross-site token refresh.\n\n- Fix is in `src/auth/refresh.rs`\n- Chrome e2e is green\n- Safari run is waiting for your approval in the inbox' },
   { report: true, effort: 'pay', from: 'research-1', time: '09:20', text: 'SCA comparison written · 3 providers · 9 sources · report ready to read' },
@@ -116,7 +129,7 @@ const CHAT = [
 ];
 
 // Question-tree canvas for "Payment providers". Coordinates are in canvas px.
-const CARDS = [
+const CARDS: Card[] = [
   { id: 'Q1', type: 'question', x: 360, y: 20, title: 'Which provider for the EU and the US?', body: 'Root question of the effort.' },
   { id: 'Q2', type: 'question', x: 40, y: 170, title: 'Fees at our volume?', body: '~2 400 orders a month, €38 average.' },
   { id: 'Q3', type: 'question', x: 360, y: 170, title: 'SCA / 3DS handled for us?', body: 'Who runs the challenge flow and exemptions.' },
@@ -128,15 +141,15 @@ const CARDS = [
   { id: 'D1', type: 'decision', x: 360, y: 470, title: 'Decision (open)', body: 'Not decided yet. Needs the recommendation criterion.' },
   { id: 'M1', type: 'map', x: 680, y: 470, title: 'Checkout flow map', body: 'Where the provider plugs into shop-web.' },
 ];
-const EDGES = [['Q1', 'Q2'], ['Q1', 'Q3'], ['Q1', 'Q4'], ['Q2', 'F1'], ['F1', 'S1'], ['Q3', 'F3'], ['Q4', 'I1'], ['F3', 'D1'], ['I1', 'M1']];
-const INCOMING = [
+const EDGES: [string, string][] = [['Q1', 'Q2'], ['Q1', 'Q3'], ['Q1', 'Q4'], ['Q2', 'F1'], ['F1', 'S1'], ['Q3', 'F3'], ['Q4', 'I1'], ['F3', 'D1'], ['I1', 'M1']];
+const INCOMING: Card[] = [
   { id: 'F4', type: 'finding', title: 'Mollie: no US acquiring', body: 'From research-1, 2 sources.', under: 'Q3' },
   { id: 'S5', type: 'source', title: 'adyen.com/pricing (no list price)', body: 'Fetched 15 Nov.', under: 'Q2' },
   { id: 'Q5', type: 'question', title: 'Chargeback fees?', body: 'Proposed by the coordinator.', under: 'Q2' },
 ];
 
 // Viewer variants for "Dark mode", three levels.
-const VARIANTS = [
+const VARIANTS: VariantSlot[] = [
   { level: 'Global', slot: 'Theme', options: ['Dusk', 'Midnight', 'Soft dark'] },
   { level: 'Global', slot: 'Layout', options: ['Grid', 'List'] },
   { level: 'Component', slot: 'Header', options: ['A · centred, text toggle', 'B · left logo, icon toggle', 'C · compact'] },

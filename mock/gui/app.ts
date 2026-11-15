@@ -1,10 +1,10 @@
 // Dovetail GUI mock: state, rendering and key dispatch. Plain JS, no build.
 
-const $ = s => document.querySelector(s);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const effortById = id => EFFORTS.find(e => e.id === id);
+const $ = (s: string): any => document.querySelector(s);
+const esc = (s: unknown): string => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const effortById = (id: string): Effort => EFFORTS.find(e => e.id === id);
 
-const S = {
+const S: any = {
   screen: 'home', homeSel: 0,
   zone: 'chat', side: 'inbox', main: null, mainItem: null,
   mode: 'normal', pending: '', leader: null,
@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- markdown (just enough) ---------------- */
-function inline(s) {
+function inline(s: string): string {
   s = esc(s);
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
@@ -32,7 +32,7 @@ function inline(s) {
   s = s.replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/g, '<b>$1</b>');
   return s;
 }
-function md(text) {
+function md(text: string): string {
   const out = []; let list = null; let code = null; let para = [];
   const flush = () => { if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; } if (list) { out.push(`</${list}>`); list = null; } };
   for (const line of text.split('\n')) {
@@ -458,7 +458,7 @@ function answerItem(kind) {
   } else if (kind === 'dismiss') { remove(); toast('Dismissed'); }
 }
 
-function act(a, arg) {
+function act(a: string, arg?: unknown): void {
   const sc = scopeNow();
   switch (a) {
     case 'none': return;
@@ -648,7 +648,7 @@ function formHtml(title, fields) {
 }
 
 /* ---------------- key dispatch ---------------- */
-function tok(e) {
+function tok(e: KeyboardEvent): string | null {
   let k = e.key;
   const arrows = { ArrowDown: 'j', ArrowUp: 'k', ArrowLeft: 'h', ArrowRight: 'l' };
   if (k === ' ') k = '<Space>';
@@ -661,7 +661,7 @@ function tok(e) {
   return k;
 }
 
-function onKey(e) {
+function onKey(e: KeyboardEvent): void {
   const k = tok(e); if (!k) return;
   // modal
   if (S.modal) {
@@ -753,4 +753,9 @@ document.addEventListener('click', e => {
   render();
 });
 document.addEventListener('keydown', onKey);
+
+// Keep where you were across the dev server's auto-reload (per tab, best effort).
+const KEEP = ['screen', 'zone', 'side', 'main', 'mainItem', 'effort', 'filter', 'tag', 'wwi', 'cardSel', 'zoom', 'slot', 'choice', 'kept', 'panel', 'panelPos', 'homeSel'];
+try { const saved = JSON.parse(sessionStorage.getItem('dovetail-mock') || '{}'); for (const k of KEEP) if (k in saved) S[k] = saved[k]; } catch { /* no storage */ }
+addEventListener('beforeunload', () => { try { sessionStorage.setItem('dovetail-mock', JSON.stringify(Object.fromEntries(KEEP.map(k => [k, S[k]])))); } catch { /* no storage */ } });
 render();

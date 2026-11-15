@@ -5,7 +5,12 @@
 //   move = movement, act = act on the thing in focus, view = open or switch a view,
 //   mode = change mode. Scope bindings win over global ones.
 
-const SCOPES = {
+type Cat = 'move' | 'act' | 'view' | 'mode' | '';
+type Binding = [keys: string, action: string, label: string, cat: Cat];
+type LeaderLeaf = [action: string, label: string];
+interface LeaderGroup { name: string; keys: Record<string, LeaderLeaf> }
+
+const SCOPES: Record<string, { name: string; hint: string }> = {
   home: { name: 'Home', hint: 'project list' },
   inbox: { name: 'Inbox', hint: 'sidebar, top' },
   tree: { name: 'Efforts tree', hint: 'sidebar, bottom' },
@@ -18,7 +23,7 @@ const SCOPES = {
   insert: { name: 'Insert (chat bar)', hint: 'typing' },
 };
 
-const KEYMAP = {
+const KEYMAP: Record<string, Binding[]> = {
   global: [
     ['h', 'zoneLeft', 'zone ←', 'move'],
     ['l', 'zoneRight', 'zone →', 'move'],
@@ -158,7 +163,7 @@ const KEYMAP = {
 };
 
 // Space leader: mnemonic groups. A group is {name, keys}; a leaf is [action, label].
-const LEADER = {
+const LEADER: Record<string, LeaderLeaf | LeaderGroup> = {
   '<Space>': ['picker', 'picker: everything'],
   c: ['focusChat', 'chat (coordinator)'],
   n: ['focusInbox', 'inbox'],
@@ -191,7 +196,7 @@ const LEADER = {
 };
 
 // Lookup helpers shared by dispatch and overlay.
-function bindingsFor(scope) {
+function bindingsFor(scope: string): Binding[] {
   const local = KEYMAP[scope] || [];
   if (scope === 'insert') return local;
   if (scope === 'home') return local.concat(KEYMAP.global.filter(b => !['h', 'l', 'C-h', 'C-l', 'C-j', 'C-k', 'i', ']e', '[e'].includes(b[0])));
