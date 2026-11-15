@@ -11,6 +11,7 @@ interface DesignSlot { level: 'Global' | 'Component' | 'Content'; id: string; na
 const DESIGN: DesignSlot[] = [
   { level: 'Global', id: 'theme', name: 'Theme', options: [
     { id: 'graphite', label: 'Graphite · neutral dark grey, pastels' },
+    { id: 'mist', label: 'Mist · the TUI palette on dark grey' },
     { id: 'graphite-warm', label: 'Graphite warm · Claude-like grey' },
     { id: 'iris', label: 'Iris · deep purple, gold' },
     { id: 'iceberg', label: 'Iceberg · blue-grey, pastels' },
@@ -18,9 +19,9 @@ const DESIGN: DesignSlot[] = [
     { id: 'iris-hc', label: 'Iris high contrast' },
   ] },
   { level: 'Global', id: 'density', name: 'Busyness', options: [
-    { id: 'calm', label: 'Calm · fewer lines, chips and hints' },
-    { id: 'focus', label: 'Focus · calm, sidebar folds to a rail' },
-    { id: 'full', label: 'Full · as before' },
+    { id: 'panels', label: 'Panels · rounded framed regions, less inside' },
+    { id: 'focus', label: 'Panels, sidebar folds to a rail' },
+    { id: 'full', label: 'Full · the first version' },
   ] },
   { level: 'Global', id: 'fs', name: 'Text size', options: [
     { id: '16', label: '16 px' },

@@ -104,15 +104,11 @@ function limitText(n: number, over: boolean): string {
 }
 
 function header(inWs) {
-  const over = running() > MACHINE_LIMIT;
   return `<div class="header">
     <span class="brand">◆ Dovetail</span>
     ${inWs ? `<span class="crumb"><button data-a="home" class="dim">Projects</button><span class="sep">/</span>Shop</span>
-      <span class="chip repo">shop-api</span><span class="chip repo">shop-web</span>
-      <span class="chip">account · work</span>` : `<span class="crumb">Projects</span>`}
+      <span class="chip repo">shop-api</span><span class="chip repo">shop-web</span>` : `<span class="crumb">Projects</span>`}
     <span class="spacer"></span>
-    ${inWs ? `<span class="limit ${over ? 'over' : ''}" title="Running efforts on this machine against the soft limit">${limitText(running(), over)}</span>` : `<span class="limit">running efforts, all projects: 8 / ${MACHINE_LIMIT} ▲</span>`}
-    <span class="usage">opus-5-5 · 5h 34% · week 18%</span>
   </div>`;
 }
 
@@ -120,12 +116,22 @@ function statusBar() {
   const m = S.mode === 'insert' ? 'INSERT' : (S.leader ? 'SPACE' : 'NORMAL');
   const cls = S.mode === 'insert' ? 'insert' : (S.leader ? 'leader' : '');
   const scope = SCOPES[scopeNow()];
+  const over = running() > MACHINE_LIMIT;
+  const ws = S.screen === 'ws';
   return `<div class="status">
     <span class="mode ${cls}">${m}</span>
     <span class="pending">${esc(S.leader ? 'Space ' + S.leader.join(' ') : S.pending)}</span>
-    <span>${scope ? esc(scope.name) : ''}</span>
-    ${S.screen === 'ws' ? `<span class="st-next">next message → ${tagHtml(S.tag)}</span><span>${S.inbox.length} need you</span>` : ''}
-    <button class="chip" data-a="designToggle" title="Design variants for this mock (F2)">◐ design</button><span class="hint"><kbd>?</kbd> keyboard map · <kbd>Space</kbd> leader · <kbd>:</kbd> command</span>
+    <span class="st">${scope ? esc(scope.name) : ''}</span>
+    ${ws && S.inbox.length ? `<span class="st warn">⚠ ${S.inbox.length} need you</span>` : ''}
+    <span class="grow"></span>
+    <span class="st ${over ? 'warn' : ''}" title="Running efforts on this machine against the soft limit">${ws ? limitText(running(), over) : `8 / ${MACHINE_LIMIT} efforts running ▲`}</span>
+    ${ws ? `<span class="st" title="Claude profile of this project">work</span>
+    <span class="st" title="Coordinator context fill"><span class="ctx-bar"><i style="width:62%"></i></span>ctx 62%</span>
+    <span class="st" title="Usage limits of this profile">5h 34% · week 18%</span>
+    <span class="st"><b>Opus 5.5</b><span class="lvl">Medium</span></span>
+    <span class="st">Auto</span>
+    <span class="st" title="A turn is running"><span class="spin"></span></span>` : ''}
+    <button class="chip" data-a="designToggle" title="Design variants for this mock (F2)">◐ design</button><span class="hint"><kbd>?</kbd> keys</span>
   </div>`;
 }
 

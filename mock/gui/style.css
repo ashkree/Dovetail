@@ -323,36 +323,40 @@ html[data-theme="graphite"], html[data-theme="graphite-warm"] {
 }
 html[data-theme="graphite-warm"] { --bg: #262624; --panel: #1f1e1d; --panel-2: #2d2c29; --raise: #353430; --edge: #33322f; --edge-hi: #4a4843; --sel-solid: #34332f; --ink: #e1ded6; --dim: #9c998f; }
 
-/* Calm and Focus: fewer borders, chips and hints; structure from spacing and two surface tones. */
-html:not([data-density="full"]) .zone { border-right: 0; }
-html:not([data-density="full"]) .sidebar { background: var(--panel); }
-html:not([data-density="full"]) .sidebar .part + .part { border-top: 0; }
-html:not([data-density="full"]) .zone-title { border-bottom: 0; text-transform: none; letter-spacing: 0; font-size: .9em; padding: 10px 16px 4px; }
+/* Panels and Focus: every region is a rounded, framed panel on the page background,
+   with less inside it (no chips, hints or uppercase titles). Focus = accent frame. */
+html:not([data-density="full"]) .ws { gap: 8px; padding: 0 8px; }
+html:not([data-density="full"]) .zone { border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); }
+html:not([data-density="full"]) .zone.focus { border-color: var(--accent); }
+html:not([data-density="full"]) .sidebar { border: 0; background: none; gap: 8px; }
+html:not([data-density="full"]) .sidebar .part { border: 1px solid var(--edge); border-radius: 12px; background: var(--panel); overflow: hidden; }
+html:not([data-density="full"]) .sidebar .part + .part { border-top: 1px solid var(--edge); }
+html:not([data-density="full"]) .sidebar .part.focus { border-color: var(--accent); }
+html:not([data-density="full"]) .sidebar.rail { border: 1px solid var(--edge); background: var(--panel); }
+html:not([data-density="full"]) .zone-title { text-transform: none; letter-spacing: 0; font-size: .92em; font-weight: 600; padding: 9px 16px; border-bottom: 1px solid var(--edge); }
 html:not([data-density="full"]) .zone-title.focus, html:not([data-density="full"]) .focus > .zone-title { box-shadow: none; color: var(--ink); }
-html:not([data-density="full"]) .zone-title.focus::before, html:not([data-density="full"]) .focus > .zone-title::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+html:not([data-density="full"]) .row { margin: 1px 6px; padding: 5px 10px; border-radius: 7px; }
+html:not([data-density="full"]) .row.indent1 { padding-left: 26px; } html:not([data-density="full"]) .row.indent2 { padding-left: 44px; } html:not([data-density="full"]) .row.indent3 { padding-left: 62px; }
+html:not([data-density="full"]) .row.sel { box-shadow: none; background: var(--sel-solid); }
+html:not([data-density="full"]) .zone:not(.focus) .row.sel, html:not([data-density="full"]) .part:not(.focus) .row.sel { box-shadow: none; background: color-mix(in srgb, var(--sel-solid) 55%, transparent); }
 html:not([data-density="full"]) .header { border-bottom: 0; }
-html:not([data-density="full"]) .header .chip, html:not([data-density="full"]) .usage { display: none; }
-html:not([data-density="full"]) .header:hover .chip { display: inline-flex; }
 html:not([data-density="full"]) .status { border-top: 0; }
 html:not([data-density="full"]) .status .hint, html:not([data-density="full"]) .tag-hint { display: none; }
-html:not([data-density="full"]) .msg-h .rule { visibility: hidden; }
-html:not([data-density="full"]) .msg-h .time { opacity: 0; transition: opacity .15s; }
-html:not([data-density="full"]) .msg:hover .msg-h .time, html:not([data-density="full"]) .msg.cur .msg-h .time { opacity: 1; }
 html:not([data-density="full"]) .msg { margin-top: 22px; }
-html:not([data-density="full"]) .report { font-size: .88em; }
+html:not([data-density="full"]) .report { font-size: .9em; border-radius: 8px; }
 html:not([data-density="full"]) .report .tag { display: none; }
 html:not([data-density="full"]) .chatbar { border-top: 0; }
-html:not([data-density="full"]) .chatbar-inner { border-color: var(--edge); }
+html:not([data-density="full"]) .chatbar-inner { border-radius: 12px; border-color: var(--edge-hi); background: var(--panel-2); }
 html:not([data-density="full"]) .status-pill { border: 0; padding: 0; }
 html:not([data-density="full"]) .effort-row .kind, html:not([data-density="full"]) .effort-row:not(.current) .tm { display: none; }
 html:not([data-density="full"]) .card .refbtn { visibility: hidden; }
 html:not([data-density="full"]) .card:hover .refbtn, html:not([data-density="full"]) .card.sel .refbtn { visibility: visible; }
-html:not([data-density="full"]) .card { border-color: var(--edge); }
+html:not([data-density="full"]) .card { border-color: var(--edge); border-radius: 12px; }
 html:not([data-density="full"]) .framework { opacity: .7; }
-html:not([data-density="full"]) .main-body { background: var(--bg); }
+html:not([data-density="full"]) .incoming { border-top: 1px solid var(--edge); }
+html:not([data-density="full"]) .wwi { border-radius: 14px; }
+html:not([data-density="full"]) .preview, html:not([data-density="full"]) .vpanel { border-radius: 12px; }
 .tagdot { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: .85em; }
-.msg-h .tagdot .tagname { opacity: 0; transition: opacity .15s; }
-.msg:hover .msg-h .tagdot .tagname, .msg.cur .msg-h .tagdot .tagname { opacity: 1; }
 .filter-min { display: flex; gap: 10px; align-items: center; padding: 2px 16px 6px; font-size: .9em; }
 .filter-min button { color: var(--dim); display: inline-flex; gap: 6px; align-items: center; }
 .filter-min button:hover { color: var(--ink); }
@@ -361,6 +365,25 @@ html:not([data-density="full"]) .main-body { background: var(--bg); }
 .rail button:hover, .rail .current { background: var(--raise); }
 .rail .rail-inbox { width: 44px; margin-bottom: 8px; }
 .rail .dot { width: 11px; height: 11px; }
-html:not([data-density="full"]) .st-next { display: none; }
 html:not([data-density="full"]) .ws.nomain > .zone:first-child > .zone-title,
 html:not([data-density="full"]) .ws.nomain .filter-min { width: 100%; max-width: 864px; margin: 0 auto; padding-left: 22px; }
+
+/* Bottom status bar: every status lives here (Claude-desktop-like plain items). */
+.status { gap: 16px; padding: 6px 16px; }
+.status .grow { flex: 1; }
+.status .st { white-space: nowrap; color: var(--dim); }
+.status .st b { color: var(--ink); font-weight: 600; }
+.status .st.warn { color: var(--warn); }
+.status .st .lvl { color: var(--dim); margin-left: 4px; }
+.status .ctx-bar { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: var(--raise); vertical-align: 1px; margin-right: 6px; overflow: hidden; }
+.status .ctx-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.status .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--edge-hi); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; vertical-align: -1px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Mist: palette B of the colour research (the TUI's Mist), on Graphite's neutral greys. */
+html[data-theme="mist"] {
+  --bg: #19191b; --panel: #1f1f22; --panel-2: #242427; --raise: #2c2c30; --edge: #2a2a2e; --edge-hi: #3d3d43; --sel: #2c2c3080; --sel-solid: #2a2a30;
+  --ink: #d0d6f2; --dim: #9a9bb2; --bold: #b4befe; --italic: #f5c2e7; --code: #a6e3a1; --link: #89b4fa; --accent: #b4befe;
+  --bad: #f38ba8; --warn: #f9e2af; --good: #a6e3a1;
+  --tag-blue: #89b4fa; --tag-coral: #f38ba8; --tag-lilac: #cba6f7; --tag-mint: #94e2d5; --tag-gold: #f9e2af;
+}
+.report .from, .report > span:last-child { white-space: nowrap; }
