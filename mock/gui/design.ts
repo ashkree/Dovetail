@@ -29,6 +29,8 @@ const DESIGN: DesignSlot[] = [
   ] },
   { level: 'Global', id: 'font', name: 'Font', options: [
     { id: 'inter', label: 'Inter' },
+    { id: 'atkinson', label: 'Atkinson Hyperlegible' },
+    { id: 'atkinson-next', label: 'Atkinson Hyperlegible Next' },
     { id: 'plex', label: 'IBM Plex Sans' },
     { id: 'fira', label: 'Fira Sans' },
     { id: 'lato', label: 'Lato' },
@@ -40,9 +42,9 @@ const DESIGN: DesignSlot[] = [
     { id: '180', label: '1.8 · airy' },
   ] },
   { level: 'Global', id: 'fs', name: 'Text size', options: [
-    { id: '16', label: '16 px' },
-    { id: '17', label: '17 px' },
-    { id: '18', label: '18 px' },
+    { id: '14', label: '14 px · like Claude desktop' },
+    { id: '13', label: '13 px' },
+    { id: '15', label: '15 px' },
   ] },
   { level: 'Component', id: 'wwi', name: '“Where was I” card', options: [
     { id: 'chat', label: 'Bottom of the chat, above the input' },
