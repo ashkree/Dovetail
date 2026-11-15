@@ -90,16 +90,13 @@ function treeRows() {
 function render() {
   const app = $('#app');
   applyDesign();
-  const pop = S.screen === 'ws' && S.wwi && D('wwi') === 'popup' ? `<div class="wwi-pop">${wwiCard(effortById(S.effort))}</div>` : '';
+  const pop = S.screen === 'ws' && S.wwi ? `<div class="wwi-pop">${wwiCard(effortById(S.effort))}</div>` : '';
   app.innerHTML = (S.screen === 'home' ? renderHomeScreen() : renderWorkspace()) + pop + renderDesignPanel();
   renderOverlay(); renderWhichKey(); renderModal();
   afterRender();
 }
 
 function limitText(n: number, over: boolean): string {
-  const v = D('limit');
-  if (v === 'b') return `${n} running · limit ${MACHINE_LIMIT}`;
-  if (v === 'c') return `${over ? '▲ ' : ''}${n} of ${MACHINE_LIMIT} efforts running`;
   return `efforts ${n} / ${MACHINE_LIMIT}${over ? ' ▲' : ''}`;
 }
 
@@ -133,7 +130,7 @@ function statusBar() {
     <span class="st"><b>Opus 5.5</b><span class="lvl">Medium</span></span>
     <span class="st">Auto</span>
     <span class="st" title="A turn is running"><span class="spin"></span></span>` : ''}
-    <button class="chip" data-a="designToggle" title="Design variants for this mock (F2)">◐ design</button><span class="hint"><kbd>?</kbd> keys</span>
+    ${DESIGN.length ? '<button class="chip" data-a="designToggle" title="Design variants for this mock (F2)">◐ design</button>' : ''}<span class="hint"><kbd>?</kbd> keys</span>
   </div>`;
 }
 
@@ -183,7 +180,7 @@ function renderSidebar() {
       const done = r.e.criteria.filter(c => c.state === 'done').length;
       return `<div class="row effort-row ${sel} ${r.e.id === S.effort ? 'current' : ''}" data-a="selTree" data-i="${i}">
         <span class="dim">${S.folded[r.e.id] ? '▸' : '▾'}</span><span class="dot" style="background:${r.e.hue}"></span>
-        <span class="t">${esc(r.e.name)}</span><span class="kind" title="${r.e.kind}">${KINDS[r.e.kind].glyph}</span><span class="tm">☑ ${done}/${r.e.criteria.length}</span></div>${S.wwi && D('wwi') === 'tree' && r.e.id === S.effort ? `<div class="wwi-tree">${wwiCard(r.e, true)}</div>` : ''}`;
+        <span class="t">${esc(r.e.name)}</span><span class="kind" title="${r.e.kind}">${KINDS[r.e.kind].glyph}</span><span class="tm">☑ ${done}/${r.e.criteria.length}</span></div>`;
     }
     if (r.type === 'task') return `<div class="row indent1 ${sel}" data-a="selTree" data-i="${i}"><span class="t">${esc(r.t.title)}</span><span class="status-pill st-${r.t.status.split(' ')[0]}">${r.t.status}</span></div>`;
     if (r.type === 'agent') return `<div class="row indent2 ${sel}" data-a="selTree" data-i="${i}"><span class="${r.a.state === 'needs' ? 'needs' : 'agent-g'}">${r.a.state === 'needs' ? '⚠' : '◐'}</span><span>◆ ${esc(r.a.name)}</span><span class="branch t">${esc(r.a.branch)}</span></div>`;
@@ -212,7 +209,6 @@ function renderMain() {
   else if (S.main === 'item') body = renderItem();
   return `<div class="zone ${S.zone === 'main' ? 'focus' : ''}">
     <div class="zone-title" data-a="zone" data-z="main"><span>${tabs.find(x => x[0] === S.main)[1]}</span><span class="spacer"></span><button class="dim" data-a="closeMain" title="Close the view; the chat takes the space">✕ close <kbd>Space v x</kbd></button></div>
-    ${S.wwi && D('wwi') === 'main' ? `<div class="wwi-main">${wwiCard(effortById(S.effort), true)}</div>` : ''}
     <div class="main-body">${body}</div></div>`;
 }
 
@@ -300,17 +296,14 @@ function renderChat() {
       return `<div class="msg ${cur}" data-vi="${vi}"><div class="report" data-a="toggleReport" data-i="${i}"><span>${open ? '▾' : '▸'}</span>${tagHtml(m.effort)}<span class="from">${esc(m.from)}</span><span class="t">${esc(m.text)}</span><span class="spacer"></span><span>${m.time}</span></div>
         ${open ? `<div class="report-open">${md('**' + m.from + ' reports:** ' + m.text + '.\n\nFull report: `Enter` on its card, or `Space v r`.')}</div>` : ''}</div>`;
     }
-    return `<div class="msg ${m.who === 'You' ? 'by-you' : 'by-agent'} ${cur}" data-vi="${vi}"><div class="msg-h"><span class="who ${m.who === 'You' ? 'you' : ''}">${esc(m.who)}</span>${S.filter === 'all' ? (D('density') !== 'full' ? tagDot(m.effort) : tagHtml(m.effort)) : ''}<span class="rule"></span><span class="time">${m.time}</span></div><div class="msg-body">${md(m.text)}</div></div>`;
+    return `<div class="msg ${m.who === 'You' ? 'by-you' : 'by-agent'} ${cur}" data-vi="${vi}"><div class="msg-h"><span class="who ${m.who === 'You' ? 'you' : ''}">${esc(m.who)}</span>${S.filter === 'all' ? tagDot(m.effort) : ''}<span class="rule"></span><span class="time">${m.time}</span></div><div class="msg-body">${md(m.text)}</div></div>`;
   }).join('');
-  const wwi = S.wwi && (D('wwi') === 'chat' || (D('wwi') === 'main' && !S.main)) ? wwiCard(e) : '';
-  const filters = [['all', '<b style="color:inherit">All</b>']].concat(EFFORTS.map(x => [x.id, `<span class="dot" style="background:${x.hue}"></span>${esc(x.name)}`]))
-    .map(([id, l]) => `<button class="fbtn ${S.filter === id ? 'on' : ''}" data-a="setFilter" data-f="${id}">${l}</button>`).join('');
   return `<div class="zone ${S.zone === 'chat' ? 'focus' : ''}">
     <div class="zone-title" data-a="zone" data-z="chat">Coordinator · Shop</div>
-    ${D('density') !== 'full' ? `<div class="filter-min"><button data-a="pickFilter">${S.filter === 'all' ? 'All efforts' : `<span class="dot" style="background:${effortById(S.filter).hue}"></span> ${esc(effortById(S.filter).name)}`} ▾</button><span class="dim">f</span></div>` : `<div class="filter-row">${filters}</div>`}
-    <div class="chat-scroll" id="chatscroll">${msgs}${wwi}</div>
+    <div class="filter-min"><button data-a="pickFilter">${S.filter === 'all' ? 'All efforts' : `<span class="dot" style="background:${effortById(S.filter).hue}"></span> ${esc(effortById(S.filter).name)}`} ▾</button><span class="dim">f</span></div>
+    <div class="chat-scroll" id="chatscroll">${msgs}</div>
     <div class="chatbar ${S.mode === 'insert' ? 'active' : ''}"><div class="chatbar-inner">
-      <div class="to">${D('density') !== 'full' ? tagDot(S.tag) : `to coordinator, tagged ${tagHtml(S.tag)}`} <span class="spacer"></span><span class="tag-hint"><kbd>Ctrl-t</kbd> change tag</span></div>
+      <div class="to">${tagDot(S.tag)} <span class="spacer"></span><span class="tag-hint"><kbd>Ctrl-t</kbd> change tag</span></div>
       <textarea id="input" rows="2" placeholder="${S.mode === 'insert' ? 'Type a message · Enter sends · Alt-Enter new line' : 'i to type'}">${esc(S.draft)}</textarea></div></div>
   </div>`;
 }
@@ -538,7 +531,7 @@ function act(a: string, arg?: unknown): void {
     case 'normal': S.mode = 'normal'; break;
     case 'leaveBar': S.mode = 'normal'; S.zone = 'chat'; break;
     case 'escape':
-      if (S.wwi && D('wwi') !== 'chat') { S.wwi = false; break; }
+      if (S.wwi) { S.wwi = false; break; }
       if (S.zone === 'main' && S.main === 'item') { S.main = null; S.zone = 'inbox'; }
       else if (S.zone === 'main' && S.main === 'reading') { S.main = 'canvas'; }
       else if (S.wwi && S.zone === 'chat') S.wwi = false;
@@ -812,5 +805,7 @@ document.addEventListener('keydown', onKey);
 // Keep where you were across the dev server's auto-reload (per tab, best effort).
 const KEEP = ['screen', 'zone', 'side', 'main', 'mainItem', 'effort', 'filter', 'tag', 'wwi', 'cardSel', 'zoom', 'slot', 'choice', 'kept', 'panel', 'panelPos', 'homeSel', 'sideW', 'sideCollapsed'];
 try { const saved = JSON.parse(sessionStorage.getItem('dovetail-mock') || '{}'); for (const k of KEEP) if (k in saved) S[k] = saved[k]; } catch { /* no storage */ }
+// Screenshot hook: #screen=ws&main=canvas&zone=main sets state from the URL (values are JSON or plain strings).
+if (location.hash.length > 1) for (const [k, v] of new URLSearchParams(location.hash.slice(1))) { try { S[k] = JSON.parse(v); } catch { S[k] = v; } }
 addEventListener('beforeunload', () => { try { sessionStorage.setItem('dovetail-mock', JSON.stringify(Object.fromEntries(KEEP.map(k => [k, S[k]])))); } catch { /* no storage */ } });
 render();

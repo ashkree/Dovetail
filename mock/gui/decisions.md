@@ -15,3 +15,5 @@ Running list of what the user settled while iterating on the mock (2026-11-15). 
 - Clickable view tabs (Chat, Canvas, Viewer, Reading) are always visible.
 - Effort names are lower kebab case; typed names are converted automatically.
 - Mock iteration loop: variants in the design panel, the user keeps a combination, the rest is deleted.
+- Kept combination (2026-11-15): Mist on dark grey, highlights 70 %, framed panels, 4 px corners, Atkinson Hyperlegible 14 px, line height 1.5, "where was I" as a pop-up, underlined view tabs, own speaker colours with a bar, chat 440 px, "efforts 5 / 4 ▲". Repos show with a folder icon.
+- Folded into `docs/gui-layout-and-keys.md`. The keymap there is still a proposal awaiting its own review.

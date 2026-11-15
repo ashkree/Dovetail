@@ -8,76 +8,8 @@
 interface DesignOption { id: string; label: string }
 interface DesignSlot { level: 'Global' | 'Component' | 'Content'; id: string; name: string; options: DesignOption[] }
 
-const DESIGN: DesignSlot[] = [
-  { level: 'Global', id: 'theme', name: 'Theme', options: [
-    { id: 'graphite', label: 'Graphite · neutral dark grey, pastels' },
-    { id: 'mist', label: 'Mist · the TUI palette on dark grey' },
-    { id: 'graphite-warm', label: 'Graphite warm · Claude-like grey' },
-    { id: 'iris', label: 'Iris · deep purple, gold' },
-    { id: 'iceberg', label: 'Iceberg · blue-grey, pastels' },
-    { id: 'iceberg-orig', label: 'Iceberg, original greys (#6b7089)' },
-    { id: 'iris-hc', label: 'Iris high contrast' },
-  ] },
-  { level: 'Global', id: 'hl', name: 'Highlight colours in text', options: [
-    { id: 'soft', label: 'Softer · 70 % colour, 30 % text colour' },
-    { id: 'faint', label: 'Faint · half and half' },
-    { id: 'full', label: 'Full · as before' },
-  ] },
-  { level: 'Global', id: 'density', name: 'Busyness', options: [
-    { id: 'panels', label: 'Panels · rounded framed regions, less inside' },
-    { id: 'full', label: 'Full · the first version' },
-  ] },
-  { level: 'Global', id: 'corners', name: 'Corners', options: [
-    { id: '6', label: '6 px · slightly soft' },
-    { id: '4', label: '4 px · nearly square' },
-    { id: '9', label: '9 px · soft' },
-  ] },
-  { level: 'Global', id: 'font', name: 'Font', options: [
-    { id: 'inter', label: 'Inter' },
-    { id: 'atkinson', label: 'Atkinson Hyperlegible' },
-    { id: 'atkinson-next', label: 'Atkinson Hyperlegible Next' },
-    { id: 'plex', label: 'IBM Plex Sans' },
-    { id: 'fira', label: 'Fira Sans' },
-    { id: 'lato', label: 'Lato' },
-    { id: 'noto', label: 'Noto Sans' },
-  ] },
-  { level: 'Global', id: 'lh', name: 'Line spacing', options: [
-    { id: '165', label: '1.65 · as now' },
-    { id: '150', label: '1.5 · tighter' },
-    { id: '180', label: '1.8 · airy' },
-  ] },
-  { level: 'Global', id: 'fs', name: 'Text size', options: [
-    { id: '14', label: '14 px · like Claude desktop' },
-    { id: '13', label: '13 px' },
-    { id: '15', label: '15 px' },
-  ] },
-  { level: 'Component', id: 'wwi', name: '“Where was I” card', options: [
-    { id: 'chat', label: 'Bottom of the chat, above the input' },
-    { id: 'main', label: 'Banner on top of the main view' },
-    { id: 'popup', label: 'Pop-up in the middle' },
-    { id: 'tree', label: 'Under the effort in the tree' },
-  ] },
-  { level: 'Component', id: 'tabs', name: 'View tabs', options: [
-    { id: 'underline', label: 'Plain words, line under the open one' },
-    { id: 'text', label: 'Plain words, open one bright and bold' },
-    { id: 'soft', label: 'Open one on a soft filled shape' },
-  ] },
-  { level: 'Component', id: 'speakers', name: 'You vs coordinator', options: [
-    { id: 'color', label: 'Own colours: you blue, coordinator warm' },
-    { id: 'bar', label: 'Own colours and a bar beside each message' },
-    { id: 'bubble', label: 'Own colours, your messages in a tinted box' },
-  ] },
-  { level: 'Component', id: 'chatw', name: 'Chat width (view open)', options: [
-    { id: '440', label: '440 px' },
-    { id: '360', label: '360 px' },
-    { id: '520', label: '520 px' },
-  ] },
-  { level: 'Content', id: 'limit', name: 'Running-efforts count', options: [
-    { id: 'a', label: 'efforts 5 / 4 ▲' },
-    { id: 'b', label: '5 running · limit 4' },
-    { id: 'c', label: '▲ 5 of 4 efforts running' },
-  ] },
-];
+// All slots settled on 2026-11-15 (see decisions.md); add a slot here to iterate again.
+const DESIGN: DesignSlot[] = [];
 
 const DS: { choice: Record<string, string>; open: boolean; pos: { x: number; y: number } | null } = { choice: {}, open: true, pos: null };
 try { Object.assign(DS, JSON.parse(localStorage.getItem('dovetail-design') || '{}')); } catch { /* no storage */ }
