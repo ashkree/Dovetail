@@ -15,12 +15,7 @@ Why: text in a terminal is harder to read than in a GUI, and density is the main
 
 **Spike `gui-text` (gates the GUI crate):** render one real, long coordinator transcript (markdown, code blocks, tool summaries) in egui at the mockup's typography (Inter 15 px, line height 1.65, 720 px measure). Pass: text quality judged by the user as close to the HTML mockup, smooth scroll of 2 000 turns, RSS under ~120 MB, no repaint while idle. Fail: compare one alternative toolkit on the same transcript before deciding.
 
-**Open, for the plan:**
-
-- Where the core lives, and whether the TUI attaches to it or can also host it alone.
-- The order the GUI buffers land in, and the self-hosting point for the GUI (the point after which Dovetail is built from the GUI).
-- What the TUI drops and when: frozen code stays until the GUI covers it, then is removed.
-- Fate of the kitty map canvas (frozen by ADR 0019): kept, or removed once maps live in the GUI.
+**Decided for the plan (2026-11-15):** `dovetail serve` hosts the core in the background and both clients attach, so closing a window leaves sessions running (`:quit-all` ends them). `dovetail` opens the GUI, or the TUI without a display; `dovetail tui` always opens the TUI. The kitty canvas and MAP mode stay frozen. Buffer order and the GUI self-hosting point are in `docs/implementation-plan.md`, "GUI track" (G1–G7).
 
 Mockup: the "Dovetail GUI concept" canvas (Layout B, GUI-native; dark/light and comfortable/compact tweaks).
 

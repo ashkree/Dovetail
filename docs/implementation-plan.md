@@ -2,7 +2,7 @@
 
 **Context.** The design phase is finished and the repo holds only a placeholder binary. This plan sets the order of work for v1: spikes first, then a TUI usable on a mock core, then the shortest route to building Dovetail inside Dovetail.
 
-**Status:** approved; M1–M4 done; waves 1 and 2 (M5–M9) in progress (2026-11-05). Sources: `AGENTS.md`, `docs/design-digest.md`, `docs/design.md`, `docs/ui-session-brief.md`, `docs/screens/`, `README.md`. Checked against this machine on 2026-11-01: Claude Code 2.1.316, cgroup v2 with the `memory` controller delegated to the user session, 30 GB RAM, `claude.ai` login on a Pro plan.
+**Status:** approved; M1–M4 done; waves 1 and 2 (M5–M9) in progress (2026-11-05). GUI track G1–G7 added 2026-11-15 (ADR 0020). Sources: `AGENTS.md`, `docs/design-digest.md`, `docs/design.md`, `docs/ui-session-brief.md`, `docs/screens/`, `README.md`. Checked against this machine on 2026-11-01: Claude Code 2.1.316, cgroup v2 with the `memory` controller delegated to the user session, 30 GB RAM, `claude.ai` login on a Pro plan.
 
 ## At a glance
 
@@ -14,6 +14,7 @@
 | Live sessions | M6–M9 | Coordinator chat, inbox approvals, slices in worktrees, `ask_user`, `report_status`, `create_task` |
 | **Self-hosting point** | **M10** | Restart survival, a stable install and a rehearsal. The rest of the build runs inside Dovetail |
 | Remaining v1 | M11–M16 | Subagents, to-dos, board, worktree view, caps, context fill, take-over, maps, hardening |
+| GUI track (ADR 0020) | G1–G7 | `dovetail serve` with GUI and TUI attaching; an egui GUI on Layout B; **GUI self-hosting point after G4**; TUI cut to a remote kit for SSH |
 
 **Changes from the suggested order in `AGENTS.md`, with reasons**
 
@@ -163,10 +164,12 @@ crates/
 ├── dovetail-mock/     # MockCore: same API, seeded, time-free in tests
 ├── dovetail-tui/      # buffers, regions, keymap, theme, render; depends only on dovetail-api
 ├── dovetail-maps/     # draw_map input, validation and limits, MapRenderer (added at M15); re-exports dovetail_api::map
-└── dovetail/          # binary: TUI (default), add, mcp, hook
+├── dovetail-ui-shared/ # Action, Mode, keymap table, `:` commands, theme palette; shared by both clients (G1)
+├── dovetail-gui/      # egui client: Layout B, buffers, markdown, maps drawn from the model (G2–G6)
+└── dovetail/          # binary: GUI (default; TUI without a display), tui, serve, add, mcp, hook
 ```
 
-Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, `api ← maps ← core` (the core validates and stores `draw_map` input; the mock only tests against maps), and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary. The plain map model sits in `dovetail_api::map` for the same reason: map content can travel in the snapshot while merman stays in `dovetail-maps`, out of the TUI.
+Dependency direction: `api ← driver ← core`, `api ← mock`, `api ← tui`, `api ← maps ← core` (the core validates and stores `draw_map` input; the mock only tests against maps), and `dovetail` wires them together. `dovetail-tui` depends only on `dovetail-api`, so Cargo itself stops the UI reaching past the boundary. From G1, both `dovetail-tui` and `dovetail-gui` depend on `dovetail-api` and `dovetail-ui-shared` only. The plain map model sits in `dovetail_api::map` for the same reason: map content can travel in the snapshot while merman stays in `dovetail-maps`, out of the TUI.
 
 Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, since nested packages otherwise fail, and add `spikes/*/target` to `.gitignore`.
 
@@ -192,6 +195,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `png` | maps, dev only | default | Tests decode the rendered PNG to check the selection ring is drawn (merman already pulls it in) |
 | `resvg` `=0.47.0` | maps | `default-features = false`, `text`, `system-fonts` | M15 (f): rasterises the swimlane map's SVG, which Dovetail draws itself (23e). No new crates: merman's PNG export already pulls in this version |
 | `rustix` 1 | core | `std`, `process` only | `waitpid` with `WUNTRACED` and `SIGCONT`, so an editor or native `claude` that stops itself (Ctrl-Z) is continued instead of hanging the terminal (task #32); no unsafe of ours, and already in the tree through `crossterm` and `tempfile` |
+| `eframe` `=0.37.0` | gui | `default-features = false`, `glow`, `wayland`, `x11`, `clipboard` | ADR 0020: the GUI client. glow, not wgpu: 216 MB against 268 MB RSS in the `gui-text` spike. Pinned because 0.37 changed `App::update` to `App::ui` |
 | `signal-hook` | tui, binary | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; the binary's `dovetail upgrade` sets a flag on SIGINT/SIGTERM so a Ctrl-C stops and reaps cargo (ADR 0014); no unsafe of ours |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
 
@@ -784,6 +788,87 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 
 **Open follow-ups:** task 3 builds ADR 0014 (upgrade from inside the app: `:upgrade` and `dovetail upgrade`, on main).
 
+### GUI track (ADR 0020, decided 2026-11-15)
+
+The GUI becomes the daily client and the TUI a remote kit for SSH. Spike `gui-text` passed (`docs/spikes/gui-text.md`): egui 0.37 with the glow renderer, about 220 MB RSS accepted. The user's decisions of 2026-11-15:
+
+- **Core host: a background service.** `dovetail serve` hosts one project's core with no UI. The first client to open a project starts it in the background; the GUI and the TUI both attach over the project's socket. Closing a window detaches and leaves the sessions running. `:quit-all` (`Command::Quit { end_sessions: true }`) ends the sessions and stops the service. This replaces B23 (sessions end with the app).
+- **Command:** `dovetail` with no subcommand opens the GUI. Without a display (no `WAYLAND_DISPLAY` or `DISPLAY`, e.g. over SSH) it opens the TUI. `dovetail tui` always opens the TUI. `dovetail --mock` works for both.
+- **Kitty maps:** the kitty canvas and MAP mode stay in the TUI, **frozen** as built in M15 (f): kept compiling, no new work. The GUI draws maps itself from the map model.
+
+**Rules for the track**
+
+- `dovetail-gui` depends only on `dovetail-api` and `dovetail-ui-shared`, as `dovetail-tui` does. Cargo enforces the boundary.
+- Keys resolve to `Action`s through the one keymap table in `dovetail-ui-shared`. The GUI binds no key outside it. Mouse is never the only way to do something.
+- The GUI repaints only on input or on a new message from the core (no idle frames). Streaming is coalesced to ≤ ~30 fps, as in the TUI.
+- **From G1 on, TUI buffers outside the remote kit are frozen:** they keep compiling and passing tests, but get no new features. The remote kit is chat, conversation, inbox, task tree, switcher, the command line and the map outline. G7 removes the rest once the GUI covers them, except the frozen kitty canvas.
+- Until the GUI self-hosting point (after G4), the work runs inside the TUI as today.
+
+#### G1. Shared UI crate, attach and `dovetail serve`
+- **Scope:** new crate `dovetail-ui-shared`, holding `Action`, `Mode`, the keymap table with sequences and timeouts, `:` command parsing, and the theme palette as plain RGB tokens. It has its own `Key { code, mods }` type, and the TUI maps crossterm events onto it. `dovetail-tui` re-exports what it moved, so its buffers change only their imports. On the socket: an `Attach` request turns the connection into a stream. It carries `ServerMsg` (Hello, Snapshot, numbered events) out and `Command`s in as NDJSON, and each connection recovers from a `Gap` with `Resync` on its own. On the client side, `dovetail_api::attach::connect(path) -> CoreLink` runs a reader and a writer thread, so the UI code still sees the same channel pair. `dovetail serve` hosts the core. Clients start it detached (own process group, logs to the usual file) when no socket answers, and wait for `Hello`. `dovetail tui` attaches. A client's quit detaches it; `:quit-all` stops the service. `:upgrade` stops the service the way it stops the app today (ADR 0014).
+- **Crates/files:** `crates/dovetail-ui-shared/` (from `dovetail-tui/src/{action,keymap,mode,command}.rs` and the palette in `theme.rs`), `dovetail-api/src/{socket,protocol}.rs`, new `dovetail-api/src/attach.rs`, `dovetail-core/src/socket.rs`, `crates/dovetail/src/{main,tui}.rs`, new `crates/dovetail/src/serve.rs`, `scripts/bootstrap.sh` (nothing new to install; check it still passes).
+- **Slices:** (a) shared crate and keymap move; (b) attach on the socket and the client adapter; (c) `serve`, the launcher and `:quit-all`, after (b).
+- **Done when:**
+  - [ ] The TUI attached to `dovetail serve` does everything it did in-process (live check: chat, a permission, a slice)
+  - [ ] Two TUIs attached at once show the same state; answering an inbox item in one clears it in the other
+  - [ ] Closing the TUI leaves sessions running; reopening attaches and shows them
+  - [ ] `:quit-all` ends the sessions and the service; no process is left
+  - [ ] `dovetail-tui` and `dovetail-ui-shared` have no dependency on tokio or core
+- **Tests:** keymap tests move with the table; NDJSON round trip of every `ServerMsg` and `Command`; attach, gap and resync per connection; two clients on one core; service start when no socket answers.
+
+#### G2. GUI shell on the mock
+- **Scope:** new crate `dovetail-gui` on `eframe` (`=0.37.0`, glow). A window with Layout B: conversation full height on the left, inbox over tree on the right (ADR 0006, ADR 0008), a header (project, search box, totals) and the status bar with the mode badge and key hints. Region focus with `h`/`l` and `Ctrl-j`/`Ctrl-k`. Modes and the keymap through `dovetail-ui-shared`. Mist theme, dark and light. Fonts as in the spike: Inter if installed, else Noto Sans, plus a monospace font, with sizes and line heights in one style table. Task tree with its groups, P-levels, slices, subagents, to-dos and progress. Inbox as cards with their actions (`y`/`a`/`d`/`D`/`r`/`x`, also as buttons) for the top item and one-line rows for the rest, as in the "Dovetail GUI concept" canvas. `dovetail --mock` opens it on `MockCore`.
+- **Crates/files:** `crates/dovetail-gui/` (`app.rs`, `region.rs`, `style.rs`, `buffers/{tree,inbox}.rs`, `status.rs`), `crates/dovetail/src/{main,gui}.rs`.
+- **Slices:** (a) window, regions, focus, header, status bar and style; (b) task tree, after (a); (c) inbox, after (a).
+- **Done when:**
+  - [ ] `dovetail --mock` opens the GUI with the mock's tree and inbox, driven entirely by keys
+  - [ ] Answering a permission from the inbox works with keys and with the mouse
+  - [ ] The frame counter stays still while idle (debug overlay, `DOVETAIL_GUI_STATS=1`)
+  - [ ] Looks like the concept canvas (yours to judge)
+- **Tests:** tree and inbox view models built from snapshots (pure functions, no window); every key in the shared table resolves the same way the TUI's does.
+
+#### G3. Conversation and chat bar
+- **Scope:** markdown from `pulldown-cmark` laid out into egui `LayoutJob`s with per-span line height (spike finding): paragraphs, emphasis, inline code, code blocks, lists, quotes, tables and links. A reading column of 720 px. Message headers, your turns on a panel, older turns dimmed, folded tool rows (`zo`/`zc`), `]]`/`[[` between turns. A virtual list that measures turn heights and keeps the scroll anchored while heights settle; scrolling tuned until you call it smooth (the spike's open point). Streaming coalesced, with older history loaded through `LoadConversation`. A chat bar with Shift-Enter for newlines, `/` and `@` completion, pasted and dropped images (through the core, as today), and `Ctrl-k`/`Ctrl-j` between bar and conversation.
+- **Crates/files:** `dovetail-gui/src/{markdown,virtual_list}.rs`, `buffers/conversation.rs`, `chat_bar.rs`.
+- **Slices:** (a) markdown layout and the virtual list; (b) chat bar and completion; (c) scroll tuning and turn navigation, after (a).
+- **Done when:**
+  - [ ] A 2 000-turn conversation scrolls smoothly with the wheel and `j`/`k`/`Space` (yours to judge)
+  - [ ] A streaming reply keeps the view anchored and paints at ≤ 30 fps
+  - [ ] Every markdown construct the TUI renders also renders in the GUI
+- **Tests:** markdown → layout snapshots (as text descriptions of the jobs); virtual-list anchoring under height changes; chat bar editing.
+
+#### G4. Picker, switcher, command line and details — **GUI SELF-HOSTING POINT**
+- **Scope:** the fuzzy picker and the session switcher (`nucleo`); the `:` command line with completion; quick capture; the model selector; help; the task detail and the inbox detail; project switching. With G1 to G3 that is the full daily loop. After this milestone the build runs from the GUI attached to the live service, and the TUI is kept for SSH.
+- **Crates/files:** `dovetail-gui/src/{picker,switcher,command_line,capture,help,model_select}.rs`, `buffers/{task_detail,inbox_detail}.rs`.
+- **Slices:** (a) picker and switcher; (b) command line, quick capture, help and model selector; (c) task and inbox details.
+- **Done when:**
+  - [ ] You run a full day of Dovetail work from the GUI against the live service
+  - [ ] Over SSH, `dovetail` opens the TUI attached to the same running service
+  - [ ] Every `:` command the TUI knows either works in the GUI or is listed as G5–G6 work
+- **Tests:** picker and switcher ordering on mock snapshots; command parsing shared with the TUI.
+
+#### G5. Side panel and reading mode
+- **Scope:** the side panel with side chats and tangents (`<leader>?`, `<leader>sq`, `T`), the tangents list and its triage, and reading mode (ADR 0018): library, reader with citations and `Ctrl-o`, Ask, figures as real images, project browsing. Focus mode.
+- **Slices:** (a) side panel, side chats and tangents; (b) reading mode library and reader; (c) Ask and figures, after (b).
+- **Done when:** the R5 and R6 validation lists pass in the GUI.
+
+#### G6. Board, worktrees, activity and maps
+- **Scope:** the board, the worktree view, the activity feed, take-over and the editor (both need a terminal, see §7 C), the context-fill display, and maps drawn by egui from the map model: structure and swimlane types, node selection, flows, smooth pan and zoom, and hit-testing on drawn nodes. Map stage 2 work goes here (ADR 0019). Mouse editing of maps is out of scope until it is planned.
+- **Slices:** (a) board and worktree view; (b) activity, take-over and editor; (c) map canvas; (d) map outline, after (c).
+- **Done when:**
+  - [ ] Every buffer the TUI has exists in the GUI
+  - [ ] A real agent's maps of both types render and pan and zoom smoothly
+- **Tests:** map hit-testing and layout on the model; board view model.
+
+#### G7. TUI cut to the remote kit
+- **Scope:** remove the TUI buffers outside the remote kit (board, worktree view, activity, reading mode, side panel, tangents list) after a week of daily GUI use. The kitty canvas and MAP mode stay, frozen. The TUI's docs and help list what it still does.
+- **Done when:**
+  - [ ] A week of GUI use with nothing reached for in the TUI except over SSH
+  - [ ] The remote kit works over SSH against a live service: chat, inbox, tree, switcher, command line
+  - [ ] `scripts/check.sh` passes with the removed code gone
+
+**Waves:** G1 is one wave (three tracks). G2 and G3 are one wave, with the shell first. G4 is one wave and ends at the GUI self-hosting point. G5 and G6 are one wave. G7 comes last. Each wave closes with `code-review` and `retro`, as before. M15's open boxes and M16 stay open: M16's "full working week" is now done in the GUI, after G4.
+
 ---
 
 ## 7. Where the docs disagree or say nothing
@@ -840,7 +925,7 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | B20 | **`<leader>sm` on a subagent** | Applies to the parent session, with a status note |
 | B21 | **`A` with no suggestions** | Disabled, with a status note |
 | B22 | **`r` on a finished turn** | Sends a normal message to that agent |
-| B23 | **Quit with live sessions** | Sessions end with the app (no daemon in v1). `:q` asks if a turn is running; everything resumes on open |
+| B23 | **Quit with live sessions** | Sessions end with the app (no daemon in v1). `:q` asks if a turn is running; everything resumes on open. **Replaced at G1 (2026-11-15, ADR 0020):** `dovetail serve` keeps sessions running when clients close; `:quit-all` ends them |
 | B24 | **Project switch** | Stops the current project's sessions after asking |
 | B25 | **Starting outside a registered repo** | ~~Offers to register; outside any git repo, opens the last project~~ Superseded by [ADR 0005](adr/0005-explicit-projects-any-folder.md): registered only on request (`:project add` or the coordinator's `add_project`), and any folder can be a project |
 | B26 | **Take-over terminal** | Same terminal, TUI suspended, as the mock shows |
@@ -850,6 +935,13 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | B30 | **Socket path** | `$XDG_RUNTIME_DIR/dovetail/<project-id>.sock`, mode 0600 |
 
 ---
+
+### C. GUI track (ADR 0020)
+
+| # | Question | Proposed default |
+| --- | --- | --- |
+| C1 | **Display-bound work in a service:** the clipboard image paste (fix #13) and opening links (`external.rs`) run in the core, which may have no display | Move both to the client that asked: the client reads the clipboard and sends bytes, and opens links itself. Decide in G1 (b) |
+| C2 **Your call** | **Take-over and the editor in the GUI:** both lend a terminal today | Open `$TERMINAL` (else `kitty`, else `xterm`) running the native `claude` or `$EDITOR`, and show "taken over" in the GUI until it exits. Decide before G6 (b) |
 
 ## 8. Risks
 
@@ -864,6 +956,9 @@ Fixes from the first days of building Dovetail inside Dovetail, one slice and PR
 | R7 | **Untested auto-mode behaviour:** classifier denials and escalations | Handled generically via the inbox; fixtures added when first seen |
 | R8 | **Upgrades interrupt running turns**, since there's no daemon | Upgrade when idle; M10's restart recovery covers the rest |
 | R9 | **merman is pre-1.0** and may add real weight | S5 measures it; `dovetail-maps` isolates it |
+| R10 | **egui churns its API** between minor versions (0.37 renamed `App::update` and `TopBottomPanel`) | Pin `=0.37.0`; upgrade deliberately, one PR, never mid-wave |
+| R11 | **A forgotten service** keeps sessions and memory alive after every window closes | The status bar and `dovetail` (on open) show sessions still running; `:quit-all` ends them; cgroup caps still apply |
+| R12 | **A service started over SSH has no display**, so core-side clipboard and browser opening fail for a GUI that attaches later | The core reports `CommandFailed` with the reason; G1 decides whether these move to the client (question C1) |
 
 ---
 
