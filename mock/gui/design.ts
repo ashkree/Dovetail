@@ -39,10 +39,6 @@ const DESIGN: DesignSlot[] = [
     { id: '360', label: '360 px' },
     { id: '520', label: '520 px' },
   ] },
-  { level: 'Component', id: 'inbox', name: 'Inbox height', options: [
-    { id: 'fixed', label: 'Fixed, 38 % of the sidebar' },
-    { id: 'fit', label: 'Fits its items (max 40 %)' },
-  ] },
   { level: 'Content', id: 'limit', name: 'Running-efforts count', options: [
     { id: 'a', label: 'efforts 5 / 4 ▲' },
     { id: 'b', label: '5 running · limit 4' },

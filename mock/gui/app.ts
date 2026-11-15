@@ -16,7 +16,7 @@ const S: any = {
   cards: CARDS.map(c => ({ ...c })), edges: EDGES.slice(), incoming: INCOMING.slice(),
   cardSel: 'Q3', canvasPart: 'cards', incSel: 0, zoom: 0.85,
   slot: 2, choice: [0, 0, 0, 0, 0], kept: [0, 0, 0, 0, 0], panel: 'docked', panelPos: { x: 0, y: 0 },
-  readHead: 0,
+  readHead: 0, sideW: 330,
   overlay: false, ovScope: 'chat', ovLayer: 'plain', ovLeader: [],
   modal: null,
 };
@@ -161,7 +161,7 @@ function renderHomeScreen() {
 
 function renderWorkspace() {
   const nomain = !S.main;
-  return header(true) + `<div class="ws ${nomain ? 'nomain' : ''} ${D('density') === 'focus' && S.zone !== 'inbox' && S.zone !== 'tree' ? 'railed' : ''}">
+  return header(true) + `<div class="ws ${nomain ? 'nomain' : ''} ${D('density') === 'focus' && S.zone !== 'inbox' && S.zone !== 'tree' ? 'railed"' : `" style="--side-w:${S.sideW}px"`}>
     ${renderChat()}
     ${nomain ? '' : renderMain()}
     ${renderSidebar()}
@@ -194,7 +194,7 @@ function renderSidebar() {
       ${EFFORTS.map(e => `<button class="rail-effort ${e.id === S.effort ? 'current' : ''}" data-a="railEffort" data-id="${e.id}" title="${esc(e.name)}"><span class="dot" style="background:${e.hue}"></span></button>`).join('')}
       <span class="spacer"></span><button class="dim" data-a="focusTree" title="Efforts tree (Space t)">☰</button></div>`;
   }
-  return `<div class="zone sidebar">
+  return `<div class="zone sidebar"><div class="side-handle" id="sidehandle" title="Drag to widen"></div>
     <div class="part ${fz('inbox')}"><div class="zone-title ${fz('inbox')}" data-a="zone" data-z="inbox">Inbox · ${S.inbox.length}</div><div class="list">${inboxRows}</div></div>
     <div class="part ${fz('tree')}"><div class="zone-title ${fz('tree')}" data-a="zone" data-z="tree">Efforts</div><div class="list">${rows}</div></div>
   </div>`;
@@ -428,6 +428,14 @@ function afterRender() {
   if (r) { const hs = r.querySelectorAll('[data-h]'); hs.forEach((h, i) => h.classList.toggle('cur', i === S.readHead)); if (hs[S.readHead] && S.readHead > 0) hs[S.readHead].scrollIntoView({ block: 'start' }); }
   const sel = document.querySelector('.canvas .card.sel'); if (sel) sel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   document.querySelectorAll('.list .row.sel').forEach(el => el.scrollIntoView({ block: 'nearest' }));
+  const sh = $('#sidehandle');
+  if (sh) sh.onmousedown = ev => {
+    ev.preventDefault(); sh.classList.add('drag');
+    const ws = $('.ws'); const right = ws.getBoundingClientRect().right;
+    const mv = e2 => { S.sideW = Math.max(240, Math.min(700, Math.round(right - e2.clientX - 8))); ws.style.setProperty('--side-w', S.sideW + 'px'); };
+    const up = () => { sh.classList.remove('drag'); removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+  };
   const dp = $('#designpanel [data-dragdesign]');
   if (dp) dp.onmousedown = ev => {
     const p = $('#designpanel'); const r = p.getBoundingClientRect(); const sx = ev.clientX - r.left, sy = ev.clientY - r.top;
@@ -800,7 +808,7 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', onKey);
 
 // Keep where you were across the dev server's auto-reload (per tab, best effort).
-const KEEP = ['screen', 'zone', 'side', 'main', 'mainItem', 'effort', 'filter', 'tag', 'wwi', 'cardSel', 'zoom', 'slot', 'choice', 'kept', 'panel', 'panelPos', 'homeSel'];
+const KEEP = ['screen', 'zone', 'side', 'main', 'mainItem', 'effort', 'filter', 'tag', 'wwi', 'cardSel', 'zoom', 'slot', 'choice', 'kept', 'panel', 'panelPos', 'homeSel', 'sideW'];
 try { const saved = JSON.parse(sessionStorage.getItem('dovetail-mock') || '{}'); for (const k of KEEP) if (k in saved) S[k] = saved[k]; } catch { /* no storage */ }
 addEventListener('beforeunload', () => { try { sessionStorage.setItem('dovetail-mock', JSON.stringify(Object.fromEntries(KEEP.map(k => [k, S[k]])))); } catch { /* no storage */ } });
 render();

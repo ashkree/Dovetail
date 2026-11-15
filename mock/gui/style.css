@@ -87,7 +87,10 @@ table.projects tr.sel td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .zone:last-child { border-right: 0; }
 .zone-title { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: .82em; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); border-bottom: 1px solid var(--edge); }
 .focus > .zone-title, .zone-title.focus { color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
-.sidebar { display: grid; grid-template-rows: 38% 62%; }
+.sidebar { display: grid; grid-template-rows: auto 1fr; position: relative; }
+.sidebar .part:first-child .list { max-height: 40vh; flex: none; }
+.side-handle { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 5; border-radius: 4px; }
+.side-handle:hover, .side-handle.drag { background: color-mix(in srgb, var(--accent) 45%, transparent); }
 .sidebar .part { min-height: 0; display: flex; flex-direction: column; }
 .sidebar .part + .part { border-top: 1px solid var(--edge); }
 .list { overflow: auto; padding: 4px 0; flex: 1; }
@@ -301,8 +304,6 @@ html[data-theme="iceberg"], html[data-theme="iceberg-orig"] {
 html[data-fs="17"] { --fs: 17px; } html[data-fs="18"] { --fs: 18px; }
 html[data-chatw="360"] { --chat-w: 360px; }
 html[data-chatw="520"] { --chat-w: 520px; }
-html[data-inbox="fit"] .sidebar { grid-template-rows: auto 1fr; }
-html[data-inbox="fit"] .sidebar .part:first-child .list { max-height: 34vh; flex: none; }
 .vpanel.design { z-index: 35; max-height: 80vh; border-color: var(--accent); }
 .wwi-pop { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 60%, transparent); z-index: 34; display: grid; place-items: center; }
 .wwi-pop .wwi { width: min(620px, 90vw); box-shadow: 0 20px 60px #000c; }
