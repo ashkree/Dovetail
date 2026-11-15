@@ -33,7 +33,7 @@ const KINDS: Record<Kind, { glyph: string; label: string }> = {
 
 const EFFORTS: Effort[] = [
   {
-    id: 'pay', name: 'Payment providers', kind: 'research', hue: 'var(--tag-blue)', running: true,
+    id: 'pay', name: 'payment-providers', kind: 'research', hue: 'var(--tag-blue)', running: true,
     goal: 'Which payment provider should Shop use for the EU and the US?',
     criteria: [
       { text: 'At least three providers compared on fees, payouts and SCA', state: 'done' },
@@ -52,7 +52,7 @@ const EFFORTS: Effort[] = [
     ],
   },
   {
-    id: 'login', name: 'Login bug', kind: 'fix', hue: 'var(--tag-coral)', running: true,
+    id: 'login', name: 'login-bug', kind: 'fix', hue: 'var(--tag-coral)', running: true,
     goal: 'Users on Safari are logged out after about five minutes.',
     criteria: [
       { text: 'A test reproduces the logout and fails before the fix', state: 'done' },
@@ -71,7 +71,7 @@ const EFFORTS: Effort[] = [
     ],
   },
   {
-    id: 'dark', name: 'Dark mode', kind: 'feature', hue: 'var(--tag-lilac)', running: true,
+    id: 'dark', name: 'dark-mode', kind: 'feature', hue: 'var(--tag-lilac)', running: true,
     goal: 'A dark theme for shop-web that users can switch on from the header.',
     criteria: [
       { text: 'Toggle in the header, choice kept across visits', state: 'open' },
@@ -79,25 +79,25 @@ const EFFORTS: Effort[] = [
       { text: 'No light flash on load', state: 'open' },
     ],
     wwi: {
-      last: 'Theme tokens merged; dark-mode built three header variants and two hero lines.',
-      waits: 'dark-mode finished a turn: pick a header and hero combination in the viewer.',
-      next: 'Choose a combination, “Keep this combination”, then dark-mode audits the pages.',
+      last: 'Theme tokens merged; header-toggle built three header variants and two hero lines.',
+      waits: 'header-toggle finished a turn: pick a header and hero combination in the viewer.',
+      next: 'Choose a combination, “Keep this combination”, then header-toggle audits the pages.',
     },
     tasks: [
       { title: 'Theme tokens', status: 'Done', agents: [] },
-      { title: 'Header toggle', status: 'In progress', agents: [{ name: 'dark-mode', kind: 'slice', state: 'working', branch: 'feat/dark-mode', subs: [] }] },
+      { title: 'Header toggle', status: 'In progress', agents: [{ name: 'header-toggle', kind: 'slice', state: 'working', branch: 'feat/dark-mode', subs: [] }] },
       { title: 'Audit pages', status: 'To do', agents: [] },
     ],
   },
   {
-    id: 'search', name: 'Search index', kind: 'cleanup', hue: 'var(--tag-mint)', running: true,
+    id: 'search', name: 'search-index', kind: 'cleanup', hue: 'var(--tag-mint)', running: true,
     goal: 'Drop the old search index code from shop-api.',
     criteria: [{ text: 'Old index module removed, build and tests green', state: 'open' }],
     wwi: { last: 'search-gc removed the writer side.', waits: 'Nothing.', next: 'Remove the reader side and the feature flag.' },
     tasks: [{ title: 'Remove old index', status: 'In progress', agents: [{ name: 'search-gc', kind: 'slice', state: 'working', branch: 'chore/drop-old-index', subs: [] }] }],
   },
   {
-    id: 'coupon', name: 'Coupon A/B', kind: 'experiment', hue: 'var(--tag-gold)', running: true,
+    id: 'coupon', name: 'coupon-ab', kind: 'experiment', hue: 'var(--tag-gold)', running: true,
     goal: 'Does a 10 % first-order coupon raise sign-ups?',
     criteria: [{ text: 'Flagged experiment ships to 10 % of visitors', state: 'open' }],
     wwi: { last: 'Effort created; no agents yet.', waits: 'Nothing.', next: 'Ask the coordinator to plan the experiment.' },
@@ -112,8 +112,8 @@ const INBOX: InboxItem[] = [
     body: '**Acceptance criterion:** Fix passes in Safari and Chrome\n\n**Evidence from login-fix:**\n\n- Chrome e2e: 48 passed, 0 failed (`e2e/chrome-2026-11-15.log`)\n- Safari e2e: *waiting for the run you are asked to approve*\n- Change: `src/auth/refresh.rs` sets `SameSite=None; Secure`\n\nApprove only when you are satisfied. Dovetail ticks the criterion on approval.' },
   { id: 'i3', kind: 'question', glyph: '?', effort: 'pay', from: 'research-1', title: 'Include Adyen? Its pricing needs a sales call', time: '14m',
     body: '**research-1 asks:** Adyen publishes no price list for our volume; getting one needs a sales call. Include it in the comparison with *estimated* fees, or drop it?' },
-  { id: 'i4', kind: 'done', glyph: '✓', effort: 'dark', from: 'dark-mode', title: 'Header variants ready to view', time: '31m',
-    body: 'dark-mode built three header variants, two footers and three hero lines. Open the viewer to mix and match.' },
+  { id: 'i4', kind: 'done', glyph: '✓', effort: 'dark', from: 'header-toggle', title: 'Header variants ready to view', time: '31m',
+    body: 'header-toggle built three header variants, two footers and three hero lines. Open the viewer to mix and match.' },
 ];
 
 const CHAT: ChatEntry[] = [
@@ -122,13 +122,13 @@ const CHAT: ChatEntry[] = [
   { report: true, effort: 'pay', from: 'research-1', time: '09:20', text: 'SCA comparison written · 3 providers · 9 sources · report ready to read' },
   { who: 'You', time: '09:31', effort: 'pay', text: 'Summarise the SCA findings in two lines.' },
   { who: 'coordinator', time: '09:31', effort: 'pay', text: '**Stripe and Adyen** handle 3DS2 and exemptions for us; **Mollie** does too but has *no US acquiring*, so it fails the US half of the question.\n\nThe full report is on the canvas as card **F3**.' },
-  { report: true, effort: 'dark', from: 'dark-mode', time: '09:44', text: 'Header variants ready · 3 headers · 2 footers · 3 hero lines' },
+  { report: true, effort: 'dark', from: 'header-toggle', time: '09:44', text: 'Header variants ready · 3 headers · 2 footers · 3 hero lines' },
   { report: true, effort: 'search', from: 'search-gc', time: '09:50', text: 'Writer side removed · 14 files · tests green' },
   { who: 'You', time: '09:52', effort: 'dark', text: 'Keep the toggle as an icon, not a text button.' },
-  { who: 'coordinator', time: '09:52', effort: 'dark', text: 'Told **dark-mode**. Variant *B* of the header already uses an icon; the viewer has it.' },
+  { who: 'coordinator', time: '09:52', effort: 'dark', text: 'Told **header-toggle**. Variant *B* of the header already uses an icon; the viewer has it.' },
 ];
 
-// Question-tree canvas for "Payment providers". Coordinates are in canvas px.
+// Question-tree canvas for "payment-providers". Coordinates are in canvas px.
 const CARDS: Card[] = [
   { id: 'Q1', type: 'question', x: 360, y: 20, title: 'Which provider for the EU and the US?', body: 'Root question of the effort.' },
   { id: 'Q2', type: 'question', x: 40, y: 170, title: 'Fees at our volume?', body: '~2 400 orders a month, €38 average.' },
@@ -148,7 +148,7 @@ const INCOMING: Card[] = [
   { id: 'Q5', type: 'question', title: 'Chargeback fees?', body: 'Proposed by the coordinator.', under: 'Q2' },
 ];
 
-// Viewer variants for "Dark mode", three levels.
+// Viewer variants for "dark-mode", three levels.
 const VARIANTS: VariantSlot[] = [
   { level: 'Global', slot: 'Theme', options: ['Dusk', 'Midnight', 'Soft dark'] },
   { level: 'Global', slot: 'Layout', options: ['Grid', 'List'] },

@@ -223,7 +223,7 @@ function renderCanvas() {
       <div style="font-size:1.1em;margin-bottom:12px">${esc(e.name)} has no canvas yet. Start from a framework:</div>
       <div class="answers" style="justify-content:center">
         <button data-a="fw">1 · Question tree</button><button data-a="fw">2 · Options compare</button><button data-a="fw">3 · Free board</button></div>
-      <p class="dim">The mock's filled canvas is on <b>Payment providers</b> (<kbd>]e</kbd> / <kbd>[e</kbd>).</p></div></div>`;
+      <p class="dim">The mock's filled canvas is on <b>payment-providers</b> (<kbd>]e</kbd> / <kbd>[e</kbd>).</p></div></div>`;
   }
   const byId = Object.fromEntries(S.cards.map(c => [c.id, c]));
   const lines = S.edges.map(([a, b]) => {
@@ -262,7 +262,7 @@ function renderViewer() {
       <div class="vh" data-drag>Variants<span class="spacer"></span><button data-a="detachPanel">${det ? '⇲ dock' : '⇱ detach'}</button><button data-a="closePanel">✕</button></div>
       ${slots}
       <button class="keep ${same ? 'same' : ''}" data-a="keepCombo">${same ? 'This is the kept combination' : 'Keep this combination  (y)'}</button></div>`;
-  return `<div class="viewer"><div class="preview"><div class="urlbar"><span>◆ dark-mode · feat/dark-mode</span><span class="mono">localhost:5173/</span><span class="spacer"></span><span>⟳ R · ↗ gx</span></div>${site}</div>${panel}</div>`;
+  return `<div class="viewer"><div class="preview"><div class="urlbar"><span>◆ header-toggle · feat/dark-mode</span><span class="mono">localhost:5173/</span><span class="spacer"></span><span>⟳ R · ↗ gx</span></div>${site}</div>${panel}</div>`;
 }
 
 function renderItem() {
@@ -630,8 +630,8 @@ function act(a: string, arg?: unknown): void {
     case 'keepCombo': {
       S.kept = S.choice.slice();
       const desc = VARIANTS.map((v, i) => `${v.slot}: ${v.options[S.choice[i]]}`).join(' · ');
-      S.chat.push({ who: 'You', time: '10:05', effort: 'dark', text: `Keep this combination for **dark-mode**: ${desc}` });
-      toast('Combination kept and sent to dark-mode through the chat'); break;
+      S.chat.push({ who: 'You', time: '10:05', effort: 'dark', text: `Keep this combination for **header-toggle**: ${desc}` });
+      toast('Combination kept and sent to header-toggle through the chat'); break;
     }
     case 'resetCombo': S.choice = S.kept.slice(); break;
     case 'togglePanel': S.panel = S.panel === 'closed' ? 'docked' : 'closed'; break;
