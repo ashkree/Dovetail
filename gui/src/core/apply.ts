@@ -21,8 +21,12 @@ function fold(s: Snapshot, e: Event): Snapshot {
   switch (e.type) {
     case 'chat_entry_added':
       return { ...s, chat: [...s.chat, e.entry] };
-    case 'inbox_resolved':
-      return { ...s, inbox: s.inbox.filter(i => i.id !== e.id) };
+    case 'inbox_resolved': {
+      if (!s.inbox.some(i => i.id === e.id)) return s;
+      // Home's "needs you" count for the open project follows its inbox.
+      const projects = s.projects.map(p => p.id === s.open_project ? { ...p, needs_you: Math.max(0, p.needs_you - 1) } : p);
+      return { ...s, inbox: s.inbox.filter(i => i.id !== e.id), projects };
+    }
     case 'criterion_changed':
       return {
         ...s,
