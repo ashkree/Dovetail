@@ -8,6 +8,8 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/shell.css';
 import './styles/home.css';
+import './styles/sidebar.css';
+import './styles/main.css';
 import './styles/overlays.css';
 import { App } from './App';
 import { MockCore } from './core/mock';
@@ -16,6 +18,7 @@ import { applyHash, followHash } from './state/urlHash';
 
 connect(new MockCore());
 applyHash(location.hash);
+window.addEventListener('hashchange', () => applyHash(location.hash));
 followHash();
 
 const root = document.getElementById('root');

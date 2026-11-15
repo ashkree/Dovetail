@@ -1,17 +1,16 @@
 import { useUi } from '../../state/ui';
+import { MainView } from '../main/MainView';
+import { Sidebar } from '../sidebar/Sidebar';
 
 /** The three zones: chat · main view · sidebar. Without a main view the chat takes its space. */
 export function Workspace() {
   const ui = useUi();
-  const f = (z: string) => ui.zone === z ? 'focus' : '';
+  const cls = `ws ${ui.main ? '' : 'nomain'} ${ui.sideCollapsed ? 'railed' : ''}`;
   return (
-    <div className={`ws ${ui.main ? '' : 'nomain'}`} style={{ ['--side-w' as string]: `${ui.sideW}px` }}>
-      <div className={`zone ${f('chat')}`}><div className="zone-title">Coordinator · Shop</div></div>
-      {ui.main && <div className={`zone ${f('main')}`}><div className="zone-title">{ui.main}</div></div>}
-      <div className="sidebar">
-        <div className={`part ${f('inbox')}`}><div className="zone-title">Inbox</div></div>
-        <div className={`part ${f('tree')}`}><div className="zone-title">Efforts</div></div>
-      </div>
+    <div className={cls} style={ui.sideCollapsed ? undefined : { ['--side-w' as string]: `${ui.sideW}px` }}>
+      <div className={`zone ${ui.zone === 'chat' ? 'focus' : ''}`}><div className="zone-title">Coordinator · Shop</div></div>
+      <MainView />
+      <Sidebar />
     </div>
   );
 }
