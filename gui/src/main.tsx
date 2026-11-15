@@ -7,14 +7,16 @@ import '@fontsource/atkinson-hyperlegible/700-italic.css';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/shell.css';
+import './styles/home.css';
 import './styles/overlays.css';
 import { App } from './App';
 import { MockCore } from './core/mock';
 import { connect } from './state/store';
-import { dispatch } from './keys/actions';
+import { applyHash, followHash } from './state/urlHash';
 
 connect(new MockCore());
-dispatch('openProject', 0);
+applyHash(location.hash);
+followHash();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('index.html has no #root');

@@ -6,13 +6,16 @@ import { KeyboardOverlay } from './components/overlays/KeyboardOverlay';
 import { Picker } from './components/overlays/Picker';
 import { Toast } from './components/overlays/Toast';
 import { useKeys } from './keys/useKeys';
+import { Home } from './components/home/Home';
+import { useUi } from './state/ui';
 
 export function App() {
   useKeys();
+  const { screen } = useUi();
   return (
     <div className="app">
       <TopBar />
-      <Workspace />
+      {screen === 'home' ? <Home /> : <Workspace />}
       <BottomBar />
       <WhichKey />
       <KeyboardOverlay />
