@@ -50,6 +50,10 @@ function md(text: string): string {
 }
 
 /* ---------------- helpers ---------------- */
+function tagDot(id: string): string {
+  const e = effortById(id);
+  return e ? `<span class="tagdot" title="${esc(e.name)}"><span class="dot" style="background:${e.hue}"></span><span class="tagname">${esc(e.name)}</span></span>` : '';
+}
 function tagHtml(id, small) {
   const e = effortById(id); if (!e) return '';
   return `<span class="tag" style="color:${e.hue}">${KINDS[e.kind].glyph} ${esc(e.name)}</span>`;
@@ -120,7 +124,7 @@ function statusBar() {
     <span class="mode ${cls}">${m}</span>
     <span class="pending">${esc(S.leader ? 'Space ' + S.leader.join(' ') : S.pending)}</span>
     <span>${scope ? esc(scope.name) : ''}</span>
-    ${S.screen === 'ws' ? `<span>next message → ${tagHtml(S.tag)}</span><span>${S.inbox.length} need you</span>` : ''}
+    ${S.screen === 'ws' ? `<span class="st-next">next message → ${tagHtml(S.tag)}</span><span>${S.inbox.length} need you</span>` : ''}
     <button class="chip" data-a="designToggle" title="Design variants for this mock (F2)">◐ design</button><span class="hint"><kbd>?</kbd> keyboard map · <kbd>Space</kbd> leader · <kbd>:</kbd> command</span>
   </div>`;
 }
@@ -151,7 +155,7 @@ function renderHomeScreen() {
 
 function renderWorkspace() {
   const nomain = !S.main;
-  return header(true) + `<div class="ws ${nomain ? 'nomain' : ''}">
+  return header(true) + `<div class="ws ${nomain ? 'nomain' : ''} ${D('density') === 'focus' && S.zone !== 'inbox' && S.zone !== 'tree' ? 'railed' : ''}">
     ${renderChat()}
     ${nomain ? '' : renderMain()}
     ${renderSidebar()}
@@ -178,6 +182,12 @@ function renderSidebar() {
     return `<div class="row indent3 ${sel}" data-a="selTree" data-i="${i}"><span class="${r.a.state === 'done' ? 'g-accept' : 'agent-g'}">${r.a.state === 'done' ? '✓' : '◐'}</span><span class="t">◇ ${esc(r.a.name)}</span></div>`;
   }).join('');
   const fz = z => S.zone === z ? 'focus' : '';
+  if (D('density') === 'focus' && S.zone !== 'inbox' && S.zone !== 'tree') {
+    return `<div class="zone sidebar rail">
+      <button class="rail-inbox" data-a="focusInbox" title="Inbox (Space n)">${S.inbox.length ? `<span class="needs">⚠</span> ${S.inbox.length}` : '✓'}</button>
+      ${EFFORTS.map(e => `<button class="rail-effort ${e.id === S.effort ? 'current' : ''}" data-a="railEffort" data-id="${e.id}" title="${esc(e.name)}"><span class="dot" style="background:${e.hue}"></span></button>`).join('')}
+      <span class="spacer"></span><button class="dim" data-a="focusTree" title="Efforts tree (Space t)">☰</button></div>`;
+  }
   return `<div class="zone sidebar">
     <div class="part ${fz('inbox')}"><div class="zone-title ${fz('inbox')}" data-a="zone" data-z="inbox">Inbox · ${S.inbox.length}</div><div class="list">${inboxRows}</div></div>
     <div class="part ${fz('tree')}"><div class="zone-title ${fz('tree')}" data-a="zone" data-z="tree">Efforts</div><div class="list">${rows}</div></div>
@@ -283,17 +293,17 @@ function renderChat() {
       return `<div class="msg ${cur}" data-vi="${vi}"><div class="report" data-a="toggleReport" data-i="${i}"><span>${open ? '▾' : '▸'}</span>${tagHtml(m.effort)}<span class="from">${esc(m.from)}</span><span class="t">${esc(m.text)}</span><span class="spacer"></span><span>${m.time}</span></div>
         ${open ? `<div class="report-open">${md('**' + m.from + ' reports:** ' + m.text + '.\n\nFull report: `Enter` on its card, or `Space v r`.')}</div>` : ''}</div>`;
     }
-    return `<div class="msg ${cur}" data-vi="${vi}"><div class="msg-h"><span class="who ${m.who === 'You' ? 'you' : ''}">${esc(m.who)}</span>${S.filter === 'all' ? tagHtml(m.effort) : ''}<span class="rule"></span><span class="time">${m.time}</span></div><div class="msg-body">${md(m.text)}</div></div>`;
+    return `<div class="msg ${cur}" data-vi="${vi}"><div class="msg-h"><span class="who ${m.who === 'You' ? 'you' : ''}">${esc(m.who)}</span>${S.filter === 'all' ? (D('density') !== 'full' ? tagDot(m.effort) : tagHtml(m.effort)) : ''}<span class="rule"></span><span class="time">${m.time}</span></div><div class="msg-body">${md(m.text)}</div></div>`;
   }).join('');
   const wwi = S.wwi && (D('wwi') === 'chat' || (D('wwi') === 'main' && !S.main)) ? wwiCard(e) : '';
   const filters = [['all', '<b style="color:inherit">All</b>']].concat(EFFORTS.map(x => [x.id, `<span class="dot" style="background:${x.hue}"></span>${esc(x.name)}`]))
     .map(([id, l]) => `<button class="fbtn ${S.filter === id ? 'on' : ''}" data-a="setFilter" data-f="${id}">${l}</button>`).join('');
   return `<div class="zone ${S.zone === 'chat' ? 'focus' : ''}">
     <div class="zone-title" data-a="zone" data-z="chat">Coordinator · Shop</div>
-    <div class="filter-row">${filters}</div>
+    ${D('density') !== 'full' ? `<div class="filter-min"><button data-a="pickFilter">${S.filter === 'all' ? 'All efforts' : `<span class="dot" style="background:${effortById(S.filter).hue}"></span> ${esc(effortById(S.filter).name)}`} ▾</button><span class="dim">f</span></div>` : `<div class="filter-row">${filters}</div>`}
     <div class="chat-scroll" id="chatscroll">${msgs}${wwi}</div>
     <div class="chatbar ${S.mode === 'insert' ? 'active' : ''}"><div class="chatbar-inner">
-      <div class="to">to coordinator, tagged ${tagHtml(S.tag)} <span class="spacer"></span><span><kbd>Ctrl-t</kbd> change tag</span></div>
+      <div class="to">${D('density') !== 'full' ? tagDot(S.tag) : `to coordinator, tagged ${tagHtml(S.tag)}`} <span class="spacer"></span><span class="tag-hint"><kbd>Ctrl-t</kbd> change tag</span></div>
       <textarea id="input" rows="2" placeholder="${S.mode === 'insert' ? 'Type a message · Enter sends · Alt-Enter new line' : 'i to type'}">${esc(S.draft)}</textarea></div></div>
   </div>`;
 }
@@ -557,6 +567,7 @@ function act(a: string, arg?: unknown): void {
       S.chatCur = c >= v.length ? -1 : Math.max(0, c); break;
     }
     case 'unfold': case 'foldEntry': { const v = visibleChat()[S.chatCur]; if (v && v.m.report) { if (a === 'unfold') S.openReports.add(v.i); else S.openReports.delete(v.i); } break; }
+    case 'pickFilter': picker('Show in the chat', [{ text: 'All efforts', html: '<span class="t">All efforts</span>', id: 'all' }, ...EFFORTS.map(e => ({ text: e.name, html: `${tagHtml(e.id)}`, id: e.id }))], it => { S.filter = it.id; if (it.id !== 'all') switchEffort(it.id, true); S.chatCur = -1; }); break;
     case 'cycleFilter': S.filter = S.filter === 'all' ? S.effort : 'all'; S.chatCur = -1; break;
     // canvas
     case 'cardLeft': nearestCard(-1, 0); break; case 'cardRight': nearestCard(1, 0); break;
@@ -763,6 +774,8 @@ document.addEventListener('click', e => {
     case 'selSlot': S.slot = +el.dataset.i; S.zone = 'main'; break;
     case 'pickOpt': S.slot = +el.dataset.i; S.choice[S.slot] = +el.dataset.j; S.zone = 'main'; break;
     case 'main': S.main = el.dataset.m; S.zone = 'main'; break;
+    case 'pickFilter': return act('pickFilter');
+    case 'railEffort': switchEffort(el.dataset.id); break;
     case 'setFilter': S.filter = el.dataset.f; if (S.filter !== 'all') switchEffort(S.filter, true); S.chatCur = -1; break;
     case 'toggleReport': { const i = +el.dataset.i; S.openReports.has(i) ? S.openReports.delete(i) : S.openReports.add(i); break; }
     case 'ovScope': S.ovScope = el.dataset.s; break;

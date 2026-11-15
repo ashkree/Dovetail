@@ -80,8 +80,9 @@ table.projects tr.sel td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .badge-n { color: var(--warn); font-weight: 650; }
 
 /* ---------- workspace ---------- */
-.ws { display: grid; grid-template-columns: 440px 1fr 330px; min-height: 0; }
-.ws.nomain { grid-template-columns: 1fr 330px; }
+.ws { display: grid; grid-template-columns: var(--chat-w, 440px) 1fr var(--side-w, 330px); min-height: 0; }
+.ws.nomain { grid-template-columns: 1fr var(--side-w, 330px); }
+.ws.railed { --side-w: 52px; }
 .zone { min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-right: 1px solid var(--edge); position: relative; }
 .zone:last-child { border-right: 0; }
 .zone-title { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: .82em; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); border-bottom: 1px solid var(--edge); }
@@ -298,8 +299,8 @@ html[data-theme="iceberg"], html[data-theme="iceberg-orig"] {
   --tag-blue: #84a0c6; --tag-coral: #e27878; --tag-lilac: #a093c7; --tag-mint: #89b8c2; --tag-gold: #e2a478;
 }
 html[data-fs="17"] { --fs: 17px; } html[data-fs="18"] { --fs: 18px; }
-html[data-chatw="360"] .ws:not(.nomain) { grid-template-columns: 360px 1fr 330px; }
-html[data-chatw="520"] .ws:not(.nomain) { grid-template-columns: 520px 1fr 330px; }
+html[data-chatw="360"] { --chat-w: 360px; }
+html[data-chatw="520"] { --chat-w: 520px; }
 html[data-inbox="fit"] .sidebar { grid-template-rows: auto 1fr; }
 html[data-inbox="fit"] .sidebar .part:first-child .list { max-height: 34vh; flex: none; }
 .vpanel.design { z-index: 35; max-height: 80vh; border-color: var(--accent); }
@@ -312,3 +313,54 @@ html[data-inbox="fit"] .sidebar .part:first-child .list { max-height: 34vh; flex
 .wwi-tree .wwi dl { grid-template-columns: 1fr; gap: 2px; }
 .wwi-tree .wwi dt { padding-top: 6px; }
 html[data-theme="iceberg-orig"] { --dim: #6b7089; --edge-hi: #444b71; }
+
+/* Graphite: neutral dark greys with Iceberg's pastels. Graphite warm: Claude-desktop-like warm greys. */
+html[data-theme="graphite"], html[data-theme="graphite-warm"] {
+  --bg: #19191b; --panel: #1f1f22; --panel-2: #242427; --raise: #2c2c30; --edge: #2a2a2e; --edge-hi: #3d3d43; --sel: #2c2c3080; --sel-solid: #2a2a2f;
+  --ink: #d6d6da; --dim: #8f8f98; --bold: #e2a478; --italic: #b3a6d9; --code: #b4be82; --link: #8fb0d8; --accent: #9cc4cc;
+  --bad: #e27878; --warn: #e2a478; --good: #b4be82;
+  --tag-blue: #8fb0d8; --tag-coral: #e27878; --tag-lilac: #b3a6d9; --tag-mint: #9cc4cc; --tag-gold: #e2a478;
+}
+html[data-theme="graphite-warm"] { --bg: #262624; --panel: #1f1e1d; --panel-2: #2d2c29; --raise: #353430; --edge: #33322f; --edge-hi: #4a4843; --sel-solid: #34332f; --ink: #e1ded6; --dim: #9c998f; }
+
+/* Calm and Focus: fewer borders, chips and hints; structure from spacing and two surface tones. */
+html:not([data-density="full"]) .zone { border-right: 0; }
+html:not([data-density="full"]) .sidebar { background: var(--panel); }
+html:not([data-density="full"]) .sidebar .part + .part { border-top: 0; }
+html:not([data-density="full"]) .zone-title { border-bottom: 0; text-transform: none; letter-spacing: 0; font-size: .9em; padding: 10px 16px 4px; }
+html:not([data-density="full"]) .zone-title.focus, html:not([data-density="full"]) .focus > .zone-title { box-shadow: none; color: var(--ink); }
+html:not([data-density="full"]) .zone-title.focus::before, html:not([data-density="full"]) .focus > .zone-title::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+html:not([data-density="full"]) .header { border-bottom: 0; }
+html:not([data-density="full"]) .header .chip, html:not([data-density="full"]) .usage { display: none; }
+html:not([data-density="full"]) .header:hover .chip { display: inline-flex; }
+html:not([data-density="full"]) .status { border-top: 0; }
+html:not([data-density="full"]) .status .hint, html:not([data-density="full"]) .tag-hint { display: none; }
+html:not([data-density="full"]) .msg-h .rule { visibility: hidden; }
+html:not([data-density="full"]) .msg-h .time { opacity: 0; transition: opacity .15s; }
+html:not([data-density="full"]) .msg:hover .msg-h .time, html:not([data-density="full"]) .msg.cur .msg-h .time { opacity: 1; }
+html:not([data-density="full"]) .msg { margin-top: 22px; }
+html:not([data-density="full"]) .report { font-size: .88em; }
+html:not([data-density="full"]) .report .tag { display: none; }
+html:not([data-density="full"]) .chatbar { border-top: 0; }
+html:not([data-density="full"]) .chatbar-inner { border-color: var(--edge); }
+html:not([data-density="full"]) .status-pill { border: 0; padding: 0; }
+html:not([data-density="full"]) .effort-row .kind, html:not([data-density="full"]) .effort-row:not(.current) .tm { display: none; }
+html:not([data-density="full"]) .card .refbtn { visibility: hidden; }
+html:not([data-density="full"]) .card:hover .refbtn, html:not([data-density="full"]) .card.sel .refbtn { visibility: visible; }
+html:not([data-density="full"]) .card { border-color: var(--edge); }
+html:not([data-density="full"]) .framework { opacity: .7; }
+html:not([data-density="full"]) .main-body { background: var(--bg); }
+.tagdot { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: .85em; }
+.msg-h .tagdot .tagname { opacity: 0; transition: opacity .15s; }
+.msg:hover .msg-h .tagdot .tagname, .msg.cur .msg-h .tagdot .tagname { opacity: 1; }
+.filter-min { display: flex; gap: 10px; align-items: center; padding: 2px 16px 6px; font-size: .9em; }
+.filter-min button { color: var(--dim); display: inline-flex; gap: 6px; align-items: center; }
+.filter-min button:hover { color: var(--ink); }
+.sidebar.rail { display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 10px; }
+.rail button { width: 36px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-size: .9em; }
+.rail button:hover, .rail .current { background: var(--raise); }
+.rail .rail-inbox { width: 44px; margin-bottom: 8px; }
+.rail .dot { width: 11px; height: 11px; }
+html:not([data-density="full"]) .st-next { display: none; }
+html:not([data-density="full"]) .ws.nomain > .zone:first-child > .zone-title,
+html:not([data-density="full"]) .ws.nomain .filter-min { width: 100%; max-width: 864px; margin: 0 auto; padding-left: 22px; }
