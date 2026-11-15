@@ -21,3 +21,5 @@ Why: maps, and later other visual views, want real pointer interaction, smooth p
 - Where the milestone sits in the plan, and whether the M15 "done when" item for kitty is still ticked as is.
 
 Approved by the user in the session of 2026-11-11 (toolkit, process model, frozen kitty canvas and the name "Companion").
+
+Note: superseded on scope by ADR 0020. The GUI is now the main client and the TUI a remote kit; the socket attach and toolkit choice carry over.

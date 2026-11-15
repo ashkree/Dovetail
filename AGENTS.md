@@ -24,6 +24,7 @@ The target is **v1** as listed in the digest's roadmap, built so v1.1 features s
 
 Known conflicts, already resolved:
 - **Layout:** Decision 15 (Layout B — conversation full height on the left, task tree over inbox on the right; placement per ADR 0006) supersedes the sketch in `ui-session-brief.md`.
+- **Clients:** ADR 0020 makes an egui GUI the main client and cuts the TUI to a remote kit (chat, inbox, tree, switcher); `ratatui` + `crossterm` now bind only the TUI.
 - **Edition:** the workspace uses edition 2024 (already in `Cargo.toml`).
 
 ## Dogfooding: Dovetail builds Dovetail
