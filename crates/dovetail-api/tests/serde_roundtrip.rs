@@ -176,7 +176,7 @@ fn subagent() -> Agent {
         last_activity_ms: 1_700_000_000_000,
         lock: SessionLock::TakenOver,
         model: Some("claude-opus-5-5".into()),
-        effort: Some(Effort::Xhigh),
+        effort: Some(ReasoningEffort::Xhigh),
         subagent_tokens: 12_345,
         tool: None,
     }
@@ -603,7 +603,7 @@ fn every_command_roundtrips() {
         Command::SetModel {
             agent: id("slice-a"),
             model: "sonnet".into(),
-            effort: Some(Effort::Max),
+            effort: Some(ReasoningEffort::Max),
         },
         Command::CyclePermissionMode {
             agent: id("slice-a"),

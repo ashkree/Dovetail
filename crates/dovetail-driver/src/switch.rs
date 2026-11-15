@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use dovetail_api::Effort;
+use dovetail_api::ReasoningEffort;
 use serde_json::{Value, json};
 
 use crate::event::{DriverEvent, ModelInfo, SwitchId};
@@ -27,7 +27,7 @@ enum Step {
     /// `set_model` was sent; on success the effort (if any) goes next.
     Model {
         switch: SwitchId,
-        effort: Option<Effort>,
+        effort: Option<ReasoningEffort>,
     },
     /// `apply_flag_settings` was sent; `get_settings` goes next.
     Effort { switch: SwitchId },
@@ -71,7 +71,7 @@ impl Switches {
     pub(crate) fn begin(
         &mut self,
         model: Option<&str>,
-        effort: Option<Effort>,
+        effort: Option<ReasoningEffort>,
     ) -> (SwitchId, Value) {
         let switch = SwitchId(self.next_switch);
         self.next_switch += 1;
@@ -100,7 +100,7 @@ impl Switches {
         request(&id, json!({"subtype": "get_settings"}))
     }
 
-    fn effort(&mut self, switch: SwitchId, effort: Effort) -> Value {
+    fn effort(&mut self, switch: SwitchId, effort: ReasoningEffort) -> Value {
         let id = self.id("effort", Step::Effort { switch });
         request(
             &id,
@@ -173,7 +173,7 @@ fn settings_of(switch: Option<SwitchId>, body: &Value) -> DriverEvent {
     DriverEvent::ModelSettings {
         switch,
         model: text("model"),
-        effort: text("effort").as_deref().and_then(Effort::parse),
+        effort: text("effort").as_deref().and_then(ReasoningEffort::parse),
     }
 }
 
@@ -201,7 +201,7 @@ pub(crate) fn models_of(body: &Value) -> Vec<ModelInfo> {
                         levels
                             .iter()
                             .filter_map(Value::as_str)
-                            .filter_map(Effort::parse)
+                            .filter_map(ReasoningEffort::parse)
                             .collect()
                     })
                     .unwrap_or_default(),
@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn a_switch_chains_model_effort_and_settings_on_each_answer() {
         let mut s = Switches::default();
-        let (switch, first) = s.begin(Some("sonnet"), Some(Effort::High));
+        let (switch, first) = s.begin(Some("sonnet"), Some(ReasoningEffort::High));
         assert_eq!(
             first["request"],
             json!({"subtype": "set_model", "model": "sonnet"})
@@ -253,7 +253,7 @@ mod tests {
             Some(DriverEvent::ModelSettings {
                 switch: Some(switch),
                 model: Some("claude-sonnet-5-5".into()),
-                effort: Some(Effort::High),
+                effort: Some(ReasoningEffort::High),
             })
         );
     }
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn a_refused_model_ends_the_switch_without_touching_effort() {
         let mut s = Switches::default();
-        let (switch, first) = s.begin(Some("bogus"), Some(Effort::Max));
+        let (switch, first) = s.begin(Some("bogus"), Some(ReasoningEffort::Max));
         let out = answer(&mut s, &first, false, json!("Model 'bogus' not found"));
         assert_eq!(out.send, None);
         assert_eq!(
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn an_effort_only_switch_sends_no_set_model() {
         let mut s = Switches::default();
-        let (_, first) = s.begin(None, Some(Effort::Low));
+        let (_, first) = s.begin(None, Some(ReasoningEffort::Low));
         assert_eq!(first["request"]["subtype"], "apply_flag_settings");
         let settings = answer(&mut s, &first, true, Value::Null)
             .send
@@ -335,7 +335,7 @@ mod tests {
             Some(DriverEvent::ModelSettings {
                 switch: None,
                 model: Some("claude-opus-5-5".into()),
-                effort: Some(Effort::High),
+                effort: Some(ReasoningEffort::High),
             })
         );
 
@@ -367,7 +367,7 @@ mod tests {
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].value, "opus");
         assert_eq!(models[0].resolved.as_deref(), Some("claude-opus-5-5"));
-        assert_eq!(models[0].efforts, Effort::ALL.to_vec());
+        assert_eq!(models[0].efforts, ReasoningEffort::ALL.to_vec());
         assert!(models[1].efforts.is_empty());
     }
 }

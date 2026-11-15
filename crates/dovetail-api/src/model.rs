@@ -367,7 +367,7 @@ pub struct Agent {
     /// The session's reasoning effort, as Claude Code last confirmed it; `None` until it does,
     /// or when its model has no effort levels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effort: Option<Effort>,
+    pub effort: Option<ReasoningEffort>,
     /// Tokens its subagents used, summed from their `task_*` events (sessions only; digest §3:
     /// the final `result` undercounts). Includes subagents whose nodes are gone.
     #[serde(default)]
@@ -485,7 +485,7 @@ pub struct SubagentProgress {
 /// How hard a session's model thinks: Claude Code's effort levels (`--effort`), lowest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Effort {
+pub enum ReasoningEffort {
     /// `low`.
     Low,
     /// `medium`.
@@ -498,24 +498,24 @@ pub enum Effort {
     Max,
 }
 
-impl Effort {
+impl ReasoningEffort {
     /// Every level, lowest first.
-    pub const ALL: [Effort; 5] = [
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::Xhigh,
-        Effort::Max,
+    pub const ALL: [ReasoningEffort; 5] = [
+        ReasoningEffort::Low,
+        ReasoningEffort::Medium,
+        ReasoningEffort::High,
+        ReasoningEffort::Xhigh,
+        ReasoningEffort::Max,
     ];
 
     /// The name Claude Code uses, for `--effort` and the `effortLevel` setting.
     pub fn as_str(self) -> &'static str {
         match self {
-            Effort::Low => "low",
-            Effort::Medium => "medium",
-            Effort::High => "high",
-            Effort::Xhigh => "xhigh",
-            Effort::Max => "max",
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High => "high",
+            ReasoningEffort::Xhigh => "xhigh",
+            ReasoningEffort::Max => "max",
         }
     }
 
@@ -540,7 +540,7 @@ pub struct ModelOption {
     /// The effort levels it accepts, once a session has listed it; `None` means not known yet,
     /// so every level is offered. Empty: the model has no effort setting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub efforts: Option<Vec<Effort>>,
+    pub efforts: Option<Vec<ReasoningEffort>>,
 }
 
 impl ModelOption {
@@ -554,7 +554,7 @@ impl ModelOption {
     }
 
     /// Whether the model accepts `effort`.
-    pub fn supports(&self, effort: Effort) -> bool {
+    pub fn supports(&self, effort: ReasoningEffort) -> bool {
         self.efforts.as_ref().is_none_or(|e| e.contains(&effort))
     }
 }

@@ -4,7 +4,7 @@
 mod support;
 
 use dovetail_api::{
-    AgentKind, AgentStatus, Command, Effort, Event, ModelOption, ServerMsg, Snapshot,
+    AgentKind, AgentStatus, Command, Event, ModelOption, ReasoningEffort, ServerMsg, Snapshot,
 };
 use dovetail_tui::App;
 use dovetail_tui::action::Action;
@@ -14,15 +14,15 @@ use dovetail_tui::mode::Mode;
 use support::*;
 
 fn models() -> Vec<ModelOption> {
-    let listed = |name: &str, resolved: &str, efforts: &[Effort]| ModelOption {
+    let listed = |name: &str, resolved: &str, efforts: &[ReasoningEffort]| ModelOption {
         name: name.into(),
         resolved: Some(resolved.into()),
         efforts: Some(efforts.to_vec()),
     };
     vec![
-        listed("opus", "claude-opus-5-5", &Effort::ALL),
-        listed("sonnet", "claude-sonnet-5-5", &Effort::ALL),
-        listed("haiku", "claude-haiku-5-5", &Effort::ALL),
+        listed("opus", "claude-opus-5-5", &ReasoningEffort::ALL),
+        listed("sonnet", "claude-sonnet-5-5", &ReasoningEffort::ALL),
+        listed("haiku", "claude-haiku-5-5", &ReasoningEffort::ALL),
     ]
 }
 
@@ -32,7 +32,7 @@ fn world_with_models() -> Snapshot {
     for a in &mut snap.agents {
         if a.kind == AgentKind::Coordinator {
             a.model = Some("claude-opus-5-5".into());
-            a.effort = Some(Effort::High);
+            a.effort = Some(ReasoningEffort::High);
         }
     }
     snap
@@ -86,7 +86,7 @@ fn enter_applies_the_pick_to_the_focused_session() {
         vec![Command::SetModel {
             agent: id,
             model: "sonnet".into(),
-            effort: Some(Effort::Xhigh),
+            effort: Some(ReasoningEffort::Xhigh),
         }]
     );
     assert_eq!(app.mode(), Mode::Normal);
@@ -126,7 +126,7 @@ fn slash_model_in_the_chat_bar_opens_the_selector_and_is_never_sent() {
         vec![Command::SetModel {
             agent: id,
             model: "haiku".into(),
-            effort: Some(Effort::High),
+            effort: Some(ReasoningEffort::High),
         }]
     );
 }
@@ -144,7 +144,7 @@ fn the_usage_row_shows_model_and_effort_once_the_core_confirms() {
         .cloned()
         .expect("coordinator");
     agent.model = Some("claude-sonnet-5-5".into());
-    agent.effort = Some(Effort::Max);
+    agent.effort = Some(ReasoningEffort::Max);
     agent.status = AgentStatus::Idle;
     app.on_server(ServerMsg::Event {
         seq: app.snapshot().seq + 1,

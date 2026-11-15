@@ -112,7 +112,7 @@ pub struct SessionSpec {
     /// Model alias or id (`--model`).
     pub model: Option<String>,
     /// Reasoning effort (`--effort`); `None` leaves Claude Code's default.
-    pub effort: Option<dovetail_api::Effort>,
+    pub effort: Option<dovetail_api::ReasoningEffort>,
     /// Starting permission mode.
     pub permission_mode: PermissionMode,
     /// `--settings` file (hooks live here).

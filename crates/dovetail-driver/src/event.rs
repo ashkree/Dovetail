@@ -490,7 +490,7 @@ pub enum DriverEvent {
         /// The full model name (`claude-sonnet-5-5`).
         model: Option<String>,
         /// The effort; `None` when the model has none or the level is not one we know.
-        effort: Option<dovetail_api::Effort>,
+        effort: Option<dovetail_api::ReasoningEffort>,
     },
     /// A [`crate::Session::set_model`] was refused (unknown model, say); the old model is
     /// still in use and nothing else was changed.
@@ -543,7 +543,7 @@ pub struct ModelInfo {
     /// Claude Code's display name (`Opus 5.5`).
     pub display_name: Option<String>,
     /// The effort levels it accepts; empty when it has no effort setting.
-    pub efforts: Vec<dovetail_api::Effort>,
+    pub efforts: Vec<dovetail_api::ReasoningEffort>,
 }
 
 /// Names one [`crate::Session::set_model`] call, so its answer is never taken for another's.

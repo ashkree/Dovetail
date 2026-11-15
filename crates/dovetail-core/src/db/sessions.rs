@@ -4,8 +4,9 @@
 use std::path::PathBuf;
 
 use dovetail_api::{
-    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, Effort,
-    EntryId, InboxId, InboxItem, InboxKind, SessionLock, SubagentProgress, TaskId, WorktreeRef,
+    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, EntryId,
+    InboxId, InboxItem, InboxKind, ReasoningEffort, SessionLock, SubagentProgress, TaskId,
+    WorktreeRef,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -45,7 +46,7 @@ pub struct ModelChoice {
     /// `--model`: an alias or a full model name.
     pub model: String,
     /// `--effort`; `None` leaves Claude Code's default.
-    pub effort: Option<Effort>,
+    pub effort: Option<ReasoningEffort>,
 }
 
 fn kind_to_text(kind: AgentKind) -> &'static str {
@@ -165,7 +166,7 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
             row.model_choice
                 .as_ref()
                 .and_then(|c| c.effort)
-                .map(Effort::as_str),
+                .map(ReasoningEffort::as_str),
         ],
     )?;
     Ok(())
@@ -235,7 +236,9 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             (chosen_model, chosen_effort),
         ) = row?;
         let chosen_effort = chosen_effort
-            .map(|e| Effort::parse(&e).ok_or_else(|| DbError::Corrupt(format!("effort {e:?}"))))
+            .map(|e| {
+                ReasoningEffort::parse(&e).ok_or_else(|| DbError::Corrupt(format!("effort {e:?}")))
+            })
             .transpose()?;
         let model_choice = chosen_model.map(|model| ModelChoice {
             model,

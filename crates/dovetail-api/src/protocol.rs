@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::map::{Map, MapId, MapSummary};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
-    Decision, DecisionId, Effort, EntryId, InboxId, InboxItem, JournalState, ModelOption, PLevel,
-    ProjectId, SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem, TodoListId, Totals,
-    UsageLimits, Warning, WarningId, WorktreeInfo,
+    Decision, DecisionId, EntryId, InboxId, InboxItem, JournalState, ModelOption, PLevel,
+    ProjectId, ReasoningEffort, SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem,
+    TodoListId, Totals, UsageLimits, Warning, WarningId, WorktreeInfo,
 };
 use crate::research::{
     BrowseWhat, BrowsedDoc, BrowsedProject, DocEntry, ResearchContent, ResearchDocument,
@@ -351,7 +351,7 @@ pub enum Command {
         /// The model, as [`ModelOption::name`].
         model: String,
         /// The effort; `None` leaves it to the model's default (a model with no levels).
-        effort: Option<Effort>,
+        effort: Option<ReasoningEffort>,
     },
     /// Move a session to its next permission mode.
     CyclePermissionMode {

@@ -4703,7 +4703,7 @@ fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
 /// next start passes as `--model`/`--effort`.
 #[test]
 fn a_model_switch_is_confirmed_live_refused_safely_and_used_on_the_next_start() {
-    use dovetail_api::Effort;
+    use dovetail_api::ReasoningEffort;
     // Paused before the first line, so the session stays live and reports nothing itself.
     let fake = fixture("plain_turn").with_options(ReplayOptions {
         pause_before: vec![0],
@@ -4718,28 +4718,28 @@ fn a_model_switch_is_confirmed_live_refused_safely_and_used_on_the_next_start() 
     h.send(Command::SetModel {
         agent: coordinator.clone(),
         model: "sonnet".into(),
-        effort: Some(Effort::High),
+        effort: Some(ReasoningEffort::High),
     });
     h.wait_for("the confirmed model", |s| {
         let c = coordinator_of(s);
-        c.model.as_deref() == Some("sonnet") && c.effort == Some(Effort::High)
+        c.model.as_deref() == Some("sonnet") && c.effort == Some(ReasoningEffort::High)
     });
     assert!(fake.sent().contains(&Sent::Model {
         model: Some("sonnet".into()),
-        effort: Some(Effort::High),
+        effort: Some(ReasoningEffort::High),
     }));
     // The same model at another effort: no `set_model`, only the effort.
     h.send(Command::SetModel {
         agent: coordinator.clone(),
         model: "sonnet".into(),
-        effort: Some(Effort::Low),
+        effort: Some(ReasoningEffort::Low),
     });
     h.wait_for("the new effort", |s| {
-        coordinator_of(s).effort == Some(Effort::Low)
+        coordinator_of(s).effort == Some(ReasoningEffort::Low)
     });
     assert!(fake.sent().contains(&Sent::Model {
         model: None,
-        effort: Some(Effort::Low),
+        effort: Some(ReasoningEffort::Low),
     }));
 
     h.send(Command::SetModel {
@@ -4771,7 +4771,7 @@ fn a_model_switch_is_confirmed_live_refused_safely_and_used_on_the_next_start() 
     }
     let spec = &fake.started_specs()[0];
     assert_eq!(spec.model.as_deref(), Some("sonnet"));
-    assert_eq!(spec.effort, Some(Effort::Low));
+    assert_eq!(spec.effort, Some(ReasoningEffort::Low));
     h.quit();
 }
 
@@ -4780,7 +4780,7 @@ fn a_model_switch_is_confirmed_live_refused_safely_and_used_on_the_next_start() 
 /// refused while the first waits for its answer.
 #[test]
 fn a_stale_or_out_of_order_settings_answer_does_not_confirm_a_switch() {
-    use dovetail_api::Effort;
+    use dovetail_api::ReasoningEffort;
     use dovetail_driver::{DriverEvent, SwitchId};
     let fake = fixture("plain_turn").with_options(ReplayOptions {
         pause_before: vec![0],
@@ -4810,11 +4810,11 @@ fn a_stale_or_out_of_order_settings_answer_does_not_confirm_a_switch() {
             h.drain(Duration::from_millis(20));
         }
     };
-    h.send(set("sonnet", Effort::High));
+    h.send(set("sonnet", ReasoningEffort::High));
     wait_sent(&mut h, 1);
 
     // A second switch while the first is unanswered is refused, and never sent.
-    h.send(set("haiku", Effort::Max));
+    h.send(set("haiku", ReasoningEffort::Max));
     let deadline = Instant::now() + Duration::from_secs(5);
     while !h.failures.iter().any(|f| f.contains("still switching")) {
         assert!(Instant::now() < deadline, "no refusal: {:?}", h.failures);
@@ -4826,7 +4826,7 @@ fn a_stale_or_out_of_order_settings_answer_does_not_confirm_a_switch() {
     fake.send_event(DriverEvent::ModelSettings {
         switch: None,
         model: Some("claude-opus-5-5".into()),
-        effort: Some(Effort::Low),
+        effort: Some(ReasoningEffort::Low),
     });
     h.drain(Duration::from_millis(200));
     let c = coordinator_of(&h.snap);
@@ -4835,20 +4835,20 @@ fn a_stale_or_out_of_order_settings_answer_does_not_confirm_a_switch() {
     // The switch's own answer confirms it.
     fake.release_model_answers(&[0]);
     h.wait_for("the confirmed switch", |s| {
-        coordinator_of(s).effort == Some(Effort::High)
+        coordinator_of(s).effort == Some(ReasoningEffort::High)
     });
 
     // A later switch, held; then the first switch's answer again, out of order: ignored.
     fake.hold_model_answers();
-    h.send(set("sonnet", Effort::Max));
+    h.send(set("sonnet", ReasoningEffort::Max));
     wait_sent(&mut h, 2);
     fake.send_event(DriverEvent::ModelSettings {
         switch: Some(SwitchId(0)),
         model: Some("sonnet".into()),
-        effort: Some(Effort::Low),
+        effort: Some(ReasoningEffort::Low),
     });
     h.drain(Duration::from_millis(200));
-    assert_eq!(coordinator_of(&h.snap).effort, Some(Effort::High));
+    assert_eq!(coordinator_of(&h.snap).effort, Some(ReasoningEffort::High));
     assert!(
         !h.failures.iter().any(|f| f.contains("kept effort")),
         "{:?}",
@@ -4856,7 +4856,7 @@ fn a_stale_or_out_of_order_settings_answer_does_not_confirm_a_switch() {
     );
     fake.release_model_answers(&[0]);
     h.wait_for("the second switch confirmed", |s| {
-        coordinator_of(s).effort == Some(Effort::Max)
+        coordinator_of(s).effort == Some(ReasoningEffort::Max)
     });
     h.quit();
 }

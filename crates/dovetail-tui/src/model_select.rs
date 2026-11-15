@@ -4,7 +4,7 @@
 //! usage row changes only when the session confirms it.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, Effort, ModelOption, model_option_index};
+use dovetail_api::{AgentId, ModelOption, ReasoningEffort, model_option_index};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
@@ -13,7 +13,7 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use crate::theme::Theme;
 
 /// The effort a move starts from when the session has not reported one.
-const START_EFFORT: Effort = Effort::High;
+const START_EFFORT: ReasoningEffort = ReasoningEffort::High;
 
 /// What a key did to the selector.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,7 +30,7 @@ pub enum SelectorOutcome {
         model: String,
         /// The effort; `None` when the model has no levels, or none was picked and none is
         /// known.
-        effort: Option<Effort>,
+        effort: Option<ReasoningEffort>,
     },
 }
 
@@ -45,9 +45,9 @@ pub struct ModelSelector {
     /// The model the session runs now, if it is one of the options.
     current: Option<usize>,
     /// The session's effort now.
-    current_effort: Option<Effort>,
+    current_effort: Option<ReasoningEffort>,
     /// The effort picked so far; carried from model to model, clamped to what each accepts.
-    effort: Option<Effort>,
+    effort: Option<ReasoningEffort>,
 }
 
 impl ModelSelector {
@@ -58,7 +58,7 @@ impl ModelSelector {
         name: impl Into<String>,
         options: Vec<ModelOption>,
         model: Option<&str>,
-        effort: Option<Effort>,
+        effort: Option<ReasoningEffort>,
         preselect: Option<&str>,
     ) -> Self {
         let current = model.and_then(|m| model_option_index(&options, m));
@@ -85,7 +85,7 @@ impl ModelSelector {
     /// The effort Enter would apply with the highlighted model: the one picked, or the nearest
     /// level below it that the model accepts (else the lowest it accepts); `None` when the model
     /// has no levels.
-    pub fn effort(&self) -> Option<Effort> {
+    pub fn effort(&self) -> Option<ReasoningEffort> {
         let option = self.selected()?;
         let wanted = self.effort?;
         if option.supports(wanted) {
@@ -231,7 +231,7 @@ impl ModelSelector {
             return Line::from(spans);
         }
         let picked = self.effort();
-        for level in Effort::ALL {
+        for level in ReasoningEffort::ALL {
             let mut text = level.as_str().to_owned();
             if Some(level) == self.current_effort && Some(self.row) == self.current {
                 text.push('●');
@@ -251,8 +251,8 @@ impl ModelSelector {
 }
 
 /// The levels `option` accepts, lowest first.
-fn levels(option: &ModelOption) -> Vec<Effort> {
-    Effort::ALL
+fn levels(option: &ModelOption) -> Vec<ReasoningEffort> {
+    ReasoningEffort::ALL
         .into_iter()
         .filter(|e| option.supports(*e))
         .collect()
@@ -276,20 +276,24 @@ mod tests {
     }
 
     fn options() -> Vec<ModelOption> {
-        let listed = |name: &str, resolved: &str, efforts: &[Effort]| ModelOption {
+        let listed = |name: &str, resolved: &str, efforts: &[ReasoningEffort]| ModelOption {
             name: name.into(),
             resolved: Some(resolved.into()),
             efforts: Some(efforts.to_vec()),
         };
         vec![
-            listed("opus", "claude-opus-5-5", &Effort::ALL),
-            listed("sonnet", "claude-sonnet-5-5", &Effort::ALL),
+            listed("opus", "claude-opus-5-5", &ReasoningEffort::ALL),
+            listed("sonnet", "claude-sonnet-5-5", &ReasoningEffort::ALL),
             listed("old", "claude-old", &[]),
-            listed("mid", "claude-mid", &[Effort::Low, Effort::Medium]),
+            listed(
+                "mid",
+                "claude-mid",
+                &[ReasoningEffort::Low, ReasoningEffort::Medium],
+            ),
         ]
     }
 
-    fn selector(model: &str, effort: Option<Effort>) -> ModelSelector {
+    fn selector(model: &str, effort: Option<ReasoningEffort>) -> ModelSelector {
         ModelSelector::new(
             AgentId("coordinator".into()),
             "coordinator",
@@ -302,21 +306,21 @@ mod tests {
 
     #[test]
     fn it_opens_on_the_running_model_and_applies_it_unchanged() {
-        let mut s = selector("claude-sonnet-5-5", Some(Effort::Medium));
+        let mut s = selector("claude-sonnet-5-5", Some(ReasoningEffort::Medium));
         assert_eq!(s.selected().map(|o| o.name.as_str()), Some("sonnet"));
         assert_eq!(
             s.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
             SelectorOutcome::Apply {
                 agent: AgentId("coordinator".into()),
                 model: "sonnet".into(),
-                effort: Some(Effort::Medium),
+                effort: Some(ReasoningEffort::Medium),
             }
         );
     }
 
     #[test]
     fn j_k_move_between_models_and_stop_at_the_ends() {
-        let mut s = selector("claude-opus-5-5", Some(Effort::High));
+        let mut s = selector("claude-opus-5-5", Some(ReasoningEffort::High));
         s.key(key('k'));
         assert_eq!(s.selected().map(|o| o.name.as_str()), Some("opus"));
         for _ in 0..10 {
@@ -327,21 +331,21 @@ mod tests {
 
     #[test]
     fn h_l_step_through_the_levels_and_stop_at_the_ends() {
-        let mut s = selector("claude-opus-5-5", Some(Effort::High));
+        let mut s = selector("claude-opus-5-5", Some(ReasoningEffort::High));
         s.key(key('l'));
-        assert_eq!(s.effort(), Some(Effort::Xhigh));
+        assert_eq!(s.effort(), Some(ReasoningEffort::Xhigh));
         s.key(key('l'));
         s.key(key('l'));
-        assert_eq!(s.effort(), Some(Effort::Max));
+        assert_eq!(s.effort(), Some(ReasoningEffort::Max));
         for _ in 0..6 {
             s.key(key('h'));
         }
-        assert_eq!(s.effort(), Some(Effort::Low));
+        assert_eq!(s.effort(), Some(ReasoningEffort::Low));
     }
 
     #[test]
     fn a_model_without_levels_applies_no_effort_and_one_with_fewer_clamps_it() {
-        let mut s = selector("claude-opus-5-5", Some(Effort::Max));
+        let mut s = selector("claude-opus-5-5", Some(ReasoningEffort::Max));
         s.key(key('j'));
         s.key(key('j'));
         assert_eq!(s.selected().map(|o| o.name.as_str()), Some("old"));
@@ -350,11 +354,11 @@ mod tests {
         assert_eq!(s.effort(), None, "nothing to step through");
         s.key(key('j'));
         // `mid` lacks max: the nearest level below it.
-        assert_eq!(s.effort(), Some(Effort::Medium));
+        assert_eq!(s.effort(), Some(ReasoningEffort::Medium));
         // Back on a model with every level, the pick is still max.
         s.key(key('k'));
         s.key(key('k'));
-        assert_eq!(s.effort(), Some(Effort::Max));
+        assert_eq!(s.effort(), Some(ReasoningEffort::Max));
     }
 
     #[test]
@@ -362,7 +366,7 @@ mod tests {
         let mut s = selector("claude-opus-5-5", None);
         assert_eq!(s.effort(), None);
         s.key(key('l'));
-        assert_eq!(s.effort(), Some(Effort::Xhigh));
+        assert_eq!(s.effort(), Some(ReasoningEffort::Xhigh));
     }
 
     #[test]
