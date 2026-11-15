@@ -8,5 +8,7 @@ export default defineConfig({
   // 5174, not 5173: another app on this machine (a container) holds 5173. See gui/DECISIONS.md.
   server: { host: '127.0.0.1', port: 5174, strictPort: true },
   preview: { host: '127.0.0.1', port: 4173, strictPort: true },
+  // One local bundle for a desktop app, not a website: React Flow and markdown make it ~650 kB.
+  build: { chunkSizeWarningLimit: 900 },
   test: { environment: 'node', include: ['src/**/*.test.ts'] },
 });

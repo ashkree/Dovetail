@@ -67,3 +67,17 @@ The plan (`docs/plan/gui-frontend.md`) says "stop and ask" in a few places. The 
 - **Chose:** a placed incoming card lands under the card it belongs to, offset by how many children that card already has (as the mock did); a new card (`n`, then kind, then title) lands under the selected card and links from it; `0` fits every card in view (computed from card positions, since React Flow's own `fitView` needs measured nodes this controlled setup does not keep); the "React Flow" attribution is hidden (`proOptions.hideAttribution`), which its MIT licence allows, to match the screenshots.
 - **Why:** closest to the mock; nothing new on screen.
 - **Change:** `accept` / `newCard` in `gui/src/keys/actions.ts`; `Canvas.tsx`. To show the attribution, drop `proOptions`.
+
+## 11. Actions the mock only sketched
+
+- **Open:** several keys in the table did nothing real in the mock (new project, add repo, reorder, archive, search, open an agent, new slice, interrupt, permission mode).
+- **Chose:** they keep the mock's behaviour: a toast saying "not in this build", or for new project the mock's sketch form. New effort, rename effort and add task are real (they send `new_effort`, `rename_effort`, `add_task`), because the plan lists those commands; new effort asks name → kind → question or goal in three prompts.
+- **Why:** the plan's out-of-scope list and command list.
+- **Change:** `gui/src/keys/actions.ts`.
+
+## 12. Build size warning
+
+- **Open:** Vite warns when a bundle passes 500 kB; React Flow and the markdown stack make ours ~650 kB.
+- **Chose:** raise the warning limit to 900 kB rather than split the bundle.
+- **Why:** it is one local bundle loaded from disk by a desktop app, not a page on the web.
+- **Change:** `build.chunkSizeWarningLimit` in `gui/vite.config.ts`.
