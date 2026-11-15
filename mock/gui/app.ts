@@ -107,7 +107,9 @@ function header(inWs) {
   return `<div class="header">
     <span class="brand">◆ Dovetail</span>
     ${inWs ? `<span class="crumb"><button data-a="home" class="dim">Projects</button><span class="sep">/</span>Shop</span>
-      <span class="chip repo">shop-api</span><span class="chip repo">shop-web</span>` : `<span class="crumb">Projects</span>`}
+      <span class="chip repo">shop-api</span><span class="chip repo">shop-web</span>
+      <nav class="viewtabs">${[[null, 'Chat', 'Space v x'], ['canvas', 'Canvas', 'Space v c'], ['viewer', 'Viewer', 'Space v w'], ['reading', 'Reading', 'Space v r']].concat(S.main === 'item' ? [['item', 'Inbox item', 'Enter in the inbox']] : [])
+        .map(([k, n, key]) => `<button class="vtab ${S.main === k ? 'on' : ''}" ${k ? `data-a="main" data-m="${k}"` : 'data-a="closeMain"'} title="${key}">${n}</button>`).join('')}</nav>` : `<span class="crumb">Projects</span>`}
     <span class="spacer"></span>
   </div>`;
 }
@@ -203,14 +205,13 @@ function renderSidebar() {
 function renderMain() {
   const tabs = [['canvas', 'Canvas'], ['viewer', 'Viewer'], ['reading', 'Reading']];
   if (S.main === 'item') tabs.push(['item', 'Inbox item']);
-  const t = tabs.map(([k, n]) => `<button class="tab ${S.main === k ? 'on' : ''}" data-a="main" data-m="${k}">${n}</button>`).join('');
   let body = '';
   if (S.main === 'canvas') body = renderCanvas();
   else if (S.main === 'viewer') body = renderViewer();
   else if (S.main === 'reading') body = `<div class="reading" id="reading"><article>${md(REPORT)}</article></div>`;
   else if (S.main === 'item') body = renderItem();
   return `<div class="zone ${S.zone === 'main' ? 'focus' : ''}">
-    <div class="zone-title" data-a="zone" data-z="main"><span class="main-tabs">${t}</span><span class="spacer"></span><button class="dim" data-a="closeMain" title="Close the view; the chat takes the space">✕ close <kbd>Space v x</kbd></button></div>
+    <div class="zone-title" data-a="zone" data-z="main"><span>${tabs.find(x => x[0] === S.main)[1]}</span><span class="spacer"></span><button class="dim" data-a="closeMain" title="Close the view; the chat takes the space">✕ close <kbd>Space v x</kbd></button></div>
     ${S.wwi && D('wwi') === 'main' ? `<div class="wwi-main">${wwiCard(effortById(S.effort), true)}</div>` : ''}
     <div class="main-body">${body}</div></div>`;
 }

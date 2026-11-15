@@ -27,6 +27,18 @@ const DESIGN: DesignSlot[] = [
     { id: '4', label: '4 px · nearly square' },
     { id: '9', label: '9 px · soft' },
   ] },
+  { level: 'Global', id: 'font', name: 'Font', options: [
+    { id: 'inter', label: 'Inter' },
+    { id: 'plex', label: 'IBM Plex Sans' },
+    { id: 'fira', label: 'Fira Sans' },
+    { id: 'lato', label: 'Lato' },
+    { id: 'noto', label: 'Noto Sans' },
+  ] },
+  { level: 'Global', id: 'lh', name: 'Line spacing', options: [
+    { id: '165', label: '1.65 · as now' },
+    { id: '150', label: '1.5 · tighter' },
+    { id: '180', label: '1.8 · airy' },
+  ] },
   { level: 'Global', id: 'fs', name: 'Text size', options: [
     { id: '16', label: '16 px' },
     { id: '17', label: '17 px' },
