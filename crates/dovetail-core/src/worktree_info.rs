@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use dovetail_api::{
     ActivityKind, AgentId, AgentKind, Changes, Event, PrLookup, PrState, PullRequest, SyncState,
-    WorktreeInfo, WorktreeSetup,
+    TaskChange, TaskId, TaskStatus, WorktreeInfo, WorktreeSetup,
 };
 use serde::Deserialize;
 
@@ -257,6 +257,9 @@ pub(crate) enum Refresh {
     Full,
     /// After an event: local `git` only; the PR stays as last looked up.
     Local,
+    /// After a slice's turn, or as it is archived: local `git` and the PR from `gh`, with no
+    /// fetch. The PR is what moves the slice's task (ADR 0024).
+    Turn,
 }
 
 /// The base branch of one refresh.
@@ -348,7 +351,7 @@ impl Context {
             }
         };
         let origin_known = match refresh {
-            Refresh::Local => true,
+            Refresh::Local | Refresh::Turn => true,
             Refresh::Full if name == "HEAD" => false,
             Refresh::Full => self
                 .fetch(&name)
@@ -368,7 +371,7 @@ impl Context {
         now_ms: i64,
         refresh: Refresh,
     ) -> Gathered {
-        let pr_checked = refresh == Refresh::Full;
+        let pr_checked = refresh != Refresh::Local;
         let pr = async {
             if pr_checked {
                 self.pr(&target.branch).await
@@ -499,6 +502,12 @@ impl Core {
         self.gather_worktrees(std::slice::from_ref(agent), Refresh::Local);
     }
 
+    /// Gathers one slice's local git state and its pull request, after its turn ended or as it
+    /// is archived; nothing for other agents.
+    pub(crate) fn refresh_worktree_after_turn(&mut self, agent: &AgentId) {
+        self.gather_worktrees(std::slice::from_ref(agent), Refresh::Turn);
+    }
+
     /// Looks at `agents`' worktrees in the background; each result arrives as
     /// [`Input::WorktreeGathered`].
     fn gather_worktrees(&mut self, agents: &[AgentId], refresh: Refresh) {
@@ -527,7 +536,11 @@ impl Core {
         let ctx = Context {
             paths: self.paths.clone(),
             repo: self.project.folder(&self.paths),
-            gh: PathBuf::from("gh"),
+            gh: self
+                .options
+                .gh
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("gh")),
             ssh_command: std::env::var("GIT_SSH_COMMAND").ok(),
         };
         let inputs = self.inputs.clone();
@@ -547,8 +560,16 @@ impl Core {
     }
 
     /// Stores and sends a gathered state, unless the slice is gone or a newer one is in.
-    pub(crate) fn on_worktree_gathered(&mut self, gathered: Gathered) {
+    pub(crate) async fn on_worktree_gathered(&mut self, gathered: Gathered) {
+        let pr_checked = gathered.pr_checked;
         if !self.agents.contains_key(&gathered.info.agent) {
+            // Archived meanwhile: the lookup started as it closed still counts for its task.
+            if let Some(task) = self.closed_slices.remove(&gathered.info.agent)
+                && pr_checked
+            {
+                self.follow_pull_request(task, &gathered.info.agent, &gathered.info.pr)
+                    .await;
+            }
             return;
         }
         let Some(info) = merge(self.worktrees.get(&gathered.info.agent), gathered) else {
@@ -563,7 +584,58 @@ impl Core {
             let agent = info.agent.clone();
             self.activity(ActivityKind::Pr, Some(&agent), text);
         }
+        let task = self.agents.get(&info.agent).and_then(|r| r.agent.task);
+        let (agent, pr) = (info.agent.clone(), info.pr.clone());
         self.emit(Event::WorktreeUpserted(info));
+        if let Some(task) = task
+            && pr_checked
+        {
+            self.follow_pull_request(task, &agent, &pr).await;
+        }
+    }
+
+    /// Moves `task` along from the pull request just looked up for its slice `seen` (ADR 0024):
+    /// in progress to review once every slice of the task has an open or merged one; to done
+    /// once every one is merged; review back to in progress when this one was closed unmerged.
+    /// A task with several slices follows the one furthest behind. A lookup that failed moves
+    /// nothing.
+    pub(crate) async fn follow_pull_request(
+        &mut self,
+        task: TaskId,
+        seen: &AgentId,
+        pr: &PrLookup,
+    ) {
+        let Some(current) = self.task(task).await else {
+            return;
+        };
+        let least = self
+            .task_slices(task)
+            .iter()
+            .filter(|slice| *slice != seen)
+            .map(|slice| self.worktrees.get(slice).map_or(0, |w| pr_stage(&w.pr)))
+            .chain([pr_stage(pr)])
+            .min()
+            .unwrap_or(0);
+        let closed = matches!(pr, PrLookup::Found(found) if found.state == PrState::Closed);
+        let next = match (current.status, least) {
+            (TaskStatus::InProgress | TaskStatus::Review, 2) => TaskStatus::Done,
+            (TaskStatus::InProgress, 1) => TaskStatus::Review,
+            (TaskStatus::Review, 0) if closed => TaskStatus::InProgress,
+            _ => return,
+        };
+        self.update_task(task, vec![TaskChange::Status(next)]).await;
+    }
+}
+
+/// How far a slice's pull request has come: 0 none (or closed, or unknown), 1 open, 2 merged.
+fn pr_stage(pr: &PrLookup) -> u8 {
+    match pr {
+        PrLookup::Found(found) => match found.state {
+            PrState::Merged => 2,
+            PrState::Open => 1,
+            PrState::Closed => 0,
+        },
+        PrLookup::None | PrLookup::Unknown { .. } => 0,
     }
 }
 

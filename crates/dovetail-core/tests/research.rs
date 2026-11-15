@@ -65,6 +65,7 @@ impl App {
             scopes: None,
             upgrade: None,
             opener: None,
+            gh: None,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths, Config::default(), options).expect("core");

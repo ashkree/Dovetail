@@ -77,6 +77,7 @@ impl App {
             upgrade: None,
             // `gx` (ADR 0018): a script the reading-mode test writes, next to the data folder.
             opener: Some(paths.data.with_file_name("opener.sh").into()),
+            gh: None,
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths, Config::default(), options).expect("core");
@@ -1162,7 +1163,11 @@ fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
         .fake
         .started_specs()
         .into_iter()
-        .find(|s| s.name.as_deref() == Some(ask.0.as_str()))
+        .find(|s| {
+            s.name
+                .as_deref()
+                .is_some_and(|n| n.ends_with(&format!(".{}", ask.0)))
+        })
         .expect("the Ask session started");
     let research_dir = app.summary(task).expect("summary").dir.clone();
     assert_eq!(spec.cwd, research_dir);

@@ -25,14 +25,14 @@ mod research;
 /// Most characters of a status line (B17).
 const STATUS_MAX: usize = 120;
 
-fn ok(text: impl Into<String>) -> SocketResponseBody {
+pub(crate) fn ok(text: impl Into<String>) -> SocketResponseBody {
     SocketResponseBody::ToolResult {
         text: text.into(),
         is_error: false,
     }
 }
 
-fn error(text: impl Into<String>) -> SocketResponseBody {
+pub(crate) fn error(text: impl Into<String>) -> SocketResponseBody {
     SocketResponseBody::ToolResult {
         text: text.into(),
         is_error: true,
@@ -174,6 +174,7 @@ impl Core {
                 self.update_agent(&agent, |row| row.agent.status_line = line);
                 ok("Status set.")
             }
+            Tool::Report(report) => self.slice_report(&agent, report).await,
             Tool::CreateTask(task) => {
                 let new = NewTask {
                     title: task.title,
@@ -394,10 +395,8 @@ impl Core {
             }
             Some(t) => t.bucket == Some(dovetail_api::Bucket::Now),
         };
+        // Validation refused a status: Dovetail sets it (ADR 0024).
         let mut patch = Vec::new();
-        if let Some(status) = update.status {
-            patch.push(TaskChange::Status(status));
-        }
         if let Some(bucket) = update.new_bucket() {
             patch.push(TaskChange::Bucket(bucket));
             // The user did not put it in Now, so it carries the marker new tasks have.

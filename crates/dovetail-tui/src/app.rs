@@ -413,13 +413,17 @@ impl App {
                     ));
                 }
             }
-            ServerMsg::Snapshot(snapshot) => {
+            ServerMsg::Snapshot(mut snapshot) => {
                 self.now_ms = self.now_ms.max(snapshot.now_ms);
+                snapshot.tasks.iter_mut().for_each(without_review);
                 self.snap = snapshot;
                 self.resyncing = false;
                 self.offer_new_project();
             }
-            ServerMsg::Event { seq, event } => {
+            ServerMsg::Event { seq, mut event } => {
+                if let Event::TaskUpserted(task) = &mut event {
+                    without_review(task);
+                }
                 let failure = match &event {
                     Event::CommandFailed { message } => Some(message.clone()),
                     _ => None,
@@ -1432,4 +1436,12 @@ pub(crate) fn commands_for<'a>(snap: &'a Snapshot, agent: &AgentId) -> &'a [Slas
 fn model_command(text: &str) -> Option<&str> {
     let rest = text.trim().strip_prefix("/model")?;
     (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim())
+}
+
+/// This UI is frozen as built before the review status (ADR 0024): it shows a task in review as
+/// in progress. Done once, where tasks arrive, so nothing downstream meets the status.
+fn without_review(task: &mut dovetail_api::Task) {
+    if task.status == dovetail_api::TaskStatus::Review {
+        task.status = dovetail_api::TaskStatus::InProgress;
+    }
 }

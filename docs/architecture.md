@@ -264,9 +264,9 @@ Size: **S** = days, additive. **M** = about a week, touches existing paths. **L*
 | Slice | Worktree of *the* repo | Worktree of one named repo | `project_start_slice` gains `repo`; `agents.repo_id` | S | ADR 0021 |
 | Work model | Tasks in buckets | Efforts → criteria → tasks | New tables, types, commands. **Built in this change.** | M | this PR |
 | Chat | One conversation per agent, no tags | One coordinator chat; every line has an effort tag | `conversation_entries.effort_id`. **Built in this change.** | S | this PR |
-| Task status | Set by hand, except "in progress" on slice start | Dovetail sets all of it | New `review` status; PR state drives two transitions | M | ADR 0024 |
-| Session names | `coordinator`, same in every project | Unique per project | Changes what Claude Code sees as the name | S, but needs a live check | ADR 0022 |
-| Slice → coordinator | Claude Code's own messaging | A Dovetail tool | New tool `core_report`; role prompts change | M | ADR 0022 |
+| Task status | Set by hand, except "in progress" on slice start | Dovetail sets all of it | New `review` status; PR state drives the transitions. **Built** (stacked PR). | M | ADR 0024 |
+| Session names | `coordinator`, same in every project | Unique per project: `<project>.<name>` | Changes what Claude Code sees as the name. **Built** (stacked PR). | S | ADR 0022 |
+| Slice → coordinator | Claude Code's own messaging | A Dovetail tool | New tool `coordination_report`; role prompts change. **Built** (stacked PR). | M | ADR 0022 |
 | Canvas | None | Canvases with cards that point at rows | New tables, commands and tools | L | ADR 0025 |
 | Driver | NDJSON stream behind `SessionDriver` | Same | One new launch flag per attached repo | S | ADR 0021 |
 | Database engine | SQLite, one thread, forward-only migrations | Same | — | — | — |

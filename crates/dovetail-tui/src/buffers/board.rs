@@ -363,7 +363,7 @@ fn waiting_tasks(snap: &Snapshot) -> HashSet<TaskId> {
 fn column_label(status: TaskStatus) -> &'static str {
     match status {
         TaskStatus::Todo => "Todo",
-        TaskStatus::InProgress => "In progress",
+        TaskStatus::InProgress | TaskStatus::Review => "In progress",
         TaskStatus::Done => "Done",
         TaskStatus::Archived => "Archived",
     }
@@ -372,7 +372,7 @@ fn column_label(status: TaskStatus) -> &'static str {
 fn column_glyph(status: TaskStatus, theme: &Theme) -> (&'static str, Color) {
     match status {
         TaskStatus::Todo | TaskStatus::Archived => ("○", theme.dim),
-        TaskStatus::InProgress => ("◐", theme.working),
+        TaskStatus::InProgress | TaskStatus::Review => ("◐", theme.working),
         TaskStatus::Done => ("✓", theme.ok),
     }
 }

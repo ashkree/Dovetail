@@ -76,6 +76,7 @@ pub fn run_real(project: Option<&str>) -> Result<()> {
         }),
         // `gx` in reading mode: `$BROWSER`, else `xdg-open`.
         opener: None,
+        gh: None,
     };
     let (link, core) = dovetail_core::spawn(resolution, paths.clone(), config, options)
         .context("starting the core")?;

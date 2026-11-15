@@ -1086,3 +1086,66 @@ fn an_effort_has_the_json_shape_the_gui_reads() {
     assert!(value["criteria"][1].get("evidence").is_none());
     roundtrip(&effort());
 }
+
+/// ADR 0022: a slice's report parses from MCP arguments, survives the socket, and is refused
+/// from any role but a slice.
+#[test]
+fn a_report_parses_roundtrips_and_is_for_slices_only() {
+    use dovetail_api::tools::{Report, ReportState, Role, Tool, ToolError};
+
+    let parsed = Tool::parse(
+        "coordination_report",
+        json!({"state": "done", "summary": "PR open, tests pass", "pr": 41}),
+    )
+    .unwrap();
+    let report = Tool::Report(Report {
+        state: ReportState::Done,
+        summary: "PR open, tests pass".into(),
+        pr: Some(41),
+    });
+    assert_eq!(parsed, report);
+    roundtrip(&report);
+    assert_eq!(report.validate(Role::Slice), Ok(()));
+    assert_eq!(
+        report.validate(Role::Coordinator),
+        Err(ToolError::ReportFromNonSlice)
+    );
+    let no_pr = Tool::parse(
+        "coordination_report",
+        json!({"state": "blocked", "summary": "need the schema"}),
+    )
+    .unwrap();
+    assert_eq!(no_pr.validate(Role::Slice), Ok(()));
+    let empty = Tool::parse(
+        "coordination_report",
+        json!({"state": "progress", "summary": "  "}),
+    )
+    .unwrap();
+    assert_eq!(
+        empty.validate(Role::Slice),
+        Err(ToolError::Empty("summary"))
+    );
+}
+
+/// ADR 0024: `review` is a status with its own name on the wire, and an agent's `tasks_update`
+/// cannot set any status.
+#[test]
+fn review_is_a_status_and_agents_cannot_set_status() {
+    use dovetail_api::tools::{Role, Tool, ToolError};
+
+    assert_eq!(
+        serde_json::to_value(TaskStatus::Review).unwrap(),
+        json!("review")
+    );
+    roundtrip(&TaskStatus::Review);
+    for (status, refusal) in [
+        ("done", ToolError::StatusIsSetByDovetail),
+        ("review", ToolError::StatusIsSetByDovetail),
+        ("archived", ToolError::UpdateToArchived),
+    ] {
+        let call = Tool::parse("tasks_update", json!({"id": 1, "status": status})).unwrap();
+        assert_eq!(call.validate(Role::Coordinator), Err(refusal), "{status}");
+    }
+    let other = Tool::parse("tasks_update", json!({"id": 1, "title": "renamed"})).unwrap();
+    assert_eq!(other.validate(Role::Coordinator), Ok(()));
+}

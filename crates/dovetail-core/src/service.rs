@@ -91,6 +91,9 @@ pub struct CoreOptions {
     /// The program [`Command::OpenExternal`] runs with the URL; `None` for `$BROWSER`, else
     /// `xdg-open`. Tests give a fake one.
     pub opener: Option<std::ffi::OsString>,
+    /// The GitHub CLI asked for a slice branch's pull request; `None` for `gh` on `PATH`. Tests
+    /// give a fake one.
+    pub gh: Option<PathBuf>,
 }
 
 /// What `:upgrade` runs its build with and installs over.
@@ -463,6 +466,18 @@ pub(crate) struct Core {
     pub(crate) efforts: BTreeMap<dovetail_api::EffortId, dovetail_api::Effort>,
     /// The effort tag each agent's new entries get: that of the user's last message to it.
     pub(crate) effort_tags: HashMap<AgentId, dovetail_api::EffortId>,
+    /// Archived slices and the task each worked on, kept so a pull-request lookup started as
+    /// the slice was archived can still move its task (ADR 0024).
+    pub(crate) closed_slices: HashMap<AgentId, TaskId>,
+}
+
+/// How a new conversation entry gets its effort tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntryTag {
+    /// From the agent's current tag, by the entry's kind ([`Core::entry_tag`]).
+    ByKind,
+    /// This tag, or none: a slice's report carries its task's effort.
+    Effort(Option<dovetail_api::EffortId>),
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -559,6 +574,7 @@ impl Core {
             model_catalog: Vec::new(),
             efforts: BTreeMap::new(),
             effort_tags: HashMap::new(),
+            closed_slices: HashMap::new(),
         }
     }
 
@@ -688,7 +704,7 @@ impl Core {
                 Input::OrphanInspected { found, result } => self.on_orphan(found, result),
                 Input::OrphanRemoved { name, result } => self.on_orphan_removed(name, result),
                 Input::TodosChanged { list } => self.mark_todos(list),
-                Input::WorktreeGathered(info) => self.on_worktree_gathered(info),
+                Input::WorktreeGathered(info) => self.on_worktree_gathered(info).await,
                 Input::Pasted { agent, paste } => {
                     self.emit(Event::ClipboardPasted { agent, paste });
                 }
@@ -1071,13 +1087,29 @@ impl Core {
         text: String,
         attachments: Vec<Attachment>,
     ) -> EntryId {
+        self.add_entry_tagged(agent, kind, text, attachments, EntryTag::ByKind)
+    }
+
+    /// [`add_entry_with`](Self::add_entry_with), saying how the entry gets its effort tag.
+    pub(crate) fn add_entry_tagged(
+        &mut self,
+        agent: &AgentId,
+        kind: EntryKind,
+        text: String,
+        attachments: Vec<Attachment>,
+        tag: EntryTag,
+    ) -> EntryId {
+        let effort = match tag {
+            EntryTag::ByKind => self.entry_tag(agent, kind),
+            EntryTag::Effort(effort) => effort,
+        };
         let entry = ConversationEntry {
             id: EntryId(self.next_entry),
             at_ms: now_ms(),
             kind,
             text,
             attachments,
-            effort: self.entry_tag(agent, kind),
+            effort,
         };
         self.next_entry += 1;
         let tail = self.tails.entry(agent.clone()).or_default();
@@ -1242,6 +1274,23 @@ impl Core {
             row.agent.status = status;
             row.agent.last_activity_ms = now_ms();
         });
+    }
+
+    /// The name a session is given in Claude Code (`--name`), which its own messaging finds
+    /// sessions by across the whole machine: `<project>.<agent name>`, so two open projects
+    /// never share one (ADR 0022).
+    pub(crate) fn session_name(&self, agent_name: &str) -> String {
+        format!("{}.{agent_name}", self.project.key())
+    }
+
+    /// An agent's own name, from a session name as the stream gives it back: without this
+    /// project's prefix. A name with no prefix (a session started before ADR 0022, or a
+    /// subagent) is returned as it is.
+    pub(crate) fn bare_name<'a>(&self, session_name: &'a str) -> &'a str {
+        session_name
+            .strip_prefix(self.project.key())
+            .and_then(|rest| rest.strip_prefix('.'))
+            .unwrap_or(session_name)
     }
 
     /// `dovetail-<project>-coordinator`, `dovetail-<project>-task-<id>` (A12), or

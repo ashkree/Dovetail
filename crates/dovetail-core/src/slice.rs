@@ -193,6 +193,10 @@ impl Core {
                 repo_path.display()
             ));
         }
+        first_prompt.push_str(&format!(
+            "The coordinator's session is named `{}`: use that name when you message it.\n\n",
+            self.session_name(COORDINATOR)
+        ));
         if let Some(task) = &task {
             first_prompt.push_str(&format!("Task #{}: {}\n\n", task.id.0, task.title));
             if !task.notes.trim().is_empty() {
@@ -343,7 +347,10 @@ impl Core {
             Some(agent),
             format!("slice {name} ready"),
         );
-        self.tell_coordinator(format!("slice {name} ready"));
+        let session = self.session_name(&name);
+        self.tell_coordinator(format!(
+            "slice {name} ready; its session is named `{session}` for SendMessage"
+        ));
     }
 
     /// Setup failed: no first prompt, an inbox error, and the coordinator is told.
@@ -402,6 +409,15 @@ impl Core {
         }
         if self.refuse_while_taken_over(agent) {
             return;
+        }
+        // A last look at its pull request: the coordinator merges and archives in one turn, so
+        // no slice turn ends in between to show the merge (ADR 0024).
+        if self
+            .agents
+            .get(agent)
+            .is_some_and(|r| r.agent.task.is_some())
+        {
+            self.refresh_worktree_after_turn(agent);
         }
         if let Some(live) = self.live.get_mut(agent) {
             live.stopping = true;
@@ -641,6 +657,11 @@ impl Core {
         }
         self.live.remove(agent);
         self.tails.remove(agent);
+        if let (AgentKind::Slice, Some(task), Some(_)) =
+            (row.agent.kind, row.agent.task, &row.agent.worktree)
+        {
+            self.closed_slices.insert(agent.clone(), task);
+        }
         // The client drops its copy with `AgentRemoved`.
         self.worktrees.remove(agent);
         let items: Vec<_> = self

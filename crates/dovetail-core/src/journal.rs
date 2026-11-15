@@ -230,7 +230,12 @@ pub(crate) fn write(dir: &Path, date: Date, block: &str) -> std::io::Result<Path
 pub(crate) fn open_tasks(tasks: &[Task]) -> String {
     let mut open: Vec<&Task> = tasks
         .iter()
-        .filter(|t| matches!(t.status, TaskStatus::Todo | TaskStatus::InProgress))
+        .filter(|t| {
+            matches!(
+                t.status,
+                TaskStatus::Todo | TaskStatus::InProgress | TaskStatus::Review
+            )
+        })
         .collect();
     if open.is_empty() {
         return "No open tasks.".into();
@@ -259,6 +264,9 @@ pub(crate) fn open_tasks(tasks: &[Task]) -> String {
         }
         if task.status == TaskStatus::InProgress {
             tags.push("in progress".into());
+        }
+        if task.status == TaskStatus::Review {
+            tags.push("in review".into());
         }
         if let Some(pr) = task.pr {
             tags.push(format!("PR #{pr}"));

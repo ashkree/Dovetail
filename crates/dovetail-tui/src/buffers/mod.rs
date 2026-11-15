@@ -437,7 +437,7 @@ pub(crate) fn status_word(status: AgentStatus) -> &'static str {
 pub(crate) fn next_status(status: TaskStatus) -> TaskStatus {
     match status {
         TaskStatus::Todo => TaskStatus::InProgress,
-        TaskStatus::InProgress => TaskStatus::Done,
+        TaskStatus::InProgress | TaskStatus::Review => TaskStatus::Done,
         TaskStatus::Done | TaskStatus::Archived => TaskStatus::Todo,
     }
 }
@@ -467,7 +467,7 @@ pub(crate) fn next_p_level(p: Option<PLevel>) -> Option<PLevel> {
 pub(crate) fn status_label(status: TaskStatus) -> &'static str {
     match status {
         TaskStatus::Todo => "to do",
-        TaskStatus::InProgress => "in progress",
+        TaskStatus::InProgress | TaskStatus::Review => "in progress",
         TaskStatus::Done => "done",
         TaskStatus::Archived => "archived",
     }
