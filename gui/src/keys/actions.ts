@@ -5,7 +5,7 @@
 import type { CardKind, EffortKind, Id, InboxItem, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
-import { effortById, INBOX_GLYPH, KIND_GLYPH, toKebab, treeRows, visibleChat } from '../state/select';
+import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
 import { scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
 import { readingHeadings, viewport } from './viewport';
 
@@ -572,7 +572,7 @@ export function dispatch(a: Action, arg?: unknown): void {
       if (u.main !== 'viewer') openMain('viewer');
       setUi(x => x.panel === 'detached' ? { panel: 'docked' } : { panel: 'detached', panelPos: { x: Math.max(16, window.innerWidth - 820), y: 120 } });
       return;
-    case 'reload': setUi(x => ({ choice: x.choice.slice() })); toast('Preview reloaded'); return;
+    case 'reload': setUi(x => ({ previewLoads: x.previewLoads + 1 })); toast('Preview reloaded'); return;
     case 'browser': toast('Opens in your browser (not in this build)'); return;
 
     // ---- reading view
@@ -582,7 +582,8 @@ export function dispatch(a: Action, arg?: unknown): void {
       return;
     }
     case 'refReport': {
-      const card = s.cards.find(c => c.report_id);
+      const report = readingReport(s, u.cardSel, u.effort);
+      const card = s.cards.find(c => c.report_id === report?.id);
       if (card) { insertRef(`[[${card.id} ${card.title}]]`); toast(`Reference to **${card.id}** put in the chat bar`); }
       return;
     }

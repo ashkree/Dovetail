@@ -47,3 +47,16 @@ The plan (`docs/plan/gui-frontend.md`) says "stop and ask" in a few places. The 
 
 - The keyboard overlay's hint for Chat said "coordinator, right"; the chat is on the left in the settled layout, so it says "coordinator, left".
 - Tab in the canvas goes to the first card the selected one links to and Shift-Tab back to the card linking to it (the mock's Tab cycled oddly between children). `h j k l` reach siblings.
+
+## 8. Which variant set and report the views show
+
+- **Open:** design v2 says the viewer follows the focused slice; the mock always showed `header-toggle`'s preview and the one report.
+- **Chose:** the viewer shows the focused effort's variant set, else the project's first one; the reading view shows the selected card's report, else the focused effort's, else the first.
+- **Why:** closest to the mock while still following focus once there is more than one.
+- **Change:** `viewerSet()` in `gui/src/keys/actions.ts`, `readingReport()` in `gui/src/state/select.ts`.
+
+## 9. The sample preview page
+
+- **Open:** the plan asks for a small static page that changes when the parent posts the variants.
+- **Chose:** `gui/public/sample/` (HTML, CSS, a 15-line script) with the mock's shop page; the GUI posts `{type: 'dovetail-variants', choice, text}` to the same origin only. It uses the system font, since a slice's site has its own look.
+- **Change:** `gui/public/sample/`.

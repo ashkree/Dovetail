@@ -11,6 +11,7 @@ import './styles/home.css';
 import './styles/sidebar.css';
 import './styles/main.css';
 import './styles/chat.css';
+import './styles/viewer.css';
 import './styles/overlays.css';
 import { App } from './App';
 import { MockCore } from './core/mock';

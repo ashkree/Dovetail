@@ -1,6 +1,6 @@
 // Derived views of the snapshot that several components and the dispatcher share. Pure.
 
-import type { Agent, ChatEntry, Effort, Id, Snapshot, Task, TaskStatus } from '../core/model';
+import type { Agent, ChatEntry, Effort, Id, Report, Snapshot, Task, TaskStatus } from '../core/model';
 
 export const effortById = (s: Snapshot, id: Id | null | undefined): Effort | undefined =>
   id ? s.efforts.find(e => e.id === id) : undefined;
@@ -57,4 +57,12 @@ export function visibleChat(s: Snapshot, filter: 'all' | Id): ChatEntry[] {
 /** Effort names are lower kebab case: "Dark mode" is saved as `dark-mode`. */
 export function toKebab(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** The report the reading view shows: the selected card's, else the focused effort's, else the first. */
+export function readingReport(s: Snapshot, cardSel: Id | null, effort: Id | null): Report | undefined {
+  const card = s.cards.find(c => c.id === cardSel);
+  return s.reports.find(r => r.id === card?.report_id)
+    ?? s.reports.find(r => r.effort_id === effort)
+    ?? s.reports[0];
 }

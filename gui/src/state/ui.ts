@@ -73,6 +73,8 @@ export interface Ui {
   /** The live variant mix in the viewer, option index per slot. */
   choice: number[];
   panel: PanelState;
+  /** Bumped to reload the viewer's preview. */
+  previewLoads: number;
   panelPos: { x: number; y: number };
   readHead: number;
   sideW: number;
@@ -92,7 +94,7 @@ export const initialUi: Ui = {
   chatCur: -1, openReports: [],
   draft: '', tag: null,
   cardSel: 'Q3', canvasPart: 'cards', incSel: 0, zoom: 0.85,
-  slot: 2, choice: [0, 0, 0, 0, 0], panel: 'docked', panelPos: { x: 0, y: 0 },
+  slot: 2, choice: [0, 0, 0, 0, 0], panel: 'docked', previewLoads: 0, panelPos: { x: 0, y: 0 },
   readHead: 0, sideW: 330, sideCollapsed: false,
   overlay: null, modal: null, toast: null,
 };
