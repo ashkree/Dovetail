@@ -18,6 +18,11 @@ const DESIGN: DesignSlot[] = [
     { id: 'iceberg-orig', label: 'Iceberg, original greys (#6b7089)' },
     { id: 'iris-hc', label: 'Iris high contrast' },
   ] },
+  { level: 'Global', id: 'hl', name: 'Highlight colours in text', options: [
+    { id: 'soft', label: 'Softer · 70 % colour, 30 % text colour' },
+    { id: 'faint', label: 'Faint · half and half' },
+    { id: 'full', label: 'Full · as before' },
+  ] },
   { level: 'Global', id: 'density', name: 'Busyness', options: [
     { id: 'panels', label: 'Panels · rounded framed regions, less inside' },
     { id: 'full', label: 'Full · the first version' },
