@@ -327,4 +327,4 @@ The first arrow exists today (`start_slice` in [`slice.rs`](../crates/dovetail-c
 
 Built in this change: migration `0017`, the effort and criterion types, their commands and events, `apply`, the core handlers, and the effort tag on chat lines. No screen changes.
 
-Waiting for your approval before anything is built on them: ADRs 0021 to 0025 in [`docs/adr/`](adr/).
+Decided and approved, not built yet: ADRs 0021 to 0025 in [`docs/adr/`](adr/).

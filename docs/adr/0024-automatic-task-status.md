@@ -1,6 +1,6 @@
 # Dovetail sets task status from what it observes
 
-**Status: Proposed: awaiting the user's approval.** Not built, except the first arrow, which exists today.
+**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
 
 Refines Decision 11 as `docs/design-v2.md` restates it ("Task status, set by Dovetail"). This ADR names the event in the core that drives each arrow, and what counts as the user's approval.
 

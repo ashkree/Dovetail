@@ -1,6 +1,6 @@
 # The Tauri shell hosts the core and carries `ServerMsg` and `Command` as they are
 
-**Status: Proposed: awaiting the user's approval.** Nothing is built on it yet.
+**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
 
 Supersedes ADR 0020's process model (`dovetail serve`, clients attaching over the socket) and its toolkit (egui), as `docs/design-v2.md` already states. This ADR adds the how: the wiring, the mapping onto the frontend's `CoreLink`, and how TypeScript stays in step with `dovetail-api`.
 

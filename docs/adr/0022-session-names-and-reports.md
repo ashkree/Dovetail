@@ -1,6 +1,6 @@
 # Session names carry the project; slices report through a Dovetail tool
 
-**Status: Proposed: awaiting the user's approval.** Not built: it changes what running sessions are called and what the role prompts say, and that needs a check against live sessions.
+**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
 
 Settles open point 4 of `docs/design-v2.md`. Proposes one simplification of it: the effort is not part of the name.
 

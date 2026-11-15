@@ -1,6 +1,6 @@
 # Canvases and cards live in `state.db`; a card names its target by kind and id
 
-**Status: Proposed: awaiting the user's approval.** Nothing is built on it yet.
+**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
 
 Refines section 10 of `docs/design-v2.md` (the `canvases`, `cards` and `card_links` tables) and settles how a card's reference stays valid. Framework layouts and the proposed "decision rounds" are left to the canvas milestone.
 

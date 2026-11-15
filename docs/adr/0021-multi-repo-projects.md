@@ -1,6 +1,6 @@
 # A project is a name with repos; the coordinator gets its own folder
 
-**Status: Proposed: awaiting the user's approval.** Nothing is built on it yet.
+**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
 
 Supersedes ADR 0005 (a project is a folder, found from the current folder) and Decision 12's "coordinator in the main checkout". Refines ADR 0009 (the profile becomes the project's account) and ADR 0015 (the project kind). Settles open points 2, 5 and 8 of `docs/design-v2.md`, and proposes one change to it: the coordinator's folder.
 
@@ -34,7 +34,7 @@ Supersedes ADR 0005 (a project is a folder, found from the current folder) and D
  ├── state.db
  ├── worktrees/api-guest/        ← slice checkouts (full copies of the code)
  ├── journal/
- └── home/                       ← coordinator cwd (proposed)
+ └── home/                       ← coordinator cwd
  attached: ~/code/shopfront-api, ~/code/shopfront-web
 ```
 
