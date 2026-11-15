@@ -382,9 +382,14 @@ impl Core {
         id: &AgentId,
         text: String,
         attachments: Vec<Attachment>,
+        effort: Option<dovetail_api::EffortId>,
     ) {
         if self.live.get(id).is_some_and(|l| l.setting_up) {
             self.fail("this slice is still setting up");
+            return;
+        }
+        // The effort tag for this message and the replies to it.
+        if !self.tag_prompt(id, effort) {
             return;
         }
         if self

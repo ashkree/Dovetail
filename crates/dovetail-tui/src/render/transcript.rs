@@ -430,6 +430,7 @@ mod tests {
             kind,
             text: text.into(),
             attachments: Vec::new(),
+            effort: None,
         }
     }
 

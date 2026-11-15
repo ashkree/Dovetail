@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::effort::{CriterionId, Effort, EffortId};
 use crate::map::MapSummary;
 use crate::research::ResearchSummary;
 
@@ -68,6 +69,9 @@ pub struct Snapshot {
     pub project: Option<ProjectSummary>,
     /// Every registered project, for the project switcher.
     pub projects: Vec<ProjectSummary>,
+    /// The open project's efforts, closed ones included, in id order.
+    #[serde(default)]
+    pub efforts: Vec<Effort>,
     /// The open project's tasks, archived ones included.
     pub tasks: Vec<Task>,
     /// Every agent in the open project.
@@ -285,6 +289,12 @@ pub struct Task {
     /// Tasks related to this one, both ways; no effect on order or status.
     #[serde(default)]
     pub related: Vec<TaskId>,
+    /// The effort it belongs to. A peer that does not send it means Unsorted.
+    #[serde(default)]
+    pub effort: EffortId,
+    /// The acceptance criterion of that effort it serves; `None` flags a task that serves none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criterion: Option<CriterionId>,
 }
 
 /// Where a task stands. Whether it needs you is not a status: it follows from the inbox
@@ -799,6 +809,10 @@ pub struct ConversationEntry {
     /// Images sent with a user message, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<Attachment>,
+    /// The effort tag: the line of work this entry belongs to. `None` for entries from before
+    /// efforts, and for ones that belong to none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<EffortId>,
 }
 
 /// Most images one message can carry.

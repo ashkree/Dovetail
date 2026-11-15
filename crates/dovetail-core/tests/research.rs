@@ -160,6 +160,8 @@ fn task_with_round(app: &mut App) -> TaskId {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     app.wait_for("the task", |s| !s.tasks.is_empty());
     let task = app.snap.tasks[0].id;
@@ -180,6 +182,7 @@ fn prompt(app: &App, text: &str) {
         agent: AgentId(COORDINATOR.into()),
         text: text.into(),
         attachments: Vec::new(),
+        effort: None,
     });
 }
 

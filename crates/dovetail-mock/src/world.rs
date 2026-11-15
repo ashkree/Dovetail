@@ -35,6 +35,8 @@ fn task(
         follow_up_of: None,
         coordinator_created: false,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }
 }
 
@@ -158,6 +160,7 @@ fn entry(id: u64, at_ms: i64, kind: EntryKind, text: &str) -> ConversationEntry 
         kind,
         text: text.into(),
         attachments: Vec::new(),
+        effort: None,
     }
 }
 
@@ -533,6 +536,8 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         now_ms,
         project: Some(project.clone()),
         projects: vec![project, other, research, crate::tangents::project()],
+        // The mock has no efforts; every task reads as Unsorted.
+        efforts: Vec::new(),
         tasks,
         agents: vec![
             coordinator,

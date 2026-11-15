@@ -231,6 +231,8 @@ fn new_task(app: &mut App, title: &str) -> TaskId {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     app.wait_for("the task", |s| s.tasks.len() > before);
     app.snap
@@ -312,6 +314,7 @@ fn researched(dir: &Path) -> Researched {
         agent: AgentId(COORDINATOR.into()),
         text: "go".into(),
         attachments: Vec::new(),
+        effort: None,
     });
     app.wait_for("the finding", |s| {
         s.research
@@ -893,6 +896,7 @@ fn unfiled(dir: &Path) -> (App, PathBuf, PathBuf) {
         agent: AgentId(COORDINATOR.into()),
         text: "go".into(),
         attachments: Vec::new(),
+        effort: None,
     });
     app.wait_for("an unfiled finding in Needs you", |s| {
         s.inbox
@@ -1144,6 +1148,7 @@ fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
         agent: ask.clone(),
         text: "Where does the codeword come from?".into(),
         attachments: Vec::new(),
+        effort: None,
     });
     let sent = app.wait_for_note("## The report");
     assert!(sent.contains("MARIGOLD-42"), "{sent}");

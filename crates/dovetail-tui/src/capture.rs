@@ -134,6 +134,8 @@ impl Capture {
             pr: parsed.pr,
             // The link relates the two tasks both ways (decided 2026-11-03).
             related: self.active_link().map(|l| l.id).into_iter().collect(),
+            effort: Default::default(),
+            criterion: None,
         })
     }
 }

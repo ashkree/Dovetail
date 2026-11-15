@@ -291,6 +291,8 @@ fn leader_t_opens_capture_and_enter_saves_with_its_tokens() {
             follow_up_of: None,
             pr: Some(1231),
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         })]
     );
     assert_eq!(app.mode(), Mode::Normal);
@@ -402,6 +404,8 @@ fn tab_saves_and_opens_the_detail_once_the_core_announces_the_task() {
             follow_up_of: None,
             coordinator_created: false,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         }),
     });
     let screen = render(&mut app, 120, 40);
@@ -967,6 +971,8 @@ fn a_failed_save_does_not_leave_tab_waiting_for_a_task_of_that_title() {
             follow_up_of: None,
             coordinator_created: false,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         }),
     });
     assert!(!render(&mut app, 120, 30).contains("task · #41"));

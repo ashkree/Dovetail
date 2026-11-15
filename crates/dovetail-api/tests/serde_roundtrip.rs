@@ -146,6 +146,39 @@ fn task() -> Task {
         follow_up_of: Some(TaskId(2)),
         coordinator_created: true,
         related: vec![],
+        effort: EffortId(7),
+        criterion: Some(CriterionId(3)),
+    }
+}
+
+fn effort() -> Effort {
+    Effort {
+        id: EffortId(7),
+        name: "payment-providers".into(),
+        kind: EffortKind::Research,
+        question_or_goal: "Which provider fits EU cards?".into(),
+        status: EffortStatus::Open,
+        where_was_i: WhereWasI {
+            last_done: "Fees compared".into(),
+            waits_on_you: "Approve criterion 3".into(),
+            next_step: "EU tax handling".into(),
+        },
+        criteria: vec![
+            Criterion {
+                id: CriterionId(3),
+                effort: EffortId(7),
+                text: "Fees compared for 3 providers".into(),
+                state: CriterionState::Claimed,
+                evidence: Some("finding 41".into()),
+            },
+            Criterion {
+                id: CriterionId(4),
+                effort: EffortId(7),
+                text: "EU tax handling known".into(),
+                state: CriterionState::Open,
+                evidence: None,
+            },
+        ],
     }
 }
 
@@ -193,6 +226,7 @@ fn entry() -> ConversationEntry {
             media_type: ImageType::Png,
             size: 421_888,
         }],
+        effort: Some(EffortId(7)),
     }
 }
 
@@ -364,6 +398,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
         now_ms: 1_700_000_000_000,
         project: Some(project.clone()),
         projects: vec![project, research],
+        efforts: vec![effort()],
         tasks: vec![task()],
         agents: vec![subagent()],
         todos: vec![todo()],
@@ -433,6 +468,7 @@ fn every_event_roundtrips() {
     let events = vec![
         Event::TaskUpserted(task()),
         Event::TaskRemoved(TaskId(3)),
+        Event::EffortUpserted(effort()),
         Event::AgentUpserted(subagent()),
         Event::AgentRemoved(id("sub-1")),
         Event::TodosReplaced {
@@ -568,6 +604,7 @@ fn every_command_roundtrips() {
             agent: id("coordinator"),
             text: "plan M2".into(),
             attachments: Vec::new(),
+            effort: None,
         },
         Command::Prompt {
             agent: id("coordinator"),
@@ -577,6 +614,55 @@ fn every_command_roundtrips() {
                 media_type: ImageType::Webp,
                 size: 10,
             }],
+            effort: Some(EffortId(7)),
+        },
+        Command::CreateEffort(NewEffort {
+            name: "Guest Checkout".into(),
+            kind: EffortKind::Feature,
+            question_or_goal: "A buyer can pay without an account".into(),
+        }),
+        Command::RenameEffort {
+            id: EffortId(7),
+            name: "providers".into(),
+        },
+        Command::UpdateEffort {
+            id: EffortId(7),
+            patch: vec![
+                EffortChange::Kind(EffortKind::Experiment),
+                EffortChange::QuestionOrGoal("Which provider?".into()),
+                EffortChange::Status(EffortStatus::Closed),
+            ],
+        },
+        Command::SetWhereWasI {
+            id: EffortId(7),
+            where_was_i: effort().where_was_i,
+        },
+        Command::AddCriterion {
+            effort: EffortId(7),
+            text: "Fees compared".into(),
+        },
+        Command::ClaimCriterion {
+            id: CriterionId(3),
+            evidence: "finding 41".into(),
+        },
+        Command::ApproveCriterion { id: CriterionId(3) },
+        Command::ReturnCriterion {
+            id: CriterionId(3),
+            reason: Some("Adyen is missing".into()),
+        },
+        Command::ReturnCriterion {
+            id: CriterionId(3),
+            reason: None,
+        },
+        Command::MoveTask {
+            id: TaskId(3),
+            effort: EffortId(7),
+            criterion: Some(CriterionId(3)),
+        },
+        Command::MoveTask {
+            id: TaskId(3),
+            effort: UNSORTED_EFFORT,
+            criterion: None,
         },
         Command::Interrupt {
             agent: id("slice-a"),
@@ -627,6 +713,8 @@ fn every_command_roundtrips() {
             follow_up_of: Some(TaskId(1)),
             pr: Some(1231),
             related: vec![TaskId(2)],
+            effort: Default::default(),
+            criterion: None,
         }),
         Command::LogDecision(NewDecision {
             task: TaskId(1),
@@ -889,6 +977,7 @@ fn an_agent_message_entry_roundtrips_and_old_kinds_still_read() {
         kind: EntryKind::AgentMessage,
         text: agent_message_text("scout", true, "report\nmore"),
         attachments: Vec::new(),
+        effort: None,
     };
     roundtrip(&entry);
     assert_eq!(
@@ -952,4 +1041,48 @@ fn a_research_proposal_and_its_evidence_survive_json() {
         assert_eq!(Evidence::parse(bad), None, "{bad:?}");
     }
     assert!(serde_json::from_value::<Evidence>(json!("nope")).is_err());
+}
+
+/// Values written before efforts existed still read: a task lands in Unsorted, a chat line and a
+/// prompt carry no tag, and a snapshot has no efforts.
+#[test]
+fn values_from_before_efforts_still_parse() {
+    let mut old_task = serde_json::to_value(task()).unwrap();
+    let fields = old_task.as_object_mut().unwrap();
+    fields.remove("effort");
+    fields.remove("criterion");
+    let parsed: Task = serde_json::from_value(old_task).unwrap();
+    assert_eq!(parsed.effort, UNSORTED_EFFORT);
+    assert_eq!(parsed.criterion, None);
+
+    let line: ConversationEntry =
+        serde_json::from_value(json!({"id": 1, "at_ms": 2, "kind": "user", "text": "hi"})).unwrap();
+    assert_eq!(line.effort, None);
+
+    let prompt: Command =
+        serde_json::from_value(json!({"prompt": {"agent": "coordinator", "text": "hi"}})).unwrap();
+    assert!(matches!(prompt, Command::Prompt { effort: None, .. }));
+
+    let mut old_snapshot = serde_json::to_value(Snapshot::default()).unwrap();
+    old_snapshot.as_object_mut().unwrap().remove("efforts");
+    let parsed: Snapshot = serde_json::from_value(old_snapshot).unwrap();
+    assert!(parsed.efforts.is_empty());
+}
+
+/// The names the GUI's TypeScript reads: kinds and states are lower snake case, ids are bare
+/// numbers, and an unclaimed criterion has no `evidence` key.
+#[test]
+fn an_effort_has_the_json_shape_the_gui_reads() {
+    let value = serde_json::to_value(effort()).unwrap();
+    assert_eq!(value["id"], json!(7));
+    assert_eq!(value["kind"], json!("research"));
+    assert_eq!(value["status"], json!("open"));
+    assert_eq!(
+        value["where_was_i"]["waits_on_you"],
+        json!("Approve criterion 3")
+    );
+    assert_eq!(value["criteria"][0]["state"], json!("claimed"));
+    assert_eq!(value["criteria"][0]["evidence"], json!("finding 41"));
+    assert!(value["criteria"][1].get("evidence").is_none());
+    roundtrip(&effort());
 }

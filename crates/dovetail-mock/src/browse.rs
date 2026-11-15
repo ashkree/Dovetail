@@ -86,6 +86,8 @@ fn market_sizing(project: ProjectSummary, now_ms: i64) -> BrowsedProject {
             follow_up_of: None,
             coordinator_created: false,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         }],
         decisions: vec![Decision {
             id: DecisionId(1),

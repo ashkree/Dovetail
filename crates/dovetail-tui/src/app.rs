@@ -855,6 +855,7 @@ impl App {
                 agent: coordinator,
                 text,
                 attachments: Vec::new(),
+                effort: None,
             }]),
             otherwise: None,
         });
@@ -921,6 +922,7 @@ impl App {
                     agent,
                     text,
                     attachments,
+                    effort: None,
                 });
             }
             if let Some((agent, dir)) = paths {

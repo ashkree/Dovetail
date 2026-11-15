@@ -289,7 +289,8 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
             text: "hello".into(),
-            attachments: Vec::new()
+            attachments: Vec::new(),
+            effort: None,
         }]
     );
     // Typing moved focus to the main pane; `h` goes back to the tree.
@@ -303,7 +304,8 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
         vec![Command::Prompt {
             agent: agent_id("slice-7"),
             text: "key is dev".into(),
-            attachments: Vec::new()
+            attachments: Vec::new(),
+            effort: None,
         }]
     );
     assert_eq!(
@@ -325,7 +327,8 @@ fn i_from_the_inbox_targets_the_coordinator() {
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
             text: "x".into(),
-            attachments: Vec::new()
+            attachments: Vec::new(),
+            effort: None,
         }]
     );
 }
@@ -344,7 +347,8 @@ fn i_in_the_main_region_targets_the_agent_it_shows() {
         vec![Command::Prompt {
             agent: agent_id("slice-4"),
             text: "go".into(),
-            attachments: Vec::new()
+            attachments: Vec::new(),
+            effort: None,
         }]
     );
 }
@@ -371,7 +375,8 @@ fn the_chat_input_takes_enter_shift_enter_alt_enter_ctrl_w_and_ctrl_u() {
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
             text: "first line\nsecond\nthird".into(),
-            attachments: Vec::new()
+            attachments: Vec::new(),
+            effort: None,
         }]
     );
     assert_eq!(app.mode(), Mode::Normal);
@@ -399,7 +404,8 @@ fn ctrl_k_leaves_the_chat_bar_and_ctrl_j_comes_back_to_the_cursor() {
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
             text: "abc".into(),
-            attachments: Vec::new()
+            attachments: Vec::new(),
+            effort: None,
         }]
     );
 }
@@ -626,7 +632,8 @@ fn slash_completes_a_command_and_at_asks_the_core_for_paths() {
         vec![Command::Prompt {
             agent: agent_id("coordinator"),
             text: "/grilling the plan @README.md".into(),
-            attachments: Vec::new()
+            attachments: Vec::new(),
+            effort: None,
         }]
     );
 }

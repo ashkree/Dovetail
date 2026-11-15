@@ -12,6 +12,7 @@ mod context;
 pub mod db;
 mod docs;
 pub mod editor;
+mod efforts;
 pub mod error;
 pub mod external;
 mod foreground;

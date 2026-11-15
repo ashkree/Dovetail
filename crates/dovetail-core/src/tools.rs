@@ -183,6 +183,8 @@ impl Core {
                     follow_up_of: task.follow_up_of,
                     pr: None,
                     related: task.related,
+                    effort: Default::default(),
+                    criterion: None,
                 };
                 let bucket = match new.bucket {
                     Some(b) => format!("{b:?}"),

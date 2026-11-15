@@ -16,6 +16,8 @@ fn task(id: i64, title: &str) -> Task {
         follow_up_of: None,
         coordinator_created: false,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }
 }
 
@@ -50,6 +52,7 @@ fn entry(id: u64, kind: EntryKind, text: &str) -> ConversationEntry {
         kind,
         text: text.into(),
         attachments: Vec::new(),
+        effort: None,
     }
 }
 
@@ -596,6 +599,7 @@ fn assistant_delta_for_an_unknown_entry_starts_one_at_snapshot_time() {
             kind: EntryKind::Assistant,
             text: "Hi".into(),
             attachments: Vec::new(),
+            effort: None,
         }]
     );
 }
@@ -712,4 +716,90 @@ fn command_failed_only_advances_seq() {
         }],
     );
     assert_eq!(state, expected);
+}
+
+fn effort(id: i64, name: &str) -> Effort {
+    Effort {
+        id: EffortId(id),
+        name: name.into(),
+        kind: EffortKind::Feature,
+        question_or_goal: String::new(),
+        status: EffortStatus::Open,
+        where_was_i: WhereWasI::default(),
+        criteria: vec![],
+    }
+}
+
+#[test]
+fn effort_upsert_inserts_then_replaces_by_id() {
+    let mut state = Snapshot::default();
+    run(
+        &mut state,
+        vec![
+            Event::EffortUpserted(effort(1, "unsorted")),
+            Event::EffortUpserted(effort(2, "guest-checkout")),
+        ],
+    );
+    assert_eq!(state.efforts.len(), 2);
+
+    // A rename, a new card and a claimed criterion all arrive as the whole effort.
+    let mut changed = effort(2, "guest-pay");
+    changed.where_was_i.next_step = "Order email".into();
+    changed.criteria.push(Criterion {
+        id: CriterionId(5),
+        effort: EffortId(2),
+        text: "Pay as guest end to end".into(),
+        state: CriterionState::Claimed,
+        evidence: Some("PR #41".into()),
+    });
+    run(&mut state, vec![Event::EffortUpserted(changed.clone())]);
+    assert_eq!(state.efforts.len(), 2);
+    assert_eq!(state.efforts[1], changed);
+    assert_eq!(state.efforts[0].name, "unsorted");
+}
+
+#[test]
+fn a_moved_task_arrives_as_a_task_upsert() {
+    let mut state = Snapshot::default();
+    run(&mut state, vec![Event::TaskUpserted(task(1, "Guest form"))]);
+    assert_eq!(state.tasks[0].effort, UNSORTED_EFFORT);
+
+    let mut moved = task(1, "Guest form");
+    moved.effort = EffortId(2);
+    moved.criterion = Some(CriterionId(5));
+    run(&mut state, vec![Event::TaskUpserted(moved)]);
+    assert_eq!(state.tasks.len(), 1);
+    assert_eq!(state.tasks[0].effort, EffortId(2));
+    assert_eq!(state.tasks[0].criterion, Some(CriterionId(5)));
+}
+
+#[test]
+fn a_tagged_entry_keeps_its_tag_through_append_and_streaming() {
+    let mut state = Snapshot::default();
+    let mut you = entry(1, EntryKind::User, "Add Paddle");
+    you.effort = Some(EffortId(2));
+    let mut reply = entry(2, EntryKind::Assistant, "");
+    reply.effort = Some(EffortId(2));
+    run(
+        &mut state,
+        vec![
+            Event::ConversationAppended {
+                agent: id("coordinator"),
+                entry: you,
+            },
+            Event::ConversationAppended {
+                agent: id("coordinator"),
+                entry: reply,
+            },
+            Event::AssistantDelta {
+                agent: id("coordinator"),
+                entry: EntryId(2),
+                text: "Added.".into(),
+            },
+        ],
+    );
+    let entries = &state.conversations[&id("coordinator")].entries;
+    assert_eq!(entries[0].effort, Some(EffortId(2)));
+    assert_eq!(entries[1].effort, Some(EffortId(2)));
+    assert_eq!(entries[1].text, "Added.");
 }

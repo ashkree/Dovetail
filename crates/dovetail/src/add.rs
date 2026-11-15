@@ -53,6 +53,8 @@ pub fn run(args: Vec<String>) -> Result<()> {
         follow_up_of: None,
         pr: captured.pr,
         related: Vec::new(),
+        effort: Default::default(),
+        criterion: None,
     };
 
     let paths = Paths::from_env();

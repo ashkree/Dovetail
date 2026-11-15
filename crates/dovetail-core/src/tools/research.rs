@@ -398,6 +398,8 @@ impl Core {
             follow_up_of: Some(task),
             pr: None,
             related: Vec::new(),
+            effort: Default::default(),
+            criterion: None,
         };
         // The user accepted it, so it is not marked as coordinator-created.
         match self.create_task(new, false).await {

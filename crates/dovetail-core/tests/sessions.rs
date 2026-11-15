@@ -245,6 +245,7 @@ fn prompt(h: &Harness, text: &str) {
         agent: AgentId(COORDINATOR.into()),
         text: text.into(),
         attachments: Vec::new(),
+        effort: None,
     });
 }
 
@@ -477,6 +478,7 @@ fn a_prompt_with_an_image_sends_an_image_block_and_keeps_the_path_after_a_restar
         agent: AgentId(COORDINATOR.into()),
         text: "what is this?".into(),
         attachments: vec![attachment.clone()],
+        effort: None,
     });
     h.wait_for("the reply", |s| finished_turns(s) == 1);
 
@@ -1104,6 +1106,7 @@ fn an_image_only_message_leaves_open_questions_open() {
             media_type: ImageType::Png,
             size: bytes.len() as u64,
         }],
+        effort: None,
     });
     h.wait_for("the reply", |s| finished_turns(s) == 1);
     assert_eq!(fake.user_messages().len(), 1, "the image went out");
@@ -1122,6 +1125,8 @@ fn slices_cannot_call_coordinator_tools_and_bad_names_are_refused() {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     h.wait_for("the task", |s| !s.tasks.is_empty());
     let socket = h.socket();
@@ -1213,6 +1218,8 @@ fn starting_a_slice_on_a_next_task_moves_it_to_now_in_progress() {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     h.wait_for("the task", |s| !s.tasks.is_empty());
     let id = h.snap.tasks[0].id;
@@ -1253,6 +1260,8 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
                 follow_up_of: None,
                 pr: None,
                 related: vec![],
+                effort: Default::default(),
+                criterion: None,
             },
         },
     ) {
@@ -1269,6 +1278,8 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     h.wait_for("the task", |s| !s.tasks.is_empty());
     // Only Dovetail's own built-in Tangents (ADR 0017) has a folder; nothing for this one.
@@ -1380,6 +1391,8 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     h.wait_for("the task", |s| !s.tasks.is_empty());
     let (text, is_error) = result_text(socket_call(
@@ -1859,6 +1872,7 @@ fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
         agent: AgentId("slice-later".into()),
         text: "carry on".into(),
         attachments: Vec::new(),
+        effort: None,
     });
     let deadline = Instant::now() + Duration::from_secs(5);
     while names(&fake).len() < 2 {
@@ -1986,6 +2000,8 @@ fn pending_start(h: &mut Harness) {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     h.wait_for("mode and task", |s| {
         !s.tasks.is_empty()
@@ -2334,6 +2350,8 @@ fn archive_task_archives_the_task_and_its_live_slice() {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     h.wait_for("the task", |s| !s.tasks.is_empty());
     let id = h.snap.tasks[0].id;
@@ -2388,6 +2406,8 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
             follow_up_of: None,
             pr: None,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         }));
     }
     h.wait_for("the tasks", |s| s.tasks.len() == 4);
@@ -2496,6 +2516,8 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
             follow_up_of: None,
             pr: None,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         }));
     }
     h.wait_for("the tasks", |s| s.tasks.len() == 2);
@@ -2884,6 +2906,8 @@ fn archiving_a_task_deletes_its_todo_list() {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     h.wait_for("the task", |s| !s.tasks.is_empty());
     let id = h.snap.tasks[0].id;
@@ -3427,6 +3451,7 @@ fn while_taken_over_headless_never_starts_and_exiting_native_keeps_the_worktree(
         agent: slice.clone(),
         text: "are you there?".into(),
         attachments: Vec::new(),
+        effort: None,
     });
     h.send(Command::CloseSlice {
         agent: slice.clone(),
@@ -3975,6 +4000,8 @@ fn eod_asks_the_coordinator_and_writes_its_reply_and_the_facts() {
         follow_up_of: None,
         pr: None,
         related: Vec::new(),
+        effort: Default::default(),
+        criterion: None,
     }));
     prompt(&h, "first");
     h.wait_for("the first reply", |s| finished_turns(s) == 1);
@@ -4048,6 +4075,8 @@ fn fresh_appends_the_handoff_seeds_a_new_coordinator_and_y_goes_back() {
         follow_up_of: None,
         pr: None,
         related: Vec::new(),
+        effort: Default::default(),
+        criterion: None,
     }));
     prompt(&h, "first");
     h.wait_for("the first reply", |s| finished_turns(s) == 1);

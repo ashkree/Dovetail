@@ -10,12 +10,14 @@
 //! ([`Db::open_unregistered`]) until [`Db::persist_state`] writes it to the new project's file
 //! (ADR 0005).
 
+mod efforts;
 mod maps;
 mod registry;
 pub mod research;
 mod sessions;
 mod tasks;
 
+pub use efforts::CriterionStep;
 pub use maps::{Drawn, NewMapVersion};
 pub use sessions::{AgentRow, ModelChoice, QueuedSlice};
 
@@ -28,8 +30,9 @@ use std::task::{Context, Poll};
 
 use dovetail_api::map::{Map, MapId, MapSummary, NodeId};
 use dovetail_api::{
-    ActivityItem, AgentId, AgentMessage, ConversationEntry, Decision, DecisionAuthor, EntryId,
-    InboxId, InboxItem, NewDecision, NewTask, Task, TaskChange, TaskId,
+    ActivityItem, AgentId, AgentMessage, ConversationEntry, CriterionId, Decision, DecisionAuthor,
+    Effort, EffortChange, EffortId, EntryId, InboxId, InboxItem, NewDecision, NewEffort, NewTask,
+    Task, TaskChange, TaskId, WhereWasI,
 };
 use rusqlite::Connection;
 use tokio::sync::oneshot;
@@ -75,6 +78,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0014_decision_evidence.sql"),
     migration!("state", "0015_research_followups.sql"),
     migration!("state", "0016_agent_model_choice.sql"),
+    migration!("state", "0017_efforts.sql"),
 ];
 
 /// Errors from the database layer.
@@ -349,6 +353,54 @@ impl Db {
         evidence: Vec<dovetail_api::research::Evidence>,
     ) -> Pending<Decision> {
         self.run(move |c, now| tasks::log_decision(c.state()?, new, by, evidence, now))
+    }
+
+    // --- efforts and criteria ---
+
+    /// Every effort of the open project with its criteria, in id order.
+    pub fn load_efforts(&self) -> Pending<Vec<Effort>> {
+        self.run(|c, _| efforts::load_efforts(c.state()?))
+    }
+
+    /// Creates an effort. `new.name` must already be in its stored form
+    /// ([`dovetail_api::effort_name`]); an empty or taken name is refused.
+    pub fn create_effort(&self, new: NewEffort) -> Pending<Effort> {
+        self.run(move |c, now| efforts::create_effort(c.state()?, new, now))
+    }
+
+    /// Renames an effort; `name` must already be in its stored form. Refused for Unsorted.
+    pub fn rename_effort(&self, id: EffortId, name: String) -> Pending<Effort> {
+        self.run(move |c, now| efforts::rename_effort(c.state()?, id, name, now))
+    }
+
+    /// Applies a patch to an effort. Resolves to the effort as it is now.
+    pub fn update_effort(&self, id: EffortId, patch: Vec<EffortChange>) -> Pending<Effort> {
+        self.run(move |c, now| efforts::update_effort(c.state()?, id, patch, now))
+    }
+
+    /// Replaces an effort's "where was I" card.
+    pub fn set_where_was_i(&self, id: EffortId, card: WhereWasI) -> Pending<Effort> {
+        self.run(move |c, now| efforts::set_where_was_i(c.state()?, id, &card, now))
+    }
+
+    /// Adds an open criterion to an effort. Resolves to the effort.
+    pub fn add_criterion(&self, effort: EffortId, text: String) -> Pending<Effort> {
+        self.run(move |c, now| efforts::add_criterion(c.state()?, effort, text, now))
+    }
+
+    /// Claims, approves or sends back a criterion. Resolves to its effort.
+    pub fn step_criterion(&self, id: CriterionId, step: CriterionStep) -> Pending<Effort> {
+        self.run(move |c, _| efforts::step_criterion(c.state()?, id, step))
+    }
+
+    /// Puts a task in an effort, serving `criterion` or none. Resolves to the task.
+    pub fn move_task(
+        &self,
+        id: TaskId,
+        effort: EffortId,
+        criterion: Option<CriterionId>,
+    ) -> Pending<Vec<Task>> {
+        self.run(move |c, now| efforts::move_task(c.state()?, id, effort, criterion, now))
     }
 
     // --- maps (M15) ---
@@ -896,6 +948,7 @@ mod tests {
             kind: EntryKind::User,
             text: "look".into(),
             attachments: vec![attachment(name)],
+            effort: None,
         };
         for (project, live, archived) in [
             ("p", "live-p.png", "gone-p.png"),
@@ -951,6 +1004,7 @@ mod tests {
             kind,
             text,
             attachments: Vec::new(),
+            effort: None,
         };
         // The old build stored a peer message as a notice.
         let old = entry(1, EntryKind::Notice, "Message from x: y".into());
@@ -1169,6 +1223,8 @@ mod tests {
             follow_up_of: None,
             pr: None,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         };
         db.create_task(new, false).wait().unwrap();
         assert!(!paths.state_db("p").exists());

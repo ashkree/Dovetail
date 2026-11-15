@@ -5,6 +5,7 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use serde::{Deserialize, Serialize};
 
+use crate::effort::{CriterionId, Effort, EffortChange, EffortId, NewEffort, WhereWasI};
 use crate::map::{Map, MapId, MapSummary};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
@@ -51,6 +52,9 @@ pub enum Event {
     TaskUpserted(Task),
     /// A task was deleted.
     TaskRemoved(TaskId),
+    /// An effort was created or changed: its fields, its "where was I" card or its criteria.
+    /// It carries the whole effort. Efforts are never removed.
+    EffortUpserted(Effort),
     /// An agent was created or changed.
     AgentUpserted(Agent),
     /// An agent was removed, with its conversation.
@@ -270,6 +274,10 @@ pub enum Command {
         /// reads the files.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         attachments: Vec<Attachment>,
+        /// The effort tag for this message and the agent's replies to it; `None` sends it
+        /// untagged.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effort: Option<EffortId>,
     },
     /// Read the system clipboard for an agent's chat bar (Ctrl-V). The core answers with
     /// [`Event::ClipboardPasted`]: an image saved as an attachment, text, or a refusal.
@@ -460,6 +468,72 @@ pub enum Command {
         id: TaskId,
         /// Changes, applied in order.
         patch: Vec<TaskChange>,
+    },
+    /// Create an effort. The core converts the name to lower kebab case
+    /// ([`crate::effort_name`]) and refuses an empty one or one already taken. It answers with
+    /// [`Event::EffortUpserted`].
+    CreateEffort(NewEffort),
+    /// Rename an effort; the name is converted as for [`Command::CreateEffort`]. Refused for
+    /// Unsorted.
+    RenameEffort {
+        /// The effort.
+        id: EffortId,
+        /// The new name, as typed.
+        name: String,
+    },
+    /// Change fields of an effort. Closing Unsorted is refused.
+    UpdateEffort {
+        /// The effort.
+        id: EffortId,
+        /// Changes, applied in order.
+        patch: Vec<EffortChange>,
+    },
+    /// Replace an effort's "where was I" card.
+    SetWhereWasI {
+        /// The effort.
+        id: EffortId,
+        /// The card.
+        where_was_i: WhereWasI,
+    },
+    /// Add an acceptance criterion to an effort; it starts open.
+    AddCriterion {
+        /// The effort.
+        effort: EffortId,
+        /// What must be true.
+        text: String,
+    },
+    /// Say a criterion is met, with evidence: it becomes claimed and waits for the user.
+    /// Refused for one already met.
+    ClaimCriterion {
+        /// The criterion.
+        id: CriterionId,
+        /// What the claim rests on.
+        evidence: String,
+    },
+    /// Approve a criterion: it becomes met. Only the user can do this; there is no agent tool
+    /// for it.
+    ApproveCriterion {
+        /// The criterion.
+        id: CriterionId,
+    },
+    /// Send a claimed (or met) criterion back: it becomes open again and keeps its evidence. The
+    /// coordinator is told, with `reason`.
+    ReturnCriterion {
+        /// The criterion.
+        id: CriterionId,
+        /// Why, for the coordinator.
+        reason: Option<String>,
+    },
+    /// Put a task in an effort and say which of its criteria the task serves. Moving to another
+    /// effort with `criterion: None` clears the criterion. Refused for a closed effort, or a
+    /// criterion of another effort. The core answers with [`Event::TaskUpserted`].
+    MoveTask {
+        /// The task.
+        id: TaskId,
+        /// The effort it belongs to from now on.
+        effort: EffortId,
+        /// The criterion it serves, if any.
+        criterion: Option<CriterionId>,
     },
     /// Add an entry to a task's decision log, as the user.
     LogDecision(NewDecision),
@@ -662,6 +736,12 @@ pub struct NewTask {
     /// Tasks it is related to (both ways).
     #[serde(default)]
     pub related: Vec<TaskId>,
+    /// The effort it belongs to; `None` puts it in Unsorted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<EffortId>,
+    /// The criterion of that effort it serves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criterion: Option<CriterionId>,
 }
 
 /// Fields for a new decision-log entry.

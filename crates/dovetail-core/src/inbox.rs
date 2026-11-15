@@ -411,7 +411,11 @@ impl Core {
                     self.fail(e);
                 }
             }
-            _ => self.prompt(&agent, text, Vec::new()).await,
+            _ => {
+                // An answer continues the thread the agent is on: it keeps the agent's tag.
+                let effort = self.effort_tags.get(&agent).copied();
+                self.prompt(&agent, text, Vec::new(), effort).await;
+            }
         }
     }
 
