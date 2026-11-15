@@ -12,6 +12,7 @@ const DESIGN: DesignSlot[] = [
   { level: 'Global', id: 'theme', name: 'Theme', options: [
     { id: 'iris', label: 'Iris · deep purple, gold' },
     { id: 'iceberg', label: 'Iceberg · blue-grey, pastels' },
+    { id: 'iceberg-orig', label: 'Iceberg, original greys (#6b7089)' },
     { id: 'iris-hc', label: 'Iris high contrast' },
   ] },
   { level: 'Global', id: 'fs', name: 'Text size', options: [

@@ -291,7 +291,7 @@ table.projects tr.sel td:first-child { box-shadow: inset 3px 0 var(--accent); }
 /* Iris high contrast: palette D of the colour research, same purple surfaces. */
 html[data-theme="iris-hc"] { --bg: #110d18; --ink: #ebe6fa; --bold: #ffd28a; --italic: #d6c4ff; --code: #8ff0cf; --link: #9cc8ff; --dim: #b0b1c6; --accent: #b9a4e8; --bad: #ff9a88; --warn: #ffd28a; --good: #8ff0cf; --edge: #3a3052; --edge-hi: #5a4b7c; }
 /* Iceberg (cocopon/iceberg.vim, dark): grey to blue-grey surfaces, soft pastel highlights. */
-html[data-theme="iceberg"] {
+html[data-theme="iceberg"], html[data-theme="iceberg-orig"] {
   --bg: #161821; --panel: #1a1c27; --panel-2: #1e2132; --raise: #272c42; --edge: #2a2e3f; --edge-hi: #444b71; --sel: #272c4280; --sel-solid: #272c42;
   --ink: #c6c8d1; --bold: #e2a478; --italic: #a093c7; --code: #b4be82; --link: #84a0c6; --dim: #8d92ac; --accent: #89b8c2;
   --bad: #e27878; --warn: #e2a478; --good: #b4be82;
@@ -311,3 +311,4 @@ html[data-inbox="fit"] .sidebar .part:first-child .list { max-height: 34vh; flex
 .wwi-tree .wwi { margin: 4px 0 8px; padding: 10px 12px; }
 .wwi-tree .wwi dl { grid-template-columns: 1fr; gap: 2px; }
 .wwi-tree .wwi dt { padding-top: 6px; }
+html[data-theme="iceberg-orig"] { --dim: #6b7089; --edge-hi: #444b71; }
