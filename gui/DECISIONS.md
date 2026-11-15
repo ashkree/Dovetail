@@ -60,3 +60,10 @@ The plan (`docs/plan/gui-frontend.md`) says "stop and ask" in a few places. The 
 - **Open:** the plan asks for a small static page that changes when the parent posts the variants.
 - **Chose:** `gui/public/sample/` (HTML, CSS, a 15-line script) with the mock's shop page; the GUI posts `{type: 'dovetail-variants', choice, text}` to the same origin only. It uses the system font, since a slice's site has its own look.
 - **Change:** `gui/public/sample/`.
+
+## 10. Canvas details
+
+- **Open:** how new and placed cards are positioned, what `0` (fit) does, and React Flow's corner attribution.
+- **Chose:** a placed incoming card lands under the card it belongs to, offset by how many children that card already has (as the mock did); a new card (`n`, then kind, then title) lands under the selected card and links from it; `0` fits every card in view (computed from card positions, since React Flow's own `fitView` needs measured nodes this controlled setup does not keep); the "React Flow" attribution is hidden (`proOptions.hideAttribution`), which its MIT licence allows, to match the screenshots.
+- **Why:** closest to the mock; nothing new on screen.
+- **Change:** `accept` / `newCard` in `gui/src/keys/actions.ts`; `Canvas.tsx`. To show the attribution, drop `proOptions`.

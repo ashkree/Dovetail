@@ -6,6 +6,7 @@ import { LeaderKey } from '../overlays/Keys';
 import { InboxItemView } from './InboxItemView';
 import { ReadingView } from './ReadingView';
 import { Viewer } from '../viewer/Viewer';
+import { Canvas } from '../canvas/Canvas';
 
 const TITLE: Record<View, string> = { canvas: 'Canvas', viewer: 'Viewer', reading: 'Reading', item: 'Inbox item' };
 
@@ -24,6 +25,7 @@ export function MainView() {
         {ui.main === 'item' && <InboxItemView />}
         {ui.main === 'reading' && <ReadingView />}
         {ui.main === 'viewer' && <Viewer />}
+        {ui.main === 'canvas' && <Canvas />}
       </div>
     </div>
   );
