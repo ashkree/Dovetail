@@ -212,7 +212,7 @@ function renderCanvas() {
   const lines = S.edges.map(([a, b]) => {
     const A = byId[a], B = byId[b]; if (!A || !B) return '';
     const x1 = A.x + 125, y1 = A.y + 70, x2 = B.x + 125, y2 = B.y;
-    return `<path d="M${x1},${y1} C${x1},${(y1 + y2) / 2} ${x2},${(y1 + y2) / 2} ${x2},${y2}" stroke="#4b3e68" stroke-width="2" fill="none"/>`;
+    return `<path d="M${x1},${y1} C${x1},${(y1 + y2) / 2} ${x2},${(y1 + y2) / 2} ${x2},${y2}" style="stroke:var(--edge-hi)" stroke-width="2" fill="none"/>`;
   }).join('');
   const cardHtml = (c, inc) => `<div class="card ${c.type} ${(!inc && S.canvasPart === 'cards' && S.cardSel === c.id) || (inc && S.canvasPart === 'incoming' && S.incoming[S.incSel] === c) ? 'sel' : ''}"
       ${inc ? '' : `style="left:${c.x}px;top:${c.y}px"`} data-a="${inc ? 'selInc' : 'selCard'}" data-id="${c.id}">

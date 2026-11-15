@@ -9,9 +9,10 @@ interface DesignOption { id: string; label: string }
 interface DesignSlot { level: 'Global' | 'Component' | 'Content'; id: string; name: string; options: DesignOption[] }
 
 const DESIGN: DesignSlot[] = [
-  { level: 'Global', id: 'theme', name: 'Palette', options: [
-    { id: 'a', label: 'A · Iris & gold' },
-    { id: 'd', label: 'D · High contrast' },
+  { level: 'Global', id: 'theme', name: 'Theme', options: [
+    { id: 'iris', label: 'Iris · deep purple, gold' },
+    { id: 'iceberg', label: 'Iceberg · blue-grey, pastels' },
+    { id: 'iris-hc', label: 'Iris high contrast' },
   ] },
   { level: 'Global', id: 'fs', name: 'Text size', options: [
     { id: '16', label: '16 px' },
