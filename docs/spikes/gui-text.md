@@ -1,6 +1,8 @@
 # gui-text: egui renders a long transcript readably
 
-**Status:** built 2026-11-15 by an agent; builds clean and both renderers start. **Not judged yet: the look and the numbers are yours** (see "What to judge"). Gates the GUI crate (ADR 0020).
+**Status:** run 2026-11-15 by the user. **Passes**, with the memory bar raised by the user (see Results). Gates the GUI crate (ADR 0020).
+
+**Recommendation:** build the GUI crate on egui 0.37 with the glow renderer. Tune scrolling in the GUI crate; it is smooth enough, not yet as smooth as wanted.
 
 ## Procedure
 
@@ -23,15 +25,21 @@ Keys: `j`/`k` line, `d`/`u` half page, `Space`/`b` page, `g`/`G` top and bottom,
 
 | Check | Pass | Result |
 | --- | --- | --- |
-| Text quality | Close to the HTML mockup at the same size: crisp, even spacing, no blurry or jumpy glyphs | _your call_ |
-| Scroll | Smooth with the wheel and `j`/`k`/`Space` through 2 000 turns; still usable at 20 000 | _your call_ |
-| Memory | Peak RSS under ~120 MB with glow (wgpu noted for comparison) | _read off the top bar_ |
-| Idle | The frame counter stops when nothing moves or is hovered | _read off the top bar_ |
-| Frame time | Last frame under ~4 ms while scrolling | _read off the top bar_ |
+| Text quality | Close to the HTML mockup at the same size: crisp, even spacing, no blurry or jumpy glyphs | Not objected to; not reported in detail |
+| Scroll | Smooth with the wheel and `j`/`k`/`Space` through 2 000 turns; still usable at 20 000 | Smooth enough, not as smooth as wanted |
+| Memory | Peak RSS under ~120 MB with glow (wgpu noted for comparison) | glow 216 MB, wgpu 268 MB. Over the bar; **the user accepts it** as small next to Claude Code |
+| Idle | The frame counter stops when nothing moves or is hovered | Not reported |
+| Frame time | Last frame under ~4 ms while scrolling | Not reported |
 
 If text quality fails, compare one alternative toolkit on the same transcript before writing the GUI crate (ADR 0020).
 
-## Findings so far
+## Results
+
+- **Renderer:** glow, 52 MB less than wgpu.
+- **Memory:** RSS counts the mapped GPU driver and shared libraries, so much of the 216 MB is not egui's own heap. The GUI crate's budget is set from this run: about 220 MB with glow.
+- **Scrolling** to tune in the GUI crate: the spike's scroll is egui's default animation on a virtualised list with estimated row heights, so the first pass over unseen turns can jump as heights are measured.
+
+## Findings
 
 - egui 0.37 changed `App::update` to `App::ui(&mut Ui)` and `TopBottomPanel` to `Panel::top`. Docs and examples written for 0.3x before that won't compile. The GUI crate pins `=0.37.0`.
 - A per-span `line_height` exists in `TextFormat`, which is what the reading column needs; no markdown crate was used, so the GUI crate will render markdown itself from `pulldown-cmark` (already a dependency).
