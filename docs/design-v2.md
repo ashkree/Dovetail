@@ -255,6 +255,90 @@ Order of work: the GUI shell for the daily loop first, project-management data a
 - Keys and commands resolve to one `Action` enum through one keymap table.
 - Per-session cgroup memory caps.
 
+## 10. Database (proposed shape)
+
+Approved by the user as the direction. Column names and types are for the implementation plan to finalise. Migrations only add: nothing existing is deleted or rewritten.
+
+### Today (checked against `crates/dovetail-core/src/db/migrations/`)
+
+```
+registry.db
+└── projects (id, name, kind code|research, repo_path, git_common_dir, last_opened_ms)
+              └─ one repo baked into the project row (registry 0001–0003)
+    (the profile is not here: it is set in the project's recipe TOML, ADR 0009)
+
+state.db (per project)
+tasks ◄── agents.task_id              (nullable)
+      ◄── research_rounds.task_id
+      ◄── findings.task_id            (+ round_id)
+      ◄── reports.task_id
+      ◄── decisions.task_id
+      ◄── maps.task_id                (nullable)
+conversation_entries (agent_id, …)    ─┐ only agent_id: a chat line does not
+inbox_items          (agent_id, …)    ─┘ know which line of work it belongs to
+```
+
+### v2
+
+```
+registry.db
+├── projects (id, name, …, account)           + account
+└── repos    (id, project_id, name, path)     NEW, 0..n per project
+
+state.db
+efforts (id, title, kind, question_or_goal, status, where_was_i)          NEW
+├── criteria (id, effort_id, text, state open|claimed|met, evidence)      NEW
+├── tasks    + effort_id, + criterion_id
+│   ├── agents + repo_id
+│   └── research_rounds / findings / reports / decisions   (unchanged, still on task_id)
+├── conversation_entries + effort_id                          (the effort tag)
+└── canvases (id, effort_id, title, framework)                            NEW
+    └── cards (id, canvas_id, kind, x, y, ref_id, text)                   NEW
+        └── card_links (from_card, to_card, label)                        NEW
+```
+
+### What each addition is for
+
+| Addition | For |
+| --- | --- |
+| `repos` | A project holds zero or more repos. The repo columns leave `projects` (moved into `repos`) |
+| `projects.account` | The project's Claude account, recorded on the project |
+| `efforts` | One line of work; `where_was_i` holds the "where was I" card |
+| `criteria` | Acceptance criteria. `claimed` = the agent says it is met and it waits for the user's approval |
+| `tasks.effort_id` | Every task belongs to an effort |
+| `tasks.criterion_id` | Which criterion a task serves; NULL is the drift flag |
+| `conversation_entries.effort_id` | The effort tag, so the chat filter is a lookup |
+| `canvases`, `cards`, `card_links` | Canvases per effort, their cards and the links between cards |
+| `agents.repo_id` | Which repo a slice's worktree belongs to |
+
+### Example rows
+
+| Table | Row |
+| --- | --- |
+| `efforts` | 7 · "Payment providers" · research · "Which provider fits EU cards?" |
+| `criteria` | 3 · effort 7 · "Fees compared for 3 providers" · claimed · evidence: finding 41 |
+| `tasks` | 52 · "Compare Stripe, Adyen, Mollie" · effort 7 · criterion 3 |
+| `findings` | 41 · task 52 (as today) |
+| `canvases` | 4 · effort 7 · "Providers" · options compare |
+| `cards` | 90 · canvas 4 · finding · ref 41 · text NULL |
+| `conversation_entries` | coordinator line "Fees are in; Mollie is cheapest for EU cards." · effort 7 |
+
+```
+effort 7 ──► criterion 3 (claimed, evidence finding 41)
+   │              ▲
+   └──► task 52 ──┘ serves
+          └──► finding 41 ◄── card 90 (canvas 4, ref 41)
+chat line ── effort_id 7 ──► shows in the "Payment providers" thread
+```
+
+### Design choices
+
+1. **Cards point, they do not copy.** A card points at a row (finding, source, decision, map, task) through `ref_id`. Only ideas and questions, which exist nowhere else, keep their own `text`.
+2. **Research stays attached to tasks.** A research effort holds one or more question tasks; rounds, findings and reports hang off those as today. No research data moves.
+3. **Migration adds, never converts.** Each project gets one "Unsorted" effort and every existing task gets its id. Existing chat lines get no tag and show under "All".
+
+Note for the plan: SQLite cannot drop or relax columns in place, so moving the repo columns out of `projects` needs the table rebuild that registry migrations 0002 and 0003 already used. `inbox_items` gains no `effort_id` in this shape.
+
 ## Open points
 
 Not decided yet. Do not build on a guess.
