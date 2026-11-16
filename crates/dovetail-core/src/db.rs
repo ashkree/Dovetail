@@ -12,7 +12,10 @@
 
 mod efforts;
 mod maps;
+mod counts;
 mod registry;
+
+pub use registry::NewRepo;
 pub mod research;
 mod sessions;
 mod tasks;
@@ -59,6 +62,7 @@ const REGISTRY_MIGRATIONS: &[Migration] = &[
     migration!("registry", "0001_init.sql"),
     migration!("registry", "0002_optional_git.sql"),
     migration!("registry", "0003_project_kind.sql"),
+    migration!("registry", "0004_repos.sql"),
 ];
 /// Migrations of a project's `state.db`, in order.
 const STATE_MIGRATIONS: &[Migration] = &[
@@ -79,6 +83,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0015_research_followups.sql"),
     migration!("state", "0016_agent_model_choice.sql"),
     migration!("state", "0017_efforts.sql"),
+    migration!("state", "0018_agent_repo.sql"),
 ];
 
 /// Errors from the database layer.
@@ -222,25 +227,56 @@ impl Db {
 
     // --- registry ---
 
-    /// Adds a project to the registry, or returns the one with this git common dir (or, without
-    /// git, this folder). The id is `slug`, numbered (`slug-2`, ...) when taken.
-    pub fn register_project(
+    /// Registers a folder as a project with one repo, or returns the project that has it
+    /// already. The id is `slug`, numbered (`slug-2`, ...) when taken.
+    pub fn register_project(&self, slug: String, name: String, repo: NewRepo) -> Pending<Project> {
+        self.run(move |c, now| registry::register(&mut c.registry, &slug, &name, &repo, now))
+    }
+
+    /// Creates a project (ADR 0021) with an optional account and first repo.
+    pub fn create_project(
         &self,
         slug: String,
         name: String,
-        repo_path: PathBuf,
-        git_common_dir: Option<PathBuf>,
+        account: Option<String>,
+        repo: Option<NewRepo>,
     ) -> Pending<Project> {
         self.run(move |c, now| {
-            registry::register(
+            registry::create(
                 &mut c.registry,
                 &slug,
                 &name,
-                &repo_path,
-                git_common_dir.as_deref(),
+                account.as_deref(),
+                repo.as_ref(),
                 now,
             )
         })
+    }
+
+    /// Adds a repo to project `id`. Refused when any project has it already, or this one a
+    /// repo of the same name.
+    pub fn add_repo(&self, id: String, repo: NewRepo) -> Pending<Project> {
+        self.run(move |c, now| registry::add_repo(&mut c.registry, &id, &repo, now))
+    }
+
+    /// Removes a repo from project `id`.
+    pub fn remove_repo(&self, id: String, repo: dovetail_api::RepoId) -> Pending<Project> {
+        self.run(move |c, _| registry::remove_repo(&c.registry, &id, repo))
+    }
+
+    /// Renames project `id`.
+    pub fn rename_project(&self, id: String, name: String) -> Pending<Project> {
+        self.run(move |c, _| registry::rename(&c.registry, &id, &name))
+    }
+
+    /// Sets or clears project `id`'s account.
+    pub fn set_project_account(&self, id: String, account: Option<String>) -> Pending<Project> {
+        self.run(move |c, _| registry::set_account(&c.registry, &id, account.as_deref()))
+    }
+
+    /// Home's counts for project `id`, read from its `state.db` without migrating it.
+    pub fn project_counts(&self, path: PathBuf) -> Pending<dovetail_api::ProjectCounts> {
+        self.run(move |_, _| counts::read(&path))
     }
 
     /// Registers a research project named `name` under id `slug` (numbered when taken). `None`
@@ -275,9 +311,13 @@ impl Db {
         self.run(move |c, _| registry::find_folder(&c.registry, &path))
     }
 
-    /// Records the git common dir of a folder project that has become a repo.
-    pub fn set_git_dir(&self, id: String, git_common_dir: PathBuf) -> Pending<Project> {
-        self.run(move |c, _| registry::set_git_dir(&c.registry, &id, &git_common_dir))
+    /// Records the git common dir of a folder repo that has become a git repo.
+    pub fn set_git_dir(
+        &self,
+        repo: dovetail_api::RepoId,
+        git_common_dir: PathBuf,
+    ) -> Pending<Project> {
+        self.run(move |c, _| registry::set_git_dir(&c.registry, repo, &git_common_dir))
     }
 
     /// Marks a project as opened now.
@@ -656,9 +696,18 @@ impl Db {
         name: String,
         brief: String,
         by_coordinator: bool,
+        repo: Option<String>,
     ) -> Pending<i64> {
         self.run(move |c, now| {
-            sessions::enqueue_slice(c.state()?, task, &name, &brief, by_coordinator, now)
+            sessions::enqueue_slice(
+                c.state()?,
+                task,
+                &name,
+                &brief,
+                by_coordinator,
+                repo.as_deref(),
+                now,
+            )
         })
     }
 
@@ -941,6 +990,7 @@ mod tests {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         };
         let entry = |n: u64, name: &str| ConversationEntry {
             id: EntryId(n),
@@ -995,6 +1045,7 @@ mod tests {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         })
         .wait()
         .unwrap();
@@ -1442,6 +1493,7 @@ mod tests {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         })
         .wait()
         .unwrap();

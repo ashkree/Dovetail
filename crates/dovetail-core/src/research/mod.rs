@@ -872,11 +872,7 @@ pub(crate) fn root_of(
     project: &crate::projects::Project,
 ) -> Result<PathBuf, ResearchDirError> {
     // A research project has no repo for a research folder to sit in: always the default.
-    let Some(repo) = project
-        .repo_path
-        .as_deref()
-        .filter(|_| !project.is_research())
-    else {
+    let Some(repo) = project.first_repo().map(|r| r.path.as_path()) else {
         return files::root(&paths.data, &project.id, std::path::Path::new(""), None);
     };
     let recipe = crate::recipe::Recipe::load(&paths.recipe(&project.id))?;

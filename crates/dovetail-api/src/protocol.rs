@@ -10,7 +10,7 @@ use crate::map::{Map, MapId, MapSummary};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
     Decision, DecisionId, EntryId, InboxId, InboxItem, JournalState, ModelOption, PLevel,
-    ProjectId, ReasoningEffort, SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem,
+    ProjectId, ProjectSummary, ReasoningEffort, RepoId, SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem,
     TodoListId, Totals, UsageLimits, Warning, WarningId, WorktreeInfo,
 };
 use crate::research::{
@@ -234,6 +234,10 @@ pub enum Event {
         /// The project to open next.
         id: ProjectId,
     },
+    /// A project was created or changed: renamed, its account set, a repo added or removed
+    /// (ADR 0021). Replaces it in `projects`, or adds it; replaces `project` too when it is the
+    /// open one.
+    ProjectUpserted(ProjectSummary),
     /// [`Command::RegisterProject`] wrote a starter recipe for the project, which had none
     /// (task #31). The UI offers `profiles` (config.toml's, empty for none) and answers with
     /// [`Command::SetRecipeProfile`]. Changes nothing in the snapshot.
@@ -378,6 +382,9 @@ pub enum Command {
         name: String,
         /// First prompt.
         brief: String,
+        /// The repo it works in, by name (ADR 0021). May be left out when the project has one.
+        #[serde(default)]
+        repo: Option<String>,
     },
     /// End a slice session, or a side chat.
     CloseSlice {
@@ -577,6 +584,51 @@ pub enum Command {
     NewResearchProject {
         /// Display name; the id is its slug.
         name: String,
+    },
+    /// Create a project (ADR 0021): a name, an optional account and an optional first repo.
+    /// Answered with [`Event::ProjectUpserted`]. Home and the core both take it.
+    CreateProject {
+        /// Display name; the id is its slug, numbered when taken.
+        name: String,
+        /// A profile name from `config.toml`; `None` for the default Claude home.
+        #[serde(default)]
+        account: Option<String>,
+        /// A folder inside a git repo, added as its first repo.
+        #[serde(default)]
+        repo: Option<PathBuf>,
+    },
+    /// Rename a project. Its id, and so its folders, stay.
+    RenameProject {
+        /// The project.
+        id: ProjectId,
+        /// The new display name.
+        name: String,
+    },
+    /// Set the Claude account a project's sessions run under; `None` goes back to the recipe's
+    /// `profile`, else the default. Running sessions keep theirs until they next start.
+    SetProjectAccount {
+        /// The project.
+        id: ProjectId,
+        /// A profile name from `config.toml`.
+        account: Option<String>,
+    },
+    /// Add a repo to a project, by a path inside it. The open project's coordinator gets it at
+    /// its next start, at once when it is idle.
+    AddRepo {
+        /// The project.
+        project: ProjectId,
+        /// A folder inside the repo.
+        path: PathBuf,
+        /// What agents call it; `None` for the slug of the folder's name.
+        #[serde(default)]
+        name: Option<String>,
+    },
+    /// Remove a repo from a project. Refused while a slice works in it. Nothing on disk changes.
+    RemoveRepo {
+        /// The project.
+        project: ProjectId,
+        /// The repo.
+        repo: RepoId,
     },
     /// Register a repo as a project.
     RegisterProject {

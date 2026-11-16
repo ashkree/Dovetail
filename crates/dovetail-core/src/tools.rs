@@ -234,6 +234,7 @@ impl Core {
                     name: start.name.trim().to_owned(),
                     brief: start.brief,
                     by_coordinator: true,
+                    repo: start.repo,
                 };
                 if let Err(reason) = self.check_slice(&request).await {
                     let _ = reply.send(error(format!("denied: {reason}")));
@@ -250,6 +251,7 @@ impl Core {
                         "task": request.task.map(|t| t.0),
                         "name": request.name,
                         "brief": request.brief,
+                        "repo": request.repo,
                     });
                     self.raise(
                         &agent,
@@ -297,7 +299,9 @@ impl Core {
                         let text = format!(
                             "Added `{}` as the Dovetail project `{}`. Its tasks, inbox and this \
                              conversation are now kept.{recipe}",
-                            project.folder(&self.paths).display(),
+                            project
+                                .first_repo()
+                                .map_or_else(String::new, |r| r.path.display().to_string()),
                             project.id
                         );
                         self.add_entry(&agent, EntryKind::Notice, text.clone());

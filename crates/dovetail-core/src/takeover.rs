@@ -744,13 +744,29 @@ impl Core {
             .push(text.to_owned());
     }
 
-    /// The working directory of agent `agent`'s session: a slice's worktree, else the repo.
+    /// The working directory of agent `agent`'s session: a slice's worktree (or, without git,
+    /// its repo's folder), else the coordinator's folder (ADR 0021).
     pub(crate) fn session_cwd(&self, agent: &dovetail_api::Agent) -> PathBuf {
         match (agent.kind, &agent.worktree) {
             (AgentKind::Slice, Some(w)) => w.path.clone(),
+            (AgentKind::Slice, None) => self
+                .repo_of(&agent.id)
+                .map_or_else(|| self.project.coordinator_folder(&self.paths), |r| r.path),
             // Whatever project runs it, a tangent works in Tangents' folder (ADR 0017).
             (AgentKind::Tangent, _) => self.tangents_folder(),
-            _ => self.project.folder(&self.paths),
+            _ => self.project.coordinator_folder(&self.paths),
+        }
+    }
+
+    /// The repo agent `id` works in (ADR 0021): a slice's stored repo, or the first when it has
+    /// none stored (slices from before the migration); a subagent's parent's; for any other
+    /// agent, the first repo. `None` in a project with no repos, or when the repo was removed.
+    pub(crate) fn repo_of(&self, id: &dovetail_api::AgentId) -> Option<crate::projects::Repo> {
+        let row = self.agents.get(id)?;
+        match (row.agent.kind, &row.agent.parent) {
+            (AgentKind::Subagent { .. }, Some(parent)) if parent != id => self.repo_of(parent),
+            (AgentKind::Slice, _) => self.project.repo(row.repo),
+            _ => self.project.repo(None),
         }
     }
 }

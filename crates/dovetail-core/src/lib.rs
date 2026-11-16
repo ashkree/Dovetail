@@ -21,6 +21,7 @@ mod inbox;
 mod journal;
 pub mod memory;
 mod oom;
+mod project_admin;
 pub mod paths;
 pub mod profile;
 pub mod projects;

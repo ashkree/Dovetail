@@ -138,9 +138,24 @@ impl Core {
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         let env = if row.agent.kind == AgentKind::Slice {
             let place = self.session_cwd(&row.agent);
-            Recipe::load(&self.paths.recipe(self.project.key()))
-                .map(|r| r.env_for(&place).into_iter().collect())
-                .unwrap_or_default()
+            let repo = self.repo_of(id);
+            let recipe = Recipe::load(&self.paths.recipe(self.project.key())).unwrap_or_default();
+            let recipe = match &repo {
+                Some(repo) => recipe.for_repo(&repo.name),
+                None => recipe,
+            };
+            let mut env: Vec<(String, String)> = recipe.env_for(&place).into_iter().collect();
+            // The worktree hook applies the same repo's overrides.
+            if let Some(repo) = repo {
+                env.push((dovetail_api::tools::env::REPO.into(), repo.name));
+            }
+            env
+        } else {
+            Vec::new()
+        };
+        // A session in the coordinator's folder sees every repo (ADR 0021 point 3).
+        let add_dirs = if cwd == self.project.coordinator_folder(&self.paths) {
+            self.project.attached()
         } else {
             Vec::new()
         };
@@ -156,6 +171,7 @@ impl Core {
             resume,
             cwd,
             worktree,
+            add_dirs,
             mode: state::to_cli(row.agent.permission_mode),
             task_list_id: row
                 .task_list_id
@@ -320,7 +336,7 @@ impl Core {
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         match row.agent.kind {
             AgentKind::Coordinator => {
-                let cwd = self.project.folder(&self.paths);
+                let cwd = self.project.coordinator_folder(&self.paths);
                 self.launch(id, cwd, None)?;
                 // Signals held while it could not be woken, unless its last turn was cut off:
                 // then they wait for the user's next message (decision 1: never continue).
@@ -762,7 +778,12 @@ impl Core {
                 .cwd
                 .as_deref()
                 .map(PathBuf::from)
-                .unwrap_or_else(|| self.project.folder(&self.paths));
+                .unwrap_or_else(|| {
+                    self.agents.get(agent).map_or_else(
+                        || self.project.coordinator_folder(&self.paths),
+                        |r| self.session_cwd(&r.agent),
+                    )
+                });
             let session_id = self
                 .agents
                 .get(agent)
@@ -982,6 +1003,9 @@ impl Core {
         let last = background == 0 && !more_queued;
         if agent.0 == COORDINATOR {
             self.closing_result(reply, interrupted, last);
+            if last {
+                self.reattach_after_turn();
+            }
         }
         if last {
             self.finished_turn(agent, preview);

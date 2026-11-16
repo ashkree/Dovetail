@@ -22,6 +22,9 @@ pub mod env {
     pub const SUITES: &str = "DOVETAIL_SUITES";
     /// The project id; set for the worktree hook.
     pub const PROJECT: &str = "DOVETAIL_PROJECT";
+    /// A slice's repo name (ADR 0021); set for the worktree hook, which applies the recipe's
+    /// `[repos.<name>]` overrides.
+    pub const REPO: &str = "DOVETAIL_REPO";
     /// Replaces `$XDG_DATA_HOME/dovetail` (databases, worktrees). With the three below, lets a
     /// dev build in a slice run on its own state without touching Claude Code's environment.
     pub const DATA_DIR: &str = "DOVETAIL_DATA_DIR";
@@ -612,6 +615,10 @@ pub struct StartSlice {
     pub name: String,
     /// The slice's first prompt.
     pub brief: String,
+    /// The repo it works in, by name (ADR 0021). May be left out when the project has one;
+    /// required with several.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
 }
 
 /// `project_add`: register the folder the coordinator runs in as a Dovetail project (ADR 0005).

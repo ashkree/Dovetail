@@ -1732,6 +1732,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         })
         .wait()
         .expect("agent");
@@ -2187,6 +2188,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         })
         .wait()
         .expect("agent");
@@ -3436,6 +3438,7 @@ fn session_row(
         claude_home: Some(home.to_path_buf()),
         takeover,
         model_choice: None,
+        repo: None,
     }
 }
 

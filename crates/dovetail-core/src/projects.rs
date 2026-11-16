@@ -1,11 +1,13 @@
-//! Project identity and the registry (plan B9, ADR 0005).
+//! Project identity and the registry (plan B9, ADR 0005, ADR 0021).
 //!
-//! A project is registered only when the user asks (`:project add`, or the coordinator's
-//! `project_add`). Which folder is the project ([`locate`]): inside a git repo, the repo,
-//! identified by `git rev-parse --path-format=absolute --git-common-dir` so that a worktree is the
-//! same project as its main checkout; otherwise the nearest registered ancestor folder; otherwise
-//! the folder itself, as a [`Candidate`]. Its id is the slug of the folder name, numbered
-//! (`name-2`) when another project already took it.
+//! A project is a name with zero or more repos and one account (ADR 0021). The GUI creates
+//! projects and adds repos from Home; the frozen TUI still registers the folder it runs in
+//! (`:project add`, or the coordinator's `project_add`) as a project with one repo. Which project
+//! a folder belongs to ([`locate`]): inside a git repo, the project with that repo, identified by
+//! `git rev-parse --path-format=absolute --git-common-dir` so that a worktree is the same project
+//! as its main checkout; otherwise the project with the nearest folder repo; otherwise the folder
+//! itself, as a [`Candidate`]. An id is the slug of the name, numbered (`name-2`) when another
+//! project already took it.
 //!
 //! These functions block on the DB thread or run `git`, so call them before the tokio runtime
 //! starts or from a blocking task, never from async code directly.
@@ -13,51 +15,100 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use dovetail_api::{ProjectId, ProjectKind, ProjectSummary};
+use dovetail_api::{ProjectId, ProjectKind, ProjectSummary, RepoId, RepoSummary};
 
-use crate::db::{Db, DbError};
+use crate::db::{Db, DbError, NewRepo};
 use crate::paths::Paths;
+
+/// One repo of a project (ADR 0021).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Repo {
+    /// Registry id: what a slice stores.
+    pub id: RepoId,
+    /// Lower kebab case, unique in its project.
+    pub name: String,
+    /// The main checkout, or a folder without git (an old folder project, ADR 0005).
+    pub path: PathBuf,
+    /// The repo's git common dir, which identifies it; `None` for a folder without git.
+    pub git_common_dir: Option<PathBuf>,
+}
+
+impl Repo {
+    /// The repo as the UI sees it.
+    pub fn summary(&self) -> RepoSummary {
+        RepoSummary {
+            id: self.id,
+            name: self.name.clone(),
+            path: self.path.clone(),
+        }
+    }
+}
 
 /// A registered project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
-    /// Slug of the folder (or of a research project's name), numbered on collision.
+    /// Slug of the name, numbered on collision. Names its state folder, socket and recipe.
     pub id: String,
-    /// Display name: the folder's name, or the name a research project was given.
+    /// Display name.
     pub name: String,
-    /// Code or research. Code paths check this, never whether a folder exists.
-    pub kind: ProjectKind,
-    /// The main checkout, or the folder of a project without git; `None` for a research
-    /// project, which has no repo.
-    pub repo_path: Option<PathBuf>,
-    /// The repo's git common dir, which identifies it; `None` for a folder without git.
-    pub git_common_dir: Option<PathBuf>,
+    /// The Claude profile its sessions run under; `None`: the recipe's `profile`, else the
+    /// default Claude home.
+    pub account: Option<String>,
+    /// Its repos, in the order they were added. None: a research-only project.
+    pub repos: Vec<Repo>,
     /// When it was last opened, in Unix milliseconds.
     pub last_opened_ms: Option<i64>,
 }
 
 impl Project {
-    /// A research project: no repo, no worktrees, no slices, no git.
+    /// A research-only project: no repos, so no worktrees, no slices, no git (ADR 0021 point 2).
     pub fn is_research(&self) -> bool {
-        self.kind == ProjectKind::Research
+        self.repos.is_empty()
     }
 
-    /// The folder its sessions run in: the repo or folder, or for a research project its own
-    /// state folder (`Paths::project_dir`).
-    pub fn folder(&self, paths: &Paths) -> PathBuf {
-        match &self.repo_path {
-            Some(repo) if !self.is_research() => repo.clone(),
-            _ => paths.project_dir(&self.id),
+    /// The kind the frozen TUI shows, computed from the repos.
+    pub fn kind(&self) -> ProjectKind {
+        if self.is_research() {
+            ProjectKind::Research
+        } else {
+            ProjectKind::Code
         }
     }
 
-    /// The project as the UI sees it.
+    /// The first repo added: what single-repo paths (`:docs`, `:upgrade`, the research folder)
+    /// use until a repo can be named there.
+    pub fn first_repo(&self) -> Option<&Repo> {
+        self.repos.first()
+    }
+
+    /// The repo with this id.
+    pub fn repo(&self, id: RepoId) -> Option<&Repo> {
+        self.repos.iter().find(|r| r.id == id)
+    }
+
+    /// The repo called `name`.
+    pub fn repo_named(&self, name: &str) -> Option<&Repo> {
+        self.repos.iter().find(|r| r.name == name)
+    }
+
+    /// The coordinator's working folder (ADR 0021 point 3).
+    pub fn home(&self, paths: &Paths) -> PathBuf {
+        paths.project_home(&self.id)
+    }
+
+    /// The project as the UI sees it, with zero counts ([`Db::project_counts`] fills them).
     pub fn summary(&self, paths: &Paths) -> ProjectSummary {
         ProjectSummary {
             id: ProjectId(self.id.clone()),
             name: self.name.clone(),
-            repo_path: self.folder(paths),
-            kind: self.kind,
+            repo_path: self
+                .first_repo()
+                .map_or_else(|| paths.project_dir(&self.id), |r| r.path.clone()),
+            kind: self.kind(),
+            repos: self.repos.iter().map(Repo::summary).collect(),
+            account: self.account.clone(),
+            last_opened_ms: self.last_opened_ms,
+            counts: Default::default(),
         }
     }
 }
@@ -86,6 +137,16 @@ impl Candidate {
             name: self.name.clone(),
             repo_path: self.repo_path.clone(),
             kind: ProjectKind::Code,
+            ..ProjectSummary::default()
+        }
+    }
+
+    /// The one repo it would be registered with, named like the project.
+    pub fn new_repo(&self) -> NewRepo {
+        NewRepo {
+            name: self.slug(),
+            path: self.repo_path.clone(),
+            git_common_dir: self.git_common_dir.clone(),
         }
     }
 }
@@ -139,6 +200,15 @@ pub enum ProjectError {
         /// The cause.
         source: std::io::Error,
     },
+    /// The account is no profile in `config.toml` (ADR 0009).
+    #[error("config.toml lists no profile `{0}`: add it with `dovetail login {0}`")]
+    UnknownAccount(String),
+    /// A project needs a name (ADR 0021: Home's new-project form).
+    #[error("a project needs a name")]
+    EmptyName,
+    /// A repo name has nothing left once made kebab case.
+    #[error("`{0}` is not a usable repo name: use letters, digits and dashes")]
+    BadRepoName(String),
     /// The registry failed.
     #[error(transparent)]
     Db(#[from] DbError),
@@ -207,8 +277,8 @@ fn folder_name(path: &Path) -> String {
         .map_or_else(|| "project".into(), |n| n.to_string_lossy().into_owned())
 }
 
-/// Finds the project `dir` belongs to, registering nothing (ADR 0005). A registered project is
-/// marked as opened now.
+/// Finds the project `dir` belongs to, registering nothing (ADR 0005), through the `repos`
+/// table (ADR 0021 point 7). A registered project is marked as opened now.
 pub fn locate(db: &Db, dir: &Path) -> Result<Resolution, ProjectError> {
     let dir = dir.canonicalize().map_err(|source| ProjectError::Io {
         path: dir.to_owned(),
@@ -219,10 +289,20 @@ pub fn locate(db: &Db, dir: &Path) -> Result<Resolution, ProjectError> {
             Some(project) => Some(project),
             // A folder project that has since become a repo keeps its id.
             None => match db.find_folder(identity.repo_path.clone()).wait()? {
-                Some(project) => Some(
-                    db.set_git_dir(project.id.clone(), identity.git_common_dir.clone())
-                        .wait()?,
-                ),
+                Some(project) => {
+                    let repo = project
+                        .repos
+                        .iter()
+                        .find(|r| r.path == identity.repo_path)
+                        .map(|r| r.id);
+                    match repo {
+                        Some(repo) => Some(
+                            db.set_git_dir(repo, identity.git_common_dir.clone())
+                                .wait()?,
+                        ),
+                        None => Some(project),
+                    }
+                }
                 None => {
                     return Ok(Resolution::Candidate(Candidate {
                         name: folder_name(&identity.repo_path),
@@ -232,14 +312,19 @@ pub fn locate(db: &Db, dir: &Path) -> Result<Resolution, ProjectError> {
                 }
             },
         },
-        // Research projects have no folder of the user's, so a directory never belongs to one.
+        // A research project has no folder of the user's, so a directory never belongs to one.
         Err(ProjectError::NotARepo(_)) => db
             .list_projects()
             .wait()?
             .into_iter()
             .filter_map(|p| {
-                let depth = p.repo_path.as_ref().filter(|r| dir.starts_with(r))?;
-                Some((depth.components().count(), p))
+                let depth = p
+                    .repos
+                    .iter()
+                    .filter(|r| r.git_common_dir.is_none() && dir.starts_with(&r.path))
+                    .map(|r| r.path.components().count())
+                    .max()?;
+                Some((depth, p))
             })
             .max_by_key(|(depth, _)| *depth)
             .map(|(_, p)| p),
@@ -258,6 +343,26 @@ pub fn locate(db: &Db, dir: &Path) -> Result<Resolution, ProjectError> {
     }
 }
 
+/// The repo at `path` (a folder inside a git repo) as it would be added, called `name` (made
+/// kebab case) or after its folder. Blocks on `git`.
+pub fn repo_at(path: &Path, name: Option<&str>) -> Result<NewRepo, ProjectError> {
+    let dir = path.canonicalize().map_err(|source| ProjectError::Io {
+        path: path.to_owned(),
+        source,
+    })?;
+    let identity = identify(&dir)?;
+    let name = match name.map(str::trim).filter(|n| !n.is_empty()) {
+        Some(given) if given.chars().any(|c| c.is_ascii_alphanumeric()) => slug(given),
+        Some(given) => return Err(ProjectError::BadRepoName(given.to_owned())),
+        None => slug(&folder_name(&identity.repo_path)),
+    };
+    Ok(NewRepo {
+        name,
+        path: identity.repo_path,
+        git_common_dir: Some(identity.git_common_dir),
+    })
+}
+
 /// The registered project for `dir`, or [`ProjectError::NotRegistered`].
 pub fn require(db: &Db, dir: &Path) -> Result<Project, ProjectError> {
     match locate(db, dir)? {
@@ -269,12 +374,7 @@ pub fn require(db: &Db, dir: &Path) -> Result<Project, ProjectError> {
 /// Registers a candidate, or returns the project already registered for its repo or folder.
 pub fn register(db: &Db, candidate: &Candidate) -> Result<Project, ProjectError> {
     Ok(db
-        .register_project(
-            candidate.slug(),
-            candidate.name.clone(),
-            candidate.repo_path.clone(),
-            candidate.git_common_dir.clone(),
-        )
+        .register_project(candidate.slug(), candidate.name.clone(), candidate.new_repo())
         .wait()?)
 }
 

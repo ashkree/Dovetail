@@ -71,6 +71,7 @@ impl Core {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);

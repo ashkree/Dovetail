@@ -802,8 +802,20 @@ impl Core {
         );
     }
 
-    /// The coordinator's session exited: if yesterday's was asked back, it resumes now.
+    /// The coordinator's session exited: if yesterday's was asked back, it resumes now; if it
+    /// stopped to take in changed repos, it resumes now with them and is told.
     pub(crate) fn coordinator_exited(&mut self) {
+        if let Some(note) = self.reattach.take() {
+            self.hold_for_coordinator(note);
+            if self.pending_fresh.is_none() && self.revert_coordinator.is_none() {
+                if self.quitting.is_none()
+                    && let Err(e) = self.ensure_live(&AgentId(COORDINATOR.into()))
+                {
+                    self.fail(e);
+                }
+                return;
+            }
+        }
         if let Some(PendingFresh { kind, seed }) = self.pending_fresh.take() {
             if self.quitting.is_none() {
                 self.fresh_coordinator(&kind, &seed);

@@ -4,11 +4,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use dovetail_api::{ActivityKind, AgentId, ProjectSummary};
+use dovetail_api::{ActivityKind, AgentId, AgentKind, ProjectSummary, RepoId};
 
 use crate::error::RegisterError;
 use crate::paths::Paths;
-use crate::projects::{Candidate, Project};
+use crate::db::DbError;
+use crate::project_admin::{self, ProjectOp};
+use crate::projects::{Candidate, Project, Repo};
 use crate::recipe;
 use crate::service::{Core, CoreHandler, serve};
 use crate::socket::{self, SocketHandler};
@@ -45,12 +47,54 @@ impl ProjectState {
         }
     }
 
-    /// The folder sessions run in: the repo or folder, or a research project's state folder.
-    pub(crate) fn folder(&self, paths: &Paths) -> PathBuf {
+    /// Where the coordinator, side chats and Ask run (ADR 0021 point 3): a registered project's
+    /// `home/` folder, every repo attached with `--add-dir`; for a folder not registered yet
+    /// (TUI only), the folder itself.
+    pub(crate) fn coordinator_folder(&self, paths: &Paths) -> PathBuf {
         match self {
-            ProjectState::Registered(p) => p.folder(paths),
+            ProjectState::Registered(p) => p.home(paths),
             ProjectState::Unregistered { candidate, .. } => candidate.repo_path.clone(),
         }
+    }
+
+    /// The folders attached to the coordinator with `--add-dir`: every repo of a registered
+    /// project, none for an unregistered folder (it runs in it).
+    pub(crate) fn attached(&self) -> Vec<PathBuf> {
+        self.registered()
+            .map(|p| p.repos.iter().map(|r| r.path.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// The repo `id`, or with `None` the first one. An unregistered folder is its own one repo
+    /// (id 0, never stored).
+    pub(crate) fn repo(&self, id: Option<RepoId>) -> Option<Repo> {
+        match self {
+            ProjectState::Registered(p) => match id {
+                Some(id) => p.repo(id),
+                None => p.first_repo(),
+            }
+            .cloned(),
+            ProjectState::Unregistered { candidate, .. } => Some(Repo {
+                id: RepoId(0),
+                name: candidate.slug(),
+                path: candidate.repo_path.clone(),
+                git_common_dir: candidate.git_common_dir.clone(),
+            }),
+        }
+    }
+
+    /// Every repo: a registered project's, or the unregistered folder as its one repo.
+    pub(crate) fn repos(&self) -> Vec<Repo> {
+        match self {
+            ProjectState::Registered(p) => p.repos.clone(),
+            ProjectState::Unregistered { .. } => self.repo(None).into_iter().collect(),
+        }
+    }
+
+    /// The first repo's folder: `:docs`, `:upgrade` and the research folder use it until a repo
+    /// can be named there. `None` for a research project.
+    pub(crate) fn first_repo_path(&self) -> Option<PathBuf> {
+        self.repo(None).map(|r| r.path)
     }
 
     /// A research project: code paths that need a repo (slices, worktrees, git) check this.
@@ -67,6 +111,157 @@ impl ProjectState {
 }
 
 impl Core {
+    /// Every registered project as the UI lists it, with Home's counts (ADR 0021).
+    pub(crate) async fn project_summaries(&self) -> Result<Vec<ProjectSummary>, DbError> {
+        let projects = self.db.list_projects().await?;
+        let mut out = Vec::with_capacity(projects.len());
+        for project in &projects {
+            out.push(self.project_summary(project).await);
+        }
+        Ok(out)
+    }
+
+    /// One project as the UI lists it, with its counts (zero, logged, when they cannot be read).
+    pub(crate) async fn project_summary(&self, project: &Project) -> ProjectSummary {
+        let mut summary = project.summary(&self.paths);
+        match self
+            .db
+            .project_counts(self.paths.state_db(&project.id))
+            .await
+        {
+            Ok(counts) => summary.counts = counts,
+            Err(e) => tracing::warn!(project = %project.id, "reading its counts: {e}"),
+        }
+        summary
+    }
+
+    /// One of the five project commands (ADR 0021). Any project may be changed; when it is the
+    /// open one, the core takes the change in at once ([`Core::open_project_changed`]).
+    pub(crate) async fn project_op(&mut self, op: ProjectOp) {
+        let open = self.project.registered().map(|p| p.id.clone());
+        let is_open = op.project().is_some_and(|id| open.as_deref() == Some(id.0.as_str()));
+        if is_open && let ProjectOp::RemoveRepo { repo, .. } = &op {
+            let busy: Vec<String> = self
+                .agents
+                .values()
+                .filter(|r| r.agent.kind == AgentKind::Slice)
+                .filter(|r| self.repo_of(&r.agent.id).is_some_and(|x| x.id == *repo))
+                .map(|r| r.agent.name.clone())
+                .collect();
+            if !busy.is_empty() {
+                return self.fail(format!(
+                    "the repo has open slices ({}): archive them first",
+                    busy.join(", ")
+                ));
+            }
+        }
+        let creating = matches!(op, ProjectOp::Create { .. });
+        let pending = match op.start(&self.db, &self.config) {
+            Ok(pending) => pending,
+            Err(e) => return self.fail(e.to_string()),
+        };
+        let project = match pending.await {
+            Ok(project) => project,
+            Err(e) => return self.fail(e.to_string()),
+        };
+        if creating {
+            match project_admin::write_starter_recipe(&self.paths, &self.config, &project) {
+                Ok(_) => {}
+                Err(e) => tracing::warn!(project = %project.id, "writing its starter recipe: {e}"),
+            }
+            self.activity(
+                ActivityKind::Lifecycle,
+                None,
+                format!("project {} created", project.name),
+            );
+        }
+        let summary = self.project_summary(&project).await;
+        self.emit(dovetail_api::Event::ProjectUpserted(summary));
+        if is_open {
+            self.open_project_changed(project);
+        }
+    }
+
+    /// The open project changed in the registry: its account takes effect at each session's
+    /// next start, and its repos at the coordinator's (ADR 0021 point 4).
+    fn open_project_changed(&mut self, new: Project) {
+        let Some(old) = self.project.registered().cloned() else {
+            return;
+        };
+        self.project = ProjectState::Registered(new.clone());
+        if old.account != new.account {
+            self.claude =
+                crate::service::project_claude_home(&self.paths, &self.config, &self.project);
+            self.profile_error_notice();
+            self.activity(
+                ActivityKind::Lifecycle,
+                None,
+                format!(
+                    "{} now runs under {}; running sessions keep theirs until they next start",
+                    new.name,
+                    new.account.as_deref().unwrap_or("the default account")
+                ),
+            );
+        }
+        let mut lines = Vec::new();
+        for repo in new.repos.iter().filter(|r| old.repo(r.id).is_none()) {
+            lines.push(format!(
+                "repo `{}` attached at {}",
+                repo.name,
+                repo.path.display()
+            ));
+        }
+        for repo in old.repos.iter().filter(|r| new.repo(r.id).is_none()) {
+            lines.push(format!(
+                "repo `{}` detached ({})",
+                repo.name,
+                repo.path.display()
+            ));
+        }
+        if !lines.is_empty() {
+            let text = format!(
+                "Dovetail: {}. Start slices with `project_start_slice` and name the repo with \
+                 `repo` when there are several.",
+                lines.join("; ")
+            );
+            for line in &lines {
+                self.activity(ActivityKind::Lifecycle, None, line.clone());
+            }
+            self.reattach_coordinator(text);
+        }
+    }
+
+    /// Gets the coordinator onto the project's current repos: an idle one is restarted at once
+    /// (a resume, with the new `--add-dir` flags) and told `note`; a working one when its turn
+    /// ends; one not running hears it at its next start, which has the new flags anyway.
+    pub(crate) fn reattach_coordinator(&mut self, note: String) {
+        let id = AgentId(crate::service::COORDINATOR.into());
+        let Some(live) = self.live.get_mut(&id) else {
+            self.hold_for_coordinator(note);
+            return;
+        };
+        self.reattach = Some(note);
+        if !live.turn.busy() && self.quitting.is_none() {
+            live.stopping = true;
+            live.session.shutdown(crate::shutdown::QUIT_GRACE);
+        }
+    }
+
+    /// The coordinator's turn ended: a pending reattach stops it now.
+    pub(crate) fn reattach_after_turn(&mut self) {
+        if self.reattach.is_none() || self.quitting.is_some() {
+            return;
+        }
+        let id = AgentId(crate::service::COORDINATOR.into());
+        if let Some(live) = self.live.get_mut(&id)
+            && !live.turn.busy()
+            && !live.stopping
+        {
+            live.stopping = true;
+            live.session.shutdown(crate::shutdown::QUIT_GRACE);
+        }
+    }
+
     /// `:project new <name> --research` (decided 2026-11-11): registers a research project and
     /// makes its state folder, where its sessions will run. The open project stays open; the
     /// fresh snapshot lists the new one in the switcher.
@@ -152,12 +347,7 @@ impl Core {
         };
         let project = self
             .db
-            .register_project(
-                candidate.slug(),
-                candidate.name.clone(),
-                candidate.repo_path.clone(),
-                candidate.git_common_dir.clone(),
-            )
+            .register_project(candidate.slug(), candidate.name.clone(), candidate.new_repo())
             .await?;
         self.db
             .persist_state(self.paths.state_db(&project.id))
@@ -204,7 +394,7 @@ impl Core {
             None,
             format!(
                 "{} added as project {}",
-                project.folder(&self.paths).display(),
+                candidate.repo_path.display(),
                 project.id
             ),
         );
@@ -217,23 +407,10 @@ impl Core {
     /// there already (task #31): it is never overwritten. The path when written; a failure is
     /// noted in the activity log and registration goes on without it.
     fn write_starter_recipe(&mut self, project: &Project) -> Option<PathBuf> {
-        let path = self.paths.recipe(&project.id);
-        let profiles: Vec<&str> = self.config.profiles.keys().map(String::as_str).collect();
-        let text = recipe::starter(&project.name, &profiles);
-        let written = path
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| {
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&path)
-            })
-            .and_then(|mut file| std::io::Write::write_all(&mut file, text.as_bytes()));
-        match written {
-            Ok(()) => Some(path),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+        match project_admin::write_starter_recipe(&self.paths, &self.config, project) {
+            Ok(written) => written,
             Err(e) => {
+                let path = self.paths.recipe(&project.id);
                 self.activity(
                     ActivityKind::Lifecycle,
                     None,

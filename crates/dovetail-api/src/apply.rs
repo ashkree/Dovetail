@@ -116,6 +116,12 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::ModelsChanged(models) => state.models = models,
         Event::JournalChanged(journal) => state.journal = Some(journal),
         Event::UpgradeBuilding(on) => state.upgrade_building = on,
+        Event::ProjectUpserted(project) => {
+            if state.project.as_ref().is_some_and(|p| p.id == project.id) {
+                state.project = Some(project.clone());
+            }
+            upsert(&mut state.projects, project, |p| p.id.clone());
+        }
         // Nothing to store: the UI shows the message as the event passes through.
         Event::CommandFailed { .. }
         | Event::MapLoaded(_)

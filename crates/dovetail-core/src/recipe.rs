@@ -8,6 +8,9 @@
 //! symlink = []              # paths relative to the repo root; symlinked, never copied (12c)
 //! setup = ["cargo fetch"]   # run in order in the new worktree; each must be safe to re-run (B5)
 //! [env]                     # set for the setup commands and for the slice's session
+//! [repos.web]               # overrides for one repo of the project (ADR 0021)
+//! setup = ["npm ci"]        # replaces [worktree] setup for that repo's slices
+//! [repos.web.env]           # merged over [env]; its keys win
 //! ```
 //!
 //! `[env]` values may use two placeholders: `{worktree}`, the slice's worktree (or, in a folder
@@ -38,6 +41,21 @@ pub struct Recipe {
     #[serde(default)]
     pub worktree: WorktreeRecipe,
     /// Environment for setup commands and the slice session.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    /// Per-repo overrides, by repo name (ADR 0021 point 6).
+    #[serde(default)]
+    pub repos: BTreeMap<String, RepoRecipe>,
+}
+
+/// A `[repos.<name>]` table: what differs for one repo's slices.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepoRecipe {
+    /// Replaces `[worktree] setup` when given.
+    #[serde(default)]
+    pub setup: Option<Vec<String>>,
+    /// Merged over `[env]`; these keys win.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
 }
@@ -76,6 +94,20 @@ pub enum RecipeError {
 }
 
 impl Recipe {
+    /// The recipe as it applies to repo `name`'s slices: its `[repos.<name>]` table, if any,
+    /// over the top-level keys. A repo with no table gets the recipe unchanged.
+    pub fn for_repo(&self, name: &str) -> Recipe {
+        let mut out = self.clone();
+        if let Some(over) = self.repos.get(name) {
+            if let Some(setup) = &over.setup {
+                out.worktree.setup = setup.clone();
+            }
+            out.env
+                .extend(over.env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
+        out
+    }
+
     /// `[env]` with the placeholders filled in for one worktree.
     pub fn env_for(&self, worktree: &Path) -> BTreeMap<String, String> {
         let path = worktree.to_string_lossy();
@@ -238,6 +270,27 @@ mod tests {
         );
         assert!(text.contains("(maveron, walid)"));
         assert!(Recipe::parse(&starter("x", &[])).is_ok());
+    }
+
+    /// ADR 0021 point 6: a `[repos.<name>]` table replaces `setup` and wins over `[env]` for
+    /// that repo only.
+    #[test]
+    fn a_repo_table_overrides_setup_and_env_for_that_repo() {
+        let recipe = Recipe::parse(
+            "[worktree]\nsetup = [\"cargo fetch\"]\n[env]\nA = \"1\"\nB = \"2\"\n\
+             [repos.web]\nsetup = [\"npm ci\"]\n[repos.web.env]\nB = \"web\"\n\
+             [repos.docs.env]\nC = \"3\"\n",
+        )
+        .unwrap();
+        let web = recipe.for_repo("web");
+        assert_eq!(web.worktree.setup, ["npm ci"]);
+        assert_eq!(web.env["A"], "1");
+        assert_eq!(web.env["B"], "web");
+        let docs = recipe.for_repo("docs");
+        assert_eq!(docs.worktree.setup, ["cargo fetch"]);
+        assert_eq!(docs.env["C"], "3");
+        assert_eq!(recipe.for_repo("api"), recipe);
+        assert!(Recipe::parse("[repos.web]\nsymlink = []\n").is_err());
     }
 
     #[test]

@@ -477,6 +477,9 @@ pub(crate) struct Core {
     /// they stay in progress until that changes or a slice reports again (decided 2026-11-16).
     /// Memory only: a restart forgets it.
     pub(crate) sent_back: HashMap<TaskId, crate::worktree_info::PrStage>,
+    /// The project's repos changed while the coordinator ran (ADR 0021 point 4): what to tell it
+    /// once it has restarted with its new `--add-dir` flags.
+    pub(crate) reattach: Option<String>,
 }
 
 /// How a new conversation entry gets its effort tag.
@@ -505,7 +508,9 @@ pub(crate) fn project_claude_home(
     if recipe.env.contains_key("CLAUDE_CONFIG_DIR") {
         return Err(crate::profile::ProfileError::EnvOverride);
     }
-    config.claude_home(recipe.profile.as_deref())
+    // The project's account wins; while it is empty the recipe's `profile` is still read, so
+    // nothing changes on the day of the migration (ADR 0021 point 1).
+    config.claude_home(p.account.as_deref().or(recipe.profile.as_deref()))
 }
 
 /// The streaming coalescing window (≤ ~30 fps).
@@ -586,6 +591,7 @@ impl Core {
             effort_tags: HashMap::new(),
             closed_slices: HashMap::new(),
             sent_back: HashMap::new(),
+            reattach: None,
         }
     }
 
@@ -805,6 +811,7 @@ impl Core {
                 claude_home: None,
                 takeover: None,
                 model_choice: None,
+                repo: None,
             };
             self.db.upsert_agent(row.clone()).await?;
             self.agents.insert(coordinator, row);
@@ -913,14 +920,14 @@ impl Core {
     }
 
     async fn snapshot(&mut self) -> Result<Snapshot, DbError> {
-        let projects = self.db.list_projects().await?;
+        let projects = self.project_summaries().await?;
         let tasks = self.db.load_tasks().await?;
         let research = self.research_summaries(&tasks).await?;
         let mut snapshot = Snapshot {
             seq: self.seq,
             now_ms: now_ms(),
             project: Some(self.project.summary(&self.paths)),
-            projects: projects.iter().map(|p| p.summary(&self.paths)).collect(),
+            projects,
             efforts: self.efforts.values().cloned().collect(),
             tasks,
             research,
@@ -1390,6 +1397,15 @@ impl Core {
 
     async fn command(&mut self, command: Command) {
         match command {
+            project @ (Command::CreateProject { .. }
+            | Command::RenameProject { .. }
+            | Command::SetProjectAccount { .. }
+            | Command::AddRepo { .. }
+            | Command::RemoveRepo { .. }) => {
+                if let Ok(op) = crate::project_admin::ProjectOp::parse(project) {
+                    self.project_op(op).await;
+                }
+            }
             Command::Prompt {
                 agent,
                 text,
@@ -1428,12 +1444,18 @@ impl Core {
             Command::EndOfDay => self.end_of_day(),
             Command::FreshStart => self.fresh_start(),
             Command::Upgrade { local } => self.start_upgrade(local),
-            Command::NewSlice { task, name, brief } => {
+            Command::NewSlice {
+                task,
+                name,
+                brief,
+                repo,
+            } => {
                 let request = SliceRequest {
                     task,
                     name,
                     brief,
                     by_coordinator: false,
+                    repo,
                 };
                 if let Err(message) = self.request_slice(request).await {
                     self.fail(message);
@@ -1480,7 +1502,9 @@ impl Core {
             }
             Command::RegisterProject { path } => {
                 let wanted = path.canonicalize().unwrap_or(path);
-                if !wanted.as_os_str().is_empty() && wanted != self.project.folder(&self.paths) {
+                if !wanted.as_os_str().is_empty()
+                    && wanted != self.project.coordinator_folder(&self.paths)
+                {
                     self.fail("only the open folder can be added as a project");
                     return;
                 }
@@ -1578,7 +1602,8 @@ impl Core {
             .get(&agent)
             .and_then(|r| r.agent.worktree.as_ref())
             .map(|w| w.path.clone())
-            .unwrap_or_else(|| self.project.folder(&self.paths));
+            .or_else(|| self.repo_of(&agent).map(|r| r.path))
+            .unwrap_or_else(|| self.project.coordinator_folder(&self.paths));
         let inputs = self.inputs.clone();
         // A research project has no repo: no git, just the folder listing as it is typed.
         let git = !self.project.is_research();
@@ -1621,7 +1646,7 @@ impl Core {
     /// The repo's `docs/` folder for reading mode's Docs · ADRs; `None` for a research project,
     /// which has no repo.
     fn docs_repo(&self) -> Option<PathBuf> {
-        (!self.project.is_research()).then(|| self.project.folder(&self.paths))
+        self.project.first_repo_path()
     }
 
     /// `Command::ListDocs`: small folders, read in place.

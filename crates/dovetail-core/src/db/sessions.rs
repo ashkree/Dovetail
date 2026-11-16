@@ -38,6 +38,9 @@ pub struct AgentRow {
     /// The model and effort picked in the model selector (task #39), used from the next start;
     /// `None` until the user picks: `config.toml`'s default applies.
     pub model_choice: Option<ModelChoice>,
+    /// A slice's repo (ADR 0021), by registry id; `None` for other agents and for slices from
+    /// before the migration, which work in the project's first repo.
+    pub repo: Option<dovetail_api::RepoId>,
 }
 
 /// A model and effort the user picked for a session.
@@ -128,15 +131,15 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
         "INSERT INTO agents (id, kind, name, parent_id, task_id, session_id, transcript_path, \
          task_list_id, worktree_path, branch, status, status_line, permission_mode, cost_usd, \
          created_ms, last_activity_ms, tool_use_id, output_file, progress, subagent_tokens, \
-         claude_home, takeover, chosen_model, chosen_effort) \
+         claude_home, takeover, chosen_model, chosen_effort, repo_id) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22, ?23, ?24) \
+         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25) \
          ON CONFLICT(id) DO UPDATE SET kind = ?2, name = ?3, parent_id = ?4, task_id = ?5, \
          session_id = ?6, transcript_path = ?7, task_list_id = ?8, worktree_path = ?9, \
          branch = ?10, status = ?11, status_line = ?12, permission_mode = ?13, cost_usd = ?14, \
          last_activity_ms = ?16, tool_use_id = ?17, output_file = ?18, progress = ?19, \
          subagent_tokens = ?20, claude_home = ?21, takeover = ?22, chosen_model = ?23, \
-         chosen_effort = ?24, closed_ms = NULL",
+         chosen_effort = ?24, repo_id = ?25, closed_ms = NULL",
         params![
             a.id.0,
             kind_to_text(a.kind),
@@ -170,6 +173,7 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
                 .as_ref()
                 .and_then(|c| c.effort)
                 .map(ReasoningEffort::as_str),
+            row.repo.map(|r| r.0),
         ],
     )?;
     Ok(())
@@ -180,7 +184,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
         "SELECT id, kind, name, parent_id, task_id, session_id, transcript_path, task_list_id, \
          worktree_path, branch, status, status_line, permission_mode, cost_usd, created_ms, \
          last_activity_ms, tool_use_id, progress, subagent_tokens, claude_home, takeover, \
-         chosen_model, chosen_effort FROM agents \
+         chosen_model, chosen_effort, repo_id FROM agents \
          WHERE closed_ms IS NULL \
          ORDER BY created_ms, id",
     )?;
@@ -214,6 +218,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             (
                 r.get::<_, Option<String>>(21)?,
                 r.get::<_, Option<String>>(22)?,
+                r.get::<_, Option<i64>>(23)?,
             ),
         ))
     })?;
@@ -236,7 +241,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             created,
             last,
             (tool_use_id, progress, subagent_tokens, claude_home, takeover),
-            (chosen_model, chosen_effort),
+            (chosen_model, chosen_effort, repo),
         ) = row?;
         let chosen_effort = chosen_effort
             .map(|e| {
@@ -300,6 +305,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             claude_home: claude_home.map(PathBuf::from),
             takeover,
             model_choice,
+            repo: repo.map(dovetail_api::RepoId),
         });
     }
     Ok(out)
@@ -536,6 +542,8 @@ pub struct QueuedSlice {
     pub brief: String,
     /// Started by the coordinator's `project_start_slice` (it is told if the start fails).
     pub by_coordinator: bool,
+    /// The repo asked for, by name (ADR 0021); `None` for the project's only repo.
+    pub repo: Option<String>,
 }
 
 pub(super) fn enqueue_slice(
@@ -544,12 +552,13 @@ pub(super) fn enqueue_slice(
     name: &str,
     brief: &str,
     by_coordinator: bool,
+    repo: Option<&str>,
     now: i64,
 ) -> Result<i64, DbError> {
     conn.execute(
-        "INSERT INTO slice_queue (task_id, name, brief, by_coordinator, created_ms) \
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![task.map(|t| t.0), name, brief, by_coordinator, now],
+        "INSERT INTO slice_queue (task_id, name, brief, by_coordinator, created_ms, repo) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![task.map(|t| t.0), name, brief, by_coordinator, now, repo],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -561,7 +570,9 @@ pub(super) fn dequeue_slice(conn: &mut Connection, id: i64) -> Result<(), DbErro
 
 pub(super) fn load_queue(conn: &mut Connection) -> Result<Vec<QueuedSlice>, DbError> {
     let mut stmt = conn
-        .prepare("SELECT id, task_id, name, brief, by_coordinator FROM slice_queue ORDER BY id")?;
+        .prepare(
+            "SELECT id, task_id, name, brief, by_coordinator, repo FROM slice_queue ORDER BY id",
+        )?;
     let rows = stmt.query_map([], |r| {
         Ok(QueuedSlice {
             id: r.get(0)?,
@@ -569,6 +580,7 @@ pub(super) fn load_queue(conn: &mut Connection) -> Result<Vec<QueuedSlice>, DbEr
             name: r.get(2)?,
             brief: r.get(3)?,
             by_coordinator: r.get(4)?,
+            repo: r.get(5)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

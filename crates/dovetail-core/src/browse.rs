@@ -64,7 +64,7 @@ impl Core {
                 });
             }
         }
-        let docs = docs_repo(&self.paths, &project)
+        let docs = docs_repo(&project)
             .map(|repo| crate::docs::list(&repo))
             .unwrap_or_default();
         self.emit(Event::ProjectBrowsed(Box::new(BrowsedProject {
@@ -84,7 +84,7 @@ impl Core {
         };
         let document = match &what {
             BrowseWhat::Doc(path) => {
-                let Some(repo) = docs_repo(&self.paths, &project) else {
+                let Some(repo) = docs_repo(&project) else {
                     return self.fail(format!("{} has no repo docs", project.name));
                 };
                 crate::docs::load(&repo, path).map_err(|e| e.to_string())
@@ -128,7 +128,7 @@ impl Core {
     }
 }
 
-/// A code project's repo, for its `docs/`; `None` for a research project, which has none.
-fn docs_repo(paths: &crate::paths::Paths, project: &Project) -> Option<PathBuf> {
-    (!project.is_research()).then(|| project.folder(paths))
+/// A code project's first repo, for its `docs/`; `None` for a research project, which has none.
+fn docs_repo(project: &Project) -> Option<PathBuf> {
+    project.first_repo().map(|r| r.path.clone())
 }

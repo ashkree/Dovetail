@@ -5,6 +5,7 @@
 //! child processes run by tokio with a timeout (a child that overruns is killed, and tokio
 //! reaps it). A part that fails is logged and shown as unknown; it never hides the others.
 
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -515,45 +516,53 @@ impl Core {
         if self.project.is_research() {
             return;
         }
-        let targets: Vec<Target> = agents
-            .iter()
-            .filter_map(|id| self.agents.get(id))
-            .filter(|r| r.agent.kind == AgentKind::Slice)
-            .filter_map(|r| {
-                let wt = r.agent.worktree.as_ref()?;
-                Some(Target {
-                    agent: r.agent.id.clone(),
-                    name: r.agent.name.clone(),
-                    key: self.worktree_key(&r.agent),
-                    path: wt.path.clone(),
-                    branch: wt.branch.clone(),
-                })
-            })
-            .collect();
-        if targets.is_empty() {
+        // Grouped by repo (ADR 0021): each repo's base branch is looked up once.
+        let mut by_repo: BTreeMap<PathBuf, Vec<Target>> = BTreeMap::new();
+        for r in agents.iter().filter_map(|id| self.agents.get(id)) {
+            if r.agent.kind != AgentKind::Slice {
+                continue;
+            }
+            let (Some(wt), Some(repo)) = (r.agent.worktree.as_ref(), self.repo_of(&r.agent.id))
+            else {
+                continue;
+            };
+            by_repo.entry(repo.path).or_default().push(Target {
+                agent: r.agent.id.clone(),
+                name: r.agent.name.clone(),
+                key: self.worktree_key(&r.agent),
+                path: wt.path.clone(),
+                branch: wt.branch.clone(),
+            });
+        }
+        if by_repo.is_empty() {
             return;
         }
-        let ctx = Context {
-            paths: self.paths.clone(),
-            repo: self.project.folder(&self.paths),
-            gh: self
-                .options
-                .gh
-                .clone()
-                .unwrap_or_else(|| PathBuf::from("gh")),
-            ssh_command: std::env::var("GIT_SSH_COMMAND").ok(),
-        };
+        let gh = self
+            .options
+            .gh
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("gh"));
+        let ssh_command = std::env::var("GIT_SSH_COMMAND").ok();
+        let paths = self.paths.clone();
         let inputs = self.inputs.clone();
         let now = now_ms();
         tokio::spawn(async move {
-            let base = ctx.base(refresh).await;
             let mut set = tokio::task::JoinSet::new();
-            for target in targets {
-                let (ctx, base, inputs) = (ctx.clone(), base.clone(), inputs.clone());
-                set.spawn(async move {
-                    let gathered = ctx.gather(target, &base, now, refresh).await;
-                    let _ = inputs.send(Input::WorktreeGathered(gathered));
-                });
+            for (repo, targets) in by_repo {
+                let ctx = Context {
+                    paths: paths.clone(),
+                    repo,
+                    gh: gh.clone(),
+                    ssh_command: ssh_command.clone(),
+                };
+                let base = ctx.base(refresh).await;
+                for target in targets {
+                    let (ctx, base, inputs) = (ctx.clone(), base.clone(), inputs.clone());
+                    set.spawn(async move {
+                        let gathered = ctx.gather(target, &base, now, refresh).await;
+                        let _ = inputs.send(Input::WorktreeGathered(gathered));
+                    });
+                }
             }
             while set.join_next().await.is_some() {}
         });
