@@ -1,0 +1,28 @@
+/* Viewer and variant panel; reading view (mock/gui/style.css, viewer / reading view). */
+.viewer { position: absolute; inset: 0; display: flex; }
+.preview { flex: 1; margin: 14px; border-radius: var(--r); border: 1px solid var(--edge); overflow: hidden; display: flex; flex-direction: column; }
+.urlbar { display: flex; gap: 10px; padding: 6px 12px; font-size: .85em; color: var(--dim); border-bottom: 1px solid var(--edge); background: var(--panel); }
+.preview iframe { flex: 1; border: 0; width: 100%; background: #1c1f2b; }
+.vpanel { width: 330px; margin: 14px 14px 14px 0; border: 1px solid var(--edge-hi); border-radius: var(--r); background: var(--panel); display: flex; flex-direction: column; overflow: auto; }
+.vpanel.detached { position: fixed; width: 340px; z-index: 30; box-shadow: 0 16px 50px #000a; margin: 0; max-height: 80vh; }
+.vpanel .vh { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--edge); font-weight: 650; cursor: move; }
+.vpanel .vh button { color: var(--dim); font-size: .85em; padding: 0 4px; }
+.vpanel .lvl { padding: 8px 12px 0; font-size: .76em; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+.slot { padding: 6px 12px 8px; border-left: 3px solid transparent; cursor: pointer; }
+.slot.sel { border-left-color: var(--accent); background: var(--sel-solid); }
+.slot .sn { font-weight: 600; font-size: .92em; margin-bottom: 4px; }
+.opts { display: flex; flex-direction: column; gap: 3px; }
+.opt { text-align: left; padding: 2px 8px; border-radius: 5px; border: 1px solid transparent; font-size: .9em; color: var(--dim); }
+.opt .n { font-family: var(--mono); color: var(--dim); margin-right: 6px; }
+.opt.on { color: var(--ink); border-color: var(--accent); background: var(--raise); }
+.opt.kept::after { content: " · kept"; color: var(--good); font-size: .85em; }
+.vpanel .keep { margin: 10px 12px 12px; padding: 7px; border-radius: 8px; background: var(--accent); color: var(--bg); font-weight: 700; }
+.vpanel .keep.same { background: var(--raise); color: var(--dim); }
+.panel-closed { position: absolute; right: 22px; top: 22px; font-size: .85em; }
+
+.reading { position: absolute; inset: 0; overflow: auto; padding: 18px 28px 60px; }
+.reading article { max-width: 760px; margin: 0 auto; font-size: 1.08em; line-height: var(--lh); }
+.reading h1 { color: color-mix(in srgb, var(--bold) var(--hl), var(--ink)); font-size: 1.6em; margin: .4em 0 .6em; }
+.reading h2 { color: color-mix(in srgb, var(--bold) var(--hl), var(--ink)); font-size: 1.2em; margin: 1.4em 0 .4em; }
+.reading h1.cur, .reading h2.cur, .reading h3.cur { box-shadow: -14px 0 0 -10px var(--accent); }
+.reading p, .reading li { margin: .55em 0; }

@@ -5,3 +5,7 @@
 .DS_Store
 .env
 spikes/*/target
+
+# GUI frontend (npm)
+gui/node_modules
+gui/dist
