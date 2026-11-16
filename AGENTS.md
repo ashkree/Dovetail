@@ -3,28 +3,26 @@
 Instructions for any coding agent working in this repository. Read in this order:
 
 1. this file;
-2. `docs/design-digest.md` — the implementation-relevant design: locked decisions, spike results, protocol facts, roadmap, open spikes;
-3. `docs/design.md` — the full design doc (when present; it wins over the digest);
-4. `docs/adr/` — decisions made after the v1 baseline (when present; an ADR wins over the design doc and digest on the decision it names);
-5. `docs/ui-session-brief.md` — detailed UI spec: data model, keys, readability, switcher, quick capture;
-6. `docs/screens/` — mock screens from the design phase (`README.md` there says which are v1 targets, which are superseded); look at `ui/b.png` and `ui/navigation.png` first. Screens are reference, the docs are spec;
+2. `docs/design-v2.md` — the v2 baseline (GUI-first, efforts, canvases, multi-repo); it wins over everything below it. `docs/architecture.md` is the map of crates and data flow;
+3. `docs/design-digest.md` — the v1 implementation-relevant design: locked decisions, spike results, protocol facts, open spikes;
+4. `docs/design.md` — the full v1 design doc (when present; it wins over the digest);
+5. `docs/adr/` — decisions made after the v1 baseline (an ADR wins over the design doc and digest on the decision it names);
+6. `docs/gui-layout-and-keys.md`, `mock/gui/` and `docs/screens/gui/` — the GUI's layout, look and keys. The TUI's spec (`docs/ui-session-brief.md`, `docs/screens/ui/`) applies to the frozen TUI only. Screens are reference, the docs are spec;
 7. `README.md` — product overview.
-
-If an implementation plan exists (`docs/implementation-plan.md`), it is the current source of truth for *order of work*. Keep it updated as milestones finish.
 
 ## What this is
 
-Dovetail is a keyboard-driven terminal UI, written in Rust, for running many Claude Code agents on one feature: a **coordinator** session the user works with directly, long-lived **slice** sessions (one git worktree each), and the **subagents** they spawn. It tracks the user's tasks, shows every agent under its task, and brings anything that needs the user into one inbox. Sessions run **headless** over Claude Code's NDJSON stream protocol; Dovetail serves its own tools to them over MCP (`dovetail mcp`).
+Dovetail is a keyboard-centric desktop GUI (Tauri 2 + React, core in Rust) for running many Claude Code agents across a **project**: a **coordinator** session the user works with directly, long-lived **slice** sessions (one git worktree each, in one of the project's repos), and the **subagents** they spawn. Work is organised into **efforts** with goals and acceptance criteria; Dovetail tracks tasks, canvases and slice previews, and brings anything that needs the user into one inbox per project. The v1 terminal UI is frozen as a fallback. Sessions run **headless** over Claude Code's NDJSON stream protocol; Dovetail serves its own tools to them over MCP (`dovetail mcp`).
 
 The design phase is finished. **All decisions are locked.** Do not reopen them; if something looks wrong, contradictory or under-specified, stop and ask.
 
 ## Scope
 
-The target is **v1** as listed in the digest's roadmap, built so v1.1 features slot in without rewrites. v1.1+ features are out of scope unless the plan says otherwise, but leave the seams for them (e.g. the keymap table must be able to become TOML).
+The target is v2's first GUI release (`docs/design-v2.md`). Features the design doc parks are out of scope unless a plan in `docs/plan/` says otherwise; leave the seams for them.
 
 Known conflicts, already resolved:
-- **Layout:** Decision 15 (Layout B — conversation full height on the left, task tree over inbox on the right; placement per ADR 0006) supersedes the sketch in `ui-session-brief.md`.
-- **Clients:** ADR 0020 makes an egui GUI the main client and cuts the TUI to a remote kit (chat, inbox, tree, switcher); `ratatui` + `crossterm` now bind only the TUI.
+- **Clients:** ADR 0023 supersedes ADR 0020's egui client and `dovetail serve`: the Tauri GUI hosts the core in its own process. The TUI is frozen.
+- **Layout:** the GUI follows `docs/gui-layout-and-keys.md`. Decision 15 (Layout B) binds the frozen TUI only.
 - **Edition:** the workspace uses edition 2024 (already in `Cargo.toml`).
 
 ## Dogfooding: Dovetail builds Dovetail
@@ -40,13 +38,13 @@ The user wants to switch from building Dovetail with plain agents to building it
 
 ## How to work
 
-1. **Plan before code.** Start by producing `docs/implementation-plan.md` (see "The plan" below) and wait for the user's explicit OK.
+1. **Plan before code.** Write the plan for a build in `docs/plan/<name>.md` (concrete: real type, module and file names; risks and open questions last) and wait for the user's explicit OK.
 2. **Spikes before the code that depends on them.** Each open spike in the digest gates specific work. Run it as a small throwaway program under `spikes/<name>/` (not a workspace member), record the result in `docs/spikes/<name>.md`, and report it. Spikes that need the user's machine, account or judgement (terms of use, cgroups on their box) are prepared as runnable scripts and handed to the user.
 3. **One wave at a time.** A wave is a set of milestones named in the plan (§6, "Waves"). Agents build a wave's tracks in parallel; at the end of the wave an Opus `code-review` runs from the last review tag, the user runs `retro`, and the wave merges. Milestone "done when" boxes are still ticked one by one. A wave is done when `scripts/check.sh` passes (fmt, clippy, tests and mechanical rule checks), except where the plan relaxes it for that wave (wave 1: `cargo build` only, no new tests; decided 2026-11-05). Then summarise what changed and how to try it.
 4. Keep changes scoped to the milestone. No speculative features, no drive-by refactors.
 5. User-facing decisions (UX, keys, visible naming) → ask. Implementation details with sensible defaults → decide, note in the summary.
 6. Never add a dependency without stating why. Prefer the standard library and small crates.
-7. **Never run real Claude Code sessions against the user's real projects** during development. Use a scratch git repo under the target dir or `/tmp`. Real sessions cost money: keep integration tests behind an opt-in flag (`DOVETAIL_LIVE_TESTS=1`) with tiny prompts.
+7. **Never run real Claude Code sessions against the user's real projects** during development. Use a scratch git repo under the target dir or `/tmp`, and start the GUI with `scripts/dev-gui.sh`, which keeps all of Dovetail's state under `target/dovetail-dev/`. Real sessions cost money: keep integration tests behind an opt-in flag (`DOVETAIL_LIVE_TESTS=1`) with tiny prompts.
 
 ## Conventions for skills
 
@@ -69,31 +67,21 @@ Which skill when:
 
 ## Hard constraints
 
-- **Rust** stable, `ratatui` + `crossterm`, `nucleo` (fuzzy), `pulldown-cmark` (markdown), `rusqlite` with `bundled` (SQLite, FTS5, WAL) on a dedicated thread, `tokio` for process/IO in the core only.
-- **Low memory:** 16 GB target machine, most of it for Claude Code. Lean dependencies. The TUI **redraws only when state changed** (dirty flag, streaming coalesced to ≤ ~30 fps, no idle ticks).
-- **Any terminal.** kitty is the default but never rely on the kitty keyboard protocol. kitty graphics only for the map canvas, with the outline as fallback.
+- **Core:** Rust stable, `rusqlite` with `bundled` (SQLite, FTS5, WAL) on a dedicated thread, `tokio` for process/IO in the core only.
+- **GUI:** Tauri 2 around React + TypeScript (Vite), React Flow for canvases. The window's TypeScript types are generated from `dovetail-api` (ts-rs) and committed.
+- **Low memory:** 16 GB target machine, most of it for Claude Code. Lean dependencies. GUI budget 500 MB (window plus one preview page).
 - **Linux** primary. cgroup caps via `systemd-run --user`.
 - **Nothing in user repos.** All state under `~/.local/share/dovetail/`, config under `~/.config/dovetail/`. Hooks, settings, MCP config and role prompts are passed to Claude Code as launch flags. Never use bare mode.
-- **Transparent terminals:** don't paint backgrounds by default.
+- **Frozen TUI:** `ratatui` + `crossterm`, `nucleo`, `pulldown-cmark`; it redraws only when state changed, works in any terminal (no kitty keyboard protocol; kitty graphics only for maps) and paints no backgrounds.
 
 ## Architecture rules (non-negotiable)
 
-- Crates: plain-data API (snapshot, events, commands, `apply()`), core, mock core, TUI, `dovetail` binary. Core and UI talk only by message-passing: `Snapshot` then deltas out, `Command`s in.
+- Crates: plain-data API (snapshot, events, commands, `apply()`), core, mock core, TUI, `dovetail` binary, and the GUI (`gui/src-tauri`, which hosts the core in-process, and the web frontend in `gui/src`). Core and UI talk only by message-passing: `Snapshot` then deltas out, `Command`s in.
 - Claude Code sits behind the `SessionDriver` trait; protocol JSON is parsed in `dovetail-driver`. The stream rules (digest §3–§6) are law.
 - Keys and `:` commands resolve to one `Action` enum through one keymap table. Storage goes through one DB thread. MCP tool handlers live in the core.
 
 Standards for review: `CODING_STANDARDS.md` (the detail of these rules, code conventions, readability, testing).
 
-## The plan (`docs/implementation-plan.md`)
+## Plans
 
-When asked to plan, write this file with:
-
-1. **Crate layout** and dependency list (each with a one-line reason and features).
-2. **Core API** sketches: `Snapshot`, `Event`, `Command`, `apply()`; how it survives a daemon split.
-3. **`SessionDriver`** trait sketch, the fake driver, and how events map onto the API.
-4. **Storage schema** (tables, FTS, migrations) for v1, with columns v1.1 will need noted.
-5. **Spike plan**: for each open spike — what it gates, a concrete procedure, pass/fail criteria, fallback, and who runs it.
-6. **Milestones**, in order, each with scope, crates/files touched, a "done when" checklist, tests added, and dependencies on spikes. Mark the **self-hosting point** explicitly, and for each later milestone say which slices it splits into when run inside Dovetail. Suggested shape (reorder with reasons): workspace + API + mock → TUI shell on mock (layout B, modes, keymap, tree, conversation, inbox, picker, quick capture) → storage + project registry → driver + single coordinator session → permissions/inbox live → slices + worktree hooks + cleanup → MCP bridge (`ask_user`, `report_status`) + role prompts → **self-hosting point** → subagents + to-do lists → memory caps + context fill → take-over → maps stage 1 → hardening and daily-driver polish.
-7. **Risks and open questions** for the user, including anything contradictory across the docs.
-
-Keep it concrete — real type, module and file names. Then stop and wait.
+`docs/implementation-plan.md` is the v1 plan: its dependency table (§2) is still the one every dependency needs a row in. v2 builds each have their own plan in `docs/plan/`.

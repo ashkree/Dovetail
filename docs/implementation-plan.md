@@ -198,9 +198,22 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `png` | maps, dev only | default | Tests decode the rendered PNG to check the selection ring is drawn (merman already pulls it in) |
 | `resvg` `=0.47.0` | maps | `default-features = false`, `text`, `system-fonts` | M15 (f): rasterises the swimlane map's SVG, which Dovetail draws itself (23e). No new crates: merman's PNG export already pulls in this version |
 | `rustix` 1 | core | `std`, `process` only | `waitpid` with `WUNTRACED` and `SIGCONT`, so an editor or native `claude` that stops itself (Ctrl-Z) is continued instead of hanging the terminal (task #32); no unsafe of ours, and already in the tree through `crossterm` and `tempfile` |
-| `eframe` `=0.37.0` | gui | `default-features = false`, `glow`, `wayland`, `x11`, `clipboard` | ADR 0020: the GUI client. glow, not wgpu: 216 MB against 268 MB RSS in the `gui-text` spike. Pinned because 0.37 changed `App::update` to `App::ui` |
 | `signal-hook` | tui, binary | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; the binary's `dovetail upgrade` sets a flag on SIGINT/SIGTERM so a Ctrl-C stops and reaps cargo (ADR 0014); no unsafe of ours |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
+
+The GUI frontend's npm packages (`gui/package.json`, dependencies and devDependencies), checked by `scripts/check.sh` the same way:
+
+| Package | Reason |
+| --- | --- |
+| `react`, `react-dom` | The frontend's UI library; React Flow needs it |
+| `@xyflow/react` | React Flow: canvases (ADR 0025) |
+| `react-markdown`, `remark-gfm` | Chat, reports and cards render markdown, with GitHub tables and task lists |
+| `@fontsource/atkinson-hyperlegible` | The settled font, bundled so the app needs no network (`docs/gui-layout-and-keys.md`) |
+| `@tauri-apps/api` | The frontend's two calls into the core (`core_send`, `core_subscribe`; ADR 0023) |
+| `@tauri-apps/cli` | `tauri dev` and `tauri build` |
+| `vite`, `@vitejs/plugin-react` | Dev server and production build |
+| `typescript`, `@types/react`, `@types/react-dom` | Type checking (`npm run typecheck`) |
+| `vitest` | Unit tests, including `apply()` against the shared cases in `crates/dovetail-api/tests/fixtures/apply` |
 
 **Deliberately not added**
 - `clap`: four subcommands are parsed by hand.
