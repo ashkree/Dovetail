@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "gui/src-tauri"]
+# The GUI shell (`dovetail-gui`) needs WebKitGTK to build; a plain `cargo build`/`cargo test` leaves it
+# out. `scripts/check.sh` builds and checks it with `--workspace`.
+default-members = ["crates/*"]
 # Spikes are throwaway packages with their own manifests.
 exclude = ["spikes"]
 
