@@ -547,6 +547,7 @@ impl Core {
                     }
                 };
                 self.research.capture.filed(&key, row.id, from, &row.body);
+                self.card_for_finding(row.id, task, &row.agent).await;
                 let title = self.task(task).await.map(|t| t.title).unwrap_or_default();
                 match self.research_dir(task, &title) {
                     Ok(dir) => {
@@ -768,6 +769,7 @@ impl Core {
             }
         };
         self.resolve(item, Some(format!("filed under #{}", task.0)));
+        self.card_for_finding(row.id, task, &row.agent).await;
         match self.research_dir(task, &t.title) {
             Ok(dir) => self.write_finding_files(&dir, &row, &sources),
             Err(e) => self.fail(e.to_string()),

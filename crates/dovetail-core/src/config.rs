@@ -14,7 +14,7 @@
 //! walid = "~/.claude"
 //! maveron = "~/.local/share/dovetail/profiles/maveron"
 //! [suites]                   # tool suites per role (ADR 0016); a role left out keeps its default
-//! coordinator = ["core", "tasks", "project", "coordination", "research", "maps"]
+//! coordinator = ["core", "tasks", "project", "coordination", "research", "maps", "canvas"]
 //! slice = ["core", "coordination", "maps"]
 //! side_chat = ["core"]       # ignored: side chats and Ask always get the core suite
 //! ```

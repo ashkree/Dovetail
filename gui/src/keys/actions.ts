@@ -2,7 +2,8 @@
 // leader leaves, `:` commands and mouse handlers all call dispatch(); nothing is mouse-only.
 // Actions change UI state with setUi() and shared state only by send(command).
 
-import type { CardKind, EffortKind, Id, InboxItem, Snapshot, VariantSet } from '../core/model';
+import { hasOwnText } from '../core/canvasView';
+import type { CardKind, EffortKind, Framework, Id, InboxItem, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
 import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
@@ -46,7 +47,8 @@ export type Action =
 /** Actions whose key the browser should still handle (paste into the chat bar). */
 export const PASS_THROUGH: ReadonlySet<Action> = new Set<Action>(['paste']);
 
-const CARD_KINDS: CardKind[] = ['finding', 'source', 'idea', 'decision', 'question', 'map'];
+/** The kinds the user makes by typing; the others point at something research or the coordinator filed. */
+const CARD_KINDS: CardKind[] = ['idea', 'question'];
 const EFFORT_KINDS: EffortKind[] = ['feature', 'fix', 'cleanup', 'research', 'experiment'];
 const MOVE_STEP = 40;
 
@@ -460,7 +462,8 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'openCard': {
       const c = s.cards.find(x => x.id === u.cardSel);
       if (c?.report_id) openMain('reading');
-      else if (c) toast(`**${c.id}** · ${c.title} — ${c.body}`);
+      else if (c && hasOwnText(c.kind)) toast(`**${c.id}** · ${c.title}${c.body ? ` — ${c.body}` : ''}`);
+      else if (c) { setUi({ awaitCard: c.id }); send({ type: 'load_card', card_id: c.id }); }
       return;
     }
     case 'refCard': {
@@ -482,13 +485,11 @@ export function dispatch(a: Action, arg?: unknown): void {
       picker('New card · kind', CARD_KINDS.map(k => ({
         key: k, text: k, label: k,
         go: () => prompt(`New ${k} card · title`, title => {
-          const before = new Set(snap().cards.map(c => c.id));
+          setUi({ awaitNewCard: true });
           send({
             type: 'add_card', canvas_id: canvas.id, kind: k, x: (from?.x ?? 40) + 30, y: (from?.y ?? 20) + 150,
             title: title.trim(), body: '', ...(from ? { link_from: from.id } : {}),
           });
-          const made = snap().cards.find(c => !before.has(c.id));
-          if (made) setUi({ cardSel: made.id });
         }),
       })));
       return;
@@ -522,7 +523,7 @@ export function dispatch(a: Action, arg?: unknown): void {
       send({ type: 'place_card', incoming_id: c.id, x: (p?.x ?? 40) + 30 + kids * 18, y: (p?.y ?? 20) + 150 + kids * 26 });
       const left = incomingOnCanvas(snap(), u).length;
       setUi({ cardSel: c.id, incSel: clamp(u.incSel, 0, Math.max(0, left - 1)), canvasPart: left ? 'incoming' : 'cards' });
-      toast(`Placed **${c.id}** under ${c.under}`);
+      toast(c.under ? `Placed **${c.id}** under ${c.under}` : `Placed **${c.id}**`);
       return;
     }
     case 'drop': {
@@ -534,7 +535,10 @@ export function dispatch(a: Action, arg?: unknown): void {
       toast(`Dropped **${c.id}**`);
       return;
     }
-    case 'pickFramework': toast('Starts a canvas from that framework (not in this build)'); return;
+    case 'pickFramework': {
+      if (u.effort) send({ type: 'new_canvas', effort_id: u.effort, framework: (arg as Framework) ?? 'question_tree' });
+      return;
+    }
 
     // ---- viewer
     case 'slotDown': case 'slotUp': {

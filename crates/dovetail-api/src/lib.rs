@@ -8,6 +8,7 @@
 #![warn(missing_docs)]
 
 mod apply;
+mod canvas;
 mod effort;
 pub mod map;
 mod model;
@@ -17,6 +18,7 @@ pub mod socket;
 pub mod tools;
 
 pub use apply::{ApplyResult, apply};
+pub use canvas::*;
 pub use effort::*;
 pub use model::*;
 pub use protocol::*;

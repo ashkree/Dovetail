@@ -5,6 +5,7 @@
 mod ask;
 mod attachments;
 mod browse;
+mod canvas;
 mod clipboard;
 mod completion;
 pub mod config;

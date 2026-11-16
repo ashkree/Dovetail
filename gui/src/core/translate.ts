@@ -4,6 +4,7 @@
 import type * as W from './generated';
 import type { Pending, PendingAction } from './pending';
 import type { UiCommand } from './protocol';
+import { coreCardId, hasOwnText } from './canvasView';
 import { COORDINATOR, variant } from './wire';
 
 export interface Translated {
@@ -33,6 +34,37 @@ export function translate(cmd: UiCommand, core: W.Snapshot, pending: Pending): T
     case 'new_effort':
       return only({ create_effort: { name: cmd.name, kind: cmd.kind, question_or_goal: cmd.question_or_goal } });
     case 'answer_inbox': return answer(cmd, core);
+    case 'new_canvas': {
+      const effort = Number(cmd.effort_id);
+      return only({ create_canvas: { effort, title: '', framework: cmd.framework } });
+    }
+    case 'place_card': {
+      const id = coreCardId(cmd.incoming_id);
+      const card = core.cards.find(c => c.id === id);
+      const canvas = card && core.canvases.find(c => c.effort === card.effort);
+      if (!card || !canvas) return refuse('That card has no canvas to go on.');
+      return only({ place_card: { id, canvas: canvas.id, x: cmd.x, y: cmd.y } });
+    }
+    case 'drop_incoming': return only({ drop_incoming: { id: coreCardId(cmd.incoming_id) } });
+    case 'move_card': return only({ move_card: { id: coreCardId(cmd.card_id), x: cmd.x, y: cmd.y } });
+    case 'delete_card': return only({ delete_card: { id: coreCardId(cmd.card_id) } });
+    case 'add_card': {
+      const canvas = core.canvases.find(c => String(c.id) === cmd.canvas_id);
+      if (!canvas) return refuse('That canvas is gone.');
+      if (!hasOwnText(cmd.kind)) return refuse(`A ${cmd.kind} card points at something that exists: research files it.`);
+      const text = cmd.body ? `${cmd.title}\n${cmd.body}` : cmd.title;
+      return only({
+        add_card: {
+          card: { effort: canvas.effort, canvas: canvas.id, kind: cmd.kind, x: cmd.x, y: cmd.y, reference: null, text },
+          link_from: cmd.link_from ? coreCardId(cmd.link_from) : null,
+        },
+      });
+    }
+    case 'link_cards': return only({ link_cards: { from: coreCardId(cmd.from), to: coreCardId(cmd.to), label: '' } });
+    case 'unlink_cards': return only({ unlink_cards: { from: coreCardId(cmd.from), to: coreCardId(cmd.to) } });
+    case 'load_card': return only({ load_card: { id: coreCardId(cmd.card_id) } });
+    case 'card_from_reply':
+      return only({ card_from_reply: { agent: COORDINATOR, entry: Number(cmd.entry_id), effort: Number(cmd.effort_id) } });
     case 'keep_variants': {
       const set = pending.variants.find(v => v.agent_id === cmd.agent_id);
       const chosen = set

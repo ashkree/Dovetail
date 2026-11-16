@@ -579,6 +579,39 @@ fn tool_defs() -> Vec<ToolDef> {
             schema: dovetail_maps::input_schema,
         },
         ToolDef {
+            name: "canvas_add_card",
+            description: "Put a card into an effort's incoming strip on its canvas, so the user \
+                sees what you found or thought. The user decides whether it goes on the canvas; \
+                you cannot place, move or delete a card. An `idea` or `question` carries its own \
+                `text`. A `finding`, `source`, `decision`, `map` or `task` card points at \
+                something that already exists: give its id as `reference` (a finding's or \
+                source's number, a decision's number, a map's id, a task's number); the card \
+                shows its title and nothing is copied. Fails for a reference that does not \
+                exist. `effort` defaults to the effort the user last tagged. Returns the \
+                card's id, for `canvas_link_cards`.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "kind": {"type": "string", "enum": ["idea", "question", "finding", "source", "decision", "map", "task"], "description": "What the card is."},
+                    "text": {"type": "string", "description": "The words of an idea or question card; leave out for the other kinds."},
+                    "reference": {"type": "string", "description": "The id of the finding, source, decision, map or task the card points at; leave out for an idea or question."},
+                    "effort": {"type": "integer", "description": "The effort's id; defaults to the one the user last tagged."}
+                }, "required": ["kind"]})
+            },
+        },
+        ToolDef {
+            name: "canvas_link_cards",
+            description: "Link two cards of one effort, such as a question to the finding that \
+                answers it. Linking them again changes the label. Cards are named by the ids \
+                `canvas_add_card` returned.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "from": {"type": "integer", "description": "The card the link starts at (the question, the parent)."},
+                    "to": {"type": "integer", "description": "The card it leads to."},
+                    "label": {"type": "string", "description": "What the link says, if anything."}
+                }, "required": ["from", "to"]})
+            },
+        },
+        ToolDef {
             name: "research_start_round",
             description: "Open the next round of a research task: a fan-out of subagents under \
                 the user's criteria. Call it before you launch research subagents; while it is \

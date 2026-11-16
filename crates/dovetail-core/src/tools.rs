@@ -176,6 +176,8 @@ impl Core {
             }
             Tool::Report(report) => self.slice_report(&agent, report).await,
             Tool::ClaimCriterion(claim) => self.claim_criterion_tool(&agent, claim).await,
+            Tool::CanvasAddCard(add) => self.canvas_add_card_tool(&agent, add).await,
+            Tool::CanvasLinkCards(link) => self.canvas_link_cards_tool(link).await,
             Tool::CreateTask(task) => {
                 let new = NewTask {
                     title: task.title,

@@ -10,6 +10,7 @@
 //! ([`Db::open_unregistered`]) until [`Db::persist_state`] writes it to the new project's file
 //! (ADR 0005).
 
+mod canvas;
 mod efforts;
 mod maps;
 mod registry;
@@ -17,6 +18,7 @@ pub mod research;
 mod sessions;
 mod tasks;
 
+pub use canvas::CanvasState;
 pub use efforts::CriterionStep;
 pub use maps::{Drawn, NewMapVersion};
 pub use sessions::{AgentRow, ModelChoice, QueuedSlice};
@@ -79,6 +81,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0015_research_followups.sql"),
     migration!("state", "0016_agent_model_choice.sql"),
     migration!("state", "0017_efforts.sql"),
+    migration!("state", "0018_canvases.sql"),
 ];
 
 /// Errors from the database layer.

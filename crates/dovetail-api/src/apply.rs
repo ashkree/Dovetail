@@ -40,6 +40,25 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::TaskUpserted(task) => upsert(&mut state.tasks, task, |t| t.id),
         Event::TaskRemoved(id) => state.tasks.retain(|t| t.id != id),
         Event::EffortUpserted(effort) => upsert(&mut state.efforts, effort, |e| e.id),
+        Event::CanvasUpserted(canvas) => upsert(&mut state.canvases, canvas, |c| c.id),
+        Event::CardUpserted(card) => upsert(&mut state.cards, card, |c| c.id),
+        Event::CardRemoved(id) => {
+            state.cards.retain(|c| c.id != id);
+            state.card_links.retain(|l| l.from != id && l.to != id);
+        }
+        Event::CardLinked(link) => {
+            match state
+                .card_links
+                .iter_mut()
+                .find(|l| l.from == link.from && l.to == link.to)
+            {
+                Some(existing) => *existing = link,
+                None => state.card_links.push(link),
+            }
+        }
+        Event::CardUnlinked { from, to } => {
+            state.card_links.retain(|l| !(l.from == from && l.to == to))
+        }
         Event::AgentUpserted(agent) => upsert(&mut state.agents, agent, |a| a.id.clone()),
         Event::AgentRemoved(id) => {
             state.agents.retain(|a| a.id != id);
@@ -119,6 +138,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         // Nothing to store: the UI shows the message as the event passes through.
         Event::CommandFailed { .. }
         | Event::MapLoaded(_)
+        | Event::CardLoaded { .. }
         | Event::ResearchLoaded { .. }
         | Event::TangentLoaded { .. }
         | Event::DocsListed { .. }
