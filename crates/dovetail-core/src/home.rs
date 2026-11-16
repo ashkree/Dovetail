@@ -14,7 +14,8 @@ use dovetail_api::{
     Command, CoreLink, Event, PROTOCOL_VERSION, ServerMsg, Snapshot, Warning, WarningId,
 };
 
-use crate::db::{Db, DbError, now_ms};
+use crate::CoreError;
+use crate::db::{Db, now_ms};
 use crate::paths::Paths;
 
 /// The id of the warning Home shows when sessions cannot start (the reason is its text).
@@ -39,17 +40,14 @@ impl HomeHandle {
 pub fn spawn_home(
     paths: Paths,
     blocked: Option<String>,
-) -> Result<(CoreLink, HomeHandle), DbError> {
+) -> Result<(CoreLink, HomeHandle), CoreError> {
     let db = Db::open(&paths, None)?;
     let (command_tx, command_rx) = mpsc::channel::<Command>();
     let (message_tx, message_rx) = mpsc::channel::<ServerMsg>();
     let thread = std::thread::Builder::new()
         .name("dovetail-home".into())
         .spawn(move || run(&db, &paths, blocked, &command_rx, &message_tx))
-        .map_err(|source| DbError::Io {
-            path: "dovetail-home".into(),
-            source,
-        })?;
+        .map_err(CoreError::Thread)?;
     Ok((
         CoreLink {
             commands: command_tx,
