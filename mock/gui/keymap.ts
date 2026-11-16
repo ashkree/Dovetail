@@ -1,0 +1,206 @@
+// The proposed keymap: one table. The mock dispatches keys from it AND draws the keyboard
+// overlay from it, so what you see in `?` is exactly what the keys do.
+//
+// Each binding: [keys, action, label, cat]. cat colours the key in the overlay:
+//   move = movement, act = act on the thing in focus, view = open or switch a view,
+//   mode = change mode. Scope bindings win over global ones.
+
+type Cat = 'move' | 'act' | 'view' | 'mode' | '';
+type Binding = [keys: string, action: string, label: string, cat: Cat];
+type LeaderLeaf = [action: string, label: string];
+interface LeaderGroup { name: string; keys: Record<string, LeaderLeaf> }
+
+const SCOPES: Record<string, { name: string; hint: string }> = {
+  home: { name: 'Home', hint: 'project list' },
+  inbox: { name: 'Inbox', hint: 'sidebar, top' },
+  tree: { name: 'Efforts tree', hint: 'sidebar, bottom' },
+  chat: { name: 'Chat', hint: 'coordinator, right' },
+  canvas: { name: 'Canvas', hint: 'main view' },
+  incoming: { name: 'Incoming strip', hint: 'under the canvas' },
+  viewer: { name: 'Viewer', hint: 'main view' },
+  reading: { name: 'Reading view', hint: 'main view' },
+  item: { name: 'Inbox item', hint: 'main view' },
+  insert: { name: 'Insert (chat bar)', hint: 'typing' },
+};
+
+const KEYMAP: Record<string, Binding[]> = {
+  global: [
+    ['h', 'zoneLeft', 'zone ←', 'move'],
+    ['l', 'zoneRight', 'zone →', 'move'],
+    ['C-h', 'zoneLeft', 'zone ← (always)', 'move'],
+    ['C-l', 'zoneRight', 'zone → (always)', 'move'],
+    ['C-j', 'zoneDown', 'zone ↓', 'move'],
+    ['C-k', 'zoneUp', 'zone ↑', 'move'],
+    ['i', 'insert', 'chat bar', 'mode'],
+    [':', 'command', 'command', 'mode'],
+    ['?', 'keys', 'keyboard map', 'view'],
+    ['<Esc>', 'escape', 'back / close', 'mode'],
+    [']e', 'nextEffort', 'next effort', 'move'],
+    ['[e', 'prevEffort', 'prev effort', 'move'],
+    ['/', 'search', 'search', 'act'],
+  ],
+  home: [
+    ['j', 'down', 'next project', 'move'],
+    ['k', 'up', 'prev project', 'move'],
+    ['gg', 'top', 'first', 'move'],
+    ['G', 'bottom', 'last', 'move'],
+    ['<CR>', 'openProject', 'open project', 'view'],
+    ['n', 'newProject', 'new project', 'act'],
+    ['r', 'addRepo', 'add repo', 'act'],
+    ['h', 'none', '', ''],
+    ['l', 'none', '', ''],
+  ],
+  inbox: [
+    ['j', 'down', 'next item', 'move'],
+    ['k', 'up', 'prev item', 'move'],
+    ['<CR>', 'openItem', 'open in full', 'view'],
+    ['y', 'allow', 'allow / approve', 'act'],
+    ['A', 'allowAlways', 'always allow', 'act'],
+    ['d', 'deny', 'deny / send back', 'act'],
+    ['D', 'denyReason', 'deny with reason', 'act'],
+    ['r', 'reply', 'reply', 'act'],
+    ['x', 'dismiss', 'dismiss', 'act'],
+    ['e', 'itemEffort', "item's effort", 'view'],
+  ],
+  tree: [
+    ['j', 'down', 'next row', 'move'],
+    ['k', 'up', 'prev row', 'move'],
+    ['o', 'fold', 'fold / unfold', 'act'],
+    ['<CR>', 'openRow', 'open', 'view'],
+    ['w', 'wwi', 'where was I', 'view'],
+    ['a', 'addTask', 'add task', 'act'],
+    ['e', 'rename', 'rename', 'act'],
+    ['J', 'moveDown', 'move down', 'act'],
+    ['K', 'moveUp', 'move up', 'act'],
+    ['dd', 'archive', 'archive', 'act'],
+  ],
+  chat: [
+    ['j', 'scrollDown', 'scroll ↓', 'move'],
+    ['k', 'scrollUp', 'scroll ↑', 'move'],
+    ['gg', 'top', 'top', 'move'],
+    ['G', 'bottom', 'bottom', 'move'],
+    [']]', 'nextTurn', 'next turn', 'move'],
+    ['[[', 'prevTurn', 'prev turn', 'move'],
+    ['zo', 'unfold', 'open report', 'act'],
+    ['zc', 'foldEntry', 'fold', 'act'],
+    ['f', 'cycleFilter', 'filter: All ⇄ effort', 'view'],
+    ['C-j', 'insert', 'chat bar', 'mode'],
+  ],
+  canvas: [
+    ['h', 'cardLeft', 'card ←', 'move'],
+    ['j', 'cardDown', 'card ↓', 'move'],
+    ['k', 'cardUp', 'card ↑', 'move'],
+    ['l', 'cardRight', 'card →', 'move'],
+    ['<Tab>', 'follow', 'follow link', 'move'],
+    ['<S-Tab>', 'followBack', 'link back', 'move'],
+    ['<CR>', 'openCard', 'open card', 'view'],
+    ['r', 'refCard', 'ref → chat', 'act'],
+    ['n', 'newCard', 'new card', 'act'],
+    ['H', 'moveCardL', 'move card ←', 'act'],
+    ['J', 'moveCardD', 'move card ↓', 'act'],
+    ['K', 'moveCardU', 'move card ↑', 'act'],
+    ['L', 'moveCardR', 'move card →', 'act'],
+    ['gi', 'toIncoming', 'go to incoming', 'move'],
+    ['dd', 'deleteCard', 'delete card', 'act'],
+    ['+', 'zoomIn', 'zoom in', 'view'],
+    ['-', 'zoomOut', 'zoom out', 'view'],
+    ['0', 'zoomFit', 'fit', 'view'],
+  ],
+  incoming: [
+    ['h', 'incLeft', 'prev card', 'move'],
+    ['l', 'incRight', 'next card', 'move'],
+    ['a', 'accept', 'place on canvas', 'act'],
+    ['x', 'drop', 'drop', 'act'],
+    ['r', 'refCard', 'ref → chat', 'act'],
+    ['k', 'toCanvas', 'back to canvas', 'move'],
+    ['<Esc>', 'toCanvas', 'back to canvas', 'move'],
+  ],
+  viewer: [
+    ['j', 'slotDown', 'next slot', 'move'],
+    ['k', 'slotUp', 'prev slot', 'move'],
+    ['<Tab>', 'optNext', 'next variant', 'act'],
+    ['<S-Tab>', 'optPrev', 'prev variant', 'act'],
+    ['1', 'opt1', 'variant 1', 'act'],
+    ['2', 'opt2', 'variant 2', 'act'],
+    ['3', 'opt3', 'variant 3', 'act'],
+    ['y', 'keepCombo', 'keep this combination', 'act'],
+    ['u', 'resetCombo', 'back to kept', 'act'],
+    ['p', 'togglePanel', 'variant panel', 'view'],
+    ['D', 'detachPanel', 'detach / dock panel', 'view'],
+    ['q', 'closePanel', 'close panel', 'view'],
+    ['R', 'reload', 'reload', 'act'],
+    ['gx', 'browser', 'open in browser', 'view'],
+  ],
+  reading: [
+    ['j', 'scrollDown', 'scroll ↓', 'move'],
+    ['k', 'scrollUp', 'scroll ↑', 'move'],
+    ['gg', 'top', 'top', 'move'],
+    ['G', 'bottom', 'bottom', 'move'],
+    [']]', 'nextHeading', 'next heading', 'move'],
+    ['[[', 'prevHeading', 'prev heading', 'move'],
+    ['r', 'refReport', 'ref → chat', 'act'],
+    ['gx', 'browser', 'open source', 'view'],
+  ],
+  item: [
+    ['y', 'allow', 'allow / approve', 'act'],
+    ['A', 'allowAlways', 'always allow', 'act'],
+    ['d', 'deny', 'deny / send back', 'act'],
+    ['D', 'denyReason', 'deny with reason', 'act'],
+    ['r', 'reply', 'reply', 'act'],
+    ['x', 'dismiss', 'dismiss', 'act'],
+    ['<CR>', 'openAgent', 'open the agent', 'view'],
+  ],
+  insert: [
+    ['<CR>', 'send', 'send', 'act'],
+    ['<A-CR>', 'newline', 'new line', 'act'],
+    ['C-t', 'cycleTag', 'change effort tag', 'act'],
+    ['C-k', 'leaveBar', 'leave bar (keep draft)', 'mode'],
+    ['<Esc>', 'normal', 'Normal mode', 'mode'],
+    ['C-w', 'none', 'delete word', 'act'],
+    ['C-u', 'none', 'delete line', 'act'],
+    ['C-v', 'none', 'paste / image', 'act'],
+  ],
+};
+
+// Space leader: mnemonic groups. A group is {name, keys}; a leaf is [action, label].
+const LEADER: Record<string, LeaderLeaf | LeaderGroup> = {
+  '<Space>': ['picker', 'picker: everything'],
+  c: ['focusChat', 'chat (coordinator)'],
+  n: ['focusInbox', 'inbox'],
+  t: ['focusTree', 'efforts tree'],
+  z: ['toggleSide', 'sidebar: collapse / expand'],
+  e: { name: 'effort', keys: {
+    e: ['pickEffort', 'switch effort'],
+    n: ['newEffort', 'new effort'],
+    w: ['wwi', 'where was I'],
+    f: ['cycleFilter', 'chat filter: All ⇄ this'],
+    c: ['criteria', 'acceptance criteria'],
+  } },
+  v: { name: 'view', keys: {
+    c: ['openCanvas', 'canvas'],
+    w: ['openViewer', 'web viewer'],
+    r: ['openReading', 'reading view'],
+    x: ['closeMain', 'close view (chat wide)'],
+    d: ['detachPanel', 'detach variant panel'],
+  } },
+  p: { name: 'project', keys: {
+    p: ['pickProject', 'switch project'],
+    h: ['home', 'home (all projects)'],
+    r: ['addRepo', 'add repo'],
+  } },
+  s: { name: 'session', keys: {
+    s: ['pickAgent', 'pick agent'],
+    n: ['newSlice', 'new slice'],
+    x: ['interrupt', 'interrupt'],
+    m: ['permMode', 'permission mode'],
+  } },
+};
+
+// Lookup helpers shared by dispatch and overlay.
+function bindingsFor(scope: string): Binding[] {
+  const local = KEYMAP[scope] || [];
+  if (scope === 'insert') return local;
+  if (scope === 'home') return local.concat(KEYMAP.global.filter(b => !['h', 'l', 'C-h', 'C-l', 'C-j', 'C-k', 'i', ']e', '[e'].includes(b[0])));
+  const seen = new Set(local.map(b => b[0]));
+  return local.concat(KEYMAP.global.filter(b => !seen.has(b[0])));
+}
