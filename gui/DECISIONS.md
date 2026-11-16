@@ -2,12 +2,12 @@
 
 The plan (`docs/plan/gui-frontend.md`) says "stop and ask" in a few places. The user was asleep while F1–F9 were built (2026-11-15), so each such point was decided here instead, staying inside the settled layout, look and nouns and as close to `mock/gui/` and `docs/gui-layout-and-keys.md` as possible. One entry each: what was open, what was chosen, why, how to change it.
 
-## 1. Dev server port 5174 instead of 5173
+## 1. Dev server port 47815 instead of 5173
 
-- **Open:** the plan fixes `http://127.0.0.1:5173` with `strictPort`. On this machine another app (a container serving "Confidence Sync" from `/app`) already listens on 5173, so `npm run dev` failed.
-- **Chose:** port 5174, still `strictPort` and host `127.0.0.1`.
-- **Why:** the other app is not Dovetail's to stop; a fixed port that works beats one that fails at start.
-- **Change:** `server.port` in `gui/vite.config.ts`.
+- **Open:** the plan fixes `http://127.0.0.1:5173` with `strictPort`. On this machine another app already listens on 5173, so `npm run dev` failed. 5174 (the first choice) is Vite's own fallback and also often taken.
+- **Chose:** port 47815 (user's call, 2026-11-16: a port not commonly taken), still `strictPort` and host `127.0.0.1`.
+- **Why:** a fixed port that works beats one that fails at start; the Tauri window loads the same URL.
+- **Change:** `server.port` in `gui/vite.config.ts` and `build.devUrl` in `gui/src-tauri/tauri.conf.json` together; they must hold the same value.
 
 ## 2. Model fields the plan did not list
 

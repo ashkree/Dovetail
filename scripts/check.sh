@@ -5,8 +5,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 cargo fmt --check
+# --workspace takes in the GUI shell (gui/src-tauri), which default-members leaves out of plain cargo runs.
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+
+# The Tauri window loads the Vite dev server: one port, the same in both files (gui/DECISIONS.md 1).
+vite_port=$(grep -E '^ *server:' gui/vite.config.ts | grep -oE 'port: [0-9]+' | grep -oE '[0-9]+')
+tauri_port=$(grep -oE '"devUrl": "http://127.0.0.1:[0-9]+"' gui/src-tauri/tauri.conf.json | grep -oE '[0-9]+"$' | tr -d '"')
+if [[ -z $vite_port || $vite_port != "$tauri_port" ]]; then
+    echo "check.sh: gui/vite.config.ts port ($vite_port) and tauri.conf.json devUrl port ($tauri_port) differ" >&2
+    exit 1
+fi
 
 # ADR 0023: the GUI's TypeScript types are generated from dovetail-api and committed. Regenerate
 # them; a Rust change the GUI has not taken in shows as a difference.

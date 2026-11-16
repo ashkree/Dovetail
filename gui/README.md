@@ -7,7 +7,7 @@ The web frontend of the Dovetail GUI (React, strict TypeScript, Vite), running o
 ```bash
 cd gui
 npm install
-npm run dev        # http://127.0.0.1:5174
+npm run dev        # http://127.0.0.1:47815
 ```
 
 `npm run check` runs the type check, the unit tests and a production build. Nothing is fetched from the network at runtime (the font is bundled).

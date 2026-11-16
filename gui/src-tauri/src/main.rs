@@ -21,6 +21,8 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use anyhow::Context as _;
+
 use dovetail_api::{Command, CoreLink, Event, ServerMsg};
 use dovetail_core::config::Config;
 use dovetail_core::db::Db;
@@ -196,7 +198,7 @@ fn start_project(setup: &Setup, id: &str) -> Result<(CoreLink, CoreHandle), Stri
     .map_err(|e| e.to_string())
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
@@ -257,7 +259,7 @@ fn main() {
         std::thread::Builder::new()
             .name("dovetail-gui-supervisor".into())
             .spawn(move || supervise(shell, setup, paths, blocked))
-            .expect("starting the supervisor thread")
+            .context("starting the supervisor thread")?
     };
     let supervisor = Mutex::new(Some(supervisor));
 
@@ -265,7 +267,7 @@ fn main() {
         .manage(shell.clone())
         .invoke_handler(tauri::generate_handler![core_send, core_subscribe])
         .build(tauri::generate_context!())
-        .expect("building the Tauri app");
+        .context("building the Tauri app")?;
     app.run(move |_, event| {
         if let RunEvent::Exit = event {
             // Sessions end with the window; they resume on the next open.
@@ -280,4 +282,5 @@ fn main() {
             }
         }
     });
+    Ok(())
 }

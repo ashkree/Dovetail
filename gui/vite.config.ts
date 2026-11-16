@@ -5,8 +5,8 @@ import react from '@vitejs/plugin-react';
 // network at runtime: the font is bundled from @fontsource.
 export default defineConfig({
   plugins: [react()],
-  // 5174, not 5173: another app on this machine (a container) holds 5173. See gui/DECISIONS.md.
-  server: { host: '127.0.0.1', port: 5174, strictPort: true },
+  // 47815, a port few tools use; tauri.conf.json's devUrl must match. See gui/DECISIONS.md.
+  server: { host: '127.0.0.1', port: 47815, strictPort: true },
   preview: { host: '127.0.0.1', port: 4173, strictPort: true },
   // One local bundle for a desktop app, not a website: React Flow and markdown make it ~650 kB.
   build: { chunkSizeWarningLimit: 900 },

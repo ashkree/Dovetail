@@ -24,8 +24,12 @@ export function apply(state: W.Snapshot, seq: number, event: W.Event): ApplyResu
   return { kind: 'applied', snapshot: { ...fold(state, event), seq } };
 }
 
+/** Every event's tag, from the generated union: a new event makes the switch below incomplete. */
+type Tag<E> = E extends string ? E : E extends object ? keyof E : never;
+type EventTag = Tag<W.Event>;
+
 function fold(s: W.Snapshot, event: W.Event): W.Snapshot {
-  const [tag, e] = variant(event);
+  const [tag, e] = variant(event) as [EventTag, unknown];
   switch (tag) {
     case 'task_upserted': {
       const task = e as W.Task;
@@ -144,9 +148,30 @@ function fold(s: W.Snapshot, event: W.Event): W.Snapshot {
       return { ...s, journal: e as W.JournalState };
     case 'upgrade_building':
       return { ...s, upgrade_building: e as boolean };
-    // Nothing to store: the UI acts on these as they pass through.
-    default:
+    // Nothing to store: the UI acts on these as they pass through (PASSED_THROUGH in
+    // crates/dovetail-api/tests/apply_cases.rs).
+    case 'browsed_loaded':
+    case 'clipboard_pasted':
+    case 'command_failed':
+    case 'doc_loaded':
+    case 'docs_listed':
+    case 'lend_terminal':
+    case 'map_loaded':
+    case 'opening_project':
+    case 'paths_listed':
+    case 'project_browsed':
+    case 'recipe_started':
+    case 'research_loaded':
+    case 'tangent_loaded':
+    case 'terminal_returned':
+    case 'upgrade_restarting':
       return s;
+    default: {
+      // A compile error here names an event this reducer does not handle yet.
+      const unhandled: never = tag;
+      void unhandled;
+      return s;
+    }
   }
 }
 

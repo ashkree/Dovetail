@@ -9,6 +9,8 @@
 
 use std::path::Path;
 
+use dovetail_api::map::{MapId, MapKind, MapSummary};
+use dovetail_api::research::ResearchSummary;
 use dovetail_api::*;
 use serde_json::{Value, json};
 
@@ -80,6 +82,147 @@ fn effort(id: i64, name: &str) -> Effort {
 
 fn coordinator() -> AgentId {
     AgentId("coordinator".into())
+}
+
+fn map(id: &str, updated_ms: i64) -> MapSummary {
+    MapSummary {
+        id: MapId(id.into()),
+        title: id.into(),
+        kind: MapKind::Structure,
+        task: None,
+        drawn_by: None,
+        version: 1,
+        created_ms: 1,
+        updated_ms,
+    }
+}
+
+fn todo(list: &str, id: &str) -> TodoItem {
+    TodoItem {
+        list: TodoListId(list.into()),
+        id: id.into(),
+        subject: format!("do {id}"),
+        status: TodoStatus::Pending,
+        blocked_by: vec![],
+        created_by: None,
+    }
+}
+
+fn research(task: i64, findings: u32) -> ResearchSummary {
+    ResearchSummary {
+        task: TaskId(task),
+        dir: "/r".into(),
+        rounds: vec![],
+        findings,
+        quick_findings: 0,
+        sources: 0,
+        report_ms: None,
+        kind: None,
+    }
+}
+
+/// Every other change the reducer stores, one event each, plus the events it passes through.
+fn the_rest() -> Case {
+    let a = AgentId("slice-a".into());
+    let mut snapshot = Snapshot {
+        seq: 0,
+        agents: vec![agent("slice-a")],
+        maps: vec![map("m1", 1), map("m2", 2)],
+        todos: vec![todo("l1", "1"), todo("l2", "1")],
+        warnings: vec![Warning {
+            id: WarningId("w".into()),
+            text: "careful".into(),
+        }],
+        ..Snapshot::default()
+    };
+    snapshot.commands.insert(a.clone(), vec![]);
+    let worktree: WorktreeInfo = serde_json::from_value(json!({
+        "agent": "slice-a", "path": "/w", "branch": "dovetail/a", "base": "main",
+        "sync": null, "changes": null, "unpushed": null, "pr": "none", "setup": "done",
+        "checked_ms": 3,
+    }))
+    .expect("worktree json");
+    let mut renamed = agent("slice-a");
+    renamed.status_line = "testing".into();
+    let events = vec![
+        Event::AgentUpserted(renamed),
+        Event::WorktreeUpserted(worktree),
+        Event::TodosReplaced {
+            list: TodoListId("l1".into()),
+            items: vec![todo("l1", "2"), todo("l1", "3")],
+        },
+        Event::ActivityAdded(ActivityItem {
+            id: 1,
+            at_ms: 4,
+            agent: Some(a.clone()),
+            kind: ActivityKind::Lifecycle,
+            text: "slice a ready".into(),
+        }),
+        Event::MessageAdded(AgentMessage {
+            id: 1,
+            at_ms: 5,
+            from: a.clone(),
+            to: coordinator(),
+            text: "done".into(),
+        }),
+        Event::DecisionAdded(Decision {
+            id: DecisionId(1),
+            task: TaskId(1),
+            at_ms: 6,
+            by: DecisionAuthor::User,
+            text: "use sqlite".into(),
+            why: None,
+            alternatives: vec![],
+            supersedes: None,
+            evidence: vec![],
+        }),
+        // A redrawn map moves to the front.
+        Event::MapUpserted(map("m1", 9)),
+        Event::ResearchUpserted(research(1, 2)),
+        Event::ResearchUpserted(research(1, 3)),
+        Event::TangentUpserted(TangentSummary {
+            task: task(7, "idea"),
+            research: None,
+        }),
+        Event::TangentUpserted(TangentSummary {
+            task: task(8, "other"),
+            research: None,
+        }),
+        Event::TangentRemoved(TaskId(7)),
+        Event::TotalsChanged(Totals::default()),
+        Event::UsageChanged(UsageLimits::default()),
+        Event::WarningCleared(WarningId("w".into())),
+        Event::CommandsChanged {
+            agent: a.clone(),
+            commands: vec![SlashCommand {
+                name: "review".into(),
+                description: "review it".into(),
+                argument_hint: String::new(),
+            }],
+        },
+        Event::ModelsChanged(vec![ModelOption {
+            name: "opus".into(),
+            resolved: None,
+            efforts: None,
+        }]),
+        Event::JournalChanged(JournalState {
+            latest: Some("2026-11-16".into()),
+            closing: false,
+            fresh: true,
+        }),
+        Event::UpgradeBuilding(true),
+        // Removing an agent drops its conversation, worktree and commands.
+        Event::AgentRemoved(a),
+    ];
+    Case {
+        name: "the_rest",
+        snapshot,
+        events: events
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| (i as u64 + 1, e))
+            .collect(),
+    }
 }
 
 /// One case: a name, the starting snapshot and the events in order.
@@ -234,7 +377,66 @@ fn cases() -> Vec<Case> {
                 ),
             ],
         },
+        the_rest(),
     ]
+}
+
+/// Events `apply()` passes through without storing: the UI acts on them as they arrive.
+const PASSED_THROUGH: &[&str] = &[
+    "browsed_loaded",
+    "clipboard_pasted",
+    "command_failed",
+    "doc_loaded",
+    "docs_listed",
+    "lend_terminal",
+    "map_loaded",
+    "opening_project",
+    "paths_listed",
+    "project_browsed",
+    "recipe_started",
+    "research_loaded",
+    "tangent_loaded",
+    "terminal_returned",
+    "upgrade_restarting",
+];
+
+/// The serde tag of an event: the string itself, or the one key of its object.
+fn tag(event: &Event) -> String {
+    match serde_json::to_value(event).expect("event json") {
+        Value::String(tag) => tag,
+        Value::Object(map) => map.keys().next().cloned().unwrap_or_default(),
+        other => panic!("unexpected event shape {other}"),
+    }
+}
+
+/// ADR 0023, point 5: a new `Event` needs a new case. The tags come from the generated
+/// TypeScript (`scripts/check.sh` keeps it current), so a variant added in Rust shows up there.
+#[test]
+fn every_stored_event_has_a_shared_case() {
+    let generated =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gui/src/core/generated/Event.ts");
+    let text = std::fs::read_to_string(&generated).expect("generated Event.ts");
+    let mut tags: Vec<String> = text
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_lowercase() || c == '_'))
+        .map(str::to_owned)
+        .collect();
+    tags.sort();
+    tags.dedup();
+    let covered: Vec<String> = cases()
+        .iter()
+        .flat_map(|c| c.events.iter().map(|(_, e)| tag(e)))
+        .collect();
+    let missing: Vec<&String> = tags
+        .iter()
+        .filter(|t| !covered.contains(t) && !PASSED_THROUGH.contains(&t.as_str()))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "events with no shared apply case: {missing:?}"
+    );
 }
 
 fn result_name(result: ApplyResult) -> &'static str {

@@ -612,30 +612,44 @@ impl Core {
             .task_slices(task)
             .iter()
             .filter(|slice| *slice != seen)
-            .map(|slice| self.worktrees.get(slice).map_or(0, |w| pr_stage(&w.pr)))
-            .chain([pr_stage(pr)])
+            .map(|slice| {
+                self.worktrees
+                    .get(slice)
+                    .map_or(PrStage::None, |w| PrStage::of(&w.pr))
+            })
+            .chain([PrStage::of(pr)])
             .min()
-            .unwrap_or(0);
+            .unwrap_or(PrStage::None);
         let closed = matches!(pr, PrLookup::Found(found) if found.state == PrState::Closed);
         let next = match (current.status, least) {
-            (TaskStatus::InProgress | TaskStatus::Review, 2) => TaskStatus::Done,
-            (TaskStatus::InProgress, 1) => TaskStatus::Review,
-            (TaskStatus::Review, 0) if closed => TaskStatus::InProgress,
+            (TaskStatus::InProgress | TaskStatus::Review, PrStage::Merged) => TaskStatus::Done,
+            (TaskStatus::InProgress, PrStage::Open) => TaskStatus::Review,
+            (TaskStatus::Review, PrStage::None) if closed => TaskStatus::InProgress,
             _ => return,
         };
         self.update_task(task, vec![TaskChange::Status(next)]).await;
     }
 }
 
-/// How far a slice's pull request has come: 0 none (or closed, or unknown), 1 open, 2 merged.
-fn pr_stage(pr: &PrLookup) -> u8 {
-    match pr {
-        PrLookup::Found(found) => match found.state {
-            PrState::Merged => 2,
-            PrState::Open => 1,
-            PrState::Closed => 0,
-        },
-        PrLookup::None | PrLookup::Unknown { .. } => 0,
+/// How far a slice's pull request has come, in order: a task follows its slice furthest behind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum PrStage {
+    /// No pull request, a closed one, or one that could not be looked up.
+    None,
+    Open,
+    Merged,
+}
+
+impl PrStage {
+    fn of(pr: &PrLookup) -> Self {
+        match pr {
+            PrLookup::Found(found) => match found.state {
+                PrState::Merged => PrStage::Merged,
+                PrState::Open => PrStage::Open,
+                PrState::Closed => PrStage::None,
+            },
+            PrLookup::None | PrLookup::Unknown { .. } => PrStage::None,
+        }
     }
 }
 

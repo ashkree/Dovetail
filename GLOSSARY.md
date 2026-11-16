@@ -193,7 +193,7 @@ A question that does not belong to the current project, answered in Tangents, a 
 _Avoid_: side chat (which is project-scoped), aside
 
 **Suite**:
-A named group of MCP tools; a role's config lists the suites it gets, and each tool name carries its suite as a prefix (ADR 0016). The suites are Core, Tasks, Project, Coordination (empty until v1.1 Claims), Research and Maps; by default the coordinator gets all of them, a slice Core, Coordination and Maps, a side chat Core. Tool names read `<suite>_<verb>`: `core_ask_user`, `tasks_create`, `project_start_slice`, `maps_draw`.
+A named group of MCP tools; a role's config lists the suites it gets, and each tool name carries its suite as a prefix (ADR 0016). The suites are Core, Tasks, Project, Coordination (`coordination_report`, ADR 0022), Research and Maps; by default the coordinator gets all of them, a slice Core, Coordination and Maps, a side chat Core. Tool names read `<suite>_<verb>`: `core_ask_user`, `tasks_create`, `project_start_slice`, `maps_draw`.
 _Avoid_: toolset, plugin, namespace
 
 **Altitude**:
