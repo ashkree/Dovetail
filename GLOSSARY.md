@@ -1,17 +1,59 @@
 # Dovetail
 
-A keyboard-driven terminal UI for running many Claude Code agents on one feature.
+A keyboard-first app for running many Claude Code agents across a project's lines of work. Terms marked **(v2)** are new in `docs/design-v2.md`; **(changed in v2)** means the v1 meaning no longer holds; **(v1 TUI)** means the term lives only in the frozen terminal UI.
 
 ## Language
 
+### Projects
+
+**Home** (v2):
+The first screen, listing every project; entering one opens its workspace.
+_Avoid_: dashboard, launcher, project switcher
+
+**Project** (changed in v2):
+A named workspace holding any number of repos, including none, and one account. It is not tied to a folder and is never found from the current folder.
+_Avoid_: workspace (for the thing itself), repo, folder
+
+**Repo** (v2):
+A git repository attached to a project.
+_Avoid_: project, checkout, codebase
+
+**Account** (v2, was Profile):
+The Claude Code account a project's sessions run under, one per project.
+_Avoid_: profile, login, identity
+
+**Effort** (v2):
+One line of work in a project, with a kind (feature, fix, cleanup, research or experiment), a defining question or goal, and acceptance criteria. Every task belongs to one.
+_Avoid_: epic, initiative, stream, thread
+
+**Acceptance criterion** (v2):
+A condition an effort must meet; it is ticked only after an agent claims it with evidence and the user approves. An effort never closes without the user's review.
+_Avoid_: requirement, goal (the effort's defining aim), definition of done
+
+**"Where was I" card** (v2):
+An effort's summary of what it is, what was last done, what waits on the user and the next step, shown first when the user returns to the effort.
+_Avoid_: status, summary, handoff (which is the whole set of cards a fresh coordinator gets)
+
+**Running effort** (v2):
+An effort that counts against the machine's soft limit on parallel lines of work; the count shows and never blocks.
+_Avoid_: active effort, open effort
+
 ### Agents
 
-**Coordinator**:
-The session the user works with directly, running in the main checkout and never stopped.
+**Coordinator** (changed in v2):
+The one session per project the user works with directly, running in the project's state folder with every repo attached, and never stopped. In v1 it ran in the repo's main checkout.
 _Avoid_: lead, main agent, orchestrator
 
-**Slice**:
-A long-lived session that owns one piece of work and has exactly one worktree of its own.
+**Project chat** (v2):
+The coordinator's single conversation for a whole project, where every message carries an effort tag.
+_Avoid_: effort chat, thread (a filtered view of one effort's messages), coordinator chat (accepted as a synonym)
+
+**Effort tag** (v2):
+The effort a chat message belongs to: the focused effort for the user's messages, the slice's task's effort for slice reports.
+_Avoid_: label, channel, topic
+
+**Slice** (changed in v2):
+A long-lived session that owns one piece of work in exactly one repo, with exactly one worktree of its own. An effort may have slices in several repos.
 _Avoid_: worker, worker session
 
 **Side chat**:
@@ -27,7 +69,7 @@ Reading mode's read-only session about one research task's report, in its resear
 _Avoid_: ask subagent, report chat, side chat (which is project-scoped and opened by hand)
 
 **Subagent**:
-An agent a session spawns, at Claude's choice, for quick self-contained work. It shares its parent's worktree unless Claude isolates it.
+An agent a session spawns, at Claude's choice, for quick self-contained work. It shares its parent's worktree unless Claude isolates it. Subagent work with no task shows as **untracked** under its effort (v2).
 _Avoid_: agent (which also covers sessions), worker
 
 **Foreground subagent**:
@@ -40,29 +82,13 @@ _Avoid_: background task
 
 ### Work
 
-**Task**:
-A piece of the user's own work tracked in Dovetail, with or without agents attached. It is done when marked done in Dovetail, whatever its to-do items say.
+**Task** (changed in v2):
+A piece of the user's own work in one effort, with or without agents attached. Dovetail sets its status: To do, In progress when an agent starts on it, Review when the agent finishes or opens a PR, Done when the user approves the merge. Its to-do items never decide it. A task that serves no acceptance criterion is flagged.
 _Avoid_: subtask, ticket, to-do
 
-**Effort**:
-One line of work in a project: a feature, fix, cleanup, research question or experiment, with a defining question or goal and acceptance criteria. Every task belongs to exactly one.
-_Avoid_: epic, project, workstream, thread; "effort" for how hard a model thinks (that is reasoning effort)
-
-**Unsorted**:
+**Unsorted** (v2):
 The effort every project starts with, holding the tasks nobody has put in an effort yet. It cannot be renamed or closed.
 _Avoid_: inbox, backlog, default effort
-
-**Acceptance criterion**:
-One thing that must be true for an effort to be done. It is open, claimed (an agent says it is met and gave evidence) or met (the user approved it).
-_Avoid_: requirement, checklist item, definition of done
-
-**Effort tag**:
-The effort a chat line belongs to. A line with none shows only under "All".
-_Avoid_: label, channel, thread id
-
-**"Where was I" card**:
-An effort's short note for the user coming back to it: what was last done, what waits on them, what comes next.
-_Avoid_: summary, status, handoff (which one coordinator writes for the next)
 
 **Reasoning effort**:
 How hard a session's model thinks, from low to max; a setting of the session, unrelated to efforts.
@@ -92,16 +118,16 @@ _Avoid_: task, task update
 How important a task is, from P0 to P3.
 _Avoid_: priority, severity
 
-**Bucket**:
-When the user will do a task: Now, Next or Later. A task with no bucket sits in the Unsorted list, which is not the Unsorted effort.
+**Bucket** (v1 TUI):
+When the user will do a task: Now, Next or Later. A task with no bucket sits in the Unsorted list, which is not the Unsorted effort. Whether buckets stay in v2 is open; v2's **Unsorted** is an effort holding migrated tasks.
 _Avoid_: priority, status, column
 
 **Journal**:
 The project's end-of-day record, one markdown file per closed day: the coordinator's handoff and Dovetail's facts (ADR 0012).
 _Avoid_: log, diary, daily notes
 
-**Handoff**:
-What an outgoing coordinator writes for the fresh one that replaces it: open threads, what it was about to do, decisions in flight, what matters first.
+**Handoff** (changed in v2):
+What a fresh coordinator starts from. In v2 it is every effort's "where was I" card; in v1 the outgoing coordinator wrote open threads, what it was about to do, decisions in flight and what matters first.
 _Avoid_: summary, briefing
 
 ### Conversation
@@ -150,8 +176,8 @@ _Avoid_: crash, failure
 One fan-out of research subagents on a research task, with the user's criteria kept as its `brief.md`. A task has many rounds across days (ADR 0015).
 _Avoid_: run, iteration, session
 
-**Finding**:
-One research subagent's full raw report, saved automatically; never fed back into the coordinator's context.
+**Finding** (changed in v2):
+A result of research. In v1, one research subagent's full raw report, saved automatically and never fed back into the coordinator's context; in v2 findings appear only as finding cards. How the two map is open.
 _Avoid_: result, output, summary
 
 **Source**:
@@ -174,7 +200,11 @@ _Avoid_: toolset, plugin, namespace
 Whether research is macro (business, economics, direction) or micro (implementation). It decides where the research lives; size decides how it runs.
 _Avoid_: scope, level, depth
 
-**Reading mode**:
+**Reading view** (v2):
+The main-view display for a long report, kept because findings are cards but reports are prose.
+_Avoid_: reading mode (the v1 TUI preset), reader
+
+**Reading mode** (v1 TUI):
 The second layout preset, `<leader>r`: the library on the left, the reading column in the middle, Ask on the right, in place of Layout B, which comes back as it was (ADR 0018).
 _Avoid_: reader view, focus mode (which only hides the side column)
 
@@ -182,13 +212,35 @@ _Avoid_: reader view, focus mode (which only hides the side column)
 Reading mode's left column: projects, the open project's research tasks with their report, rounds, findings and sources, the decision log and the repo's docs.
 _Avoid_: tree (the task tree), shelf (the map shelf)
 
-**Research-only project**:
-A project of the research kind: it exists for macro research and has no repo, no worktrees and no slices; its sessions run in Dovetail's own folder for it (ADR 0015).
+**Research-only project** (changed in v2):
+In v2, a project with no repos; whether the separate project kind stays is open. In v1, a project of the research kind: it exists for macro research and has no repo, no worktrees and no slices; its sessions run in Dovetail's own folder for it (ADR 0015).
 _Avoid_: notes project, non-code project
 
-**Companion**:
-A GUI window the user can open beside the terminal UI, for views a terminal does badly (maps first); it shows the same app and never holds the only way to do something (ADR 0019).
+**Companion** (replaced in v2):
+A GUI window the user could open beside the terminal UI, which never held the only way to do something (ADR 0019). v2 replaces it with the GUI itself.
 _Avoid_: GUI, viewer, canvas window, desktop app
+
+### Canvas and viewer
+
+**Canvas** (v2):
+A board belonging to an effort, started from a framework: question tree, options compare or free board. An effort can have any number.
+_Avoid_: board (the v1 kanban view), whiteboard, map
+
+**Card** (v2):
+One item on a canvas, of a fixed kind: finding, source, idea, decision, question or map. The agent adds and links cards but never moves the user's.
+_Avoid_: node (a map's item), note, sticky
+
+**Incoming strip** (v2):
+The edge of a canvas where research output arrives as cards before the user places them.
+_Avoid_: inbox (the attention list), queue
+
+**Viewer** (v2):
+The main-view display of a running web preview, started from the project's preview command per slice; it follows the focused slice.
+_Avoid_: preview pane, browser, Companion
+
+**Variant** (v2):
+One alternative the agent writes into a slice's code and declares in a list, at one of three levels: global, component or content. Variants mix and match; keeping a combination makes it permanent and deletes the rest.
+_Avoid_: option (an options-compare column), version, theme
 
 ### Maps
 
@@ -226,9 +278,8 @@ _Avoid_: revision, snapshot (the core's snapshot is something else)
 A project's instructions for preparing a new worktree: files to symlink in, plus an optional setup command.
 _Avoid_: setup script, template, worktree config
 
-**Profile**:
-A named Claude Code account, kept in its own config folder; each project picks one in its worktree recipe and every session of the project runs under it.
-_Avoid_: account (for the setting), login, identity
+**Profile** (replaced in v2 by Account):
+v1's name for a named Claude Code account kept in its own config folder, picked per project in its worktree recipe.
 
 **Self-hosting point**:
 The earliest milestone after which the rest of Dovetail's build runs inside Dovetail.
