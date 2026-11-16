@@ -87,6 +87,12 @@ export function effortCanvas(s: Snapshot, effort: Id | null) {
   return s.canvases.find(c => c.effort_id === effort);
 }
 
+/** The slot the viewer's keys act on: the remembered one, kept inside this set's slots (another
+ * slice's set may have fewer). */
+export function slotIndex(set: VariantSet | undefined, slot: number): number {
+  return set ? clamp(slot, 0, Math.max(0, set.slots.length - 1)) : slot;
+}
+
 /** The user picks option `j` of slot `i`: the core keeps it and the viewer posts it to the page. */
 function pick(set: VariantSet, i: number, j: number): void {
   const slot = set.slots[i];
@@ -333,9 +339,9 @@ export function dispatch(a: Action, arg?: unknown): void {
         picker(`New effort ${kebab} · kind`, EFFORT_KINDS.map(k => ({
           key: k, text: k, label: k, glyph: KIND_GLYPH[k],
           go: () => prompt(`New effort ${kebab} · question or goal`, goal => {
+            // The core answers with the effort; it takes focus then (store.ts, effortEvent).
+            setUi({ awaitEffort: kebab });
             send({ type: 'new_effort', name: kebab, kind: k, question_or_goal: goal });
-            const made = snap().efforts.find(e => e.name === kebab);
-            if (made) switchEffort(made.id, true);
             toast(`New effort saved as **${kebab}**`);
           }),
         })));
@@ -589,19 +595,20 @@ export function dispatch(a: Action, arg?: unknown): void {
     // ---- viewer
     case 'slotDown': case 'slotUp': {
       const set = viewerSet(s, u.effort);
-      if (set) setUi({ slot: clamp(u.slot + (a === 'slotDown' ? 1 : -1), 0, set.slots.length - 1) });
+      if (set) setUi({ slot: clamp(slotIndex(set, u.slot) + (a === 'slotDown' ? 1 : -1), 0, set.slots.length - 1) });
       return;
     }
     case 'selectSlot': setUi({ slot: Number(arg), zone: 'main' }); return;
     case 'optNext': case 'optPrev': case 'opt1': case 'opt2': case 'opt3': {
       const set = viewerSet(s, u.effort);
-      const slot = set?.slots[u.slot];
+      const i = slotIndex(set, u.slot);
+      const slot = set?.slots[i];
       if (!set || !slot) return;
       const n = slot.options.length;
-      const cur = set.choice[u.slot] ?? 0;
+      const cur = set.choice[i] ?? 0;
       const j = a === 'optNext' ? (cur + 1) % n : a === 'optPrev' ? (cur + n - 1) % n : Number(a.slice(3)) - 1;
       if (j >= n) return;
-      pick(set, u.slot, j);
+      pick(set, i, j);
       return;
     }
     case 'pickOption': {

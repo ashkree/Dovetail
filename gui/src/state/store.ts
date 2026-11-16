@@ -68,6 +68,7 @@ function receive(msg: W.ServerMsg): void {
   if (r.kind === 'applied') {
     coreStore.set(r.snapshot);
     cardEvent(before, kind, payload);
+    effortEvent(before, kind, payload);
   }
   else if (r.kind === 'gap') link?.send('resync');
 }
@@ -92,6 +93,16 @@ function cardEvent(before: W.Snapshot, kind: string, payload: unknown): void {
       setUi({ awaitNewCard: false, cardSel: cardViewId(card) });
     }
   }
+}
+
+/** A new effort the user just created takes focus, as switching to it does. */
+function effortEvent(before: W.Snapshot, kind: string, payload: unknown): void {
+  if (kind !== 'effort_upserted') return;
+  const effort = payload as W.Effort;
+  const u = uiStore.get();
+  if (u.awaitEffort !== effort.name || before.efforts.some(e => e.id === effort.id)) return;
+  const id = String(effort.id);
+  setUi(x => ({ awaitEffort: null, effort: id, tag: id, wwi: true, wwiFlash: 0, filter: x.filter === 'all' ? 'all' : id }));
 }
 
 /** A project's snapshot just arrived: focus an effort of it, as opening it from Home does. */

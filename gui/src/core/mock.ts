@@ -55,6 +55,14 @@ export class MockCore implements CoreLink {
         }, REPLY_DELAY_MS);
         return;
       }
+      case 'cycle_permission_mode': {
+        const { agent } = data as { agent: W.AgentId };
+        const a = s.agents.find(x => x.id === agent);
+        if (!a) return this.fail(`no agent ${agent}`);
+        const next: Record<W.PermissionMode, W.PermissionMode> = { auto: 'accept_edits', accept_edits: 'manual', manual: 'auto' };
+        this.emit({ agent_upserted: { ...a, permission_mode: next[a.permission_mode] } });
+        return;
+      }
       case 'start_preview':
       case 'restart_preview': {
         // The mock runs no processes: the sample page is the one preview, a slice without one has no line.
