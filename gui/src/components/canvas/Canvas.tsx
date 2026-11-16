@@ -45,11 +45,10 @@ export function Canvas() {
       <div className="empty-main"><div className="empty-canvas">
         <div className="lead">{e?.name ?? 'This effort'} has no canvas yet. Start from a framework:</div>
         <div className="answers" style={{ justifyContent: 'center' }}>
-          <button onClick={() => dispatch('pickFramework')}>1 · Question tree</button>
-          <button onClick={() => dispatch('pickFramework')}>2 · Options compare</button>
-          <button onClick={() => dispatch('pickFramework')}>3 · Free board</button>
+          <button onClick={() => dispatch('pickFramework', 'question_tree')}>1 · Question tree</button>
+          <button onClick={() => dispatch('pickFramework', 'options_compare')}>2 · Options compare</button>
+          <button onClick={() => dispatch('pickFramework', 'free_board')}>3 · Free board</button>
         </div>
-        <p className="dim">The filled canvas in this build is on <b>payment-providers</b>.</p>
       </div></div>
     );
   }

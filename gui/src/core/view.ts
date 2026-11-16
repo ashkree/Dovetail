@@ -10,6 +10,7 @@ import type {
   Agent, AgentState, ChatEntry, Criterion, Effort, Id, InboxItem, ProjectSummary, Snapshot, Status, TagColour,
   Task,
 } from './model';
+import { viewCanvas } from './canvasView';
 import type { Pending } from './pending';
 import { COORDINATOR, UNSORTED_EFFORT, variant } from './wire';
 
@@ -29,6 +30,7 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
     .map(e => viewEffort(e, tasks, agents, pending));
   const inbox = [...claims(core, nowMs), ...core.inbox.map(i => viewInboxItem(core, i, nowMs))];
   const open = core.project?.id ?? null;
+  const canvas = viewCanvas(core, pending);
   return {
     seq: core.seq,
     projects: core.projects.map(p => viewProject(p, open, pending, efforts, inbox, core.profile)),
@@ -38,12 +40,12 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
     agents,
     inbox,
     chat: viewChat(core),
-    canvases: pending.canvases,
-    cards: pending.cards,
-    card_links: pending.card_links,
-    incoming: pending.incoming,
+    canvases: canvas.canvases,
+    cards: canvas.cards,
+    card_links: canvas.card_links,
+    incoming: canvas.incoming,
     variants: pending.variants,
-    reports: pending.reports,
+    reports: [...pending.reports, ...canvas.reports],
     status: viewStatus(core, pending),
   };
 }

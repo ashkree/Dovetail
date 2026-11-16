@@ -19,6 +19,7 @@
 .card.idea { border-left: 4px solid var(--italic); }
 .card.decision { border-left: 4px solid var(--bold); }
 .card.map { border-left: 4px solid var(--bad); }
+.card.task { border-left: 4px solid var(--accent); }
 
 .incoming { position: absolute; left: 0; right: 0; bottom: 0; height: 128px; border-top: 1px solid var(--edge); padding: 8px 12px; display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; }
 .incoming .lbl { writing-mode: vertical-rl; transform: rotate(180deg); font-size: .78em; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }

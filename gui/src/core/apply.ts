@@ -41,6 +41,28 @@ function fold(s: W.Snapshot, event: W.Event): W.Snapshot {
       const effort = e as W.Effort;
       return { ...s, efforts: upsert(s.efforts, effort, x => x.id) };
     }
+    case 'canvas_upserted': {
+      const canvas = e as W.Canvas;
+      return { ...s, canvases: upsert(s.canvases, canvas, c => c.id) };
+    }
+    case 'card_upserted': {
+      const card = e as W.Card;
+      return { ...s, cards: upsert(s.cards, card, c => c.id) };
+    }
+    case 'card_removed':
+      return {
+        ...s,
+        cards: s.cards.filter(c => c.id !== e),
+        card_links: s.card_links.filter(l => l.from !== e && l.to !== e),
+      };
+    case 'card_linked': {
+      const link = e as W.CardLink;
+      return { ...s, card_links: upsert(s.card_links, link, l => `${l.from}>${l.to}`) };
+    }
+    case 'card_unlinked': {
+      const { from, to } = e as { from: W.CardId; to: W.CardId };
+      return { ...s, card_links: s.card_links.filter(l => !(l.from === from && l.to === to)) };
+    }
     case 'agent_upserted': {
       const agent = e as W.Agent;
       return { ...s, agents: upsert(s.agents, agent, a => a.id) };
@@ -151,6 +173,7 @@ function fold(s: W.Snapshot, event: W.Event): W.Snapshot {
     // Nothing to store: the UI acts on these as they pass through (PASSED_THROUGH in
     // crates/dovetail-api/tests/apply_cases.rs).
     case 'browsed_loaded':
+    case 'card_loaded':
     case 'clipboard_pasted':
     case 'command_failed':
     case 'doc_loaded':
