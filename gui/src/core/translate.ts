@@ -2,7 +2,7 @@
 // pending state, or why it cannot be done. Pure; store.ts carries it out.
 
 import type * as W from './generated';
-import type { Pending, PendingAction } from './pending';
+import type { PendingAction } from './pending';
 import type { UiCommand } from './protocol';
 import { coreCardId, hasOwnText } from './canvasView';
 import { COORDINATOR, variant } from './wire';
@@ -17,7 +17,7 @@ export interface Translated {
 const only = (...core: W.Command[]): Translated => ({ core });
 const refuse = (refused: string): Translated => ({ core: [], refused });
 
-export function translate(cmd: UiCommand, core: W.Snapshot, pending: Pending): Translated {
+export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
   switch (cmd.type) {
     case 'resync': return only('resync');
     case 'open_project': return only({ open_project: { id: cmd.project_id } });
@@ -76,14 +76,12 @@ export function translate(cmd: UiCommand, core: W.Snapshot, pending: Pending): T
     case 'load_card': return only({ load_card: { id: coreCardId(cmd.card_id) } });
     case 'card_from_reply':
       return only({ card_from_reply: { agent: COORDINATOR, entry: Number(cmd.entry_id), effort: Number(cmd.effort_id) } });
-    case 'keep_variants': {
-      const set = pending.variants.find(v => v.agent_id === cmd.agent_id);
-      const chosen = set
-        ? set.slots.map((slot, i) => `${slot.name}: ${slot.options[cmd.choice[i] ?? 0] ?? '?'}`).join('; ')
-        : cmd.choice.join(', ');
-      const text = `Keep this combination of variants: ${chosen}. Make it permanent and delete the other variants.`;
-      return { core: [{ prompt: { agent: cmd.agent_id, text } }], pending: cmd };
-    }
+    case 'start_preview': return only({ start_preview: { agent: cmd.agent_id } });
+    case 'restart_preview': return only({ restart_preview: { agent: cmd.agent_id } });
+    case 'select_variant':
+      return only({ select_variant: { agent: cmd.agent_id, slot: cmd.slot, option: cmd.option } });
+    case 'keep_variants': return only({ keep_variants: { agent: cmd.agent_id } });
+    case 'open_external': return only({ open_external: { url: cmd.url } });
     default: return { core: [], pending: cmd };
   }
 }

@@ -78,8 +78,21 @@ function fold(s: W.Snapshot, event: W.Event): W.Snapshot {
         agents: s.agents.filter(a => a.id !== id),
         conversations,
         worktrees: s.worktrees.filter(w => w.agent !== id),
+        previews: s.previews.filter(p => p.agent !== id),
+        variants: s.variants.filter(v => v.agent !== id),
         commands,
       };
+    }
+    case 'preview_changed': {
+      const preview = e as W.Preview;
+      return { ...s, previews: upsert(s.previews, preview, p => p.agent) };
+    }
+    case 'variants_upserted': {
+      // A set with no slots is how the core says the slice declared none.
+      const set = e as W.VariantSet;
+      return set.slots.length === 0
+        ? { ...s, variants: s.variants.filter(v => v.agent !== set.agent) }
+        : { ...s, variants: upsert(s.variants, set, v => v.agent) };
     }
     case 'worktree_upserted': {
       const info = e as W.WorktreeInfo;

@@ -3,11 +3,11 @@
 //
 // It is written in the view's terms (model.ts), as the screens show it, and turned into the
 // core's terms at the bottom: a core Snapshot (generated types) for what dovetail-api serves,
-// and the pending state for what it does not serve yet (variants, reports).
+// and the pending state for what it does not serve yet (reports).
 
 import type * as W from './generated';
 import type {
-  Agent, ChatEntry, Effort, InboxItem, ProjectSummary, Report, Task, VariantSet,
+  Agent, ChatEntry, Effort, InboxItem, ProjectSummary, Report, Task,
 } from './model';
 import { cardViewId } from './canvasView';
 import { emptyPending, type Pending } from './pending';
@@ -188,18 +188,21 @@ function coreCanvasState(): Pick<W.Snapshot, 'canvases' | 'cards' | 'card_links'
   };
 }
 
-// Viewer variants for "dark-mode", three levels.
-const VARIANTS: VariantSet[] = [{
-  agent_id: 'header-toggle', effort_id: 'dark', url: 'localhost:5173/',
+// Viewer variants for "dark-mode", three levels, as the core holds them (ADR 0026): the slot's name is its key.
+const VARIANTS: W.VariantSet[] = [{
+  agent: 'header-toggle',
   slots: [
-    { id: 'theme', level: 'global', name: 'Theme', options: ['Dusk', 'Midnight', 'Soft dark'] },
-    { id: 'layout', level: 'global', name: 'Layout', options: ['Grid', 'List'] },
-    { id: 'header', level: 'component', name: 'Header', options: ['A · centred, text toggle', 'B · left logo, icon toggle', 'C · compact'] },
-    { id: 'footer', level: 'component', name: 'Footer', options: ['Slim', 'Full'] },
-    { id: 'hero', level: 'content', name: 'Hero line', options: ['Find something good.', 'New in: winter.', 'Made to last.'] },
+    { name: 'theme', level: 'global', options: ['Dusk', 'Midnight', 'Soft dark'] },
+    { name: 'layout', level: 'global', options: ['Grid', 'List'] },
+    { name: 'header', level: 'component', options: ['A · centred, text toggle', 'B · left logo, icon toggle', 'C · compact'] },
+    { name: 'footer', level: 'component', options: ['Slim', 'Full'] },
+    { name: 'hero', level: 'content', options: ['Find something good.', 'New in: winter.', 'Made to last.'] },
   ],
-  kept: [0, 0, 0, 0, 0],
+  selection: { theme: 'Dusk', layout: 'Grid', header: 'A · centred, text toggle', footer: 'Slim', hero: 'Find something good.' },
 }];
+
+/** The mock's running preview: the sample page the app serves itself. */
+const PREVIEWS: W.Preview[] = [{ agent: 'header-toggle', state: { running: { url: '/sample/index.html' } } }];
 
 const REPORT = `# SCA support compared
 
@@ -376,7 +379,7 @@ export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot 
   if (project.id !== 'shop') return { ...opened, efforts: [UNSORTED], agents: [coordinator(project, false)] };
   return {
     ...opened,
-    efforts: coreEfforts(), ...coreCanvasState(), tasks: coreTasks(), agents: coreAgents(project), inbox: coreInbox(),
+    efforts: coreEfforts(), ...coreCanvasState(), variants: VARIANTS, previews: PREVIEWS, tasks: coreTasks(), agents: coreAgents(project), inbox: coreInbox(),
     conversations: { [COORDINATOR]: { entries: coreChat(), has_more: false } },
   };
 }
@@ -392,7 +395,6 @@ export function pendingFor(projectId: string | null): Pending {
   if (projectId !== 'shop') return base;
   return {
     ...base,
-    variants: VARIANTS.map(v => ({ ...v, effort_id: effort(v.effort_id) })),
     reports: REPORTS.map(r => ({ ...r, effort_id: effort(r.effort_id) })),
     colours: Object.fromEntries(EFFORTS.map(e => [effort(e.id), e.colour])),
     card_reports: Object.fromEntries(

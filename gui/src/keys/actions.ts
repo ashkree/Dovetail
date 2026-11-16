@@ -3,7 +3,7 @@
 // Actions change UI state with setUi() and shared state only by send(command).
 
 import { hasOwnText } from '../core/canvasView';
-import type { CardKind, EffortKind, Framework, Id, InboxItem, Snapshot, VariantSet } from '../core/model';
+import type { Agent, CardKind, EffortKind, Framework, Id, InboxItem, Preview, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
 import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
@@ -56,14 +56,41 @@ const snap = (): Snapshot => snapshotStore.get();
 const ui = (): Ui => uiStore.get();
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
-/** The variant set the viewer shows: the focused effort's, else the first one. */
+/** The slice the viewer follows: in the focused effort the one with variants or a preview already,
+ * else its first slice with a worktree. With no effort focused, any effort's. */
+export function viewerAgent(s: Snapshot, effort: Id | null): Agent | undefined {
+  const taskEffort = new Map(s.tasks.map(t => [t.id, t.effort_id]));
+  const slices = s.agents.filter(a =>
+    a.kind === 'slice' && (effort === null || taskEffort.get(a.task_id) === effort));
+  return slices.find(a => s.variants.some(v => v.agent_id === a.id))
+    ?? slices.find(a => s.previews.some(p => p.agent_id === a.id && p.state !== 'not_started'))
+    ?? slices.find(a => a.branch)
+    ?? slices[0];
+}
+
+/** The variant set of the slice the viewer shows. */
 export function viewerSet(s: Snapshot, effort: Id | null): VariantSet | undefined {
-  return s.variants.find(v => v.effort_id === effort) ?? s.variants[0];
+  const agent = viewerAgent(s, effort);
+  return agent && s.variants.find(v => v.agent_id === agent.id);
+}
+
+/** The preview state of the slice the viewer shows; `not_started` until the core says more. */
+export function viewerPreview(s: Snapshot, effort: Id | null): Preview | undefined {
+  const agent = viewerAgent(s, effort);
+  return agent && (s.previews.find(p => p.agent_id === agent.id)
+    ?? { agent_id: agent.id, effort_id: effort ?? '', state: 'not_started' });
 }
 
 /** The canvas the main view shows: the focused effort's first canvas. */
 export function effortCanvas(s: Snapshot, effort: Id | null) {
   return s.canvases.find(c => c.effort_id === effort);
+}
+
+/** The user picks option `j` of slot `i`: the core keeps it and the viewer posts it to the page. */
+function pick(set: VariantSet, i: number, j: number): void {
+  const slot = set.slots[i];
+  const option = slot?.options[j];
+  if (slot && option !== undefined) send({ type: 'select_variant', agent_id: set.agent_id, slot: slot.name, option });
 }
 
 function switchEffort(id: Id, quiet = false): void {
@@ -565,36 +592,58 @@ export function dispatch(a: Action, arg?: unknown): void {
     }
     case 'selectSlot': setUi({ slot: Number(arg), zone: 'main' }); return;
     case 'optNext': case 'optPrev': case 'opt1': case 'opt2': case 'opt3': {
-      const slot = viewerSet(s, u.effort)?.slots[u.slot];
-      if (!slot) return;
+      const set = viewerSet(s, u.effort);
+      const slot = set?.slots[u.slot];
+      if (!set || !slot) return;
       const n = slot.options.length;
-      const cur = u.choice[u.slot] ?? 0;
+      const cur = set.choice[u.slot] ?? 0;
       const j = a === 'optNext' ? (cur + 1) % n : a === 'optPrev' ? (cur + n - 1) % n : Number(a.slice(3)) - 1;
       if (j >= n) return;
-      setUi(x => ({ choice: x.choice.map((v, i) => i === x.slot ? j : v) }));
+      pick(set, u.slot, j);
       return;
     }
     case 'pickOption': {
       const [slot, j] = arg as [number, number];
-      setUi(x => ({ slot, zone: 'main', choice: x.choice.map((v, i) => i === slot ? j : v) }));
+      const set = viewerSet(s, u.effort);
+      setUi({ slot, zone: 'main' });
+      if (set) pick(set, slot, j);
       return;
     }
     case 'keepCombo': {
       const set = viewerSet(s, u.effort);
       if (!set) return;
-      send({ type: 'keep_variants', agent_id: set.agent_id, choice: u.choice.slice(0, set.slots.length) });
+      send({ type: 'keep_variants', agent_id: set.agent_id });
       toast(`Combination kept and sent to **${set.agent_id}**`);
       return;
     }
-    case 'resetCombo': { const set = viewerSet(s, u.effort); if (set) setUi({ choice: set.kept.slice() }); return; }
+    case 'resetCombo': {
+      const set = viewerSet(s, u.effort);
+      set?.slots.forEach((_, i) => { if ((set.choice[i] ?? 0) !== (set.kept[i] ?? 0)) pick(set, i, set.kept[i] ?? 0); });
+      return;
+    }
     case 'togglePanel': setUi(x => ({ panel: x.panel === 'closed' ? 'docked' : 'closed' })); return;
     case 'closePanel': setUi({ panel: 'closed' }); return;
     case 'detachPanel':
       if (u.main !== 'viewer') openMain('viewer');
       setUi(x => x.panel === 'detached' ? { panel: 'docked' } : { panel: 'detached', panelPos: { x: Math.max(16, window.innerWidth - 820), y: 120 } });
       return;
-    case 'reload': setUi(x => ({ previewLoads: x.previewLoads + 1 })); toast('Preview reloaded'); return;
-    case 'browser': toast('Opens in your browser (not in this build)'); return;
+    case 'reload': {
+      const p = viewerPreview(s, u.effort);
+      if (p && (p.state === 'failed' || p.state === 'no_command')) {
+        send({ type: 'restart_preview', agent_id: p.agent_id });
+        toast('Preview restarting');
+        return;
+      }
+      setUi(x => ({ previewLoads: x.previewLoads + 1 }));
+      toast('Preview reloaded');
+      return;
+    }
+    case 'browser': {
+      const url = viewerPreview(s, u.effort)?.url;
+      if (url) send({ type: 'open_external', url });
+      else toast('The preview is not running');
+      return;
+    }
 
     // ---- reading view
     case 'nextHeading': case 'prevHeading': {

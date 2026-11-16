@@ -128,15 +128,26 @@ export interface IncomingCard {
 
 export type VariantLevel = 'global' | 'component' | 'content';
 export interface VariantSlot { id: Id; level: VariantLevel; name: string; options: string[] }
-/** The variants one slice declared for its web preview (design v2 §7). */
+/** The variants one slice declared for its web preview (ADR 0026). A slot's `id` is its name. */
 export interface VariantSet {
   agent_id: Id;
   effort_id: Id;
-  /** The slice's preview. */
-  url: string;
   slots: VariantSlot[];
-  /** Option index per slot, in slot order: the kept combination. */
+  /** Option index per slot, in slot order: the kept combination (the first when none is kept). */
   kept: number[];
+  /** Option index per slot: the user's current pick. */
+  choice: number[];
+}
+
+/** Where a slice's preview stands (the core's `PreviewState`, flattened). */
+export interface Preview {
+  agent_id: Id;
+  effort_id: Id;
+  state: 'not_started' | 'no_command' | 'starting' | 'running' | 'failed';
+  /** While running. */
+  url?: string;
+  /** When failed: why, then the last lines it printed. */
+  output?: string;
 }
 
 export interface Report { id: Id; effort_id: Id; title: string; markdown: string }
@@ -172,6 +183,7 @@ export interface Snapshot {
   card_links: CardLink[];
   incoming: IncomingCard[];
   variants: VariantSet[];
+  previews: Preview[];
   reports: Report[];
   status: Status;
 }

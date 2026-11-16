@@ -55,6 +55,27 @@ export class MockCore implements CoreLink {
         }, REPLY_DELAY_MS);
         return;
       }
+      case 'start_preview':
+      case 'restart_preview': {
+        // The mock runs no processes: the sample page is the one preview, a slice without one has no line.
+        const { agent } = data as { agent: W.AgentId };
+        if (!s.previews.some(p => p.agent === agent)) this.emit({ preview_changed: { agent, state: 'no_command' } });
+        return;
+      }
+      case 'select_variant': {
+        const { agent, slot, option } = data as { agent: W.AgentId; slot: string; option: string };
+        const set = s.variants.find(v => v.agent === agent);
+        if (!set?.slots.some(x => x.name === slot && x.options.includes(option))) return this.fail(`${option} is not an option of ${slot}`);
+        this.emit({ variants_upserted: { ...set, selection: { ...set.selection, [slot]: option } } });
+        return;
+      }
+      case 'keep_variants': {
+        const { agent } = data as { agent: W.AgentId };
+        const set = s.variants.find(v => v.agent === agent);
+        if (!set) return this.fail(`${agent} has declared no variants`);
+        this.emit({ variants_upserted: { ...set, slots: set.slots.map(x => ({ ...x, kept: set.selection[x.name] ?? null })) } });
+        return;
+      }
       case 'answer_permission': {
         const { item, answer } = data as { item: number; answer: W.PermissionAnswer };
         const found = s.inbox.find(i => i.id === item);

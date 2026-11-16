@@ -8,7 +8,7 @@
 import type * as W from './generated';
 import type {
   Agent, AgentState, ChatEntry, Criterion, Effort, Id, InboxItem, ProjectSummary, Snapshot, Status, TagColour,
-  Task,
+  Preview, Task, VariantSet,
 } from './model';
 import { viewCanvas } from './canvasView';
 import type { Pending } from './pending';
@@ -44,7 +44,8 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
     cards: canvas.cards,
     card_links: canvas.card_links,
     incoming: canvas.incoming,
-    variants: pending.variants,
+    variants: viewVariants(core, agents),
+    previews: viewPreviews(core, agents),
     reports: [...pending.reports, ...canvas.reports],
     status: viewStatus(core, pending),
   };
@@ -96,6 +97,46 @@ const viewTask = (t: W.Task): Task => ({
 const STATE: Record<W.AgentStatus, AgentState> = {
   setting_up: 'working', working: 'working', idle: 'idle', needs_you: 'needs_you', done: 'done', error: 'needs_you',
 };
+
+/** The effort a slice's work belongs to, as the view's id; `undefined` for a slice with no task. */
+function sliceEffort(core: W.Snapshot, agents: Agent[], id: string): Id | undefined {
+  const agent = agents.find(a => a.id === id);
+  const task = agent && core.tasks.find(t => String(t.id) === agent.task_id);
+  return task ? String(task.effort) : undefined;
+}
+
+/** The variants slices declared, with the user's pick and the kept option as indices (ADR 0026). */
+function viewVariants(core: W.Snapshot, agents: Agent[]): VariantSet[] {
+  const out: VariantSet[] = [];
+  for (const set of core.variants) {
+    const effort_id = sliceEffort(core, agents, set.agent);
+    if (effort_id === undefined || set.slots.length === 0) continue;
+    const index = (slot: W.VariantSlot, option: string | null | undefined) => Math.max(0, slot.options.indexOf(option ?? ''));
+    out.push({
+      agent_id: set.agent,
+      effort_id,
+      slots: set.slots.map(s => ({ id: s.name, level: s.level, name: s.name, options: s.options })),
+      kept: set.slots.map(s => index(s, s.kept)),
+      choice: set.slots.map(s => index(s, set.selection[s.name])),
+    });
+  }
+  return out;
+}
+
+/** Each slice's preview state, flattened for the viewer. */
+function viewPreviews(core: W.Snapshot, agents: Agent[]): Preview[] {
+  const out: Preview[] = [];
+  for (const p of core.previews) {
+    const effort_id = sliceEffort(core, agents, p.agent);
+    if (effort_id === undefined) continue;
+    const [kind, data] = variant(p.state);
+    const base = { agent_id: p.agent, effort_id };
+    if (kind === 'running') out.push({ ...base, state: 'running', url: (data as { url: string }).url });
+    else if (kind === 'failed') out.push({ ...base, state: 'failed', output: (data as { output: string }).output });
+    else out.push({ ...base, state: kind as Preview['state'] });
+  }
+  return out;
+}
 
 /** Slices and their subagents, each under a task; other sessions are not in the tree. */
 function viewAgents(core: W.Snapshot): Agent[] {
