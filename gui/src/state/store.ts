@@ -15,7 +15,7 @@ import { translate } from '../core/translate';
 import { toView } from '../core/view';
 import { emptyCoreSnapshot, variant } from '../core/wire';
 import { createStore, type Store } from './observable';
-import { setUi, toast, uiStore } from './ui';
+import { focusEffort, setUi, toast, uiStore } from './ui';
 
 export { createStore, type Store };
 
@@ -55,6 +55,7 @@ function receive(msg: W.ServerMsg): void {
     const after = next.project?.id ?? null;
     if (!started || before !== after) pendingStore.set(seed(after));
     started = true;
+    setUi({ awaitEffort: false });
     coreStore.set(next);
     if (before !== after) focusOpenedProject();
     return;
@@ -62,7 +63,11 @@ function receive(msg: W.ServerMsg): void {
   if (tag !== 'event' || !started) return;
   const { seq, event } = data as { seq: number; event: W.Event };
   const [kind, payload] = variant(event);
-  if (kind === 'command_failed') toast((payload as { message: string }).message);
+  if (kind === 'command_failed') {
+    toast((payload as { message: string }).message);
+    // A refused create_effort must not leave a later effort to take focus unasked.
+    setUi({ awaitEffort: false });
+  }
   const before = coreStore.get();
   const r = apply(before, seq, event);
   if (r.kind === 'applied') {
@@ -99,10 +104,9 @@ function cardEvent(before: W.Snapshot, kind: string, payload: unknown): void {
 function effortEvent(before: W.Snapshot, kind: string, payload: unknown): void {
   if (kind !== 'effort_upserted') return;
   const effort = payload as W.Effort;
-  const u = uiStore.get();
-  if (u.awaitEffort !== effort.name || before.efforts.some(e => e.id === effort.id)) return;
-  const id = String(effort.id);
-  setUi(x => ({ awaitEffort: null, effort: id, tag: id, wwi: true, wwiFlash: 0, filter: x.filter === 'all' ? 'all' : id }));
+  if (!uiStore.get().awaitEffort || before.efforts.some(e => e.id === effort.id)) return;
+  setUi({ awaitEffort: false });
+  focusEffort(String(effort.id));
 }
 
 /** A project's snapshot just arrived: focus an effort of it, as opening it from Home does. */

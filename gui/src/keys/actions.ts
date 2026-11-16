@@ -8,7 +8,7 @@ import type { Agent, CardKind, EffortKind, Framework, Id, InboxItem, Preview, Sn
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
 import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
-import { scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
+import { focusEffort, scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
 import { readingHeadings, viewport } from './viewport';
 
 export type Action =
@@ -101,10 +101,13 @@ function pick(set: VariantSet, i: number, j: number): void {
   if (slot && option !== undefined) send({ type: 'select_variant', agent_id: set.agent_id, slot: slot.name, option });
 }
 
+/** The frameworks an empty canvas offers, in their key order (`1 2 3`). */
+export const FRAMEWORK_KEY = { framework1: 'question_tree', framework2: 'options_compare', framework3: 'free_board' } as const satisfies Record<string, Framework>;
+
 function switchEffort(id: Id, quiet = false): void {
   const e = effortById(snap(), id);
   if (!e) return;
-  setUi(u => ({ effort: id, tag: id, wwi: true, wwiFlash: 0, filter: u.filter === 'all' ? 'all' : id }));
+  focusEffort(id);
   if (!quiet) toast(`Effort: **${e.name}** · next message is tagged with it`);
 }
 
@@ -341,7 +344,7 @@ export function dispatch(a: Action, arg?: unknown): void {
           key: k, text: k, label: k, glyph: KIND_GLYPH[k],
           go: () => prompt(`New effort ${kebab} · question or goal`, goal => {
             // The core answers with the effort; it takes focus then (store.ts, effortEvent).
-            setUi({ awaitEffort: kebab });
+            setUi({ awaitEffort: true });
             send({ type: 'new_effort', name: kebab, kind: k, question_or_goal: goal });
             toast(`New effort saved as **${kebab}**`);
           }),
@@ -591,8 +594,7 @@ export function dispatch(a: Action, arg?: unknown): void {
     // The empty canvas offers its frameworks as 1 2 3; with a canvas the keys do nothing.
     case 'framework1': case 'framework2': case 'framework3': {
       if (effortCanvas(s, u.effort)) return;
-      const framework: Framework[] = ['question_tree', 'options_compare', 'free_board'];
-      dispatch('pickFramework', framework[Number(a.slice(9)) - 1]);
+      dispatch('pickFramework', FRAMEWORK_KEY[a]);
       return;
     }
     case 'pickFramework': {

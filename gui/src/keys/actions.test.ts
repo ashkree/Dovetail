@@ -42,10 +42,16 @@ describe('actions against the core', () => {
       id: 99, name: 'fresh', kind: 'feature', question_or_goal: 'g', status: 'open',
       where_was_i: { last_done: '', waits_on_you: '', next_step: '' }, criteria: [],
     };
-    setUi({ effort: null, awaitEffort: 'fresh' });
+    setUi({ effort: null, awaitEffort: true });
     push({ event: { seq, event: { effort_upserted: effort } } });
     expect(uiStore.get().effort).toBe('99');
-    expect(uiStore.get().awaitEffort).toBeNull();
+    expect(uiStore.get().awaitEffort).toBe(false);
+  });
+
+  it('forgets a new effort the core refused', () => {
+    setUi({ effort: null, awaitEffort: true });
+    push({ event: { seq: coreStore.get().seq + 1, event: { command_failed: { message: 'taken' } } } });
+    expect(uiStore.get().awaitEffort).toBe(false);
   });
 
   it('starts a canvas with 1 2 3 only while the effort has none', () => {

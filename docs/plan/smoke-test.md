@@ -72,3 +72,13 @@ Tests: `gui/src/keys/actions.test.ts` covers 1, 2, 3, 4 and 5 against a fake cor
 - Streaming was seen only as finished replies (screenshots every few seconds); partial messages
   are on (`--include-partial-messages`) but the token-by-token render was not watched.
 - "Keep this combination", deny/always-allow answers, and a second repo's slice were not run.
+
+## Review (code-review skill, PR #85)
+
+- Standards: empty-canvas hints now read from the keymap (`keyText`), one `FRAMEWORK_KEY` list,
+  one `focusEffort` (in `ui.ts`), `gui/DECISIONS.md` §11 amended for `Space s m`. Left as is:
+  `effort_limit` 0 meaning "none" (the API has no option there yet).
+- Spec: `awaitEffort` is now a flag cleared by `command_failed` and by a new snapshot, so a
+  refused or renamed effort cannot take focus later, and names the core spells differently still
+  match. The `1 2 3` keys row is marked as awaiting review. The `?` map lists them even when a
+  canvas exists (they do nothing then); left for the keymap review.
