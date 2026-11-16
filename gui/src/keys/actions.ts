@@ -3,6 +3,7 @@
 // Actions change UI state with setUi() and shared state only by send(command).
 
 import { hasOwnText } from '../core/canvasView';
+import { UNSORTED_EFFORT } from '../core/wire';
 import type { Agent, CardKind, EffortKind, Framework, Id, InboxItem, Preview, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
@@ -461,8 +462,9 @@ export function dispatch(a: Action, arg?: unknown): void {
     // ---- insert (chat bar)
     case 'send': {
       const text = u.draft.trim();
-      const tag = u.tag ?? u.effort;
-      if (!text || !tag) return;
+      // With no effort in focus (a new project has none) the message goes to Unsorted.
+      const tag = u.tag ?? u.effort ?? String(UNSORTED_EFFORT);
+      if (!text) return;
       send({ type: 'send_message', text, effort_id: tag });
       setUi({ draft: '', wwi: false, chatCur: -1 });
       return;
