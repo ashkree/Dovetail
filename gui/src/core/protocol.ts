@@ -47,6 +47,8 @@ export type UiCommand =
   | { type: 'keep_variants'; agent_id: Id }
   /** Open a web page in the user's browser, through the core. */
   | { type: 'open_external'; url: string }
+  /** Move a session to its next permission mode. */
+  | { type: 'cycle_permission_mode'; agent_id: Id }
   /** Ask for a fresh snapshot (after a gap). */
   | { type: 'resync' }
   | PendingAction;

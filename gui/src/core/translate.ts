@@ -76,6 +76,7 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
     case 'load_card': return only({ load_card: { id: coreCardId(cmd.card_id) } });
     case 'card_from_reply':
       return only({ card_from_reply: { agent: COORDINATOR, entry: Number(cmd.entry_id), effort: Number(cmd.effort_id) } });
+    case 'cycle_permission_mode': return only({ cycle_permission_mode: { agent: cmd.agent_id } });
     case 'start_preview': return only({ start_preview: { agent: cmd.agent_id } });
     case 'restart_preview': return only({ restart_preview: { agent: cmd.agent_id } });
     case 'select_variant':

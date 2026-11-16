@@ -3,7 +3,7 @@
 // Actions change UI state with setUi() and shared state only by send(command).
 
 import { hasOwnText } from '../core/canvasView';
-import { UNSORTED_EFFORT } from '../core/wire';
+import { COORDINATOR, UNSORTED_EFFORT } from '../core/wire';
 import type { Agent, CardKind, EffortKind, Framework, Id, InboxItem, Preview, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
@@ -703,6 +703,8 @@ export function dispatch(a: Action, arg?: unknown): void {
       return;
     }
     case 'interrupt': toast('Interrupt the agent in focus (not in this build)'); return;
-    case 'permMode': toast('Permission mode: auto → acceptEdits → manual (not in this build)'); return;
+    // The coordinator's session moves to its next mode (auto → acceptEdits → manual); the
+    // bottom bar shows the new one when the core reports it.
+    case 'permMode': send({ type: 'cycle_permission_mode', agent_id: COORDINATOR }); return;
   }
 }
