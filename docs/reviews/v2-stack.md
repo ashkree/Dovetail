@@ -47,3 +47,9 @@ Standards: `CODING_STANDARDS.md`, plus the hard constraints and architecture rul
 1. When you send a task back from Review while its PR is still open, should it stay In progress until something new happens (a new PR state, or the slice reporting again)?
 2. Should approving a criterion that was never claimed be refused?
 3. Should agents get a tool to claim a criterion now, and in which suite?
+
+## As decided 2026-11-16
+
+1. **Yes.** A task sent back from review stays in progress until its pull requests change stage or a slice reports again. Built; see ADR 0024, "As decided 2026-11-16".
+2. **No, keep it.** Approving a criterion nobody claimed stays allowed, as the user's shortcut.
+3. **Yes, in Coordination.** `coordination_claim_criterion`, for slices and the coordinator; only the user approves.

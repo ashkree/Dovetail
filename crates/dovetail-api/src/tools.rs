@@ -231,6 +231,9 @@ tools! {
     ResearchGet(ResearchGet) = "research_get", Research;
     /// `coordination_report` (ADR 0022): a slice's report to the coordinator.
     Report(Report) = "coordination_report", Coordination;
+    /// `coordination_claim_criterion` (decided 2026-11-16): say an acceptance criterion is met,
+    /// with evidence; only the user approves it.
+    ClaimCriterion(ClaimCriterion) = "coordination_claim_criterion", Coordination;
     /// `maps_draw` (decision 25, M15).
     DrawMap(DrawMap) = "maps_draw", Maps, was "draw_map";
 }
@@ -296,6 +299,11 @@ pub enum ToolError {
     StatusIsSetByDovetail,
     /// `coordination_report` from a session that is not a slice.
     ReportFromNonSlice,
+    /// `coordination_claim_criterion` from a session that is neither a slice nor the
+    /// coordinator.
+    ClaimFromOtherRole,
+    /// A criterion id is not positive.
+    NotACriterionId,
     /// `tasks_update` named no field to change.
     NothingToUpdate,
     /// `research_propose` of a decision with no evidence (ADR 0015).
@@ -334,6 +342,12 @@ impl std::fmt::Display for ToolError {
             ),
             ToolError::ReportFromNonSlice => {
                 f.write_str("`coordination_report` is for slices: it reports to the coordinator")
+            }
+            ToolError::ClaimFromOtherRole => {
+                f.write_str("`coordination_claim_criterion` is for slices and the coordinator")
+            }
+            ToolError::NotACriterionId => {
+                f.write_str("`criterion` must be a criterion id (a positive integer)")
             }
             ToolError::NothingToUpdate => f.write_str(
                 "give at least one field to change: `bucket`, `p_level`, `title` or `notes`",
@@ -400,6 +414,15 @@ impl Tool {
                     return Err(ToolError::ReportFromNonSlice);
                 }
                 text("summary", &r.summary)
+            }
+            Tool::ClaimCriterion(c) => {
+                if !matches!(role, Role::Slice | Role::Coordinator) {
+                    return Err(ToolError::ClaimFromOtherRole);
+                }
+                if c.criterion.0 <= 0 {
+                    return Err(ToolError::NotACriterionId);
+                }
+                text("evidence", &c.evidence)
             }
             Tool::CreateTask(c) => {
                 text("title", &c.title)?;
@@ -505,6 +528,17 @@ pub struct Report {
     /// The pull request the report is about, if there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr: Option<u32>,
+}
+
+/// `coordination_claim_criterion`: an agent says an acceptance criterion is met and why. The
+/// criterion becomes claimed and waits in the user's inbox; only the user can make it met.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ClaimCriterion {
+    /// The criterion's id.
+    pub criterion: crate::CriterionId,
+    /// What shows it is met: a pull request, a test, a finding.
+    pub evidence: String,
 }
 
 /// Where a slice says its work stands, in a [`Report`].

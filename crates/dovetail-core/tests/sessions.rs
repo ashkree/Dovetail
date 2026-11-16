@@ -5066,6 +5066,62 @@ fn an_effort_is_named_in_kebab_case_and_its_criterion_goes_claimed_then_met() {
     h.quit();
 }
 
+/// Decided 2026-11-16: an agent claims a criterion with `coordination_claim_criterion`; the
+/// claim waits for the user, and no tool call can make a criterion met.
+#[test]
+fn an_agent_claims_a_criterion_and_only_the_user_approves_it() {
+    use dovetail_api::CriterionState;
+    use dovetail_api::tools::ClaimCriterion;
+
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let effort = create_effort(&mut h, "providers", "providers");
+    h.send(Command::AddCriterion {
+        effort,
+        text: "fees compared".into(),
+    });
+    h.wait_for("the criterion", |s| {
+        effort_named(s, "providers").is_some_and(|e| !e.criteria.is_empty())
+    });
+    let criterion = effort_named(&h.snap, "providers").expect("effort").criteria[0].id;
+    let state_of = move |s: &Snapshot| effort_named(s, "providers").map(|e| e.criteria[0].state);
+    let claim = |evidence: &str| {
+        Tool::ClaimCriterion(ClaimCriterion {
+            criterion,
+            evidence: evidence.into(),
+        })
+    };
+    let socket = h.socket();
+
+    let (text, is_error) =
+        result_text(socket_call(&socket, tool(COORDINATOR, claim("finding 41"))));
+    assert!(!is_error, "{text}");
+    assert!(text.contains("waits for the user's approval"), "{text}");
+    h.wait_for("claimed", |s| state_of(s) == Some(CriterionState::Claimed));
+    let evidence = effort_named(&h.snap, "providers").expect("effort").criteria[0]
+        .evidence
+        .clone();
+    assert_eq!(evidence.as_deref(), Some("finding 41"));
+
+    // Empty evidence and an unknown criterion are refused.
+    let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, claim("  "))));
+    assert!(is_error && text.contains("evidence"), "{text}");
+    let unknown = Tool::ClaimCriterion(ClaimCriterion {
+        criterion: dovetail_api::CriterionId(999),
+        evidence: "x".into(),
+    });
+    let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, unknown)));
+    assert!(is_error, "{text}");
+
+    // Only the user makes it met; a claim of a met criterion is refused and changes nothing.
+    h.send(Command::ApproveCriterion { id: criterion });
+    h.wait_for("met", |s| state_of(s) == Some(CriterionState::Met));
+    let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, claim("again"))));
+    assert!(is_error && text.contains("already met"), "{text}");
+    h.drain(Duration::from_millis(100));
+    assert_eq!(state_of(&h.snap), Some(CriterionState::Met));
+    h.quit();
+}
+
 #[test]
 fn a_task_is_created_in_unsorted_and_moved_to_an_effort_and_its_criterion() {
     use dovetail_api::{NewTask, UNSORTED_EFFORT};
@@ -5404,6 +5460,55 @@ fn a_task_follows_its_slices_pull_request_to_review_done_and_back() {
     h.send(Command::RefreshWorktrees);
     h.drain(Duration::from_millis(300));
     assert_eq!(task_status(&h.snap, 1), Some(TaskStatus::Todo));
+    h.quit();
+}
+
+/// Decided 2026-11-16: a task the user sends back from review stays in progress until
+/// something new happens: its pull request changes, or its slice reports again.
+#[test]
+fn a_task_sent_back_from_review_stays_in_progress_until_something_new_happens() {
+    use dovetail_api::tools::ReportState;
+    let (dir, repo, paths) = repo_with_task_slices(&["api"], false);
+    GH.with(|g| *g.borrow_mut() = Some(fake_gh(dir.path())));
+    let mut h = Harness::start_in(fixture("plain_turn"), paths, Some(repo));
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "api"));
+    set_pr(dir.path(), "api", "OPEN");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("review", |s| task_status(s, 1) == Some(TaskStatus::Review));
+
+    // Sent back while the PR stays open: a new lookup of the same open PR moves nothing.
+    h.send(Command::UpdateTask {
+        id: TaskId(1),
+        patch: vec![dovetail_api::TaskChange::Status(TaskStatus::InProgress)],
+    });
+    h.wait_for("sent back", |s| {
+        task_status(s, 1) == Some(TaskStatus::InProgress)
+    });
+    h.send(Command::RefreshWorktrees);
+    h.drain(Duration::from_millis(300));
+    assert_eq!(task_status(&h.snap, 1), Some(TaskStatus::InProgress));
+
+    // The slice reports again: the hold ends, and done moves it to review.
+    let (text, is_error) = result_text(socket_call(
+        &h.socket(),
+        tool("slice-api", report(ReportState::Done, "fixed", Some(42))),
+    ));
+    assert!(!is_error, "{text}");
+    h.wait_for("review again", |s| {
+        task_status(s, 1) == Some(TaskStatus::Review)
+    });
+
+    // Sent back again; then the PR is merged, which is new: done.
+    h.send(Command::UpdateTask {
+        id: TaskId(1),
+        patch: vec![dovetail_api::TaskChange::Status(TaskStatus::InProgress)],
+    });
+    h.wait_for("sent back again", |s| {
+        task_status(s, 1) == Some(TaskStatus::InProgress)
+    });
+    set_pr(dir.path(), "api", "MERGED");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("done", |s| task_status(s, 1) == Some(TaskStatus::Done));
     h.quit();
 }
 

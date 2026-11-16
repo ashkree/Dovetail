@@ -598,7 +598,7 @@ impl Core {
     /// in progress to review once every slice of the task has an open or merged one; to done
     /// once every one is merged; review back to in progress when this one was closed unmerged.
     /// A task with several slices follows the one furthest behind. A lookup that failed moves
-    /// nothing.
+    /// nothing. A task the user sent back from review waits until its pull requests change.
     pub(crate) async fn follow_pull_request(
         &mut self,
         task: TaskId,
@@ -608,18 +608,13 @@ impl Core {
         let Some(current) = self.task(task).await else {
             return;
         };
-        let least = self
-            .task_slices(task)
-            .iter()
-            .filter(|slice| *slice != seen)
-            .map(|slice| {
-                self.worktrees
-                    .get(slice)
-                    .map_or(PrStage::None, |w| PrStage::of(&w.pr))
-            })
-            .chain([PrStage::of(pr)])
-            .min()
-            .unwrap_or(PrStage::None);
+        let least = self.least_pr_stage(task, Some((seen, pr)));
+        if let Some(was) = self.sent_back.get(&task) {
+            if *was == least {
+                return;
+            }
+            self.sent_back.remove(&task);
+        }
         let closed = matches!(pr, PrLookup::Found(found) if found.state == PrState::Closed);
         let next = match (current.status, least) {
             (TaskStatus::InProgress | TaskStatus::Review, PrStage::Merged) => TaskStatus::Done,
@@ -629,11 +624,48 @@ impl Core {
         };
         self.update_task(task, vec![TaskChange::Status(next)]).await;
     }
+
+    /// How far the pull requests of `task`'s slices have come: the one furthest behind. `fresh`
+    /// is a lookup newer than the one kept for its slice.
+    fn least_pr_stage(&self, task: TaskId, fresh: Option<(&AgentId, &PrLookup)>) -> PrStage {
+        let seen = fresh.map(|(agent, _)| agent);
+        self.task_slices(task)
+            .iter()
+            .filter(|slice| Some(*slice) != seen)
+            .map(|slice| {
+                self.worktrees
+                    .get(slice)
+                    .map_or(PrStage::None, |w| PrStage::of(&w.pr))
+            })
+            .chain(fresh.map(|(_, pr)| PrStage::of(pr)))
+            .min()
+            .unwrap_or(PrStage::None)
+    }
+
+    /// A task change the user made. Sending a task from review back to in progress holds it
+    /// there until its pull requests change or a slice reports again (decided 2026-11-16); any
+    /// other status the user sets ends that hold.
+    pub(crate) async fn user_update_task(&mut self, id: TaskId, patch: Vec<TaskChange>) {
+        let status = patch.iter().rev().find_map(|c| match c {
+            TaskChange::Status(s) => Some(*s),
+            _ => None,
+        });
+        if let Some(status) = status {
+            let was = self.task(id).await.map(|t| t.status);
+            if was == Some(TaskStatus::Review) && status == TaskStatus::InProgress {
+                let stage = self.least_pr_stage(id, None);
+                self.sent_back.insert(id, stage);
+            } else {
+                self.sent_back.remove(&id);
+            }
+        }
+        self.update_task(id, patch).await;
+    }
 }
 
 /// How far a slice's pull request has come, in order: a task follows its slice furthest behind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum PrStage {
+pub(crate) enum PrStage {
     /// No pull request, a closed one, or one that could not be looked up.
     None,
     Open,

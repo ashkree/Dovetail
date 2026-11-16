@@ -31,6 +31,10 @@ impl Core {
             Some(id) => self.task(id).await,
             None => None,
         };
+        // A new report ends the hold on a task the user sent back from review.
+        if let Some(task) = &task {
+            self.sent_back.remove(&task.id);
+        }
         let pr = report.pr.map(|n| format!(" (PR #{n})")).unwrap_or_default();
         let body = format!("[{}] {}{pr}", report.state.as_str(), report.summary.trim());
         let about = task

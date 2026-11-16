@@ -1127,6 +1127,46 @@ fn a_report_parses_roundtrips_and_is_for_slices_only() {
     );
 }
 
+/// Decided 2026-11-16: `coordination_claim_criterion` parses, survives the socket, and is for
+/// slices and the coordinator only, with evidence.
+#[test]
+fn a_criterion_claim_is_for_slices_and_the_coordinator_with_evidence() {
+    use dovetail_api::CriterionId;
+    use dovetail_api::tools::{ClaimCriterion, Role, Tool, ToolError};
+
+    let parsed = Tool::parse(
+        "coordination_claim_criterion",
+        json!({"criterion": 3, "evidence": "PR #41, test guest_pays"}),
+    )
+    .unwrap();
+    let claim = Tool::ClaimCriterion(ClaimCriterion {
+        criterion: CriterionId(3),
+        evidence: "PR #41, test guest_pays".into(),
+    });
+    assert_eq!(parsed, claim);
+    roundtrip(&claim);
+    assert_eq!(claim.validate(Role::Slice), Ok(()));
+    assert_eq!(claim.validate(Role::Coordinator), Ok(()));
+    for role in [Role::SideChat, Role::Ask] {
+        assert_eq!(claim.validate(role), Err(ToolError::ClaimFromOtherRole));
+    }
+    let empty = Tool::parse(
+        "coordination_claim_criterion",
+        json!({"criterion": 3, "evidence": " "}),
+    )
+    .unwrap();
+    assert_eq!(
+        empty.validate(Role::Slice),
+        Err(ToolError::Empty("evidence"))
+    );
+    let zero = Tool::parse(
+        "coordination_claim_criterion",
+        json!({"criterion": 0, "evidence": "x"}),
+    )
+    .unwrap();
+    assert_eq!(zero.validate(Role::Slice), Err(ToolError::NotACriterionId));
+}
+
 /// ADR 0024: `review` is a status with its own name on the wire, and an agent's `tasks_update`
 /// cannot set any status.
 #[test]
