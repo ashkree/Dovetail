@@ -1,53 +1,39 @@
+// The GUI's reducer against the shared cases Rust writes (crates/dovetail-api/tests/apply_cases.rs):
+// the same snapshot and events must give the same snapshot here as in Rust (ADR 0023, point 5).
+
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { apply } from './apply';
-import { emptySnapshot } from './model';
-import type { Event } from './protocol';
+import type * as W from './generated';
 
-const entry: Event = { type: 'chat_entry_added', entry: { id: 'm1', who: 'you', report: false, at: '10:00', effort_id: 'e1', text: 'hi' } };
+const DIR = join(__dirname, '../../../crates/dovetail-api/tests/fixtures/apply');
 
-describe('apply', () => {
-  it('applies the next event and advances seq', () => {
-    const s = { ...emptySnapshot(), seq: 4 };
-    const r = apply(s, 5, entry);
-    expect(r.kind).toBe('applied');
-    if (r.kind !== 'applied') return;
-    expect(r.snapshot.seq).toBe(5);
-    expect(r.snapshot.chat.map(m => m.id)).toEqual(['m1']);
-    expect(s.chat).toEqual([]); // pure: the input is untouched
-  });
+interface Case {
+  snapshot: W.Snapshot;
+  events: { seq: number; event: W.Event }[];
+  results: ('applied' | 'gap' | 'stale')[];
+  expected: W.Snapshot;
+}
 
-  it('rejects a gap', () => {
-    const r = apply({ ...emptySnapshot(), seq: 4 }, 7, entry);
-    expect(r).toEqual({ kind: 'gap', expected: 5, got: 7 });
-  });
+const files = readdirSync(DIR).filter(f => f.endsWith('.json')).sort();
 
-  it('ignores a stale event', () => {
-    expect(apply({ ...emptySnapshot(), seq: 4 }, 4, entry)).toEqual({ kind: 'stale' });
-    expect(apply({ ...emptySnapshot(), seq: 4 }, 2, entry)).toEqual({ kind: 'stale' });
-  });
-
-  it('deletes a card with its links', () => {
-    const s = {
-      ...emptySnapshot(),
-      cards: [{ id: 'A', canvas_id: 'c', kind: 'idea' as const, x: 0, y: 0, title: '', body: '' }],
-      card_links: [{ from: 'A', to: 'B' }, { from: 'B', to: 'C' }],
-    };
-    const r = apply(s, 1, { type: 'card_deleted', id: 'A' });
-    if (r.kind !== 'applied') throw new Error(r.kind);
-    expect(r.snapshot.cards).toEqual([]);
-    expect(r.snapshot.card_links).toEqual([{ from: 'B', to: 'C' }]);
-  });
-
-  it('ticks a criterion', () => {
-    const s = {
-      ...emptySnapshot(),
-      efforts: [{
-        id: 'e', name: 'x', kind: 'fix' as const, question_or_goal: '', running: true, colour: 'blue' as const,
-        where_was_i: { last: '', waits: '', next: '' }, criteria: [{ id: 'c', text: '', state: 'claimed' as const }],
-      }],
-    };
-    const r = apply(s, 1, { type: 'criterion_changed', effort_id: 'e', criterion_id: 'c', state: 'met' });
-    if (r.kind !== 'applied') throw new Error(r.kind);
-    expect(r.snapshot.efforts[0]?.criteria[0]?.state).toBe('met');
-  });
+describe('apply matches Rust on the shared cases', () => {
+  it('has cases to run', () => expect(files.length).toBeGreaterThan(0));
+  for (const file of files) {
+    it(file, () => {
+      const c = JSON.parse(readFileSync(join(DIR, file), 'utf8')) as Case;
+      const before = JSON.stringify(c.snapshot);
+      let state = c.snapshot;
+      const results = c.events.map(({ seq, event }) => {
+        const r = apply(state, seq, event);
+        if (r.kind === 'applied') state = r.snapshot;
+        return r.kind;
+      });
+      expect(results).toEqual(c.results);
+      expect(state).toEqual(c.expected);
+      // Pure: the starting snapshot is untouched.
+      expect(JSON.stringify(c.snapshot)).toBe(before);
+    });
+  }
 });
