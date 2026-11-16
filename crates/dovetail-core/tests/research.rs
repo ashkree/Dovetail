@@ -289,6 +289,19 @@ fn replay_round(name: &str, paths: &Paths, repo: &Path) -> PathBuf {
     assert_eq!(listing.findings[0].path, finding);
     assert_eq!(listing.findings[0].sources.len(), 2);
     assert_eq!(listing.sources.len(), 2);
+    // ADR 0025: filing the finding put one finding card in its effort's incoming strip.
+    app.wait_for("the finding card", |s| !s.cards.is_empty());
+    assert_eq!(app.snap.cards.len(), 1, "{:?}", app.snap.cards);
+    let card = &app.snap.cards[0];
+    assert_eq!(card.kind, dovetail_api::CardKind::Finding);
+    assert_eq!(card.canvas, None);
+    assert_eq!(card.effort, dovetail_api::UNSORTED_EFFORT);
+    assert!(!card.missing && !card.title.is_empty(), "{card:?}");
+    assert_eq!(
+        card.reference.as_ref().map(|r| (r.kind, r.id.as_str())),
+        Some((dovetail_api::RefKind::Finding, "1"))
+    );
+    assert_eq!(card.text, "");
     let dir = summary.dir.clone();
     app.quit();
     dir

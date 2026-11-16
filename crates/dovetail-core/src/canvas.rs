@@ -41,7 +41,10 @@ impl Core {
         link_from: Option<CardId>,
         added_by: &str,
     ) -> Result<Card, DbError> {
-        let (card, link) = self.db.add_card(card, link_from, added_by.to_owned()).await?;
+        let (card, link) = self
+            .db
+            .add_card(card, link_from, added_by.to_owned())
+            .await?;
         self.emit(Event::CardUpserted(card.clone()));
         if let Some(link) = link {
             self.emit(Event::CardLinked(link));
@@ -99,7 +102,12 @@ impl Core {
 
     /// A chat reply becomes an idea card in the effort's incoming strip, by copying its text
     /// (ADR 0025, point 6): the card keeps the words whatever happens to the conversation.
-    pub(crate) async fn card_from_reply(&mut self, agent: AgentId, entry: EntryId, effort: EffortId) {
+    pub(crate) async fn card_from_reply(
+        &mut self,
+        agent: AgentId,
+        entry: EntryId,
+        effort: EffortId,
+    ) {
         let text = self
             .tails
             .get(&agent)
@@ -129,7 +137,11 @@ impl Core {
         task: TaskId,
         agent: &AgentId,
     ) {
-        match self.db.add_finding_card(finding, task, agent.0.clone()).await {
+        match self
+            .db
+            .add_finding_card(finding, task, agent.0.clone())
+            .await
+        {
             Ok(card) => self.emit(Event::CardUpserted(card)),
             Err(e) => tracing::warn!("making a card for finding {}: {e}", finding.0),
         }
@@ -172,7 +184,10 @@ impl Core {
                 self.activity(
                     ActivityKind::Task,
                     Some(agent),
-                    format!("canvas: added card {} \"{}\" to incoming", card.id.0, card.title),
+                    format!(
+                        "canvas: added card {} \"{}\" to incoming",
+                        card.id.0, card.title
+                    ),
                 );
                 ok(format!(
                     "Added card {} to the incoming strip of effort {}; the user decides whether it goes on the canvas.",
@@ -184,7 +199,10 @@ impl Core {
     }
 
     /// `canvas_link_cards`.
-    pub(crate) async fn canvas_link_cards_tool(&mut self, call: CanvasLinkCards) -> SocketResponseBody {
+    pub(crate) async fn canvas_link_cards_tool(
+        &mut self,
+        call: CanvasLinkCards,
+    ) -> SocketResponseBody {
         match self.db.link_cards(call.from, call.to, call.label).await {
             Ok(link) => {
                 let text = format!("Linked card {} to card {}.", link.from.0, link.to.0);

@@ -5122,6 +5122,346 @@ fn an_agent_claims_a_criterion_and_only_the_user_approves_it() {
     h.quit();
 }
 
+// --- canvases and cards (ADR 0025) ---
+
+fn idea(effort: dovetail_api::EffortId, text: &str) -> dovetail_api::NewCard {
+    dovetail_api::NewCard {
+        effort,
+        canvas: None,
+        kind: dovetail_api::CardKind::Idea,
+        x: 0,
+        y: 0,
+        reference: None,
+        text: text.into(),
+    }
+}
+
+fn card_titled<'a>(s: &'a Snapshot, title: &str) -> Option<&'a dovetail_api::Card> {
+    s.cards.iter().find(|c| c.title == title)
+}
+
+/// A canvas, a card made incoming, placed, moved and linked, all still there after a restart;
+/// the commands that make no sense are refused and change nothing.
+#[test]
+fn canvases_cards_and_links_are_core_state_that_survives_a_restart() {
+    use dovetail_api::{CanvasId, Framework};
+
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let effort = create_effort(&mut h, "providers", "providers");
+    let other = create_effort(&mut h, "other", "other");
+    h.send(Command::CreateCanvas {
+        effort,
+        title: String::new(),
+        framework: Framework::QuestionTree,
+    });
+    h.send(Command::CreateCanvas {
+        effort: other,
+        title: "Elsewhere".into(),
+        framework: Framework::FreeBoard,
+    });
+    h.wait_for("two canvases", |s| s.canvases.len() == 2);
+    let canvas = h.snap.canvases[0].id;
+    let elsewhere = h.snap.canvases[1].id;
+    assert_eq!(
+        h.snap.canvases[0].title, "providers",
+        "an empty title is the effort's name"
+    );
+
+    h.send(Command::AddCard {
+        card: idea(effort, "Ask Mollie about EU-only pricing"),
+        link_from: None,
+    });
+    h.wait_for("the idea", |s| {
+        card_titled(s, "Ask Mollie about EU-only pricing").is_some()
+    });
+    let first = card_titled(&h.snap, "Ask Mollie about EU-only pricing")
+        .expect("card")
+        .clone();
+    assert_eq!((first.canvas, first.added_by.as_str()), (None, "user"));
+
+    // Refused: moving an incoming card, placing it on another effort's canvas, dropping a
+    // card that does not exist, a link to itself.
+    h.send(Command::MoveCard {
+        id: first.id,
+        x: 1,
+        y: 1,
+    });
+    h.send(Command::PlaceCard {
+        id: first.id,
+        canvas: elsewhere,
+        x: 1,
+        y: 1,
+    });
+    h.send(Command::DropIncoming {
+        id: dovetail_api::CardId(999),
+    });
+    h.send(Command::LinkCards {
+        from: first.id,
+        to: first.id,
+        label: String::new(),
+    });
+    h.send(Command::PlaceCard {
+        id: first.id,
+        canvas,
+        x: 40,
+        y: 60,
+    });
+    h.wait_for("placed", |s| {
+        s.cards.iter().any(|c| c.canvas == Some(canvas))
+    });
+    assert_eq!(h.failures.len(), 4, "{:?}", h.failures);
+    assert!(h.failures[0].contains("incoming"), "{:?}", h.failures);
+    assert!(h.failures[1].contains("another effort"), "{:?}", h.failures);
+    h.send(Command::PlaceCard {
+        id: first.id,
+        canvas,
+        x: 5,
+        y: 5,
+    });
+    h.send(Command::DropIncoming { id: first.id });
+    h.send(Command::MoveCard {
+        id: first.id,
+        x: 41,
+        y: 62,
+    });
+    h.wait_for("moved", |s| s.cards.iter().any(|c| (c.x, c.y) == (41, 62)));
+    assert_eq!(h.failures.len(), 6, "{:?}", h.failures);
+
+    // A second card linked from the first on creation; a card of another effort cannot be linked.
+    h.send(Command::AddCard {
+        card: idea(effort, "Compare Stripe and Adyen"),
+        link_from: Some(first.id),
+    });
+    h.send(Command::AddCard {
+        card: idea(other, "Unrelated"),
+        link_from: None,
+    });
+    h.wait_for("three cards", |s| s.cards.len() == 3);
+    let second = card_titled(&h.snap, "Compare Stripe and Adyen")
+        .expect("card")
+        .id;
+    let third = card_titled(&h.snap, "Unrelated").expect("card").id;
+    assert_eq!(h.snap.card_links.len(), 1);
+    h.send(Command::LinkCards {
+        from: first.id,
+        to: third,
+        label: String::new(),
+    });
+    h.send(Command::LinkCards {
+        from: first.id,
+        to: second,
+        label: "next".into(),
+    });
+    h.wait_for("relabelled", |s| {
+        s.card_links.first().is_some_and(|l| l.label == "next")
+    });
+    assert_eq!(h.snap.card_links.len(), 1, "linking again only relabels");
+    assert!(
+        h.failures
+            .last()
+            .expect("failure")
+            .contains("different efforts")
+    );
+
+    // Everything is the same after a restart, and the ids go on from where they were.
+    let before = (
+        h.snap.canvases.clone(),
+        h.snap.cards.clone(),
+        h.snap.card_links.clone(),
+    );
+    let paths = h.paths.clone();
+    let _state = h.quit();
+    let mut h = Harness::start_on(fixture("plain_turn"), paths);
+    h.wait_for("the first snapshot", |s| !s.efforts.is_empty());
+    assert_eq!(
+        (
+            h.snap.canvases.clone(),
+            h.snap.cards.clone(),
+            h.snap.card_links.clone()
+        ),
+        before
+    );
+    h.send(Command::DeleteCard { id: second });
+    h.wait_for("deleted", |s| s.cards.len() == 2);
+    assert!(h.snap.card_links.is_empty(), "a card's links go with it");
+    h.send(Command::RenameCanvas {
+        id: CanvasId(1),
+        title: "Providers".into(),
+    });
+    h.wait_for("renamed", |s| s.canvases[0].title == "Providers");
+    h.quit();
+}
+
+/// A chat reply copied into an idea card; a reference checked against its target; a card whose
+/// target is gone reads "missing" and does not stop the snapshot.
+#[test]
+fn a_reply_becomes_an_idea_and_a_reference_must_exist() {
+    use dovetail_api::{CardKind, CardRef, NewCard, RefKind};
+
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let effort = create_effort(&mut h, "providers", "providers");
+    h.send(Command::Prompt {
+        agent: AgentId(COORDINATOR.into()),
+        text: "hello".into(),
+        attachments: vec![],
+        effort: None,
+    });
+    h.wait_for("a reply", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| {
+                t.entries
+                    .iter()
+                    .any(|e| e.kind == EntryKind::Assistant && !e.text.is_empty())
+            })
+    });
+    let reply = h.snap.conversations[&AgentId(COORDINATOR.into())]
+        .entries
+        .iter()
+        .find(|e| e.kind == EntryKind::Assistant)
+        .cloned()
+        .expect("reply");
+    h.send(Command::CardFromReply {
+        agent: AgentId(COORDINATOR.into()),
+        entry: reply.id,
+        effort,
+    });
+    h.wait_for("the idea", |s| {
+        s.cards.iter().any(|c| c.kind == CardKind::Idea)
+    });
+    assert_eq!(h.snap.cards[0].text, reply.text, "the words are copied");
+    assert_eq!(h.snap.cards[0].canvas, None);
+
+    let reference = |kind: RefKind, id: &str| NewCard {
+        effort,
+        canvas: None,
+        kind: kind.card_kind(),
+        x: 0,
+        y: 0,
+        reference: Some(CardRef {
+            kind,
+            id: id.into(),
+        }),
+        text: String::new(),
+    };
+    // A target that does not exist is refused.
+    h.send(Command::AddCard {
+        card: reference(RefKind::Task, "77"),
+        link_from: None,
+    });
+    h.send(Command::AddCard {
+        card: reference(RefKind::Map, "no-such-map"),
+        link_from: None,
+    });
+    h.send(Command::CreateTask(NewTask {
+        title: "Pick a provider".into(),
+        p_level: None,
+        bucket: None,
+        notes: "Notes on the pick".into(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+        effort: Some(effort),
+        criterion: None,
+    }));
+    h.wait_for("the task", |s| !s.tasks.is_empty());
+    let id = h.snap.tasks[0].id;
+    h.send(Command::AddCard {
+        card: reference(RefKind::Task, &id.0.to_string()),
+        link_from: None,
+    });
+    h.wait_for("the task card", |s| {
+        card_titled(s, "Pick a provider").is_some()
+    });
+    let card = card_titled(&h.snap, "Pick a provider")
+        .expect("card")
+        .clone();
+    assert!(!card.missing && card.text.is_empty());
+    assert_eq!(h.failures.len(), 2, "{:?}", h.failures);
+    assert!(
+        h.failures[0].contains("there is no task 77"),
+        "{:?}",
+        h.failures
+    );
+    h.quit();
+}
+
+/// The coordinator's canvas tools add to incoming and link; no tool moves, places or deletes.
+#[test]
+fn the_canvas_tools_add_and_link_and_nothing_else() {
+    use dovetail_api::CardKind;
+    use dovetail_api::tools::{CanvasAddCard, CanvasLinkCards, Suite, TOOLS};
+
+    let canvas_tools: Vec<&str> = TOOLS
+        .iter()
+        .filter(|t| t.suite == Suite::Canvas)
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(canvas_tools, ["canvas_add_card", "canvas_link_cards"]);
+
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let effort = create_effort(&mut h, "providers", "providers");
+    let socket = h.socket();
+    let add = |kind: CardKind, text: &str, reference: Option<&str>| {
+        Tool::CanvasAddCard(CanvasAddCard {
+            effort: Some(effort),
+            kind,
+            text: text.into(),
+            reference: reference.map(Into::into),
+        })
+    };
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            COORDINATOR,
+            add(CardKind::Question, "Which provider?", None),
+        ),
+    ));
+    assert!(!is_error && text.contains("incoming"), "{text}");
+    let (_, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, add(CardKind::Idea, "Use Stripe", None)),
+    ));
+    assert!(!is_error);
+    h.wait_for("two cards", |s| s.cards.len() == 2);
+    assert!(
+        h.snap
+            .cards
+            .iter()
+            .all(|c| c.canvas.is_none() && c.added_by == COORDINATOR)
+    );
+    let (from, to) = (h.snap.cards[0].id, h.snap.cards[1].id);
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            COORDINATOR,
+            Tool::CanvasLinkCards(CanvasLinkCards {
+                from,
+                to,
+                label: "answers".into(),
+            }),
+        ),
+    ));
+    assert!(!is_error, "{text}");
+    h.wait_for("the link", |s| s.card_links.len() == 1);
+
+    // Refused: a reference that does not exist, text on a reference card, an idea without text.
+    for (call, wanted) in [
+        (
+            add(CardKind::Finding, "", Some("41")),
+            "there is no finding 41",
+        ),
+        (add(CardKind::Finding, "words", Some("41")), "no `text`"),
+        (add(CardKind::Idea, " ", None), "`text`"),
+    ] {
+        let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, call)));
+        assert!(is_error && text.contains(wanted), "{text}");
+    }
+    h.drain(Duration::from_millis(100));
+    assert_eq!(h.snap.cards.len(), 2);
+    h.quit();
+}
+
 #[test]
 fn a_task_is_created_in_unsorted_and_moved_to_an_effort_and_its_criterion() {
     use dovetail_api::{NewTask, UNSORTED_EFFORT};

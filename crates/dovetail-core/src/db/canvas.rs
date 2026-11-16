@@ -5,11 +5,11 @@
 //! checked to exist inside the same request that adds the card. A target that is gone anyway
 //! (a damaged database) makes the card read as "missing"; it never fails a load.
 
+use dovetail_api::research::FindingId;
 use dovetail_api::{
     Canvas, CanvasId, Card, CardId, CardKind, CardLink, CardRef, EffortId, Framework, NewCard,
     RefKind, TaskId, UNSORTED_EFFORT, card_title,
 };
-use dovetail_api::research::FindingId;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use super::sessions::{from_text, to_text};
@@ -215,9 +215,15 @@ fn no_canvas(id: CanvasId) -> DbError {
 
 fn load_state(conn: &Connection) -> Result<CanvasState, DbError> {
     let mut canvases = Vec::new();
-    let mut stmt = conn.prepare("SELECT id, effort_id, title, framework FROM canvases ORDER BY id")?;
+    let mut stmt =
+        conn.prepare("SELECT id, effort_id, title, framework FROM canvases ORDER BY id")?;
     let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+        ))
     })?;
     for row in rows {
         let (id, effort, title, framework) = row?;
@@ -235,8 +241,8 @@ fn load_state(conn: &Connection) -> Result<CanvasState, DbError> {
         cards.push(make_card(conn, row?)?);
     }
     let mut links = Vec::new();
-    let mut stmt =
-        conn.prepare("SELECT from_card, to_card, label FROM card_links ORDER BY from_card, to_card")?;
+    let mut stmt = conn
+        .prepare("SELECT from_card, to_card, label FROM card_links ORDER BY from_card, to_card")?;
     let rows = stmt.query_map([], |r| {
         Ok(CardLink {
             from: CardId(r.get(0)?),
@@ -272,9 +278,11 @@ fn load_canvas(conn: &Connection, id: CanvasId) -> Result<Canvas, DbError> {
 }
 
 fn effort_name(conn: &Connection, id: EffortId) -> Result<String, DbError> {
-    conn.query_row("SELECT name FROM efforts WHERE id = ?1", [id.0], |r| r.get(0))
-        .optional()?
-        .ok_or_else(|| DbError::NotFound(format!("no effort {}", id.0)))
+    conn.query_row("SELECT name FROM efforts WHERE id = ?1", [id.0], |r| {
+        r.get(0)
+    })
+    .optional()?
+    .ok_or_else(|| DbError::NotFound(format!("no effort {}", id.0)))
 }
 
 fn create_canvas(
@@ -354,7 +362,9 @@ fn insert_card(
         }
         let text = new.text.trim();
         if text.is_empty() {
-            return Err(DbError::Refused("an idea or question card needs text".into()));
+            return Err(DbError::Refused(
+                "an idea or question card needs text".into(),
+            ));
         }
         (None, None, text.to_owned())
     } else {
@@ -461,7 +471,12 @@ fn delete_card(conn: &mut Connection, id: CardId, incoming_only: bool) -> Result
     Ok(())
 }
 
-fn link_cards(conn: &Connection, from: CardId, to: CardId, label: &str) -> Result<CardLink, DbError> {
+fn link_cards(
+    conn: &Connection,
+    from: CardId,
+    to: CardId,
+    label: &str,
+) -> Result<CardLink, DbError> {
     if from == to {
         return Err(DbError::Refused("a card cannot link to itself".into()));
     }
@@ -537,7 +552,10 @@ fn card_body(conn: &Connection, id: CardId) -> Result<String, DbError> {
         return Ok(card.text);
     };
     if card.missing {
-        return Ok(format!("*The {} this card pointed at is missing.*", to_text(&r.kind)?));
+        return Ok(format!(
+            "*The {} this card pointed at is missing.*",
+            to_text(&r.kind)?
+        ));
     }
     let body: Option<String> = match r.kind {
         RefKind::Finding => one(conn, "SELECT body FROM findings WHERE id = ?1", &r.id)?,
@@ -560,7 +578,11 @@ fn card_body(conn: &Connection, id: CardId) -> Result<String, DbError> {
                 |row| row.get(0),
             )
             .optional()?,
-        RefKind::Task => one(conn, "SELECT title || char(10) || char(10) || notes FROM tasks WHERE id = ?1", &r.id)?,
+        RefKind::Task => one(
+            conn,
+            "SELECT title || char(10) || char(10) || notes FROM tasks WHERE id = ?1",
+            &r.id,
+        )?,
     };
     let mut body = body.unwrap_or_default();
     if body.chars().count() > BODY_MAX {
@@ -575,5 +597,206 @@ fn one(conn: &Connection, sql: &str, id: &str) -> Result<Option<String>, DbError
     match id.parse::<i64>() {
         Ok(n) => Ok(conn.query_row(sql, [n], |r| r.get(0)).optional()?),
         Err(_) => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{Db, STATE_MIGRATIONS, migrate};
+    use crate::paths::Paths;
+    use dovetail_api::{NewDecision, NewTask};
+
+    fn db() -> (tempfile::TempDir, Db) {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            data: dir.path().join("data"),
+            config: dir.path().join("config"),
+            state: dir.path().join("state"),
+            runtime: dir.path().join("run"),
+        };
+        let db = Db::open(&paths, Some("p")).unwrap();
+        (dir, db)
+    }
+
+    fn reference(kind: RefKind, id: &str) -> NewCard {
+        NewCard {
+            effort: UNSORTED_EFFORT,
+            canvas: None,
+            kind: kind.card_kind(),
+            x: 0,
+            y: 0,
+            reference: Some(CardRef {
+                kind,
+                id: id.into(),
+            }),
+            text: String::new(),
+        }
+    }
+
+    #[test]
+    fn the_tables_come_from_a_migration_over_version_17_and_from_empty() {
+        let canvas_steps = STATE_MIGRATIONS
+            .iter()
+            .position(|(name, _)| name.ends_with("0018_canvases.sql"))
+            .expect("the canvases migration is listed");
+        assert_eq!(canvas_steps, 17, "it follows 0017_efforts");
+        let tables = |conn: &Connection| -> Vec<String> {
+            conn.prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        // Version 17: a project with an effort and a task, as released before canvases.
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrate(
+            &mut conn,
+            std::path::Path::new(":memory:"),
+            &STATE_MIGRATIONS[..17],
+        )
+        .unwrap();
+        assert!(!tables(&conn).iter().any(|t| t == "cards"));
+        let before: i64 = conn
+            .query_row("SELECT count(*) FROM efforts", [], |r| r.get(0))
+            .unwrap();
+        migrate(
+            &mut conn,
+            std::path::Path::new(":memory:"),
+            STATE_MIGRATIONS,
+        )
+        .unwrap();
+        for t in ["canvases", "cards", "card_links"] {
+            assert!(tables(&conn).iter().any(|x| x == t), "{t}");
+        }
+        let after: i64 = conn
+            .query_row("SELECT count(*) FROM efforts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(before, after, "existing rows are untouched");
+        assert_eq!(load_state(&conn).unwrap(), CanvasState::default());
+        // From empty.
+        let mut empty = Connection::open_in_memory().unwrap();
+        migrate(
+            &mut empty,
+            std::path::Path::new(":memory:"),
+            STATE_MIGRATIONS,
+        )
+        .unwrap();
+        assert!(tables(&empty).iter().any(|t| t == "card_links"));
+    }
+
+    #[test]
+    fn a_reference_is_checked_titled_and_read_on_request_and_a_missing_target_does_not_stop_a_load()
+    {
+        let (_dir, db) = db();
+        let tasks = db
+            .create_task(
+                NewTask {
+                    title: "Pick a provider".into(),
+                    p_level: None,
+                    bucket: None,
+                    notes: "Compare fees".into(),
+                    follow_up_of: None,
+                    pr: None,
+                    related: vec![],
+                    effort: Default::default(),
+                    criterion: None,
+                },
+                false,
+            )
+            .wait()
+            .unwrap();
+        let task = tasks[0].id;
+        let decision = db
+            .log_decision(
+                NewDecision {
+                    task,
+                    text: "Use Stripe".into(),
+                    why: Some("cheapest".into()),
+                    alternatives: vec![],
+                    supersedes: None,
+                },
+                dovetail_api::DecisionAuthor::User,
+            )
+            .wait()
+            .unwrap();
+        let (card, _) = db
+            .add_card(
+                reference(RefKind::Task, &task.0.to_string()),
+                None,
+                "user".into(),
+            )
+            .wait()
+            .unwrap();
+        assert_eq!(
+            (card.title.as_str(), card.missing, card.text.as_str()),
+            ("Pick a provider", false, "")
+        );
+        let (dcard, _) = db
+            .add_card(
+                reference(RefKind::Decision, &decision.id.0.to_string()),
+                None,
+                "a".into(),
+            )
+            .wait()
+            .unwrap();
+        assert_eq!(dcard.title, "Use Stripe");
+        let body = db.load_card_body(dcard.id).wait().unwrap();
+        assert!(
+            body.contains("Use Stripe") && body.contains("Why: cheapest"),
+            "{body}"
+        );
+        let body = db.load_card_body(card.id).wait().unwrap();
+        assert!(body.contains("Compare fees"), "{body}");
+
+        // The target must exist when the card is made, and the kinds must agree.
+        let err = db
+            .add_card(reference(RefKind::Finding, "5"), None, "a".into())
+            .wait()
+            .unwrap_err();
+        assert!(err.to_string().contains("there is no finding 5"), "{err}");
+        let err = db
+            .add_card(reference(RefKind::Map, "nope"), None, "a".into())
+            .wait()
+            .unwrap_err();
+        assert!(err.to_string().contains("no map nope"), "{err}");
+        let mut wrong = reference(RefKind::Task, "1");
+        wrong.kind = CardKind::Finding;
+        assert!(db.add_card(wrong, None, "a".into()).wait().is_err());
+        assert_eq!(db.load_canvas_state().wait().unwrap().cards.len(), 2);
+
+        // A damaged database: the target row is gone. The card reads "missing" and loads.
+        db.run(move |c, _| {
+            c.state()?.execute("PRAGMA foreign_keys = OFF", [])?;
+            c.state()?.execute(
+                "DELETE FROM decisions WHERE id = ?1",
+                [decision.id.0 as i64],
+            )?;
+            Ok(())
+        })
+        .wait()
+        .unwrap();
+        let state = db.load_canvas_state().wait().unwrap();
+        let missing = state.cards.iter().find(|c| c.id == dcard.id).unwrap();
+        assert!(missing.missing);
+        assert_eq!(missing.title, MISSING_TITLE);
+        assert!(
+            db.load_card_body(dcard.id)
+                .wait()
+                .unwrap()
+                .contains("missing")
+        );
+    }
+
+    #[test]
+    fn a_finding_card_for_an_unknown_task_is_refused() {
+        let (_dir, db) = db();
+        let err = db
+            .add_finding_card(FindingId(1), TaskId(9), "slice-a".into())
+            .wait()
+            .unwrap_err();
+        assert!(err.to_string().contains("no task"), "{err}");
     }
 }

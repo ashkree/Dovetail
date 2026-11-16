@@ -56,9 +56,9 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
                 None => state.card_links.push(link),
             }
         }
-        Event::CardUnlinked { from, to } => state
-            .card_links
-            .retain(|l| !(l.from == from && l.to == to)),
+        Event::CardUnlinked { from, to } => {
+            state.card_links.retain(|l| !(l.from == from && l.to == to))
+        }
         Event::AgentUpserted(agent) => upsert(&mut state.agents, agent, |a| a.id.clone()),
         Event::AgentRemoved(id) => {
             state.agents.retain(|a| a.id != id);
