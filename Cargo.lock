@@ -987,6 +987,7 @@ dependencies = [
 name = "dovetail-gui"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "dovetail-api",
  "dovetail-core",
  "dovetail-driver",
