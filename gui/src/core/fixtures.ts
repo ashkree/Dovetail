@@ -3,8 +3,7 @@
 //
 // It is written in the view's terms (model.ts), as the screens show it, and turned into the
 // core's terms at the bottom: a core Snapshot (generated types) for what dovetail-api serves,
-// and the pending state for what it does not serve yet (canvas, cards, variants, reports,
-// Home's extra columns).
+// and the pending state for what it does not serve yet (canvas, cards, variants, reports).
 
 import type * as W from './generated';
 import type {
@@ -14,12 +13,14 @@ import type {
 import { emptyPending, type Pending } from './pending';
 import { COORDINATOR, UNSORTED_EFFORT, emptyCoreSnapshot } from './wire';
 
-export const PROJECTS: ProjectSummary[] = [
-  { id: 'shop', name: 'Shop', repos: ['shop-api', 'shop-web'], account: 'work', efforts: 5, running: 5, needs_you: 4, opened: 'today 09:12', note: 'Payments, login fix, dark mode' },
-  { id: 'dovetail', name: 'Dovetail', repos: ['dovetail'], account: 'personal', efforts: 3, running: 2, needs_you: 1, opened: 'yesterday', note: 'GUI rework' },
-  { id: 'garden', name: 'Garden planner', repos: ['garden-app', 'garden-data'], account: 'personal', efforts: 2, running: 0, needs_you: 0, opened: '12 Nov', note: 'Planting calendar' },
-  { id: 'thesis', name: 'Thesis notes', repos: [], account: 'personal', efforts: 4, running: 1, needs_you: 0, opened: '9 Nov', note: 'Research only, no repo' },
-  { id: 'homelab', name: 'Home lab', repos: ['infra', 'dotfiles', 'backups'], account: 'personal', efforts: 1, running: 0, needs_you: 0, opened: '28 Oct', note: 'Backups to the NAS' },
+/** Home's projects; `days` ago it was last opened. */
+interface FixtureProject extends Omit<ProjectSummary, 'opened'> { days: number }
+export const PROJECTS: FixtureProject[] = [
+  { id: 'shop', name: 'Shop', repos: ['shop-api', 'shop-web'], account: 'work', efforts: 5, running: 5, needs_you: 4, days: 0 },
+  { id: 'dovetail', name: 'Dovetail', repos: ['dovetail'], account: 'personal', efforts: 3, running: 2, needs_you: 1, days: 1 },
+  { id: 'garden', name: 'Garden planner', repos: ['garden-app', 'garden-data'], account: 'personal', efforts: 2, running: 0, needs_you: 0, days: 4 },
+  { id: 'thesis', name: 'Thesis notes', repos: [], account: 'personal', efforts: 4, running: 1, needs_you: 0, days: 7 },
+  { id: 'homelab', name: 'Home lab', repos: ['infra', 'dotfiles', 'backups'], account: 'personal', efforts: 1, running: 0, needs_you: 0, days: 19 },
 ];
 
 const EFFORTS: Effort[] = [
@@ -228,10 +229,14 @@ const num = (map: Map<string, number>, id: string): number => {
   return n;
 };
 
-const coreProject = (p: ProjectSummary): W.ProjectSummary => ({
+const coreProject = (p: FixtureProject, i: number): W.ProjectSummary => ({
   id: p.id, name: p.name,
   repo_path: p.repos.length ? `/home/you/code/${p.repos[0]}` : `/home/you/.local/share/dovetail/projects/${p.id}`,
   kind: p.repos.length ? 'code' : 'research',
+  repos: p.repos.map((name, j) => ({ id: (i + 1) * 10 + j, name, path: `/home/you/code/${name}` })),
+  account: p.account || null,
+  last_opened_ms: NOW - p.days * 86_400_000 - 60_000,
+  counts: { efforts: p.efforts, running: p.running, needs_you: p.needs_you },
 });
 
 function coreAgent(id: string, name: string, kind: W.AgentKind, task: number | null, status: W.AgentStatus): W.Agent {
@@ -246,7 +251,7 @@ const CORE_STATUS: Record<Agent['state'], W.AgentStatus> = {
   working: 'working', needs_you: 'needs_you', done: 'done', idle: 'idle',
 };
 
-function coordinator(project: ProjectSummary, busy: boolean): W.Agent {
+function coordinator(project: FixtureProject, busy: boolean): W.Agent {
   return {
     ...coreAgent(COORDINATOR, 'coordinator', 'coordinator', null, busy ? 'working' : 'idle'),
     context_pct: 62, model: 'claude-opus-5-5', effort: 'medium',
@@ -283,7 +288,7 @@ function coreTasks(): W.Task[] {
   }));
 }
 
-function coreAgents(project: ProjectSummary): W.Agent[] {
+function coreAgents(project: FixtureProject): W.Agent[] {
   return [coordinator(project, true), ...AGENTS.map(a => ({
     ...coreAgent(a.id, a.name, a.kind === 'slice' ? 'slice' : { subagent: { background: false } },
       a.parent_id ? null : num(TASK_ID, a.task_id), CORE_STATUS[a.state]),
@@ -329,10 +334,11 @@ function coreChat(): W.ConversationEntry[] {
 /** The core's Snapshot: Home (no project) or one project. Only Shop has data. */
 export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot {
   const base: W.Snapshot = { ...emptyCoreSnapshot(), seq, now_ms: NOW, projects: PROJECTS.map(coreProject) };
-  const project = PROJECTS.find(p => p.id === projectId);
+  const index = PROJECTS.findIndex(p => p.id === projectId);
+  const project = PROJECTS[index];
   if (!project) return base;
   const opened: W.Snapshot = {
-    ...base, project: coreProject(project), profile: project.account,
+    ...base, project: coreProject(project, index), profile: project.account,
     usage: {
       five_hour: { utilization: 0.34, resets_at_ms: null, status: 'allowed' },
       seven_day: { utilization: 0.18, resets_at_ms: null, status: 'allowed' },
@@ -350,10 +356,8 @@ export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot 
  * columns. Effort ids are the core's, as text. */
 export function pendingFor(projectId: string | null): Pending {
   const effort = (id: string) => String(num(EFFORT_ID, id));
-  const projects = Object.fromEntries(PROJECTS.map(({ id, name: _name, ...extra }) => [id, extra]));
   const base: Pending = {
     ...emptyPending(),
-    projects,
     status: { effort_limit: MACHINE_LIMIT, machine_running: PROJECTS.reduce((n, p) => n + p.running, 0) },
   };
   if (projectId !== 'shop') return base;

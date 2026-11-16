@@ -148,6 +148,11 @@ function fold(s: W.Snapshot, event: W.Event): W.Snapshot {
       return { ...s, journal: e as W.JournalState };
     case 'upgrade_building':
       return { ...s, upgrade_building: e as boolean };
+    case 'project_upserted': {
+      const project = e as W.ProjectSummary;
+      const open = s.project?.id === project.id ? { project } : {};
+      return { ...s, ...open, projects: upsert(s.projects, project, p => p.id) };
+    }
     // Nothing to store: the UI acts on these as they pass through (PASSED_THROUGH in
     // crates/dovetail-api/tests/apply_cases.rs).
     case 'browsed_loaded':

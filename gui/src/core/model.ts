@@ -15,8 +15,9 @@ export type TagColour = 'blue' | 'coral' | 'lilac' | 'mint' | 'gold';
 export interface ProjectSummary {
   id: Id;
   name: string;
+  /** Repo names, in the order they were added (ADR 0021). None: a research-only project. */
   repos: string[];
-  /** The Claude account its sessions run under. */
+  /** The Claude account its sessions run under; empty for the default. */
   account: string;
   efforts: number;
   /** Efforts running in it now (counts against the machine's soft limit). */
@@ -25,7 +26,6 @@ export interface ProjectSummary {
   needs_you: number;
   /** When it was last opened, as shown. */
   opened: string;
-  note: string;
 }
 
 /** `open`: nobody claims it; `claimed`: an agent says it is met and waits for review; `met`: the user approved. */

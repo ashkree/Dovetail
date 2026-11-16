@@ -42,7 +42,21 @@ function modalKey(e: KeyboardEvent, m: Modal): void {
   const t = tokenOf(e, true);
   if (!t) return;
   if (MODAL_KEYS.close.includes(t)) { e.preventDefault(); setUi({ modal: null }); return; }
-  if (m.type === 'form') { e.preventDefault(); return; }
+  if (m.type === 'form') {
+    const next = MODAL_KEYS.nextField.includes(t) || MODAL_KEYS.down.includes(t);
+    const prev = MODAL_KEYS.prevField.includes(t) || MODAL_KEYS.up.includes(t);
+    if (next || prev) {
+      e.preventDefault();
+      setUi({ modal: { ...m, sel: Math.max(0, Math.min(m.fields.length - 1, m.sel + (next ? 1 : -1))) } });
+    } else if (MODAL_KEYS.accept.includes(t)) {
+      e.preventDefault();
+      // The first field is required; the rest may stay empty.
+      if (!m.fields[0]?.value.trim()) { setUi({ modal: { ...m, sel: 0 } }); return; }
+      setUi({ modal: null });
+      m.onDone(m.fields.map(f => f.value));
+    }
+    return;
+  }
   if (m.type === 'picker') {
     const rows = pickerRows(m);
     if (MODAL_KEYS.down.includes(t) || MODAL_KEYS.up.includes(t)) {

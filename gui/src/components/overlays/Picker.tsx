@@ -1,5 +1,5 @@
 // The one modal: the picker (Space Space and the switchers), prompts, the `:` command line and
-// the new-project sketch. Keys are handled by useKeys; this draws it and takes the mouse.
+// forms (new project, add repo, new slice). Keys are handled by useKeys; this draws it and takes the mouse.
 
 import { useEffect, useRef } from 'react';
 import { useSnapshot } from '../../state/store';
@@ -10,14 +10,26 @@ import { EffortTag } from '../chat/EffortTag';
 export function Picker() {
   const { modal } = useUi();
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { input.current?.focus(); }, [modal?.type, modal && 'title' in modal ? modal.title : '']);
+  const sel = modal?.type === 'form' ? modal.sel : 0;
+  useEffect(() => { input.current?.focus(); }, [modal?.type, modal && 'title' in modal ? modal.title : '', sel]);
   if (!modal) return null;
   if (modal.type === 'form') {
+    const set = (i: number, value: string) =>
+      setUi({ modal: { ...modal, fields: modal.fields.map((f, j) => (j === i ? { ...f, value } : f)) } });
     return (
       <div className="modal">
         <div className="ttl form">{modal.title}</div>
-        {modal.fields.map(([k, v]) => <div key={k} className="row field"><div className="dim" style={{ fontSize: '.85em' }}>{k}</div><div>{v}</div></div>)}
-        <div className="row field dim" style={{ padding: '12px 16px' }}>A form in the real app; <kbd>Esc</kbd> closes this sketch.</div>
+        {modal.fields.map((f, i) => (
+          <div key={f.label} className={`row field ${i === modal.sel ? 'sel' : ''}`}>
+            <div className="dim" style={{ fontSize: '.85em' }}>{f.label}</div>
+            <input ref={i === modal.sel ? input : undefined} value={f.value} placeholder={f.hint}
+              onFocus={() => i !== modal.sel && setUi({ modal: { ...modal, sel: i } })}
+              onChange={e => set(i, e.target.value)} />
+          </div>
+        ))}
+        <div className="row field dim" style={{ padding: '12px 16px' }}>
+          <kbd>Tab</kbd> next field · <kbd>Enter</kbd> create · <kbd>Esc</kbd> cancel
+        </div>
       </div>
     );
   }

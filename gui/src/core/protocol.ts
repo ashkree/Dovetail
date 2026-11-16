@@ -16,6 +16,12 @@ export type UiCommand =
   | { type: 'add_task'; effort_id: Id; title: string }
   | { type: 'rename_effort'; effort_id: Id; name: string }
   | { type: 'new_effort'; name: string; kind: EffortKind; question_or_goal: string }
+  /** ADR 0021: a name, an optional account and an optional first repo (a path inside it). */
+  | { type: 'create_project'; name: string; account?: string; repo_path?: string }
+  /** A repo by a path inside it; `name` defaults to its folder's. */
+  | { type: 'add_repo'; project_id: Id; path: string; name?: string }
+  /** A slice in `repo` (by name; may be left out when the project has one). */
+  | { type: 'new_slice'; name: string; brief: string; task_id?: Id; repo?: string }
   /** Ask for a fresh snapshot (after a gap). */
   | { type: 'resync' }
   | PendingAction;

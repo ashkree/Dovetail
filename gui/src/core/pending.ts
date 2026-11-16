@@ -1,11 +1,10 @@
 // What the GUI shows that the core does not serve yet: canvases and cards (ADR 0025), the
-// viewer's variants (design v2 §7), reports in the reading view, and Home's per-project
-// details (ADR 0021). It is held in the frontend and changed by the frontend's own reducer below.
+// viewer's variants (design v2 §7) and reports in the reading view. It is held in the frontend and changed by the frontend's own reducer below.
 // With the real core it starts empty for every project; MockCore seeds it with the fake data.
 // Each part moves into the core's Snapshot when the core grows it, and leaves this file.
 
 import type {
-  Card, CardKind, CardLink, Canvas, Id, IncomingCard, ProjectSummary, Report, Status, TagColour, VariantSet,
+  Card, CardKind, CardLink, Canvas, Id, IncomingCard, Report, Status, TagColour, VariantSet,
 } from './model';
 
 export interface Pending {
@@ -15,8 +14,6 @@ export interface Pending {
   incoming: IncomingCard[];
   variants: VariantSet[];
   reports: Report[];
-  /** Home's columns the core's ProjectSummary lacks (repos, account, counts), by project id. */
-  projects: Record<Id, Partial<Omit<ProjectSummary, 'id' | 'name'>>>;
   /** The bottom bar's machine-wide effort count and limit (design v2 open point 9). */
   status: Pick<Status, 'effort_limit' | 'machine_running'>;
   /** Tag colours, by effort id; an effort not listed gets one from its id. */
@@ -25,7 +22,7 @@ export interface Pending {
 
 export function emptyPending(): Pending {
   return {
-    canvases: [], cards: [], card_links: [], incoming: [], variants: [], reports: [], projects: {},
+    canvases: [], cards: [], card_links: [], incoming: [], variants: [], reports: [],
     status: { effort_limit: 0, machine_running: 0 }, colours: {},
   };
 }

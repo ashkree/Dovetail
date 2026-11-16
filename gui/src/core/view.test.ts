@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { coreSnapshot, pendingFor } from './fixtures';
 import { emptyPending } from './pending';
-import { modelName, toView } from './view';
+import { modelName, openedText, toView } from './view';
 
 describe('toView', () => {
   const view = toView(coreSnapshot(0, 'shop'), pendingFor('shop'));
@@ -46,11 +46,23 @@ describe('toView', () => {
     expect(view.status.usage).toEqual({ five_hour: 0.34, week: 0.18 });
   });
 
-  it('gives Home what the core knows when nothing else is known', () => {
+  it("gives Home each project's repos, account and counts from the core", () => {
     const home = toView(coreSnapshot(0, null), emptyPending());
     expect(home.open_project).toBeNull();
     expect(home.projects.find(p => p.id === 'thesis')?.repos).toEqual([]);
-    expect(home.projects.find(p => p.id === 'shop')?.repos).toEqual(['shop-api']);
+    expect(home.projects.find(p => p.id === 'shop')).toMatchObject({
+      repos: ['shop-api', 'shop-web'], account: 'work', efforts: 5, running: 5, needs_you: 4,
+    });
+    expect(home.projects.find(p => p.id === 'shop')?.opened).toMatch(/^today \d\d:\d\d$/);
+    expect(home.projects.find(p => p.id === 'dovetail')?.opened).toBe('yesterday');
+  });
+
+  it('says when a project was last opened', () => {
+    const now = new Date(2026, 10, 16, 15, 0).getTime();
+    expect(openedText(new Date(2026, 10, 16, 9, 5).getTime(), now)).toBe('today 09:05');
+    expect(openedText(new Date(2026, 10, 15, 23, 0).getTime(), now)).toBe('yesterday');
+    expect(openedText(new Date(2026, 10, 2, 8, 0).getTime(), now)).toBe('2 Nov');
+    expect(openedText(null, now)).toBe('');
   });
 
   it('names models as people say them', () => {

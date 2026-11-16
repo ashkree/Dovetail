@@ -32,9 +32,9 @@ export function Home() {
           {s.projects.map((p, i) => (
             <tr key={p.id} ref={homeSel === i ? sel : undefined} className={homeSel === i ? 'sel' : ''}
               onClick={e => e.detail >= 2 ? dispatch('openProject', i) : dispatch('selectHome', i)}>
-              <td><span className="pname">{p.name}</span><div className="dim" style={{ fontSize: '.88em' }}>{p.note}</div></td>
+              <td><span className="pname">{p.name}</span></td>
               <td>{p.repos.length ? p.repos.map(r => <span key={r} className="chip repo" style={{ marginRight: 4 }}>{r}</span>) : <span className="dim">no repo · research</span>}</td>
-              <td>{p.account}</td>
+              <td>{p.account || <span className="dim">default</span>}</td>
               <td>{p.running} running / {p.efforts}</td>
               <td>{p.needs_you ? <span className="badge-n">{p.needs_you} ⚠</span> : <span className="dim">—</span>}</td>
               <td className="dim">{p.opened}</td>

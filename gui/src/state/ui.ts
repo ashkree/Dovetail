@@ -31,7 +31,15 @@ export type Modal =
   | { type: 'picker'; title: string; items: PickItem[]; sel: number; q: string }
   | { type: 'prompt'; title: string; value: string; onDone: (value: string) => void }
   | { type: 'command'; value: string }
-  | { type: 'form'; title: string; fields: [label: string, value: string][] };
+  | { type: 'form'; title: string; fields: FormField[]; sel: number; onDone: (values: string[]) => void };
+
+/** One field of a form modal. The first field must be filled for the form to be sent. */
+export interface FormField {
+  label: string;
+  value: string;
+  /** Dim text in the empty field. */
+  hint?: string;
+}
 
 export interface Overlay { scope: string; layer: OverlayLayer; leader: string[] }
 
