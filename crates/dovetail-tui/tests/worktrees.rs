@@ -201,6 +201,7 @@ fn x_on_a_clean_pushed_worktree_removes_it_at_once() {
     let (mut core, mut app) = view();
     // A new slice: clean, and nothing to push.
     core.handle(Command::NewSlice {
+        repo: None,
         task: None,
         name: "fresh".into(),
         brief: "try it".into(),

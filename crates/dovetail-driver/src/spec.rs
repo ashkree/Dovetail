@@ -125,6 +125,9 @@ pub struct SessionSpec {
     pub allowed_tools: Vec<String>,
     /// `--worktree <name>` (slice sessions; the WorktreeCreate hook creates it).
     pub worktree: Option<String>,
+    /// One `--add-dir <path>` each: folders the session may read and edit besides its cwd (the
+    /// coordinator's repos, ADR 0021).
+    pub add_dirs: Vec<PathBuf>,
     /// Pass `--replay-user-messages` (default on).
     pub replay_user_messages: bool,
     /// Extra environment variables (`CLAUDE_CODE_ENABLE_TODO_TOOLS`, `CLAUDE_CODE_TASK_LIST_ID`, ...).
@@ -158,6 +161,7 @@ impl SessionSpec {
             append_system_prompt_file: None,
             allowed_tools: Vec::new(),
             worktree: None,
+            add_dirs: Vec::new(),
             replay_user_messages: true,
             env: Vec::new(),
             extra_args: Vec::new(),
@@ -235,6 +239,10 @@ impl SessionSpec {
                 a.push(flag.into());
                 a.push(v);
             }
+        }
+        for dir in &self.add_dirs {
+            a.push("--add-dir".into());
+            a.push(lossy(dir));
         }
         if !self.allowed_tools.is_empty() {
             a.push("--allowedTools".into());

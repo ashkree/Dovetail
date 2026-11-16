@@ -18,6 +18,7 @@ import type { NewTask } from "./NewTask";
 import type { PermissionAnswer } from "./PermissionAnswer";
 import type { ProjectId } from "./ProjectId";
 import type { ReasoningEffort } from "./ReasoningEffort";
+import type { RepoId } from "./RepoId";
 import type { ResearchKind } from "./ResearchKind";
 import type { ResearchWhat } from "./ResearchWhat";
 import type { TaskChange } from "./TaskChange";
@@ -125,7 +126,11 @@ name: string,
 /**
  * First prompt.
  */
-brief: string, } } | { "close_slice": { 
+brief: string, 
+/**
+ * The repo it works in, by name (ADR 0021). May be left out when the project has one.
+ */
+repo: string | null, } } | { "close_slice": { 
 /**
  * The slice or side chat.
  */
@@ -381,7 +386,55 @@ id: ProjectId, } } | { "new_research_project": {
 /**
  * Display name; the id is its slug.
  */
-name: string, } } | { "register_project": { 
+name: string, } } | { "create_project": { 
+/**
+ * Display name; the id is its slug, numbered when taken.
+ */
+name: string, 
+/**
+ * A profile name from `config.toml`; `None` for the default Claude home.
+ */
+account: string | null, 
+/**
+ * A folder inside a git repo, added as its first repo.
+ */
+repo: string | null, } } | { "rename_project": { 
+/**
+ * The project.
+ */
+id: ProjectId, 
+/**
+ * The new display name.
+ */
+name: string, } } | { "set_project_account": { 
+/**
+ * The project.
+ */
+id: ProjectId, 
+/**
+ * A profile name from `config.toml`.
+ */
+account: string | null, } } | { "add_repo": { 
+/**
+ * The project.
+ */
+project: ProjectId, 
+/**
+ * A folder inside the repo.
+ */
+path: string, 
+/**
+ * What agents call it; `None` for the slug of the folder's name.
+ */
+name: string | null, } } | { "remove_repo": { 
+/**
+ * The project.
+ */
+project: ProjectId, 
+/**
+ * The repo.
+ */
+repo: RepoId, } } | { "register_project": { 
 /**
  * Path inside the repo.
  */

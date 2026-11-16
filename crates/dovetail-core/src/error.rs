@@ -87,6 +87,17 @@ pub enum SliceError {
          and subagents here; code work belongs in a code project"
     )]
     ResearchProject,
+    /// The project has several repos and the request named none (ADR 0021).
+    #[error("this project has several repos: name one with `repo` ({0})")]
+    RepoRequired(String),
+    /// No repo of the project has this name.
+    #[error("there is no repo `{name}` in this project; its repos are: {known}")]
+    UnknownRepo {
+        /// The name asked for.
+        name: String,
+        /// The project's repo names, comma-separated.
+        known: String,
+    },
     /// `project_archive_slice` named the coordinator.
     #[error("the coordinator cannot be archived")]
     ArchiveCoordinator,

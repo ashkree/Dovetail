@@ -138,6 +138,7 @@ impl Core {
             claude_home: parent_row.claude_home.clone(),
             takeover: None,
             model_choice: None,
+            repo: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
@@ -358,7 +359,9 @@ impl Core {
         }
         let paths = self.paths.clone();
         let key = self.project.key().to_owned();
-        let repo = self.project.folder(&self.paths);
+        let Some(repo) = self.repo_of(id).map(|r| r.path) else {
+            return;
+        };
         let inputs = self.inputs.clone();
         let agent = id.clone();
         tokio::task::spawn_blocking(move || {

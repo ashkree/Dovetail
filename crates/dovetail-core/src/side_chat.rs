@@ -34,10 +34,11 @@ impl Core {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
-        let cwd = self.project.folder(&self.paths);
+        let cwd = self.project.coordinator_folder(&self.paths);
         if let Err(e) = self.launch(&id, cwd, None) {
             self.closed(&id);
             self.fail(e);

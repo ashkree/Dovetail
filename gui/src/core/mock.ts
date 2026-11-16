@@ -113,6 +113,47 @@ export class MockCore implements CoreLink {
         } });
         return;
       }
+      case 'create_project': {
+        const c = data as { name: string; account: string | null; repo: string | null };
+        const name = c.name.trim();
+        if (!name) return this.fail('a project needs a name');
+        let id = kebab(name) || 'project';
+        for (let n = 2; s.projects.some(p => p.id === id); n++) id = `${kebab(name)}-${n}`;
+        const repos = c.repo ? [this.repo(c.repo, null)] : [];
+        this.emit({ project_upserted: {
+          id, name, repo_path: repos[0]?.path ?? `/home/you/.local/share/dovetail/projects/${id}`,
+          kind: repos.length ? 'code' : 'research', repos, account: c.account, last_opened_ms: Date.now(),
+          counts: { efforts: 0, running: 0, needs_you: 0 },
+        } });
+        return;
+      }
+      case 'add_repo': {
+        const a = data as { project: string; path: string; name: string | null };
+        const p = s.projects.find(x => x.id === a.project);
+        if (!p) return this.fail(`there is no project ${a.project}`);
+        const repo = this.repo(a.path, a.name);
+        if (p.repos.some(r => r.name === repo.name || r.path === repo.path)) {
+          return this.fail(`project ${p.id} already has a repo named ${repo.name} or at ${repo.path}`);
+        }
+        this.emit({ project_upserted: { ...p, kind: 'code', repos: [...p.repos, repo] } });
+        return;
+      }
+      case 'new_slice': {
+        const n = data as { task: number | null; name: string; brief: string; repo: string | null };
+        const repos = s.project?.repos ?? [];
+        if (!repos.length) return this.fail('this is a research project: it has no repo, so it runs no slices');
+        if (!n.repo && repos.length > 1) {
+          return this.fail(`this project has several repos: name one with \`repo\` (${repos.map(r => r.name).join(', ')})`);
+        }
+        if (s.agents.some(a => a.name === n.name)) return this.fail(`a slice named \`${n.name}\` already exists`);
+        const coord = s.agents.find(a => a.id === COORDINATOR);
+        if (!coord) return;
+        this.emit({ agent_upserted: {
+          ...coord, id: `slice-${n.name}`, name: n.name, kind: 'slice', task: n.task, status: 'setting_up',
+          worktree: { path: `/home/you/.local/share/dovetail/projects/${s.project?.id}/worktrees/${n.name}`, branch: `dovetail/${n.name}` },
+        } });
+        return;
+      }
       case 'create_canvas': {
         const c = data as { effort: number; title: string; framework: W.Framework };
         const effort = s.efforts.find(e => e.id === c.effort);
@@ -211,6 +252,12 @@ export class MockCore implements CoreLink {
       default:
         this.fail(`${tag} is not in the mock core`);
     }
+  }
+
+  /** A repo as the mock registers one: named after its folder, or as asked. */
+  private repo(path: string, name: string | null): W.RepoSummary {
+    const clean = path.trim().replace(/\/+$/, '');
+    return { id: this.nextId++, name: kebab(name || clean.split('/').pop() || 'repo'), path: clean };
   }
 
   private entry(kind: W.EntryKind, text: string, effort: number | null): W.ConversationEntry {

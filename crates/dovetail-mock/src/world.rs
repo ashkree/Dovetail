@@ -176,12 +176,14 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         name: "Dovetail".into(),
         repo_path: PROJECT_DIR.into(),
         kind: ProjectKind::Code,
+        ..ProjectSummary::default()
     };
     let other = ProjectSummary {
         id: ProjectId("notes-site".into()),
         name: "notes-site".into(),
         repo_path: "/home/you/src/notes-site".into(),
         kind: ProjectKind::Code,
+        ..ProjectSummary::default()
     };
     // A research-only project: no repo, its sessions run in Dovetail's state folder for it.
     let research = ProjectSummary {
@@ -189,6 +191,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         name: "Market sizing".into(),
         repo_path: research_project_dir("market-sizing"),
         kind: ProjectKind::Research,
+        ..ProjectSummary::default()
     };
 
     let mut tasks = vec![

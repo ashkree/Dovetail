@@ -360,8 +360,11 @@ impl Core {
                     .then(|| (r.agent.id.clone(), r.agent.name.clone(), w.path.clone()))
             })
             .collect();
-        let repo = self.project.folder(&self.paths);
         for (agent, name, path) in missing {
+            let Some(repo) = self.repo_of(&agent).map(|r| r.path) else {
+                tracing::warn!(slice = %name, "its repo is no longer in the project; kept");
+                continue;
+            };
             // One failed `exists()` is not proof: archive only when the parent directory reads
             // fine and git no longer lists the worktree either.
             match worktree_gone(&repo, &path) {
@@ -399,7 +402,8 @@ impl Core {
                 return;
             }
         };
-        let repo = self.project.folder(&self.paths);
+        // An orphan belongs to the repo its `.git` file points at; a plain folder to the first.
+        let fallback = self.project.first_repo_path().unwrap_or_default();
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -408,9 +412,10 @@ impl Core {
             }
             let paths = self.paths.clone();
             let key = key.clone();
-            let repo = repo.clone();
+            let fallback = fallback.clone();
             let inputs = self.inputs.clone();
             tokio::task::spawn_blocking(move || {
+                let repo = worktree::main_checkout(&path).unwrap_or(fallback);
                 let found = Orphan::look(name, path);
                 let result = worktree::inspect(&paths, &key, &found.name, &repo);
                 let _ = inputs.send(Input::OrphanInspected { found, result });
@@ -489,11 +494,18 @@ impl Core {
         }
         let paths = self.paths.clone();
         let key = self.project.key().to_owned();
-        let repo = self.project.folder(&self.paths);
+        // Removed through the repo its `.git` file names; a plain folder (no git) through the
+        // first repo. With neither, it fails loudly rather than run git somewhere unknown.
+        let fallback = self.project.first_repo_path();
         let inputs = self.inputs.clone();
         let name = found.name;
         tokio::task::spawn_blocking(move || {
-            let result = worktree::remove(&paths, &key, &name, &repo, true);
+            let repo = match (worktree::main_checkout(&found.path), fallback) {
+                (Ok(repo), _) => Ok(repo),
+                (Err(_), Some(first)) if found.files.is_some() => Ok(first),
+                (Err(e), _) => Err(e),
+            };
+            let result = repo.and_then(|repo| worktree::remove(&paths, &key, &name, &repo, true));
             let _ = inputs.send(Input::OrphanRemoved { name, result });
         });
     }

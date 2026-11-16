@@ -209,6 +209,12 @@ impl MockCore {
     /// Carries out a command. Its effects are delivered before anything already scheduled.
     pub fn handle(&mut self, command: Command) {
         match command {
+            // The mock serves the frozen TUI, which changes projects only by `:project add`.
+            Command::CreateProject { .. }
+            | Command::RenameProject { .. }
+            | Command::SetProjectAccount { .. }
+            | Command::AddRepo { .. }
+            | Command::RemoveRepo { .. } => self.fail("the mock does not change projects".into()),
             Command::Prompt {
                 agent,
                 text,
@@ -380,7 +386,9 @@ impl MockCore {
                     }
                 });
             }
-            Command::NewSlice { task, name, brief } => {
+            Command::NewSlice {
+                task, name, brief, ..
+            } => {
                 if self.agent(&agent_id(&name)).is_some() {
                     return self.fail(format!("a slice named {name} exists"));
                 }
@@ -877,6 +885,7 @@ impl MockCore {
             name,
             repo_path: world::research_project_dir(&id),
             kind: ProjectKind::Research,
+            ..ProjectSummary::default()
         });
         self.ready
             .push_back(ServerMsg::Snapshot(self.state.trimmed()));

@@ -259,16 +259,16 @@ Size: **S** = days, additive. **M** = about a week, touches existing paths. **L*
 | --- | --- | --- | --- | --- | --- |
 | UI | Terminal UI in the same process | Tauri window with a React frontend; TUI frozen | New client on the same `CoreLink`. **Wiring built** (`gui/src-tauri`). | L (frontend), S (wiring) | ADR 0023 |
 | Core / UI seam | Two Rust channels | The same messages as JSON across Tauri | Types exported to TypeScript; `apply` written twice and tested against shared cases. **Built.** | S | ADR 0023 |
-| Project | A folder; one repo in the `projects` row | A name, 0..n repos, one account | New `repos` table; opening by id, not by folder | M | ADR 0021 |
-| Coordinator | Runs in the repo's main checkout | Runs in its own folder, every repo attached | New working folder means a fresh coordinator session once | M | ADR 0021 |
-| Slice | Worktree of *the* repo | Worktree of one named repo | `project_start_slice` gains `repo`; `agents.repo_id` | S | ADR 0021 |
+| Project | A folder; one repo in the `projects` row | A name, 0..n repos, one account | New `repos` table; opening by id, not by folder. **Built.** | M | ADR 0021 |
+| Coordinator | Runs in the repo's main checkout | Runs in its own folder, every repo attached | New working folder means a fresh coordinator session once. **Built.** | M | ADR 0021 |
+| Slice | Worktree of *the* repo | Worktree of one named repo | `project_start_slice` gains `repo`; `agents.repo_id`. **Built.** | S | ADR 0021 |
 | Work model | Tasks in buckets | Efforts → criteria → tasks | New tables, types, commands. **Built in this change.** | M | this PR |
 | Chat | One conversation per agent, no tags | One coordinator chat; every line has an effort tag | `conversation_entries.effort_id`. **Built in this change.** | S | this PR |
 | Task status | Set by hand, except "in progress" on slice start | Dovetail sets all of it | New `review` status; PR state drives the transitions. **Built** (stacked PR). | M | ADR 0024 |
 | Session names | `coordinator`, same in every project | Unique per project: `<project>.<name>` | Changes what Claude Code sees as the name. **Built** (stacked PR). | S | ADR 0022 |
 | Slice → coordinator | Claude Code's own messaging | A Dovetail tool | New tool `coordination_report`; role prompts change. **Built** (stacked PR). | M | ADR 0022 |
 | Canvas | None | Canvases with cards that point at rows | New tables, commands and tools | L | ADR 0025 |
-| Driver | NDJSON stream behind `SessionDriver` | Same | One new launch flag per attached repo | S | ADR 0021 |
+| Driver | NDJSON stream behind `SessionDriver` | Same | One new launch flag per attached repo (`--add-dir`). **Built.** | S | ADR 0021 |
 | Database engine | SQLite, one thread, forward-only migrations | Same | — | — | — |
 | MCP bridge, socket, hooks | As in section 3 | Same | — | — | — |
 

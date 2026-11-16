@@ -56,14 +56,8 @@ impl App {
             runtime: run.path().to_path_buf(),
             ..paths.clone()
         };
-        let resolution = Resolution::Registered(Project {
-            id: "p".into(),
-            name: "work".into(),
-            kind: dovetail_api::ProjectKind::Code,
-            repo_path: Some(repo.to_path_buf()),
-            git_common_dir: None,
-            last_opened_ms: None,
-        });
+        let resolution =
+            Resolution::Registered(Project::with_repo("p", "work", repo.to_path_buf(), None));
         let options = CoreOptions {
             driver: Arc::new(fake.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),

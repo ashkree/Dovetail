@@ -110,6 +110,8 @@ pub struct Launch {
     pub cwd: PathBuf,
     /// `--worktree <name>`, for a new slice in a git project.
     pub worktree: Option<String>,
+    /// `--add-dir` each: the repos of a session in the coordinator's folder (ADR 0021).
+    pub add_dirs: Vec<PathBuf>,
     /// Starting permission mode.
     pub mode: CliMode,
     /// `CLAUDE_CODE_TASK_LIST_ID`.
@@ -201,6 +203,7 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
         ]);
     }
     spec.worktree = launch.worktree.clone();
+    spec.add_dirs = launch.add_dirs.clone();
     spec.env = vec![
         ("CLAUDE_CODE_ENABLE_TODO_TOOLS".into(), "1".into()),
         (

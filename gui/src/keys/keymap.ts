@@ -223,4 +223,7 @@ export const MODAL_KEYS = {
   accept: ['<CR>'],
   down: ['C-j', '<Down>'],
   up: ['C-k', '<Up>'],
+  /** A form's next and previous field (as well as down and up). */
+  nextField: ['<Tab>'],
+  prevField: ['<S-Tab>'],
 };

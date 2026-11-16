@@ -227,6 +227,7 @@ pub fn world() -> Snapshot {
             name: "business".into(),
             repo_path: "/src/business".into(),
             kind: Default::default(),
+            ..ProjectSummary::default()
         }),
         tasks: vec![t1, t2, t3, t4, t5],
         agents: vec![coordinator, slice4, rebase, explore, slice7],

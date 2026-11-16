@@ -80,9 +80,16 @@ impl Paths {
     }
 
     /// A project's own state folder, `<data>/projects/<id>/`: its `state.db`, journal, default
-    /// research folder and worktrees. A research project's sessions run here.
+    /// research folder, worktrees and the coordinator's `home/`.
     pub fn project_dir(&self, project: &str) -> PathBuf {
         self.data.join("projects").join(project)
+    }
+
+    /// The coordinator's working folder, `<data>/projects/<id>/home/` (ADR 0021 point 3): empty,
+    /// so a search from there does not walk `state.db` or the slice worktrees. Each repo is
+    /// attached with `--add-dir`.
+    pub fn project_home(&self, project: &str) -> PathBuf {
+        self.project_dir(project).join("home")
     }
 
     /// A project's `state.db`.

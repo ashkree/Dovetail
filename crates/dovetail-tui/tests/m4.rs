@@ -53,6 +53,7 @@ fn spawn_with_a_name_and_brief_starts_a_slice_on_the_focused_task() {
     assert_eq!(
         app.take_commands(),
         vec![Command::NewSlice {
+            repo: None,
             task: Some(TaskId(2)),
             name: "eval-fix".into(),
             brief: "reproduce the 500 with the key set".into()
@@ -68,6 +69,7 @@ fn spawn_with_no_task_in_focus_makes_a_slice_with_no_task() {
     assert_eq!(
         app.take_commands(),
         vec![Command::NewSlice {
+            repo: None,
             task: None,
             name: "scratch".into(),
             brief: String::new()
@@ -90,6 +92,7 @@ fn leader_s_n_asks_for_a_name_then_a_brief() {
     assert_eq!(
         app.take_commands(),
         vec![Command::NewSlice {
+            repo: None,
             task: Some(TaskId(3)),
             name: "keyflow".into(),
             brief: "sketch it".into()

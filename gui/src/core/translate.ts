@@ -33,6 +33,17 @@ export function translate(cmd: UiCommand, core: W.Snapshot, pending: Pending): T
     case 'rename_effort': return only({ rename_effort: { id: Number(cmd.effort_id), name: cmd.name } });
     case 'new_effort':
       return only({ create_effort: { name: cmd.name, kind: cmd.kind, question_or_goal: cmd.question_or_goal } });
+    case 'create_project':
+      return only({ create_project: {
+        name: cmd.name, account: cmd.account?.trim() || null, repo: cmd.repo_path?.trim() || null,
+      } });
+    case 'add_repo':
+      return only({ add_repo: { project: cmd.project_id, path: cmd.path.trim(), name: cmd.name?.trim() || null } });
+    case 'new_slice':
+      return only({ new_slice: {
+        task: cmd.task_id ? Number(cmd.task_id) : null, name: cmd.name.trim(), brief: cmd.brief.trim(),
+        repo: cmd.repo ?? null,
+      } });
     case 'answer_inbox': return answer(cmd, core);
     case 'new_canvas': {
       const effort = Number(cmd.effort_id);

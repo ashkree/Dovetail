@@ -138,9 +138,24 @@ impl Core {
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         let env = if row.agent.kind == AgentKind::Slice {
             let place = self.session_cwd(&row.agent);
-            Recipe::load(&self.paths.recipe(self.project.key()))
-                .map(|r| r.env_for(&place).into_iter().collect())
-                .unwrap_or_default()
+            let repo = self.repo_of(id);
+            let recipe = Recipe::load(&self.paths.recipe(self.project.key())).unwrap_or_default();
+            let recipe = match &repo {
+                Some(repo) => recipe.for_repo(&repo.name),
+                None => recipe,
+            };
+            let mut env: Vec<(String, String)> = recipe.env_for(&place).into_iter().collect();
+            // The worktree hook applies the same repo's overrides.
+            if let Some(repo) = repo {
+                env.push((dovetail_api::tools::env::REPO.into(), repo.name));
+            }
+            env
+        } else {
+            Vec::new()
+        };
+        // A session in the coordinator's folder sees every repo (ADR 0021 point 3).
+        let add_dirs = if cwd == self.project.coordinator_folder(&self.paths) {
+            self.project.attached()
         } else {
             Vec::new()
         };
@@ -156,6 +171,7 @@ impl Core {
             resume,
             cwd,
             worktree,
+            add_dirs,
             mode: state::to_cli(row.agent.permission_mode),
             task_list_id: row
                 .task_list_id
@@ -176,6 +192,30 @@ impl Core {
         Ok(spec)
     }
 
+    /// Whether agent `id`'s recorded transcript was filed under another working folder than
+    /// `cwd` (or its canonical form, which Claude Code may report instead), so it cannot be
+    /// resumed from `cwd`. `false` when nothing is recorded.
+    pub(crate) fn filed_elsewhere(&self, id: &AgentId, cwd: &std::path::Path) -> bool {
+        let Some(row) = self.agents.get(id) else {
+            return false;
+        };
+        let (Some(recorded), Some(session)) = (&row.transcript_path, &row.session_id) else {
+            return false;
+        };
+        let home = row
+            .claude_home
+            .clone()
+            .unwrap_or_else(crate::profile::default_dir);
+        let folder = |cwd: &std::path::Path| {
+            launch::transcript_path(&home, cwd, session)
+                .parent()
+                .map(std::path::Path::to_path_buf)
+        };
+        let here = recorded.parent().map(std::path::Path::to_path_buf);
+        let canonical = cwd.canonicalize().ok();
+        here != folder(cwd) && canonical.as_deref().is_none_or(|c| here != folder(c))
+    }
+
     /// Starts (or resumes, if it has run before) the session of agent `id` in `cwd`. Every
     /// headless start comes through here, so a session taken over (M14) never starts.
     pub(crate) fn launch(
@@ -186,6 +226,16 @@ impl Core {
     ) -> Result<(), SessionError> {
         self.check_lock(id)?;
         let home = self.claude.clone()?;
+        // The coordinator's own folder exists before its first start (ADR 0021 point 3).
+        if cwd == self.project.coordinator_folder(&self.paths)
+            && let Err(e) = std::fs::create_dir_all(&cwd)
+        {
+            tracing::warn!("creating {}: {e}", cwd.display());
+        }
+        // Only sessions in the coordinator's folder moved (ADR 0021); a slice's never does, and
+        // is never started fresh on a guess about its path.
+        let elsewhere =
+            cwd == self.project.coordinator_folder(&self.paths) && self.filed_elsewhere(id, &cwd);
         let Some(row) = self.agents.get_mut(id) else {
             return Err(SessionError::NoAgent(id.0.clone()));
         };
@@ -198,7 +248,10 @@ impl Core {
             .unwrap_or_else(crate::profile::default_dir);
         let moved =
             row.transcript_path.is_some() && !crate::profile::same_dir(&recorded, &home.dir);
-        if moved {
+        // Claude Code files a transcript by working folder and resumes it only from there: a
+        // session recorded in another folder (a coordinator from before ADR 0021) starts fresh.
+        let elsewhere = elsewhere && !moved;
+        if moved || elsewhere {
             row.session_id = Some(uuid::Uuid::new_v4().to_string());
             row.transcript_path = None;
         }
@@ -209,6 +262,16 @@ impl Core {
             .clone();
         let resume = row.transcript_path.is_some();
         let row = row.clone();
+        if elsewhere {
+            self.notice(
+                id,
+                format!(
+                    "Started a fresh session in {}: the last one ran in another folder, and \
+                     Claude Code resumes a session only from its own folder",
+                    cwd.display()
+                ),
+            );
+        }
         if moved {
             self.notice(
                 id,
@@ -320,7 +383,7 @@ impl Core {
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         match row.agent.kind {
             AgentKind::Coordinator => {
-                let cwd = self.project.folder(&self.paths);
+                let cwd = self.project.coordinator_folder(&self.paths);
                 self.launch(id, cwd, None)?;
                 // Signals held while it could not be woken, unless its last turn was cut off:
                 // then they wait for the user's next message (decision 1: never continue).
@@ -758,11 +821,12 @@ impl Core {
         if first {
             // The process runs, so its scope exists.
             self.watch_oom(agent);
-            let cwd = init
-                .cwd
-                .as_deref()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| self.project.folder(&self.paths));
+            let cwd = init.cwd.as_deref().map(PathBuf::from).unwrap_or_else(|| {
+                self.agents.get(agent).map_or_else(
+                    || self.project.coordinator_folder(&self.paths),
+                    |r| self.session_cwd(&r.agent),
+                )
+            });
             let session_id = self
                 .agents
                 .get(agent)
@@ -982,6 +1046,9 @@ impl Core {
         let last = background == 0 && !more_queued;
         if agent.0 == COORDINATOR {
             self.closing_result(reply, interrupted, last);
+            if last {
+                self.reattach_after_turn();
+            }
         }
         if last {
             self.finished_turn(agent, preview);

@@ -76,7 +76,7 @@ impl Core {
     /// Why this run cannot upgrade, if it cannot: upgrades are off, or this is not the
     /// installed binary (a dev build in a slice must not replace the one the user works in).
     fn upgrade_refusal(&self) -> Option<String> {
-        // The build runs in the open project's repo, and a research project has none.
+        // The build runs in the open project's first repo, and a research project has none.
         if self.project.is_research() {
             return Some(
                 "a research project has no repo to build from: :upgrade in a code project".into(),
@@ -110,7 +110,8 @@ impl Core {
             return;
         };
         let request = BuildRequest {
-            repo: self.project.folder(&self.paths),
+            // `upgrade_refusal` refused a project with no repo.
+            repo: self.project.first_repo_path().unwrap_or_default(),
             source: if local {
                 Source::Local
             } else {

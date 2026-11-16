@@ -24,6 +24,7 @@ pub mod memory;
 mod oom;
 pub mod paths;
 pub mod profile;
+mod project_admin;
 pub mod projects;
 pub mod recipe;
 mod registration;

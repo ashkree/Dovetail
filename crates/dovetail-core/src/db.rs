@@ -11,9 +11,12 @@
 //! (ADR 0005).
 
 mod canvas;
+mod counts;
 mod efforts;
 mod maps;
 mod registry;
+
+pub use registry::NewRepo;
 pub mod research;
 mod sessions;
 mod tasks;
@@ -61,6 +64,7 @@ const REGISTRY_MIGRATIONS: &[Migration] = &[
     migration!("registry", "0001_init.sql"),
     migration!("registry", "0002_optional_git.sql"),
     migration!("registry", "0003_project_kind.sql"),
+    migration!("registry", "0004_repos.sql"),
 ];
 /// Migrations of a project's `state.db`, in order.
 const STATE_MIGRATIONS: &[Migration] = &[
@@ -82,6 +86,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0016_agent_model_choice.sql"),
     migration!("state", "0017_efforts.sql"),
     migration!("state", "0018_canvases.sql"),
+    migration!("state", "0019_agent_repo.sql"),
 ];
 
 /// Errors from the database layer.
@@ -225,25 +230,62 @@ impl Db {
 
     // --- registry ---
 
-    /// Adds a project to the registry, or returns the one with this git common dir (or, without
-    /// git, this folder). The id is `slug`, numbered (`slug-2`, ...) when taken.
-    pub fn register_project(
+    /// Registers a folder as a project with one repo, or returns the project that has it
+    /// already. The id is `slug`, numbered (`slug-2`, ...) when taken.
+    pub fn register_project(&self, slug: String, name: String, repo: NewRepo) -> Pending<Project> {
+        self.run(move |c, now| registry::register(&mut c.registry, &slug, &name, &repo, now))
+    }
+
+    /// Creates a project (ADR 0021) with an optional account and first repo.
+    pub fn create_project(
         &self,
         slug: String,
         name: String,
-        repo_path: PathBuf,
-        git_common_dir: Option<PathBuf>,
+        account: Option<String>,
+        repo: Option<NewRepo>,
     ) -> Pending<Project> {
         self.run(move |c, now| {
-            registry::register(
+            registry::create(
                 &mut c.registry,
                 &slug,
                 &name,
-                &repo_path,
-                git_common_dir.as_deref(),
+                account.as_deref(),
+                repo.as_ref(),
                 now,
             )
         })
+    }
+
+    /// Adds a repo to project `id`. Refused when any project has it already, or this one a
+    /// repo of the same name.
+    pub fn add_repo(&self, id: String, repo: NewRepo) -> Pending<Project> {
+        self.run(move |c, now| registry::add_repo(&mut c.registry, &id, &repo, now))
+    }
+
+    /// Removes a repo from project `id`.
+    pub fn remove_repo(&self, id: String, repo: dovetail_api::RepoId) -> Pending<Project> {
+        self.run(move |c, _| registry::remove_repo(&c.registry, &id, repo))
+    }
+
+    /// Renames project `id`.
+    pub fn rename_project(&self, id: String, name: String) -> Pending<Project> {
+        self.run(move |c, _| registry::rename(&c.registry, &id, &name))
+    }
+
+    /// Sets or clears project `id`'s account.
+    pub fn set_project_account(&self, id: String, account: Option<String>) -> Pending<Project> {
+        self.run(move |c, _| registry::set_account(&c.registry, &id, account.as_deref()))
+    }
+
+    /// The open slices in a project's `state.db` at `path` that work in `repo` (`first`: the
+    /// project's first repo), read without migrating it.
+    pub fn slices_in_repo(&self, path: PathBuf, repo: i64, first: bool) -> Pending<Vec<String>> {
+        self.run(move |_, _| counts::slices_in_repo(&path, repo, first))
+    }
+
+    /// Home's counts for project `id`, read from its `state.db` without migrating it.
+    pub fn project_counts(&self, path: PathBuf) -> Pending<dovetail_api::ProjectCounts> {
+        self.run(move |_, _| counts::read(&path))
     }
 
     /// Registers a research project named `name` under id `slug` (numbered when taken). `None`
@@ -278,9 +320,13 @@ impl Db {
         self.run(move |c, _| registry::find_folder(&c.registry, &path))
     }
 
-    /// Records the git common dir of a folder project that has become a repo.
-    pub fn set_git_dir(&self, id: String, git_common_dir: PathBuf) -> Pending<Project> {
-        self.run(move |c, _| registry::set_git_dir(&c.registry, &id, &git_common_dir))
+    /// Records the git common dir of a folder repo that has become a git repo.
+    pub fn set_git_dir(
+        &self,
+        repo: dovetail_api::RepoId,
+        git_common_dir: PathBuf,
+    ) -> Pending<Project> {
+        self.run(move |c, _| registry::set_git_dir(&c.registry, repo, &git_common_dir))
     }
 
     /// Marks a project as opened now.
@@ -659,9 +705,18 @@ impl Db {
         name: String,
         brief: String,
         by_coordinator: bool,
+        repo: Option<String>,
     ) -> Pending<i64> {
         self.run(move |c, now| {
-            sessions::enqueue_slice(c.state()?, task, &name, &brief, by_coordinator, now)
+            sessions::enqueue_slice(
+                c.state()?,
+                task,
+                &name,
+                &brief,
+                by_coordinator,
+                repo.as_deref(),
+                now,
+            )
         })
     }
 
@@ -944,6 +999,7 @@ mod tests {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         };
         let entry = |n: u64, name: &str| ConversationEntry {
             id: EntryId(n),
@@ -998,6 +1054,7 @@ mod tests {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         })
         .wait()
         .unwrap();
@@ -1112,14 +1169,18 @@ mod tests {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
         assert_eq!(version as usize, REGISTRY_MIGRATIONS.len());
-        let kind_column: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM pragma_table_info('projects') WHERE name = 'kind'",
-                [],
+        let column = |table: &str, name: &str| -> i64 {
+            conn.query_row(
+                &format!("SELECT count(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+                [name],
                 |row| row.get(0),
             )
-            .unwrap();
-        assert_eq!(kind_column, 1, "projects.kind comes from migration 0003");
+            .unwrap()
+        };
+        // Migration 0004 (ADR 0021): the kind is gone, the account and the repos table are in.
+        assert_eq!(column("projects", "kind"), 0);
+        assert_eq!(column("projects", "account"), 1);
+        assert_eq!(column("repos", "git_common_dir"), 1);
     }
 
     #[test]
@@ -1171,6 +1232,51 @@ mod tests {
 
     /// Migration 0017 on a database as version 16 left it: every task goes to Unsorted, chat
     /// lines keep no tag, and nothing else about them changes.
+    /// ADR 0021: state migration 0019 from version 18. Agents and queued starts are kept; none
+    /// has a repo yet (read as the project's first), and a stored one round-trips.
+    #[test]
+    fn agent_repos_migrate_up_from_version_18() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let path = paths.state_db("p");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut old = Connection::open(&path).unwrap();
+        migrate(&mut old, &path, &STATE_MIGRATIONS[..18]).unwrap();
+        old.execute_batch(
+            "INSERT INTO agents (id, kind, name, status, permission_mode, created_ms)
+               VALUES ('slice-a', 'slice', 'a', 'idle', 'auto', 1);
+             INSERT INTO slice_queue (name, brief, created_ms) VALUES ('b', 'go', 2);",
+        )
+        .unwrap();
+        drop(old);
+
+        let db = Db::open(&paths, Some("p")).unwrap();
+        let mut agents = db.load_agents().wait().unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].repo, None);
+        let queue = db.load_queue().wait().unwrap();
+        assert_eq!(
+            (queue[0].name.as_str(), queue[0].repo.as_deref()),
+            ("b", None)
+        );
+
+        agents[0].repo = Some(dovetail_api::RepoId(7));
+        db.upsert_agent(agents[0].clone()).wait().unwrap();
+        db.enqueue_slice(None, "c".into(), "go".into(), false, Some("web".into()))
+            .wait()
+            .unwrap();
+        drop(db);
+        let db = Db::open(&paths, Some("p")).unwrap();
+        assert_eq!(
+            db.load_agents().wait().unwrap()[0].repo,
+            Some(dovetail_api::RepoId(7))
+        );
+        assert_eq!(
+            db.load_queue().wait().unwrap()[1].repo.as_deref(),
+            Some("web")
+        );
+    }
+
     #[test]
     fn efforts_migrate_up_from_version_16_and_existing_tasks_go_to_unsorted() {
         use dovetail_api::{EntryKind, TaskStatus, UNSORTED_EFFORT};
@@ -1445,6 +1551,7 @@ mod tests {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            repo: None,
         })
         .wait()
         .unwrap();
@@ -1571,11 +1678,11 @@ mod tests {
         let paths = paths(dir.path());
         let db = Db::open(&paths, None).unwrap();
         let folder = db
-            .register_project("notes".into(), "notes".into(), "/x/notes".into(), None)
+            .register_project("notes".into(), "notes".into(), folder_repo("/x/notes"))
             .wait()
             .unwrap();
         let again = db
-            .register_project("notes".into(), "notes".into(), "/x/notes".into(), None)
+            .register_project("notes".into(), "notes".into(), folder_repo("/x/notes"))
             .wait()
             .unwrap();
         assert_eq!(folder, again);
@@ -1583,103 +1690,156 @@ mod tests {
             .register_project(
                 "notes".into(),
                 "notes".into(),
-                "/y/notes".into(),
-                Some("/y/notes/.git".into()),
+                NewRepo {
+                    name: "notes".into(),
+                    path: "/y/notes".into(),
+                    git_common_dir: Some("/y/notes/.git".into()),
+                },
             )
             .wait()
             .unwrap();
         assert_eq!(repo.id, "notes-2");
     }
 
+    fn folder_repo(path: &str) -> NewRepo {
+        NewRepo {
+            name: "notes".into(),
+            path: path.into(),
+            git_common_dir: None,
+        }
+    }
+
+    /// ADR 0021: registry migration 0004 from version 3. Every project is kept; a code project
+    /// and a folder project each get one repo named after the project, a research project none.
     #[test]
-    fn an_existing_registry_migrates_to_project_kinds() {
-        use dovetail_api::ProjectKind;
+    fn an_existing_registry_migrates_to_repos() {
+        use dovetail_api::{ProjectKind, RepoId};
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
-        // A registry.db as the build before project kinds left it: a repo and a folder.
         let path = paths.registry_db();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut old = Connection::open(&path).unwrap();
         let before = REGISTRY_MIGRATIONS.len() - 1;
         migrate(&mut old, &path, &REGISTRY_MIGRATIONS[..before]).unwrap();
         old.execute_batch(
-            "INSERT INTO projects VALUES ('dovetail', 'Dovetail', '/src/dovetail', \
-             '/src/dovetail/.git', 5);
-             INSERT INTO projects VALUES ('notes', 'notes', '/x/notes', NULL, 4);",
+            "INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \
+               VALUES ('dovetail', 'Dovetail', 'code', '/src/dovetail', '/src/dovetail/.git', 5);
+             INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \
+               VALUES ('notes', 'notes', 'code', '/x/notes', NULL, 4);
+             INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \
+               VALUES ('market', 'Market', 'research', NULL, NULL, 3);",
         )
         .unwrap();
         drop(old);
 
         let db = Db::open(&paths, None).unwrap();
         let listed = db.list_projects().wait().unwrap();
-        assert_eq!(listed.len(), 2);
-        assert!(listed.iter().all(|p| p.kind == ProjectKind::Code));
+        let ids: Vec<&str> = listed.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["dovetail", "notes", "market"]);
+        let dovetail = &listed[0];
         assert_eq!(
-            listed[0].repo_path.as_deref(),
-            Some(Path::new("/src/dovetail"))
+            (dovetail.name.as_str(), dovetail.account.as_deref()),
+            ("Dovetail", None)
         );
+        assert_eq!(dovetail.last_opened_ms, Some(5));
+        assert_eq!(dovetail.repos.len(), 1);
+        assert_eq!(dovetail.repos[0].name, "dovetail");
+        assert_eq!(dovetail.repos[0].path, Path::new("/src/dovetail"));
         assert_eq!(
-            listed[0].git_common_dir.as_deref(),
+            dovetail.repos[0].git_common_dir.as_deref(),
             Some(Path::new("/src/dovetail/.git"))
         );
-        assert_eq!(listed[1].repo_path.as_deref(), Some(Path::new("/x/notes")));
-        // Folder and repo lookups still find them.
-        assert!(db.find_folder("/x/notes".into()).wait().unwrap().is_some());
-        assert!(
-            db.find_project("/src/dovetail/.git".into())
-                .wait()
-                .unwrap()
-                .is_some()
-        );
-
-        // A research project has neither path; its id is numbered past the folder's.
-        let research = db
-            .register_research("notes".into(), "notes".into())
+        assert_eq!(dovetail.kind(), ProjectKind::Code);
+        assert_eq!(listed[1].repos[0].git_common_dir, None);
+        assert_eq!(listed[1].kind(), ProjectKind::Code);
+        assert!(listed[2].repos.is_empty());
+        assert_eq!(listed[2].kind(), ProjectKind::Research);
+        // Lookups go through repos.
+        let found = db.find_project("/src/dovetail/.git".into()).wait().unwrap();
+        assert_eq!(found.map(|p| p.id), Some("dovetail".into()));
+        let found = db.find_folder("/x/notes".into()).wait().unwrap();
+        assert_eq!(found.map(|p| p.id), Some("notes".into()));
+        // A git dir stays unique across projects.
+        let again = db
+            .add_repo(
+                "notes".into(),
+                NewRepo {
+                    name: "dt".into(),
+                    path: "/elsewhere".into(),
+                    git_common_dir: Some("/src/dovetail/.git".into()),
+                },
+            )
+            .wait();
+        assert!(matches!(again, Err(DbError::Refused(_))), "{again:?}");
+        let removed = db
+            .remove_repo("dovetail".into(), dovetail.repos[0].id)
             .wait()
-            .unwrap()
-            .expect("new");
-        assert_eq!(research.id, "notes-2");
-        assert_eq!((research.repo_path, research.git_common_dir), (None, None));
-        assert_eq!(
-            db.get_project("notes-2".into())
-                .wait()
-                .unwrap()
-                .map(|p| p.kind),
-            Some(ProjectKind::Research)
-        );
-        // A second research project of the same name is refused; a folder lookup never finds
-        // one.
+            .unwrap();
+        assert!(removed.repos.is_empty());
         assert!(
-            db.register_research("notes".into(), "notes".into())
+            db.remove_repo("dovetail".into(), RepoId(999))
+                .wait()
+                .is_err()
+        );
+        drop(db);
+        // Opening again changes nothing.
+        let db = Db::open(&paths, None).unwrap();
+        assert_eq!(db.list_projects().wait().unwrap().len(), 3);
+    }
+
+    /// ADR 0021: projects are created with an account and repos, renamed, and given another
+    /// account; a research project's name is unique among projects with no repos.
+    #[test]
+    fn projects_are_created_renamed_and_given_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let db = Db::open(&paths, None).unwrap();
+        let api = NewRepo {
+            name: "shop-api".into(),
+            path: "/code/shop-api".into(),
+            git_common_dir: Some("/code/shop-api/.git".into()),
+        };
+        let shop = db
+            .create_project("shop".into(), "Shop".into(), Some("work".into()), Some(api))
+            .wait()
+            .unwrap();
+        assert_eq!(shop.account.as_deref(), Some("work"));
+        let web = NewRepo {
+            name: "shop-web".into(),
+            path: "/code/shop-web".into(),
+            git_common_dir: Some("/code/shop-web/.git".into()),
+        };
+        let shop = db.add_repo("shop".into(), web.clone()).wait().unwrap();
+        assert_eq!(shop.repos.len(), 2);
+        // The same name twice in one project is refused.
+        let clash = NewRepo {
+            path: "/code/other".into(),
+            git_common_dir: Some("/code/other/.git".into()),
+            ..web
+        };
+        assert!(db.add_repo("shop".into(), clash).wait().is_err());
+        let renamed = db
+            .rename_project("shop".into(), "Shop front".into())
+            .wait()
+            .unwrap();
+        assert_eq!(
+            (renamed.id.as_str(), renamed.name.as_str()),
+            ("shop", "Shop front")
+        );
+        let cleared = db.set_project_account("shop".into(), None).wait().unwrap();
+        assert_eq!(cleared.account, None);
+        let again = db
+            .create_project("shop".into(), "Shop".into(), None, None)
+            .wait()
+            .unwrap();
+        assert_eq!(again.id, "shop-2");
+        assert!(again.is_research());
+        assert!(
+            db.register_research("x".into(), "Shop".into())
                 .wait()
                 .unwrap()
                 .is_none()
         );
-        assert_eq!(
-            db.find_folder("/x/notes".into())
-                .wait()
-                .unwrap()
-                .map(|p| p.id),
-            Some("notes".into())
-        );
-        drop(db);
-
-        // The table refuses what the kinds rule out, and git dirs stay unique.
-        let conn = Connection::open(&path).unwrap();
-        let insert = |sql: &str| conn.execute(sql, []).is_err();
-        assert!(insert(
-            "INSERT INTO projects (id, name, kind) VALUES ('c', 'c', 'code')"
-        ));
-        assert!(insert(
-            "INSERT INTO projects (id, name, kind, repo_path) VALUES ('r', 'r', 'research', '/r')"
-        ));
-        assert!(insert(
-            "INSERT INTO projects (id, name, kind) VALUES ('o', 'o', 'other')"
-        ));
-        assert!(insert(
-            "INSERT INTO projects (id, name, repo_path, git_common_dir) \
-             VALUES ('d', 'd', '/d', '/src/dovetail/.git')"
-        ));
     }
 }

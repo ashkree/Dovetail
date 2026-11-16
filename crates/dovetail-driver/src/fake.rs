@@ -262,6 +262,7 @@ impl SessionDriver for FakeDriver {
         handle.spawn(replay(
             self.lines.clone(),
             options,
+            spec.cwd.to_string_lossy().into_owned(),
             tx.clone(),
             shared.clone(),
             self.gate.clone(),
@@ -290,9 +291,12 @@ impl Shared {
     }
 }
 
+/// Replays `lines`. Each init reports `cwd`, the folder the session was started in, as a real
+/// `claude` does, not the folder the fixture was recorded in.
 async fn replay(
     lines: Arc<Vec<Line>>,
     options: ReplayOptions,
+    cwd: String,
     tx: UnboundedSender<DriverEvent>,
     shared: Arc<Shared>,
     gate: Arc<Notify>,
@@ -325,7 +329,12 @@ async fn replay(
             }
         }
         prev_t = line.t;
-        for ev in parse::map_value(line.msg.clone()) {
+        for mut ev in parse::map_value(line.msg.clone()) {
+            if let DriverEvent::Init(init) = &mut ev
+                && init.cwd.is_some()
+            {
+                init.cwd = Some(cwd.clone());
+            }
             if let DriverEvent::PermissionRequest(req) = &ev
                 && let Ok(mut o) = shared.outstanding.lock()
             {

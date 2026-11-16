@@ -1,6 +1,6 @@
 # A project is a name with repos; the coordinator gets its own folder
 
-**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
+**Status: Accepted and built.** Approved by the user in the session of 2026-11-15; built 2026-11-16 (see "As built").
 
 Supersedes ADR 0005 (a project is a folder, found from the current folder) and Decision 12's "coordinator in the main checkout". Refines ADR 0009 (the profile becomes the project's account) and ADR 0015 (the project kind). Settles open points 2, 5 and 8 of `docs/design-v2.md`, and proposes one change to it: the coordinator's folder.
 
@@ -66,3 +66,15 @@ Example: `project_start_slice { task: 12, name: "api-guest", repo: "shopfront-ap
 - `Project.repo_path` and `ProjectState::folder` are read in more than fifty places in the core. Each becomes either "the coordinator's folder" or "this agent's repo". That is the bulk of the work.
 - Docs reading (`:docs`) and `@` path completion need a repo to be named when there are several.
 - The role prompt for the coordinator changes: it no longer runs in a checkout, and it names a repo when it starts a slice.
+
+## As built (2026-11-16)
+
+Plan: `docs/plan/multi-repo.md`.
+
+- **Registry migration 0004** rebuilds `projects` (`id, name, account, last_opened_ms`) and adds `repos` (`UNIQUE (project_id, name)`, `UNIQUE (project_id, path)`, `git_common_dir UNIQUE`). A folder project without git keeps a repo row with no git dir. **State migration 0019** adds `agents.repo_id` and `slice_queue.repo` (by name, resolved when the queued start runs).
+- **Every** registered project's coordinator runs in `home/`, research projects too; side chats run there as well and get the same `--add-dir` flags. Tangent sessions stay in Tangents' state folder.
+- **Moved coordinator** (point 8): detected at each start, not only in the migration: a recorded transcript filed under another folder than the one the session now starts in is not resumed. For the coordinator, `start_coordinator` seeds the fresh session with the newest handoff (if a journal exists) and the open tasks. The old session cannot be resumed from the inbox (Claude Code resumes only from the folder it ran in), so the Needs-you item is a note naming its id and transcript, to reopen by hand with `claude --resume`.
+- **Restart on change** (point 4): an idle coordinator is stopped and resumed at once; one mid-turn when its turn ends; one not running hears it at its next start.
+- **Single-repo paths** (`:docs`, `:upgrade`, `research_dir`, `@` completion outside a worktree) use the first repo until a repo can be named there.
+- **The worktree hook** learns the slice's repo from `DOVETAIL_REPO` and applies `[repos.<name>]`.
+- **Counts on Home** are read from each project's `state.db` opened read-only, never migrated.

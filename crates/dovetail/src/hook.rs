@@ -15,6 +15,7 @@
 //!
 //! Environment, set by the core at launch:
 //! - `DOVETAIL_PROJECT` (required): the project id (recipe: `~/.config/dovetail/projects/<id>.toml`).
+//! - `DOVETAIL_REPO`: the slice's repo name, for the recipe's `[repos.<name>]` overrides.
 //! - `DOVETAIL_SLICE`: the slice name (informational; the worktree name comes from the hook's `name`).
 //! - `DOVETAIL_AGENT_ID`: the Dovetail agent id of the session (informational, used in messages).
 //!
@@ -88,6 +89,11 @@ fn worktree_create() -> Result<()> {
         .with_context(|| format!("{} is not set", env::PROJECT))?;
     let paths = Paths::from_env();
     let recipe = Recipe::load(&paths.recipe(&project)).context("loading the project recipe")?;
+    // A slice of one of several repos gets that repo's `[repos.<name>]` overrides (ADR 0021).
+    let recipe = match std::env::var(env::REPO).ok().filter(|r| !r.is_empty()) {
+        Some(repo) => recipe.for_repo(&repo),
+        None => recipe,
+    };
     let req = CreateRequest {
         project,
         name: input.name,

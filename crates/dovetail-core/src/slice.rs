@@ -26,6 +26,7 @@ use crate::db::{AgentRow, QueuedSlice, now_ms};
 use crate::error::{SessionError, SetupFailure, SliceError};
 use crate::inbox::Waiter;
 use crate::projects;
+use crate::projects::Repo;
 use crate::service::{COORDINATOR, Core, Input, new_agent};
 use crate::worktree::{self, SUBAGENT_PREFIX, WorktreeError};
 
@@ -40,6 +41,8 @@ pub(crate) struct SliceRequest {
     pub(crate) name: String,
     pub(crate) brief: String,
     pub(crate) by_coordinator: bool,
+    /// The repo by name (ADR 0021); `None` when the project has one.
+    pub(crate) repo: Option<String>,
 }
 
 /// What became of a request.
@@ -84,11 +87,39 @@ impl Core {
             .count()
     }
 
-    /// Everything that makes a request impossible, checked before asking anyone.
-    pub(crate) async fn check_slice(&self, request: &SliceRequest) -> Result<(), SliceError> {
+    /// The repo a slice asked for by `name` works in (ADR 0021): the named one; with no name,
+    /// the only one. Refused in a project with no repos, with several and no name, or for a
+    /// name the project does not have.
+    pub(crate) fn pick_repo(&self, name: Option<&str>) -> Result<Repo, SliceError> {
         if self.project.is_research() {
             return Err(SliceError::ResearchProject);
         }
+        let repos = self.project.repos();
+        let known = || {
+            repos
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        match name.map(str::trim).filter(|n| !n.is_empty()) {
+            Some(name) => repos
+                .iter()
+                .find(|r| r.name == name)
+                .cloned()
+                .ok_or_else(|| SliceError::UnknownRepo {
+                    name: name.to_owned(),
+                    known: known(),
+                }),
+            None if repos.len() == 1 => Ok(repos[0].clone()),
+            None if repos.is_empty() => Err(SliceError::ResearchProject),
+            None => Err(SliceError::RepoRequired(known())),
+        }
+    }
+
+    /// Everything that makes a request impossible, checked before asking anyone.
+    pub(crate) async fn check_slice(&self, request: &SliceRequest) -> Result<(), SliceError> {
+        self.pick_repo(request.repo.as_deref())?;
         let name = request.name.trim();
         worktree::validate_name(name).map_err(SliceError::BadName)?;
         if name.starts_with(SUBAGENT_PREFIX) {
@@ -133,6 +164,7 @@ impl Core {
                     name.clone(),
                     request.brief.clone(),
                     request.by_coordinator,
+                    request.repo.clone(),
                 )
                 .await?;
             self.queue.push_back(QueuedSlice {
@@ -141,6 +173,7 @@ impl Core {
                 name: name.clone(),
                 brief: request.brief,
                 by_coordinator: request.by_coordinator,
+                repo: request.repo,
             });
             return Ok(SliceStart::Queued(name));
         }
@@ -160,6 +193,7 @@ impl Core {
                 name: queued.name,
                 brief: queued.brief,
                 by_coordinator: queued.by_coordinator,
+                repo: queued.repo,
             };
             let name = request.name.clone();
             let by_coordinator = request.by_coordinator;
@@ -175,7 +209,8 @@ impl Core {
     async fn start_slice(&mut self, request: SliceRequest) -> Result<(), SliceError> {
         // A folder that is not a project yet may run slices too; their state is kept with the
         // rest on registration (ADR 0005, decided 2026-11-06).
-        let repo_path = self.project.folder(&self.paths);
+        let repo = self.pick_repo(request.repo.as_deref())?;
+        let repo_path = repo.path.clone();
         let name = request.name.trim().to_owned();
         let id = slice_id(&name);
         let git = projects::has_git(&repo_path);
@@ -204,6 +239,13 @@ impl Core {
                 first_prompt.push_str("\n\n");
             }
         }
+        if self.project.repos().len() > 1 {
+            first_prompt.push_str(&format!(
+                "You work in the repo `{}` ({}).\n\n",
+                repo.name,
+                repo_path.display()
+            ));
+        }
         first_prompt.push_str(request.brief.trim());
 
         let mut agent = new_agent(id.clone(), name.clone(), AgentKind::Slice, request.task);
@@ -224,6 +266,8 @@ impl Core {
             claude_home: None,
             takeover: None,
             model_choice: None,
+            // An unregistered folder's repo (id 0) is never stored.
+            repo: Some(repo.id).filter(|r| r.0 > 0),
         };
         self.agents.insert(id.clone(), row);
         self.save_agent(&id);
@@ -463,7 +507,10 @@ impl Core {
         let name = row.agent.name.clone();
         let paths = self.paths.clone();
         let key = self.worktree_key(&row.agent);
-        let repo = self.project.folder(&self.paths);
+        let Some(repo) = self.repo_of(agent).map(|r| r.path) else {
+            self.fail(format!("{name}: its repo is no longer in the project"));
+            return;
+        };
         let inputs = self.inputs.clone();
         let agent = agent.clone();
         tokio::task::spawn_blocking(move || {

@@ -221,9 +221,26 @@ export function dispatch(a: Action, arg?: unknown): void {
       return;
     }
     case 'newProject':
-      setUi({ modal: { type: 'form', title: 'New project', fields: [['Name', 'Shop'], ['Repos', 'shop-api, shop-web  (any number; none for research)'], ['Claude account', 'work']] } });
+      setUi({ modal: { type: 'form', title: 'New project', sel: 0, fields: [
+        { label: 'Name', value: '', hint: 'Shop' },
+        { label: 'Claude account', value: '', hint: 'a profile from config.toml; empty for the default' },
+        { label: 'First repo', value: '', hint: '~/code/shop-api — a folder in a git repo; empty for research only' },
+      ], onDone: ([name = '', account = '', repo = '']) => {
+        send({ type: 'create_project', name, account, repo_path: repo });
+      } } });
       return;
-    case 'addRepo': toast('Add repo: a folder picker; the repo joins this project (not in this build)'); return;
+    case 'addRepo': {
+      // Home: the selected project; a workspace: the open one.
+      const p = u.screen === 'home' ? s.projects[u.homeSel] : s.projects.find(x => x.id === s.open_project);
+      if (!p) return;
+      setUi({ modal: { type: 'form', title: `Add a repo to ${p.name}`, sel: 0, fields: [
+        { label: 'Folder', value: '', hint: '~/code/shop-web — a folder in a git repo' },
+        { label: 'Name', value: '', hint: "what agents call it; empty for the folder's name" },
+      ], onDone: ([path = '', name = '']) => {
+        send({ type: 'add_repo', project_id: p.id, path, name });
+      } } });
+      return;
+    }
     case 'pickProject':
       picker('Switch project', s.projects.map((p, i) => ({
         key: p.id, text: p.name, label: p.name, detail: `${p.repos.join(', ') || 'research'} · ${p.account}`, go: () => dispatch('openProject', i),
@@ -617,7 +634,23 @@ export function dispatch(a: Action, arg?: unknown): void {
       ]);
       return;
     case 'pickAgent': dispatch('picker'); setUi(x => x.modal?.type === 'picker' ? { modal: { ...x.modal, q: 'agent ' } } : {}); return;
-    case 'newSlice': toast('New slice: picks repo and task, makes the worktree (not in this build)'); return;
+    case 'newSlice': {
+      const repos = s.projects.find(x => x.id === s.open_project)?.repos ?? [];
+      if (!repos.length) { toast('This project has no repo, so it runs no slices: **Space p r** adds one'); return; }
+      const row = u.zone === 'tree' ? treeRows(s, u.folded)[u.treeSel] : undefined;
+      const task = row?.type === 'task' ? row.task : undefined;
+      const form = (repo: string | undefined) => setUi({ modal: { type: 'form', sel: 0,
+        title: `New slice${repo ? ` in ${repo}` : ''}${task ? ` on “${task.title}”` : ''}`, fields: [
+          { label: 'Name', value: '', hint: 'api-guest — also its branch' },
+          { label: 'Brief', value: '', hint: 'its first prompt: goal, scope, checks' },
+        ], onDone: ([name = '', brief = '']) => {
+          send({ type: 'new_slice', name, brief: brief || name, ...(task ? { task_id: task.id } : {}), ...(repo ? { repo } : {}) });
+        } } });
+      // With several repos the slice's repo is asked first (ADR 0021).
+      if (repos.length === 1) { form(undefined); return; }
+      picker('Which repo?', repos.map(r => ({ key: r, text: r, label: r, glyph: '▣', glyphClass: 'dim', go: () => form(r) })));
+      return;
+    }
     case 'interrupt': toast('Interrupt the agent in focus (not in this build)'); return;
     case 'permMode': toast('Permission mode: auto → acceptEdits → manual (not in this build)'); return;
   }

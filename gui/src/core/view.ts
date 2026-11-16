@@ -33,7 +33,7 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
   const canvas = viewCanvas(core, pending);
   return {
     seq: core.seq,
-    projects: core.projects.map(p => viewProject(p, open, pending, efforts, inbox, core.profile)),
+    projects: core.projects.map(p => viewProject(p, open, efforts, inbox, core.profile, nowMs)),
     open_project: open,
     efforts,
     tasks: tasks.map(viewTask),
@@ -51,14 +51,15 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
 }
 
 function viewProject(
-  p: W.ProjectSummary, open: Id | null, pending: Pending, efforts: Effort[], inbox: InboxItem[],
-  profile: string | null | undefined,
+  p: W.ProjectSummary, open: Id | null, efforts: Effort[], inbox: InboxItem[],
+  profile: string | null | undefined, nowMs: number,
 ): ProjectSummary {
   const base: ProjectSummary = {
     id: p.id, name: p.name,
-    repos: p.kind === 'research' ? [] : [basename(p.repo_path)],
-    account: '', efforts: 0, running: 0, needs_you: 0, opened: '', note: '',
-    ...pending.projects[p.id],
+    repos: p.repos.map(r => r.name),
+    account: p.account ?? '',
+    efforts: p.counts.efforts, running: p.counts.running, needs_you: p.counts.needs_you,
+    opened: openedText(p.last_opened_ms ?? null, nowMs),
   };
   if (p.id !== open) return base;
   // The open project's counts are live.
@@ -231,6 +232,17 @@ function viewStatus(core: W.Snapshot, pending: Pending): Status {
   };
 }
 
+/** When a project was last opened, as Home shows it: "today 09:12", "yesterday", "12 Nov". */
+export function openedText(ms: number | null, nowMs: number): string {
+  if (ms === null || ms <= 0) return '';
+  const at = new Date(ms);
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(new Date(nowMs)) - day(at)) / 86_400_000);
+  if (days === 0) return `today ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  if (days === 1) return 'yesterday';
+  return `${at.getDate()} ${at.toLocaleString('en-GB', { month: 'short' })}`;
+}
+
 /** `claude-opus-5-5` → `Opus 5.5`; anything else as it is. */
 export function modelName(model: string): string {
   const m = /^claude-([a-z]+)-(\d+)-(\d+)/.exec(model);
@@ -250,7 +262,6 @@ function mainArgument(input: unknown): string {
 
 const firstLine = (text: string): string => text.split('\n')[0]?.trim() ?? '';
 const capital = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-const basename = (path: string): string => path.replace(/\/+$/, '').split('/').pop() ?? path;
 
 function clock(ms: number): string {
   const d = new Date(ms);
