@@ -991,7 +991,6 @@ dependencies = [
  "dovetail-api",
  "dovetail-core",
  "dovetail-driver",
- "serde_json",
  "tauri",
  "tauri-build",
  "tracing",
