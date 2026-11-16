@@ -494,12 +494,18 @@ impl Core {
         }
         let paths = self.paths.clone();
         let key = self.project.key().to_owned();
-        let fallback = self.project.first_repo_path().unwrap_or_default();
+        // Removed through the repo its `.git` file names; a plain folder (no git) through the
+        // first repo. With neither, it fails loudly rather than run git somewhere unknown.
+        let fallback = self.project.first_repo_path();
         let inputs = self.inputs.clone();
         let name = found.name;
         tokio::task::spawn_blocking(move || {
-            let repo = worktree::main_checkout(&found.path).unwrap_or(fallback);
-            let result = worktree::remove(&paths, &key, &name, &repo, true);
+            let repo = match (worktree::main_checkout(&found.path), fallback) {
+                (Ok(repo), _) => Ok(repo),
+                (Err(_), Some(first)) if found.files.is_some() => Ok(first),
+                (Err(e), _) => Err(e),
+            };
+            let result = repo.and_then(|repo| worktree::remove(&paths, &key, &name, &repo, true));
             let _ = inputs.send(Input::OrphanRemoved { name, result });
         });
     }

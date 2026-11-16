@@ -277,6 +277,12 @@ impl Db {
         self.run(move |c, _| registry::set_account(&c.registry, &id, account.as_deref()))
     }
 
+    /// The open slices in a project's `state.db` at `path` that work in `repo` (`first`: the
+    /// project's first repo), read without migrating it.
+    pub fn slices_in_repo(&self, path: PathBuf, repo: i64, first: bool) -> Pending<Vec<String>> {
+        self.run(move |_, _| counts::slices_in_repo(&path, repo, first))
+    }
+
     /// Home's counts for project `id`, read from its `state.db` without migrating it.
     pub fn project_counts(&self, path: PathBuf) -> Pending<dovetail_api::ProjectCounts> {
         self.run(move |_, _| counts::read(&path))

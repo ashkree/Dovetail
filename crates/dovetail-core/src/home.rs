@@ -84,7 +84,7 @@ fn summary(db: &Db, paths: &Paths, project: &Project) -> dovetail_api::ProjectSu
 fn project_op(db: &Db, paths: &Paths, config: &Config, op: ProjectOp) -> Event {
     let creating = matches!(op, ProjectOp::Create { .. });
     let done = op
-        .start(db, config)
+        .start(db, paths, config)
         .and_then(|pending| pending.wait().map_err(Into::into));
     match done {
         Ok(project) => {
@@ -361,6 +361,23 @@ mod tests {
             .unwrap();
         assert!(failed(&link).contains("not inside a git repository"));
 
+        // A slice works in `web` (its project is not open): that repo stays.
+        drop(Db::open(&paths, Some("shop-front")).unwrap());
+        rusqlite::Connection::open(paths.state_db("shop-front"))
+            .unwrap()
+            .execute(
+                "INSERT INTO agents (id, kind, name, status, permission_mode, created_ms, repo_id) \
+                 VALUES ('slice-ui', 'slice', 'ui', 'idle', 'auto', 1, ?1)",
+                [two.repos[1].id.0],
+            )
+            .unwrap();
+        link.commands
+            .send(Command::RemoveRepo {
+                project: shop.id.clone(),
+                repo: two.repos[1].id,
+            })
+            .unwrap();
+        assert!(failed(&link).contains("open slices (ui)"));
         link.commands
             .send(Command::RemoveRepo {
                 project: shop.id.clone(),

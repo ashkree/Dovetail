@@ -10,7 +10,7 @@ use crate::db::DbError;
 use crate::error::RegisterError;
 use crate::paths::Paths;
 use crate::project_admin::{self, ProjectOp};
-use crate::projects::{Candidate, Project, Repo};
+use crate::projects::{Candidate, Project, ProjectError, Repo};
 use crate::recipe;
 use crate::service::{Core, CoreHandler, serve};
 use crate::socket::{self, SocketHandler};
@@ -151,16 +151,17 @@ impl Core {
                 .map(|r| r.agent.name.clone())
                 .collect();
             if !busy.is_empty() {
-                return self.fail(format!(
-                    "the repo has open slices ({}): archive them first",
-                    busy.join(", ")
-                ));
+                return self.fail(ProjectError::RepoInUse(busy.join(", ")).to_string());
             }
         }
         let creating = matches!(op, ProjectOp::Create { .. });
-        let pending = match op.start(&self.db, &self.config) {
-            Ok(pending) => pending,
-            Err(e) => return self.fail(e.to_string()),
+        // `start` runs git and reads files: off the loop's thread.
+        let (db, paths, config) = (self.db.clone(), self.paths.clone(), self.config.clone());
+        let started = tokio::task::spawn_blocking(move || op.start(&db, &paths, &config)).await;
+        let pending = match started {
+            Ok(Ok(pending)) => pending,
+            Ok(Err(e)) => return self.fail(e.to_string()),
+            Err(e) => return self.fail(format!("the project change did not run: {e}")),
         };
         let project = match pending.await {
             Ok(project) => project,
@@ -242,7 +243,11 @@ impl Core {
             self.hold_for_coordinator(note);
             return;
         };
-        self.reattach = Some(note);
+        // A second change before the restart adds to the note rather than replace it.
+        self.reattach = Some(match self.reattach.take() {
+            Some(earlier) => format!("{earlier}\n{note}"),
+            None => note,
+        });
         if !live.turn.busy() && self.quitting.is_none() {
             live.stopping = true;
             live.session.shutdown(crate::shutdown::QUIT_GRACE);

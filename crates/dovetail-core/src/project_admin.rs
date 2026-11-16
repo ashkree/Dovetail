@@ -95,9 +95,15 @@ impl ProjectOp {
         }
     }
 
-    /// Checks the input and starts the registry request. Runs `git` for a repo path (a
-    /// `rev-parse`, quick), so it blocks briefly. `config` lists the accounts there are.
-    pub(crate) fn start(self, db: &Db, config: &Config) -> Result<Pending<Project>, ProjectError> {
+    /// Checks the input and starts the registry request. Blocks: it runs `git` for a repo path
+    /// and reads the project's `state.db` for slices in a repo to remove, so the core calls it
+    /// on a blocking thread. `config` lists the accounts there are.
+    pub(crate) fn start(
+        self,
+        db: &Db,
+        paths: &Paths,
+        config: &Config,
+    ) -> Result<Pending<Project>, ProjectError> {
         let account = |account: Option<String>| -> Result<Option<String>, ProjectError> {
             match account
                 .map(|a| a.trim().to_owned())
@@ -141,7 +147,22 @@ impl ProjectOp {
                 let repo = projects::repo_at(&expand_home(&path), name.as_deref())?;
                 db.add_repo(id.0, repo)
             }
-            ProjectOp::RemoveRepo { id, repo } => db.remove_repo(id.0, repo),
+            ProjectOp::RemoveRepo { id, repo } => {
+                // A repo a slice still works in stays (ADR 0021 point 4), whether or not the
+                // project is open.
+                let first = db
+                    .get_project(id.0.clone())
+                    .wait()?
+                    .and_then(|p| p.first_repo().map(|r| r.id))
+                    == Some(repo);
+                let busy = db
+                    .slices_in_repo(paths.state_db(&id.0), repo.0, first)
+                    .wait()?;
+                if !busy.is_empty() {
+                    return Err(ProjectError::RepoInUse(busy.join(", ")));
+                }
+                db.remove_repo(id.0, repo)
+            }
         })
     }
 }

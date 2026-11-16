@@ -8,6 +8,24 @@ use rusqlite::{Connection, OpenFlags};
 
 use super::DbError;
 
+/// The open slices of the `state.db` at `path` that work in repo `repo`; `first`: it is the
+/// project's first repo, which slices with no repo stored (from before ADR 0021) use. A missing
+/// file has none.
+pub(super) fn slices_in_repo(path: &Path, repo: i64, first: bool) -> Result<Vec<String>, DbError> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let mut stmt = conn.prepare(
+        "SELECT name FROM agents WHERE kind = 'slice' AND closed_ms IS NULL \
+         AND (repo_id = ?1 OR (repo_id IS NULL AND ?2)) ORDER BY name",
+    )?;
+    let names = stmt
+        .query_map(rusqlite::params![repo, first], |r| r.get::<_, String>(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(names)
+}
+
 /// The counts of the `state.db` at `path`. A missing file is all zero; so is one too old to have
 /// efforts (the caller logs the error and shows zero).
 pub(super) fn read(path: &Path) -> Result<ProjectCounts, DbError> {

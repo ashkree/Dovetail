@@ -226,6 +226,9 @@ pub enum ProjectError {
     /// The account is no profile in `config.toml` (ADR 0009).
     #[error("config.toml lists no profile `{0}`: add it with `dovetail login {0}`")]
     UnknownAccount(String),
+    /// A repo still has open slices (ADR 0021 point 4).
+    #[error("the repo has open slices ({0}): archive them first")]
+    RepoInUse(String),
     /// A project needs a name (ADR 0021: Home's new-project form).
     #[error("a project needs a name")]
     EmptyName,

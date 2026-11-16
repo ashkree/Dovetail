@@ -232,7 +232,10 @@ impl Core {
         {
             tracing::warn!("creating {}: {e}", cwd.display());
         }
-        let elsewhere = self.filed_elsewhere(id, &cwd);
+        // Only sessions in the coordinator's folder moved (ADR 0021); a slice's never does, and
+        // is never started fresh on a guess about its path.
+        let elsewhere =
+            cwd == self.project.coordinator_folder(&self.paths) && self.filed_elsewhere(id, &cwd);
         let Some(row) = self.agents.get_mut(id) else {
             return Err(SessionError::NoAgent(id.0.clone()));
         };
