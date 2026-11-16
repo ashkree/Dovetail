@@ -8,6 +8,7 @@
 //! symlink = []              # paths relative to the repo root; symlinked, never copied (12c)
 //! setup = ["cargo fetch"]   # run in order in the new worktree; each must be safe to re-run (B5)
 //! [env]                     # set for the setup commands and for the slice's session
+//! preview = "npm run dev -- --port {port}"  # the slice's web preview (ADR 0026)
 //! [repos.web]               # overrides for one repo of the project (ADR 0021)
 //! setup = ["npm ci"]        # replaces [worktree] setup for that repo's slices
 //! [repos.web.env]           # merged over [env]; its keys win
@@ -37,6 +38,10 @@ pub struct Recipe {
     /// writes only under this folder.
     #[serde(default)]
     pub research_dir: Option<PathBuf>,
+    /// The command that serves a slice's web preview (ADR 0026); `{port}` becomes a free port on
+    /// 127.0.0.1. Run in the slice's worktree when the viewer first opens on the slice.
+    #[serde(default)]
+    pub preview: Option<String>,
     /// How slice worktrees are prepared.
     #[serde(default)]
     pub worktree: WorktreeRecipe,
@@ -55,6 +60,9 @@ pub struct RepoRecipe {
     /// Replaces `[worktree] setup` when given.
     #[serde(default)]
     pub setup: Option<Vec<String>>,
+    /// Replaces the top-level `preview` when given.
+    #[serde(default)]
+    pub preview: Option<String>,
     /// Merged over `[env]`; these keys win.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -101,6 +109,9 @@ impl Recipe {
         if let Some(over) = self.repos.get(name) {
             if let Some(setup) = &over.setup {
                 out.worktree.setup = setup.clone();
+            }
+            if let Some(preview) = &over.preview {
+                out.preview = Some(preview.clone());
             }
             out.env
                 .extend(over.env.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -216,6 +227,17 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_repos_preview_line_replaces_the_projects() {
+        let r = super::Recipe::parse(
+            "preview = \"a {port}\"\n[repos.web]\npreview = \"b {port}\"\n[repos.api]\nsetup = []\n",
+        )
+        .unwrap();
+        assert_eq!(r.for_repo("web").preview.as_deref(), Some("b {port}"));
+        assert_eq!(r.for_repo("api").preview.as_deref(), Some("a {port}"));
+        assert_eq!(r.for_repo("other").preview.as_deref(), Some("a {port}"));
+    }
+
     use super::*;
 
     #[test]

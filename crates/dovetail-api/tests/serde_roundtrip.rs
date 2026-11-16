@@ -446,6 +446,30 @@ fn hello_and_a_full_snapshot_roundtrip() {
             to: CardId(90),
             label: "answers".into(),
         }],
+        previews: vec![
+            Preview {
+                agent: AgentId("web-slice".into()),
+                state: PreviewState::Running {
+                    url: "http://127.0.0.1:41000/".into(),
+                },
+            },
+            Preview {
+                agent: AgentId("api-slice".into()),
+                state: PreviewState::Failed {
+                    output: "nothing listened".into(),
+                },
+            },
+        ],
+        variants: vec![VariantSet::declared(
+            AgentId("web-slice".into()),
+            vec![VariantSlot {
+                name: "theme".into(),
+                level: VariantLevel::Global,
+                options: vec!["light".into(), "dark".into()],
+                kept: Some("dark".into()),
+            }],
+            &Default::default(),
+        )],
         tasks: vec![task()],
         agents: vec![subagent()],
         todos: vec![todo()],

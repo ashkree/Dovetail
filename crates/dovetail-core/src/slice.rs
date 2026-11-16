@@ -454,6 +454,8 @@ impl Core {
         if self.refuse_while_taken_over(agent) {
             return;
         }
+        // The preview runs in the worktree about to go (ADR 0026).
+        self.stop_preview(agent, true);
         // A last look at its pull request: the coordinator merges and archives in one turn, so
         // no slice turn ends in between to show the merge (ADR 0024).
         if self
@@ -491,6 +493,7 @@ impl Core {
         if self.refuse_while_taken_over(agent) {
             return;
         }
+        self.stop_preview(agent, false);
         if self.live.contains_key(agent) {
             // Stop the session first; the removal follows its exit.
             self.close_slice(agent, confirmed);
@@ -711,6 +714,8 @@ impl Core {
         }
         // The client drops its copy with `AgentRemoved`.
         self.worktrees.remove(agent);
+        self.stop_preview(agent, false);
+        self.persist("forgotten variants", self.db.forget_variants(agent.clone()));
         let items: Vec<_> = self
             .inbox
             .values()

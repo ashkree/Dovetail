@@ -55,6 +55,7 @@ impl Core {
             return;
         }
         self.cancel_upgrade_build();
+        self.stop_all_previews();
         for live in self.live.values_mut() {
             live.stopping = true;
             live.session.shutdown(QUIT_GRACE);

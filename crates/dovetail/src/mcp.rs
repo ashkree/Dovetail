@@ -615,6 +615,39 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
+            name: "design_declare_variants",
+            description: "Declare what the user can switch in your running web preview, so \
+                Dovetail's variant panel lists it. Send the whole list each time; it replaces \
+                the last one. A slot is one thing to switch, with a `level`: `global` (the \
+                whole page: a theme, a layout), `component` (one part: the header, the footer) \
+                or `content` (one piece of content: a line of text), and its `options` (1 to 8 \
+                strings). Name slots so they work as a JavaScript property: `theme`, \
+                `header`, `hero_text`. Dovetail sends the user's picks to your page with \
+                `postMessage` on load and on every change, to the page's window: \
+                `{ dovetailVariants: { <slot name>: <option>, ... } }`, every declared slot \
+                each time. You write the page code that applies it, for example \
+                `addEventListener('message', e => { const v = e.data?.dovetailVariants; if (v) \
+                for (const [k, o] of Object.entries(v)) document.documentElement.dataset[k] = \
+                o; })`, and the CSS or components that react. Nothing else is added to your \
+                page. The user mixes options freely, then presses \"Keep this combination\": \
+                you then get a message naming the chosen options. Make them permanent, delete \
+                the other options and the switching code, and call this tool again with what \
+                is left (`slots: []` when nothing is). Slice only. Every problem with the list \
+                comes back at once.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "slots": {"type": "array", "maxItems": 12, "description": "Every slot, in the order the panel shows them. Empty clears the list.", "items": {
+                        "type": "object", "properties": {
+                            "name": {"type": "string", "description": "The slot's key; unique; the page reads it."},
+                            "level": {"type": "string", "enum": ["global", "component", "content"]},
+                            "options": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8, "description": "The choices; the page receives one of these strings."},
+                            "kept": {"type": "string", "description": "The option already made permanent, if any; must be one of `options`."}
+                        }, "required": ["name", "level", "options"]
+                    }}
+                }, "required": ["slots"]})
+            },
+        },
+        ToolDef {
             name: "research_start_round",
             description: "Open the next round of a research task: a fan-out of subagents under \
                 the user's criteria. Call it before you launch research subagents; while it is \

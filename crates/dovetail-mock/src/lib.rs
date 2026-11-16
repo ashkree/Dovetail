@@ -694,6 +694,10 @@ impl MockCore {
             | Command::UnlinkCards { .. }
             | Command::CardFromReply { .. }
             | Command::LoadCard { .. }
+            | Command::StartPreview { .. }
+            | Command::RestartPreview { .. }
+            | Command::SelectVariant { .. }
+            | Command::KeepVariants { .. }
             | Command::CreateEffort(_)
             | Command::RenameEffort { .. }
             | Command::UpdateEffort { .. }

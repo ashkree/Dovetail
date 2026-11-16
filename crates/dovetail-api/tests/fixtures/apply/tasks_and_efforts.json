@@ -180,6 +180,7 @@
     "messages": [],
     "models": [],
     "now_ms": 0,
+    "previews": [],
     "project": null,
     "projects": [],
     "research": [],
@@ -214,6 +215,7 @@
       "five_hour": null,
       "seven_day": null
     },
+    "variants": [],
     "warnings": [],
     "worktrees": []
   },
@@ -241,6 +243,7 @@
     "messages": [],
     "models": [],
     "now_ms": 0,
+    "previews": [],
     "project": null,
     "projects": [],
     "research": [],
@@ -258,6 +261,7 @@
       "five_hour": null,
       "seven_day": null
     },
+    "variants": [],
     "warnings": [],
     "worktrees": []
   }

@@ -13,6 +13,7 @@ import type { InboxItem } from "./InboxItem";
 import type { JournalState } from "./JournalState";
 import type { MapSummary } from "./MapSummary";
 import type { ModelOption } from "./ModelOption";
+import type { Preview } from "./Preview";
 import type { ProjectSummary } from "./ProjectSummary";
 import type { ResearchSummary } from "./ResearchSummary";
 import type { SlashCommand } from "./SlashCommand";
@@ -21,6 +22,7 @@ import type { Task } from "./Task";
 import type { TodoItem } from "./TodoItem";
 import type { Totals } from "./Totals";
 import type { UsageLimits } from "./UsageLimits";
+import type { VariantSet } from "./VariantSet";
 import type { Warning } from "./Warning";
 import type { WorktreeInfo } from "./WorktreeInfo";
 
@@ -149,4 +151,12 @@ tangents: Array<TangentSummary>,
 /**
  * The models the model selector offers, in order (task #39).
  */
-models: Array<ModelOption>, };
+models: Array<ModelOption>, 
+/**
+ * Each slice's running preview, for slices the viewer was opened on (ADR 0026).
+ */
+previews: Array<Preview>, 
+/**
+ * The variants slices declared, with the user's picks (ADR 0026).
+ */
+variants: Array<VariantSet>, };

@@ -290,7 +290,31 @@ entry: EntryId,
 /**
  * The effort the card goes to.
  */
-effort: EffortId, } } | { "load_card": { 
+effort: EffortId, } } | { "start_preview": { 
+/**
+ * The slice.
+ */
+agent: AgentId, } } | { "restart_preview": { 
+/**
+ * The slice.
+ */
+agent: AgentId, } } | { "select_variant": { 
+/**
+ * The slice.
+ */
+agent: AgentId, 
+/**
+ * The slot's name.
+ */
+slot: string, 
+/**
+ * The option.
+ */
+option: string, } } | { "keep_variants": { 
+/**
+ * The slice.
+ */
+agent: AgentId, } } | { "load_card": { 
 /**
  * The card.
  */
