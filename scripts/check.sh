@@ -10,7 +10,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 
 # The Tauri window loads the Vite dev server: one port, the same in both files (gui/DECISIONS.md 1).
-vite_port=$(grep -oE 'port: [0-9]+' gui/vite.config.ts | grep -oE '[0-9]+')
+vite_port=$(grep -E '^ *server:' gui/vite.config.ts | grep -oE 'port: [0-9]+' | grep -oE '[0-9]+')
 tauri_port=$(grep -oE '"devUrl": "http://127.0.0.1:[0-9]+"' gui/src-tauri/tauri.conf.json | grep -oE '[0-9]+"$' | tr -d '"')
 if [[ -z $vite_port || $vite_port != "$tauri_port" ]]; then
     echo "check.sh: gui/vite.config.ts port ($vite_port) and tauri.conf.json devUrl port ($tauri_port) differ" >&2
