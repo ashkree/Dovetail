@@ -90,7 +90,8 @@ pub enum Suite {
     Tasks,
     /// Slice lifecycle and project registration.
     Project,
-    /// Claims and ordering between sessions (v1.1; no tools yet).
+    /// What sessions tell each other through Dovetail: a slice's reports (ADR 0022). Claims
+    /// and ordering come in v1.1.
     Coordination,
     /// Research rounds, reports and proposals (ADR 0015).
     Research,
@@ -225,6 +226,8 @@ tools! {
     ResearchPropose(ResearchPropose) = "research_propose", Research;
     /// `research_get`: read a stored research document.
     ResearchGet(ResearchGet) = "research_get", Research;
+    /// `coordination_report` (ADR 0022): a slice's report to the coordinator.
+    Report(Report) = "coordination_report", Coordination;
     /// `maps_draw` (decision 25, M15).
     DrawMap(DrawMap) = "maps_draw", Maps, was "draw_map";
 }
@@ -286,6 +289,10 @@ pub enum ToolError {
     DecisionNeedsTask,
     /// `tasks_update` asked for `archived`, which is `tasks_archive`'s job.
     UpdateToArchived,
+    /// `tasks_update` asked for a status: Dovetail sets task status itself (ADR 0024).
+    StatusIsSetByDovetail,
+    /// `coordination_report` from a session that is not a slice.
+    ReportFromNonSlice,
     /// `tasks_update` named no field to change.
     NothingToUpdate,
     /// `research_propose` of a decision with no evidence (ADR 0015).
@@ -313,13 +320,20 @@ impl std::fmt::Display for ToolError {
             ToolError::DecisionNeedsTask => {
                 f.write_str("the coordinator must name the `task` this decision belongs to")
             }
-            ToolError::UpdateToArchived => f.write_str(
-                "`status` must be `todo`, `in_progress` or `done`: archive a task with \
-                 `tasks_archive`",
+            ToolError::UpdateToArchived => {
+                f.write_str("`status` cannot be set here: archive a task with `tasks_archive`")
+            }
+            ToolError::StatusIsSetByDovetail => f.write_str(
+                "`status` cannot be set: Dovetail moves a task to in progress when its slice \
+                 starts, to review when its pull request opens or its slice reports done, and \
+                 to done when the pull request is merged. For work with no pull request, ask \
+                 the user to mark it done",
             ),
+            ToolError::ReportFromNonSlice => {
+                f.write_str("`coordination_report` is for slices: it reports to the coordinator")
+            }
             ToolError::NothingToUpdate => f.write_str(
-                "give at least one field to change: `status`, `bucket`, `p_level`, `title` or \
-                 `notes`",
+                "give at least one field to change: `bucket`, `p_level`, `title` or `notes`",
             ),
             ToolError::DecisionNeedsEvidence => f.write_str(
                 "a decision needs `evidence`: the finding and source ids it rests on, like \
@@ -378,6 +392,12 @@ impl Tool {
         match self {
             Tool::AskUser(a) => text("question", &a.question),
             Tool::ReportStatus(r) => text("status", &r.status),
+            Tool::Report(r) => {
+                if role != Role::Slice {
+                    return Err(ToolError::ReportFromNonSlice);
+                }
+                text("summary", &r.summary)
+            }
             Tool::CreateTask(c) => {
                 text("title", &c.title)?;
                 if c.bucket == Some(Bucket::Now) {
@@ -435,11 +455,12 @@ impl Tool {
                 if let Some(title) = &u.title {
                     text("title", title)?;
                 }
-                if u.status == Some(TaskStatus::Archived) {
-                    return Err(ToolError::UpdateToArchived);
+                match u.status {
+                    Some(TaskStatus::Archived) => return Err(ToolError::UpdateToArchived),
+                    Some(_) => return Err(ToolError::StatusIsSetByDovetail),
+                    None => {}
                 }
-                if u.status.is_none()
-                    && u.bucket.is_none()
+                if u.bucket.is_none()
                     && u.p_level.is_none()
                     && u.title.is_none()
                     && u.notes.is_none()
@@ -465,6 +486,42 @@ pub struct AskUser {
 pub struct ReportStatus {
     /// One line; the core cuts it at 120 characters.
     pub status: String,
+}
+
+/// `coordination_report`: what a slice tells the coordinator about its task (ADR 0022). It
+/// goes through Dovetail, never by session name, so it cannot reach another project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Report {
+    /// Where the work stands.
+    pub state: ReportState,
+    /// What happened, in a line or two.
+    pub summary: String,
+    /// The pull request the report is about, if there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr: Option<u32>,
+}
+
+/// Where a slice says its work stands, in a [`Report`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportState {
+    /// Still working; something worth knowing happened.
+    Progress,
+    /// The work is ready for review.
+    Done,
+    /// It cannot go on without the coordinator.
+    Blocked,
+}
+
+impl ReportState {
+    /// The word shown in the report line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReportState::Progress => "progress",
+            ReportState::Done => "done",
+            ReportState::Blocked => "blocked",
+        }
+    }
 }
 
 /// `tasks_create`: a task filed by the coordinator.
@@ -585,7 +642,8 @@ pub struct GetTask {
 pub struct UpdateTask {
     /// The task.
     pub id: TaskId,
-    /// `todo`, `in_progress` or `done`; `archived` fails [`Tool::validate`].
+    /// No longer settable: Dovetail sets task status itself (ADR 0024). Still parsed, so a
+    /// caller that sends it gets [`Tool::validate`]'s explanation, not a schema error.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<TaskStatus>,
     /// `now`, `next`, `later` or `unsorted`. A task the coordinator moves into Now is marked

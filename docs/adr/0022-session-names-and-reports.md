@@ -1,6 +1,6 @@
 # Session names carry the project; slices report through a Dovetail tool
 
-**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
+**Status: Accepted and built.** Approved by the user in the session of 2026-11-15; built 2026-11-16.
 
 Settles open point 4 of `docs/design-v2.md`. Proposes one simplification of it: the effort is not part of the name.
 
@@ -49,3 +49,9 @@ Example chat line: `[guest-checkout] ▸ slice api-guest: PR #41 open, tests pas
 - `config/roles/slice.md` changes: "report with `core_report`", and ask the coordinator by its full name. `config/roles/coordinator.md` changes: slice names are prefixed.
 - `core_report` joins the Core suite for slices (ADR 0016's table in `dovetail_api::tools`).
 - The agent-to-agent message feed keeps working: it already matches names through `agent_by_name`.
+
+## As built (2026-11-16)
+
+- **The tool is `coordination_report`, in the Coordination suite, not `core_report`.** Every tool's name starts with its suite's (ADR 0016), and the Core suite also goes to side chats, which have nothing to report to. Slices and the coordinator get Coordination; a call from anything but a slice is refused.
+- **Point 5 is settled:** a resumed session takes the new name (`docs/spikes/session-name-on-resume.md`), so existing sessions are renamed on their next start.
+- The report line is an agent-message entry in the coordinator's conversation, tagged with the effort of the slice's task. "Slice ready" now also gives the slice's session name.

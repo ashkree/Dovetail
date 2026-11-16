@@ -15,6 +15,7 @@ fn status_to_text(status: TaskStatus) -> &'static str {
     match status {
         TaskStatus::Todo => "todo",
         TaskStatus::InProgress => "in_progress",
+        TaskStatus::Review => "review",
         TaskStatus::Done => "done",
         TaskStatus::Archived => "archived",
     }
@@ -24,6 +25,7 @@ fn status_from_text(text: &str) -> Result<TaskStatus, DbError> {
     Ok(match text {
         "todo" => TaskStatus::Todo,
         "in_progress" => TaskStatus::InProgress,
+        "review" => TaskStatus::Review,
         "done" => TaskStatus::Done,
         "archived" => TaskStatus::Archived,
         other => return Err(DbError::Corrupt(format!("task status {other:?}"))),

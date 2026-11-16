@@ -72,6 +72,7 @@ impl App {
             scopes: None,
             upgrade: None,
             opener: None,
+            gh: None,
         };
         let (link, core) = dovetail_core::spawn(
             Resolution::Registered(project),
@@ -259,7 +260,11 @@ fn a_tangent_runs_read_only_in_tangents_and_is_saved_there_with_its_sources() {
     let spec = fake
         .started_specs()
         .into_iter()
-        .find(|s| s.name.as_deref() == Some(agent.0.as_str()))
+        .find(|s| {
+            s.name
+                .as_deref()
+                .is_some_and(|n| n.ends_with(&format!(".{}", agent.0)))
+        })
         .expect("tangent spec");
     assert_eq!(spec.cwd, paths.project_dir(TANGENTS_PROJECT));
     assert_eq!(

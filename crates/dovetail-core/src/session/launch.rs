@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(names(Role::SideChat), side_chat);
         let slice: Vec<&str> = [
             &core[..],
-            &["maps_draw"],
+            &["coordination_report", "maps_draw"],
             &core_old,
             &["draw_map"],
             &messaging,
@@ -365,6 +365,7 @@ mod tests {
                 "research_write_report",
                 "research_propose",
                 "research_get",
+                "coordination_report",
                 "maps_draw",
             ],
             &core_old,

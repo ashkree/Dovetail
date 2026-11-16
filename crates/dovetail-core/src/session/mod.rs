@@ -107,8 +107,10 @@ impl Core {
         })
     }
 
-    /// The agent the user calls `name`, as sessions know it (`--name`).
+    /// The agent a session calls `name`: its session name (`--name`, see
+    /// [`Core::session_name`]) or its bare name.
     pub(crate) fn agent_by_name(&self, name: &str) -> AgentId {
+        let name = self.bare_name(name);
         self.agents
             .values()
             .find(|r| r.agent.name == name)
@@ -146,7 +148,7 @@ impl Core {
         let launch = launch::Launch {
             project_key: self.project.key().to_owned(),
             agent_id: id.0.clone(),
-            name: row.agent.name.clone(),
+            name: self.session_name(&row.agent.name),
             role,
             prompt: (row.agent.kind == AgentKind::Tangent).then_some(TANGENT_PROMPT),
             suites: self.config.suites.for_role(role).to_vec(),
@@ -362,6 +364,26 @@ impl Core {
         shown_text: String,
         attachments: Vec<Attachment>,
     ) -> Result<(), SessionError> {
+        self.send_input_tagged(
+            id,
+            input,
+            shown,
+            shown_text,
+            attachments,
+            crate::service::EntryTag::ByKind,
+        )
+    }
+
+    /// [`send_input`](Self::send_input), saying how the shown entry gets its effort tag.
+    pub(crate) fn send_input_tagged(
+        &mut self,
+        id: &AgentId,
+        input: UserInput,
+        shown: EntryKind,
+        shown_text: String,
+        attachments: Vec<Attachment>,
+        tag: crate::service::EntryTag,
+    ) -> Result<(), SessionError> {
         self.ensure_live(id)?;
         let name = self.name_of(id);
         let Some(live) = self.live.get_mut(id) else {
@@ -371,7 +393,7 @@ impl Core {
             .send(input)
             .map_err(|source| SessionError::Driver { name, source })?;
         live.turn.input_sent();
-        self.add_entry_with(id, shown, shown_text, attachments);
+        self.add_entry_tagged(id, shown, shown_text, attachments, tag);
         self.refresh_status(id);
         Ok(())
     }
@@ -491,20 +513,32 @@ impl Core {
     /// its session next starts.
     pub(crate) fn tell_coordinator(&mut self, text: String) {
         let id = AgentId(COORDINATOR.into());
-        // A coordinator taken over (M14) is not woken: the note is held like any other and goes
-        // when headless resumes.
+        if self.coordinator_wakeable() {
+            self.send_note(&id, &text);
+        } else {
+            self.hold_for_coordinator(text);
+        }
+    }
+
+    /// Whether a signal may go to the coordinator's session now, starting a turn if it is idle.
+    /// A coordinator taken over (M14) is not woken: the note is held like any other and goes
+    /// when headless resumes.
+    pub(crate) fn coordinator_wakeable(&self) -> bool {
+        let id = AgentId(COORDINATOR.into());
         let wakeable = !self.locked(&id)
             && (self.live.contains_key(&id)
                 || self
                     .agents
                     .get(&id)
                     .is_some_and(|r| r.agent.status == AgentStatus::Idle));
-        if self.quitting.is_none() && wakeable && !self.notes_wait_for_user {
-            self.send_note(&id, &text);
-        } else {
-            self.persist("a coordinator note", self.db.add_note(text.clone()));
-            self.coordinator_notes.push(text);
-        }
+        self.quitting.is_none() && wakeable && !self.notes_wait_for_user
+    }
+
+    /// Holds a signal for a coordinator that cannot be woken now; it goes when its session next
+    /// starts.
+    pub(crate) fn hold_for_coordinator(&mut self, text: String) {
+        self.persist("a coordinator note", self.db.add_note(text.clone()));
+        self.coordinator_notes.push(text);
     }
 
     pub(crate) fn interrupt(&mut self, id: &AgentId) {
@@ -632,6 +666,7 @@ impl Core {
                         .map(str::to_owned);
                     let to_id = self.agent_by_name(&to);
                     let from = self.agents.get(&agent).map(|r| r.agent.name.clone());
+                    let to = self.bare_name(&to).to_owned();
                     self.activity(
                         ActivityKind::Message,
                         Some(&agent),
@@ -660,7 +695,8 @@ impl Core {
                         .agents
                         .get(&from)
                         .is_some_and(|r| matches!(r.agent.kind, AgentKind::Subagent { .. }));
-                    let text = dovetail_api::agent_message_text(&peer.name, subagent, &peer.body);
+                    let sender = self.bare_name(&peer.name).to_owned();
+                    let text = dovetail_api::agent_message_text(&sender, subagent, &peer.body);
                     self.add_entry(&agent, EntryKind::AgentMessage, text);
                     self.message(from, agent.clone(), peer.body, peer.msg_id);
                 }
@@ -949,8 +985,9 @@ impl Core {
         }
         if last {
             self.finished_turn(agent, preview);
-            // The turn may have committed, pushed or opened a PR (worktree view, M12b).
-            self.refresh_worktree(agent);
+            // The turn may have committed, pushed or opened a PR (worktree view, M12b): the
+            // pull request is looked up too, since it moves the task (ADR 0024).
+            self.refresh_worktree_after_turn(agent);
         }
         self.refresh_status(agent);
     }

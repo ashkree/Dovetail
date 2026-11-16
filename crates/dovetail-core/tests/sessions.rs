@@ -34,6 +34,12 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+thread_local! {
+    /// Taken by the next `Harness::start` on this test's thread: the fake `gh` it looks pull
+    /// requests up with.
+    static GH: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
 fn fixture(name: &str) -> FakeDriver {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../dovetail-driver/tests/fixtures")
@@ -118,6 +124,7 @@ impl Harness {
             scopes,
             upgrade,
             opener: None,
+            gh: GH.with(|g| g.borrow_mut().take()),
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
@@ -582,6 +589,7 @@ impl Harness {
             scopes: None,
             upgrade: None,
             opener: None,
+            gh: GH.with(|g| g.borrow_mut().take()),
         };
         let (link, core) =
             dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
@@ -1324,7 +1332,7 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
     let spec = fake
         .started_specs()
         .into_iter()
-        .find(|s| s.name.as_deref() == Some("after"))
+        .find(|s| s.name.as_deref().is_some_and(|n| n.ends_with(".after")))
         .expect("slice spec");
     let env = |key: &str| {
         spec.env
@@ -1867,7 +1875,7 @@ fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
             .map(|s| (s.name.clone().unwrap_or_default(), s.resume))
             .collect()
     };
-    assert_eq!(names(&fake), vec![("coordinator".to_string(), true)]);
+    assert_eq!(names(&fake), vec![("p.coordinator".to_string(), true)]);
     h.send(Command::Prompt {
         agent: AgentId("slice-later".into()),
         text: "carry on".into(),
@@ -1879,7 +1887,7 @@ fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
         assert!(Instant::now() < deadline, "{:?}", names(&fake));
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(names(&fake)[1], ("later".to_string(), true));
+    assert_eq!(names(&fake)[1], ("p.later".to_string(), true));
     h.quit();
 }
 
@@ -2540,8 +2548,9 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
             ..update(1)
         },
     );
-    assert!(!is_error, "{text}");
-    assert_eq!(text, "#1 [done · next · P2] one");
+    // Status is Dovetail's to set (ADR 0024): the call is refused and nothing changes.
+    assert!(is_error, "{text}");
+    assert!(text.contains("Dovetail moves a task"), "{text}");
     let (text, _) = call(
         COORDINATOR,
         UpdateTask {
@@ -2549,7 +2558,7 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
             ..update(1)
         },
     );
-    assert_eq!(text, "#1 [done · later · P2] one");
+    assert_eq!(text, "#1 [todo · later · P2] one");
     let (text, _) = call(
         COORDINATOR,
         UpdateTask {
@@ -2557,7 +2566,7 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
             ..update(1)
         },
     );
-    assert_eq!(text, "#1 [done · later · P0] one");
+    assert_eq!(text, "#1 [todo · later · P0] one");
     let (text, _) = call(
         COORDINATOR,
         UpdateTask {
@@ -2566,7 +2575,7 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
             ..update(1)
         },
     );
-    assert_eq!(text, "#1 [done · unsorted] one");
+    assert_eq!(text, "#1 [todo · unsorted] one");
     let (text, _) = call(
         COORDINATOR,
         UpdateTask {
@@ -2575,7 +2584,7 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
             ..update(1)
         },
     );
-    assert_eq!(text, "#1 [done · unsorted] renamed");
+    assert_eq!(text, "#1 [todo · unsorted] renamed");
     // The TUI sees each change live.
     h.wait_for("the edits in the snapshot", |s| {
         s.tasks.iter().any(|t| {
@@ -2584,7 +2593,7 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
                 && t.notes == "new notes"
                 && t.bucket.is_none()
                 && t.p_level.is_none()
-                && t.status == TaskStatus::Done
+                && t.status == TaskStatus::Todo
         })
     });
 
@@ -2606,7 +2615,7 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
         },
     );
     assert!(!is_error, "{text}");
-    assert!(text.starts_with("#1 [done · now]"), "{text}");
+    assert!(text.starts_with("#1 [todo · now]"), "{text}");
     h.wait_for("task 1 unseen in Now", |s| {
         s.tasks
             .iter()
@@ -2645,12 +2654,11 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
         COORDINATOR,
         UpdateTask {
             bucket: Some(BucketFilter::Next),
-            status: Some(TaskStatus::Done),
             ..update(2)
         },
     );
     assert!(!is_error, "{text}");
-    assert_eq!(text, "#2 [done · next · P2] two (slice work)");
+    assert_eq!(text, "#2 [in_progress · next · P2] two (slice work)");
 
     let (text, is_error) = call(
         "slice-work",
@@ -2667,7 +2675,7 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
     let (text, is_error) = call(
         COORDINATOR,
         UpdateTask {
-            status: Some(TaskStatus::Done),
+            title: Some("gone".into()),
             ..update(99)
         },
     );
@@ -4645,7 +4653,7 @@ fn a_side_chat_gets_only_the_core_suite_whatever_the_config_says() {
     let spec = fake
         .started_specs()
         .into_iter()
-        .find(|s| s.name.as_deref() == Some("side-1"))
+        .find(|s| s.name.as_deref().is_some_and(|n| n.ends_with(".side-1")))
         .expect("side chat spec");
     let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
     assert!(mcp.contains(r#""DOVETAIL_SUITES": "core""#), "{mcp}");
@@ -4675,7 +4683,7 @@ fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
     let spec = fake
         .started_specs()
         .into_iter()
-        .find(|s| s.name.as_deref() == Some("side-1"))
+        .find(|s| s.name.as_deref().is_some_and(|n| n.ends_with(".side-1")))
         .expect("side chat spec");
     let args = spec.claude_args();
     // Anything not allowed is denied without asking (decided 2026-11-11).
@@ -5130,6 +5138,306 @@ fn a_tagged_message_tags_the_reply_and_the_tag_survives_a_restart() {
     prompt(&h, "Reply with exactly the word: alpha");
     h.wait_for("the untagged message", |s| {
         tags(s).contains(&(EntryKind::User, None))
+    });
+    h.quit();
+}
+
+// --- session names and slice reports (ADR 0022), automatic task status (ADR 0024) ---
+
+fn task_status(s: &Snapshot, id: i64) -> Option<TaskStatus> {
+    s.tasks
+        .iter()
+        .find(|t| t.id == TaskId(id))
+        .map(|t| t.status)
+}
+
+fn report(state: dovetail_api::tools::ReportState, summary: &str, pr: Option<u32>) -> Tool {
+    Tool::Report(dovetail_api::tools::Report {
+        state,
+        summary: summary.into(),
+        pr,
+    })
+}
+
+#[test]
+fn sessions_are_named_after_the_project_and_a_slice_reports_through_dovetail() {
+    use dovetail_api::NewTask;
+    use dovetail_api::tools::ReportState;
+
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    let effort = create_effort(&mut h, "guest checkout", "guest-checkout");
+    h.send(Command::CreateTask(NewTask {
+        title: "API: guest order endpoint".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: Vec::new(),
+        effort: Some(effort),
+        criterion: None,
+    }));
+    h.send(Command::NewSlice {
+        task: Some(TaskId(1)),
+        name: "api".into(),
+        brief: "build the endpoint".into(),
+    });
+    h.wait_for("the slice working on its task", |s| {
+        s.agents.iter().any(|a| a.name == "api")
+            && task_status(s, 1) == Some(TaskStatus::InProgress)
+    });
+    // The slice is told the coordinator's session name, and its own carries the project.
+    wait_sent_containing(&fake, "The coordinator's session is named `p.coordinator`");
+    let names: Vec<String> = fake
+        .started_specs()
+        .iter()
+        .filter_map(|s| s.name.clone())
+        .collect();
+    assert!(names.contains(&"p.api".to_string()), "{names:?}");
+    wait_sent_containing(&fake, "slice api ready; its session is named `p.api`");
+    assert!(names.iter().all(|n| n.starts_with("p.")), "{names:?}");
+
+    let socket = h.socket();
+    // Only a slice reports.
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, report(ReportState::Done, "all good", None)),
+    ));
+    assert!(is_error && text.contains("is for slices"), "{text}");
+
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            "slice-api",
+            report(ReportState::Progress, "endpoint drafted", None),
+        ),
+    ));
+    assert!(!is_error, "{text}");
+    assert_eq!(text, "Reported to the coordinator.");
+    h.drain(Duration::from_millis(100));
+    assert_eq!(task_status(&h.snap, 1), Some(TaskStatus::InProgress));
+
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            "slice-api",
+            report(ReportState::Done, " PR open, tests pass ", Some(41)),
+        ),
+    ));
+    assert!(!is_error, "{text}");
+    assert_eq!(
+        text,
+        "Reported to the coordinator. Task #1 is now in review."
+    );
+    h.wait_for("the task in review", |s| {
+        task_status(s, 1) == Some(TaskStatus::Review)
+    });
+
+    // One line in the coordinator's chat, tagged with the effort of the slice's task.
+    let line = h.snap.conversations[&AgentId(COORDINATOR.into())]
+        .entries
+        .iter()
+        .find(|e| e.text.contains("[done]"))
+        .expect("the report line")
+        .clone();
+    assert_eq!(line.kind, EntryKind::AgentMessage);
+    assert_eq!(line.effort, Some(effort));
+    let parts = line.agent_message().expect("an agent message");
+    assert_eq!(
+        (parts.from, parts.body),
+        ("api", "[done] PR open, tests pass (PR #41)")
+    );
+    // And the coordinator's session got it as a message.
+    wait_sent_containing(
+        &fake,
+        "Report from slice api on task #1 API: guest order endpoint: [done] PR open, tests \
+         pass (PR #41)",
+    );
+    h.quit();
+}
+
+/// A fake `gh`: `gh pr list --head <branch> ...` prints `<dir>/<branch with _ for />.json`, or
+/// `[]` when there is no such file.
+fn fake_gh(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let script = dir.join("gh");
+    let text = format!(
+        "#!/bin/sh\nbranch=\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = --head ]; then branch=$2; fi\n  \
+         shift\ndone\nfile=\"{}/$(echo \"$branch\" | tr / _).json\"\nif [ -f \"$file\" ]; then cat \
+         \"$file\"; else echo '[]'; fi\n",
+        dir.display()
+    );
+    std::fs::write(&script, text).expect("fake gh");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    script
+}
+
+fn set_pr(dir: &Path, slice: &str, state: &str) {
+    let text = format!(
+        "[{{\"number\": 42, \"state\": \"{state}\", \"url\": \"https://example.test/pr/42\"}}]"
+    );
+    std::fs::write(dir.join(format!("dovetail_{slice}.json")), text).expect("pr file");
+}
+
+/// Slices `names` in a git repo, each on its own task (ids from 1, in order), all in progress.
+/// With `shared`, every slice works on task 1.
+fn repo_with_task_slices(names: &[&str], shared: bool) -> (TempDir, PathBuf, Paths) {
+    use dovetail_api::{NewTask, TaskChange};
+    let (dir, repo, paths) = repo_with_slices(names);
+    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+    let mut rows = db.load_agents().wait().expect("agents");
+    for (index, name) in names.iter().enumerate() {
+        let task = if shared && index > 0 {
+            TaskId(1)
+        } else {
+            let created = db
+                .create_task(
+                    NewTask {
+                        title: format!("task for {name}"),
+                        p_level: None,
+                        bucket: None,
+                        notes: String::new(),
+                        follow_up_of: None,
+                        pr: None,
+                        related: Vec::new(),
+                        effort: None,
+                        criterion: None,
+                    },
+                    false,
+                )
+                .wait()
+                .expect("task");
+            let id = created[0].id;
+            db.update_task(id, vec![TaskChange::Status(TaskStatus::InProgress)])
+                .wait()
+                .expect("status");
+            id
+        };
+        let row = rows
+            .iter_mut()
+            .find(|r| r.agent.name == *name)
+            .expect("slice row");
+        row.agent.task = Some(task);
+        db.upsert_agent(row.clone()).wait().expect("agent");
+    }
+    drop(db);
+    (dir, repo, paths)
+}
+
+#[test]
+fn a_task_follows_its_slices_pull_request_to_review_done_and_back() {
+    let (dir, repo, paths) = repo_with_task_slices(&["api"], false);
+    GH.with(|g| *g.borrow_mut() = Some(fake_gh(dir.path())));
+    let mut h = Harness::start_in(fixture("plain_turn"), paths, Some(repo));
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "api"));
+    assert_eq!(task_status(&h.snap, 1), Some(TaskStatus::InProgress));
+
+    // No pull request: nothing moves.
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("the first lookup", |s| {
+        s.worktrees
+            .iter()
+            .any(|w| w.pr == dovetail_api::PrLookup::None)
+    });
+    assert_eq!(task_status(&h.snap, 1), Some(TaskStatus::InProgress));
+
+    // Open: review.
+    set_pr(dir.path(), "api", "OPEN");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("review", |s| task_status(s, 1) == Some(TaskStatus::Review));
+
+    // Closed without merging: back to in progress.
+    set_pr(dir.path(), "api", "CLOSED");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("back in progress", |s| {
+        task_status(s, 1) == Some(TaskStatus::InProgress)
+    });
+
+    // Reopened, then merged: review, then done.
+    set_pr(dir.path(), "api", "OPEN");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("review again", |s| {
+        task_status(s, 1) == Some(TaskStatus::Review)
+    });
+    set_pr(dir.path(), "api", "MERGED");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("done", |s| task_status(s, 1) == Some(TaskStatus::Done));
+
+    // The user's own word is never overruled: marked to do, a merged PR does not move it.
+    h.send(Command::UpdateTask {
+        id: TaskId(1),
+        patch: vec![dovetail_api::TaskChange::Status(TaskStatus::Todo)],
+    });
+    h.wait_for("to do", |s| task_status(s, 1) == Some(TaskStatus::Todo));
+    h.send(Command::RefreshWorktrees);
+    h.drain(Duration::from_millis(300));
+    assert_eq!(task_status(&h.snap, 1), Some(TaskStatus::Todo));
+    h.quit();
+}
+
+#[test]
+fn a_task_with_two_slices_follows_the_one_furthest_behind() {
+    let (dir, repo, paths) = repo_with_task_slices(&["api", "web"], true);
+    GH.with(|g| *g.borrow_mut() = Some(fake_gh(dir.path())));
+    let mut h = Harness::start_in(fixture("plain_turn"), paths, Some(repo));
+    h.wait_for("the slices", |s| {
+        s.agents
+            .iter()
+            .filter(|a| a.kind == AgentKind::Slice)
+            .count()
+            == 2
+    });
+    let looked_up = |s: &Snapshot, state: dovetail_api::PrState| {
+        s.worktrees
+            .iter()
+            .filter(|w| matches!(&w.pr, dovetail_api::PrLookup::Found(pr) if pr.state == state))
+            .count()
+    };
+
+    set_pr(dir.path(), "api", "OPEN");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("one open PR seen", |s| {
+        looked_up(s, dovetail_api::PrState::Open) == 1 && s.worktrees.len() == 2
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(task_status(&h.snap, 1), Some(TaskStatus::InProgress));
+
+    set_pr(dir.path(), "web", "OPEN");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("review", |s| task_status(s, 1) == Some(TaskStatus::Review));
+
+    set_pr(dir.path(), "api", "MERGED");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("one merged PR seen", |s| {
+        looked_up(s, dovetail_api::PrState::Merged) == 1
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(task_status(&h.snap, 1), Some(TaskStatus::Review));
+
+    set_pr(dir.path(), "web", "MERGED");
+    h.send(Command::RefreshWorktrees);
+    h.wait_for("done", |s| task_status(s, 1) == Some(TaskStatus::Done));
+    h.quit();
+}
+
+/// The coordinator merges and archives in one turn, so no slice turn ends in between: the
+/// lookup made as the slice is archived is what shows the merge.
+#[test]
+fn a_merge_is_seen_when_the_slice_is_archived() {
+    let (dir, repo, paths) = repo_with_task_slices(&["api"], false);
+    GH.with(|g| *g.borrow_mut() = Some(fake_gh(dir.path())));
+    let mut h = Harness::start_in(fixture("plain_turn"), paths, Some(repo));
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "api"));
+    set_pr(dir.path(), "api", "MERGED");
+    let socket = h.socket();
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, archive_slice("api")),
+    ));
+    assert!(!is_error && text.starts_with(ARCHIVED), "{text}");
+    h.wait_for("done, and the slice gone", |s| {
+        task_status(s, 1) == Some(TaskStatus::Done) && !s.agents.iter().any(|a| a.name == "api")
     });
     h.quit();
 }

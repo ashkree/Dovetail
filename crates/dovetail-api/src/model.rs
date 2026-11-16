@@ -306,7 +306,10 @@ pub enum TaskStatus {
     Todo,
     /// Started; set when its first slice starts, and kept after slices close.
     InProgress,
-    /// Marked done by the user.
+    /// The work is up for review: its slice's pull request is open, or its agent reported it
+    /// done (ADR 0024). Dovetail sets it; agents cannot.
+    Review,
+    /// Done: its pull request was merged, or the user marked it done.
     Done,
     /// Hidden from the tree.
     Archived,

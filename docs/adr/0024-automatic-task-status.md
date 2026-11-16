@@ -1,6 +1,6 @@
 # Dovetail sets task status from what it observes
 
-**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
+**Status: Accepted and built.** Approved by the user in the session of 2026-11-15; built 2026-11-16, except subagent tracking.
 
 Refines Decision 11 as `docs/design-v2.md` restates it ("Task status, set by Dovetail"). This ADR names the event in the core that drives each arrow, and what counts as the user's approval.
 
@@ -49,3 +49,11 @@ Example. The user asks for "Web: guest checkout form" (task 14, todo). The coord
 - `TaskStatus::Review` is a new value in the API and in `tasks.status`. No migration: the column is text. The frozen TUI must show it as in progress.
 - A merged PR on a task whose slice is already archived is not seen. Archiving a slice does a last lookup first.
 - Size: about a week with tests. It was left out of the effort data layer because it changes what live sessions are told and adds a network call per turn.
+
+## As built (2026-11-16)
+
+- The report tool is `coordination_report` (ADR 0022, "As built").
+- A `done` report moves the task to review at once only when the reporting slice is the task's only slice. With several, their pull requests decide.
+- The pull request is looked up after each finished slice turn, when a report names one or says done, and as a slice is archived.
+- Dovetail never moves a task the user set to to do or done by hand: only in progress and review are followed.
+- **Not built:** the "untracked" grouping for subagents with no task. It needs the tree in the GUI to show it.
