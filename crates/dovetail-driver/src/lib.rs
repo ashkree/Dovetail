@@ -100,7 +100,7 @@ pub trait Session: Send {
     fn set_model(
         &self,
         model: Option<&str>,
-        effort: Option<dovetail_api::Effort>,
+        effort: Option<dovetail_api::ReasoningEffort>,
     ) -> Result<SwitchId, DriverError>;
     /// Answer a pending [`DriverEvent::PermissionRequest`], in any order.
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError>;

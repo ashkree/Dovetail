@@ -6,7 +6,7 @@
 //! profile's. Parts drop as the row narrows: the reset times, then the profile and model, then the
 //! week; the 5-hour figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
 
-use dovetail_api::{Effort, UsageLimits, UsageWindow};
+use dovetail_api::{ReasoningEffort, UsageLimits, UsageWindow};
 use jiff::{Timestamp, tz::TimeZone};
 use ratatui::text::Span;
 
@@ -89,7 +89,7 @@ pub fn variants(
     usage: &UsageLimits,
     profile: Option<&str>,
     model: Option<&str>,
-    effort: Option<Effort>,
+    effort: Option<ReasoningEffort>,
     now_ms: i64,
     tz: &TimeZone,
     theme: &Theme,
@@ -230,7 +230,7 @@ mod tests {
             &UsageLimits::default(),
             None,
             Some("claude-sonnet-5-5"),
-            Some(Effort::Xhigh),
+            Some(ReasoningEffort::Xhigh),
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,

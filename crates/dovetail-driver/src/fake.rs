@@ -91,7 +91,7 @@ pub enum Sent {
         /// The model asked for; `None` keeps it.
         model: Option<String>,
         /// The effort asked for.
-        effort: Option<dovetail_api::Effort>,
+        effort: Option<dovetail_api::ReasoningEffort>,
     },
     /// `shutdown(grace)`.
     Shutdown(Duration),
@@ -438,7 +438,7 @@ impl Session for FakeSession {
     fn set_model(
         &self,
         model: Option<&str>,
-        effort: Option<dovetail_api::Effort>,
+        effort: Option<dovetail_api::ReasoningEffort>,
     ) -> Result<SwitchId, DriverError> {
         // Numbered across the fake's sessions; only distinctness matters.
         let switch = SwitchId(

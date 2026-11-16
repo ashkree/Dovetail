@@ -35,6 +35,8 @@ fn task(
         follow_up_of: None,
         coordinator_created: false,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }
 }
 
@@ -56,7 +58,7 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
         last_activity_ms: now_ms,
         lock: SessionLock::Headless,
         model: Some("claude-opus-5-5".into()),
-        effort: Some(Effort::High),
+        effort: Some(ReasoningEffort::High),
         subagent_tokens: 0,
         tool: None,
     }
@@ -65,16 +67,16 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
 /// The model selector's choices (task #39): the built-in aliases as a session lists them, and
 /// one extra older model with no effort levels, so the selector shows them grayed.
 pub(crate) fn models() -> Vec<ModelOption> {
-    let listed = |name: &str, resolved: &str, efforts: &[Effort]| ModelOption {
+    let listed = |name: &str, resolved: &str, efforts: &[ReasoningEffort]| ModelOption {
         name: name.into(),
         resolved: Some(resolved.into()),
         efforts: Some(efforts.to_vec()),
     };
     vec![
-        listed("opus", "claude-opus-5-5", &Effort::ALL),
-        listed("sonnet", "claude-sonnet-5-5", &Effort::ALL),
-        listed("haiku", "claude-haiku-5-5", &Effort::ALL),
-        listed("fable", "claude-fable-5-2", &Effort::ALL),
+        listed("opus", "claude-opus-5-5", &ReasoningEffort::ALL),
+        listed("sonnet", "claude-sonnet-5-5", &ReasoningEffort::ALL),
+        listed("haiku", "claude-haiku-5-5", &ReasoningEffort::ALL),
+        listed("fable", "claude-fable-5-2", &ReasoningEffort::ALL),
         listed(
             "claude-haiku-4-5-20251001",
             "claude-haiku-4-5-20251001",
@@ -158,6 +160,7 @@ fn entry(id: u64, at_ms: i64, kind: EntryKind, text: &str) -> ConversationEntry 
         kind,
         text: text.into(),
         attachments: Vec::new(),
+        effort: None,
     }
 }
 
@@ -533,6 +536,8 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         now_ms,
         project: Some(project.clone()),
         projects: vec![project, other, research, crate::tangents::project()],
+        // The mock has no efforts; every task reads as Unsorted.
+        efforts: Vec::new(),
         tasks,
         agents: vec![
             coordinator,

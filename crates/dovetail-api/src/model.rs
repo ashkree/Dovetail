@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::effort::{CriterionId, Effort, EffortId};
 use crate::map::MapSummary;
 use crate::research::ResearchSummary;
 
@@ -68,6 +69,9 @@ pub struct Snapshot {
     pub project: Option<ProjectSummary>,
     /// Every registered project, for the project switcher.
     pub projects: Vec<ProjectSummary>,
+    /// The open project's efforts, closed ones included, in id order.
+    #[serde(default)]
+    pub efforts: Vec<Effort>,
     /// The open project's tasks, archived ones included.
     pub tasks: Vec<Task>,
     /// Every agent in the open project.
@@ -285,6 +289,12 @@ pub struct Task {
     /// Tasks related to this one, both ways; no effect on order or status.
     #[serde(default)]
     pub related: Vec<TaskId>,
+    /// The effort it belongs to. A peer that does not send it means Unsorted.
+    #[serde(default)]
+    pub effort: EffortId,
+    /// The acceptance criterion of that effort it serves; `None` flags a task that serves none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criterion: Option<CriterionId>,
 }
 
 /// Where a task stands. Whether it needs you is not a status: it follows from the inbox
@@ -367,7 +377,7 @@ pub struct Agent {
     /// The session's reasoning effort, as Claude Code last confirmed it; `None` until it does,
     /// or when its model has no effort levels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effort: Option<Effort>,
+    pub effort: Option<ReasoningEffort>,
     /// Tokens its subagents used, summed from their `task_*` events (sessions only; digest §3:
     /// the final `result` undercounts). Includes subagents whose nodes are gone.
     #[serde(default)]
@@ -485,7 +495,7 @@ pub struct SubagentProgress {
 /// How hard a session's model thinks: Claude Code's effort levels (`--effort`), lowest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Effort {
+pub enum ReasoningEffort {
     /// `low`.
     Low,
     /// `medium`.
@@ -498,24 +508,24 @@ pub enum Effort {
     Max,
 }
 
-impl Effort {
+impl ReasoningEffort {
     /// Every level, lowest first.
-    pub const ALL: [Effort; 5] = [
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::Xhigh,
-        Effort::Max,
+    pub const ALL: [ReasoningEffort; 5] = [
+        ReasoningEffort::Low,
+        ReasoningEffort::Medium,
+        ReasoningEffort::High,
+        ReasoningEffort::Xhigh,
+        ReasoningEffort::Max,
     ];
 
     /// The name Claude Code uses, for `--effort` and the `effortLevel` setting.
     pub fn as_str(self) -> &'static str {
         match self {
-            Effort::Low => "low",
-            Effort::Medium => "medium",
-            Effort::High => "high",
-            Effort::Xhigh => "xhigh",
-            Effort::Max => "max",
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High => "high",
+            ReasoningEffort::Xhigh => "xhigh",
+            ReasoningEffort::Max => "max",
         }
     }
 
@@ -540,7 +550,7 @@ pub struct ModelOption {
     /// The effort levels it accepts, once a session has listed it; `None` means not known yet,
     /// so every level is offered. Empty: the model has no effort setting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub efforts: Option<Vec<Effort>>,
+    pub efforts: Option<Vec<ReasoningEffort>>,
 }
 
 impl ModelOption {
@@ -554,7 +564,7 @@ impl ModelOption {
     }
 
     /// Whether the model accepts `effort`.
-    pub fn supports(&self, effort: Effort) -> bool {
+    pub fn supports(&self, effort: ReasoningEffort) -> bool {
         self.efforts.as_ref().is_none_or(|e| e.contains(&effort))
     }
 }
@@ -799,6 +809,10 @@ pub struct ConversationEntry {
     /// Images sent with a user message, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<Attachment>,
+    /// The effort tag: the line of work this entry belongs to. `None` for entries from before
+    /// efforts, and for ones that belong to none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<EffortId>,
 }
 
 /// Most images one message can carry.

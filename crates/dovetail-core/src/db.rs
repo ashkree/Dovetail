@@ -10,12 +10,14 @@
 //! ([`Db::open_unregistered`]) until [`Db::persist_state`] writes it to the new project's file
 //! (ADR 0005).
 
+mod efforts;
 mod maps;
 mod registry;
 pub mod research;
 mod sessions;
 mod tasks;
 
+pub use efforts::CriterionStep;
 pub use maps::{Drawn, NewMapVersion};
 pub use sessions::{AgentRow, ModelChoice, QueuedSlice};
 
@@ -28,8 +30,9 @@ use std::task::{Context, Poll};
 
 use dovetail_api::map::{Map, MapId, MapSummary, NodeId};
 use dovetail_api::{
-    ActivityItem, AgentId, AgentMessage, ConversationEntry, Decision, DecisionAuthor, EntryId,
-    InboxId, InboxItem, NewDecision, NewTask, Task, TaskChange, TaskId,
+    ActivityItem, AgentId, AgentMessage, ConversationEntry, CriterionId, Decision, DecisionAuthor,
+    Effort, EffortChange, EffortId, EntryId, InboxId, InboxItem, NewDecision, NewEffort, NewTask,
+    Task, TaskChange, TaskId, WhereWasI,
 };
 use rusqlite::Connection;
 use tokio::sync::oneshot;
@@ -75,6 +78,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0014_decision_evidence.sql"),
     migration!("state", "0015_research_followups.sql"),
     migration!("state", "0016_agent_model_choice.sql"),
+    migration!("state", "0017_efforts.sql"),
 ];
 
 /// Errors from the database layer.
@@ -349,6 +353,54 @@ impl Db {
         evidence: Vec<dovetail_api::research::Evidence>,
     ) -> Pending<Decision> {
         self.run(move |c, now| tasks::log_decision(c.state()?, new, by, evidence, now))
+    }
+
+    // --- efforts and criteria ---
+
+    /// Every effort of the open project with its criteria, in id order.
+    pub fn load_efforts(&self) -> Pending<Vec<Effort>> {
+        self.run(|c, _| efforts::load_efforts(c.state()?))
+    }
+
+    /// Creates an effort. `new.name` must already be in its stored form
+    /// ([`dovetail_api::effort_name`]); an empty or taken name is refused.
+    pub fn create_effort(&self, new: NewEffort) -> Pending<Effort> {
+        self.run(move |c, now| efforts::create_effort(c.state()?, new, now))
+    }
+
+    /// Renames an effort; `name` must already be in its stored form. Refused for Unsorted.
+    pub fn rename_effort(&self, id: EffortId, name: String) -> Pending<Effort> {
+        self.run(move |c, now| efforts::rename_effort(c.state()?, id, name, now))
+    }
+
+    /// Applies a patch to an effort. Resolves to the effort as it is now.
+    pub fn update_effort(&self, id: EffortId, patch: Vec<EffortChange>) -> Pending<Effort> {
+        self.run(move |c, now| efforts::update_effort(c.state()?, id, patch, now))
+    }
+
+    /// Replaces an effort's "where was I" card.
+    pub fn set_where_was_i(&self, id: EffortId, card: WhereWasI) -> Pending<Effort> {
+        self.run(move |c, now| efforts::set_where_was_i(c.state()?, id, &card, now))
+    }
+
+    /// Adds an open criterion to an effort. Resolves to the effort.
+    pub fn add_criterion(&self, effort: EffortId, text: String) -> Pending<Effort> {
+        self.run(move |c, now| efforts::add_criterion(c.state()?, effort, text, now))
+    }
+
+    /// Claims, approves or sends back a criterion. Resolves to its effort.
+    pub fn step_criterion(&self, id: CriterionId, step: CriterionStep) -> Pending<Effort> {
+        self.run(move |c, _| efforts::step_criterion(c.state()?, id, step))
+    }
+
+    /// Puts a task in an effort, serving `criterion` or none. Resolves to the task.
+    pub fn move_task(
+        &self,
+        id: TaskId,
+        effort: EffortId,
+        criterion: Option<CriterionId>,
+    ) -> Pending<Vec<Task>> {
+        self.run(move |c, now| efforts::move_task(c.state()?, id, effort, criterion, now))
     }
 
     // --- maps (M15) ---
@@ -896,6 +948,7 @@ mod tests {
             kind: EntryKind::User,
             text: "look".into(),
             attachments: vec![attachment(name)],
+            effort: None,
         };
         for (project, live, archived) in [
             ("p", "live-p.png", "gone-p.png"),
@@ -951,6 +1004,7 @@ mod tests {
             kind,
             text,
             attachments: Vec::new(),
+            effort: None,
         };
         // The old build stored a peer message as a notice.
         let old = entry(1, EntryKind::Notice, "Message from x: y".into());
@@ -1008,6 +1062,8 @@ mod tests {
             "reports",
             "unfiled_findings",
             "unfiled_finding_sources",
+            "efforts",
+            "criteria",
         ] {
             assert!(tables.contains(table), "missing table {table}: {tables:?}");
         }
@@ -1031,9 +1087,14 @@ mod tests {
                 .any(|c| c == "attachments")
         );
         let tasks = columns("tasks");
-        for column in ["research_kind", "altitude"] {
+        for column in ["research_kind", "altitude", "effort_id", "criterion_id"] {
             assert!(tasks.iter().any(|c| c == column), "tasks.{column}");
         }
+        assert!(
+            columns("conversation_entries")
+                .iter()
+                .any(|c| c == "effort_id")
+        );
         assert!(columns("research_rounds").iter().any(|c| c == "queued"));
         assert!(!columns("map_versions").is_empty());
         assert!(!columns("maps").is_empty());
@@ -1083,6 +1144,325 @@ mod tests {
             reopened.load_todo_owners().wait().unwrap(),
             vec![("l1".into(), "1".into(), sub)]
         );
+    }
+
+    /// Migration 0017 on a database from empty: Unsorted is there, and a new task lands in it.
+    #[test]
+    fn a_new_project_starts_with_the_unsorted_effort() {
+        use dovetail_api::{EffortKind, EffortStatus, UNSORTED_EFFORT, UNSORTED_EFFORT_NAME};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
+        let efforts = db.load_efforts().wait().unwrap();
+        assert_eq!(efforts.len(), 1);
+        assert_eq!(efforts[0].id, UNSORTED_EFFORT);
+        assert_eq!(efforts[0].name, UNSORTED_EFFORT_NAME);
+        assert_eq!(efforts[0].kind, EffortKind::Cleanup);
+        assert_eq!(efforts[0].status, EffortStatus::Open);
+        assert!(efforts[0].criteria.is_empty());
+
+        let created = db.create_task(new_task("first"), false).wait().unwrap();
+        assert_eq!(created[0].effort, UNSORTED_EFFORT);
+        assert_eq!(created[0].criterion, None);
+    }
+
+    /// Migration 0017 on a database as version 16 left it: every task goes to Unsorted, chat
+    /// lines keep no tag, and nothing else about them changes.
+    #[test]
+    fn efforts_migrate_up_from_version_16_and_existing_tasks_go_to_unsorted() {
+        use dovetail_api::{EntryKind, TaskStatus, UNSORTED_EFFORT};
+
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let path = paths.state_db("p");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut old = Connection::open(&path).unwrap();
+        migrate(&mut old, &path, &STATE_MIGRATIONS[..16]).unwrap();
+        let version: u32 = old
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 16);
+        old.execute_batch(
+            "INSERT INTO tasks (id, title, status, bucket, notes) VALUES
+               (4, 'kept', 'in_progress', 'now', 'as it was'),
+               (9, 'old', 'archived', NULL, '');
+             INSERT INTO conversation_entries (id, agent_id, at_ms, kind, text)
+               VALUES (1, 'coordinator', 5, 'user', 'hello');",
+        )
+        .unwrap();
+        drop(old);
+
+        let db = Db::open(&paths, Some("p")).unwrap();
+        let tasks = db.load_tasks().wait().unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks.iter().all(|t| t.effort == UNSORTED_EFFORT));
+        assert!(tasks.iter().all(|t| t.criterion.is_none()));
+        assert_eq!(tasks[0].title, "kept");
+        assert_eq!(tasks[0].status, TaskStatus::InProgress);
+        assert_eq!(tasks[0].notes, "as it was");
+        assert_eq!(tasks[1].status, TaskStatus::Archived);
+
+        let efforts = db.load_efforts().wait().unwrap();
+        assert_eq!(efforts.len(), 1);
+        assert_eq!(efforts[0].id, UNSORTED_EFFORT);
+
+        let (entries, _) = db
+            .load_entries(AgentId("coordinator".into()), None, 10)
+            .wait()
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].kind, EntryKind::User);
+        assert_eq!(entries[0].effort, None);
+
+        // Opening again changes nothing: the step ran once.
+        drop(db);
+        let again = Db::open(&paths, Some("p")).unwrap();
+        assert_eq!(again.load_efforts().wait().unwrap().len(), 1);
+    }
+
+    fn new_task(title: &str) -> NewTask {
+        NewTask {
+            title: title.into(),
+            p_level: None,
+            bucket: None,
+            notes: String::new(),
+            follow_up_of: None,
+            pr: None,
+            related: Vec::new(),
+            effort: None,
+            criterion: None,
+        }
+    }
+
+    fn new_effort(name: &str) -> NewEffort {
+        NewEffort {
+            name: name.into(),
+            kind: dovetail_api::EffortKind::Feature,
+            question_or_goal: String::new(),
+        }
+    }
+
+    #[test]
+    fn effort_names_are_unique_and_unsorted_is_fixed() {
+        use dovetail_api::{EffortStatus, UNSORTED_EFFORT};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
+        let effort = db
+            .create_effort(new_effort("guest-checkout"))
+            .wait()
+            .unwrap();
+        assert_eq!(effort.name, "guest-checkout");
+        assert!(matches!(
+            db.create_effort(new_effort("guest-checkout")).wait(),
+            Err(DbError::Refused(_))
+        ));
+        assert!(matches!(
+            db.create_effort(new_effort("")).wait(),
+            Err(DbError::Refused(_))
+        ));
+        // Renaming to its own name is fine; to another's is not.
+        db.rename_effort(effort.id, "guest-checkout".into())
+            .wait()
+            .unwrap();
+        assert!(matches!(
+            db.rename_effort(effort.id, "unsorted".into()).wait(),
+            Err(DbError::Refused(_))
+        ));
+        assert!(matches!(
+            db.rename_effort(UNSORTED_EFFORT, "misc".into()).wait(),
+            Err(DbError::Refused(_))
+        ));
+        assert!(matches!(
+            db.update_effort(
+                UNSORTED_EFFORT,
+                vec![EffortChange::Status(EffortStatus::Closed)]
+            )
+            .wait(),
+            Err(DbError::Refused(_))
+        ));
+        assert!(matches!(
+            db.rename_effort(dovetail_api::EffortId(99), "x".into())
+                .wait(),
+            Err(DbError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn a_criterion_goes_open_claimed_met_and_can_be_sent_back() {
+        use dovetail_api::CriterionState;
+
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let db = Db::open(&paths, Some("p")).unwrap();
+        let effort = db
+            .create_effort(new_effort("guest-checkout"))
+            .wait()
+            .unwrap();
+        let effort = db
+            .add_criterion(effort.id, " pay as guest end to end ".into())
+            .wait()
+            .unwrap();
+        let id = effort.criteria[0].id;
+        assert_eq!(effort.criteria[0].text, "pay as guest end to end");
+        assert_eq!(effort.criteria[0].state, CriterionState::Open);
+        assert_eq!(effort.criteria[0].evidence, None);
+
+        // Nothing to send back yet, and no claim without evidence.
+        assert!(matches!(
+            db.step_criterion(id, CriterionStep::Return).wait(),
+            Err(DbError::Refused(_))
+        ));
+        let empty = CriterionStep::Claim {
+            evidence: "  ".into(),
+        };
+        assert!(matches!(
+            db.step_criterion(id, empty).wait(),
+            Err(DbError::Refused(_))
+        ));
+
+        let claim = |evidence: &str| CriterionStep::Claim {
+            evidence: evidence.into(),
+        };
+        let claimed = db.step_criterion(id, claim("PR #41")).wait().unwrap();
+        assert_eq!(claimed.criteria[0].state, CriterionState::Claimed);
+        assert_eq!(claimed.criteria[0].evidence.as_deref(), Some("PR #41"));
+
+        // Sent back: open again, the evidence stays on record until the next claim.
+        let returned = db.step_criterion(id, CriterionStep::Return).wait().unwrap();
+        assert_eq!(returned.criteria[0].state, CriterionState::Open);
+        assert_eq!(returned.criteria[0].evidence.as_deref(), Some("PR #41"));
+
+        db.step_criterion(id, claim("PR #44")).wait().unwrap();
+        let met = db
+            .step_criterion(id, CriterionStep::Approve)
+            .wait()
+            .unwrap();
+        assert_eq!(met.criteria[0].state, CriterionState::Met);
+        assert_eq!(met.criteria[0].evidence.as_deref(), Some("PR #44"));
+        // A met criterion is not claimed again.
+        assert!(matches!(
+            db.step_criterion(id, claim("again")).wait(),
+            Err(DbError::Refused(_))
+        ));
+
+        // It is all still there after a reopen.
+        drop(db);
+        let reopened = Db::open(&paths, Some("p")).unwrap();
+        let efforts = reopened.load_efforts().wait().unwrap();
+        assert_eq!(efforts[1], met);
+    }
+
+    #[test]
+    fn a_task_moves_between_efforts_and_serves_only_its_own_efforts_criteria() {
+        use dovetail_api::{EffortStatus, UNSORTED_EFFORT};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
+        let checkout = db
+            .create_effort(new_effort("guest-checkout"))
+            .wait()
+            .unwrap();
+        let checkout = db
+            .add_criterion(checkout.id, "pay as guest".into())
+            .wait()
+            .unwrap();
+        let criterion = checkout.criteria[0].id;
+        let other = db.create_effort(new_effort("providers")).wait().unwrap();
+        let task = db.create_task(new_task("form"), false).wait().unwrap()[0].id;
+
+        let moved = db
+            .move_task(task, checkout.id, Some(criterion))
+            .wait()
+            .unwrap();
+        assert_eq!(moved[0].effort, checkout.id);
+        assert_eq!(moved[0].criterion, Some(criterion));
+        assert_eq!(db.load_tasks().wait().unwrap()[0], moved[0]);
+
+        // A criterion of another effort is refused, and the task stays where it was.
+        assert!(matches!(
+            db.move_task(task, other.id, Some(criterion)).wait(),
+            Err(DbError::Refused(_))
+        ));
+        assert_eq!(db.load_tasks().wait().unwrap()[0].effort, checkout.id);
+
+        // Moving on with no criterion clears it.
+        let moved = db.move_task(task, other.id, None).wait().unwrap();
+        assert_eq!((moved[0].effort, moved[0].criterion), (other.id, None));
+
+        // A closed effort takes no tasks, by move or at creation.
+        db.update_effort(
+            checkout.id,
+            vec![EffortChange::Status(EffortStatus::Closed)],
+        )
+        .wait()
+        .unwrap();
+        assert!(matches!(
+            db.move_task(task, checkout.id, None).wait(),
+            Err(DbError::Refused(_))
+        ));
+        let mut into_closed = new_task("late");
+        into_closed.effort = Some(checkout.id);
+        assert!(matches!(
+            db.create_task(into_closed, false).wait(),
+            Err(DbError::Refused(_))
+        ));
+        assert!(matches!(
+            db.move_task(TaskId(99), UNSORTED_EFFORT, None).wait(),
+            Err(DbError::NotFound(_))
+        ));
+
+        // A task can be created straight into an effort, serving a criterion.
+        let mut placed = new_task("tax");
+        placed.effort = Some(other.id);
+        let created = db.create_task(placed, false).wait().unwrap();
+        assert_eq!(created[0].effort, other.id);
+    }
+
+    #[test]
+    fn an_entrys_effort_tag_is_stored_and_read_back() {
+        use dovetail_api::{AgentKind, EntryKind};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
+        let effort = db.create_effort(new_effort("providers")).wait().unwrap();
+        let agent = AgentId("coordinator".into());
+        db.upsert_agent(AgentRow {
+            agent: crate::service::new_agent(
+                agent.clone(),
+                "coordinator".into(),
+                AgentKind::Coordinator,
+                None,
+            ),
+            session_id: None,
+            transcript_path: None,
+            task_list_id: None,
+            created_ms: 0,
+            tool_use_id: None,
+            claude_home: None,
+            takeover: None,
+            model_choice: None,
+        })
+        .wait()
+        .unwrap();
+        let entry = |n: u64, effort| ConversationEntry {
+            id: EntryId(n),
+            at_ms: 0,
+            kind: EntryKind::User,
+            text: "hi".into(),
+            attachments: Vec::new(),
+            effort,
+        };
+        let tagged = entry(1, Some(effort.id));
+        let plain = entry(2, None);
+        db.upsert_entry(agent.clone(), tagged.clone())
+            .wait()
+            .unwrap();
+        db.upsert_entry(agent.clone(), plain.clone())
+            .wait()
+            .unwrap();
+        let (loaded, _) = db.load_entries(agent, None, 10).wait().unwrap();
+        assert_eq!(loaded, vec![tagged, plain]);
     }
 
     #[test]
@@ -1169,6 +1549,8 @@ mod tests {
             follow_up_of: None,
             pr: None,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         };
         db.create_task(new, false).wait().unwrap();
         assert!(!paths.state_db("p").exists());

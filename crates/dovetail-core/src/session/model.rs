@@ -9,7 +9,7 @@
 //! switch's answer never confirms another switch. One switch at a time: another is refused until
 //! the first is confirmed or refused.
 
-use dovetail_api::{AgentId, AgentKind, Effort, Event, ModelOption};
+use dovetail_api::{AgentId, AgentKind, Event, ModelOption, ReasoningEffort};
 use dovetail_driver::{ModelInfo, SwitchId};
 
 use crate::db::{AgentRow, ModelChoice};
@@ -34,7 +34,12 @@ pub(crate) fn is_current(latest: Option<SwitchId>, answer: Option<SwitchId>) -> 
 impl Core {
     /// `Command::SetModel`: switch `id`'s session (a subagent's parent, since subagents share
     /// it) to `model` at `effort`.
-    pub(crate) fn switch_model(&mut self, id: &AgentId, model: String, effort: Option<Effort>) {
+    pub(crate) fn switch_model(
+        &mut self,
+        id: &AgentId,
+        model: String,
+        effort: Option<ReasoningEffort>,
+    ) {
         let model = model.trim().to_owned();
         if model.is_empty() {
             self.fail("No model given");
@@ -102,7 +107,7 @@ impl Core {
         agent: &AgentId,
         switch: Option<SwitchId>,
         model: Option<String>,
-        effort: Option<Effort>,
+        effort: Option<ReasoningEffort>,
     ) {
         let Some(live) = self.live.get_mut(agent) else {
             return;
@@ -126,7 +131,7 @@ impl Core {
             self.fail(format!(
                 "{name} switched to {} but kept effort {}: the model did not take {}",
                 choice.model,
-                effort.map_or("none", Effort::as_str),
+                effort.map_or("none", ReasoningEffort::as_str),
                 wanted.as_str()
             ));
             choice.effort = effort;
@@ -177,7 +182,7 @@ impl Core {
 
     /// `--model` and `--effort` for `row`'s next start: the user's choice, else the default
     /// of its kind.
-    pub(crate) fn launch_model(&self, row: &AgentRow) -> (Option<String>, Option<Effort>) {
+    pub(crate) fn launch_model(&self, row: &AgentRow) -> (Option<String>, Option<ReasoningEffort>) {
         if let Some(choice) = &row.model_choice {
             return (Some(choice.model.clone()), choice.effort);
         }
@@ -200,7 +205,7 @@ impl Core {
 }
 
 /// "sonnet at high effort", or just the model.
-fn describe(model: &str, effort: Option<Effort>) -> String {
+fn describe(model: &str, effort: Option<ReasoningEffort>) -> String {
     match effort {
         Some(e) => format!("{model} at {} effort", e.as_str()),
         None => model.to_owned(),
@@ -228,7 +233,7 @@ fn options(names: &[String], catalog: &[ModelInfo]) -> Vec<ModelOption> {
 mod tests {
     use super::*;
 
-    fn info(value: &str, resolved: &str, efforts: &[Effort]) -> ModelInfo {
+    fn info(value: &str, resolved: &str, efforts: &[ReasoningEffort]) -> ModelInfo {
         ModelInfo {
             value: value.into(),
             resolved: Some(resolved.into()),
@@ -243,7 +248,7 @@ mod tests {
             .map(String::from)
             .to_vec();
         let catalog = [
-            info("opus", "claude-opus-5-5", &Effort::ALL),
+            info("opus", "claude-opus-5-5", &ReasoningEffort::ALL),
             info(
                 "claude-haiku-4-5-20251001",
                 "claude-haiku-4-5-20251001",
@@ -252,11 +257,11 @@ mod tests {
         ];
         let got = options(&names, &catalog);
         assert_eq!(got[0].resolved.as_deref(), Some("claude-opus-5-5"));
-        assert!(got[0].supports(Effort::Max));
+        assert!(got[0].supports(ReasoningEffort::Max));
         assert_eq!(got[1].efforts, Some(Vec::new()));
-        assert!(!got[1].supports(Effort::Low));
+        assert!(!got[1].supports(ReasoningEffort::Low));
         // Not listed by any session: every level is offered.
         assert_eq!(got[2], ModelOption::named("mystery"));
-        assert!(got[2].supports(Effort::Xhigh));
+        assert!(got[2].supports(ReasoningEffort::Xhigh));
     }
 }

@@ -76,6 +76,7 @@ fn a_pasted_image_shows_as_a_chip_and_goes_out_with_the_prompt() {
             agent,
             text,
             attachments,
+            effort: None,
         },
     ] = commands.as_slice()
     else {
@@ -141,6 +142,7 @@ fn text_on_the_clipboard_is_pasted_at_the_cursor() {
             agent: agent_id("coordinator"),
             text: "hello brave new world".into(),
             attachments: Vec::new(),
+            effort: None,
         }]
     );
 }

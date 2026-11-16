@@ -39,6 +39,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
     match event {
         Event::TaskUpserted(task) => upsert(&mut state.tasks, task, |t| t.id),
         Event::TaskRemoved(id) => state.tasks.retain(|t| t.id != id),
+        Event::EffortUpserted(effort) => upsert(&mut state.efforts, effort, |e| e.id),
         Event::AgentUpserted(agent) => upsert(&mut state.agents, agent, |a| a.id.clone()),
         Event::AgentRemoved(id) => {
             state.agents.retain(|a| a.id != id);
@@ -77,6 +78,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
                         kind: EntryKind::Assistant,
                         text,
                         attachments: Vec::new(),
+                        effort: None,
                     },
                 ),
             }

@@ -213,6 +213,8 @@ impl MockCore {
                 agent,
                 text,
                 attachments,
+                // The mock has no efforts: a tag is dropped.
+                effort: _,
             } => {
                 if self.agent(&agent).is_none() {
                     return self.fail(format!("no agent {}", agent.0));
@@ -556,6 +558,8 @@ impl MockCore {
                     follow_up_of: new.follow_up_of,
                     coordinator_created: false,
                     related: vec![],
+                    effort: Default::default(),
+                    criterion: None,
                 };
                 self.next_task += 1;
                 let id = task.id;
@@ -671,6 +675,15 @@ impl MockCore {
             | Command::CloseRound { .. }
             | Command::DropRound { .. }
             | Command::SetResearchKind { .. }
+            | Command::CreateEffort(_)
+            | Command::RenameEffort { .. }
+            | Command::UpdateEffort { .. }
+            | Command::SetWhereWasI { .. }
+            | Command::AddCriterion { .. }
+            | Command::ClaimCriterion { .. }
+            | Command::ApproveCriterion { .. }
+            | Command::ReturnCriterion { .. }
+            | Command::MoveTask { .. }
             | Command::FileUnfiled { .. } => self.fail("not available in the mock".into()),
             Command::OpenExternal { url } => {
                 if url.starts_with("http://") || url.starts_with("https://") {
@@ -742,6 +755,8 @@ impl MockCore {
                         follow_up_of: None,
                         pr: None,
                         related: vec![],
+                        effort: Default::default(),
+                        criterion: None,
                     }));
                 }
                 self.leave_tangents(tangent, "filed into", &project.0);
@@ -763,6 +778,8 @@ impl MockCore {
                         follow_up_of: None,
                         pr: None,
                         related: vec![],
+                        effort: Default::default(),
+                        criterion: None,
                     }));
                 }
                 found.task.status = TaskStatus::Done;
@@ -896,6 +913,8 @@ impl MockCore {
             follow_up_of: None,
             coordinator_created: false,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         };
         self.emit(Event::TangentUpserted(TangentSummary {
             task,
@@ -1011,6 +1030,7 @@ impl MockCore {
                 kind,
                 text,
                 attachments,
+                effort: None,
             },
         });
     }
@@ -1307,6 +1327,7 @@ impl MockCore {
                     kind: EntryKind::Assistant,
                     text: String::new(),
                     attachments: Vec::new(),
+                    effort: None,
                 },
             });
         });
@@ -1772,6 +1793,8 @@ impl MockCore {
             follow_up_of,
             coordinator_created: true,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         };
         self.next_task += 1;
         self.emit(Event::TaskUpserted(task));

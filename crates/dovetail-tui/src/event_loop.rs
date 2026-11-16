@@ -592,6 +592,8 @@ mod tests {
                     follow_up_of: None,
                     coordinator_created: true,
                     related: vec![],
+                    effort: Default::default(),
+                    criterion: None,
                 }),
             });
             // Long enough for the 33 ms draw window; then end the loop with no key pressed.

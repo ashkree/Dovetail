@@ -459,6 +459,10 @@ pub(crate) struct Core {
     pub(crate) tangents: Result<Db, crate::tangents::TangentError>,
     /// The models sessions last listed (`list_models`), for the selector's effort levels.
     pub(crate) model_catalog: Vec<dovetail_driver::ModelInfo>,
+    /// Every effort of the open project with its criteria (`efforts`).
+    pub(crate) efforts: BTreeMap<dovetail_api::EffortId, dovetail_api::Effort>,
+    /// The effort tag each agent's new entries get: that of the user's last message to it.
+    pub(crate) effort_tags: HashMap<AgentId, dovetail_api::EffortId>,
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -553,6 +557,8 @@ impl Core {
             research: Default::default(),
             tangents: Err(crate::tangents::TangentError::Off("not opened".into())),
             model_catalog: Vec::new(),
+            efforts: BTreeMap::new(),
+            effort_tags: HashMap::new(),
         }
     }
 
@@ -779,6 +785,7 @@ impl Core {
         // The native lists as they are on disk now, with their owners.
         self.load_todos().await?;
         self.load_research().await?;
+        self.load_efforts().await?;
         Ok(restored)
     }
 
@@ -887,6 +894,7 @@ impl Core {
             now_ms: now_ms(),
             project: Some(self.project.summary(&self.paths)),
             projects: projects.iter().map(|p| p.summary(&self.paths)).collect(),
+            efforts: self.efforts.values().cloned().collect(),
             tasks,
             research,
             decisions: self.db.load_decisions().await?,
@@ -1069,6 +1077,7 @@ impl Core {
             kind,
             text,
             attachments,
+            effort: self.entry_tag(agent, kind),
         };
         self.next_entry += 1;
         let tail = self.tails.entry(agent.clone()).or_default();
@@ -1325,7 +1334,8 @@ impl Core {
                 agent,
                 text,
                 attachments,
-            } => self.prompt(&agent, text, attachments).await,
+                effort,
+            } => self.prompt(&agent, text, attachments, effort).await,
             Command::PasteClipboard { agent } => self.paste_clipboard(agent),
             Command::PasteText { agent, text } => self.paste_text(agent, text),
             Command::ListPaths { agent, dir } => self.list_paths(agent, dir),
@@ -1387,6 +1397,21 @@ impl Core {
                 Ok(tasks) => self.emit_tasks(tasks),
                 Err(e) => self.fail(e.to_string()),
             },
+            Command::CreateEffort(new) => self.create_effort(new).await,
+            Command::RenameEffort { id, name } => self.rename_effort(id, name).await,
+            Command::UpdateEffort { id, patch } => self.update_effort(id, patch).await,
+            Command::SetWhereWasI { id, where_was_i } => {
+                self.set_where_was_i(id, where_was_i).await;
+            }
+            Command::AddCriterion { effort, text } => self.add_criterion(effort, text).await,
+            Command::ClaimCriterion { id, evidence } => self.claim_criterion(id, evidence).await,
+            Command::ApproveCriterion { id } => self.approve_criterion(id).await,
+            Command::ReturnCriterion { id, reason } => self.return_criterion(id, reason).await,
+            Command::MoveTask {
+                id,
+                effort,
+                criterion,
+            } => self.move_task(id, effort, criterion).await,
             Command::LogDecision(new) => {
                 match self.db.log_decision(new, DecisionAuthor::User).await {
                     Ok(decision) => self.emit(Event::DecisionAdded(decision)),

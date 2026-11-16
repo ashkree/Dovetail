@@ -147,6 +147,7 @@ fn typing_in_the_panel_asks_the_side_chat_and_leaves_the_conversation_alone() {
             agent: agent_id("side-1"),
             text: "and the fix?".into(),
             attachments: Vec::new(),
+            effort: None,
         }]
     );
     assert_eq!(app.open_agent(), Some(&agent_id("coordinator")));
@@ -163,6 +164,7 @@ fn typing_in_the_panel_asks_the_side_chat_and_leaves_the_conversation_alone() {
             agent: agent_id("coordinator"),
             text: "hi".into(),
             attachments: Vec::new(),
+            effort: None,
         }]
     );
 }

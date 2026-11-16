@@ -319,6 +319,8 @@ impl Core {
             follow_up_of: None,
             pr: None,
             related: Vec::new(),
+            effort: Default::default(),
+            criterion: None,
         };
         let task = match db.create_task(new, false).await {
             Ok(tasks) => match tasks.first() {
@@ -638,6 +640,8 @@ impl Core {
             follow_up_of: None,
             pr: None,
             related: Vec::new(),
+            effort: Default::default(),
+            criterion: None,
         };
         let task = self.task_in(&target, here, new).await?;
         let filed = file_all(&target, copies(&r, task.id, tangent))
@@ -711,6 +715,8 @@ impl Core {
             follow_up_of: None,
             pr: None,
             related: Vec::new(),
+            effort: Default::default(),
+            criterion: None,
         };
         let task = self.task_in(&target, here, new).await?;
         let line = format!(

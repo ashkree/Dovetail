@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use dovetail_api::research::{Evidence, FindingId, SourceId};
 use dovetail_api::{
-    Alternative, Bucket, Decision, DecisionAuthor, DecisionId, NewDecision, NewTask, PLevel, Task,
-    TaskChange, TaskId, TaskStatus,
+    Alternative, Bucket, CriterionId, Decision, DecisionAuthor, DecisionId, EffortId, NewDecision,
+    NewTask, PLevel, Task, TaskChange, TaskId, TaskStatus, UNSORTED_EFFORT,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -83,7 +83,7 @@ pub(super) fn load_tasks(conn: &mut Connection) -> Result<Vec<Task>, DbError> {
     }
     let mut stmt = conn.prepare(
         "SELECT id, title, status, p_level, bucket, sort_order, notes, pr, follow_up_of, \
-         coordinator_created FROM tasks ORDER BY id",
+         coordinator_created, effort_id, criterion_id FROM tasks ORDER BY id",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -97,11 +97,26 @@ pub(super) fn load_tasks(conn: &mut Connection) -> Result<Vec<Task>, DbError> {
             r.get::<_, Option<u32>>(7)?,
             r.get::<_, Option<i64>>(8)?,
             r.get::<_, bool>(9)?,
+            r.get::<_, Option<i64>>(10)?,
+            r.get::<_, Option<i64>>(11)?,
         ))
     })?;
     let mut tasks = Vec::new();
     for row in rows {
-        let (id, title, status, p_level, bucket, order, notes, pr, follow_up_of, created) = row?;
+        let (
+            id,
+            title,
+            status,
+            p_level,
+            bucket,
+            order,
+            notes,
+            pr,
+            follow_up_of,
+            created,
+            effort,
+            criterion,
+        ) = row?;
         let mut related_ids = related.remove(&id).unwrap_or_default();
         related_ids.sort();
         tasks.push(Task {
@@ -117,13 +132,16 @@ pub(super) fn load_tasks(conn: &mut Connection) -> Result<Vec<Task>, DbError> {
             follow_up_of: follow_up_of.map(TaskId),
             coordinator_created: created,
             related: related_ids,
+            // Every write sets it; a row without one reads as Unsorted.
+            effort: effort.map_or(UNSORTED_EFFORT, EffortId),
+            criterion: criterion.map(CriterionId),
         });
     }
     Ok(tasks)
 }
 
 /// The tasks with these ids, in id order. Ids that do not exist are skipped.
-fn tasks_by_ids(conn: &mut Connection, ids: &[TaskId]) -> Result<Vec<Task>, DbError> {
+pub(super) fn tasks_by_ids(conn: &mut Connection, ids: &[TaskId]) -> Result<Vec<Task>, DbError> {
     let mut tasks = load_tasks(conn)?;
     tasks.retain(|t| ids.contains(&t.id));
     // Keep the caller's order, which puts the main task first.
@@ -170,10 +188,13 @@ pub(super) fn create_task(
     now_ms: i64,
 ) -> Result<Vec<Task>, DbError> {
     let tx = conn.transaction()?;
+    let effort = new.effort.unwrap_or(UNSORTED_EFFORT);
+    super::efforts::check_place(&tx, effort, new.criterion)?;
     let order = next_order(&tx, new.bucket)?;
     tx.execute(
         "INSERT INTO tasks (title, status, p_level, bucket, sort_order, notes, pr, follow_up_of, \
-         coordinator_created, created_ms, updated_ms) VALUES (?1, 'todo', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+         coordinator_created, created_ms, updated_ms, effort_id, criterion_id) \
+         VALUES (?1, 'todo', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11)",
         params![
             new.title,
             new.p_level.map(p_level_to_int),
@@ -183,7 +204,9 @@ pub(super) fn create_task(
             new.pr,
             new.follow_up_of.map(|t| t.0),
             coordinator_created,
-            now_ms
+            now_ms,
+            effort.0,
+            new.criterion.map(|c| c.0)
         ],
     )?;
     let id = TaskId(tx.last_insert_rowid());

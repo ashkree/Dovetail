@@ -384,13 +384,15 @@ fn ask_answers_with_citations_that_resolve_and_esc_twice_leaves() {
         [Command::Prompt {
             agent: ask.clone(),
             text: "why nucleo?".into(),
-            attachments: vec![]
+            attachments: vec![],
+            effort: None,
         }]
     );
     core.handle(Command::Prompt {
         agent: ask.clone(),
         text: "why nucleo?".into(),
         attachments: vec![],
+        effort: None,
     });
     run_until(&mut core, &mut app, "the answer", |app| {
         app.snapshot()

@@ -364,6 +364,8 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     app.wait_for("the task", |s| !s.tasks.is_empty());
     let task = app.snap.tasks[0].id;
@@ -502,6 +504,7 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
             kind: EntryKind::User,
             text: "yesterday".into(),
             attachments: vec![],
+            effort: None,
         },
     )
     .wait()
@@ -524,6 +527,8 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
                     follow_up_of: None,
                     pr: None,
                     related: vec![],
+                    effort: Default::default(),
+                    criterion: None,
                 },
                 false,
             )
@@ -603,6 +608,8 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
                 follow_up_of: None,
                 pr: None,
                 related: vec![],
+                effort: Default::default(),
+                criterion: None,
             },
             false,
         )

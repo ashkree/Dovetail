@@ -121,7 +121,7 @@ pub struct Launch {
     /// `--model`.
     pub model: Option<String>,
     /// `--effort`.
-    pub effort: Option<dovetail_api::Effort>,
+    pub effort: Option<dovetail_api::ReasoningEffort>,
     /// Extra environment (a slice's recipe `[env]`).
     pub env: Vec<(String, String)>,
     /// `CLAUDE_CONFIG_DIR`: the project's profile folder; `None` to inherit Dovetail's own.

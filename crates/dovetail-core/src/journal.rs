@@ -1023,6 +1023,8 @@ mod tests {
             follow_up_of: None,
             coordinator_created: false,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         }
     }
 

@@ -240,6 +240,8 @@ fn a_adds_a_task_by_title() {
             follow_up_of: None,
             pr: None,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         })]
     );
     assert_eq!(app.mode(), Mode::Normal);
@@ -392,7 +394,8 @@ fn r_on_a_finished_turn_sends_the_agent_a_normal_prompt() {
             Command::Prompt {
                 agent: agent_id("slice-4"),
                 text: "go on".into(),
-                attachments: Vec::new()
+                attachments: Vec::new(),
+                effort: None,
             }
         ]
     );

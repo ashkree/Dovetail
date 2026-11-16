@@ -219,6 +219,7 @@ fn the_coordinator_runs_in_the_state_folder_with_its_role_prompt_and_resumes_aft
         agent: AgentId(COORDINATOR.into()),
         text: "hello".into(),
         attachments: Vec::new(),
+        effort: None,
     });
     app.wait_for("the reply", |s| said(s, COORDINATOR, "alpha"));
     let spec = fake.started_specs()[0].clone();
@@ -275,6 +276,8 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
         follow_up_of: None,
         pr: None,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }));
     app.wait_for("the task", |s| !s.tasks.is_empty());
 
@@ -422,6 +425,8 @@ fn a_task_is_captured_into_a_research_project_by_id_without_opening_it() {
                 follow_up_of: None,
                 pr: None,
                 related: Vec::new(),
+                effort: Default::default(),
+                criterion: None,
             },
             false,
         )
@@ -456,6 +461,8 @@ fn another_projects_library_is_loaded_read_only() {
                     follow_up_of: None,
                     pr: None,
                     related: Vec::new(),
+                    effort: Default::default(),
+                    criterion: None,
                 },
                 false,
             )

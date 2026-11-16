@@ -7,7 +7,7 @@ use crate::switch::Switches;
 use crate::{
     ControlAnswer, DriverError, PermissionMode, Session, SessionDriver, SessionSpec, UserInput,
 };
-use dovetail_api::Effort;
+use dovetail_api::ReasoningEffort;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
@@ -428,7 +428,7 @@ impl Session for ClaudeSession {
     fn set_model(
         &self,
         model: Option<&str>,
-        effort: Option<Effort>,
+        effort: Option<ReasoningEffort>,
     ) -> Result<SwitchId, DriverError> {
         let (switch, line) = self
             .switches

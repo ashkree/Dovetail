@@ -78,6 +78,7 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
             agent: AgentId("coordinator".into()),
             text: "How are the slices doing?".into(),
             attachments: Vec::new(),
+            effort: None,
         }),
         2 => slice.map(|agent| Command::Interrupt { agent }),
         3 => Some(Command::CreateTask(NewTask {
@@ -88,6 +89,8 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
             follow_up_of: task,
             pr: None,
             related: vec![],
+            effort: Default::default(),
+            criterion: None,
         })),
         4 => task.map(|id| Command::ReorderTask { id, delta: 1 }),
         5 => slice.map(|agent| Command::CyclePermissionMode { agent }),

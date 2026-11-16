@@ -62,6 +62,8 @@ fn task(
         follow_up_of: None,
         coordinator_created: false,
         related: vec![],
+        effort: Default::default(),
+        criterion: None,
     }
 }
 
@@ -72,6 +74,7 @@ pub fn entry(id: u64, at: i64, kind: EntryKind, text: &str) -> ConversationEntry
         kind,
         text: text.into(),
         attachments: Vec::new(),
+        effort: None,
     }
 }
 

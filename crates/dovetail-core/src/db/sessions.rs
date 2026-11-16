@@ -4,8 +4,9 @@
 use std::path::PathBuf;
 
 use dovetail_api::{
-    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, Effort,
-    EntryId, InboxId, InboxItem, InboxKind, SessionLock, SubagentProgress, TaskId, WorktreeRef,
+    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, EntryId,
+    InboxId, InboxItem, InboxKind, ReasoningEffort, SessionLock, SubagentProgress, TaskId,
+    WorktreeRef,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -45,7 +46,7 @@ pub struct ModelChoice {
     /// `--model`: an alias or a full model name.
     pub model: String,
     /// `--effort`; `None` leaves Claude Code's default.
-    pub effort: Option<Effort>,
+    pub effort: Option<ReasoningEffort>,
 }
 
 fn kind_to_text(kind: AgentKind) -> &'static str {
@@ -75,14 +76,17 @@ fn kind_from_text(text: &str) -> Result<AgentKind, DbError> {
 
 /// A unit enum's text in the database: its serde name in the API (`setting_up`,
 /// `accept_edits`, `tool_summary`, ...), so the API is the one source of these names.
-fn to_text<T: serde::Serialize>(value: &T) -> Result<String, DbError> {
+pub(super) fn to_text<T: serde::Serialize>(value: &T) -> Result<String, DbError> {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => Ok(s),
         _ => Err(DbError::Corrupt("a value with no text form".into())),
     }
 }
 
-fn from_text<T: serde::de::DeserializeOwned>(what: &str, text: &str) -> Result<T, DbError> {
+pub(super) fn from_text<T: serde::de::DeserializeOwned>(
+    what: &str,
+    text: &str,
+) -> Result<T, DbError> {
     serde_json::from_value(serde_json::Value::String(text.to_owned()))
         .map_err(|_| DbError::Corrupt(format!("{what} {text:?}")))
 }
@@ -165,7 +169,7 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
             row.model_choice
                 .as_ref()
                 .and_then(|c| c.effort)
-                .map(Effort::as_str),
+                .map(ReasoningEffort::as_str),
         ],
     )?;
     Ok(())
@@ -235,7 +239,9 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             (chosen_model, chosen_effort),
         ) = row?;
         let chosen_effort = chosen_effort
-            .map(|e| Effort::parse(&e).ok_or_else(|| DbError::Corrupt(format!("effort {e:?}"))))
+            .map(|e| {
+                ReasoningEffort::parse(&e).ok_or_else(|| DbError::Corrupt(format!("effort {e:?}")))
+            })
             .transpose()?;
         let model_choice = chosen_model.map(|model| ModelChoice {
             model,
@@ -354,15 +360,16 @@ pub(super) fn upsert_entry(
     entry: &ConversationEntry,
 ) -> Result<(), DbError> {
     conn.execute(
-        "INSERT INTO conversation_entries (id, agent_id, at_ms, kind, text, attachments) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET text = ?5",
+        "INSERT INTO conversation_entries (id, agent_id, at_ms, kind, text, attachments, \
+         effort_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET text = ?5",
         params![
             entry.id.0 as i64,
             agent.0,
             entry.at_ms,
             to_text(&entry.kind)?,
             entry.text,
-            attachments_text(&entry.attachments)?
+            attachments_text(&entry.attachments)?,
+            entry.effort.map(|e| e.0)
         ],
     )?;
     Ok(())
@@ -376,7 +383,7 @@ pub(super) fn load_entries(
 ) -> Result<(Vec<ConversationEntry>, bool), DbError> {
     let before = before.map_or(i64::MAX, |b| b.0 as i64);
     let mut stmt = conn.prepare(
-        "SELECT id, at_ms, kind, text, attachments FROM conversation_entries \
+        "SELECT id, at_ms, kind, text, attachments, effort_id FROM conversation_entries \
          WHERE agent_id = ?1 AND id < ?2 ORDER BY id DESC LIMIT ?3",
     )?;
     let rows = stmt.query_map(params![agent.0, before, limit as i64 + 1], |r| {
@@ -386,11 +393,12 @@ pub(super) fn load_entries(
             r.get::<_, String>(2)?,
             r.get::<_, String>(3)?,
             r.get::<_, Option<String>>(4)?,
+            r.get::<_, Option<i64>>(5)?,
         ))
     })?;
     let mut entries = Vec::new();
     for row in rows {
-        let (id, at_ms, kind, text, attachments) = row?;
+        let (id, at_ms, kind, text, attachments, effort) = row?;
         let attachments = match attachments {
             Some(json) => serde_json::from_str(&json)
                 .map_err(|_| DbError::Corrupt(format!("attachments {json:?}")))?,
@@ -402,6 +410,7 @@ pub(super) fn load_entries(
             kind: from_text("entry kind", &kind)?,
             text,
             attachments,
+            effort: effort.map(dovetail_api::EffortId),
         });
     }
     let has_more = entries.len() > limit;

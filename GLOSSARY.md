@@ -86,6 +86,14 @@ _Avoid_: background task
 A piece of the user's own work in one effort, with or without agents attached. Dovetail sets its status: To do, In progress when an agent starts on it, Review when the agent finishes or opens a PR, Done when the user approves the merge. Its to-do items never decide it. A task that serves no acceptance criterion is flagged.
 _Avoid_: subtask, ticket, to-do
 
+**Unsorted** (v2):
+The effort every project starts with, holding the tasks nobody has put in an effort yet. It cannot be renamed or closed.
+_Avoid_: inbox, backlog, default effort
+
+**Reasoning effort**:
+How hard a session's model thinks, from low to max; a setting of the session, unrelated to efforts.
+_Avoid_: effort
+
 **Related task**:
 A task linked to another both ways, with no effect on either one's order or status. Quick capture relates the new task to the task in focus unless told not to.
 _Avoid_: subtask, child task, linked task
@@ -111,7 +119,7 @@ How important a task is, from P0 to P3.
 _Avoid_: priority, severity
 
 **Bucket** (v1 TUI):
-When the user will do a task: Now, Next or Later. A task with no bucket sits in Unsorted. Whether buckets stay in v2 is open; v2's **Unsorted** is an effort holding migrated tasks.
+When the user will do a task: Now, Next or Later. A task with no bucket sits in the Unsorted list, which is not the Unsorted effort. Whether buckets stay in v2 is open; v2's **Unsorted** is an effort holding migrated tasks.
 _Avoid_: priority, status, column
 
 **Journal**:
