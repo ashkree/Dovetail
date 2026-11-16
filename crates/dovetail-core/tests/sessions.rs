@@ -6186,3 +6186,373 @@ fn a_coordinator_recorded_in_its_repo_starts_fresh_in_home() {
     });
     h.quit();
 }
+
+// ---- ADR 0026: slice previews and declared variants
+
+/// The preview state of slice `name` in the snapshot.
+fn preview_of(s: &Snapshot, agent: &str) -> Option<dovetail_api::PreviewState> {
+    s.previews
+        .iter()
+        .find(|p| p.agent.0 == agent)
+        .map(|p| p.state.clone())
+}
+
+/// `GET /` of a preview URL, as plain HTTP on a socket: the body, or `None` if nothing answers.
+fn fetch(url: &str) -> Option<String> {
+    let addr = url.strip_prefix("http://")?.trim_end_matches('/');
+    let mut stream = std::net::TcpStream::connect(addr).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(3))).ok()?;
+    stream
+        .write_all(format!("GET / HTTP/1.0\r\nHost: {addr}\r\n\r\n").as_bytes())
+        .ok()?;
+    let mut body = String::new();
+    std::io::Read::read_to_string(&mut stream, &mut body).ok()?;
+    Some(body)
+}
+
+/// Waits (up to 5 s) for nothing to answer at `url`.
+fn gone(url: &str) -> bool {
+    let until = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < until {
+        if fetch(url).is_none() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+fn start_viewer_harness(recipe: Option<&str>) -> (Harness, TempDir, PathBuf) {
+    let (dir, repo, paths) = repo_with_slices(&["web"]);
+    if let Some(text) = recipe {
+        write_recipe(&paths, text);
+    }
+    let mut h = Harness::start_with(
+        fixture("plain_turn"),
+        paths.clone(),
+        Some(repo.clone()),
+        Config::default(),
+    );
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "web"));
+    (h, dir, repo)
+}
+
+#[test]
+fn a_preview_runs_in_the_worktree_serves_the_page_and_stops_with_the_slice() {
+    let (mut h, _dir, _repo) = start_viewer_harness(Some(
+        "preview = \"python3 -m http.server {port} --bind 127.0.0.1\"\n",
+    ));
+    assert_eq!(preview_of(&h.snap, "slice-web"), None);
+    h.send(Command::StartPreview {
+        agent: AgentId("slice-web".into()),
+    });
+    h.wait_for("the preview to run", |s| {
+        matches!(
+            preview_of(s, "slice-web"),
+            Some(dovetail_api::PreviewState::Running { .. })
+        )
+    });
+    let Some(dovetail_api::PreviewState::Running { url }) = preview_of(&h.snap, "slice-web") else {
+        unreachable!()
+    };
+    assert!(url.starts_with("http://127.0.0.1:"), "{url}");
+    let page = fetch(&url).expect("the preview answers");
+    // The server lists the worktree's files: it runs there.
+    assert!(page.contains("README"), "{page}");
+
+    // Asking again while it runs changes nothing.
+    h.send(Command::StartPreview {
+        agent: AgentId("slice-web".into()),
+    });
+    h.drain(Duration::from_millis(200));
+    assert_eq!(
+        preview_of(&h.snap, "slice-web"),
+        Some(dovetail_api::PreviewState::Running { url: url.clone() })
+    );
+
+    // Archiving the slice stops it.
+    let socket = h.socket();
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, archive_slice("web")),
+    ));
+    assert!(!is_error && text.starts_with(ARCHIVED), "{text}");
+    assert!(gone(&url), "the preview still answers after archive");
+    h.wait_for("the slice and its preview to go", |s| {
+        preview_of(s, "slice-web").is_none() && !s.agents.iter().any(|a| a.name == "web")
+    });
+    h.quit();
+}
+
+#[test]
+fn restarting_a_preview_starts_it_again_and_quitting_stops_it() {
+    let (mut h, _dir, _repo) = start_viewer_harness(Some(
+        "preview = \"python3 -m http.server {port} --bind 127.0.0.1\"\n",
+    ));
+    let agent = AgentId("slice-web".into());
+    h.send(Command::StartPreview {
+        agent: agent.clone(),
+    });
+    h.wait_for("running", |s| {
+        matches!(
+            preview_of(s, "slice-web"),
+            Some(dovetail_api::PreviewState::Running { .. })
+        )
+    });
+    let Some(dovetail_api::PreviewState::Running { url: first }) = preview_of(&h.snap, "slice-web")
+    else {
+        unreachable!()
+    };
+    h.send(Command::RestartPreview {
+        agent: agent.clone(),
+    });
+    h.wait_for("running again on a new port", |s| {
+        matches!(
+            preview_of(s, "slice-web"),
+            Some(dovetail_api::PreviewState::Running { url }) if url != first
+        )
+    });
+    assert!(gone(&first), "the first run was stopped");
+    let Some(dovetail_api::PreviewState::Running { url }) = preview_of(&h.snap, "slice-web") else {
+        unreachable!()
+    };
+    assert!(fetch(&url).is_some());
+    h.quit();
+    assert!(gone(&url), "quitting stops the preview");
+}
+
+#[test]
+fn a_slice_of_a_repo_with_no_preview_line_says_so_and_a_failing_command_shows_its_output() {
+    let (mut h, _dir, _repo) = start_viewer_harness(None);
+    h.send(Command::StartPreview {
+        agent: AgentId("slice-web".into()),
+    });
+    h.wait_for("no command", |s| {
+        preview_of(s, "slice-web") == Some(dovetail_api::PreviewState::NoCommand)
+    });
+    h.quit();
+
+    let (mut h, _dir, _repo) =
+        start_viewer_harness(Some("preview = \"echo boom on port {port}; exit 3\"\n"));
+    h.send(Command::StartPreview {
+        agent: AgentId("slice-web".into()),
+    });
+    h.wait_for("failed", |s| {
+        matches!(
+            preview_of(s, "slice-web"),
+            Some(dovetail_api::PreviewState::Failed { .. })
+        )
+    });
+    let Some(dovetail_api::PreviewState::Failed { output }) = preview_of(&h.snap, "slice-web")
+    else {
+        unreachable!()
+    };
+    assert!(output.contains("exited before it listened"), "{output}");
+    assert!(output.contains("boom on port"), "{output}");
+    h.quit();
+}
+
+#[test]
+fn a_repo_override_replaces_the_projects_preview_line() {
+    // The project line would fail; the repo's own (named after the repo) serves.
+    let (mut h, _dir, _repo) = start_viewer_harness(Some(
+        "preview = \"exit 1\"\n[repos.p]\npreview = \"python3 -m http.server {port} --bind 127.0.0.1\"\n",
+    ));
+    h.send(Command::StartPreview {
+        agent: AgentId("slice-web".into()),
+    });
+    h.wait_for("a preview state", |s| preview_of(s, "slice-web").is_some());
+    h.wait_for("running", |s| {
+        matches!(
+            preview_of(s, "slice-web"),
+            Some(
+                dovetail_api::PreviewState::Running { .. }
+                    | dovetail_api::PreviewState::Failed { .. }
+            )
+        ) && !matches!(
+            preview_of(s, "slice-web"),
+            Some(dovetail_api::PreviewState::Starting)
+        )
+    });
+    assert!(
+        matches!(
+            preview_of(&h.snap, "slice-web"),
+            Some(dovetail_api::PreviewState::Running { .. })
+        ),
+        "{:?}",
+        preview_of(&h.snap, "slice-web")
+    );
+    h.quit();
+}
+
+fn declare(slots: Vec<dovetail_api::VariantSlot>) -> Tool {
+    Tool::DeclareVariants(dovetail_api::tools::DeclareVariants { slots })
+}
+
+fn slot(
+    name: &str,
+    level: dovetail_api::VariantLevel,
+    options: &[&str],
+) -> dovetail_api::VariantSlot {
+    dovetail_api::VariantSlot {
+        name: name.into(),
+        level,
+        options: options.iter().map(|o| (*o).into()).collect(),
+        kept: None,
+    }
+}
+
+#[test]
+fn a_slice_declares_variants_the_user_picks_and_keeps_and_the_slice_is_prompted() {
+    use dovetail_api::VariantLevel::{Component, Global};
+    let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+    h.send(Command::NewSlice {
+        repo: None,
+        task: None,
+        name: "later".into(),
+        brief: "go".into(),
+    });
+    h.wait_for("the slice to have run", |s| {
+        s.conversations
+            .get(&AgentId("slice-later".into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "alpha"))
+    });
+    let socket = h.socket();
+    let agent = AgentId("slice-later".into());
+
+    // Only a slice may declare; the coordinator is refused.
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(COORDINATOR, declare(vec![slot("theme", Global, &["a"])])),
+    ));
+    assert!(is_error && text.contains("for slices"), "{text}");
+    // The whole list is checked: every problem comes back.
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            "slice-later",
+            declare(vec![
+                slot("theme", Global, &["a", "a"]),
+                slot("theme", Global, &[]),
+            ]),
+        ),
+    ));
+    assert!(
+        is_error
+            && text.contains("twice")
+            && text.contains("needs 1 to 8 options")
+            && text.contains("appears twice"),
+        "{text}"
+    );
+
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            "slice-later",
+            declare(vec![
+                slot("theme", Global, &["light", "dark"]),
+                slot("header", Component, &["plain", "bold"]),
+            ]),
+        ),
+    ));
+    assert!(!is_error, "{text}");
+    h.wait_for("the declared set", |s| s.variants.len() == 1);
+    let set = h.snap.variants[0].clone();
+    assert_eq!(set.selection["theme"], "light");
+    assert_eq!(set.selection["header"], "plain");
+
+    h.send(Command::SelectVariant {
+        agent: agent.clone(),
+        slot: "theme".into(),
+        option: "dark".into(),
+    });
+    h.wait_for("the pick", |s| {
+        s.variants
+            .first()
+            .is_some_and(|v| v.selection["theme"] == "dark")
+    });
+    h.send(Command::SelectVariant {
+        agent: agent.clone(),
+        slot: "theme".into(),
+        option: "neon".into(),
+    });
+    h.drain(Duration::from_millis(300));
+    assert!(
+        h.failures.iter().any(|f| f.contains("not an option")),
+        "{:?}",
+        h.failures
+    );
+
+    // Declaring again keeps a pick that is still valid and drops one that is not.
+    let (_, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            "slice-later",
+            declare(vec![
+                slot("theme", Global, &["light", "dark", "sepia"]),
+                slot("header", Component, &["compact"]),
+            ]),
+        ),
+    ));
+    assert!(!is_error);
+    h.wait_for("the redeclared set", |s| {
+        s.variants
+            .first()
+            .is_some_and(|v| v.slots.len() == 2 && v.slots[1].options == ["compact"])
+    });
+    assert_eq!(h.snap.variants[0].selection["theme"], "dark");
+    assert_eq!(h.snap.variants[0].selection["header"], "compact");
+
+    // Keep: the picks become the kept options and the slice is prompted.
+    h.send(Command::KeepVariants {
+        agent: agent.clone(),
+    });
+    h.wait_for("the kept options", |s| {
+        s.variants
+            .first()
+            .is_some_and(|v| v.slots[0].kept.as_deref() == Some("dark"))
+    });
+    h.wait_for("the prompt in the slice's conversation", |s| {
+        s.conversations
+            .get(&agent)
+            .is_some_and(|t| t.entries.iter().any(|e| e.kind == EntryKind::User && e.text.contains("Keep this combination of variants: theme (global): dark; header (component): compact")))
+    });
+
+    // An empty declaration clears the list.
+    let (_, is_error) = result_text(socket_call(&socket, tool("slice-later", declare(vec![]))));
+    assert!(!is_error);
+    h.wait_for("the cleared list", |s| s.variants.is_empty());
+    h.quit();
+}
+
+#[test]
+fn declared_variants_and_picks_survive_a_restart() {
+    use dovetail_api::VariantLevel::Global;
+    let (mut h, dir, repo) = start_viewer_harness(None);
+    let paths = h.paths.clone();
+    let socket = h.socket();
+    let (_, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            "slice-web",
+            declare(vec![slot("theme", Global, &["light", "dark"])]),
+        ),
+    ));
+    assert!(!is_error);
+    h.send(Command::SelectVariant {
+        agent: AgentId("slice-web".into()),
+        slot: "theme".into(),
+        option: "dark".into(),
+    });
+    h.wait_for("the pick", |s| {
+        s.variants
+            .first()
+            .is_some_and(|v| v.selection["theme"] == "dark")
+    });
+    h.quit();
+    let h = Harness::start_with(fixture("plain_turn"), paths, Some(repo), Config::default());
+    assert_eq!(h.snap.variants.len(), 1, "{:?}", h.snap.variants);
+    assert_eq!(h.snap.variants[0].selection["theme"], "dark");
+    drop(dir);
+    h.quit();
+}

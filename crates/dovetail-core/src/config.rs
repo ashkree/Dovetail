@@ -14,8 +14,8 @@
 //! walid = "~/.claude"
 //! maveron = "~/.local/share/dovetail/profiles/maveron"
 //! [suites]                   # tool suites per role (ADR 0016); a role left out keeps its default
-//! coordinator = ["core", "tasks", "project", "coordination", "research", "maps", "canvas"]
-//! slice = ["core", "coordination", "maps"]
+//! coordinator = ["core", "tasks", "project", "coordination", "research", "maps", "canvas", "design"]
+//! slice = ["core", "coordination", "maps", "design"]
 //! side_chat = ["core"]       # ignored: side chats and Ask always get the core suite
 //! ```
 //!
@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(defaults.for_role(Role::Coordinator), Suite::ALL);
         assert_eq!(
             defaults.for_role(Role::Slice),
-            [Suite::Core, Suite::Coordination, Suite::Maps]
+            [Suite::Core, Suite::Coordination, Suite::Maps, Suite::Design]
         );
         assert_eq!(defaults.for_role(Role::SideChat), [Suite::Core]);
         let partial = Config::parse("[suites]\nslice = [\"core\"]\n")

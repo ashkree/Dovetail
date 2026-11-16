@@ -545,6 +545,9 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         canvases: Vec::new(),
         cards: Vec::new(),
         card_links: Vec::new(),
+        // Nor previews or variants (ADR 0026).
+        previews: Vec::new(),
+        variants: Vec::new(),
         tasks,
         agents: vec![
             coordinator,

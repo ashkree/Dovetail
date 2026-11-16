@@ -55,19 +55,19 @@ describe('the canvas view', () => {
 
 describe('translating card commands', () => {
   it('turns a placement into the core command with the effort\'s canvas', () => {
-    const t = translate({ type: 'place_card', incoming_id: 'F11', x: 5, y: 6 }, core, pending);
+    const t = translate({ type: 'place_card', incoming_id: 'F11', x: 5, y: 6 }, core);
     expect(t.core).toEqual([{ place_card: { id: 11, canvas: 1, x: 5, y: 6 } }]);
   });
 
   it('sends a new idea with its title as the first line', () => {
-    const t = translate({ type: 'add_card', canvas_id: '1', kind: 'idea', x: 1, y: 2, title: 'Ask Mollie', body: '', link_from: 'Q2' }, core, pending);
+    const t = translate({ type: 'add_card', canvas_id: '1', kind: 'idea', x: 1, y: 2, title: 'Ask Mollie', body: '', link_from: 'Q2' }, core);
     expect(t.core).toEqual([{
       add_card: { card: { effort: 2, canvas: 1, kind: 'idea', x: 1, y: 2, reference: null, text: 'Ask Mollie' }, link_from: 2 },
     }]);
   });
 
   it('refuses to type a finding into existence', () => {
-    const t = translate({ type: 'add_card', canvas_id: '1', kind: 'finding', x: 0, y: 0, title: 'x', body: '' }, core, pending);
+    const t = translate({ type: 'add_card', canvas_id: '1', kind: 'finding', x: 0, y: 0, title: 'x', body: '' }, core);
     expect(t.core).toEqual([]);
     expect(t.refused).toMatch(/points at something/);
   });

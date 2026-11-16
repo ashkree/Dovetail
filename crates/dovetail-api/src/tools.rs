@@ -43,7 +43,7 @@ pub mod env {
 pub enum Role {
     /// The coordinator: every suite.
     Coordinator,
-    /// A slice: Core, Coordination and Maps.
+    /// A slice: Core, Coordination, Maps and Design.
     Slice,
     /// A side chat: Core only (ADR 0011, ADR 0016).
     SideChat,
@@ -76,7 +76,7 @@ impl Role {
     pub fn default_suites(self) -> &'static [Suite] {
         match self {
             Role::Coordinator => Suite::ALL,
-            Role::Slice => &[Suite::Core, Suite::Coordination, Suite::Maps],
+            Role::Slice => &[Suite::Core, Suite::Coordination, Suite::Maps, Suite::Design],
             Role::SideChat => &[Suite::Core],
             Role::Ask => &[],
         }
@@ -105,6 +105,8 @@ pub enum Suite {
     /// The effort canvas: add a card to incoming, link two cards (ADR 0025). Coordinator only
     /// for now.
     Canvas,
+    /// What a slice's previewed page can switch: `design_declare_variants` (ADR 0026).
+    Design,
 }
 
 impl Suite {
@@ -117,6 +119,7 @@ impl Suite {
         Suite::Research,
         Suite::Maps,
         Suite::Canvas,
+        Suite::Design,
     ];
 
     /// The name in `config.toml` and [`env::SUITES`], also the tools' prefix.
@@ -129,6 +132,7 @@ impl Suite {
             Suite::Research => "research",
             Suite::Maps => "maps",
             Suite::Canvas => "canvas",
+            Suite::Design => "design",
         }
     }
 
@@ -248,6 +252,8 @@ tools! {
     CanvasAddCard(CanvasAddCard) = "canvas_add_card", Canvas;
     /// `canvas_link_cards` (ADR 0025): link two cards.
     CanvasLinkCards(CanvasLinkCards) = "canvas_link_cards", Canvas;
+    /// `design_declare_variants` (ADR 0026): the slots the viewer's variant panel shows.
+    DeclareVariants(DeclareVariants) = "design_declare_variants", Design;
 }
 
 /// The row of [`TOOLS`] named `name`, by its current or its old name.
@@ -327,6 +333,10 @@ pub enum ToolError {
     /// `canvas_add_card` of an idea or question with no text, or of a reference with no id, or
     /// of an idea or question that also names a reference.
     BadCard(&'static str),
+    /// `design_declare_variants` from a session that is not a slice.
+    DeclareFromNonSlice,
+    /// `design_declare_variants` with a list that cannot be used; the text says what is wrong.
+    BadVariants(String),
     /// `research_get`'s `what` is none of `report`, `round:N`, `finding:N`, `source:N`.
     BadWhat(String),
 }
@@ -381,6 +391,10 @@ impl std::fmt::Display for ToolError {
                 write!(f, "`{field}` must be a card id (a positive integer)")
             }
             ToolError::BadCard(why) => f.write_str(why),
+            ToolError::DeclareFromNonSlice => f.write_str(
+                "`design_declare_variants` is for slices: they declare the variants of the page they build",
+            ),
+            ToolError::BadVariants(why) => write!(f, "bad variants: {why}"),
             ToolError::BadWhat(text) => write!(
                 f,
                 "`what` must be `report`, `round:N`, `finding:N` or `source:N`, not `{text}`"
@@ -476,6 +490,12 @@ impl Tool {
                     return Err(ToolError::NotACardId("to"));
                 }
                 Ok(())
+            }
+            Tool::DeclareVariants(d) => {
+                if role != Role::Slice {
+                    return Err(ToolError::DeclareFromNonSlice);
+                }
+                d.check().map_err(|p| ToolError::BadVariants(p.join("; ")))
             }
             Tool::CreateTask(c) => {
                 text("title", &c.title)?;
@@ -626,6 +646,61 @@ pub struct CanvasLinkCards {
     /// What the link says, if anything.
     #[serde(default)]
     pub label: String,
+}
+
+/// `design_declare_variants` (ADR 0026): replace the list of things the user can switch in the
+/// slice's preview. Call it again whenever the list changes, and with `slots: []` when none is
+/// left.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DeclareVariants {
+    /// Every slot, in the order the panel shows them.
+    pub slots: Vec<crate::VariantSlot>,
+}
+
+impl DeclareVariants {
+    /// Checks the whole list, so every problem comes back at once: at most
+    /// [`crate::MAX_SLOTS`] slots with unique non-empty names, each with 1 to
+    /// [`crate::MAX_OPTIONS`] unique non-empty options, and a `kept` that is one of them.
+    pub fn check(&self) -> Result<(), Vec<String>> {
+        let mut problems = Vec::new();
+        if self.slots.len() > crate::MAX_SLOTS {
+            problems.push(format!("at most {} slots", crate::MAX_SLOTS));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for slot in &self.slots {
+            let name = slot.name.trim();
+            if name.is_empty() {
+                problems.push("a slot has an empty name".to_owned());
+            } else if !seen.insert(name) {
+                problems.push(format!("slot `{name}` appears twice"));
+            }
+            if slot.options.is_empty() || slot.options.len() > crate::MAX_OPTIONS {
+                problems.push(format!(
+                    "slot `{name}` needs 1 to {} options",
+                    crate::MAX_OPTIONS
+                ));
+            }
+            let mut options = std::collections::BTreeSet::new();
+            for o in &slot.options {
+                if o.trim().is_empty() {
+                    problems.push(format!("slot `{name}` has an empty option"));
+                } else if !options.insert(o.as_str()) {
+                    problems.push(format!("slot `{name}` has the option `{o}` twice"));
+                }
+            }
+            if let Some(kept) = &slot.kept
+                && !slot.options.contains(kept)
+            {
+                problems.push(format!("slot `{name}`: `kept` is not one of its options"));
+            }
+        }
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            Err(problems)
+        }
+    }
 }
 
 /// Where a slice says its work stands, in a [`Report`].

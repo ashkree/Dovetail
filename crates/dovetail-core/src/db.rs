@@ -12,6 +12,7 @@
 
 mod canvas;
 mod counts;
+mod design;
 mod efforts;
 mod maps;
 mod registry;
@@ -87,6 +88,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0017_efforts.sql"),
     migration!("state", "0018_canvases.sql"),
     migration!("state", "0019_agent_repo.sql"),
+    migration!("state", "0020_design_variants.sql"),
 ];
 
 /// Errors from the database layer.

@@ -57,6 +57,11 @@ pub enum Event {
     /// An effort was created or changed: its fields, its "where was I" card or its criteria.
     /// It carries the whole effort. Efforts are never removed.
     EffortUpserted(Effort),
+    /// A slice's preview changed state (ADR 0026).
+    PreviewChanged(crate::design::Preview),
+    /// A slice declared its variants, or the user picked or kept an option (ADR 0026). It
+    /// carries the whole set.
+    VariantsUpserted(crate::design::VariantSet),
     /// A canvas was created or renamed (ADR 0025).
     CanvasUpserted(crate::canvas::Canvas),
     /// A card was added, placed, moved or changed. It carries the whole card.
@@ -586,6 +591,32 @@ pub enum Command {
         entry: EntryId,
         /// The effort the card goes to.
         effort: EffortId,
+    },
+    /// Start a slice's preview (ADR 0026) unless it already starts or runs. The viewer sends it
+    /// when it opens on the slice. Answered with [`Event::PreviewChanged`].
+    StartPreview {
+        /// The slice.
+        agent: AgentId,
+    },
+    /// Stop a slice's preview and start it again.
+    RestartPreview {
+        /// The slice.
+        agent: AgentId,
+    },
+    /// Pick an option of a declared variant slot. Refused for an unknown slot or option.
+    SelectVariant {
+        /// The slice.
+        agent: AgentId,
+        /// The slot's name.
+        slot: String,
+        /// The option.
+        option: String,
+    },
+    /// "Keep this combination": mark the picked options as kept and prompt the slice to make
+    /// them permanent and delete the rest.
+    KeepVariants {
+        /// The slice.
+        agent: AgentId,
     },
     /// Fetch a card's body. The core answers with [`Event::CardLoaded`].
     LoadCard {

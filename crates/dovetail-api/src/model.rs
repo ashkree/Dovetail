@@ -158,6 +158,12 @@ pub struct Snapshot {
     /// The models the model selector offers, in order (task #39).
     #[serde(default)]
     pub models: Vec<ModelOption>,
+    /// Each slice's running preview, for slices the viewer was opened on (ADR 0026).
+    #[serde(default)]
+    pub previews: Vec<crate::design::Preview>,
+    /// The variants slices declared, with the user's picks (ADR 0026).
+    #[serde(default)]
+    pub variants: Vec<crate::design::VariantSet>,
 }
 
 /// A tangent: a question that did not belong to the project it was asked from, saved as a task

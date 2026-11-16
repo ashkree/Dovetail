@@ -350,6 +350,7 @@ mod tests {
                 "coordination_report",
                 "coordination_claim_criterion",
                 "maps_draw",
+                "design_declare_variants",
             ],
             &core_old,
             &["draw_map"],
@@ -377,6 +378,7 @@ mod tests {
                 "maps_draw",
                 "canvas_add_card",
                 "canvas_link_cards",
+                "design_declare_variants",
             ],
             &core_old,
             &[

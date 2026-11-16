@@ -40,6 +40,12 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::TaskUpserted(task) => upsert(&mut state.tasks, task, |t| t.id),
         Event::TaskRemoved(id) => state.tasks.retain(|t| t.id != id),
         Event::EffortUpserted(effort) => upsert(&mut state.efforts, effort, |e| e.id),
+        Event::PreviewChanged(preview) => upsert(&mut state.previews, preview, |p| p.agent.clone()),
+        // A set with no slots is how the core says the slice declared none.
+        Event::VariantsUpserted(set) if set.slots.is_empty() => {
+            state.variants.retain(|v| v.agent != set.agent)
+        }
+        Event::VariantsUpserted(set) => upsert(&mut state.variants, set, |v| v.agent.clone()),
         Event::CanvasUpserted(canvas) => upsert(&mut state.canvases, canvas, |c| c.id),
         Event::CardUpserted(card) => upsert(&mut state.cards, card, |c| c.id),
         Event::CardRemoved(id) => {
@@ -62,6 +68,8 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::AgentUpserted(agent) => upsert(&mut state.agents, agent, |a| a.id.clone()),
         Event::AgentRemoved(id) => {
             state.agents.retain(|a| a.id != id);
+            state.previews.retain(|p| p.agent != id);
+            state.variants.retain(|v| v.agent != id);
             state.conversations.remove(&id);
             state.worktrees.retain(|w| w.agent != id);
             state.commands.remove(&id);

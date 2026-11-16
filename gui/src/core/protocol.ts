@@ -38,6 +38,15 @@ export type UiCommand =
   | { type: 'load_card'; card_id: Id }
   /** Keep a chat reply as an idea card in the effort's incoming strip, by copying its text. */
   | { type: 'card_from_reply'; entry_id: Id; effort_id: Id }
+  /** The viewer opened on a slice: start its preview unless it runs (ADR 0026). */
+  | { type: 'start_preview'; agent_id: Id }
+  | { type: 'restart_preview'; agent_id: Id }
+  /** Pick an option (by its name) of a slot (by its name). */
+  | { type: 'select_variant'; agent_id: Id; slot: string; option: string }
+  /** "Keep this combination": the core marks the picks and prompts the slice. */
+  | { type: 'keep_variants'; agent_id: Id }
+  /** Open a web page in the user's browser, through the core. */
+  | { type: 'open_external'; url: string }
   /** Ask for a fresh snapshot (after a gap). */
   | { type: 'resync' }
   | PendingAction;

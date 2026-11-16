@@ -322,6 +322,12 @@ pub(crate) enum Input {
     },
     /// `:eod` has its handoff, or knows none is coming: write the day's journal file.
     CloseDay,
+    /// A slice's preview process reported (ADR 0026). `run` tells which start it belongs to.
+    Preview {
+        agent: AgentId,
+        run: u64,
+        report: crate::preview::PreviewReport,
+    },
 }
 
 /// Hands socket requests to the loop.
@@ -468,6 +474,8 @@ pub(crate) struct Core {
     pub(crate) model_catalog: Vec<dovetail_driver::ModelInfo>,
     /// Every effort of the open project with its criteria (`efforts`).
     pub(crate) efforts: BTreeMap<dovetail_api::EffortId, dovetail_api::Effort>,
+    /// Each slice's preview process and state (ADR 0026, `preview`).
+    pub(crate) previews: crate::preview::Previews,
     /// The effort tag each agent's new entries get: that of the user's last message to it.
     pub(crate) effort_tags: HashMap<AgentId, dovetail_api::EffortId>,
     /// Archived slices and the task each worked on, kept so a pull-request lookup started as
@@ -588,6 +596,7 @@ impl Core {
             tangents: Err(crate::tangents::TangentError::Off("not opened".into())),
             model_catalog: Vec::new(),
             efforts: BTreeMap::new(),
+            previews: Default::default(),
             effort_tags: HashMap::new(),
             closed_slices: HashMap::new(),
             sent_back: HashMap::new(),
@@ -736,6 +745,7 @@ impl Core {
                 }
                 Input::OomKills { cgroup, count } => self.on_oom_kills(cgroup, count),
                 Input::CloseDay => self.write_journal().await,
+                Input::Preview { agent, run, report } => self.on_preview(&agent, run, report),
                 Input::NativeStarted { agent, pid } => self.native_started(&agent, pid),
                 Input::NativeExited { agent, end } => self.native_exited(&agent, end),
             }
@@ -952,6 +962,8 @@ impl Core {
             upgrade_building: self.upgrade.building.is_some(),
             tangents: self.tangent_summaries().await,
             models: self.model_options(),
+            previews: self.previews.list(),
+            variants: self.db.load_variants().await?,
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1502,6 +1514,14 @@ impl Core {
                 effort,
             } => self.card_from_reply(agent, entry, effort).await,
             Command::LoadCard { id } => self.load_card(id).await,
+            Command::StartPreview { agent } => self.start_preview(agent),
+            Command::RestartPreview { agent } => self.restart_preview(agent),
+            Command::SelectVariant {
+                agent,
+                slot,
+                option,
+            } => self.select_variant(agent, slot, option).await,
+            Command::KeepVariants { agent } => self.keep_variants(agent).await,
             Command::CreateEffort(new) => self.create_effort(new).await,
             Command::RenameEffort { id, name } => self.rename_effort(id, name).await,
             Command::UpdateEffort { id, patch } => self.update_effort(id, patch).await,

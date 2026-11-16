@@ -21,6 +21,7 @@ import type { Map } from "./Map";
 import type { MapSummary } from "./MapSummary";
 import type { ModelOption } from "./ModelOption";
 import type { Paste } from "./Paste";
+import type { Preview } from "./Preview";
 import type { ProjectId } from "./ProjectId";
 import type { ProjectSummary } from "./ProjectSummary";
 import type { ResearchContent } from "./ResearchContent";
@@ -35,6 +36,7 @@ import type { TodoItem } from "./TodoItem";
 import type { TodoListId } from "./TodoListId";
 import type { Totals } from "./Totals";
 import type { UsageLimits } from "./UsageLimits";
+import type { VariantSet } from "./VariantSet";
 import type { Warning } from "./Warning";
 import type { WarningId } from "./WarningId";
 import type { WorktreeInfo } from "./WorktreeInfo";
@@ -42,7 +44,7 @@ import type { WorktreeInfo } from "./WorktreeInfo";
 /**
  * One change to the client's [`Snapshot`].
  */
-export type Event = { "task_upserted": Task } | { "task_removed": TaskId } | { "effort_upserted": Effort } | { "canvas_upserted": Canvas } | { "card_upserted": Card } | { "card_removed": CardId } | { "card_linked": CardLink } | { "card_unlinked": { 
+export type Event = { "task_upserted": Task } | { "task_removed": TaskId } | { "effort_upserted": Effort } | { "preview_changed": Preview } | { "variants_upserted": VariantSet } | { "canvas_upserted": Canvas } | { "card_upserted": Card } | { "card_removed": CardId } | { "card_linked": CardLink } | { "card_unlinked": { 
 /**
  * The card it started at.
  */

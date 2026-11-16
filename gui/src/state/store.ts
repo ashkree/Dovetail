@@ -41,7 +41,7 @@ export function connect(core: CoreLink, pendingFor?: (project: string | null) =>
 }
 
 export function send(cmd: UiCommand): void {
-  const t = translate(cmd, coreStore.get(), pendingStore.get());
+  const t = translate(cmd, coreStore.get());
   if (t.refused) toast(t.refused);
   if (t.pending) pendingStore.set(p => applyPending(p, t.pending!));
   for (const c of t.core) link?.send(c);

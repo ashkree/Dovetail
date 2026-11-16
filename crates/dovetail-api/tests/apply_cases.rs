@@ -302,6 +302,62 @@ fn canvas() -> Case {
     }
 }
 
+/// ADR 0026: a preview goes through its states and goes with its slice; declared variants are
+/// replaced whole, a pick changes the selection, and a set with no slots removes the entry.
+fn design() -> Case {
+    let web = AgentId("web".into());
+    let slot = |name: &str, level, options: &[&str]| VariantSlot {
+        name: name.into(),
+        level,
+        options: options.iter().map(|o| (*o).into()).collect(),
+        kept: None,
+    };
+    let declared = VariantSet::declared(
+        web.clone(),
+        vec![
+            slot("theme", VariantLevel::Global, &["light", "dark"]),
+            slot("header", VariantLevel::Component, &["plain", "bold"]),
+        ],
+        &Default::default(),
+    );
+    let mut picked = declared.clone();
+    picked.selection.insert("theme".into(), "dark".into());
+    let mut kept = picked.clone();
+    kept.slots[0].kept = Some("dark".into());
+    let preview = |state| Preview {
+        agent: web.clone(),
+        state,
+    };
+    let events = vec![
+        Event::PreviewChanged(preview(PreviewState::Starting)),
+        Event::PreviewChanged(preview(PreviewState::Running {
+            url: "http://127.0.0.1:41000/".into(),
+        })),
+        Event::VariantsUpserted(declared.clone()),
+        Event::VariantsUpserted(picked),
+        Event::VariantsUpserted(kept),
+        Event::VariantsUpserted(VariantSet {
+            agent: web.clone(),
+            slots: Vec::new(),
+            selection: Default::default(),
+        }),
+        Event::VariantsUpserted(declared),
+        Event::PreviewChanged(preview(PreviewState::Failed {
+            output: "the preview exited".into(),
+        })),
+        Event::AgentRemoved(web),
+    ];
+    Case {
+        name: "design",
+        snapshot: Snapshot::default(),
+        events: events
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| (i as u64 + 1, e))
+            .collect(),
+    }
+}
+
 fn project(id: &str, repos: &[&str]) -> ProjectSummary {
     ProjectSummary {
         id: ProjectId(id.into()),
@@ -510,6 +566,7 @@ fn cases() -> Vec<Case> {
         },
         the_rest(),
         canvas(),
+        design(),
         projects(),
     ]
 }
