@@ -6,8 +6,9 @@ import {
   Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useViewport,
   type Edge, type Node, type NodeChange, type NodeProps,
 } from '@xyflow/react';
-import type { Card } from '../../core/model';
-import { dispatch, effortCanvas } from '../../keys/actions';
+import type { Card, Framework } from '../../core/model';
+import { dispatch, effortCanvas, FRAMEWORK_KEY } from '../../keys/actions';
+import { keyText } from '../overlays/Keys';
 import { viewport } from '../../keys/viewport';
 import { effortById } from '../../state/select';
 import { send, useSnapshot } from '../../state/store';
@@ -22,7 +23,8 @@ const START = { x: 10, y: 10, zoom: 0.85 };
 const CARD_W = 250;
 const CARD_H = 100;
 const FIT_PAD = 16;
-const FRAMEWORK_NAME = { question_tree: 'question tree', options_compare: 'options compare', free_board: 'free board' };
+const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+const FRAMEWORK_NAME: Record<Framework, string> = { question_tree: 'question tree', options_compare: 'options compare', free_board: 'free board' };
 
 type CardNode = Node<{ card: Card; sel: boolean }, 'card'>;
 
@@ -45,9 +47,9 @@ export function Canvas() {
       <div className="empty-main"><div className="empty-canvas">
         <div className="lead">{e?.name ?? 'This effort'} has no canvas yet. Start from a framework:</div>
         <div className="answers" style={{ justifyContent: 'center' }}>
-          <button onClick={() => dispatch('pickFramework', 'question_tree')}>1 · Question tree</button>
-          <button onClick={() => dispatch('pickFramework', 'options_compare')}>2 · Options compare</button>
-          <button onClick={() => dispatch('pickFramework', 'free_board')}>3 · Free board</button>
+          {(Object.entries(FRAMEWORK_KEY) as [keyof typeof FRAMEWORK_KEY, Framework][]).map(([key, f]) => (
+            <button key={f} onClick={() => dispatch('pickFramework', f)}>{keyText(key, 'canvas')} · {capital(FRAMEWORK_NAME[f])}</button>
+          ))}
         </div>
       </div></div>
     );

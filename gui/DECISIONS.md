@@ -73,6 +73,7 @@ The plan (`docs/plan/gui-frontend.md`) says "stop and ask" in a few places. The 
 - **Open:** several keys in the table did nothing real in the mock (new project, add repo, reorder, archive, search, open an agent, new slice, interrupt, permission mode).
 - **Chose:** they keep the mock's behaviour: a toast saying "not in this build", or for new project the mock's sketch form. New effort, rename effort and add task are real (they send `new_effort`, `rename_effort`, `add_task`), because the plan lists those commands; new effort asks name → kind → question or goal in three prompts.
 - **Why:** the plan's out-of-scope list and command list.
+- **Since the live smoke test (2026-11-16):** `Space s m` is real: it sends `cycle_permission_mode` for the coordinator (auto → acceptEdits → manual), since without it no permission request could be produced. See `docs/plan/smoke-test.md`.
 - **Change:** `gui/src/keys/actions.ts`.
 
 ## 12. Build size warning

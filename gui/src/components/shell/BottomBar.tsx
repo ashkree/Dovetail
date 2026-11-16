@@ -15,7 +15,10 @@ export function BottomBar() {
   const scope = SCOPES[scopeOf(ui)];
   const st = s.status;
   const running = ws ? runningEfforts(s) : st.machine_running;
-  const over = running > st.effort_limit;
+  // The core sends no soft limit yet (0): then only the count shows, with no warning.
+  const limited = st.effort_limit > 0;
+  const over = limited && running > st.effort_limit;
+  const of = limited ? ` / ${st.effort_limit}` : '';
   return (
     <div className="status">
       <span className={`mode ${cls}`}>{mode}</span>
@@ -24,7 +27,7 @@ export function BottomBar() {
       {ws && s.inbox.length > 0 && <span className="st warn">⚠ {s.inbox.length} need you</span>}
       <span className="grow" />
       <span className={`st ${over ? 'warn' : ''}`} title="Running efforts on this machine against the soft limit">
-        {ws ? `efforts ${running} / ${st.effort_limit}${over ? ' ▲' : ''}` : `${running} / ${st.effort_limit} efforts running${over ? ' ▲' : ''}`}
+        {ws ? `efforts ${running}${of}${over ? ' ▲' : ''}` : `${running}${of} efforts running${over ? ' ▲' : ''}`}
       </span>
       {ws && <>
         <span className="st" title="Claude profile of this project">{st.account}</span>

@@ -179,6 +179,10 @@ pub fn starter(name: &str, profiles: &[&str]) -> String {
          # The Claude account (ADR 0009) from config.toml [profiles] ({listed}). Left out: ~/.claude.\n\
          {STARTER_PROFILE}{example}\"\n\
          \n\
+         # The command that serves a slice's web preview in the viewer (ADR 0026); {{port}} is filled in.\n\
+         # A [repos.<name>] table can set its own preview line.\n\
+         # preview = \"npm run dev -- --port {{port}}\"\n\
+         \n\
          # How slice worktrees are prepared.\n\
          # [worktree]\n\
          # Paths relative to the repo root, symlinked (never copied) into each new worktree.\n\

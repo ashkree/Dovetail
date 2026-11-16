@@ -3,11 +3,12 @@
 // Actions change UI state with setUi() and shared state only by send(command).
 
 import { hasOwnText } from '../core/canvasView';
+import { COORDINATOR, UNSORTED_EFFORT } from '../core/wire';
 import type { Agent, CardKind, EffortKind, Framework, Id, InboxItem, Preview, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
 import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
-import { scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
+import { focusEffort, scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
 import { readingHeadings, viewport } from './viewport';
 
 export type Action =
@@ -42,7 +43,8 @@ export type Action =
   | 'interrupt' | 'permMode'
   // mouse (the same dispatcher; each has a key elsewhere)
   | 'showView' | 'selectHome' | 'selectInbox' | 'selectTree' | 'selectCard' | 'selectIncoming' | 'selectSlot'
-  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickFramework';
+  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickFramework'
+  | 'framework1' | 'framework2' | 'framework3';
 
 /** Actions whose key the browser should still handle (paste into the chat bar). */
 export const PASS_THROUGH: ReadonlySet<Action> = new Set<Action>(['paste']);
@@ -86,6 +88,12 @@ export function effortCanvas(s: Snapshot, effort: Id | null) {
   return s.canvases.find(c => c.effort_id === effort);
 }
 
+/** The slot the viewer's keys act on: the remembered one, kept inside this set's slots (another
+ * slice's set may have fewer). */
+export function slotIndex(set: VariantSet | undefined, slot: number): number {
+  return set ? clamp(slot, 0, Math.max(0, set.slots.length - 1)) : slot;
+}
+
 /** The user picks option `j` of slot `i`: the core keeps it and the viewer posts it to the page. */
 function pick(set: VariantSet, i: number, j: number): void {
   const slot = set.slots[i];
@@ -93,10 +101,13 @@ function pick(set: VariantSet, i: number, j: number): void {
   if (slot && option !== undefined) send({ type: 'select_variant', agent_id: set.agent_id, slot: slot.name, option });
 }
 
+/** The frameworks an empty canvas offers, in their key order (`1 2 3`). */
+export const FRAMEWORK_KEY = { framework1: 'question_tree', framework2: 'options_compare', framework3: 'free_board' } as const satisfies Record<string, Framework>;
+
 function switchEffort(id: Id, quiet = false): void {
   const e = effortById(snap(), id);
   if (!e) return;
-  setUi(u => ({ effort: id, tag: id, wwi: true, wwiFlash: 0, filter: u.filter === 'all' ? 'all' : id }));
+  focusEffort(id);
   if (!quiet) toast(`Effort: **${e.name}** · next message is tagged with it`);
 }
 
@@ -332,9 +343,9 @@ export function dispatch(a: Action, arg?: unknown): void {
         picker(`New effort ${kebab} · kind`, EFFORT_KINDS.map(k => ({
           key: k, text: k, label: k, glyph: KIND_GLYPH[k],
           go: () => prompt(`New effort ${kebab} · question or goal`, goal => {
+            // The core answers with the effort; it takes focus then (store.ts, effortEvent).
+            setUi({ awaitEffort: true });
             send({ type: 'new_effort', name: kebab, kind: k, question_or_goal: goal });
-            const made = snap().efforts.find(e => e.name === kebab);
-            if (made) switchEffort(made.id, true);
             toast(`New effort saved as **${kebab}**`);
           }),
         })));
@@ -461,8 +472,9 @@ export function dispatch(a: Action, arg?: unknown): void {
     // ---- insert (chat bar)
     case 'send': {
       const text = u.draft.trim();
-      const tag = u.tag ?? u.effort;
-      if (!text || !tag) return;
+      // With no effort in focus (a new project has none) the message goes to Unsorted.
+      const tag = u.tag ?? u.effort ?? String(UNSORTED_EFFORT);
+      if (!text) return;
       send({ type: 'send_message', text, effort_id: tag });
       setUi({ draft: '', wwi: false, chatCur: -1 });
       return;
@@ -579,6 +591,12 @@ export function dispatch(a: Action, arg?: unknown): void {
       toast(`Dropped **${c.id}**`);
       return;
     }
+    // The empty canvas offers its frameworks as 1 2 3; with a canvas the keys do nothing.
+    case 'framework1': case 'framework2': case 'framework3': {
+      if (effortCanvas(s, u.effort)) return;
+      dispatch('pickFramework', FRAMEWORK_KEY[a]);
+      return;
+    }
     case 'pickFramework': {
       if (u.effort) send({ type: 'new_canvas', effort_id: u.effort, framework: (arg as Framework) ?? 'question_tree' });
       return;
@@ -587,19 +605,20 @@ export function dispatch(a: Action, arg?: unknown): void {
     // ---- viewer
     case 'slotDown': case 'slotUp': {
       const set = viewerSet(s, u.effort);
-      if (set) setUi({ slot: clamp(u.slot + (a === 'slotDown' ? 1 : -1), 0, set.slots.length - 1) });
+      if (set) setUi({ slot: clamp(slotIndex(set, u.slot) + (a === 'slotDown' ? 1 : -1), 0, set.slots.length - 1) });
       return;
     }
     case 'selectSlot': setUi({ slot: Number(arg), zone: 'main' }); return;
     case 'optNext': case 'optPrev': case 'opt1': case 'opt2': case 'opt3': {
       const set = viewerSet(s, u.effort);
-      const slot = set?.slots[u.slot];
+      const i = slotIndex(set, u.slot);
+      const slot = set?.slots[i];
       if (!set || !slot) return;
       const n = slot.options.length;
-      const cur = set.choice[u.slot] ?? 0;
+      const cur = set.choice[i] ?? 0;
       const j = a === 'optNext' ? (cur + 1) % n : a === 'optPrev' ? (cur + n - 1) % n : Number(a.slice(3)) - 1;
       if (j >= n) return;
-      pick(set, u.slot, j);
+      pick(set, i, j);
       return;
     }
     case 'pickOption': {
@@ -701,6 +720,8 @@ export function dispatch(a: Action, arg?: unknown): void {
       return;
     }
     case 'interrupt': toast('Interrupt the agent in focus (not in this build)'); return;
-    case 'permMode': toast('Permission mode: auto → acceptEdits → manual (not in this build)'); return;
+    // The coordinator's session moves to its next mode (auto → acceptEdits → manual); the
+    // bottom bar shows the new one when the core reports it.
+    case 'permMode': send({ type: 'cycle_permission_mode', agent_id: COORDINATOR }); return;
   }
 }

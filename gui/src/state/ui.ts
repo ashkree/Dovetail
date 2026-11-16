@@ -78,6 +78,8 @@ export interface Ui {
   awaitCard: Id | null;
   /** The user just asked for a new card: the next one the core adds is selected. */
   awaitNewCard: boolean;
+  /** The user just created an effort: the next one the core adds takes focus. */
+  awaitEffort: boolean;
   canvasPart: 'cards' | 'incoming';
   incSel: number;
   zoom: number;
@@ -103,7 +105,7 @@ export const initialUi: Ui = {
   inboxSel: 0, treeSel: 0, folded: { search: true, coupon: true },
   chatCur: -1, openReports: [],
   draft: '', tag: null,
-  cardSel: 'Q3', awaitCard: null, awaitNewCard: false, canvasPart: 'cards', incSel: 0, zoom: 0.85,
+  cardSel: 'Q3', awaitCard: null, awaitNewCard: false, awaitEffort: false, canvasPart: 'cards', incSel: 0, zoom: 0.85,
   slot: 2, panel: 'docked', previewLoads: 0, panelPos: { x: 0, y: 0 },
   readHead: 0, sideW: 330, sideCollapsed: false,
   overlay: null, modal: null, toast: null,
@@ -134,4 +136,9 @@ export function scopeOf(ui: Ui): string {
     return ui.main;
   }
   return ui.zone === 'main' ? 'chat' : ui.zone;
+}
+
+/** Focus effort `id`: the next message is tagged with it and its "where was I" comes up. */
+export function focusEffort(id: Id): void {
+  setUi(u => ({ effort: id, tag: id, wwi: true, wwiFlash: 0, filter: u.filter === 'all' ? 'all' : id }));
 }

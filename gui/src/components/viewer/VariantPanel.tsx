@@ -3,7 +3,7 @@
 
 import type { MouseEvent } from 'react';
 import type { VariantLevel, VariantSet } from '../../core/model';
-import { dispatch } from '../../keys/actions';
+import { dispatch, slotIndex } from '../../keys/actions';
 import { setUi, uiStore, useUi } from '../../state/ui';
 import { keyText } from '../overlays/Keys';
 
@@ -39,7 +39,7 @@ export function VariantPanel({ set }: { set: VariantSet | undefined }) {
       {set && set.slots.map((slot, i) => (
         <div key={slot.id}>
           {(i === 0 || set.slots[i - 1]?.level !== slot.level) && <div className="lvl">{LEVEL[slot.level]}</div>}
-          <div className={`slot ${ui.slot === i ? 'sel' : ''}`} onClick={() => dispatch('selectSlot', i)}>
+          <div className={`slot ${slotIndex(set, ui.slot) === i ? 'sel' : ''}`} onClick={() => dispatch('selectSlot', i)}>
             <div className="sn">{slot.name}</div>
             <div className="opts">
               {slot.options.map((o, j) => (
