@@ -128,6 +128,7 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 | `maps_draw` (was `draw_map`) | Create/update a map | ✓ | ✓ | – | v1 |
 | `canvas_add_card` | Add a card to an effort's incoming strip (ADR 0025); no tool moves or deletes a card | ✓ | – | – | v2 |
 | `canvas_link_cards` | Link two cards of one effort (ADR 0025) | ✓ | – | – | v2 |
+| `design_declare_variants` | Declare the variant slots of the slice's web preview (ADR 0026); slice only | – | ✓ | – | v2 |
 | `tasks_create` (was `create_task`) | Create a task (lands in Unsorted; ADR 0002) | ✓ | – | – | v1 |
 | `tasks_list` / `tasks_get` | Find tasks; read one in full | ✓ | – | – | v1 |
 | `tasks_update` | Change status, bucket, priority, title or notes (may move a task into Now; marked unseen) | ✓ | – | – | v1 |

@@ -60,19 +60,26 @@ function PreviewMessage(props: { state: string; output: string | undefined; proj
   if (props.state === 'no_command') {
     return (
       <div className="empty-main">
-        This repo has no preview line, so there is nothing to show. Add one to the project's recipe
-        (<code>~/.config/dovetail/projects/{props.project ?? '<project>'}.toml</code>), for a repo of its own under <code>[repos.&lt;name&gt;]</code>:
-        <pre>preview = &quot;npm run dev -- --port {'{port}'}&quot;</pre>
-        Dovetail starts it in the slice's worktree on a free port.
+        <div>
+          <p>
+            This repo has no preview line, so there is nothing to show. Add one to the project's recipe
+            (<code>~/.config/dovetail/projects/{props.project ?? '<project>'}.toml</code>); a repo of its own goes
+            under <code>[repos.&lt;name&gt;]</code>:
+          </p>
+          <pre>preview = &quot;npm run dev -- --port {'{port}'}&quot;</pre>
+          <p>Dovetail starts it in the slice's worktree on a free port.</p>
+        </div>
       </div>
     );
   }
   if (props.state === 'failed') {
     return (
       <div className="empty-main">
-        The preview did not run.
-        <pre>{props.output}</pre>
-        <button className="chip" onClick={() => send({ type: 'restart_preview', agent_id: props.agent })}>Restart the preview</button>
+        <div>
+          <p>The preview did not run.</p>
+          <pre>{props.output}</pre>
+          <button className="chip" onClick={() => send({ type: 'restart_preview', agent_id: props.agent })}>Restart the preview</button>
+        </div>
       </div>
     );
   }
