@@ -114,6 +114,9 @@ export const KEYMAP: Record<string, Binding[]> = {
     ['+', 'zoomIn', 'zoom in', 'view'],
     ['-', 'zoomOut', 'zoom out', 'view'],
     ['0', 'zoomFit', 'fit', 'view'],
+    ['1', 'framework1', 'no canvas yet: question tree', 'act'],
+    ['2', 'framework2', 'no canvas yet: options compare', 'act'],
+    ['3', 'framework3', 'no canvas yet: free board', 'act'],
   ],
   incoming: [
     ['h', 'incLeft', 'prev card', 'move'],

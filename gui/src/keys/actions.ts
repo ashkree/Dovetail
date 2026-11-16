@@ -43,7 +43,8 @@ export type Action =
   | 'interrupt' | 'permMode'
   // mouse (the same dispatcher; each has a key elsewhere)
   | 'showView' | 'selectHome' | 'selectInbox' | 'selectTree' | 'selectCard' | 'selectIncoming' | 'selectSlot'
-  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickFramework';
+  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickFramework'
+  | 'framework1' | 'framework2' | 'framework3';
 
 /** Actions whose key the browser should still handle (paste into the chat bar). */
 export const PASS_THROUGH: ReadonlySet<Action> = new Set<Action>(['paste']);
@@ -585,6 +586,13 @@ export function dispatch(a: Action, arg?: unknown): void {
       const left = incomingOnCanvas(snap(), u).length;
       setUi({ incSel: clamp(u.incSel - 1, 0, Math.max(0, left - 1)), canvasPart: left ? 'incoming' : 'cards' });
       toast(`Dropped **${c.id}**`);
+      return;
+    }
+    // The empty canvas offers its frameworks as 1 2 3; with a canvas the keys do nothing.
+    case 'framework1': case 'framework2': case 'framework3': {
+      if (effortCanvas(s, u.effort)) return;
+      const framework: Framework[] = ['question_tree', 'options_compare', 'free_board'];
+      dispatch('pickFramework', framework[Number(a.slice(9)) - 1]);
       return;
     }
     case 'pickFramework': {

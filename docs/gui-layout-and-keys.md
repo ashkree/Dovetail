@@ -168,6 +168,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `+` | zoom in |
 | `-` | zoom out |
 | `0` | fit |
+| `1` `2` `3` | no canvas yet: question tree, options compare, free board |
 
 **Incoming strip**
 
