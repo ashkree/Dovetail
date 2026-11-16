@@ -427,3 +427,60 @@ pub fn find(db: &Db, id: &str) -> Result<Project, ProjectError> {
 pub fn list(db: &Db) -> Result<Vec<Project>, ProjectError> {
     Ok(db.list_projects().wait()?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn git_repo(dir: &Path) -> PathBuf {
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let ok = Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git init");
+        dir.canonicalize().unwrap()
+    }
+
+    /// ADR 0021 point 7: `dovetail` run in a folder of any of a project's repos opens that
+    /// project; a repo of no project is a candidate.
+    #[test]
+    fn a_folder_opens_the_project_of_its_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            data: dir.path().join("data"),
+            config: dir.path().join("config"),
+            state: dir.path().join("state"),
+            runtime: dir.path().join("run"),
+        };
+        let api = git_repo(&dir.path().join("shop-api"));
+        let web = git_repo(&dir.path().join("shop-web"));
+        let other = git_repo(&dir.path().join("other"));
+        let db = Db::open(&paths, None).unwrap();
+        let Resolution::Candidate(candidate) = locate(&db, &api).unwrap() else {
+            panic!("not registered yet");
+        };
+        let shop = register(&db, &candidate).unwrap();
+        assert_eq!(shop.repos.len(), 1);
+        db.add_repo(shop.id.clone(), repo_at(&web, None).unwrap())
+            .wait()
+            .unwrap();
+
+        for folder in [api.join("src"), web.join("src")] {
+            match locate(&db, &folder).unwrap() {
+                Resolution::Registered(p) => assert_eq!(p.id, shop.id),
+                Resolution::Candidate(c) => panic!("{} not found: {c:?}", folder.display()),
+            }
+        }
+        assert!(matches!(
+            locate(&db, &other).unwrap(),
+            Resolution::Candidate(_)
+        ));
+        assert!(matches!(
+            repo_at(&dir.path().join("data"), None),
+            Err(ProjectError::NotARepo(_)) | Err(ProjectError::Io { .. })
+        ));
+    }
+}

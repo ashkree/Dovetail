@@ -225,6 +225,60 @@ fn the_rest() -> Case {
     }
 }
 
+fn project(id: &str, repos: &[&str]) -> ProjectSummary {
+    ProjectSummary {
+        id: ProjectId(id.into()),
+        name: id.into(),
+        repo_path: format!("/code/{id}").into(),
+        kind: if repos.is_empty() {
+            ProjectKind::Research
+        } else {
+            ProjectKind::Code
+        },
+        repos: repos
+            .iter()
+            .enumerate()
+            .map(|(i, name)| RepoSummary {
+                id: RepoId(i as i64 + 1),
+                name: (*name).into(),
+                path: format!("/code/{name}").into(),
+            })
+            .collect(),
+        account: None,
+        last_opened_ms: Some(1),
+        counts: ProjectCounts::default(),
+    }
+}
+
+/// ADR 0021: a changed project replaces its row in `projects`, and `project` too when it is
+/// the open one; a new one is appended.
+fn projects() -> Case {
+    let snapshot = Snapshot {
+        seq: 0,
+        project: Some(project("shop", &["shop-api"])),
+        projects: vec![project("shop", &["shop-api"]), project("notes", &[])],
+        ..Snapshot::default()
+    };
+    let mut two = project("shop", &["shop-api", "shop-web"]);
+    two.account = Some("work".into());
+    two.counts = ProjectCounts {
+        efforts: 3,
+        running: 1,
+        needs_you: 2,
+    };
+    let mut renamed = project("notes", &[]);
+    renamed.name = "Market notes".into();
+    Case {
+        name: "projects",
+        snapshot,
+        events: vec![
+            (1, Event::ProjectUpserted(two)),
+            (2, Event::ProjectUpserted(renamed)),
+            (3, Event::ProjectUpserted(project("garden", &["garden"]))),
+        ],
+    }
+}
+
 /// One case: a name, the starting snapshot and the events in order.
 struct Case {
     name: &'static str,
@@ -378,6 +432,7 @@ fn cases() -> Vec<Case> {
             ],
         },
         the_rest(),
+        projects(),
     ]
 }
 

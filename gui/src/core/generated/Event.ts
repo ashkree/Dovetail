@@ -18,6 +18,7 @@ import type { MapSummary } from "./MapSummary";
 import type { ModelOption } from "./ModelOption";
 import type { Paste } from "./Paste";
 import type { ProjectId } from "./ProjectId";
+import type { ProjectSummary } from "./ProjectSummary";
 import type { ResearchContent } from "./ResearchContent";
 import type { ResearchDocument } from "./ResearchDocument";
 import type { ResearchSummary } from "./ResearchSummary";
@@ -168,7 +169,7 @@ error: string | null, } } | { "journal_changed": JournalState } | { "upgrade_bui
 /**
  * The project to open next.
  */
-id: ProjectId, } } | { "recipe_started": { 
+id: ProjectId, } } | { "project_upserted": ProjectSummary } | { "recipe_started": { 
 /**
  * The project just added.
  */

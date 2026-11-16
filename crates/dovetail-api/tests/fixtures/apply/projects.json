@@ -1,0 +1,285 @@
+{
+  "events": [
+    {
+      "event": {
+        "project_upserted": {
+          "account": "work",
+          "counts": {
+            "efforts": 3,
+            "needs_you": 2,
+            "running": 1
+          },
+          "id": "shop",
+          "kind": "code",
+          "last_opened_ms": 1,
+          "name": "shop",
+          "repo_path": "/code/shop",
+          "repos": [
+            {
+              "id": 1,
+              "name": "shop-api",
+              "path": "/code/shop-api"
+            },
+            {
+              "id": 2,
+              "name": "shop-web",
+              "path": "/code/shop-web"
+            }
+          ]
+        }
+      },
+      "seq": 1
+    },
+    {
+      "event": {
+        "project_upserted": {
+          "account": null,
+          "counts": {
+            "efforts": 0,
+            "needs_you": 0,
+            "running": 0
+          },
+          "id": "notes",
+          "kind": "research",
+          "last_opened_ms": 1,
+          "name": "Market notes",
+          "repo_path": "/code/notes",
+          "repos": []
+        }
+      },
+      "seq": 2
+    },
+    {
+      "event": {
+        "project_upserted": {
+          "account": null,
+          "counts": {
+            "efforts": 0,
+            "needs_you": 0,
+            "running": 0
+          },
+          "id": "garden",
+          "kind": "code",
+          "last_opened_ms": 1,
+          "name": "garden",
+          "repo_path": "/code/garden",
+          "repos": [
+            {
+              "id": 1,
+              "name": "garden",
+              "path": "/code/garden"
+            }
+          ]
+        }
+      },
+      "seq": 3
+    }
+  ],
+  "expected": {
+    "activity": [],
+    "agents": [],
+    "commands": {},
+    "conversations": {},
+    "decisions": [],
+    "efforts": [],
+    "inbox": [],
+    "maps": [],
+    "messages": [],
+    "models": [],
+    "now_ms": 0,
+    "project": {
+      "account": "work",
+      "counts": {
+        "efforts": 3,
+        "needs_you": 2,
+        "running": 1
+      },
+      "id": "shop",
+      "kind": "code",
+      "last_opened_ms": 1,
+      "name": "shop",
+      "repo_path": "/code/shop",
+      "repos": [
+        {
+          "id": 1,
+          "name": "shop-api",
+          "path": "/code/shop-api"
+        },
+        {
+          "id": 2,
+          "name": "shop-web",
+          "path": "/code/shop-web"
+        }
+      ]
+    },
+    "projects": [
+      {
+        "account": "work",
+        "counts": {
+          "efforts": 3,
+          "needs_you": 2,
+          "running": 1
+        },
+        "id": "shop",
+        "kind": "code",
+        "last_opened_ms": 1,
+        "name": "shop",
+        "repo_path": "/code/shop",
+        "repos": [
+          {
+            "id": 1,
+            "name": "shop-api",
+            "path": "/code/shop-api"
+          },
+          {
+            "id": 2,
+            "name": "shop-web",
+            "path": "/code/shop-web"
+          }
+        ]
+      },
+      {
+        "account": null,
+        "counts": {
+          "efforts": 0,
+          "needs_you": 0,
+          "running": 0
+        },
+        "id": "notes",
+        "kind": "research",
+        "last_opened_ms": 1,
+        "name": "Market notes",
+        "repo_path": "/code/notes",
+        "repos": []
+      },
+      {
+        "account": null,
+        "counts": {
+          "efforts": 0,
+          "needs_you": 0,
+          "running": 0
+        },
+        "id": "garden",
+        "kind": "code",
+        "last_opened_ms": 1,
+        "name": "garden",
+        "repo_path": "/code/garden",
+        "repos": [
+          {
+            "id": 1,
+            "name": "garden",
+            "path": "/code/garden"
+          }
+        ]
+      }
+    ],
+    "research": [],
+    "seq": 3,
+    "tangents": [],
+    "tasks": [],
+    "todos": [],
+    "totals": {
+      "cost_usd": 0.0,
+      "memory_mb": 0,
+      "needs_you": 0
+    },
+    "upgrade_building": false,
+    "usage": {
+      "five_hour": null,
+      "seven_day": null
+    },
+    "warnings": [],
+    "worktrees": []
+  },
+  "results": [
+    "applied",
+    "applied",
+    "applied"
+  ],
+  "snapshot": {
+    "activity": [],
+    "agents": [],
+    "commands": {},
+    "conversations": {},
+    "decisions": [],
+    "efforts": [],
+    "inbox": [],
+    "maps": [],
+    "messages": [],
+    "models": [],
+    "now_ms": 0,
+    "project": {
+      "account": null,
+      "counts": {
+        "efforts": 0,
+        "needs_you": 0,
+        "running": 0
+      },
+      "id": "shop",
+      "kind": "code",
+      "last_opened_ms": 1,
+      "name": "shop",
+      "repo_path": "/code/shop",
+      "repos": [
+        {
+          "id": 1,
+          "name": "shop-api",
+          "path": "/code/shop-api"
+        }
+      ]
+    },
+    "projects": [
+      {
+        "account": null,
+        "counts": {
+          "efforts": 0,
+          "needs_you": 0,
+          "running": 0
+        },
+        "id": "shop",
+        "kind": "code",
+        "last_opened_ms": 1,
+        "name": "shop",
+        "repo_path": "/code/shop",
+        "repos": [
+          {
+            "id": 1,
+            "name": "shop-api",
+            "path": "/code/shop-api"
+          }
+        ]
+      },
+      {
+        "account": null,
+        "counts": {
+          "efforts": 0,
+          "needs_you": 0,
+          "running": 0
+        },
+        "id": "notes",
+        "kind": "research",
+        "last_opened_ms": 1,
+        "name": "notes",
+        "repo_path": "/code/notes",
+        "repos": []
+      }
+    ],
+    "research": [],
+    "seq": 0,
+    "tangents": [],
+    "tasks": [],
+    "todos": [],
+    "totals": {
+      "cost_usd": 0.0,
+      "memory_mb": 0,
+      "needs_you": 0
+    },
+    "upgrade_building": false,
+    "usage": {
+      "five_hour": null,
+      "seven_day": null
+    },
+    "warnings": [],
+    "worktrees": []
+  }
+}

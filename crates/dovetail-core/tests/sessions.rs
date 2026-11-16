@@ -35,6 +35,12 @@ thread_local! {
 }
 
 thread_local! {
+    /// Taken by the next `Harness::start` on this test's thread: the project it opens, when a
+    /// test registered its own (ADR 0021: several repos).
+    static PROJECT: std::cell::RefCell<Option<Project>> = const { std::cell::RefCell::new(None) };
+}
+
+thread_local! {
     /// Taken by the next `Harness::start` on this test's thread: the fake `gh` it looks pull
     /// requests up with.
     static GH: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
@@ -571,12 +577,10 @@ impl Harness {
                 dir.path().to_path_buf()
             }
         });
-        let resolution = Resolution::Registered(Project::with_repo(
-            "p",
-            "work",
-            repo.clone(),
-            git_common_dir,
-        ));
+        let project = PROJECT
+            .with(|p| p.borrow_mut().take())
+            .unwrap_or_else(|| Project::with_repo("p", "work", repo.clone(), git_common_dir));
+        let resolution = Resolution::Registered(project);
         let options = CoreOptions {
             driver: Arc::new(driver.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),
@@ -5604,6 +5608,241 @@ fn a_merge_is_seen_when_the_slice_is_archived() {
     assert!(!is_error && text.starts_with(ARCHIVED), "{text}");
     h.wait_for("done, and the slice gone", |s| {
         task_status(s, 1) == Some(TaskStatus::Done) && !s.agents.iter().any(|a| a.name == "api")
+    });
+    h.quit();
+}
+
+// --- multi-repo projects (ADR 0021) ---
+
+/// A git repo with one commit at `<dir>/<name>`, by its canonical path.
+fn committed_repo(dir: &Path, name: &str) -> PathBuf {
+    let repo = dir.join(name);
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), name).unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    repo.canonicalize().unwrap()
+}
+
+/// Project `p`, registered in the registry with a repo for each of `names`, and the paths
+/// under `dir` it lives in. The next harness opens it.
+fn registered_project(dir: &Path, names: &[&str]) -> (Paths, Vec<PathBuf>) {
+    let paths = Paths {
+        data: dir.join("data"),
+        config: dir.join("config"),
+        state: dir.join("state"),
+        runtime: dir.join("run"),
+    };
+    let repos: Vec<PathBuf> = names.iter().map(|n| committed_repo(dir, n)).collect();
+    let db = dovetail_core::db::Db::open(&paths, None).expect("registry");
+    let mut project = db
+        .create_project("p".into(), "work".into(), None, None)
+        .wait()
+        .expect("project");
+    for repo in &repos {
+        let new = dovetail_core::projects::repo_at(repo, None).expect("repo");
+        project = db.add_repo("p".into(), new).wait().expect("add");
+    }
+    drop(db);
+    PROJECT.with(|p| *p.borrow_mut() = Some(project));
+    (paths, repos)
+}
+
+fn replied(s: &Snapshot) -> bool {
+    s.conversations
+        .get(&AgentId(COORDINATOR.into()))
+        .is_some_and(|t| t.entries.iter().any(|e| e.text == "alpha"))
+}
+
+#[test]
+fn the_coordinator_attaches_every_repo_and_a_slice_names_its_repo() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (paths, repos) = registered_project(dir.path(), &["api", "web"]);
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths.clone());
+    prompt(&h, "hello");
+    h.wait_for("the reply", replied);
+    let spec = fake.started_specs()[0].clone();
+    assert_eq!(spec.cwd, paths.project_home("p"));
+    assert_eq!(spec.add_dirs, repos);
+    let args = spec.claude_args();
+    let attached: Vec<&String> = args
+        .iter()
+        .zip(args.iter().skip(1))
+        .filter(|(flag, _)| *flag == "--add-dir")
+        .map(|(_, dir)| dir)
+        .collect();
+    assert_eq!(attached.len(), 2, "{args:?}");
+    assert_eq!(h.snap.project.as_ref().map(|p| p.repos.len()), Some(2));
+
+    // Two repos: a slice must name one, and one the project has.
+    let slice = |repo: Option<&str>| Command::NewSlice {
+        task: None,
+        name: "ui".into(),
+        brief: "go".into(),
+        repo: repo.map(Into::into),
+    };
+    h.send(slice(None));
+    h.send(slice(Some("docs")));
+    h.drain(Duration::from_millis(200));
+    assert_eq!(h.failures.len(), 2, "{:?}", h.failures);
+    assert!(h.failures[0].contains("several repos"), "{:?}", h.failures);
+    assert!(h.failures[1].contains("no repo `docs`"), "{:?}", h.failures);
+
+    h.send(slice(Some("web")));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < 2 {
+        assert!(Instant::now() < deadline, "the slice never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let spec = fake.started_specs()[1].clone();
+    assert_eq!(spec.cwd, repos[1]);
+    assert_eq!(spec.worktree.as_deref(), Some("ui"));
+    assert!(spec.add_dirs.is_empty());
+    assert!(
+        spec.env
+            .iter()
+            .any(|(k, v)| k == dovetail_api::tools::env::REPO && v == "web"),
+        "{:?}",
+        spec.env
+    );
+    h.quit();
+}
+
+/// ADR 0021 point 4: a repo added while the coordinator works is attached once its turn ends:
+/// it stops, resumes with the new `--add-dir`, and is told.
+#[test]
+fn adding_a_repo_restarts_the_coordinator_with_it_attached_after_its_turn() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (paths, repos) = registered_project(dir.path(), &["api"]);
+    let docs = committed_repo(dir.path(), "docs");
+    // Held before its `result`: the coordinator is mid-turn when the repo is added.
+    let fake = fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![4],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start_on(fake.clone(), paths.clone());
+    prompt(&h, "hello");
+    h.wait_for("the reply", replied);
+
+    h.send(Command::AddRepo {
+        project: dovetail_api::ProjectId("p".into()),
+        path: docs.clone(),
+        name: None,
+    });
+    h.wait_for("the project with two repos", |s| {
+        s.project.as_ref().is_some_and(|p| p.repos.len() == 2)
+            && s.projects
+                .iter()
+                .any(|p| p.id.0 == "p" && p.repos.len() == 2)
+    });
+    // Working: not stopped yet.
+    h.drain(Duration::from_millis(100));
+    assert!(!fake.sent().iter().any(|s| matches!(s, Sent::Shutdown(_))));
+    assert_eq!(fake.started_specs().len(), 1);
+
+    fake.resume();
+    wait_sent_shutdown(&fake);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < 2 {
+        assert!(
+            Instant::now() < deadline,
+            "the coordinator was not restarted"
+        );
+        h.drain(Duration::from_millis(20));
+    }
+    let again = fake.started_specs()[1].clone();
+    assert!(again.resume, "the same session, resumed");
+    assert_eq!(again.add_dirs, vec![repos[0].clone(), docs.clone()]);
+    wait_sent_containing(&fake, "repo `docs` attached at");
+    h.quit();
+}
+
+#[test]
+fn a_repo_with_an_open_slice_cannot_be_removed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (paths, _repos) = registered_project(dir.path(), &["api", "web"]);
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.send(Command::NewSlice {
+        task: None,
+        name: "ui".into(),
+        brief: "go".into(),
+        repo: Some("web".into()),
+    });
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "ui"));
+    let project = h.snap.project.clone().expect("open project");
+    let id = |name: &str| {
+        project
+            .repos
+            .iter()
+            .find(|r| r.name == name)
+            .expect("repo")
+            .id
+    };
+    h.send(Command::RemoveRepo {
+        project: project.id.clone(),
+        repo: id("web"),
+    });
+    h.drain(Duration::from_millis(200));
+    assert!(
+        h.failures.iter().any(|f| f.contains("open slices (ui)")),
+        "{:?}",
+        h.failures
+    );
+    h.send(Command::RemoveRepo {
+        project: project.id.clone(),
+        repo: id("api"),
+    });
+    h.wait_for("api removed", |s| {
+        s.project
+            .as_ref()
+            .is_some_and(|p| p.repos.iter().map(|r| r.name.as_str()).eq(["web"]))
+    });
+    h.quit();
+}
+
+/// ADR 0021 point 8: a coordinator from before, filed under its repo's folder, starts a fresh
+/// session in `home/` at the first open, seeded, and Needs you says how to reopen the old one.
+#[test]
+fn a_coordinator_recorded_in_its_repo_starts_fresh_in_home() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (paths, repos) = registered_project(dir.path(), &["api"]);
+    let claude = dir.path().join("claude");
+    let old = dovetail_core::session::launch::transcript_path(
+        &claude,
+        &repos[0],
+        &format!("{COORDINATOR}-session"),
+    );
+    seed(
+        &paths,
+        session_row(
+            COORDINATOR,
+            AgentKind::Coordinator,
+            None,
+            &claude,
+            old.clone(),
+            None,
+        ),
+    );
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start_on(fake.clone(), paths.clone());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().is_empty() {
+        assert!(Instant::now() < deadline, "the coordinator never started");
+        h.drain(Duration::from_millis(20));
+    }
+    let spec = fake.started_specs()[0].clone();
+    assert!(!spec.resume, "a fresh session");
+    assert_ne!(spec.session_id, format!("{COORDINATOR}-session"));
+    assert_eq!(spec.cwd, paths.project_home("p"));
+    wait_sent_containing(&fake, "Dovetail now runs the coordinator in its own folder");
+    h.wait_for("the note in Needs you", |s| {
+        s.inbox.iter().any(|i| {
+            matches!(&i.kind, InboxKind::Error { text }
+                if text.contains("moved to its own folder") && text.contains(&format!("{COORDINATOR}-session")))
+        })
     });
     h.quit();
 }
