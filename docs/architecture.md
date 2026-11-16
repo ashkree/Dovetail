@@ -257,8 +257,8 @@ Size: **S** = days, additive. **M** = about a week, touches existing paths. **L*
 
 | Layer | Today | v2 | Change | Size | Decided in |
 | --- | --- | --- | --- | --- | --- |
-| UI | Terminal UI in the same process | Tauri window with a React frontend; TUI frozen | New client on the same `CoreLink`. The core does not change for it. | L (frontend), S (wiring) | ADR 0023 |
-| Core / UI seam | Two Rust channels | The same messages as JSON across Tauri | Types exported to TypeScript; `apply` written twice and tested against shared cases | S | ADR 0023 |
+| UI | Terminal UI in the same process | Tauri window with a React frontend; TUI frozen | New client on the same `CoreLink`. **Wiring built** (`gui/src-tauri`). | L (frontend), S (wiring) | ADR 0023 |
+| Core / UI seam | Two Rust channels | The same messages as JSON across Tauri | Types exported to TypeScript; `apply` written twice and tested against shared cases. **Built.** | S | ADR 0023 |
 | Project | A folder; one repo in the `projects` row | A name, 0..n repos, one account | New `repos` table; opening by id, not by folder | M | ADR 0021 |
 | Coordinator | Runs in the repo's main checkout | Runs in its own folder, every repo attached | New working folder means a fresh coordinator session once | M | ADR 0021 |
 | Slice | Worktree of *the* repo | Worktree of one named repo | `project_start_slice` gains `repo`; `agents.repo_id` | S | ADR 0021 |

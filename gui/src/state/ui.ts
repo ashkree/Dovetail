@@ -3,7 +3,7 @@
 
 import { useSyncExternalStore } from 'react';
 import type { Id } from '../core/model';
-import { createStore } from './store';
+import { createStore } from './observable';
 
 export type Screen = 'home' | 'ws';
 export type Zone = 'chat' | 'main' | 'inbox' | 'tree';

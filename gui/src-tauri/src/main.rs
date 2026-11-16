@@ -64,6 +64,7 @@ fn core_send(shell: State<'_, Arc<Shell>>, command: Command) -> Result<(), Strin
 /// Routes every message from now on to `channel`, and asks for a fresh snapshot.
 #[tauri::command]
 fn core_subscribe(shell: State<'_, Arc<Shell>>, channel: Channel<ServerMsg>) {
+    tracing::info!("the window subscribed");
     *lock(&shell.channel) = Some(channel);
     if let Some(tx) = lock(&shell.commands).as_ref() {
         let _ = tx.send(Command::Resync);
@@ -115,7 +116,13 @@ fn supervise(shell: Arc<Shell>, setup: Option<Setup>, paths: Paths, blocked: Opt
                 .map_err(|e| e.to_string()),
         };
         let (link, running) = match started {
-            Ok(started) => started,
+            Ok(started) => {
+                tracing::info!(
+                    project = next.as_deref().unwrap_or("(Home)"),
+                    "core started"
+                );
+                started
+            }
             Err(why) => {
                 tracing::error!("starting a core: {why}");
                 if next.take().is_some() {

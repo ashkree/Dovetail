@@ -12,7 +12,7 @@ npm run dev        # http://127.0.0.1:5174
 
 `npm run check` runs the type check, the unit tests and a production build. Nothing is fetched from the network at runtime (the font is bundled).
 
-Any screen opens straight from the URL hash, as in the mock: `#screen=ws&main=canvas&effort=pay`, `#screen=ws&main=item&mainItem=i2&zone=main`, `#screen=ws&main=viewer&effort=dark&choice=[0,0,1,0,2]`, `#screen=ws&leader=[]`. Values are JSON or plain strings; any field of `state/ui.ts` works, plus `project` (default: the first project).
+Any screen opens straight from the URL hash, as in the mock: `#screen=ws&main=canvas&effort=2`, `#screen=ws&main=item&mainItem=c5&zone=main`, `#screen=ws&main=viewer&effort=4&choice=[0,0,1,0,2]`, `#screen=ws&leader=[]`. Values are JSON or plain strings; any field of `state/ui.ts` works, plus `project` (default: the first project). Effort ids are the core's numbers (in the mock: 2 payment-providers, 3 login-bug, 4 dark-mode, 5 search-index, 6 coupon-ab); inbox rows are `i<id>`, or `c<criterion>` for a claim to review.
 
 ## Try it
 
@@ -55,9 +55,18 @@ gui/
 - Every key is named once, in `keys/keymap.ts`; hints in the UI, the which-key pop-up and the `?` overlay are drawn from it. Mouse handlers call the same `dispatch()` the keys do.
 - No timers except MockCore's scripted reply; no `dangerouslySetInnerHTML`; no network requests.
 
-## How the real core plugs in
+## The app: the real core (ADR 0023)
 
-`CoreLink` is the whole contract:
+```bash
+npm --prefix gui install
+cd gui && npx tauri dev     # the window; its process hosts dovetail-core
+```
+
+The Tauri shell is `gui/src-tauri` (crate `dovetail-gui`). At start it serves Home (no project open) from `dovetail_core::home`; opening a project spawns that project's core in the same process. Sessions need the installed `dovetail` binary (`scripts/bootstrap.sh`); without it Home says so and opens nothing. Closing the window stops the core and its sessions; they resume on the next open.
+
+## How the core plugs in
+
+`CoreLink` is the whole contract, in the core's own messages:
 
 ```ts
 interface CoreLink {
@@ -66,4 +75,15 @@ interface CoreLink {
 }
 ```
 
-`MockCore` implements it in the page. The real one, `TauriCore`, will implement the same interface over Tauri's IPC (`invoke` for `send`, an event channel for `subscribe`) with `dovetail-core` in the GUI process; `main.tsx` then calls `connect(new TauriCore())` instead of `connect(new MockCore())`, and nothing else changes. The types in `core/model.ts` and `core/protocol.ts` follow `dovetail-api` by hand for now; generating them from the Rust types is planned (plan §8).
+`TauriCore` (`core/tauri.ts`) carries them to the Rust core through two Tauri calls, `core_subscribe` and `core_send`; `MockCore` fakes a core in a plain browser. `main.tsx` picks one.
+
+```
+components ──UiCommand──► store.send ──translate.ts──► Command ──► CoreLink ──► core
+     ▲                        └─ canvas, cards, variants ──► pending.ts (not in the core yet)
+     └── view (model.ts) ◄── view.ts ◄── Snapshot ◄── apply.ts ◄── ServerMsg ◄──┘
+```
+
+- `core/generated/`: the core's types, generated from `crates/dovetail-api` (`cargo test -p dovetail-api --features ts --test ts_export`). Never edit them; `scripts/check.sh` fails when they are stale.
+- `core/apply.ts`: the reducer, a port of the Rust one, run against the same cases (`crates/dovetail-api/tests/fixtures/apply/`).
+- `core/view.ts`: the one place that knows both the core's shapes and the view's; components read only the view (`core/model.ts`).
+- `core/pending.ts`: what the GUI shows that the core does not serve yet (canvas, cards, variants, reports, Home's extra columns). Empty with the real core; MockCore seeds it with the fake data.

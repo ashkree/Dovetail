@@ -1,10 +1,18 @@
 // The fake data MockCore serves, ported from mock/gui/data.ts. Nothing here is real.
-// Only MockCore imports this file; components never do.
+// Only the mock imports this file; components never do.
+//
+// It is written in the view's terms (model.ts), as the screens show it, and turned into the
+// core's terms at the bottom: a core Snapshot (generated types) for what dovetail-api serves,
+// and the pending state for what it does not serve yet (canvas, cards, variants, reports,
+// Home's extra columns).
 
+import type * as W from './generated';
 import type {
-  Agent, Canvas, Card, CardLink, ChatEntry, Effort, IncomingCard, InboxItem, ProjectSummary, Report,
-  Snapshot, Status, Task, VariantSet,
+  Agent, Canvas, Card, CardLink, ChatEntry, Effort, IncomingCard, InboxItem, ProjectSummary, Report, Task,
+  VariantSet,
 } from './model';
+import { emptyPending, type Pending } from './pending';
+import { COORDINATOR, UNSORTED_EFFORT, emptyCoreSnapshot } from './wire';
 
 export const PROJECTS: ProjectSummary[] = [
   { id: 'shop', name: 'Shop', repos: ['shop-api', 'shop-web'], account: 'work', efforts: 5, running: 5, needs_you: 4, opened: 'today 09:12', note: 'Payments, login fix, dark mode' },
@@ -196,30 +204,165 @@ const REPORTS: Report[] = [{ id: 'r-sca', effort_id: 'pay', title: 'SCA support 
 
 const MACHINE_LIMIT = 4; // soft limit on running efforts on this machine
 
-export const STATUS: Status = {
-  effort_limit: MACHINE_LIMIT,
-  machine_running: PROJECTS.reduce((n, p) => n + p.running, 0),
-  account: 'work', context_fill: 0.62, usage: { five_hour: 0.34, week: 0.18 },
-  model: 'Opus 5.5', effort_level: 'Medium', permission_mode: 'Auto', busy: true,
+// ---- the core's terms -------------------------------------------------------------------------
+
+/** The mock's clock: "now" is when the page loaded. */
+const NOW = Date.now();
+const MIN = 60_000;
+
+/** Today at "09:14", in Unix ms. */
+function today(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  const d = new Date(NOW);
+  d.setHours(h ?? 0, m ?? 0, 0, 0);
+  return d.getTime();
+}
+
+/** Core ids for Shop: Unsorted is effort 1, the fixtures' efforts follow in order. */
+const EFFORT_ID = new Map(EFFORTS.map((e, i) => [e.id, i + 2]));
+const TASK_ID = new Map(TASKS.map((t, i) => [t.id, i + 1]));
+const CRITERION_ID = new Map(EFFORTS.flatMap(e => e.criteria).map((c, i) => [c.id, i + 1]));
+const num = (map: Map<string, number>, id: string): number => {
+  const n = map.get(id);
+  if (n === undefined) throw new Error(`fixture id ${id} has no core id`);
+  return n;
 };
 
-/** The snapshot for the home screen: every project, none open. */
-export function homeSnapshot(seq: number): Snapshot {
+const coreProject = (p: ProjectSummary): W.ProjectSummary => ({
+  id: p.id, name: p.name,
+  repo_path: p.repos.length ? `/home/you/code/${p.repos[0]}` : `/home/you/.local/share/dovetail/projects/${p.id}`,
+  kind: p.repos.length ? 'code' : 'research',
+});
+
+function coreAgent(id: string, name: string, kind: W.AgentKind, task: number | null, status: W.AgentStatus): W.Agent {
   return {
-    seq, projects: PROJECTS, open_project: null, efforts: [], tasks: [], agents: [], inbox: [], chat: [],
-    canvases: [], cards: [], card_links: [], incoming: [], variants: [], reports: [], status: STATUS,
+    id, name, kind, parent: null, task, worktree: null, status, status_line: '', memory_mb: null, cost_usd: 0,
+    permission_mode: 'auto', context_pct: null, progress: null, last_activity_ms: NOW, lock: 'headless',
+    subagent_tokens: 0,
   };
 }
 
-/** The snapshot with one project open. Only Shop has data; the others open empty. */
-export function projectSnapshot(seq: number, projectId: string): Snapshot {
-  const project = PROJECTS.find(p => p.id === projectId);
-  const base = homeSnapshot(seq);
-  if (!project) return base;
-  if (project.id !== 'shop') return { ...base, open_project: project.id, status: { ...STATUS, account: project.account, busy: false } };
+const CORE_STATUS: Record<Agent['state'], W.AgentStatus> = {
+  working: 'working', needs_you: 'needs_you', done: 'done', idle: 'idle',
+};
+
+function coordinator(project: ProjectSummary, busy: boolean): W.Agent {
   return {
-    ...base, open_project: project.id,
-    efforts: EFFORTS, tasks: TASKS, agents: AGENTS, inbox: INBOX, chat: CHAT,
-    canvases: CANVASES, cards: CARDS, card_links: LINKS, incoming: INCOMING, variants: VARIANTS, reports: REPORTS,
+    ...coreAgent(COORDINATOR, 'coordinator', 'coordinator', null, busy ? 'working' : 'idle'),
+    context_pct: 62, model: 'claude-opus-5-5', effort: 'medium',
+    ...(project.id === 'shop' ? {} : { context_pct: 0 }),
+  };
+}
+
+const UNSORTED: W.Effort = {
+  id: UNSORTED_EFFORT, name: 'unsorted', kind: 'cleanup', question_or_goal: 'Tasks not sorted into an effort yet',
+  status: 'open', where_was_i: { last_done: '', waits_on_you: '', next_step: '' }, criteria: [],
+};
+
+function coreEfforts(): W.Effort[] {
+  // The criterion waiting for review (inbox item i2) is claimed, with its evidence.
+  const evidence = INBOX.find(i => i.kind === 'criterion')?.body.split('\n\n').slice(1, 3).join('\n\n') ?? null;
+  return [UNSORTED, ...EFFORTS.map((e): W.Effort => {
+    const id = num(EFFORT_ID, e.id);
+    return {
+      id, name: e.name, kind: e.kind, question_or_goal: e.question_or_goal, status: 'open',
+      where_was_i: { last_done: e.where_was_i.last, waits_on_you: e.where_was_i.waits, next_step: e.where_was_i.next },
+      criteria: e.criteria.map(c => ({
+        id: num(CRITERION_ID, c.id), effort: id, text: c.text, state: c.state,
+        ...(c.state === 'claimed' ? { evidence } : {}),
+      })),
+    };
+  })];
+}
+
+function coreTasks(): W.Task[] {
+  return TASKS.map(t => ({
+    id: num(TASK_ID, t.id), title: t.title, status: t.status, p_level: null, bucket: null, order: 0, deps: [],
+    notes: '', pr: null, follow_up_of: null, coordinator_created: false, related: [],
+    effort: num(EFFORT_ID, t.effort_id),
+  }));
+}
+
+function coreAgents(project: ProjectSummary): W.Agent[] {
+  return [coordinator(project, true), ...AGENTS.map(a => ({
+    ...coreAgent(a.id, a.name, a.kind === 'slice' ? 'slice' : { subagent: { background: false } },
+      a.parent_id ? null : num(TASK_ID, a.task_id), CORE_STATUS[a.state]),
+    parent: a.parent_id ?? null,
+    worktree: a.branch ? { path: `/home/you/.local/share/dovetail/projects/shop/worktrees/${a.id}`, branch: a.branch } : null,
+  }))];
+}
+
+/** The inbox as the core holds it; the criterion review is the claimed criterion instead. */
+function coreInbox(): W.InboxItem[] {
+  const ago = (m: number) => NOW - m * MIN;
+  return [
+    {
+      id: 1, agent: 'login-fix', at_ms: ago(2), kind: { permission: {
+        tool: 'Bash', input: { command: 'npm run e2e -- --browser safari' }, suggestions: [],
+        reason: 'It runs the e2e suite against a local Safari WebDriver. No network beyond localhost.',
+      } },
+    },
+    {
+      id: 3, agent: 'research-1', at_ms: ago(14), kind: { question: {
+        text: 'Adyen publishes no price list for our volume; getting one needs a sales call. Include it in the comparison with *estimated* fees, or drop it?',
+      } },
+    },
+    {
+      id: 4, agent: 'header-toggle', at_ms: ago(31), kind: { finished_turn: {
+        preview: 'header-toggle built three header variants, two footers and three hero lines. Open the viewer to mix and match.',
+      } },
+    },
+  ];
+}
+
+function coreChat(): W.ConversationEntry[] {
+  return CHAT.map((m, i): W.ConversationEntry => {
+    const effort = m.effort_id ? { effort: num(EFFORT_ID, m.effort_id) } : {};
+    const base = { id: i + 1, at_ms: today(m.at), ...effort };
+    if (m.who === 'you') return { ...base, kind: 'user', text: m.text };
+    if (m.who === 'coordinator') return { ...base, kind: 'assistant', text: m.text };
+    const name = AGENTS.find(a => a.id === m.who)?.name ?? m.who;
+    return { ...base, kind: 'agent_message', text: `agent ${name}\n${m.text}` };
+  });
+}
+
+/** The core's Snapshot: Home (no project) or one project. Only Shop has data. */
+export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot {
+  const base: W.Snapshot = { ...emptyCoreSnapshot(), seq, now_ms: NOW, projects: PROJECTS.map(coreProject) };
+  const project = PROJECTS.find(p => p.id === projectId);
+  if (!project) return base;
+  const opened: W.Snapshot = {
+    ...base, project: coreProject(project), profile: project.account,
+    usage: {
+      five_hour: { utilization: 0.34, resets_at_ms: null, status: 'allowed' },
+      seven_day: { utilization: 0.18, resets_at_ms: null, status: 'allowed' },
+    },
+  };
+  if (project.id !== 'shop') return { ...opened, efforts: [UNSORTED], agents: [coordinator(project, false)] };
+  return {
+    ...opened,
+    efforts: coreEfforts(), tasks: coreTasks(), agents: coreAgents(project), inbox: coreInbox(),
+    conversations: { [COORDINATOR]: { entries: coreChat(), has_more: false } },
+  };
+}
+
+/** The pending state for a project: Shop's canvas, cards, variants and report, everyone's Home
+ * columns. Effort ids are the core's, as text. */
+export function pendingFor(projectId: string | null): Pending {
+  const effort = (id: string) => String(num(EFFORT_ID, id));
+  const projects = Object.fromEntries(PROJECTS.map(({ id, name: _name, ...extra }) => [id, extra]));
+  const base: Pending = {
+    ...emptyPending(),
+    projects,
+    status: { effort_limit: MACHINE_LIMIT, machine_running: PROJECTS.reduce((n, p) => n + p.running, 0) },
+  };
+  if (projectId !== 'shop') return base;
+  return {
+    ...base,
+    canvases: CANVASES.map(c => ({ ...c, effort_id: effort(c.effort_id) })),
+    cards: CARDS, card_links: LINKS, incoming: INCOMING,
+    variants: VARIANTS.map(v => ({ ...v, effort_id: effort(v.effort_id) })),
+    reports: REPORTS.map(r => ({ ...r, effort_id: effort(r.effort_id) })),
+    colours: Object.fromEntries(EFFORTS.map(e => [effort(e.id), e.colour])),
   };
 }

@@ -1,162 +1,158 @@
-// MockCore: a fake core behind the CoreLink seam. It answers every Command with Events (each
-// with the next seq), folded into its own copy with the same apply() the client uses, and a
-// scripted coordinator reply 600 ms after a message (the only timer in the frontend, plan §3).
-// Only main.tsx imports this file.
+// MockCore: a fake core behind the CoreLink seam, speaking the real core's protocol (the
+// generated types). It answers Commands with Events, each with the next seq, folded into its
+// own copy with the same apply() the client uses, and sends a scripted coordinator reply 600 ms
+// after a message (the only timer in the frontend). Only main.tsx imports this file.
 
 import { apply } from './apply';
-import { homeSnapshot, projectSnapshot } from './fixtures';
+import { coreSnapshot } from './fixtures';
+import type * as W from './generated';
 import type { CoreLink } from './link';
-import type { Effort, Id, InboxItem, Snapshot, TagColour } from './model';
-import type { Command, Event, ServerMsg } from './protocol';
+import { COORDINATOR, variant } from './wire';
 
 const REPLY_DELAY_MS = 600;
-const COLOURS: TagColour[] = ['blue', 'coral', 'lilac', 'mint', 'gold'];
 
 export class MockCore implements CoreLink {
-  private state: Snapshot = homeSnapshot(0);
+  private state: W.Snapshot = coreSnapshot(0, null);
   /** Each project's state as last left, so going Home and back keeps what changed. */
-  private saved = new Map<Id, Snapshot>();
-  private subs = new Set<(msg: ServerMsg) => void>();
-  private nextId = 1;
+  private saved = new Map<string, W.Snapshot>();
+  private subs = new Set<(msg: W.ServerMsg) => void>();
+  private nextId = 1000;
 
-  subscribe(fn: (msg: ServerMsg) => void): () => void {
+  subscribe(fn: (msg: W.ServerMsg) => void): () => void {
     this.subs.add(fn);
-    fn({ type: 'snapshot', snapshot: this.state });
+    fn({ snapshot: this.state });
     return () => { this.subs.delete(fn); };
   }
 
-  send(cmd: Command): void {
+  send(cmd: W.Command): void {
     const s = this.state;
-    switch (cmd.type) {
+    const [tag, data] = variant(cmd);
+    switch (tag) {
       case 'resync':
-        this.broadcast({ type: 'snapshot', snapshot: s });
+        this.broadcast({ snapshot: s });
         return;
       case 'open_project': {
-        if (s.open_project === cmd.project_id) return;
-        if (s.open_project) this.saved.set(s.open_project, s);
-        const kept = this.saved.get(cmd.project_id);
-        this.state = kept ? { ...kept, seq: s.seq } : projectSnapshot(s.seq, cmd.project_id);
-        this.broadcast({ type: 'snapshot', snapshot: this.state });
+        const { id } = data as { id: string };
+        if (s.project?.id === id) return;
+        // As the real core does: say so, stop, and the next project's core sends its snapshot.
+        this.emit({ opening_project: { id } });
+        if (s.project) this.saved.set(s.project.id, this.state);
+        this.state = this.saved.get(id) ?? coreSnapshot(0, id);
+        this.broadcast({ snapshot: this.state });
         return;
       }
-      case 'send_message': {
-        const effort = s.efforts.find(e => e.id === cmd.effort_id);
+      case 'prompt': {
+        const p = data as { agent: string; text: string; effort?: number | null };
+        if (p.agent !== COORDINATOR) return; // a slice's conversation is not shown in the mock
+        const effort = p.effort ?? null;
+        const name = s.efforts.find(e => e.id === effort)?.name;
+        this.emit({ conversation_appended: { agent: COORDINATOR, entry: this.entry('user', p.text, effort) } });
+        this.coordinator('working');
+        setTimeout(() => {
+          const text = `Noted for **${name ?? 'this effort'}**. *(MockCore's coordinator only echoes.)*`;
+          this.emit({ conversation_appended: { agent: COORDINATOR, entry: this.entry('assistant', text, effort) } });
+          this.coordinator('idle');
+        }, REPLY_DELAY_MS);
+        return;
+      }
+      case 'answer_permission': {
+        const { item, answer } = data as { item: number; answer: W.PermissionAnswer };
+        const found = s.inbox.find(i => i.id === item);
+        if (!found) return;
+        const [, kind] = variant(found.kind);
+        const command = ((kind as { input?: { command?: string } }).input?.command) ?? 'the tool';
+        const name = s.agents.find(a => a.id === found.agent)?.name ?? found.agent;
+        const [how, detail] = variant(answer);
+        const text = how === 'deny'
+          ? `Denied${(detail as { message: string | null }).message ? `: “${(detail as { message: string }).message}”` : ''}`
+          : `Running ${command} (approved ${how === 'allow' ? 'once' : 'always'})`;
+        const effort = this.effortOf(found.agent);
         this.emit(
-          { type: 'chat_entry_added', entry: { id: this.id('m'), who: 'you', report: false, at: clock(), effort_id: cmd.effort_id, text: cmd.text } },
-          { type: 'status_changed', status: { ...s.status, busy: true } },
-        );
-        setTimeout(() => this.emit(
-          { type: 'chat_entry_added', entry: { id: this.id('m'), who: 'coordinator', report: false, at: clock(), effort_id: cmd.effort_id, text: `Noted for **${effort?.name ?? 'this effort'}**. *(MockCore's coordinator only echoes.)*` } },
-          { type: 'status_changed', status: { ...this.state.status, busy: false } },
-        ), REPLY_DELAY_MS);
-        return;
-      }
-      case 'answer_inbox': {
-        const item = s.inbox.find(i => i.id === cmd.id);
-        if (item) this.emit(...this.answer(item, cmd.answer, cmd.reason));
-        return;
-      }
-      case 'place_card': {
-        const inc = s.incoming.find(c => c.id === cmd.incoming_id);
-        if (!inc) return;
-        this.emit(
-          { type: 'incoming_removed', id: inc.id },
-          { type: 'card_added', card: { id: inc.id, canvas_id: inc.canvas_id, kind: inc.kind, x: cmd.x, y: cmd.y, title: inc.title, body: inc.body } },
-          { type: 'card_link_added', link: { from: inc.under, to: inc.id } },
-        );
-        return;
-      }
-      case 'drop_incoming':
-        this.emit({ type: 'incoming_removed', id: cmd.incoming_id });
-        return;
-      case 'move_card':
-        this.emit({ type: 'card_moved', id: cmd.card_id, x: cmd.x, y: cmd.y });
-        return;
-      case 'delete_card':
-        this.emit({ type: 'card_deleted', id: cmd.card_id });
-        return;
-      case 'add_card': {
-        let n = s.cards.length + 1;
-        const prefix = cmd.kind.charAt(0).toUpperCase();
-        while (s.cards.some(c => c.id === prefix + n)) n++;
-        const id = prefix + n;
-        const events: Event[] = [{ type: 'card_added', card: { id, canvas_id: cmd.canvas_id, kind: cmd.kind, x: cmd.x, y: cmd.y, title: cmd.title, body: cmd.body } }];
-        if (cmd.link_from) events.push({ type: 'card_link_added', link: { from: cmd.link_from, to: id } });
-        this.emit(...events);
-        return;
-      }
-      case 'add_task':
-        this.emit({ type: 'task_added', task: { id: this.id('t'), effort_id: cmd.effort_id, title: cmd.title, status: 'todo' } });
-        return;
-      case 'rename_effort':
-        this.emit({ type: 'effort_renamed', id: cmd.effort_id, name: cmd.name });
-        return;
-      case 'new_effort': {
-        const effort: Effort = {
-          id: this.id('e'), name: cmd.name, kind: cmd.kind, question_or_goal: cmd.question_or_goal, running: false,
-          colour: COLOURS[s.efforts.length % COLOURS.length] ?? 'blue',
-          where_was_i: { last: 'Effort created; no agents yet.', waits: 'Nothing.', next: 'Ask the coordinator to plan it.' },
-          criteria: [],
-        };
-        this.emit({ type: 'effort_added', effort });
-        return;
-      }
-      case 'keep_variants': {
-        const set = s.variants.find(v => v.agent_id === cmd.agent_id);
-        if (!set) return;
-        const desc = set.slots.map((slot, i) => `${slot.name}: ${slot.options[cmd.choice[i] ?? 0] ?? '?'}`).join(' · ');
-        this.emit(
-          { type: 'variants_kept', agent_id: cmd.agent_id, kept: cmd.choice },
-          { type: 'chat_entry_added', entry: { id: this.id('m'), who: 'you', report: false, at: clock(), effort_id: set.effort_id, text: `Keep this combination for **${cmd.agent_id}**: ${desc}` } },
+          { inbox_resolved: { id: item } },
+          { conversation_appended: { agent: COORDINATOR, entry: this.entry('agent_message', `agent ${name}\n${text}`, effort) } },
         );
         return;
       }
+      case 'answer_question':
+      case 'dismiss_inbox': {
+        const { item } = data as { item: number };
+        this.emit({ inbox_resolved: { id: item } });
+        return;
+      }
+      case 'approve_criterion':
+      case 'return_criterion': {
+        const { id } = data as { id: number };
+        const effort = s.efforts.find(e => e.criteria.some(c => c.id === id));
+        if (!effort) return this.fail(`no criterion ${id}`);
+        const state: W.CriterionState = tag === 'approve_criterion' ? 'met' : 'open';
+        this.emit({ effort_upserted: { ...effort, criteria: effort.criteria.map(c => (c.id === id ? { ...c, state } : c)) } });
+        return;
+      }
+      case 'create_effort': {
+        const n = data as W.NewEffort;
+        const name = kebab(n.name);
+        if (!name || s.efforts.some(e => e.name === name)) return this.fail(`there is already an effort named ${name}`);
+        this.emit({ effort_upserted: {
+          id: Math.max(0, ...s.efforts.map(e => e.id)) + 1, name, kind: n.kind, question_or_goal: n.question_or_goal.trim(),
+          status: 'open', where_was_i: { last_done: '', waits_on_you: '', next_step: '' }, criteria: [],
+        } });
+        return;
+      }
+      case 'rename_effort': {
+        const { id, name } = data as { id: number; name: string };
+        const effort = s.efforts.find(e => e.id === id);
+        if (effort) this.emit({ effort_upserted: { ...effort, name: kebab(name) } });
+        return;
+      }
+      case 'create_task': {
+        const t = data as W.NewTask;
+        this.emit({ task_upserted: {
+          id: Math.max(0, ...s.tasks.map(x => x.id)) + 1, title: t.title, status: 'todo', p_level: null, bucket: null,
+          order: 0, deps: [], notes: '', pr: null, follow_up_of: null, coordinator_created: false, related: [],
+          effort: t.effort ?? 1,
+        } });
+        return;
+      }
+      default:
+        this.fail(`${tag} is not in the mock core`);
     }
   }
 
-  private answer(item: InboxItem, answer: string, reason?: string): Event[] {
-    const done: Event = { type: 'inbox_resolved', id: item.id };
-    const report = (text: string): Event => ({ type: 'chat_entry_added', entry: { id: this.id('m'), who: item.agent_id, report: true, at: clock(), effort_id: item.effort_id, text } });
-    switch (item.kind) {
-      case 'permission':
-        if (answer === 'allow' || answer === 'allow_always') {
-          const what = item.title.split(' · ').pop() ?? item.title;
-          return [done, report(`Running ${what} (approved ${answer === 'allow' ? 'once' : 'always'})`)];
-        }
-        if (answer === 'deny') return [done, report(`Denied ${reason ? `: “${reason}”` : ''}`.trim())];
-        return answer === 'dismiss' ? [done] : [];
-      case 'criterion':
-        if (answer === 'approve' && item.criterion_id) return [done, { type: 'criterion_changed', effort_id: item.effort_id, criterion_id: item.criterion_id, state: 'met' }];
-        if (answer === 'send_back' && item.criterion_id) return [done, { type: 'criterion_changed', effort_id: item.effort_id, criterion_id: item.criterion_id, state: 'open' }];
-        return answer === 'dismiss' ? [done] : [];
-      case 'question':
-        if (answer === 'reply' && reason) return [done, { type: 'chat_entry_added', entry: { id: this.id('m'), who: 'you', report: false, at: clock(), effort_id: item.effort_id, text: `@${item.agent_id} ${reason}` } }];
-        return answer === 'dismiss' ? [done] : [];
-      case 'finished':
-        return answer === 'dismiss' ? [done] : [];
-    }
+  private entry(kind: W.EntryKind, text: string, effort: number | null): W.ConversationEntry {
+    return { id: this.nextId++, at_ms: Date.now(), kind, text, ...(effort !== null ? { effort } : {}) };
   }
 
-  private emit(...events: Event[]): void {
+  private effortOf(agent: string): number | null {
+    const a = this.state.agents.find(x => x.id === agent);
+    const task = a?.task ?? this.state.agents.find(x => x.id === a?.parent)?.task;
+    return this.state.tasks.find(t => t.id === task)?.effort ?? null;
+  }
+
+  private coordinator(status: W.AgentStatus): void {
+    const c = this.state.agents.find(a => a.id === COORDINATOR);
+    if (c) this.emit({ agent_upserted: { ...c, status } });
+  }
+
+  private fail(message: string): void {
+    this.emit({ command_failed: { message } });
+  }
+
+  private emit(...events: W.Event[]): void {
     for (const event of events) {
       const seq = this.state.seq + 1;
       const r = apply(this.state, seq, event);
       if (r.kind !== 'applied') continue;
       this.state = r.snapshot;
-      this.broadcast({ type: 'event', seq, event });
+      this.broadcast({ event: { seq, event } });
     }
   }
 
-  private broadcast(msg: ServerMsg): void {
+  private broadcast(msg: W.ServerMsg): void {
     for (const fn of this.subs) fn(msg);
-  }
-
-  private id(prefix: string): Id {
-    return `${prefix}-new-${this.nextId++}`;
   }
 }
 
-function clock(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+/** As the core does (dovetail_api::effort_name): lower case, runs of anything else to one hyphen. */
+function kebab(name: string): string {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
 }

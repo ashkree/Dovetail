@@ -16,11 +16,19 @@ import '@xyflow/react/dist/base.css';
 import './styles/canvas.css';
 import './styles/overlays.css';
 import { App } from './App';
-import { MockCore } from './core/mock';
+import { TauriCore, inTauri } from './core/tauri';
 import { connect } from './state/store';
+import { toast } from './state/ui';
 import { applyHash, followHash } from './state/urlHash';
 
-connect(new MockCore());
+// Inside the app window, the real core in the app's own process (ADR 0023); in a plain browser,
+// the fake one with its fake data, loaded only then.
+if (inTauri()) {
+  connect(new TauriCore(message => toast(message)));
+} else {
+  const [{ MockCore }, { pendingFor }] = await Promise.all([import('./core/mock'), import('./core/fixtures')]);
+  connect(new MockCore(), pendingFor);
+}
 applyHash(location.hash);
 window.addEventListener('hashchange', () => applyHash(location.hash));
 followHash();

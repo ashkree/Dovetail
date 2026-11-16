@@ -1,13 +1,10 @@
 // The GUI's reducer against the shared cases Rust writes (crates/dovetail-api/tests/apply_cases.rs):
 // the same snapshot and events must give the same snapshot here as in Rust (ADR 0023, point 5).
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { apply } from './apply';
 import type * as W from './generated';
 
-const DIR = join(__dirname, '../../../crates/dovetail-api/tests/fixtures/apply');
 
 interface Case {
   snapshot: W.Snapshot;
@@ -16,13 +13,16 @@ interface Case {
   expected: W.Snapshot;
 }
 
-const files = readdirSync(DIR).filter(f => f.endsWith('.json')).sort();
+const CASES = import.meta.glob<Case>('../../../crates/dovetail-api/tests/fixtures/apply/*.json', {
+  eager: true, import: 'default',
+});
+const files = Object.keys(CASES).sort();
 
 describe('apply matches Rust on the shared cases', () => {
   it('has cases to run', () => expect(files.length).toBeGreaterThan(0));
   for (const file of files) {
-    it(file, () => {
-      const c = JSON.parse(readFileSync(join(DIR, file), 'utf8')) as Case;
+    it(file.split('/').pop() ?? file, () => {
+      const c = structuredClone(CASES[file]) as Case;
       const before = JSON.stringify(c.snapshot);
       let state = c.snapshot;
       const results = c.events.map(({ seq, event }) => {

@@ -1,7 +1,7 @@
-// The client's copy of the core's state: plain data, shaped after design v2's nouns
-// (docs/design-v2.md §3). Field names are snake_case because that is what the Rust API
-// serialises; the exact shapes are reconciled when the real core is wired (plan §3).
-// Every reference is an id, never an array position or a name.
+// The view: what the components read, shaped after design v2's nouns (docs/design-v2.md §3).
+// It is made by view.ts from the core's Snapshot (the generated types, dovetail-api's names)
+// and the pending state (pending.ts); components never see the core's shapes. Every reference
+// is an id, never an array position or a name.
 
 export type Id = string;
 
@@ -174,16 +174,4 @@ export interface Snapshot {
   variants: VariantSet[];
   reports: Report[];
   status: Status;
-}
-
-/** A snapshot with nothing in it: what the client holds before the core's first message. */
-export function emptySnapshot(): Snapshot {
-  return {
-    seq: 0, projects: [], open_project: null, efforts: [], tasks: [], agents: [], inbox: [], chat: [],
-    canvases: [], cards: [], card_links: [], incoming: [], variants: [], reports: [],
-    status: {
-      effort_limit: 0, machine_running: 0, account: '', context_fill: 0, usage: { five_hour: 0, week: 0 },
-      model: '', effort_level: '', permission_mode: '', busy: false,
-    },
-  };
 }
