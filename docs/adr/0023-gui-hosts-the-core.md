@@ -1,6 +1,6 @@
 # The Tauri shell hosts the core and carries `ServerMsg` and `Command` as they are
 
-**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
+**Status: Accepted and built.** Approved by the user in the session of 2026-11-15; built 2026-11-16.
 
 Supersedes ADR 0020's process model (`dovetail serve`, clients attaching over the socket) and its toolkit (egui), as `docs/design-v2.md` already states. This ADR adds the how: the wiring, the mapping onto the frontend's `CoreLink`, and how TypeScript stays in step with `dovetail-api`.
 
@@ -59,3 +59,10 @@ Before relying on it, a half-day spike: confirm `ts-rs` handles what the API use
 - New dependencies, each needing its row in the plan's table: `tauri` (shell only), `ts-rs` (API crate, optional).
 - The frontend session's rename from its sketch names to the Rust names is real work; it should happen once, when `TauriCore` lands, not piecemeal.
 - The 500 MB memory budget is measured with this wiring in place (design open point 11).
+
+## As built (2026-11-16)
+
+- **Components keep a view model.** The wire, the store and `apply` use the generated Rust types; components read a view (`gui/src/core/model.ts`) that `gui/src/core/view.ts` makes from the core's `Snapshot`. Moving every component to the Rust shapes would have spread numeric ids, per-agent conversations and serde's enum encoding through about forty components; one adapter keeps that in one file. Drift is still impossible: the adapter is type-checked against the generated types.
+- **Home is its own small loop** (`dovetail_core::home`), not a `Resolution` variant: the core always has a project, so none of its paths had to learn to run without one.
+- **What the core does not serve yet** (canvas, cards, variants, reports, Home's extra columns) lives in `gui/src/core/pending.ts`: empty with the real core, seeded with fake data by the mock.
+- The `ts-rs` spike passed (`docs/spikes/ts-rs.md`); 64-bit integers are exported as `number`.

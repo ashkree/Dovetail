@@ -184,6 +184,9 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `rusqlite` 0.41 | core | `bundled` (FTS5 included) | Required |
 | `rusqlite_migration` | core | none | Small migration layer; check it supports this `rusqlite` version |
 | `toml` | core | default | Recipe and `config.toml` |
+| `ts-rs` 12 | api (optional feature `ts`) | `serde-compat`, `serde-json-impl`, `no-serde-warnings` | TypeScript declarations of the protocol for the GUI (ADR 0023); only the export test and `scripts/check.sh` turn it on |
+| `tauri` 2 | gui (`gui/src-tauri`) | default | The GUI window around the web frontend; its process hosts the core (ADR 0023). npm side: `@tauri-apps/api` (the two calls) and `@tauri-apps/cli` (dev and build) |
+| `tauri-build` 2 | gui (build) | default | Tauri's build step: reads `tauri.conf.json` and declares the shell's two commands for its capability |
 | `thiserror`, `anyhow` | libraries, binary | none | Required by conventions |
 | `tracing`, `tracing-subscriber`, `tracing-appender` | core, tui, binary | `fmt`, `env-filter` | File logging only. The TUI uses only the `tracing` macros; the binary sets up the file writer (M2) |
 | `jiff` | core, tui, binary | default | Local-time display with no unsafe of ours; the binary passes the system time zone to the UI; the core names journal files by local date (ADR 0012) |

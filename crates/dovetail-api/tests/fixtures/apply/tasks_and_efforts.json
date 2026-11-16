@@ -1,0 +1,258 @@
+{
+  "events": [
+    {
+      "event": {
+        "effort_upserted": {
+          "criteria": [],
+          "id": 1,
+          "kind": "feature",
+          "name": "unsorted",
+          "question_or_goal": "",
+          "status": "open",
+          "where_was_i": {
+            "last_done": "",
+            "next_step": "",
+            "waits_on_you": ""
+          }
+        }
+      },
+      "seq": 1
+    },
+    {
+      "event": {
+        "effort_upserted": {
+          "criteria": [],
+          "id": 2,
+          "kind": "feature",
+          "name": "guest-pay",
+          "question_or_goal": "",
+          "status": "open",
+          "where_was_i": {
+            "last_done": "",
+            "next_step": "",
+            "waits_on_you": ""
+          }
+        }
+      },
+      "seq": 2
+    },
+    {
+      "event": {
+        "task_upserted": {
+          "bucket": null,
+          "coordinator_created": false,
+          "deps": [],
+          "effort": 1,
+          "follow_up_of": null,
+          "id": 1,
+          "notes": "",
+          "order": 0,
+          "p_level": null,
+          "pr": null,
+          "related": [],
+          "status": "todo",
+          "title": "form"
+        }
+      },
+      "seq": 3
+    },
+    {
+      "event": {
+        "task_upserted": {
+          "bucket": null,
+          "coordinator_created": false,
+          "deps": [],
+          "effort": 1,
+          "follow_up_of": null,
+          "id": 2,
+          "notes": "",
+          "order": 0,
+          "p_level": null,
+          "pr": null,
+          "related": [],
+          "status": "todo",
+          "title": "email"
+        }
+      },
+      "seq": 4
+    },
+    {
+      "event": {
+        "effort_upserted": {
+          "criteria": [
+            {
+              "effort": 2,
+              "evidence": "PR #41",
+              "id": 3,
+              "state": "claimed",
+              "text": "pay as guest"
+            }
+          ],
+          "id": 2,
+          "kind": "feature",
+          "name": "guest-checkout",
+          "question_or_goal": "",
+          "status": "open",
+          "where_was_i": {
+            "last_done": "",
+            "next_step": "",
+            "waits_on_you": ""
+          }
+        }
+      },
+      "seq": 5
+    },
+    {
+      "event": {
+        "task_upserted": {
+          "bucket": null,
+          "coordinator_created": false,
+          "criterion": 3,
+          "deps": [],
+          "effort": 2,
+          "follow_up_of": null,
+          "id": 1,
+          "notes": "",
+          "order": 0,
+          "p_level": null,
+          "pr": null,
+          "related": [],
+          "status": "review",
+          "title": "form"
+        }
+      },
+      "seq": 6
+    },
+    {
+      "event": {
+        "task_removed": 2
+      },
+      "seq": 7
+    }
+  ],
+  "expected": {
+    "activity": [],
+    "agents": [],
+    "commands": {},
+    "conversations": {},
+    "decisions": [],
+    "efforts": [
+      {
+        "criteria": [],
+        "id": 1,
+        "kind": "feature",
+        "name": "unsorted",
+        "question_or_goal": "",
+        "status": "open",
+        "where_was_i": {
+          "last_done": "",
+          "next_step": "",
+          "waits_on_you": ""
+        }
+      },
+      {
+        "criteria": [
+          {
+            "effort": 2,
+            "evidence": "PR #41",
+            "id": 3,
+            "state": "claimed",
+            "text": "pay as guest"
+          }
+        ],
+        "id": 2,
+        "kind": "feature",
+        "name": "guest-checkout",
+        "question_or_goal": "",
+        "status": "open",
+        "where_was_i": {
+          "last_done": "",
+          "next_step": "",
+          "waits_on_you": ""
+        }
+      }
+    ],
+    "inbox": [],
+    "maps": [],
+    "messages": [],
+    "models": [],
+    "now_ms": 0,
+    "project": null,
+    "projects": [],
+    "research": [],
+    "seq": 7,
+    "tangents": [],
+    "tasks": [
+      {
+        "bucket": null,
+        "coordinator_created": false,
+        "criterion": 3,
+        "deps": [],
+        "effort": 2,
+        "follow_up_of": null,
+        "id": 1,
+        "notes": "",
+        "order": 0,
+        "p_level": null,
+        "pr": null,
+        "related": [],
+        "status": "review",
+        "title": "form"
+      }
+    ],
+    "todos": [],
+    "totals": {
+      "cost_usd": 0.0,
+      "memory_mb": 0,
+      "needs_you": 0
+    },
+    "upgrade_building": false,
+    "usage": {
+      "five_hour": null,
+      "seven_day": null
+    },
+    "warnings": [],
+    "worktrees": []
+  },
+  "results": [
+    "applied",
+    "applied",
+    "applied",
+    "applied",
+    "applied",
+    "applied",
+    "applied"
+  ],
+  "snapshot": {
+    "activity": [],
+    "agents": [],
+    "commands": {},
+    "conversations": {},
+    "decisions": [],
+    "efforts": [],
+    "inbox": [],
+    "maps": [],
+    "messages": [],
+    "models": [],
+    "now_ms": 0,
+    "project": null,
+    "projects": [],
+    "research": [],
+    "seq": 0,
+    "tangents": [],
+    "tasks": [],
+    "todos": [],
+    "totals": {
+      "cost_usd": 0.0,
+      "memory_mb": 0,
+      "needs_you": 0
+    },
+    "upgrade_building": false,
+    "usage": {
+      "five_hour": null,
+      "seven_day": null
+    },
+    "warnings": [],
+    "worktrees": []
+  }
+}

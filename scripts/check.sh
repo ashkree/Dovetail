@@ -7,6 +7,23 @@ cd "$(dirname "$0")/.."
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+
+# ADR 0023: the GUI's TypeScript types are generated from dovetail-api and committed. Regenerate
+# them; a Rust change the GUI has not taken in shows as a difference.
+cargo test -q -p dovetail-api --features ts --test ts_export >/dev/null
+if [[ -n $(git status --porcelain -- gui/src/core/generated) ]]; then
+    echo "check.sh: gui/src/core/generated is out of date with dovetail-api; commit the regenerated files:" >&2
+    git status --short -- gui/src/core/generated >&2
+    exit 1
+fi
+
+# The GUI frontend's own gate: type check, unit tests (its apply() against the shared cases in
+# crates/dovetail-api/tests/fixtures/apply), production build.
+if [[ ! -d gui/node_modules ]]; then
+    echo "check.sh: gui/node_modules is missing; run: npm --prefix gui install" >&2
+    exit 1
+fi
+npm --prefix gui run --silent check
 # Also enforced by `cargo test` (CODING_STANDARDS.md "Architecture", schema changes go through
 # migrations): migrations are contiguous and listed in order
 # (dovetail-core `db::tests::migrations_are_contiguous_and_listed_in_order`).

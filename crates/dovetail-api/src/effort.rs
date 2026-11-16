@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Identifies an effort. Matches the `efforts.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct EffortId(pub i64);
 
@@ -19,6 +20,7 @@ impl Default for EffortId {
 
 /// Identifies an acceptance criterion. Matches the `criteria.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct CriterionId(pub i64);
 
@@ -31,6 +33,7 @@ pub const UNSORTED_EFFORT_NAME: &str = "unsorted";
 
 /// One line of work in a project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Effort {
     /// Effort id.
     pub id: EffortId,
@@ -52,6 +55,7 @@ pub struct Effort {
 
 /// What sort of work an effort is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum EffortKind {
     /// Something new for the product.
@@ -68,6 +72,7 @@ pub enum EffortKind {
 
 /// Whether an effort is still being worked on.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum EffortStatus {
     /// Being worked on, or waiting to be.
@@ -80,6 +85,7 @@ pub enum EffortStatus {
 /// An effort's "where was I" card: what the user reads first on coming back to it. What the
 /// effort is comes from [`Effort::question_or_goal`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct WhereWasI {
     /// The last thing that got done.
     #[serde(default)]
@@ -94,6 +100,7 @@ pub struct WhereWasI {
 
 /// One acceptance criterion of an effort.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Criterion {
     /// Criterion id.
     pub id: CriterionId,
@@ -111,6 +118,7 @@ pub struct Criterion {
 
 /// Where an acceptance criterion stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum CriterionState {
     /// Not met yet.
@@ -123,6 +131,7 @@ pub enum CriterionState {
 
 /// Fields for a new effort.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NewEffort {
     /// Its name as typed; the core converts it with [`effort_name`].
     pub name: String,
@@ -135,6 +144,7 @@ pub struct NewEffort {
 
 /// One field change in [`crate::Command::UpdateEffort`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum EffortChange {
     /// New kind.

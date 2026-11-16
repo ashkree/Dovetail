@@ -12,6 +12,7 @@ use crate::{AgentId, NewTask, TaskId};
 
 /// One request from a socket client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SocketRequest {
     /// Chosen by the client, unique per connection; echoed in the response.
     pub id: u64,
@@ -21,6 +22,7 @@ pub struct SocketRequest {
 
 /// What a socket client asks for.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum SocketRequestBody {
     /// `dovetail add`: create a task from a parsed quick-capture line.
@@ -49,6 +51,7 @@ pub enum SocketRequestBody {
 
 /// One response to a [`SocketRequest`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SocketResponse {
     /// The request's `id`.
     pub id: u64,
@@ -58,6 +61,7 @@ pub struct SocketResponse {
 
 /// The outcome of a socket request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum SocketResponseBody {
     /// The task was created.

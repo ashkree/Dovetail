@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "gui/src-tauri"]
 # Spikes are throwaway packages with their own manifests.
 exclude = ["spikes"]
 
@@ -39,6 +39,11 @@ tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "process", "io-util", "net", "sync", "time", "macros"] }
 toml = "1"
+# The GUI shell (ADR 0023): a desktop window around the web frontend; its process hosts the core.
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+# TypeScript declarations of dovetail-api for the GUI (ADR 0023); 64-bit ints as `number`.
+ts-rs = { version = "12", default-features = false, features = ["serde-compat", "serde-json-impl", "no-serde-warnings"] }
 notify = { version = "8", default-features = false }
 uuid = { version = "1", features = ["v4"] }
 
