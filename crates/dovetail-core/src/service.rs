@@ -376,6 +376,10 @@ pub(crate) struct Core {
     pub(crate) config: Config,
     pub(crate) options: CoreOptions,
     pub(crate) project: ProjectState,
+    /// The prefix of every session name this process launches (ADR 0022): the project key at
+    /// start. It stays when an unregistered project is added, so sessions launched as
+    /// `new-<pid>.<name>` keep being found and stripped until the next start.
+    pub(crate) session_prefix: String,
     /// The socket the bridges of this app's sessions use.
     pub(crate) socket: PathBuf,
     /// Sockets bound since start (after registration), removed on exit.
@@ -516,12 +520,14 @@ impl Core {
         inputs: tokio_mpsc::UnboundedSender<Input>,
     ) -> Self {
         let claude = project_claude_home(&paths, &config, &project);
+        let session_prefix = project.key().to_owned();
         Core {
             db,
             paths,
             config,
             options,
             project,
+            session_prefix,
             socket,
             extra_sockets: Vec::new(),
             out,
@@ -1278,9 +1284,9 @@ impl Core {
 
     /// The name a session is given in Claude Code (`--name`), which its own messaging finds
     /// sessions by across the whole machine: `<project>.<agent name>`, so two open projects
-    /// never share one (ADR 0022).
+    /// never share one (ADR 0022). The prefix is fixed for this process ([`Core::session_prefix`]).
     pub(crate) fn session_name(&self, agent_name: &str) -> String {
-        format!("{}.{agent_name}", self.project.key())
+        format!("{}.{agent_name}", self.session_prefix)
     }
 
     /// An agent's own name, from a session name as the stream gives it back: without this
@@ -1288,7 +1294,7 @@ impl Core {
     /// subagent) is returned as it is.
     pub(crate) fn bare_name<'a>(&self, session_name: &'a str) -> &'a str {
         session_name
-            .strip_prefix(self.project.key())
+            .strip_prefix(self.session_prefix.as_str())
             .and_then(|rest| rest.strip_prefix('.'))
             .unwrap_or(session_name)
     }

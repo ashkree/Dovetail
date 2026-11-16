@@ -3169,6 +3169,37 @@ fn project_add_writes_a_starter_recipe_and_a_picked_profile_lands_in_it() {
     h.quit();
 }
 
+#[test]
+fn sessions_keep_their_launch_prefix_after_project_add() {
+    // ADR 0022: a coordinator launched before `:project add` runs as `new-<pid>.coordinator`
+    // until the next start, so slices launched after it must name it so too.
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), false, Config::default());
+    let path = h.repo.clone();
+    h.send(Command::RegisterProject { path });
+    h.wait_for("registration", |s| {
+        s.warnings.iter().all(|w| w.id.0 != "unregistered")
+    });
+    h.send(Command::NewSlice {
+        task: None,
+        name: "api".into(),
+        brief: "build the endpoint".into(),
+    });
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "api"));
+    let prefix = format!("new-{}.", std::process::id());
+    wait_sent_containing(
+        &fake,
+        &format!("The coordinator's session is named `{prefix}coordinator`"),
+    );
+    let names: Vec<String> = fake
+        .started_specs()
+        .iter()
+        .filter_map(|s| s.name.clone())
+        .collect();
+    assert!(names.iter().all(|n| n.starts_with(&prefix)), "{names:?}");
+    h.quit();
+}
+
 fn write_recipe_for(paths: &Paths, project: &str, text: &str) {
     let file = paths.recipe(project);
     std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
