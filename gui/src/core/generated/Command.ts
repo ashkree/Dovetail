@@ -2,12 +2,16 @@
 import type { AgentId } from "./AgentId";
 import type { Attachment } from "./Attachment";
 import type { BrowseWhat } from "./BrowseWhat";
+import type { CanvasId } from "./CanvasId";
+import type { CardId } from "./CardId";
 import type { CriterionId } from "./CriterionId";
 import type { EffortChange } from "./EffortChange";
 import type { EffortId } from "./EffortId";
 import type { EntryId } from "./EntryId";
+import type { Framework } from "./Framework";
 import type { InboxId } from "./InboxId";
 import type { MapId } from "./MapId";
+import type { NewCard } from "./NewCard";
 import type { NewDecision } from "./NewDecision";
 import type { NewEffort } from "./NewEffort";
 import type { NewTask } from "./NewTask";
@@ -190,7 +194,107 @@ id: TaskId,
 /**
  * Changes, applied in order.
  */
-patch: Array<TaskChange>, } } | { "create_effort": NewEffort } | { "rename_effort": { 
+patch: Array<TaskChange>, } } | { "create_canvas": { 
+/**
+ * The effort.
+ */
+effort: EffortId, 
+/**
+ * Its title; empty becomes the effort's name.
+ */
+title: string, 
+/**
+ * Its layout.
+ */
+framework: Framework, } } | { "rename_canvas": { 
+/**
+ * The canvas.
+ */
+id: CanvasId, 
+/**
+ * The new title.
+ */
+title: string, } } | { "add_card": { 
+/**
+ * The card.
+ */
+card: NewCard, 
+/**
+ * A card to link from, of the same effort.
+ */
+link_from: CardId | null, } } | { "place_card": { 
+/**
+ * The card.
+ */
+id: CardId, 
+/**
+ * The canvas.
+ */
+canvas: CanvasId, 
+/**
+ * Position in canvas pixels.
+ */
+x: number, 
+/**
+ * Position in canvas pixels.
+ */
+y: number, } } | { "move_card": { 
+/**
+ * The card.
+ */
+id: CardId, 
+/**
+ * Position in canvas pixels.
+ */
+x: number, 
+/**
+ * Position in canvas pixels.
+ */
+y: number, } } | { "delete_card": { 
+/**
+ * The card.
+ */
+id: CardId, } } | { "drop_incoming": { 
+/**
+ * The card.
+ */
+id: CardId, } } | { "link_cards": { 
+/**
+ * Where the link starts.
+ */
+from: CardId, 
+/**
+ * Where it leads.
+ */
+to: CardId, 
+/**
+ * What it says.
+ */
+label: string, } } | { "unlink_cards": { 
+/**
+ * Where the link starts.
+ */
+from: CardId, 
+/**
+ * Where it leads.
+ */
+to: CardId, } } | { "card_from_reply": { 
+/**
+ * Whose conversation.
+ */
+agent: AgentId, 
+/**
+ * The entry.
+ */
+entry: EntryId, 
+/**
+ * The effort the card goes to.
+ */
+effort: EffortId, } } | { "load_card": { 
+/**
+ * The card.
+ */
+id: CardId, } } | { "create_effort": NewEffort } | { "rename_effort": { 
 /**
  * The effort.
  */

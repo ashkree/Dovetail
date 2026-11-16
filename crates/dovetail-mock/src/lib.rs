@@ -683,6 +683,17 @@ impl MockCore {
             | Command::CloseRound { .. }
             | Command::DropRound { .. }
             | Command::SetResearchKind { .. }
+            | Command::CreateCanvas { .. }
+            | Command::RenameCanvas { .. }
+            | Command::AddCard { .. }
+            | Command::PlaceCard { .. }
+            | Command::MoveCard { .. }
+            | Command::DeleteCard { .. }
+            | Command::DropIncoming { .. }
+            | Command::LinkCards { .. }
+            | Command::UnlinkCards { .. }
+            | Command::CardFromReply { .. }
+            | Command::LoadCard { .. }
             | Command::CreateEffort(_)
             | Command::RenameEffort { .. }
             | Command::UpdateEffort { .. }

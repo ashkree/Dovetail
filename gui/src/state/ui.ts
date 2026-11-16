@@ -74,6 +74,10 @@ export interface Ui {
   /** The effort the next message is tagged with. */
   tag: Id | null;
   cardSel: Id | null;
+  /** A card whose body was asked for with `o`: the reading view opens when it arrives. */
+  awaitCard: Id | null;
+  /** The user just asked for a new card: the next one the core adds is selected. */
+  awaitNewCard: boolean;
   canvasPart: 'cards' | 'incoming';
   incSel: number;
   zoom: number;
@@ -101,7 +105,7 @@ export const initialUi: Ui = {
   inboxSel: 0, treeSel: 0, folded: { search: true, coupon: true },
   chatCur: -1, openReports: [],
   draft: '', tag: null,
-  cardSel: 'Q3', canvasPart: 'cards', incSel: 0, zoom: 0.85,
+  cardSel: 'Q3', awaitCard: null, awaitNewCard: false, canvasPart: 'cards', incSel: 0, zoom: 0.85,
   slot: 2, choice: [0, 0, 0, 0, 0], panel: 'docked', previewLoads: 0, panelPos: { x: 0, y: 0 },
   readHead: 0, sideW: 330, sideCollapsed: false,
   overlay: null, modal: null, toast: null,

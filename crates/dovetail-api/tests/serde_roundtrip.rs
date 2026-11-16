@@ -151,6 +151,26 @@ fn task() -> Task {
     }
 }
 
+fn canvas_card() -> Card {
+    Card {
+        id: CardId(90),
+        effort: EffortId(7),
+        canvas: Some(CanvasId(4)),
+        kind: CardKind::Finding,
+        x: 320,
+        y: 180,
+        reference: Some(CardRef {
+            kind: RefKind::Finding,
+            id: "41".into(),
+        }),
+        title: "Stripe fees".into(),
+        text: String::new(),
+        missing: false,
+        added_by: "user".into(),
+        created_ms: 1_700_000_000_000,
+    }
+}
+
 fn effort() -> Effort {
     Effort {
         id: EffortId(7),
@@ -401,6 +421,31 @@ fn hello_and_a_full_snapshot_roundtrip() {
         project: Some(project.clone()),
         projects: vec![project, research],
         efforts: vec![effort()],
+        canvases: vec![Canvas {
+            id: CanvasId(4),
+            effort: EffortId(7),
+            title: "payment-providers".into(),
+            framework: Framework::QuestionTree,
+        }],
+        cards: vec![
+            canvas_card(),
+            Card {
+                id: CardId(92),
+                canvas: None,
+                kind: CardKind::Idea,
+                x: 0,
+                y: 0,
+                reference: None,
+                title: "Ask Mollie".into(),
+                text: "Ask Mollie\nabout EU-only pricing".into(),
+                ..canvas_card()
+            },
+        ],
+        card_links: vec![CardLink {
+            from: CardId(92),
+            to: CardId(90),
+            label: "answers".into(),
+        }],
         tasks: vec![task()],
         agents: vec![subagent()],
         todos: vec![todo()],
@@ -470,6 +515,27 @@ fn every_event_roundtrips() {
     let events = vec![
         Event::TaskUpserted(task()),
         Event::TaskRemoved(TaskId(3)),
+        Event::CanvasUpserted(Canvas {
+            id: CanvasId(4),
+            effort: EffortId(7),
+            title: "payment-providers".into(),
+            framework: Framework::FreeBoard,
+        }),
+        Event::CardUpserted(canvas_card()),
+        Event::CardRemoved(CardId(90)),
+        Event::CardLinked(CardLink {
+            from: CardId(1),
+            to: CardId(2),
+            label: String::new(),
+        }),
+        Event::CardUnlinked {
+            from: CardId(1),
+            to: CardId(2),
+        },
+        Event::CardLoaded {
+            id: CardId(90),
+            body: "Stripe charges 1.5 %.".into(),
+        },
         Event::EffortUpserted(effort()),
         Event::AgentUpserted(subagent()),
         Event::AgentRemoved(id("sub-1")),
@@ -619,6 +685,55 @@ fn every_command_roundtrips() {
             }],
             effort: Some(EffortId(7)),
         },
+        Command::CreateCanvas {
+            effort: EffortId(7),
+            title: String::new(),
+            framework: Framework::OptionsCompare,
+        },
+        Command::RenameCanvas {
+            id: CanvasId(4),
+            title: "options".into(),
+        },
+        Command::AddCard {
+            card: NewCard {
+                effort: EffortId(7),
+                canvas: None,
+                kind: CardKind::Idea,
+                x: 0,
+                y: 0,
+                reference: None,
+                text: "Ask Mollie".into(),
+            },
+            link_from: Some(CardId(90)),
+        },
+        Command::PlaceCard {
+            id: CardId(92),
+            canvas: CanvasId(4),
+            x: 40,
+            y: 60,
+        },
+        Command::MoveCard {
+            id: CardId(92),
+            x: 41,
+            y: 61,
+        },
+        Command::DeleteCard { id: CardId(92) },
+        Command::DropIncoming { id: CardId(92) },
+        Command::LinkCards {
+            from: CardId(1),
+            to: CardId(2),
+            label: "answers".into(),
+        },
+        Command::UnlinkCards {
+            from: CardId(1),
+            to: CardId(2),
+        },
+        Command::CardFromReply {
+            agent: id("coordinator"),
+            entry: EntryId(5),
+            effort: EffortId(7),
+        },
+        Command::LoadCard { id: CardId(90) },
         Command::CreateEffort(NewEffort {
             name: "Guest Checkout".into(),
             kind: EffortKind::Feature,

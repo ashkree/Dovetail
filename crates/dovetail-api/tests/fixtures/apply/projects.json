@@ -78,6 +78,9 @@
   "expected": {
     "activity": [],
     "agents": [],
+    "canvases": [],
+    "card_links": [],
+    "cards": [],
     "commands": {},
     "conversations": {},
     "decisions": [],
@@ -199,6 +202,9 @@
   "snapshot": {
     "activity": [],
     "agents": [],
+    "canvases": [],
+    "card_links": [],
+    "cards": [],
     "commands": {},
     "conversations": {},
     "decisions": [],

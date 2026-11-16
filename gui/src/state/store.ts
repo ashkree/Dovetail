@@ -8,6 +8,7 @@ import { apply } from '../core/apply';
 import type * as W from '../core/generated';
 import type { CoreLink } from '../core/link';
 import type { Snapshot } from '../core/model';
+import { cardViewId } from '../core/canvasView';
 import { applyPending, emptyPending, type Pending } from '../core/pending';
 import type { UiCommand } from '../core/protocol';
 import { translate } from '../core/translate';
@@ -62,9 +63,35 @@ function receive(msg: W.ServerMsg): void {
   const { seq, event } = data as { seq: number; event: W.Event };
   const [kind, payload] = variant(event);
   if (kind === 'command_failed') toast((payload as { message: string }).message);
-  const r = apply(coreStore.get(), seq, event);
-  if (r.kind === 'applied') coreStore.set(r.snapshot);
+  const before = coreStore.get();
+  const r = apply(before, seq, event);
+  if (r.kind === 'applied') {
+    coreStore.set(r.snapshot);
+    cardEvent(before, kind, payload);
+  }
   else if (r.kind === 'gap') link?.send('resync');
+}
+
+/** What an event about a card means for the UI: a body to keep, a new card to select (ADR 0025). */
+function cardEvent(before: W.Snapshot, kind: string, payload: unknown): void {
+  if (kind === 'card_loaded') {
+    const { id, body } = payload as { id: number; body: string };
+    const card = coreStore.get().cards.find(c => c.id === id);
+    if (!card) return;
+    const viewId = cardViewId(card);
+    pendingStore.set(p => applyPending(p, { type: 'card_body', card_id: viewId, body }));
+    if (uiStore.get().awaitCard === viewId) {
+      // The reading view shows a body long enough to be a document; a short one is a toast.
+      const report = snapshotStore.get().cards.find(c => c.id === viewId)?.report_id;
+      setUi(report ? { awaitCard: null, main: 'reading', zone: 'main', readHead: 0 } : { awaitCard: null });
+      if (!report) toast(`**${viewId}** · ${card.title} — ${body}`);
+    }
+  } else if (kind === 'card_upserted' && uiStore.get().awaitNewCard) {
+    const card = payload as W.Card;
+    if (!before.cards.some(c => c.id === card.id)) {
+      setUi({ awaitNewCard: false, cardSel: cardViewId(card) });
+    }
+  }
 }
 
 /** A project's snapshot just arrived: focus an effort of it, as opening it from Home does. */

@@ -88,6 +88,9 @@
   "expected": {
     "activity": [],
     "agents": [],
+    "canvases": [],
+    "card_links": [],
+    "cards": [],
     "commands": {},
     "conversations": {
       "coordinator": {
@@ -160,6 +163,9 @@
   "snapshot": {
     "activity": [],
     "agents": [],
+    "canvases": [],
+    "card_links": [],
+    "cards": [],
     "commands": {},
     "conversations": {
       "coordinator": {

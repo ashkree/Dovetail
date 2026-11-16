@@ -10,6 +10,7 @@
 //! ([`Db::open_unregistered`]) until [`Db::persist_state`] writes it to the new project's file
 //! (ADR 0005).
 
+mod canvas;
 mod counts;
 mod efforts;
 mod maps;
@@ -20,6 +21,7 @@ pub mod research;
 mod sessions;
 mod tasks;
 
+pub use canvas::CanvasState;
 pub use efforts::CriterionStep;
 pub use maps::{Drawn, NewMapVersion};
 pub use sessions::{AgentRow, ModelChoice, QueuedSlice};
@@ -83,7 +85,8 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0015_research_followups.sql"),
     migration!("state", "0016_agent_model_choice.sql"),
     migration!("state", "0017_efforts.sql"),
-    migration!("state", "0018_agent_repo.sql"),
+    migration!("state", "0018_canvases.sql"),
+    migration!("state", "0019_agent_repo.sql"),
 ];
 
 /// Errors from the database layer.
@@ -1223,6 +1226,51 @@ mod tests {
 
     /// Migration 0017 on a database as version 16 left it: every task goes to Unsorted, chat
     /// lines keep no tag, and nothing else about them changes.
+    /// ADR 0021: state migration 0019 from version 18. Agents and queued starts are kept; none
+    /// has a repo yet (read as the project's first), and a stored one round-trips.
+    #[test]
+    fn agent_repos_migrate_up_from_version_18() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let path = paths.state_db("p");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut old = Connection::open(&path).unwrap();
+        migrate(&mut old, &path, &STATE_MIGRATIONS[..18]).unwrap();
+        old.execute_batch(
+            "INSERT INTO agents (id, kind, name, status, permission_mode, created_ms)
+               VALUES ('slice-a', 'slice', 'a', 'idle', 'auto', 1);
+             INSERT INTO slice_queue (name, brief, created_ms) VALUES ('b', 'go', 2);",
+        )
+        .unwrap();
+        drop(old);
+
+        let db = Db::open(&paths, Some("p")).unwrap();
+        let mut agents = db.load_agents().wait().unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].repo, None);
+        let queue = db.load_queue().wait().unwrap();
+        assert_eq!(
+            (queue[0].name.as_str(), queue[0].repo.as_deref()),
+            ("b", None)
+        );
+
+        agents[0].repo = Some(dovetail_api::RepoId(7));
+        db.upsert_agent(agents[0].clone()).wait().unwrap();
+        db.enqueue_slice(None, "c".into(), "go".into(), false, Some("web".into()))
+            .wait()
+            .unwrap();
+        drop(db);
+        let db = Db::open(&paths, Some("p")).unwrap();
+        assert_eq!(
+            db.load_agents().wait().unwrap()[0].repo,
+            Some(dovetail_api::RepoId(7))
+        );
+        assert_eq!(
+            db.load_queue().wait().unwrap()[1].repo.as_deref(),
+            Some("web")
+        );
+    }
+
     #[test]
     fn efforts_migrate_up_from_version_16_and_existing_tasks_go_to_unsorted() {
         use dovetail_api::{EntryKind, TaskStatus, UNSORTED_EFFORT};

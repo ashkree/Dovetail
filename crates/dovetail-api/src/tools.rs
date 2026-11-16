@@ -102,6 +102,9 @@ pub enum Suite {
     Research,
     /// Maps (decision 25).
     Maps,
+    /// The effort canvas: add a card to incoming, link two cards (ADR 0025). Coordinator only
+    /// for now.
+    Canvas,
 }
 
 impl Suite {
@@ -113,6 +116,7 @@ impl Suite {
         Suite::Coordination,
         Suite::Research,
         Suite::Maps,
+        Suite::Canvas,
     ];
 
     /// The name in `config.toml` and [`env::SUITES`], also the tools' prefix.
@@ -124,6 +128,7 @@ impl Suite {
             Suite::Coordination => "coordination",
             Suite::Research => "research",
             Suite::Maps => "maps",
+            Suite::Canvas => "canvas",
         }
     }
 
@@ -239,6 +244,10 @@ tools! {
     ClaimCriterion(ClaimCriterion) = "coordination_claim_criterion", Coordination;
     /// `maps_draw` (decision 25, M15).
     DrawMap(DrawMap) = "maps_draw", Maps, was "draw_map";
+    /// `canvas_add_card` (ADR 0025): a card into an effort's incoming strip.
+    CanvasAddCard(CanvasAddCard) = "canvas_add_card", Canvas;
+    /// `canvas_link_cards` (ADR 0025): link two cards.
+    CanvasLinkCards(CanvasLinkCards) = "canvas_link_cards", Canvas;
 }
 
 /// The row of [`TOOLS`] named `name`, by its current or its old name.
@@ -313,6 +322,11 @@ pub enum ToolError {
     DecisionNeedsEvidence,
     /// An `evidence` entry is not `F<id>` or `S<id>`.
     BadEvidence(String),
+    /// A card id is not positive.
+    NotACardId(&'static str),
+    /// `canvas_add_card` of an idea or question with no text, or of a reference with no id, or
+    /// of an idea or question that also names a reference.
+    BadCard(&'static str),
     /// `research_get`'s `what` is none of `report`, `round:N`, `finding:N`, `source:N`.
     BadWhat(String),
 }
@@ -363,6 +377,10 @@ impl std::fmt::Display for ToolError {
                 f,
                 "evidence `{text}` is not a finding or source id: write F<id> or S<id>, like                  F3 or S12"
             ),
+            ToolError::NotACardId(field) => {
+                write!(f, "`{field}` must be a card id (a positive integer)")
+            }
+            ToolError::BadCard(why) => f.write_str(why),
             ToolError::BadWhat(text) => write!(
                 f,
                 "`what` must be `report`, `round:N`, `finding:N` or `source:N`, not `{text}`"
@@ -426,6 +444,38 @@ impl Tool {
                     return Err(ToolError::NotACriterionId);
                 }
                 text("evidence", &c.evidence)
+            }
+            Tool::CanvasAddCard(c) => {
+                if c.kind.has_own_text() {
+                    if c.reference.is_some() {
+                        return Err(ToolError::BadCard(
+                            "an idea or question card holds its own `text`: leave `reference` out",
+                        ));
+                    }
+                    text("text", &c.text)
+                } else {
+                    if !c.text.trim().is_empty() {
+                        return Err(ToolError::BadCard(
+                            "a card that points at something has no `text` of its own: leave it out",
+                        ));
+                    }
+                    match &c.reference {
+                        Some(r) if r.trim().is_empty() => Err(ToolError::Empty("reference")),
+                        Some(_) => Ok(()),
+                        None => Err(ToolError::BadCard(
+                            "a finding, source, decision, map or task card needs its `reference`: the id of what it points at",
+                        )),
+                    }
+                }
+            }
+            Tool::CanvasLinkCards(l) => {
+                if l.from.0 <= 0 {
+                    return Err(ToolError::NotACardId("from"));
+                }
+                if l.to.0 <= 0 {
+                    return Err(ToolError::NotACardId("to"));
+                }
+                Ok(())
             }
             Tool::CreateTask(c) => {
                 text("title", &c.title)?;
@@ -542,6 +592,40 @@ pub struct ClaimCriterion {
     pub criterion: crate::CriterionId,
     /// What shows it is met: a pull request, a test, a finding.
     pub evidence: String,
+}
+
+/// `canvas_add_card` (ADR 0025): put a card into an effort's incoming strip. The user decides
+/// whether it goes on the canvas; there is no tool to place, move or delete a card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CanvasAddCard {
+    /// The effort; `None` means the one the user last tagged (Unsorted when none).
+    #[serde(default)]
+    pub effort: Option<crate::EffortId>,
+    /// What the card is: `idea` or `question` with `text`, or `finding`, `source`, `decision`,
+    /// `map` or `task` with `reference`.
+    pub kind: crate::CardKind,
+    /// The words of an idea or a question.
+    #[serde(default)]
+    pub text: String,
+    /// The id of what a finding, source, decision, map or task card points at (a map's id is
+    /// text; the others are numbers). It must exist.
+    #[serde(default)]
+    pub reference: Option<String>,
+}
+
+/// `canvas_link_cards` (ADR 0025): link two cards of one effort, such as a question to the
+/// finding that answers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CanvasLinkCards {
+    /// The card the link starts at.
+    pub from: crate::CardId,
+    /// The card it leads to.
+    pub to: crate::CardId,
+    /// What the link says, if anything.
+    #[serde(default)]
+    pub label: String,
 }
 
 /// Where a slice says its work stands, in a [`Report`].

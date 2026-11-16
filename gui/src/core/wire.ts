@@ -20,7 +20,7 @@ export const UNSORTED_EFFORT: W.EffortId = 1;
 /** A snapshot with nothing in it: what the client holds before the core's first message. */
 export function emptyCoreSnapshot(): W.Snapshot {
   return {
-    seq: 0, now_ms: 0, project: null, projects: [], efforts: [], tasks: [], agents: [], todos: [],
+    seq: 0, now_ms: 0, project: null, projects: [], efforts: [], canvases: [], cards: [], card_links: [], tasks: [], agents: [], todos: [],
     inbox: [], activity: [], messages: [], conversations: {},
     totals: { memory_mb: 0, needs_you: 0, cost_usd: 0 }, warnings: [], decisions: [],
     usage: { five_hour: null, seven_day: null }, worktrees: [], maps: [], research: [], commands: {},

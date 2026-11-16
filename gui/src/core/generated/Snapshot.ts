@@ -3,6 +3,9 @@ import type { ActivityItem } from "./ActivityItem";
 import type { Agent } from "./Agent";
 import type { AgentId } from "./AgentId";
 import type { AgentMessage } from "./AgentMessage";
+import type { Canvas } from "./Canvas";
+import type { Card } from "./Card";
+import type { CardLink } from "./CardLink";
 import type { ConversationTail } from "./ConversationTail";
 import type { Decision } from "./Decision";
 import type { Effort } from "./Effort";
@@ -45,6 +48,19 @@ projects: Array<ProjectSummary>,
  * The open project's efforts, closed ones included, in id order.
  */
 efforts: Array<Effort>, 
+/**
+ * The open project's canvases, in id order.
+ */
+canvases: Array<Canvas>, 
+/**
+ * The open project's cards, in id order: placed ones and the incoming strip's (no canvas).
+ * Titles only; a card's body comes with [`crate::Command::LoadCard`].
+ */
+cards: Array<Card>, 
+/**
+ * The links between cards.
+ */
+card_links: Array<CardLink>, 
 /**
  * The open project's tasks, archived ones included.
  */

@@ -81,3 +81,10 @@ The plan (`docs/plan/gui-frontend.md`) says "stop and ask" in a few places. The 
 - **Chose:** raise the warning limit to 900 kB rather than split the bundle.
 - **Why:** it is one local bundle loaded from disk by a desktop app, not a page on the web.
 - **Change:** `build.chunkSizeWarningLimit` in `gui/vite.config.ts`.
+
+## 13. Projects and repos from Home (ADR 0021)
+
+- **Open:** `docs/gui-layout-and-keys.md` binds `n` (new project), `r` and `Space p r` (add repo) and `Space s n` (new slice) but does not say what each asks.
+- **Chose:** one form modal in the picker's style: a label and an input per field, `Tab`/`Shift-Tab` (or `Ctrl-j`/`Ctrl-k`, arrows) between fields, `Enter` sends, `Esc` cancels; the first field is required. New project asks Name, Claude account (empty: default) and First repo (a folder in a git repo; empty: research only). Add repo asks Folder and Name (empty: the folder's name) and acts on the selected project on Home, the open one in a workspace. New slice asks for the repo with the picker when the project has several, then Name and Brief; it works on the task selected in the tree, if any. The project list's note line went: the core has no such field.
+- **Why:** closest to what is settled: the existing picker and prompt modals; the repo picker is the "asks for the repo" the brief named.
+- **Change:** `gui/src/keys/actions.ts`, `gui/src/components/overlays/Picker.tsx`, `gui/src/keys/useKeys.ts`, `MODAL_KEYS` in `gui/src/keys/keymap.ts`.

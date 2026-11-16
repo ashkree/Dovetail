@@ -4,7 +4,7 @@
 // after a message (the only timer in the frontend). Only main.tsx imports this file.
 
 import { apply } from './apply';
-import { coreSnapshot } from './fixtures';
+import { CARD_BODIES, coreSnapshot } from './fixtures';
 import type * as W from './generated';
 import type { CoreLink } from './link';
 import { COORDINATOR, variant } from './wire';
@@ -152,6 +152,101 @@ export class MockCore implements CoreLink {
           ...coord, id: `slice-${n.name}`, name: n.name, kind: 'slice', task: n.task, status: 'setting_up',
           worktree: { path: `/home/you/.local/share/dovetail/projects/${s.project?.id}/worktrees/${n.name}`, branch: `dovetail/${n.name}` },
         } });
+        return;
+      }
+      case 'create_canvas': {
+        const c = data as { effort: number; title: string; framework: W.Framework };
+        const effort = s.efforts.find(e => e.id === c.effort);
+        if (!effort) return this.fail(`no effort ${c.effort}`);
+        this.emit({ canvas_upserted: {
+          id: Math.max(0, ...s.canvases.map(x => x.id)) + 1, effort: c.effort,
+          title: c.title.trim() || effort.name, framework: c.framework,
+        } });
+        return;
+      }
+      case 'rename_canvas': {
+        const { id, title } = data as { id: number; title: string };
+        const canvas = s.canvases.find(c => c.id === id);
+        if (!canvas || !title.trim()) return this.fail(canvas ? 'a canvas needs a title' : `no canvas ${id}`);
+        this.emit({ canvas_upserted: { ...canvas, title: title.trim() } });
+        return;
+      }
+      case 'add_card': {
+        const { card, link_from } = data as { card: W.NewCard; link_from?: number | null };
+        if (card.kind !== 'idea' && card.kind !== 'question') return this.fail('the mock core only makes idea and question cards');
+        const text = card.text.trim();
+        if (!text) return this.fail('an idea or question card needs text');
+        if (!s.efforts.some(e => e.id === card.effort)) return this.fail(`no effort ${card.effort}`);
+        const from = link_from == null ? undefined : s.cards.find(c => c.id === link_from);
+        if (link_from != null && !from) return this.fail(`no card ${link_from}`);
+        const id = Math.max(0, ...s.cards.map(c => c.id)) + 1;
+        const placed = card.canvas != null;
+        this.emit({ card_upserted: {
+          id, effort: card.effort, ...(placed ? { canvas: card.canvas } : {}), kind: card.kind,
+          x: placed ? card.x : 0, y: placed ? card.y : 0, title: text.split('\n')[0] ?? text, text,
+          missing: false, added_by: 'user', created_ms: Date.now(),
+        } });
+        if (from) this.emit({ card_linked: { from: from.id, to: id, label: '' } });
+        return;
+      }
+      case 'place_card': {
+        const { id, canvas, x, y } = data as { id: number; canvas: number; x: number; y: number };
+        const card = s.cards.find(c => c.id === id);
+        if (!card) return this.fail(`no card ${id}`);
+        if (card.canvas != null) return this.fail(`card ${id} is already placed`);
+        if (s.canvases.find(c => c.id === canvas)?.effort !== card.effort) return this.fail(`canvas ${canvas} belongs to another effort than card ${id}`);
+        this.emit({ card_upserted: { ...card, canvas, x, y } });
+        return;
+      }
+      case 'move_card': {
+        const { id, x, y } = data as { id: number; x: number; y: number };
+        const card = s.cards.find(c => c.id === id);
+        if (!card) return this.fail(`no card ${id}`);
+        if (card.canvas == null) return this.fail(`card ${id} is incoming: place it first`);
+        this.emit({ card_upserted: { ...card, x, y } });
+        return;
+      }
+      case 'delete_card':
+      case 'drop_incoming': {
+        const { id } = data as { id: number };
+        const card = s.cards.find(c => c.id === id);
+        if (!card) return this.fail(`no card ${id}`);
+        if (tag === 'drop_incoming' && card.canvas != null) return this.fail(`card ${id} is on a canvas: delete it there`);
+        this.emit({ card_removed: id });
+        return;
+      }
+      case 'link_cards': {
+        const { from, to, label } = data as { from: number; to: number; label: string };
+        const a = s.cards.find(c => c.id === from);
+        const b = s.cards.find(c => c.id === to);
+        if (!a || !b) return this.fail(`no card ${a ? to : from}`);
+        if (from === to) return this.fail('a card cannot link to itself');
+        if (a.effort !== b.effort) return this.fail('cards of different efforts cannot be linked');
+        this.emit({ card_linked: { from, to, label: label.trim() } });
+        return;
+      }
+      case 'unlink_cards': {
+        const { from, to } = data as { from: number; to: number };
+        if (!s.card_links.some(l => l.from === from && l.to === to)) return this.fail(`card ${from} is not linked to card ${to}`);
+        this.emit({ card_unlinked: { from, to } });
+        return;
+      }
+      case 'card_from_reply': {
+        const { agent, entry, effort } = data as { agent: string; entry: number; effort: number };
+        const text = s.conversations[agent]?.entries.find(e => e.id === entry)?.text.trim();
+        if (!text) return this.fail('that reply has no text to keep (or it is no longer loaded)');
+        const id = Math.max(0, ...s.cards.map(c => c.id)) + 1;
+        this.emit({ card_upserted: {
+          id, effort, kind: 'idea', x: 0, y: 0, title: text.split('\n')[0] ?? text, text, missing: false,
+          added_by: 'user', created_ms: Date.now(),
+        } });
+        return;
+      }
+      case 'load_card': {
+        const { id } = data as { id: number };
+        const card = s.cards.find(c => c.id === id);
+        if (!card) return this.fail(`no card ${id}`);
+        this.emit({ card_loaded: { id, body: CARD_BODIES[id] ?? card.text } });
         return;
       }
       default:

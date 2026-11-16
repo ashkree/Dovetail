@@ -5,6 +5,10 @@ import type { AgentId } from "./AgentId";
 import type { AgentMessage } from "./AgentMessage";
 import type { BrowsedDoc } from "./BrowsedDoc";
 import type { BrowsedProject } from "./BrowsedProject";
+import type { Canvas } from "./Canvas";
+import type { Card } from "./Card";
+import type { CardId } from "./CardId";
+import type { CardLink } from "./CardLink";
 import type { ConversationEntry } from "./ConversationEntry";
 import type { Decision } from "./Decision";
 import type { DocEntry } from "./DocEntry";
@@ -38,7 +42,23 @@ import type { WorktreeInfo } from "./WorktreeInfo";
 /**
  * One change to the client's [`Snapshot`].
  */
-export type Event = { "task_upserted": Task } | { "task_removed": TaskId } | { "effort_upserted": Effort } | { "agent_upserted": Agent } | { "agent_removed": AgentId } | { "todos_replaced": { 
+export type Event = { "task_upserted": Task } | { "task_removed": TaskId } | { "effort_upserted": Effort } | { "canvas_upserted": Canvas } | { "card_upserted": Card } | { "card_removed": CardId } | { "card_linked": CardLink } | { "card_unlinked": { 
+/**
+ * The card it started at.
+ */
+from: CardId, 
+/**
+ * The card it led to.
+ */
+to: CardId, } } | { "card_loaded": { 
+/**
+ * The card.
+ */
+id: CardId, 
+/**
+ * The body, as markdown.
+ */
+body: string, } } | { "agent_upserted": Agent } | { "agent_removed": AgentId } | { "todos_replaced": { 
 /**
  * The list.
  */

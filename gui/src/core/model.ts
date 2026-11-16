@@ -98,7 +98,7 @@ export interface ChatEntry {
 export type Framework = 'question_tree' | 'options_compare' | 'free_board';
 export interface Canvas { id: Id; effort_id: Id; framework: Framework; title: string }
 
-export type CardKind = 'finding' | 'source' | 'idea' | 'decision' | 'question' | 'map';
+export type CardKind = 'finding' | 'source' | 'idea' | 'decision' | 'question' | 'map' | 'task';
 export interface Card {
   /** Short and shown ("Q1", "F3"); also what a chat reference names. */
   id: Id;
@@ -122,8 +122,8 @@ export interface IncomingCard {
   kind: CardKind;
   title: string;
   body: string;
-  /** The card it would hang under when placed. */
-  under: Id;
+  /** The card it would hang under when placed: the placed card that links to it, if any. */
+  under?: Id;
 }
 
 export type VariantLevel = 'global' | 'component' | 'content';

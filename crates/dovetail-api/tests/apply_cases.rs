@@ -225,6 +225,83 @@ fn the_rest() -> Case {
     }
 }
 
+fn card(id: i64, kind: CardKind, canvas: Option<i64>, title: &str) -> Card {
+    Card {
+        id: CardId(id),
+        effort: EffortId(2),
+        canvas: canvas.map(CanvasId),
+        kind,
+        x: 0,
+        y: 0,
+        reference: None,
+        title: title.into(),
+        text: String::new(),
+        missing: false,
+        added_by: "user".into(),
+        created_ms: 1,
+    }
+}
+
+/// Canvases, cards and links: a card arrives in incoming, is placed and moved, linked, relabelled
+/// and unlinked; removing a card drops its links.
+fn canvas() -> Case {
+    let mut placed = card(1, CardKind::Question, Some(1), "Which provider?");
+    placed.text = "Which provider?".into();
+    let mut incoming = card(2, CardKind::Finding, None, "Stripe fees");
+    incoming.reference = Some(CardRef {
+        kind: RefKind::Finding,
+        id: "41".into(),
+    });
+    let mut on_canvas = incoming.clone();
+    on_canvas.canvas = Some(CanvasId(1));
+    on_canvas.x = 320;
+    on_canvas.y = 180;
+    let mut moved = on_canvas.clone();
+    moved.x = 340;
+    let link = |label: &str| CardLink {
+        from: CardId(1),
+        to: CardId(2),
+        label: label.into(),
+    };
+    let events = vec![
+        Event::CanvasUpserted(Canvas {
+            id: CanvasId(1),
+            effort: EffortId(2),
+            title: "guest-pay".into(),
+            framework: Framework::QuestionTree,
+        }),
+        Event::CardUpserted(placed),
+        Event::CardUpserted(incoming),
+        Event::CardUpserted(on_canvas),
+        Event::CardUpserted(moved),
+        Event::CardLinked(link("")),
+        Event::CardLinked(link("answers")),
+        Event::CardLinked(CardLink {
+            from: CardId(1),
+            to: CardId(3),
+            label: String::new(),
+        }),
+        Event::CardUnlinked {
+            from: CardId(1),
+            to: CardId(3),
+        },
+        Event::CardLoaded {
+            id: CardId(2),
+            body: "Stripe charges 1.5 %.".into(),
+        },
+        Event::CardRemoved(CardId(1)),
+    ];
+    Case {
+        name: "canvas",
+        snapshot: Snapshot::default(),
+        events: events
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| (i as u64 + 1, e))
+            .collect(),
+    }
+}
+
 fn project(id: &str, repos: &[&str]) -> ProjectSummary {
     ProjectSummary {
         id: ProjectId(id.into()),
@@ -432,6 +509,7 @@ fn cases() -> Vec<Case> {
             ],
         },
         the_rest(),
+        canvas(),
         projects(),
     ]
 }

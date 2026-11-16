@@ -3,13 +3,13 @@
 //
 // It is written in the view's terms (model.ts), as the screens show it, and turned into the
 // core's terms at the bottom: a core Snapshot (generated types) for what dovetail-api serves,
-// and the pending state for what it does not serve yet (canvas, cards, variants, reports).
+// and the pending state for what it does not serve yet (variants, reports).
 
 import type * as W from './generated';
 import type {
-  Agent, Canvas, Card, CardLink, ChatEntry, Effort, IncomingCard, InboxItem, ProjectSummary, Report, Task,
-  VariantSet,
+  Agent, ChatEntry, Effort, InboxItem, ProjectSummary, Report, Task, VariantSet,
 } from './model';
+import { cardViewId } from './canvasView';
 import { emptyPending, type Pending } from './pending';
 import { COORDINATOR, UNSORTED_EFFORT, emptyCoreSnapshot } from './wire';
 
@@ -127,37 +127,66 @@ const CHAT: ChatEntry[] = [
   { id: 'm2', who: 'coordinator', report: false, at: '09:14', effort_id: 'login', text: '**login-fix** found it: the refresh cookie had `SameSite=Lax`, so Safari dropped it on the cross-site token refresh.\n\n- Fix is in `src/auth/refresh.rs`\n- Chrome e2e is green\n- Safari run is waiting for your approval in the inbox' },
   { id: 'm3', who: 'research-1', report: true, at: '09:20', effort_id: 'pay', text: 'SCA comparison written · 3 providers · 9 sources · report ready to read' },
   { id: 'm4', who: 'you', report: false, at: '09:31', effort_id: 'pay', text: 'Summarise the SCA findings in two lines.' },
-  { id: 'm5', who: 'coordinator', report: false, at: '09:31', effort_id: 'pay', text: '**Stripe and Adyen** handle 3DS2 and exemptions for us; **Mollie** does too but has *no US acquiring*, so it fails the US half of the question.\n\nThe full report is on the canvas as card **F3**.' },
+  { id: 'm5', who: 'coordinator', report: false, at: '09:31', effort_id: 'pay', text: '**Stripe and Adyen** handle 3DS2 and exemptions for us; **Mollie** does too but has *no US acquiring*, so it fails the US half of the question.\n\nThe full report is on the canvas as card **F7**.' },
   { id: 'm6', who: 'header-toggle', report: true, at: '09:44', effort_id: 'dark', text: 'Header variants ready · 3 headers · 2 footers · 3 hero lines' },
   { id: 'm7', who: 'search-gc', report: true, at: '09:50', effort_id: 'search', text: 'Writer side removed · 14 files · tests green' },
   { id: 'm8', who: 'you', report: false, at: '09:52', effort_id: 'dark', text: 'Keep the toggle as an icon, not a text button.' },
   { id: 'm9', who: 'coordinator', report: false, at: '09:52', effort_id: 'dark', text: 'Told **header-toggle**. Variant *B* of the header already uses an icon; the viewer has it.' },
 ];
 
-const CANVASES: Canvas[] = [{ id: 'c-pay', effort_id: 'pay', framework: 'question_tree', title: 'Which provider?' }];
+// Question-tree canvas for "payment-providers", in the core's terms (ADR 0025): the core's card
+// number is the number of the view id (`Q1`, `F5`), so the fixture says it once. Cards that point
+// at something carry a made-up reference; their bodies are what `load_card` answers. Canvas
+// coordinates are px.
+const PAY_EFFORT = 2; // EFFORT_ID.get('pay')
+interface FixtureCard {
+  id: number; kind: W.CardKind; x?: number; y?: number; title: string; body: string;
+  /** Opens this report in the reading view. */
+  report?: string;
+}
+const FIXTURE_CARDS: FixtureCard[] = [
+  { id: 1, kind: 'question', x: 360, y: 20, title: 'Which provider for the EU and the US?', body: 'Root question of the effort.' },
+  { id: 2, kind: 'question', x: 40, y: 170, title: 'Fees at our volume?', body: '~2 400 orders a month, €38 average.' },
+  { id: 3, kind: 'question', x: 360, y: 170, title: 'SCA / 3DS handled for us?', body: 'Who runs the challenge flow and exemptions.' },
+  { id: 4, kind: 'question', x: 680, y: 170, title: 'Payouts and currencies?', body: 'EUR and USD payouts, timing.' },
+  { id: 5, kind: 'finding', x: 40, y: 330, title: 'Stripe 1.5 % + €0.25 EU cards', body: 'Cheapest published rate for EU cards at our volume.' },
+  { id: 6, kind: 'source', x: 40, y: 470, title: 'stripe.com/pricing', body: 'Fetched 15 Nov.' },
+  { id: 7, kind: 'finding', x: 360, y: 330, title: 'SCA comparison (report)', body: 'Stripe and Adyen handle 3DS2 and exemptions; Mollie has no US acquiring.', report: 'r-sca' },
+  { id: 8, kind: 'idea', x: 680, y: 330, title: 'Use Stripe for both, revisit Adyen at 10k orders', body: 'Keeps one integration now.' },
+  { id: 9, kind: 'decision', x: 360, y: 470, title: 'Decision (open)', body: 'Not decided yet. Needs the recommendation criterion.' },
+  { id: 10, kind: 'map', x: 680, y: 470, title: 'Checkout flow map', body: 'Where the provider plugs into shop-web.' },
+  // Incoming: no position.
+  { id: 11, kind: 'finding', title: 'Mollie: no US acquiring', body: 'From research-1, 2 sources.' },
+  { id: 12, kind: 'source', title: 'adyen.com/pricing (no list price)', body: 'Fetched 15 Nov.' },
+  { id: 13, kind: 'question', title: 'Chargeback fees?', body: 'Proposed by the coordinator.' },
+];
+const FIXTURE_LINKS: [number, number][] = [
+  [1, 2], [1, 3], [1, 4], [2, 5], [5, 6], [3, 7], [4, 8], [7, 9], [8, 10],
+  // Where the incoming cards would hang.
+  [3, 11], [2, 12], [2, 13],
+];
+const isIncoming = (c: FixtureCard) => c.x === undefined;
 
-// Question-tree canvas for "payment-providers". Coordinates are in canvas px.
-const card = (id: string, kind: Card['kind'], x: number, y: number, title: string, body: string, more: Partial<Card> = {}): Card =>
-  ({ id, canvas_id: 'c-pay', kind, x, y, title, body, ...more });
-const CARDS: Card[] = [
-  card('Q1', 'question', 360, 20, 'Which provider for the EU and the US?', 'Root question of the effort.'),
-  card('Q2', 'question', 40, 170, 'Fees at our volume?', '~2 400 orders a month, €38 average.'),
-  card('Q3', 'question', 360, 170, 'SCA / 3DS handled for us?', 'Who runs the challenge flow and exemptions.'),
-  card('Q4', 'question', 680, 170, 'Payouts and currencies?', 'EUR and USD payouts, timing.'),
-  card('F1', 'finding', 40, 330, 'Stripe 1.5 % + €0.25 EU cards', 'Cheapest published rate for EU cards at our volume.', { ref: 'S1' }),
-  card('S1', 'source', 40, 470, 'stripe.com/pricing', 'Fetched 15 Nov.'),
-  card('F3', 'finding', 360, 330, 'SCA comparison (report)', 'Stripe and Adyen handle 3DS2 and exemptions; Mollie has no US acquiring.', { report_id: 'r-sca' }),
-  card('I1', 'idea', 680, 330, 'Use Stripe for both, revisit Adyen at 10k orders', 'Keeps one integration now.'),
-  card('D1', 'decision', 360, 470, 'Decision (open)', 'Not decided yet. Needs the recommendation criterion.'),
-  card('M1', 'map', 680, 470, 'Checkout flow map', 'Where the provider plugs into shop-web.'),
-];
-const LINKS: CardLink[] = [['Q1', 'Q2'], ['Q1', 'Q3'], ['Q1', 'Q4'], ['Q2', 'F1'], ['F1', 'S1'], ['Q3', 'F3'], ['Q4', 'I1'], ['F3', 'D1'], ['I1', 'M1']]
-  .map(([from, to]) => ({ from: from as string, to: to as string }));
-const INCOMING: IncomingCard[] = [
-  { id: 'F4', canvas_id: 'c-pay', kind: 'finding', title: 'Mollie: no US acquiring', body: 'From research-1, 2 sources.', under: 'Q3' },
-  { id: 'S5', canvas_id: 'c-pay', kind: 'source', title: 'adyen.com/pricing (no list price)', body: 'Fetched 15 Nov.', under: 'Q2' },
-  { id: 'Q5', canvas_id: 'c-pay', kind: 'question', title: 'Chargeback fees?', body: 'Proposed by the coordinator.', under: 'Q2' },
-];
+/** The mock's card bodies, by core card id: what `load_card` answers for a card that points at something. */
+export const CARD_BODIES: Record<number, string> = Object.fromEntries(
+  FIXTURE_CARDS.filter(c => !['idea', 'question'].includes(c.kind)).map(c => [c.id, c.body]),
+);
+
+function coreCanvasState(): Pick<W.Snapshot, 'canvases' | 'cards' | 'card_links'> {
+  return {
+    canvases: [{ id: 1, effort: PAY_EFFORT, title: 'Which provider?', framework: 'question_tree' }],
+    cards: FIXTURE_CARDS.map((c): W.Card => {
+      const own = c.kind === 'idea' || c.kind === 'question';
+      return {
+        id: c.id, effort: PAY_EFFORT, ...(isIncoming(c) ? {} : { canvas: 1 }), kind: c.kind, x: c.x ?? 0, y: c.y ?? 0,
+        ...(own ? {} : { reference: { kind: c.kind as W.RefKind, id: String(c.id) } }),
+        title: c.title, text: own ? `${c.title}\n${c.body}` : '', missing: false,
+        added_by: isIncoming(c) ? 'research-1' : 'user', created_ms: NOW,
+      };
+    }),
+    card_links: FIXTURE_LINKS.map(([from, to]) => ({ from, to, label: '' })),
+  };
+}
 
 // Viewer variants for "dark-mode", three levels.
 const VARIANTS: VariantSet[] = [{
@@ -347,7 +376,7 @@ export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot 
   if (project.id !== 'shop') return { ...opened, efforts: [UNSORTED], agents: [coordinator(project, false)] };
   return {
     ...opened,
-    efforts: coreEfforts(), tasks: coreTasks(), agents: coreAgents(project), inbox: coreInbox(),
+    efforts: coreEfforts(), ...coreCanvasState(), tasks: coreTasks(), agents: coreAgents(project), inbox: coreInbox(),
     conversations: { [COORDINATOR]: { entries: coreChat(), has_more: false } },
   };
 }
@@ -363,10 +392,11 @@ export function pendingFor(projectId: string | null): Pending {
   if (projectId !== 'shop') return base;
   return {
     ...base,
-    canvases: CANVASES.map(c => ({ ...c, effort_id: effort(c.effort_id) })),
-    cards: CARDS, card_links: LINKS, incoming: INCOMING,
     variants: VARIANTS.map(v => ({ ...v, effort_id: effort(v.effort_id) })),
     reports: REPORTS.map(r => ({ ...r, effort_id: effort(r.effort_id) })),
     colours: Object.fromEntries(EFFORTS.map(e => [effort(e.id), e.colour])),
+    card_reports: Object.fromEntries(
+      FIXTURE_CARDS.filter(c => c.report).map(c => [cardViewId(c), c.report as string]),
+    ),
   };
 }
