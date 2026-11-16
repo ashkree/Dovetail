@@ -22,6 +22,7 @@ pub(crate) fn project() -> ProjectSummary {
         name: "Tangents".into(),
         repo_path: research_project_dir(TANGENTS_PROJECT),
         kind: ProjectKind::Research,
+        ..ProjectSummary::default()
     }
 }
 

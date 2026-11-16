@@ -61,6 +61,29 @@ pub struct Project {
 }
 
 impl Project {
+    /// A project with one repo (id 1), as `:project add` registers a folder; for callers that
+    /// build one without the registry, such as tests.
+    pub fn with_repo(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        path: PathBuf,
+        git_common_dir: Option<PathBuf>,
+    ) -> Project {
+        let id = id.into();
+        Project {
+            repos: vec![Repo {
+                id: RepoId(1),
+                name: slug(&id),
+                path,
+                git_common_dir,
+            }],
+            id,
+            name: name.into(),
+            account: None,
+            last_opened_ms: None,
+        }
+    }
+
     /// A research-only project: no repos, so no worktrees, no slices, no git (ADR 0021 point 2).
     pub fn is_research(&self) -> bool {
         self.repos.is_empty()
@@ -374,7 +397,11 @@ pub fn require(db: &Db, dir: &Path) -> Result<Project, ProjectError> {
 /// Registers a candidate, or returns the project already registered for its repo or folder.
 pub fn register(db: &Db, candidate: &Candidate) -> Result<Project, ProjectError> {
     Ok(db
-        .register_project(candidate.slug(), candidate.name.clone(), candidate.new_repo())
+        .register_project(
+            candidate.slug(),
+            candidate.name.clone(),
+            candidate.new_repo(),
+        )
         .wait()?)
 }
 

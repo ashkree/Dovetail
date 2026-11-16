@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use dovetail_api::{ActivityKind, AgentId, AgentKind, ProjectSummary, RepoId};
 
+use crate::db::DbError;
 use crate::error::RegisterError;
 use crate::paths::Paths;
-use crate::db::DbError;
 use crate::project_admin::{self, ProjectOp};
 use crate::projects::{Candidate, Project, Repo};
 use crate::recipe;
@@ -139,7 +139,9 @@ impl Core {
     /// open one, the core takes the change in at once ([`Core::open_project_changed`]).
     pub(crate) async fn project_op(&mut self, op: ProjectOp) {
         let open = self.project.registered().map(|p| p.id.clone());
-        let is_open = op.project().is_some_and(|id| open.as_deref() == Some(id.0.as_str()));
+        let is_open = op
+            .project()
+            .is_some_and(|id| open.as_deref() == Some(id.0.as_str()));
         if is_open && let ProjectOp::RemoveRepo { repo, .. } = &op {
             let busy: Vec<String> = self
                 .agents
@@ -347,7 +349,11 @@ impl Core {
         };
         let project = self
             .db
-            .register_project(candidate.slug(), candidate.name.clone(), candidate.new_repo())
+            .register_project(
+                candidate.slug(),
+                candidate.name.clone(),
+                candidate.new_repo(),
+            )
             .await?;
         self.db
             .persist_state(self.paths.state_db(&project.id))

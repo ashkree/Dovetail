@@ -176,10 +176,8 @@ fn insert_repo(conn: &Connection, id: &str, repo: &NewRepo, now_ms: i64) -> Resu
         )));
     }
     conn.execute(
-        &format!(
-            "INSERT INTO repos (project_id, name, path, git_common_dir, added_ms) \
-             VALUES (?1, ?2, ?3, ?4, ?5)"
-        ),
+        "INSERT INTO repos (project_id, name, path, git_common_dir, added_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             id,
             repo.name,

@@ -10,9 +10,9 @@
 //! ([`Db::open_unregistered`]) until [`Db::persist_state`] writes it to the new project's file
 //! (ADR 0005).
 
+mod counts;
 mod efforts;
 mod maps;
-mod counts;
 mod registry;
 
 pub use registry::NewRepo;
@@ -1160,14 +1160,18 @@ mod tests {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
         assert_eq!(version as usize, REGISTRY_MIGRATIONS.len());
-        let kind_column: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM pragma_table_info('projects') WHERE name = 'kind'",
-                [],
+        let column = |table: &str, name: &str| -> i64 {
+            conn.query_row(
+                &format!("SELECT count(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+                [name],
                 |row| row.get(0),
             )
-            .unwrap();
-        assert_eq!(kind_column, 1, "projects.kind comes from migration 0003");
+            .unwrap()
+        };
+        // Migration 0004 (ADR 0021): the kind is gone, the account and the repos table are in.
+        assert_eq!(column("projects", "kind"), 0);
+        assert_eq!(column("projects", "account"), 1);
+        assert_eq!(column("repos", "git_common_dir"), 1);
     }
 
     #[test]
@@ -1620,11 +1624,11 @@ mod tests {
         let paths = paths(dir.path());
         let db = Db::open(&paths, None).unwrap();
         let folder = db
-            .register_project("notes".into(), "notes".into(), "/x/notes".into(), None)
+            .register_project("notes".into(), "notes".into(), folder_repo("/x/notes"))
             .wait()
             .unwrap();
         let again = db
-            .register_project("notes".into(), "notes".into(), "/x/notes".into(), None)
+            .register_project("notes".into(), "notes".into(), folder_repo("/x/notes"))
             .wait()
             .unwrap();
         assert_eq!(folder, again);
@@ -1632,103 +1636,156 @@ mod tests {
             .register_project(
                 "notes".into(),
                 "notes".into(),
-                "/y/notes".into(),
-                Some("/y/notes/.git".into()),
+                NewRepo {
+                    name: "notes".into(),
+                    path: "/y/notes".into(),
+                    git_common_dir: Some("/y/notes/.git".into()),
+                },
             )
             .wait()
             .unwrap();
         assert_eq!(repo.id, "notes-2");
     }
 
+    fn folder_repo(path: &str) -> NewRepo {
+        NewRepo {
+            name: "notes".into(),
+            path: path.into(),
+            git_common_dir: None,
+        }
+    }
+
+    /// ADR 0021: registry migration 0004 from version 3. Every project is kept; a code project
+    /// and a folder project each get one repo named after the project, a research project none.
     #[test]
-    fn an_existing_registry_migrates_to_project_kinds() {
-        use dovetail_api::ProjectKind;
+    fn an_existing_registry_migrates_to_repos() {
+        use dovetail_api::{ProjectKind, RepoId};
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
-        // A registry.db as the build before project kinds left it: a repo and a folder.
         let path = paths.registry_db();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut old = Connection::open(&path).unwrap();
         let before = REGISTRY_MIGRATIONS.len() - 1;
         migrate(&mut old, &path, &REGISTRY_MIGRATIONS[..before]).unwrap();
         old.execute_batch(
-            "INSERT INTO projects VALUES ('dovetail', 'Dovetail', '/src/dovetail', \
-             '/src/dovetail/.git', 5);
-             INSERT INTO projects VALUES ('notes', 'notes', '/x/notes', NULL, 4);",
+            "INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \
+               VALUES ('dovetail', 'Dovetail', 'code', '/src/dovetail', '/src/dovetail/.git', 5);
+             INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \
+               VALUES ('notes', 'notes', 'code', '/x/notes', NULL, 4);
+             INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \
+               VALUES ('market', 'Market', 'research', NULL, NULL, 3);",
         )
         .unwrap();
         drop(old);
 
         let db = Db::open(&paths, None).unwrap();
         let listed = db.list_projects().wait().unwrap();
-        assert_eq!(listed.len(), 2);
-        assert!(listed.iter().all(|p| p.kind == ProjectKind::Code));
+        let ids: Vec<&str> = listed.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["dovetail", "notes", "market"]);
+        let dovetail = &listed[0];
         assert_eq!(
-            listed[0].repo_path.as_deref(),
-            Some(Path::new("/src/dovetail"))
+            (dovetail.name.as_str(), dovetail.account.as_deref()),
+            ("Dovetail", None)
         );
+        assert_eq!(dovetail.last_opened_ms, Some(5));
+        assert_eq!(dovetail.repos.len(), 1);
+        assert_eq!(dovetail.repos[0].name, "dovetail");
+        assert_eq!(dovetail.repos[0].path, Path::new("/src/dovetail"));
         assert_eq!(
-            listed[0].git_common_dir.as_deref(),
+            dovetail.repos[0].git_common_dir.as_deref(),
             Some(Path::new("/src/dovetail/.git"))
         );
-        assert_eq!(listed[1].repo_path.as_deref(), Some(Path::new("/x/notes")));
-        // Folder and repo lookups still find them.
-        assert!(db.find_folder("/x/notes".into()).wait().unwrap().is_some());
-        assert!(
-            db.find_project("/src/dovetail/.git".into())
-                .wait()
-                .unwrap()
-                .is_some()
-        );
-
-        // A research project has neither path; its id is numbered past the folder's.
-        let research = db
-            .register_research("notes".into(), "notes".into())
+        assert_eq!(dovetail.kind(), ProjectKind::Code);
+        assert_eq!(listed[1].repos[0].git_common_dir, None);
+        assert_eq!(listed[1].kind(), ProjectKind::Code);
+        assert!(listed[2].repos.is_empty());
+        assert_eq!(listed[2].kind(), ProjectKind::Research);
+        // Lookups go through repos.
+        let found = db.find_project("/src/dovetail/.git".into()).wait().unwrap();
+        assert_eq!(found.map(|p| p.id), Some("dovetail".into()));
+        let found = db.find_folder("/x/notes".into()).wait().unwrap();
+        assert_eq!(found.map(|p| p.id), Some("notes".into()));
+        // A git dir stays unique across projects.
+        let again = db
+            .add_repo(
+                "notes".into(),
+                NewRepo {
+                    name: "dt".into(),
+                    path: "/elsewhere".into(),
+                    git_common_dir: Some("/src/dovetail/.git".into()),
+                },
+            )
+            .wait();
+        assert!(matches!(again, Err(DbError::Refused(_))), "{again:?}");
+        let removed = db
+            .remove_repo("dovetail".into(), dovetail.repos[0].id)
             .wait()
-            .unwrap()
-            .expect("new");
-        assert_eq!(research.id, "notes-2");
-        assert_eq!((research.repo_path, research.git_common_dir), (None, None));
-        assert_eq!(
-            db.get_project("notes-2".into())
-                .wait()
-                .unwrap()
-                .map(|p| p.kind),
-            Some(ProjectKind::Research)
-        );
-        // A second research project of the same name is refused; a folder lookup never finds
-        // one.
+            .unwrap();
+        assert!(removed.repos.is_empty());
         assert!(
-            db.register_research("notes".into(), "notes".into())
+            db.remove_repo("dovetail".into(), RepoId(999))
+                .wait()
+                .is_err()
+        );
+        drop(db);
+        // Opening again changes nothing.
+        let db = Db::open(&paths, None).unwrap();
+        assert_eq!(db.list_projects().wait().unwrap().len(), 3);
+    }
+
+    /// ADR 0021: projects are created with an account and repos, renamed, and given another
+    /// account; a research project's name is unique among projects with no repos.
+    #[test]
+    fn projects_are_created_renamed_and_given_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let db = Db::open(&paths, None).unwrap();
+        let api = NewRepo {
+            name: "shop-api".into(),
+            path: "/code/shop-api".into(),
+            git_common_dir: Some("/code/shop-api/.git".into()),
+        };
+        let shop = db
+            .create_project("shop".into(), "Shop".into(), Some("work".into()), Some(api))
+            .wait()
+            .unwrap();
+        assert_eq!(shop.account.as_deref(), Some("work"));
+        let web = NewRepo {
+            name: "shop-web".into(),
+            path: "/code/shop-web".into(),
+            git_common_dir: Some("/code/shop-web/.git".into()),
+        };
+        let shop = db.add_repo("shop".into(), web.clone()).wait().unwrap();
+        assert_eq!(shop.repos.len(), 2);
+        // The same name twice in one project is refused.
+        let clash = NewRepo {
+            path: "/code/other".into(),
+            git_common_dir: Some("/code/other/.git".into()),
+            ..web
+        };
+        assert!(db.add_repo("shop".into(), clash).wait().is_err());
+        let renamed = db
+            .rename_project("shop".into(), "Shop front".into())
+            .wait()
+            .unwrap();
+        assert_eq!(
+            (renamed.id.as_str(), renamed.name.as_str()),
+            ("shop", "Shop front")
+        );
+        let cleared = db.set_project_account("shop".into(), None).wait().unwrap();
+        assert_eq!(cleared.account, None);
+        let again = db
+            .create_project("shop".into(), "Shop".into(), None, None)
+            .wait()
+            .unwrap();
+        assert_eq!(again.id, "shop-2");
+        assert!(again.is_research());
+        assert!(
+            db.register_research("x".into(), "Shop".into())
                 .wait()
                 .unwrap()
                 .is_none()
         );
-        assert_eq!(
-            db.find_folder("/x/notes".into())
-                .wait()
-                .unwrap()
-                .map(|p| p.id),
-            Some("notes".into())
-        );
-        drop(db);
-
-        // The table refuses what the kinds rule out, and git dirs stay unique.
-        let conn = Connection::open(&path).unwrap();
-        let insert = |sql: &str| conn.execute(sql, []).is_err();
-        assert!(insert(
-            "INSERT INTO projects (id, name, kind) VALUES ('c', 'c', 'code')"
-        ));
-        assert!(insert(
-            "INSERT INTO projects (id, name, kind, repo_path) VALUES ('r', 'r', 'research', '/r')"
-        ));
-        assert!(insert(
-            "INSERT INTO projects (id, name, kind) VALUES ('o', 'o', 'other')"
-        ));
-        assert!(insert(
-            "INSERT INTO projects (id, name, repo_path, git_common_dir) \
-             VALUES ('d', 'd', '/d', '/src/dovetail/.git')"
-        ));
     }
 }

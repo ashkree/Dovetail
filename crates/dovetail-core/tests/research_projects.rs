@@ -49,8 +49,8 @@ fn register(paths: &Paths) -> Project {
         .wait()
         .expect("register")
         .expect("a new name");
-    assert_eq!(made.kind, ProjectKind::Research);
-    assert_eq!(made.repo_path, None);
+    assert_eq!(made.kind(), ProjectKind::Research);
+    assert!(made.repos.is_empty());
     projects::open(&db, &made.id).expect("open by id")
 }
 
@@ -188,7 +188,7 @@ fn dirs() -> (TempDir, TempDir) {
 }
 
 #[test]
-fn the_coordinator_runs_in_the_state_folder_with_its_role_prompt_and_resumes_after_a_restart() {
+fn the_coordinator_runs_in_its_home_folder_with_its_role_prompt_and_resumes_after_a_restart() {
     let (dir, run) = dirs();
     let paths = paths(dir.path(), run.path());
     let role = paths.role_prompt("coordinator");
@@ -223,9 +223,12 @@ fn the_coordinator_runs_in_the_state_folder_with_its_role_prompt_and_resumes_aft
         effort: None,
     });
     app.wait_for("the reply", |s| said(s, COORDINATOR, "alpha"));
+    // ADR 0021 point 3: every coordinator runs in its project's `home/`, with no repos to attach.
     let spec = fake.started_specs()[0].clone();
-    assert_eq!(spec.cwd, folder);
-    assert!(folder.is_dir());
+    let home = paths.project_home(&project.id);
+    assert_eq!(spec.cwd, home);
+    assert!(home.is_dir());
+    assert!(spec.add_dirs.is_empty());
     assert_eq!(
         spec.append_system_prompt_file.as_deref(),
         Some(role.as_path())
@@ -237,7 +240,7 @@ fn the_coordinator_runs_in_the_state_folder_with_its_role_prompt_and_resumes_aft
     let db = Db::open(&paths, None).expect("registry");
     let again = projects::open(&db, "market-sizing").expect("still registered");
     drop(db);
-    assert_eq!(again.kind, ProjectKind::Research);
+    assert_eq!(again.kind(), ProjectKind::Research);
     let fake = fixture("plain_turn");
     let mut app = App::start(&fake, &paths, again);
     assert!(said(&app.snap, COORDINATOR, "alpha"), "the chat is kept");
@@ -248,7 +251,7 @@ fn the_coordinator_runs_in_the_state_folder_with_its_role_prompt_and_resumes_aft
     }
     let spec = fake.started_specs()[0].clone();
     assert!(spec.resume);
-    assert_eq!(spec.cwd, folder);
+    assert_eq!(spec.cwd, home);
     app.quit();
 }
 
@@ -284,6 +287,7 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
 
     // `:spawn` from the UI.
     app.send(Command::NewSlice {
+        repo: None,
         task: None,
         name: "later".into(),
         brief: "go".into(),
@@ -302,6 +306,7 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
             tool_use_id: None,
             called_as: None,
             call: Tool::StartSlice(StartSlice {
+                repo: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -409,7 +414,7 @@ fn a_task_is_captured_into_a_research_project_by_id_without_opening_it() {
     register(&paths);
     let registry = Db::open(&paths, None).expect("registry");
     let before = projects::find(&registry, "market-sizing").expect("registered");
-    assert_eq!(before.kind, ProjectKind::Research);
+    assert_eq!(before.kind(), ProjectKind::Research);
     assert!(matches!(
         projects::find(&registry, "nope"),
         Err(projects::ProjectError::UnknownId(id)) if id == "nope"

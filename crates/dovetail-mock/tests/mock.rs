@@ -95,6 +95,7 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
         4 => task.map(|id| Command::ReorderTask { id, delta: 1 }),
         5 => slice.map(|agent| Command::CyclePermissionMode { agent }),
         _ => Some(Command::NewSlice {
+            repo: None,
             task,
             name: format!("slice-{round}"),
             brief: "Do the thing.".into(),
@@ -288,6 +289,7 @@ fn starting_a_slice_on_a_todo_task_marks_it_in_progress() {
         .map(|t| t.id)
         .expect("the starting world has a to-do task");
     core.handle(Command::NewSlice {
+        repo: None,
         task: Some(todo),
         name: "reading-column".into(),
         brief: "Build the reading column.".into(),

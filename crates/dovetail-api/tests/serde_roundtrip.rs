@@ -386,12 +386,14 @@ fn hello_and_a_full_snapshot_roundtrip() {
         name: "Dovetail".into(),
         repo_path: "/home/user/src/dovetail".into(),
         kind: ProjectKind::Code,
+        ..ProjectSummary::default()
     };
     let research = ProjectSummary {
         id: ProjectId("market-sizing".into()),
         name: "Market sizing".into(),
         repo_path: "/home/user/.local/share/dovetail/projects/market-sizing".into(),
         kind: ProjectKind::Research,
+        ..ProjectSummary::default()
     };
     let snapshot = Snapshot {
         seq: 42,
@@ -566,6 +568,7 @@ fn every_event_roundtrips() {
                 name: "Market sizing".into(),
                 repo_path: "/d/projects/market-sizing".into(),
                 kind: ProjectKind::Research,
+                ..ProjectSummary::default()
             },
             tasks: Vec::new(),
             decisions: vec![decision()],
@@ -698,6 +701,7 @@ fn every_command_roundtrips() {
             task: Some(TaskId(3)),
             name: "tree-view".into(),
             brief: "Build the tree".into(),
+            repo: Some("shop-web".into()),
         },
         Command::CloseSlice {
             agent: id("slice-a"),

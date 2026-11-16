@@ -44,9 +44,21 @@ pub(crate) enum ProjectOp {
 }
 
 impl ProjectOp {
-    /// The project command in `command`, or the command back when it is another one.
-    pub(crate) fn parse(command: Command) -> Result<ProjectOp, Command> {
-        Ok(match command {
+    /// Whether `command` is one of the five project commands.
+    pub(crate) fn matches(command: &Command) -> bool {
+        matches!(
+            command,
+            Command::CreateProject { .. }
+                | Command::RenameProject { .. }
+                | Command::SetProjectAccount { .. }
+                | Command::AddRepo { .. }
+                | Command::RemoveRepo { .. }
+        )
+    }
+
+    /// The project command in `command`; `None` for any other command.
+    pub(crate) fn parse(command: Command) -> Option<ProjectOp> {
+        Some(match command {
             Command::CreateProject {
                 name,
                 account,
@@ -68,7 +80,7 @@ impl ProjectOp {
                 name,
             },
             Command::RemoveRepo { project, repo } => ProjectOp::RemoveRepo { id: project, repo },
-            other => return Err(other),
+            _ => return None,
         })
     }
 
@@ -87,7 +99,10 @@ impl ProjectOp {
     /// `rev-parse`, quick), so it blocks briefly. `config` lists the accounts there are.
     pub(crate) fn start(self, db: &Db, config: &Config) -> Result<Pending<Project>, ProjectError> {
         let account = |account: Option<String>| -> Result<Option<String>, ProjectError> {
-            match account.map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()) {
+            match account
+                .map(|a| a.trim().to_owned())
+                .filter(|a| !a.is_empty())
+            {
                 Some(a) if !config.profiles.contains_key(&a) => {
                     Err(ProjectError::UnknownAccount(a))
                 }
@@ -118,9 +133,10 @@ impl ProjectOp {
                 }
                 db.rename_project(id.0, name)
             }
-            ProjectOp::SetAccount { id, account: wanted } => {
-                db.set_project_account(id.0, account(wanted)?)
-            }
+            ProjectOp::SetAccount {
+                id,
+                account: wanted,
+            } => db.set_project_account(id.0, account(wanted)?),
             ProjectOp::AddRepo { id, path, name } => {
                 let repo = projects::repo_at(&expand_home(&path), name.as_deref())?;
                 db.add_repo(id.0, repo)

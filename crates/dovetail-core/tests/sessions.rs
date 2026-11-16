@@ -93,14 +93,7 @@ impl Harness {
         let repo = dir.path().join("work");
         std::fs::create_dir_all(&repo).expect("work dir");
         let resolution = if registered {
-            Resolution::Registered(Project {
-                id: "p".into(),
-                name: "work".into(),
-                kind: dovetail_api::ProjectKind::Code,
-                repo_path: Some(repo.clone()),
-                git_common_dir: None,
-                last_opened_ms: None,
-            })
+            Resolution::Registered(Project::with_repo("p", "work", repo.clone(), None))
         } else {
             Resolution::Candidate(Candidate {
                 name: "work".into(),
@@ -568,15 +561,22 @@ impl Harness {
             ..paths
         };
         let git_common_dir = repo.as_ref().map(|r| r.join(".git"));
-        let repo = repo.unwrap_or_else(|| dir.path().to_path_buf());
-        let resolution = Resolution::Registered(Project {
-            id: "p".into(),
-            name: "work".into(),
-            kind: dovetail_api::ProjectKind::Code,
-            repo_path: Some(repo.clone()),
-            git_common_dir,
-            last_opened_ms: None,
+        // Reopened on earlier state: the same `work` folder the first app ran its slices in, so
+        // their sessions resume where they were filed (ADR 0021).
+        let earlier = paths.data.with_file_name("work");
+        let repo = repo.unwrap_or_else(|| {
+            if earlier.is_dir() {
+                earlier
+            } else {
+                dir.path().to_path_buf()
+            }
         });
+        let resolution = Resolution::Registered(Project::with_repo(
+            "p",
+            "work",
+            repo.clone(),
+            git_common_dir,
+        ));
         let options = CoreOptions {
             driver: Arc::new(driver.clone()),
             exe: PathBuf::from("/usr/bin/dovetail"),
@@ -1140,6 +1140,7 @@ fn slices_cannot_call_coordinator_tools_and_bad_names_are_refused() {
     let socket = h.socket();
     let start = |name: &str| {
         Tool::StartSlice(StartSlice {
+            repo: None,
             task: TaskId(1),
             name: name.into(),
             brief: "go".into(),
@@ -1181,6 +1182,7 @@ fn slices_over_the_cap_queue_until_one_is_archived() {
     let mut h = Harness::start(fixture("plain_turn"), true, config);
     for name in ["first", "second"] {
         h.send(Command::NewSlice {
+            repo: None,
             task: None,
             name: name.into(),
             brief: "go".into(),
@@ -1191,6 +1193,7 @@ fn slices_over_the_cap_queue_until_one_is_archived() {
     });
     assert!(!h.snap.agents.iter().any(|a| a.name == "second"));
     h.send(Command::NewSlice {
+        repo: None,
         task: None,
         name: "third".into(),
         brief: "go".into(),
@@ -1233,6 +1236,7 @@ fn starting_a_slice_on_a_next_task_moves_it_to_now_in_progress() {
     let id = h.snap.tasks[0].id;
     assert_eq!(h.snap.tasks[0].bucket, Some(Bucket::Next));
     h.send(Command::NewSlice {
+        repo: None,
         task: Some(id),
         name: "work".into(),
         brief: "go".into(),
@@ -1301,6 +1305,7 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
     assert_eq!(written, ["tangents"], "nothing written yet");
     // A slice may start before the folder is a project (decided 2026-11-06).
     h.send(Command::NewSlice {
+        repo: None,
         task: None,
         name: "early".into(),
         brief: "go".into(),
@@ -1319,6 +1324,7 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
 
     // Regression: after registration everything is named after the project id, not `new-<pid>`.
     h.send(Command::NewSlice {
+        repo: None,
         task: Some(TaskId(1)),
         name: "after".into(),
         brief: "go".into(),
@@ -1383,6 +1389,7 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
         tool(
             COORDINATOR,
             Tool::StartSlice(StartSlice {
+                repo: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -1408,6 +1415,7 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
         tool(
             COORDINATOR,
             Tool::StartSlice(StartSlice {
+                repo: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -1852,6 +1860,7 @@ fn on_reopen_the_coordinator_resumes_at_once_and_a_slice_on_first_touch() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     prompt(&h, "hello");
     h.send(Command::NewSlice {
+        repo: None,
         task: None,
         name: "later".into(),
         brief: "go".into(),
@@ -2023,6 +2032,7 @@ fn pending_start(h: &mut Harness) {
         tool(
             COORDINATOR,
             Tool::StartSlice(StartSlice {
+                repo: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -2229,6 +2239,7 @@ fn archive_slice_removes_a_clean_worktree_and_branch_and_frees_the_queue() {
         s.agents.iter().any(|a| a.name == "done")
     });
     h.send(Command::NewSlice {
+        repo: None,
         task: None,
         name: "next".into(),
         brief: "go".into(),
@@ -2366,6 +2377,7 @@ fn archive_task_archives_the_task_and_its_live_slice() {
     h.wait_for("the task", |s| !s.tasks.is_empty());
     let id = h.snap.tasks[0].id;
     h.send(Command::NewSlice {
+        repo: None,
         task: Some(id),
         name: "work".into(),
         brief: "go".into(),
@@ -2423,6 +2435,7 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
     h.wait_for("the tasks", |s| s.tasks.len() == 4);
     // Task 3 gets a slice, which moves it to Now.
     h.send(Command::NewSlice {
+        repo: None,
         task: Some(TaskId(3)),
         name: "work".into(),
         brief: "go".into(),
@@ -2533,6 +2546,7 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
     h.wait_for("the tasks", |s| s.tasks.len() == 2);
     // Task 2 gets a slice, which moves it to Now.
     h.send(Command::NewSlice {
+        repo: None,
         task: Some(TaskId(2)),
         name: "work".into(),
         brief: "go".into(),
@@ -2927,6 +2941,7 @@ fn archiving_a_task_deletes_its_todo_list() {
     let other = tasks_dir(&h.paths).join("dovetail-p-coordinator");
     write_item(&other, "1", "keep", "pending");
     h.send(Command::NewSlice {
+        repo: None,
         task: Some(id),
         name: "work".into(),
         brief: "go".into(),
@@ -3183,6 +3198,7 @@ fn sessions_keep_their_launch_prefix_after_project_add() {
         s.warnings.iter().all(|w| w.id.0 != "unregistered")
     });
     h.send(Command::NewSlice {
+        repo: None,
         task: None,
         name: "api".into(),
         brief: "build the endpoint".into(),
@@ -3209,9 +3225,6 @@ fn write_recipe_for(paths: &Paths, project: &str, text: &str) {
 }
 
 // --- Take-over (M14) ---
-
-/// `plain_turn` records its session in this folder; its transcript is filed under it.
-const FIXTURE_CWD: &str = "/tmp/dovetail-spikes/driver/repo";
 
 /// The transcript folder name Claude Code uses for `cwd`.
 fn encoded(cwd: &Path) -> String {
@@ -3298,7 +3311,8 @@ fn take_over_stops_headless_runs_native_with_its_flags_and_resumes_headless() {
     write_recipe(&paths, "profile = \"mine\"\n");
     let out = dir.path().join("native");
     std::fs::create_dir_all(&out).expect("out");
-    let claude = fake_claude(&out, &encoded(Path::new(FIXTURE_CWD)), None);
+    // The coordinator runs in its `home/` folder (ADR 0021), and the fake driver reports that.
+    let claude = fake_claude(&out, &encoded(&paths.project_home("p")), None);
     // Held before its `result`: the session is still running when it is taken over.
     let fake = fixture("plain_turn").with_options(ReplayOptions {
         pause_before: vec![4],
@@ -3374,9 +3388,14 @@ fn take_over_stops_headless_runs_native_with_its_flags_and_resumes_headless() {
     assert!(!argv.contains(&"-p".to_string()));
     assert_eq!(read(&out.join("config_dir")), mine.to_string_lossy());
     assert_eq!(read(&out.join("agent")), COORDINATOR);
+    // Native runs where headless did: the coordinator's `home/` (ADR 0021).
     assert_eq!(
         read(&out.join("cwd")).trim(),
-        h.repo.canonicalize().expect("repo").to_string_lossy()
+        h.paths
+            .project_home("p")
+            .canonicalize()
+            .expect("home")
+            .to_string_lossy()
     );
 
     // Headless again, resuming the same session.
@@ -3544,9 +3563,12 @@ fn open_after_crash(pid: u32, ticks: Option<u64>) -> (Harness, FakeDriver, TempD
     let config = profiles_config(dir.path());
     let mine = dir.path().join("profiles/mine");
     write_recipe(&paths, "profile = \"mine\"\n");
-    let transcript = mine
-        .join("projects/x")
-        .join(format!("{COORDINATOR}-session.jsonl"));
+    // Filed where Claude Code files the coordinator's session: under its `home/` folder.
+    let transcript = dovetail_core::session::launch::transcript_path(
+        &mine,
+        &paths.project_home("p"),
+        &format!("{COORDINATOR}-session"),
+    );
     std::fs::create_dir_all(transcript.parent().expect("parent")).expect("dir");
     std::fs::write(&transcript, "{\"type\":\"summary\"}\n").expect("transcript");
     let offset = std::fs::metadata(&transcript).expect("len").len();
@@ -3692,7 +3714,11 @@ fn y_on_an_undecidable_crash_lock_releases_it_and_delivers_the_held_notes() {
             AgentKind::Coordinator,
             None,
             &mine,
-            mine.join("projects/x/coordinator-session.jsonl"),
+            dovetail_core::session::launch::transcript_path(
+                &mine,
+                &paths.project_home("p"),
+                &format!("{COORDINATOR}-session"),
+            ),
             Some(lock),
         ),
     );
@@ -5269,6 +5295,7 @@ fn sessions_are_named_after_the_project_and_a_slice_reports_through_dovetail() {
         criterion: None,
     }));
     h.send(Command::NewSlice {
+        repo: None,
         task: Some(TaskId(1)),
         name: "api".into(),
         brief: "build the endpoint".into(),

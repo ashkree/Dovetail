@@ -20,6 +20,7 @@ fn code(id: &str, path: &str) -> ProjectSummary {
         name: id.into(),
         repo_path: path.into(),
         kind: ProjectKind::Code,
+        ..ProjectSummary::default()
     }
 }
 
@@ -29,6 +30,7 @@ fn research(id: &str, name: &str) -> ProjectSummary {
         name: name.into(),
         repo_path: format!("/home/you/.local/share/dovetail/projects/{id}").into(),
         kind: ProjectKind::Research,
+        ..ProjectSummary::default()
     }
 }
 

@@ -569,10 +569,9 @@ pub(super) fn dequeue_slice(conn: &mut Connection, id: i64) -> Result<(), DbErro
 }
 
 pub(super) fn load_queue(conn: &mut Connection) -> Result<Vec<QueuedSlice>, DbError> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, task_id, name, brief, by_coordinator, repo FROM slice_queue ORDER BY id",
-        )?;
+    let mut stmt = conn.prepare(
+        "SELECT id, task_id, name, brief, by_coordinator, repo FROM slice_queue ORDER BY id",
+    )?;
     let rows = stmt.query_map([], |r| {
         Ok(QueuedSlice {
             id: r.get(0)?,

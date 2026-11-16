@@ -1402,7 +1402,7 @@ impl Core {
             | Command::SetProjectAccount { .. }
             | Command::AddRepo { .. }
             | Command::RemoveRepo { .. }) => {
-                if let Ok(op) = crate::project_admin::ProjectOp::parse(project) {
+                if let Some(op) = crate::project_admin::ProjectOp::parse(project) {
                     self.project_op(op).await;
                 }
             }

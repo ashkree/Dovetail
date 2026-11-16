@@ -23,10 +23,10 @@ use serde_json::json;
 use tokio::sync::oneshot;
 
 use crate::db::{AgentRow, QueuedSlice, now_ms};
-use crate::projects::Repo;
 use crate::error::{SessionError, SetupFailure, SliceError};
 use crate::inbox::Waiter;
 use crate::projects;
+use crate::projects::Repo;
 use crate::service::{COORDINATOR, Core, Input, new_agent};
 use crate::worktree::{self, SUBAGENT_PREFIX, WorktreeError};
 

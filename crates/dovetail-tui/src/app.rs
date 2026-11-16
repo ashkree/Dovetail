@@ -1038,7 +1038,12 @@ impl App {
 
     fn new_slice(&mut self, name: String, brief: String) {
         let task = self.focused_task();
-        self.outbox.push(Command::NewSlice { task, name, brief });
+        self.outbox.push(Command::NewSlice {
+            task,
+            name,
+            brief,
+            repo: None,
+        });
     }
 
     /// Today's date on the UI's clock, `YYYY-MM-DD`, as journal files are named.

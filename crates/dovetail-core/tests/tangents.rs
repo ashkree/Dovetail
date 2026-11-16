@@ -172,8 +172,8 @@ fn tangents_is_a_built_in_research_project_whose_id_nobody_else_gets() {
     let tangents = db.ensure_tangents().wait().expect("created");
     assert_eq!(tangents.id, TANGENTS_PROJECT);
     assert_eq!(tangents.name, "Tangents");
-    assert_eq!(tangents.kind, ProjectKind::Research);
-    assert_eq!(tangents.repo_path, None);
+    assert_eq!(tangents.kind(), ProjectKind::Research);
+    assert!(tangents.repos.is_empty());
     // Created once: the second call finds it.
     assert_eq!(db.ensure_tangents().wait().expect("again"), tangents);
     assert_eq!(

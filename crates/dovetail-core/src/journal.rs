@@ -665,6 +665,13 @@ impl Core {
     pub(crate) async fn start_coordinator(&mut self, last_used: LastUse) {
         let id = AgentId(COORDINATOR.into());
         let today = today();
+        // A coordinator recorded in another folder (the repo, before ADR 0021) cannot resume
+        // in its own: it starts fresh there, seeded as `:fresh` seeds one.
+        let folder = self.project.coordinator_folder(&self.paths);
+        if self.filed_elsewhere(&id, &folder) {
+            self.moved_coordinator(today).await;
+            return;
+        }
         let newest = self.journal_dir().and_then(|dir| newest(&dir));
         let fresh = match morning(newest, last_used, today) {
             Morning::Fresh(date) => Some(date),
@@ -708,6 +715,90 @@ impl Core {
         let kind = Fresh::NewDay { date };
         let seed = seed_prompt(today, &kind, handoff(&text), &open_tasks(&tasks));
         self.fresh_coordinator(&kind, &seed);
+    }
+
+    /// The coordinator moved to its own folder (ADR 0021 point 8): a new session there, seeded
+    /// with the newest handoff, if any, and the open tasks. The old session stays on disk; a
+    /// Needs-you note says how to reopen it by hand, since Claude Code resumes it only from the
+    /// folder it ran in.
+    async fn moved_coordinator(&mut self, today: Date) {
+        let id = AgentId(COORDINATOR.into());
+        let Some(row) = self.agents.get(&id) else {
+            return;
+        };
+        let old_session = row.session_id.clone().unwrap_or_default();
+        let old_transcript = row.transcript_path.clone();
+        self.update_agent(&id, |row| {
+            row.session_id = Some(uuid::Uuid::new_v4().to_string());
+            row.transcript_path = None;
+        });
+        let folder = self.project.coordinator_folder(&self.paths);
+        let repos: Vec<String> = self
+            .project
+            .repos()
+            .iter()
+            .map(|r| format!("`{}` ({})", r.name, r.path.display()))
+            .collect();
+        let latest_handoff = self.journal_dir().and_then(|dir| {
+            let date = latest(&dir)?;
+            let text = std::fs::read_to_string(file(&dir, date)).ok()?;
+            Some((date, handoff(&text).to_owned()))
+        });
+        let handoff_block = match &latest_handoff {
+            Some((date, text)) => format!("# Handoff from {date}\n\n{text}"),
+            None => "No handoff was written (`:eod` writes one).".to_owned(),
+        };
+        let tasks = self.db.load_tasks().await.unwrap_or_default();
+        let attached = if repos.is_empty() {
+            "It has no repos.".to_owned()
+        } else {
+            format!("Its repos are attached: {}.", repos.join(", "))
+        };
+        let seed = format!(
+            "This is a fresh coordinator session for {today}. Dovetail now runs the coordinator \
+             in its own folder, `{}`, not in a checkout. {attached} When you start a slice, \
+             name its repo with `repo` if there are several. The previous coordinator's \
+             conversation is kept but not continued.\n\n{handoff_block}\n\n# Open tasks\n\n{}\n\n\
+             Read this, check anything you need to, then tell the user in a few lines what you \
+             would pick up first. Start no work until they answer.",
+            folder.display(),
+            open_tasks(&tasks)
+        );
+        tracing::info!("coordinator moved to {}", folder.display());
+        self.notice(
+            &id,
+            format!(
+                "The coordinator now runs in {}: a fresh session started, seeded with the open \
+                 tasks{}.",
+                folder.display(),
+                if latest_handoff.is_some() {
+                    " and the newest handoff"
+                } else {
+                    ""
+                }
+            ),
+        );
+        if let Err(e) = self.send_text(&id, &seed, EntryKind::Notice, format!("Dovetail: {seed}")) {
+            self.fail(e);
+        }
+        let reopen = match &old_transcript {
+            Some(path) => format!(
+                " Its transcript is {}; `claude --resume {old_session}` in the folder it ran in \
+                 reopens it.",
+                path.display()
+            ),
+            None => String::new(),
+        };
+        self.raise(
+            &id,
+            InboxKind::Error {
+                text: format!(
+                    "The coordinator moved to its own folder (ADR 0021), so a fresh session \
+                     started. The previous one is kept.{reopen}"
+                ),
+            },
+            Waiter::None,
+        );
     }
 
     /// Gives the coordinator a new session and sends it `seed`. The old session id and

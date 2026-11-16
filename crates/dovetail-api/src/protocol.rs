@@ -10,8 +10,8 @@ use crate::map::{Map, MapId, MapSummary};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
     Decision, DecisionId, EntryId, InboxId, InboxItem, JournalState, ModelOption, PLevel,
-    ProjectId, ProjectSummary, ReasoningEffort, RepoId, SlashCommand, Snapshot, Task, TaskId, TaskStatus, TodoItem,
-    TodoListId, Totals, UsageLimits, Warning, WarningId, WorktreeInfo,
+    ProjectId, ProjectSummary, ReasoningEffort, RepoId, SlashCommand, Snapshot, Task, TaskId,
+    TaskStatus, TodoItem, TodoListId, Totals, UsageLimits, Warning, WarningId, WorktreeInfo,
 };
 use crate::research::{
     BrowseWhat, BrowsedDoc, BrowsedProject, DocEntry, ResearchContent, ResearchDocument,

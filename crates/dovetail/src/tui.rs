@@ -124,8 +124,7 @@ fn open_project(paths: &Paths, id: &str) {
     let folder = Db::open(paths, None)
         .ok()
         .and_then(|db| db.get_project(id.to_owned()).wait().ok().flatten())
-        .filter(|p| !p.is_research())
-        .and_then(|p| p.repo_path);
+        .and_then(|p| p.first_repo().map(|r| r.path.clone()));
     if let Some(folder) = folder {
         command.current_dir(folder);
     }
