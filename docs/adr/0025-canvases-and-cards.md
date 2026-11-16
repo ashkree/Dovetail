@@ -1,6 +1,6 @@
 # Canvases and cards live in `state.db`; a card names its target by kind and id
 
-**Status: Accepted.** Approved by the user in the session of 2026-11-15. Not built yet.
+**Status: Accepted.** Approved by the user in the session of 2026-11-15. Built: see `docs/plan/canvas-core.md` (state migration `0018_canvases.sql`, the `canvas` tool suite, the GUI reading cards from the core).
 
 Refines section 10 of `docs/design-v2.md` (the `canvases`, `cards` and `card_links` tables) and settles how a card's reference stays valid. Framework layouts and the proposed "decision rounds" are left to the canvas milestone.
 

@@ -36,8 +36,7 @@ Events: `CanvasUpserted(Canvas)`, `CardUpserted(Card)`, `CardRemoved(CardId)` (a
 ## 3. Core
 
 - `crates/dovetail-core/src/db/canvas.rs`: `impl Db` typed methods running on the DB thread: `load_canvas_state`, `create_canvas`, `rename_canvas`, `add_card`, `place_card`, `move_card`, `delete_card`, `link_cards`, `unlink_cards`, `load_card_body`, `add_finding_card`. `add_card` checks in the same request that the effort exists, the canvas belongs to that effort, and the reference target exists. Links need two cards of one effort.
-- `crates/dovetail-core/src/canvas.rs`: `Core` handlers, one per command, each writing through the DB thread then emitting the event; the core keeps no copy of cards (the snapshot builder asks the DB at open and `Resync` reads what `load` returned at open plus events: see below).
-- Restore on open: `load_canvas_state` runs next to `load_efforts` and its result is kept on `Core` (`canvases`, `cards`, `links`, like `efforts`) so a snapshot can be built without waiting on the DB.
+- `crates/dovetail-core/src/canvas.rs`: `Core` handlers, one per command, each writing through the DB thread then emitting the event. The core keeps no copy: the database is the only one, and the snapshot builder reads it (as it reads tasks), so a restart or a `Resync` restores everything.
 - Findings: after `file_finding` (round capture) and `file_unfiled_to_task` succeed, the core calls `add_finding_card(task, finding)`, which puts one `finding` card in the task's effort's incoming (`added_by` = the finding's agent id) and emits `CardUpserted`. Findings filed in Tangents are not carded (Tangents has no canvases in the GUI).
 - Ids stay valid: nothing deletes finding, source, decision, map or task rows already.
 
