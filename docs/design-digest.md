@@ -118,7 +118,7 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 
 - **Native messaging** (Claude Code ≥ 2.1.224): per-session unix sockets, `ListAgents` / `SendMessage`. Workers launch with `crossSessionInbound: "accept"`. Messages carry no authority. The message timeline is built from `SendMessage` tool calls and received messages in each stream (how inbound messages appear is an **open spike**). Warn at startup if `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `DISABLE_GROWTHBOOK` is set (any can silently disable messaging).
 - **Agent teams ruled out** (can't spawn teammates from non-interactive sessions).
-- **Wrapper tools** served by `dovetail mcp`, grouped in suites per role (ADR 0016: Core, Tasks, Project, Coordination, Research, Maps; coordinator all, slice Core + Coordination + Maps, helper Core only). The old unprefixed names still answer as aliases for one release:
+- **Wrapper tools** served by `dovetail mcp`, grouped in suites per role (ADR 0016: Core, Tasks, Project, Coordination, Research, Maps, Canvas; coordinator all, slice Core + Coordination + Maps, helper Core only). The old unprefixed names still answer as aliases for one release:
 
 | Tool | Purpose | Coordinator | Slices | Helper | Ships |
 | --- | --- | --- | --- | --- | --- |
@@ -126,6 +126,8 @@ Claude Code sessions ──MCP tools──► MCP bridge (dovetail mcp, one per 
 | `core_report_status` (was `report_status`) | One-line status for the tree | ✓ | ✓ | ✓ | v1 |
 | `core_log_decision` (was `log_decision`) | Add to a task's decision log (ADR 0003) | ✓ | ✓ | ✓ | v1 |
 | `maps_draw` (was `draw_map`) | Create/update a map | ✓ | ✓ | – | v1 |
+| `canvas_add_card` | Add a card to an effort's incoming strip (ADR 0025); no tool moves or deletes a card | ✓ | – | – | v2 |
+| `canvas_link_cards` | Link two cards of one effort (ADR 0025) | ✓ | – | – | v2 |
 | `tasks_create` (was `create_task`) | Create a task (lands in Unsorted; ADR 0002) | ✓ | – | – | v1 |
 | `tasks_list` / `tasks_get` | Find tasks; read one in full | ✓ | – | – | v1 |
 | `tasks_update` | Change status, bucket, priority, title or notes (may move a task into Now; marked unseen) | ✓ | – | – | v1 |

@@ -22,6 +22,7 @@ Why: the tool list has grown from three to twelve and the research feature adds 
 | Coordination | `claim`, `release` (v1.1 Claims, not built: empty for now), ordering rules | ✓ | ✓ | |
 | Research | `research_start_round`, `research_write_report`, `research_propose`, `research_get` | ✓ | | |
 | Maps | `maps_draw` | ✓ | ✓ | |
+| Canvas (ADR 0025) | `canvas_add_card`, `canvas_link_cards` | ✓ | | |
 
 - `log_decision` is Core, so slices and side chats keep it without getting Tasks. Side chats keep their read-only launch lists (ADR 0011, PR #52) and get Core only, so they lose `draw_map`.
 - `start_slice`, `archive_slice` and `add_project` are lifecycle, not PR ownership: their own Project suite, not Coordination.

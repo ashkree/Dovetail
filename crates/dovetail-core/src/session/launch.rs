@@ -372,6 +372,8 @@ mod tests {
                 "coordination_report",
                 "coordination_claim_criterion",
                 "maps_draw",
+                "canvas_add_card",
+                "canvas_link_cards",
             ],
             &core_old,
             &[

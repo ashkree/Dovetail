@@ -81,6 +81,16 @@ pub struct Snapshot {
     /// The open project's efforts, closed ones included, in id order.
     #[serde(default)]
     pub efforts: Vec<Effort>,
+    /// The open project's canvases, in id order.
+    #[serde(default)]
+    pub canvases: Vec<crate::canvas::Canvas>,
+    /// The open project's cards, in id order: placed ones and the incoming strip's (no canvas).
+    /// Titles only; a card's body comes with [`crate::Command::LoadCard`].
+    #[serde(default)]
+    pub cards: Vec<crate::canvas::Card>,
+    /// The links between cards.
+    #[serde(default)]
+    pub card_links: Vec<crate::canvas::CardLink>,
     /// The open project's tasks, archived ones included.
     pub tasks: Vec<Task>,
     /// Every agent in the open project.

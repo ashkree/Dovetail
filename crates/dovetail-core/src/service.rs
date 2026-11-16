@@ -915,6 +915,7 @@ impl Core {
     async fn snapshot(&mut self) -> Result<Snapshot, DbError> {
         let projects = self.db.list_projects().await?;
         let tasks = self.db.load_tasks().await?;
+        let canvas = self.db.load_canvas_state().await?;
         let research = self.research_summaries(&tasks).await?;
         let mut snapshot = Snapshot {
             seq: self.seq,
@@ -922,6 +923,9 @@ impl Core {
             project: Some(self.project.summary(&self.paths)),
             projects: projects.iter().map(|p| p.summary(&self.paths)).collect(),
             efforts: self.efforts.values().cloned().collect(),
+            canvases: canvas.canvases,
+            cards: canvas.cards,
+            card_links: canvas.links,
             tasks,
             research,
             decisions: self.db.load_decisions().await?,
@@ -1457,6 +1461,25 @@ impl Core {
                 Ok(tasks) => self.emit_tasks(tasks),
                 Err(e) => self.fail(e.to_string()),
             },
+            Command::CreateCanvas {
+                effort,
+                title,
+                framework,
+            } => self.create_canvas(effort, title, framework).await,
+            Command::RenameCanvas { id, title } => self.rename_canvas(id, title).await,
+            Command::AddCard { card, link_from } => self.add_card(card, link_from).await,
+            Command::PlaceCard { id, canvas, x, y } => self.place_card(id, canvas, x, y).await,
+            Command::MoveCard { id, x, y } => self.move_card(id, x, y).await,
+            Command::DeleteCard { id } => self.delete_card(id, false).await,
+            Command::DropIncoming { id } => self.delete_card(id, true).await,
+            Command::LinkCards { from, to, label } => self.link_cards(from, to, label).await,
+            Command::UnlinkCards { from, to } => self.unlink_cards(from, to).await,
+            Command::CardFromReply {
+                agent,
+                entry,
+                effort,
+            } => self.card_from_reply(agent, entry, effort).await,
+            Command::LoadCard { id } => self.load_card(id).await,
             Command::CreateEffort(new) => self.create_effort(new).await,
             Command::RenameEffort { id, name } => self.rename_effort(id, name).await,
             Command::UpdateEffort { id, patch } => self.update_effort(id, patch).await,

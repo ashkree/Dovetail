@@ -57,6 +57,29 @@ pub enum Event {
     /// An effort was created or changed: its fields, its "where was I" card or its criteria.
     /// It carries the whole effort. Efforts are never removed.
     EffortUpserted(Effort),
+    /// A canvas was created or renamed (ADR 0025).
+    CanvasUpserted(crate::canvas::Canvas),
+    /// A card was added, placed, moved or changed. It carries the whole card.
+    CardUpserted(crate::canvas::Card),
+    /// A card was deleted or dropped; its links go with it.
+    CardRemoved(crate::canvas::CardId),
+    /// Two cards were linked, or a link was relabelled.
+    CardLinked(crate::canvas::CardLink),
+    /// A link was removed.
+    CardUnlinked {
+        /// The card it started at.
+        from: crate::canvas::CardId,
+        /// The card it led to.
+        to: crate::canvas::CardId,
+    },
+    /// A card's body, in answer to [`Command::LoadCard`]: the target's text for a reference. Changes
+    /// nothing in the snapshot.
+    CardLoaded {
+        /// The card.
+        id: crate::canvas::CardId,
+        /// The body, as markdown.
+        body: String,
+    },
     /// An agent was created or changed.
     AgentUpserted(Agent),
     /// An agent was removed, with its conversation.
@@ -472,6 +495,95 @@ pub enum Command {
         id: TaskId,
         /// Changes, applied in order.
         patch: Vec<TaskChange>,
+    },
+    /// Create a canvas for an effort (ADR 0025). Answers with [`Event::CanvasUpserted`].
+    CreateCanvas {
+        /// The effort.
+        effort: EffortId,
+        /// Its title; empty becomes the effort's name.
+        title: String,
+        /// Its layout.
+        framework: crate::canvas::Framework,
+    },
+    /// Rename a canvas.
+    RenameCanvas {
+        /// The canvas.
+        id: crate::canvas::CanvasId,
+        /// The new title.
+        title: String,
+    },
+    /// Add a card: placed when `card.canvas` is set, else into the effort's incoming strip. With
+    /// `link_from`, the new card is also linked from that card. The core checks that a
+    /// reference's target exists and answers with [`Event::CardUpserted`].
+    AddCard {
+        /// The card.
+        card: crate::canvas::NewCard,
+        /// A card to link from, of the same effort.
+        #[serde(default)]
+        link_from: Option<crate::canvas::CardId>,
+    },
+    /// Place an incoming card on a canvas of its effort, at a position. Refused for a card
+    /// already placed.
+    PlaceCard {
+        /// The card.
+        id: crate::canvas::CardId,
+        /// The canvas.
+        canvas: crate::canvas::CanvasId,
+        /// Position in canvas pixels.
+        x: i64,
+        /// Position in canvas pixels.
+        y: i64,
+    },
+    /// Move a placed card. Refused for an incoming card.
+    MoveCard {
+        /// The card.
+        id: crate::canvas::CardId,
+        /// Position in canvas pixels.
+        x: i64,
+        /// Position in canvas pixels.
+        y: i64,
+    },
+    /// Delete a card and its links. The card's target is not touched.
+    DeleteCard {
+        /// The card.
+        id: crate::canvas::CardId,
+    },
+    /// Drop an incoming card (`x` in the strip). Refused for a placed card.
+    DropIncoming {
+        /// The card.
+        id: crate::canvas::CardId,
+    },
+    /// Link two cards of one effort; linking them again changes the label.
+    LinkCards {
+        /// Where the link starts.
+        from: crate::canvas::CardId,
+        /// Where it leads.
+        to: crate::canvas::CardId,
+        /// What it says.
+        #[serde(default)]
+        label: String,
+    },
+    /// Remove a link.
+    UnlinkCards {
+        /// Where the link starts.
+        from: crate::canvas::CardId,
+        /// Where it leads.
+        to: crate::canvas::CardId,
+    },
+    /// Turn a chat reply into an idea card in an effort's incoming strip, by copying its text
+    /// (ADR 0025, point 6). Refused for an unknown entry or one with no text.
+    CardFromReply {
+        /// Whose conversation.
+        agent: AgentId,
+        /// The entry.
+        entry: EntryId,
+        /// The effort the card goes to.
+        effort: EffortId,
+    },
+    /// Fetch a card's body. The core answers with [`Event::CardLoaded`].
+    LoadCard {
+        /// The card.
+        id: crate::canvas::CardId,
     },
     /// Create an effort. The core converts the name to lower kebab case
     /// ([`crate::effort_name`]) and refuses an empty one or one already taken. It answers with

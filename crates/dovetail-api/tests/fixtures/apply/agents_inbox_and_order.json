@@ -81,6 +81,9 @@
         "worktree": null
       }
     ],
+    "canvases": [],
+    "card_links": [],
+    "cards": [],
     "commands": {},
     "conversations": {},
     "decisions": [],
@@ -164,6 +167,9 @@
         "worktree": null
       }
     ],
+    "canvases": [],
+    "card_links": [],
+    "cards": [],
     "commands": {},
     "conversations": {
       "slice-a": {
