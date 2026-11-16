@@ -175,6 +175,7 @@ impl Core {
                 ok("Status set.")
             }
             Tool::Report(report) => self.slice_report(&agent, report).await,
+            Tool::ClaimCriterion(claim) => self.claim_criterion_tool(&agent, claim).await,
             Tool::CreateTask(task) => {
                 let new = NewTask {
                     title: task.title,

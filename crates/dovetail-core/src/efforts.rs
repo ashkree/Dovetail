@@ -5,15 +5,20 @@
 //! tells the UI with [`Event::EffortUpserted`], which carries the whole effort.
 //!
 //! Approving a criterion is reachable only from [`dovetail_api::Command::ApproveCriterion`]:
-//! no tool handler calls it, so an agent can claim but never tick.
+//! no tool handler calls it, so an agent can claim (`coordination_claim_criterion`) but never
+//! tick. The user may approve a criterion nobody claimed, as a shortcut (decided 2026-11-16).
 
 use dovetail_api::{
     ActivityKind, AgentId, CriterionId, Effort, EffortChange, EffortId, EntryKind, Event,
     NewEffort, TaskId, WhereWasI, effort_name,
 };
 
+use dovetail_api::socket::SocketResponseBody;
+use dovetail_api::tools::ClaimCriterion;
+
 use crate::db::{CriterionStep, DbError};
 use crate::service::Core;
+use crate::tools::{error, ok};
 
 impl Core {
     /// Reads every effort, and each agent's effort tag from its conversation: the tag of the
@@ -118,7 +123,7 @@ impl Core {
         self.effort_changed(result);
     }
 
-    /// A criterion is claimed met, with evidence; it now waits for the user.
+    /// The user claims a criterion met, with evidence; it now waits for approval.
     pub(crate) async fn claim_criterion(&mut self, id: CriterionId, evidence: String) {
         let result = self
             .db
@@ -126,6 +131,42 @@ impl Core {
             .await;
         if let Some(effort) = self.effort_changed(result) {
             self.criterion_activity(&effort, id, "claimed met");
+        }
+    }
+
+    /// `coordination_claim_criterion` from `agent`: the same claim, answered to the agent.
+    /// Validation already refused other roles and empty evidence. It can only claim: a met
+    /// criterion is refused, and nothing here approves.
+    pub(crate) async fn claim_criterion_tool(
+        &mut self,
+        agent: &AgentId,
+        claim: ClaimCriterion,
+    ) -> SocketResponseBody {
+        let id = claim.criterion;
+        let result = self
+            .db
+            .step_criterion(
+                id,
+                CriterionStep::Claim {
+                    evidence: claim.evidence,
+                },
+            )
+            .await;
+        match result {
+            Ok(effort) => {
+                self.efforts.insert(effort.id, effort.clone());
+                self.emit(Event::EffortUpserted(effort.clone()));
+                let who = self
+                    .agents
+                    .get(agent)
+                    .map_or_else(|| agent.0.clone(), |r| r.agent.name.clone());
+                self.criterion_activity(&effort, id, &format!("claimed met by {who}"));
+                ok(format!(
+                    "Criterion {} of effort {} is claimed; it waits for the user's approval.",
+                    id.0, effort.name
+                ))
+            }
+            Err(e) => error(format!("could not claim criterion {}: {e}", id.0)),
         }
     }
 

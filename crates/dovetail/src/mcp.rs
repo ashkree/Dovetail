@@ -551,6 +551,20 @@ fn tool_defs() -> Vec<ToolDef> {
             },
         },
         ToolDef {
+            name: "coordination_claim_criterion",
+            description: "Say an acceptance criterion of an effort is met, with the evidence: \
+                a pull request, a test that passes, a finding. The criterion becomes claimed \
+                and waits in the user's inbox; only the user can approve it as met, or send it \
+                back. Claim only what you can show. Fails for an unknown criterion, one already \
+                met, or empty evidence.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "criterion": {"type": "integer", "description": "The criterion's id."},
+                    "evidence": {"type": "string", "description": "What shows it is met, specific enough for the user to check: PR number, test name, finding id."}
+                }, "required": ["criterion", "evidence"]})
+            },
+        },
+        ToolDef {
             name: "maps_draw",
             description: "Draw a map the user can explore in Dovetail, to explain structure, \
                 flow or architecture instead of drawing ASCII diagrams. A `structure` map shows \

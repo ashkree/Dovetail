@@ -57,3 +57,11 @@ Example. The user asks for "Web: guest checkout form" (task 14, todo). The coord
 - The pull request is looked up after each finished slice turn, when a report names one or says done, and as a slice is archived.
 - Dovetail never moves a task the user set to to do or done by hand: only in progress and review are followed.
 - **Not built:** the "untracked" grouping for subagents with no task. It needs the tree in the GUI to show it.
+
+## As decided 2026-11-16
+
+The user settled the three open points of the v2 stack review (`docs/reviews/v2-stack.md`):
+
+1. **Send-back sticks.** A task the user sends back from review to in progress stays there until something new happens: its pull requests reach a different stage (opened, merged, closed), or one of its slices reports again with `coordination_report`. The hold lives in memory (`Core::sent_back`), so a restart forgets it. Built in `user_update_task` and `follow_pull_request` (`worktree_info.rs`), tested by `a_task_sent_back_from_review_stays_in_progress_until_something_new_happens`.
+2. **Approving an unclaimed criterion stays allowed**, as the user's shortcut: `Command::ApproveCriterion` moves an open criterion straight to met. Agents still cannot approve.
+3. **Agents claim criteria with `coordination_claim_criterion`** (Coordination suite: slices and the coordinator). It takes a criterion id and evidence, makes the criterion claimed (which raises its row in Needs you), and is refused for any other role, for empty evidence, and for a criterion already met. Nothing a tool does can make a criterion met.

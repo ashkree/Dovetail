@@ -473,6 +473,10 @@ pub(crate) struct Core {
     /// Archived slices and the task each worked on, kept so a pull-request lookup started as
     /// the slice was archived can still move its task (ADR 0024).
     pub(crate) closed_slices: HashMap<AgentId, TaskId>,
+    /// Tasks the user sent back from review, with how far their pull requests had come then:
+    /// they stay in progress until that changes or a slice reports again (decided 2026-11-16).
+    /// Memory only: a restart forgets it.
+    pub(crate) sent_back: HashMap<TaskId, crate::worktree_info::PrStage>,
 }
 
 /// How a new conversation entry gets its effort tag.
@@ -581,6 +585,7 @@ impl Core {
             efforts: BTreeMap::new(),
             effort_tags: HashMap::new(),
             closed_slices: HashMap::new(),
+            sent_back: HashMap::new(),
         }
     }
 
@@ -1443,7 +1448,7 @@ impl Core {
                     self.fail(e.to_string());
                 }
             }
-            Command::UpdateTask { id, patch } => self.update_task(id, patch).await,
+            Command::UpdateTask { id, patch } => self.user_update_task(id, patch).await,
             Command::ArchiveTask { id } => {
                 let slices = self.task_slices(id);
                 self.archive_task(id, &slices).await;
