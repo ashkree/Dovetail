@@ -3,7 +3,7 @@
   "productName": "Dovetail",
   "identifier": "dev.dovetail.app",
   "build": {
-    "devUrl": "http://127.0.0.1:5174",
+    "devUrl": "http://127.0.0.1:47815",
     "frontendDist": "../dist",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
