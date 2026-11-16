@@ -37,6 +37,31 @@ npm --prefix gui run --silent check
 # migrations): migrations are contiguous and listed in order
 # (dovetail-core `db::tests::migrations_are_contiguous_and_listed_in_order`).
 
+# Parallel branches each take "the next" migration number; the second to merge clashes. A migration
+# this branch adds must not reuse a number main already has under another name. Offline, the last
+# fetched origin/main is used.
+git fetch -q origin main 2>/dev/null || true
+if git rev-parse -q --verify origin/main >/dev/null; then
+    mig=crates/dovetail-core/src/db/migrations
+    clashes=""
+    for db in state registry; do
+        main_files=$(git ls-tree --name-only origin/main -- "$mig/$db/" | xargs -rn1 basename)
+        for f in "$mig/$db"/*.sql; do
+            name=$(basename "$f")
+            grep -qxF "$name" <<<"$main_files" && continue
+            num=${name%%_*}
+            if taken=$(grep -E "^${num}_" <<<"$main_files"); then
+                clashes+="$db/$name: main already has $db/$taken"$'\n'
+            fi
+        done
+    done
+    if [[ -n $clashes ]]; then
+        echo "check.sh: migration numbers clash with origin/main; renumber yours after main's last:" >&2
+        printf '%s' "$clashes" >&2
+        exit 1
+    fi
+fi
+
 # CODING_STANDARDS.md "Code": typed (thiserror) errors in libraries; String errors only in the binary.
 libs=(crates/dovetail-api crates/dovetail-core crates/dovetail-driver crates/dovetail-maps crates/dovetail-mock crates/dovetail-tui)
 if hits=$(grep -rnE 'Result<[^;{]*,[[:space:]]*String>' "${libs[@]/%//src}"); then
@@ -81,10 +106,27 @@ declared=$(awk '
             name = $0; sub(/[.[:space:]=].*/, "", name)
             if (in_ws || (in_member && $0 !~ /workspace[[:space:]]*=[[:space:]]*true/)) print name
         }
-    ' Cargo.toml crates/*/Cargo.toml | grep -v '^dovetail' | sort -u)
+    ' Cargo.toml crates/*/Cargo.toml gui/src-tauri/Cargo.toml | grep -v '^dovetail' | sort -u)
 missing=$(comm -23 <(echo "$declared") <(echo "$plan_deps"))
 if [[ -n $missing ]]; then
     echo "check.sh: dependencies with no stated reason; add a row to the table in docs/implementation-plan.md:" >&2
+    echo "$missing" >&2
+    exit 1
+fi
+
+# The same for the GUI frontend: every package in gui/package.json needs a row in the npm table.
+plan_npm=$(awk -F'|' '
+        /^\| Package \|/ { in_table = 1; next }
+        in_table && !/^\|/ { exit }
+        in_table { print $2 }
+    ' docs/implementation-plan.md | grep -o '`[^`]*`' | tr -d '`' | sort -u)
+declared_npm=$(node -e '
+    const p = require("./gui/package.json");
+    for (const k of Object.keys({ ...p.dependencies, ...p.devDependencies })) console.log(k);
+' | sort -u)
+missing=$(comm -23 <(echo "$declared_npm") <(echo "$plan_npm"))
+if [[ -n $missing ]]; then
+    echo "check.sh: GUI packages with no stated reason; add a row to the npm table in docs/implementation-plan.md:" >&2
     echo "$missing" >&2
     exit 1
 fi
