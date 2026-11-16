@@ -23,6 +23,7 @@ pub const PROTOCOL_VERSION: u32 = 1;
 
 /// Everything the core sends: a hello, then a snapshot, then numbered events.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 // One snapshot per connection or resync against many events: boxing it would only add an
 // allocation to every match on the stream.
 #[allow(clippy::large_enum_variant)]
@@ -46,6 +47,7 @@ pub enum ServerMsg {
 
 /// One change to the client's [`Snapshot`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Event {
     /// A task was created or changed.
@@ -249,6 +251,7 @@ pub enum Event {
 
 /// What the core found on the system clipboard.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Paste {
     /// An accepted image (PNG, JPEG, GIF or WebP, at most [`crate::MAX_ATTACHMENT_BYTES`]),
@@ -262,6 +265,7 @@ pub enum Paste {
 
 /// Something the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     /// Send the user's prompt to an agent.
@@ -704,6 +708,7 @@ pub enum Command {
 
 /// The user's answer to a permission request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionAnswer {
     /// Allow this once.
@@ -719,6 +724,7 @@ pub enum PermissionAnswer {
 
 /// Fields for a new task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NewTask {
     /// One-line title.
     pub title: String,
@@ -746,6 +752,7 @@ pub struct NewTask {
 
 /// Fields for a new decision-log entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NewDecision {
     /// The task it belongs to.
     pub task: TaskId,
@@ -761,6 +768,7 @@ pub struct NewDecision {
 
 /// One field change in [`Command::UpdateTask`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskChange {
     /// New title.

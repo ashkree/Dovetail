@@ -16,6 +16,7 @@ mod efforts;
 pub mod error;
 pub mod external;
 mod foreground;
+pub mod home;
 mod inbox;
 mod journal;
 pub mod memory;

@@ -13,16 +13,19 @@ use crate::model::{AgentId, Decision, ProjectId, ProjectSummary, Task, TaskId};
 
 /// Identifies a finding: the `findings.id` row id. Shown to agents as `F<id>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct FindingId(pub i64);
 
 /// Identifies a source: the `sources.id` row id. Shown to agents as `S<id>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct SourceId(pub i64);
 
 /// One task's research as the library lists it, without content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResearchSummary {
     /// The task (the question).
     pub task: TaskId,
@@ -61,6 +64,7 @@ impl ResearchSummary {
 
 /// What a research task is for (`tasks.research_kind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ResearchKind {
     /// A plain question: an ordinary report.
@@ -116,6 +120,7 @@ pub fn ordinal(n: usize) -> String {
 
 /// One round: a fan-out of subagents under one brief.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RoundSummary {
     /// Row id; queued rounds open in this order.
     #[serde(default)]
@@ -140,6 +145,7 @@ pub struct RoundSummary {
 
 /// What [`crate::Command::LoadResearch`] asks for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ResearchWhat {
     /// Every finding and source of the task, without bodies.
@@ -159,6 +165,7 @@ pub enum ResearchWhat {
 
 /// The answer to [`crate::Command::LoadResearch`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ResearchContent {
     /// Answer to [`ResearchWhat::Listing`].
@@ -169,6 +176,7 @@ pub enum ResearchContent {
 
 /// Every finding and source of a task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResearchListing {
     /// Findings, oldest first.
     pub findings: Vec<FindingSummary>,
@@ -178,6 +186,7 @@ pub struct ResearchListing {
 
 /// A finding without its body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FindingSummary {
     /// Its id (`F<id>` in reports).
     pub id: FindingId,
@@ -199,6 +208,7 @@ pub struct FindingSummary {
 
 /// How a source was reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     /// A web page: fetched (`WebFetch`) or listed by a search (`WebSearch`).
@@ -232,6 +242,7 @@ impl SourceKind {
 
 /// A source without its cached copy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SourceSummary {
     /// Its id (`S<id>` in reports).
     pub id: SourceId,
@@ -252,6 +263,7 @@ pub struct SourceSummary {
 
 /// One research document, as markdown.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResearchDocument {
     /// Its file, absolute (for the editor hand-off); `None` for a source that is listed but not
     /// cached (`Grep`, `Glob`).
@@ -277,6 +289,7 @@ impl ResearchDocument {
 
 /// An image a document shows, found by the core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DocImage {
     /// The image's address as the markdown writes it.
     pub src: String,
@@ -290,6 +303,7 @@ pub struct DocImage {
 
 /// A read-only markdown doc of the project's repo (reading mode's Docs · ADRs).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DocEntry {
     /// Relative to the repo's `docs/` folder: `research.md`, `adr/0018-reading-mode-layout.md`.
     pub path: PathBuf,
@@ -301,6 +315,7 @@ pub struct DocEntry {
 /// decided 2026-11-11 later), in answer to [`crate::Command::BrowseProject`]. A copy taken when
 /// asked: it is not kept up to date.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BrowsedProject {
     /// The project browsed.
     pub project: ProjectSummary,
@@ -318,6 +333,7 @@ pub struct BrowsedProject {
 
 /// One task's findings and sources in a [`BrowsedProject`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BrowsedListing {
     /// The task.
     pub task: TaskId,
@@ -327,6 +343,7 @@ pub struct BrowsedListing {
 
 /// A document of a browsed project, for [`crate::Command::LoadBrowsed`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum BrowseWhat {
     /// A research document (not [`ResearchWhat::Listing`]: listings come with the project).
@@ -342,6 +359,7 @@ pub enum BrowseWhat {
 
 /// Names a browsed project's document in [`crate::Event::BrowsedLoaded`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BrowsedDoc {
     /// The project.
     pub project: ProjectId,
@@ -351,6 +369,7 @@ pub struct BrowsedDoc {
 
 /// A finding or source cited as evidence, written `F<id>` or `S<id>` (no brackets) on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(try_from = "String", into = "String")]
 pub enum Evidence {
     /// A finding, `F<id>`.
@@ -424,6 +443,7 @@ impl TryFrom<String> for Evidence {
 
 /// What `research_propose` proposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ProposalKind {
     /// An idea: accepting it files a follow-up task or opens a new round (ADR 0015).

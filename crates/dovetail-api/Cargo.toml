@@ -6,9 +6,19 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# TypeScript declarations of the protocol for the GUI (ADR 0023). Only the export test and
+# scripts/check.sh turn it on; ordinary builds never compile ts-rs.
+ts = ["dep:ts-rs"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[[test]]
+name = "ts_export"
+required-features = ["ts"]
 
 [lints]
 workspace = true
