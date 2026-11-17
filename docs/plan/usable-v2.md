@@ -67,7 +67,7 @@ decided.
 ## Not done here
 
 - `scripts/install.sh` was not run: replacing `~/.local/bin/dovetail` was refused by this session's permission check. No Rust changed on this branch, and the installed binary was built after PR #86 merged, so the live pass used a current core.
-- Not exercised live: a subagent's view, `ga` on a card, `Enter` on a report line, paging older messages with `gg` (each is covered by the unit tests or is a thin call into the same `showAgent`).
+- Not exercised live: a subagent's view, `ga` on a card, `Enter` on a report line, paging older messages with `gg`. The first three only call `showAgent`, which the live pass and the unit tests cover; paging sends the core's existing `load_conversation`.
 
 ## Open for the user
 

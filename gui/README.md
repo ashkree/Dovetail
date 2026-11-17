@@ -62,6 +62,8 @@ npm --prefix gui install
 cd gui && npx tauri dev     # the window; its process hosts dovetail-core
 ```
 
+For daily use, `scripts/install.sh` builds a release window (`npx tauri build --no-bundle`, the web files inside, no dev server) and installs it as `~/.local/bin/dovetail-gui`, next to `dovetail`; start it with `dovetail-gui`. `scripts/dev-gui.sh --release` runs that build on the throwaway dev state instead.
+
 The Tauri shell is `gui/src-tauri` (crate `dovetail-gui`). At start it serves Home (no project open) from `dovetail_core::home`; opening a project spawns that project's core in the same process. Sessions need the installed `dovetail` binary (`scripts/bootstrap.sh`); without it Home says so and opens nothing. Closing the window stops the core and its sessions; they resume on the next open.
 
 ## How the core plugs in
