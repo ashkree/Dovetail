@@ -3,7 +3,7 @@
 # and the hooks and MCP bridge every session runs) and `dovetail-gui` (the window, ADR 0023: a
 # release build with the web files inside, no dev server).
 #
-#   scripts/install.sh            # check, then install both
+#   scripts/install.sh            # check, then install both (plus the launcher entry and icon)
 #   scripts/install.sh --no-gui   # only `dovetail`
 #   scripts/install.sh --check    # only check whether Dovetail is running (exit 1 if so)
 #
@@ -82,6 +82,24 @@ if [[ $gui -eq 1 ]]; then
   (cd gui && npx tauri build --no-bundle)
   install -m 755 target/release/dovetail-gui "$gui_target"
   echo "installed $gui_target (start it with: dovetail-gui)"
+
+  # The launcher entry (wofi/rofi drun, GNOME and KDE read ~/.local/share/applications) and its
+  # icon, rewritten on every install so they always point at this build.
+  data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+  icon="$data_home/icons/hicolor/scalable/apps/dovetail.svg"
+  desktop="$data_home/applications/dovetail.desktop"
+  install -D -m 644 gui/src-tauri/icons/icon.svg "$icon"
+  mkdir -p "$(dirname "$desktop")"
+  printf '%s\n' \
+    '[Desktop Entry]' \
+    'Type=Application' \
+    'Name=Dovetail' \
+    'Comment=Run Claude Code agents across your projects' \
+    "Exec=$gui_target" \
+    "Icon=$icon" \
+    'Terminal=false' \
+    'Categories=Development;' >"$desktop"
+  echo "installed $desktop (launcher entry)"
 fi
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
