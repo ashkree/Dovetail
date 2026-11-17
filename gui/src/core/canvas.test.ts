@@ -1,4 +1,4 @@
-// Canvases and cards through the view, the translation and MockCore (ADR 0025).
+// Blocks and cards through the view, the translation and MockCore (ADR 0025, ADR 0027).
 
 import { describe, expect, it } from 'vitest';
 import { apply } from './apply';
@@ -17,10 +17,10 @@ const view = toView(core, pending);
 
 describe('the canvas view', () => {
   it('shows the placed cards by kind letter and number, and the incoming ones apart', () => {
-    expect(view.canvases).toEqual([{ id: '1', effort_id: '2', framework: 'question_tree', title: 'Which provider?' }]);
+    expect(view.blocks).toEqual([{ id: '1', effort_id: '2', layout: 'question_tree', title: 'Which provider?', x: 20, y: -20 }]);
     expect(view.cards.map(c => c.id)).toEqual(['Q1', 'Q2', 'Q3', 'Q4', 'F5', 'S6', 'F7', 'I8', 'D9', 'M10']);
     expect(view.incoming.map(c => c.id)).toEqual(['F11', 'S12', 'Q13']);
-    expect(view.incoming[0]).toMatchObject({ canvas_id: '1', under: 'Q3' });
+    expect(view.incoming[0]).toMatchObject({ effort_id: '2', under: 'Q3' });
   });
 
   it("keeps an idea's or question's first line as its title and the rest as its body", () => {
@@ -47,27 +47,39 @@ describe('the canvas view', () => {
     expect(coreCardId('F90')).toBe(90);
   });
 
-  it('has nothing for a project without canvases', () => {
+  it('marks a card an agent put into a block until it is seen', () => {
+    const agentCard: W.Card = { ...core.cards[0]!, id: 40, seen: false, added_by: 'research-1' };
+    const v = toView({ ...core, cards: [...core.cards, agentCard] }, pending);
+    expect(v.cards.find(c => c.id === 'Q40')?.unseen).toBe(true);
+    expect(v.cards.find(c => c.id === 'Q1')?.unseen).toBeUndefined();
+  });
+
+  it('has nothing for a project without blocks', () => {
     const empty = toView(emptyCoreSnapshot(), pendingFor(null));
-    expect([empty.canvases, empty.cards, empty.incoming, empty.card_links]).toEqual([[], [], [], []]);
+    expect([empty.blocks, empty.cards, empty.incoming, empty.card_links]).toEqual([[], [], [], []]);
   });
 });
 
 describe('translating card commands', () => {
-  it('turns a placement into the core command with the effort\'s canvas', () => {
-    const t = translate({ type: 'place_card', incoming_id: 'F11', x: 5, y: 6 }, core);
-    expect(t.core).toEqual([{ place_card: { id: 11, canvas: 1, x: 5, y: 6 } }]);
+  it('leaves where a placed card goes to the core', () => {
+    const t = translate({ type: 'place_card', incoming_id: 'F11' }, core);
+    expect(t.core).toEqual([{ place_card: { id: 11, block: null } }]);
+  });
+
+  it('asks the core for a new block of a layout', () => {
+    expect(translate({ type: 'new_block', effort_id: '3', layout: 'options_compare' }, core).core)
+      .toEqual([{ create_block: { effort: 3, title: '', layout: 'options_compare' } }]);
   });
 
   it('sends a new idea with its title as the first line', () => {
-    const t = translate({ type: 'add_card', canvas_id: '1', kind: 'idea', x: 1, y: 2, title: 'Ask Mollie', body: '', link_from: 'Q2' }, core);
+    const t = translate({ type: 'add_card', block_id: '1', kind: 'idea', title: 'Ask Mollie', body: '', link_from: 'Q2' }, core);
     expect(t.core).toEqual([{
-      add_card: { card: { effort: 2, canvas: 1, kind: 'idea', x: 1, y: 2, reference: null, text: 'Ask Mollie' }, link_from: 2 },
+      add_card: { card: { effort: 2, block: 1, kind: 'idea', reference: null, text: 'Ask Mollie' }, link_from: 2 },
     }]);
   });
 
   it('refuses to type a finding into existence', () => {
-    const t = translate({ type: 'add_card', canvas_id: '1', kind: 'finding', x: 0, y: 0, title: 'x', body: '' }, core);
+    const t = translate({ type: 'add_card', block_id: '1', kind: 'finding', title: 'x', body: '' }, core);
     expect(t.core).toEqual([]);
     expect(t.refused).toMatch(/points at something/);
   });
@@ -97,14 +109,17 @@ describe('MockCore speaks the canvas protocol', () => {
     const { mock, c } = client();
     expect(c.state.cards).toHaveLength(13);
     mock.send({ move_card: { id: 11, x: 1, y: 1 } }); // incoming: refused
-    mock.send({ place_card: { id: 11, canvas: 1, x: 100, y: 200 } });
+    mock.send({ place_card: { id: 11, block: null } });
+    // Under Q3, which links to it.
+    const q3 = c.state.cards.find(x => x.id === 3)!;
+    expect(c.state.cards.find(x => x.id === 11)).toMatchObject({ block: 1, x: q3.x });
     mock.send({ move_card: { id: 11, x: 120, y: 220 } });
-    expect(c.state.cards.find(x => x.id === 11)).toMatchObject({ canvas: 1, x: 120, y: 220 });
+    expect(c.state.cards.find(x => x.id === 11)).toMatchObject({ block: 1, x: 120, y: 220 });
     expect(c.failures).toEqual(['card 11 is incoming: place it first']);
 
-    mock.send({ add_card: { card: { effort: 2, canvas: 1, kind: 'idea', x: 5, y: 6, reference: null, text: 'Ask Mollie' }, link_from: 1 } });
+    mock.send({ add_card: { card: { effort: 2, block: 1, kind: 'idea', reference: null, text: 'Ask Mollie' }, link_from: 1 } });
     const made = c.state.cards.at(-1);
-    expect(made).toMatchObject({ id: 14, title: 'Ask Mollie', added_by: 'user', canvas: 1 });
+    expect(made).toMatchObject({ id: 14, title: 'Ask Mollie', added_by: 'user', block: 1, seen: true });
     expect(c.state.card_links).toContainEqual({ from: 1, to: 14, label: '' });
 
     mock.send({ delete_card: { id: 14 } });
@@ -113,13 +128,20 @@ describe('MockCore speaks the canvas protocol', () => {
     mock.send({ drop_incoming: { id: 12 } });
     expect(c.state.cards.some(x => x.id === 12)).toBe(false);
     mock.send({ drop_incoming: { id: 1 } }); // placed: refused
-    expect(c.failures.at(-1)).toMatch(/on a canvas/);
+    expect(c.failures.at(-1)).toMatch(/on the canvas/);
   });
 
-  it('creates a canvas for an effort and answers a body request', () => {
+  it('adds a block right of the others, and makes one for a card placed where there is none', () => {
     const { mock, c } = client();
-    mock.send({ create_canvas: { effort: 3, title: '', framework: 'free_board' } });
-    expect(c.state.canvases.at(-1)).toMatchObject({ id: 2, effort: 3, title: 'login-bug', framework: 'free_board' });
+    mock.send({ create_block: { effort: 2, title: '', layout: 'free_area' } });
+    const [first, second] = c.state.blocks;
+    expect(second).toMatchObject({ id: 2, effort: 2, title: 'Free area', layout: 'free_area', y: 0 });
+    expect(second!.x).toBeGreaterThan(first!.x + 600);
+    mock.send({ add_card: { card: { effort: 3, block: null, kind: 'idea', reference: null, text: 'Loose' }, link_from: null } });
+    mock.send({ place_card: { id: 14, block: null } });
+    expect(c.state.blocks.at(-1)).toMatchObject({ id: 3, effort: 3, layout: 'free_area' });
+    expect(c.state.cards.find(x => x.id === 14)).toMatchObject({ block: 3 });
+    mock.send({ see_card: { id: 14 } });
     mock.send({ load_card: { id: 5 } });
     expect(c.failures).toEqual([]);
   });

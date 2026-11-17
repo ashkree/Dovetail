@@ -41,9 +41,9 @@ function fold(s: W.Snapshot, event: W.Event): W.Snapshot {
       const effort = e as W.Effort;
       return { ...s, efforts: upsert(s.efforts, effort, x => x.id) };
     }
-    case 'canvas_upserted': {
-      const canvas = e as W.Canvas;
-      return { ...s, canvases: upsert(s.canvases, canvas, c => c.id) };
+    case 'block_upserted': {
+      const block = e as W.Block;
+      return { ...s, blocks: upsert(s.blocks, block, b => b.id) };
     }
     case 'card_upserted': {
       const card = e as W.Card;

@@ -5,9 +5,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { coreSnapshot } from '../core/fixtures';
 import type * as W from '../core/generated';
 import type { CoreLink } from '../core/link';
-import { connect, coreStore } from '../state/store';
+import { connect, coreStore, snapshotStore } from '../state/store';
+import { needsYou, treeRows } from '../state/select';
 import { setUi, uiStore } from '../state/ui';
-import { dispatch, slotIndex } from './actions';
+import { dispatch, slotIndex, viewerAgent } from './actions';
 
 let sent: W.Command[] = [];
 let push: (msg: W.ServerMsg) => void = () => {};
@@ -54,16 +55,49 @@ describe('actions against the core', () => {
     expect(uiStore.get().awaitEffort).toBe(false);
   });
 
-  it('starts a canvas with 1 2 3 only while the effort has none', () => {
-    const withCanvas = coreStore.get().canvases[0];
-    expect(withCanvas).toBeDefined();
-    setUi({ effort: String(withCanvas!.effort) });
-    dispatch('framework2');
-    expect(sent).toEqual([]);
-    const bare = coreStore.get().efforts.find(e => !coreStore.get().canvases.some(c => c.effort === e.id));
-    setUi({ effort: String(bare!.id) });
-    dispatch('framework2');
-    expect(sent).toEqual([{ create_canvas: { effort: bare!.id, framework: 'options_compare', title: '' } }]);
+  it('b 1 2 3 add a block of that layout to the focused effort', () => {
+    setUi({ effort: '3' });
+    dispatch('newBlock2');
+    expect(sent).toEqual([{ create_block: { effort: 3, title: '', layout: 'options_compare' } }]);
+  });
+
+  it('marks an unseen card seen when it is selected', () => {
+    const card = coreStore.get().cards.find(c => c.block != null)!;
+    push({ event: { seq: coreStore.get().seq + 1, event: { card_upserted: { ...card, seen: false } } } });
+    dispatch('selectCard', `Q${card.id}`);
+    expect(sent).toEqual([{ see_card: { id: card.id } }]);
+  });
+
+  it('opens the viewer on a slice picked in the tree, whatever effort has focus', () => {
+    const rows = treeRows(snapshotStore.get(), {});
+    const i = rows.findIndex(r => r.type === 'agent' && r.agent.kind === 'slice' && r.agent.id === 'login-fix');
+    setUi({ screen: 'ws', zone: 'tree', effort: '1', folded: {}, treeSel: i, viewerAgent: null });
+    dispatch('openRow');
+    expect(uiStore.get()).toMatchObject({ viewerAgent: 'login-fix', main: 'viewer', effort: '1' });
+    expect(viewerAgent(snapshotStore.get(), uiStore.get())?.id).toBe('login-fix');
+  });
+
+  it('cycles the mode of the agent under the tree cursor', () => {
+    const rows = treeRows(snapshotStore.get(), {});
+    const i = rows.findIndex(r => r.type === 'agent' && r.agent.id === 'run-e2e');
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: i });
+    dispatch('permMode');
+    // A subagent shares its parent's session.
+    expect(sent).toEqual([{ cycle_permission_mode: { agent: 'login-fix' } }]);
+  });
+
+  it('selects a project the user just created on Home', () => {
+    setUi({ screen: 'home', homeSel: 0, awaitProject: true });
+    const p = { ...coreStore.get().projects[0]!, id: 'fresh', name: 'Fresh' };
+    push({ event: { seq: coreStore.get().seq + 1, event: { project_upserted: p } } });
+    expect(uiStore.get().homeSel).toBe(snapshotStore.get().projects.findIndex(x => x.id === 'fresh'));
+    expect(uiStore.get().awaitProject).toBe(false);
+  });
+
+  it('counts only items that wait on the user', () => {
+    const s = snapshotStore.get();
+    expect(needsYou(s)).toBe(s.inbox.filter(i => i.kind !== 'finished').length);
+    expect(s.inbox.findIndex(i => i.kind === 'finished')).toBeGreaterThanOrEqual(needsYou(s));
   });
 });
 

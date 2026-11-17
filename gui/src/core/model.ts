@@ -97,15 +97,18 @@ export interface ChatEntry {
   text: string;
 }
 
-export type Framework = 'question_tree' | 'options_compare' | 'free_board';
-export interface Canvas { id: Id; effort_id: Id; framework: Framework; title: string }
+export type Layout = 'question_tree' | 'options_compare' | 'free_area';
+/** A block on an effort's canvas (ADR 0027): a framed region with a layout. */
+export interface Block { id: Id; effort_id: Id; layout: Layout; title: string; x: number; y: number }
 
 export type CardKind = 'finding' | 'source' | 'idea' | 'decision' | 'question' | 'map' | 'task';
 export interface Card {
   /** Short and shown ("Q1", "F3"); also what a chat reference names. */
   id: Id;
-  canvas_id: Id;
+  block_id: Id;
   kind: CardKind;
+  /** An agent put it into a block and the user has not selected it yet. */
+  unseen?: boolean;
   x: number;
   y: number;
   title: string;
@@ -120,7 +123,7 @@ export interface CardLink { from: Id; to: Id }
 /** A card an agent proposed; it waits in the incoming strip until the user places or drops it. */
 export interface IncomingCard {
   id: Id;
-  canvas_id: Id;
+  effort_id: Id;
   kind: CardKind;
   title: string;
   body: string;
@@ -180,7 +183,7 @@ export interface Snapshot {
   agents: Agent[];
   inbox: InboxItem[];
   chat: ChatEntry[];
-  canvases: Canvas[];
+  blocks: Block[];
   cards: Card[];
   card_links: CardLink[];
   incoming: IncomingCard[];

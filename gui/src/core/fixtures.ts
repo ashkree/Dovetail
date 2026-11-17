@@ -172,16 +172,16 @@ export const CARD_BODIES: Record<number, string> = Object.fromEntries(
   FIXTURE_CARDS.filter(c => !['idea', 'question'].includes(c.kind)).map(c => [c.id, c.body]),
 );
 
-function coreCanvasState(): Pick<W.Snapshot, 'canvases' | 'cards' | 'card_links'> {
+function coreCanvasState(): Pick<W.Snapshot, 'blocks' | 'cards' | 'card_links'> {
   return {
-    canvases: [{ id: 1, effort: PAY_EFFORT, title: 'Which provider?', framework: 'question_tree' }],
+    blocks: [{ id: 1, effort: PAY_EFFORT, title: 'Which provider?', layout: 'question_tree', x: 20, y: -20 }],
     cards: FIXTURE_CARDS.map((c): W.Card => {
       const own = c.kind === 'idea' || c.kind === 'question';
       return {
-        id: c.id, effort: PAY_EFFORT, ...(isIncoming(c) ? {} : { canvas: 1 }), kind: c.kind, x: c.x ?? 0, y: c.y ?? 0,
+        id: c.id, effort: PAY_EFFORT, ...(isIncoming(c) ? {} : { block: 1 }), kind: c.kind, x: c.x ?? 0, y: c.y ?? 0,
         ...(own ? {} : { reference: { kind: c.kind as W.RefKind, id: String(c.id) } }),
         title: c.title, text: own ? `${c.title}\n${c.body}` : '', missing: false,
-        added_by: isIncoming(c) ? 'research-1' : 'user', created_ms: NOW,
+        added_by: isIncoming(c) ? 'research-1' : 'user', created_ms: NOW, seen: true,
       };
     }),
     card_links: FIXTURE_LINKS.map(([from, to]) => ({ from, to, label: '' })),

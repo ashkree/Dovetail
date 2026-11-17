@@ -1,13 +1,16 @@
-// The which-key pop-up while the Space leader is active: the keys one level down, from the table.
+// The which-key pop-up: the keys one level down while the Space leader is active, or after a
+// prefix the keymap names in PREFIX_POPUPS (`b` on the canvas). All from the table.
 
 import { dispatch } from '../../keys/actions';
-import { leaderNode } from '../../keys/resolve';
+import { PREFIX_POPUPS } from '../../keys/keymap';
+import { bindingsFor, leaderNode } from '../../keys/resolve';
 import { keyName } from '../../keys/resolve';
-import { setUi, useUi } from '../../state/ui';
+import { scopeOf, setUi, useUi } from '../../state/ui';
 
 export function WhichKey() {
-  const { leader } = useUi();
-  if (!leader) return null;
+  const ui = useUi();
+  const { leader } = ui;
+  if (!leader) return <PrefixKeys scope={scopeOf(ui)} pending={ui.pending} />;
   const node = leaderNode(leader);
   if (!node) return null;
   return (
@@ -24,6 +27,24 @@ export function WhichKey() {
             <button key={k} className={leaf ? '' : 'grp-n'} onClick={run}>{leaf ? v[1] : `${v.name} ▸`}</button>,
           ];
         })}
+      </div>
+    </div>
+  );
+}
+
+/** The keys that finish a pending prefix the keymap pops up for. */
+function PrefixKeys({ scope, pending }: { scope: string; pending: string }) {
+  const name = PREFIX_POPUPS[scope]?.[pending];
+  if (!name) return null;
+  const rest = bindingsFor(scope).filter(b => b[0].startsWith(pending) && b[0] !== pending);
+  return (
+    <div className="whichkey">
+      <h4>{keyName(pending)} · {name}</h4>
+      <div className="wk">
+        {rest.map(([k, action, label]) => [
+          <kbd key={k + 'k'}>{keyName(k.slice(pending.length))}</kbd>,
+          <button key={k} onClick={() => { setUi({ pending: '' }); dispatch(action); }}>{label.startsWith(`${name}: `) ? label.slice(name.length + 2) : label}</button>,
+        ])}
       </div>
     </div>
   );

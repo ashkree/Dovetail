@@ -45,28 +45,20 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
       return only({ remove_repo: { project: cmd.project_id, repo: repo.id } });
     }
     case 'answer_inbox': return answer(cmd, core);
-    case 'new_canvas': {
-      const effort = Number(cmd.effort_id);
-      return only({ create_canvas: { effort, title: '', framework: cmd.framework } });
-    }
-    case 'place_card': {
-      const id = coreCardId(cmd.incoming_id);
-      const card = core.cards.find(c => c.id === id);
-      const canvas = card && core.canvases.find(c => c.effort === card.effort);
-      if (!card || !canvas) return refuse('That card has no canvas to go on.');
-      return only({ place_card: { id, canvas: canvas.id, x: cmd.x, y: cmd.y } });
-    }
+    case 'new_block': return only({ create_block: { effort: Number(cmd.effort_id), title: '', layout: cmd.layout } });
+    case 'place_card': return only({ place_card: { id: coreCardId(cmd.incoming_id), block: null } });
+    case 'see_card': return only({ see_card: { id: coreCardId(cmd.card_id) } });
     case 'drop_incoming': return only({ drop_incoming: { id: coreCardId(cmd.incoming_id) } });
     case 'move_card': return only({ move_card: { id: coreCardId(cmd.card_id), x: cmd.x, y: cmd.y } });
     case 'delete_card': return only({ delete_card: { id: coreCardId(cmd.card_id) } });
     case 'add_card': {
-      const canvas = core.canvases.find(c => String(c.id) === cmd.canvas_id);
-      if (!canvas) return refuse('That canvas is gone.');
+      const block = core.blocks.find(b => String(b.id) === cmd.block_id);
+      if (!block) return refuse('That block is gone.');
       if (!hasOwnText(cmd.kind)) return refuse(`A ${cmd.kind} card points at something that exists: research files it.`);
       const text = cmd.body ? `${cmd.title}\n${cmd.body}` : cmd.title;
       return only({
         add_card: {
-          card: { effort: canvas.effort, canvas: canvas.id, kind: cmd.kind, x: cmd.x, y: cmd.y, reference: null, text },
+          card: { effort: block.effort, block: block.id, kind: cmd.kind, reference: null, text },
           link_from: cmd.link_from ? coreCardId(cmd.link_from) : null,
         },
       });

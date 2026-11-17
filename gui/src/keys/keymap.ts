@@ -117,9 +117,9 @@ export const KEYMAP: Record<string, Binding[]> = {
     ['+', 'zoomIn', 'zoom in', 'view'],
     ['-', 'zoomOut', 'zoom out', 'view'],
     ['0', 'zoomFit', 'fit', 'view'],
-    ['1', 'framework1', 'no canvas yet: question tree', 'act'],
-    ['2', 'framework2', 'no canvas yet: options compare', 'act'],
-    ['3', 'framework3', 'no canvas yet: free board', 'act'],
+    ['b1', 'newBlock1', 'new block: question tree', 'act'],
+    ['b2', 'newBlock2', 'new block: options compare', 'act'],
+    ['b3', 'newBlock3', 'new block: free area', 'act'],
   ],
   incoming: [
     ['h', 'incLeft', 'prev card', 'move'],
@@ -209,6 +209,12 @@ export const LEADER: Record<string, LeaderNode> = {
     x: ['interrupt', 'interrupt'],
     m: ['permMode', 'permission mode (tree: its agent)'],
   } },
+};
+
+/** Prefixes whose next keys pop up like the Space leader's which-key, by scope: `b` on the
+ * canvas offers the block layouts. */
+export const PREFIX_POPUPS: Record<string, Record<string, string>> = {
+  canvas: { b: 'new block' },
 };
 
 /** Global keys Home does not take (it has no zones or efforts). */

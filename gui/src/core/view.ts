@@ -44,7 +44,7 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
     agents,
     inbox,
     chat: viewChat(core),
-    canvases: canvas.canvases,
+    blocks: canvas.blocks,
     cards: canvas.cards,
     card_links: canvas.card_links,
     incoming: canvas.incoming,

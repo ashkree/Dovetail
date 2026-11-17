@@ -4,11 +4,12 @@
 
 import { hasOwnText } from '../core/canvasView';
 import { COORDINATOR, UNSORTED_EFFORT } from '../core/wire';
-import type { Agent, CardKind, EffortKind, Framework, Id, InboxItem, Preview, Snapshot, VariantSet } from '../core/model';
+import type { Agent, Block, CardKind, EffortKind, Id, InboxItem, Layout, Preview, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
 import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
 import { focusEffort, scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
+import { keysFor } from './resolve';
 import { readingHeadings, viewport } from './viewport';
 
 export type Action =
@@ -43,8 +44,8 @@ export type Action =
   | 'interrupt' | 'permMode'
   // mouse (the same dispatcher; each has a key elsewhere)
   | 'showView' | 'selectHome' | 'selectInbox' | 'selectTree' | 'selectCard' | 'selectIncoming' | 'selectSlot'
-  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickFramework'
-  | 'framework1' | 'framework2' | 'framework3';
+  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickLayout'
+  | 'newBlock1' | 'newBlock2' | 'newBlock3';
 
 /** Actions whose key the browser should still handle (paste into the chat bar). */
 export const PASS_THROUGH: ReadonlySet<Action> = new Set<Action>(['paste']);
@@ -90,9 +91,9 @@ export function viewerPreview(s: Snapshot, u: ViewerFocus): Preview | undefined 
     ?? { agent_id: agent.id, effort_id: effort ?? u.effort ?? '', state: 'not_started' });
 }
 
-/** The canvas the main view shows: the focused effort's first canvas. */
-export function effortCanvas(s: Snapshot, effort: Id | null) {
-  return s.canvases.find(c => c.effort_id === effort);
+/** The blocks on an effort's canvas (ADR 0027), oldest first. */
+export function effortBlocks(s: Snapshot, effort: Id | null): Block[] {
+  return s.blocks.filter(b => b.effort_id === effort);
 }
 
 /** The agent whose permission mode `Shift-Tab` and `Space s m` change: the one under the tree
@@ -119,8 +120,14 @@ function pick(set: VariantSet, i: number, j: number): void {
   if (slot && option !== undefined) send({ type: 'select_variant', agent_id: set.agent_id, slot: slot.name, option });
 }
 
-/** The frameworks an empty canvas offers, in their key order (`1 2 3`). */
-export const FRAMEWORK_KEY = { framework1: 'question_tree', framework2: 'options_compare', framework3: 'free_board' } as const satisfies Record<string, Framework>;
+/** The layouts `b` offers for a new block, by action (`b 1`, `b 2`, `b 3`). */
+export const BLOCK_KEY = { newBlock1: 'question_tree', newBlock2: 'options_compare', newBlock3: 'free_area' } as const satisfies Record<string, Layout>;
+
+/** Select a card on the canvas; one an agent put there unseen is marked seen. */
+function selectCard(s: Snapshot, id: Id): void {
+  setUi({ cardSel: id });
+  if (s.cards.find(c => c.id === id)?.unseen) send({ type: 'see_card', card_id: id });
+}
 
 function switchEffort(id: Id, quiet = false): void {
   const e = effortById(snap(), id);
@@ -153,13 +160,12 @@ function insertRef(text: string): void {
 }
 
 function cardsOnCanvas(s: Snapshot, u: Ui) {
-  const canvas = effortCanvas(s, u.effort);
-  return canvas ? s.cards.filter(c => c.canvas_id === canvas.id) : [];
+  const blocks = new Set(effortBlocks(s, u.effort).map(b => b.id));
+  return s.cards.filter(c => blocks.has(c.block_id));
 }
 
 function incomingOnCanvas(s: Snapshot, u: Ui) {
-  const canvas = effortCanvas(s, u.effort);
-  return canvas ? s.incoming.filter(c => c.canvas_id === canvas.id) : [];
+  return s.incoming.filter(c => c.effort_id === u.effort);
 }
 
 /** The nearest card in a direction: along the direction, with sideways distance counted double. */
@@ -344,7 +350,7 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'escape':
       if (u.wwi) setUi({ wwi: false });
       else if (u.zone === 'main' && u.main === 'item') setUi({ main: null, mainItem: null, zone: 'inbox' });
-      else if (u.zone === 'main' && u.main === 'reading' && effortCanvas(s, u.effort)) setUi({ main: 'canvas' });
+      else if (u.zone === 'main' && u.main === 'reading' && effortBlocks(s, u.effort).length) setUi({ main: 'canvas' });
       else if (u.zone === 'chat') setUi({ chatCur: -1 });
       return;
     case 'command': setUi({ modal: { type: 'command', value: '' } }); return;
@@ -536,10 +542,10 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'cardLeft': case 'cardRight': case 'cardUp': case 'cardDown': {
       const [dx, dy] = { cardLeft: [-1, 0], cardRight: [1, 0], cardUp: [0, -1], cardDown: [0, 1] }[a];
       const next = nearestCard(cardsOnCanvas(s, u), u.cardSel, dx ?? 0, dy ?? 0);
-      if (next) setUi({ cardSel: next.id });
+      if (next) selectCard(s, next.id);
       return;
     }
-    case 'selectCard': setUi({ cardSel: String(arg), canvasPart: 'cards', zone: 'main' }); return;
+    case 'selectCard': selectCard(s, String(arg)); setUi({ canvasPart: 'cards', zone: 'main' }); return;
     case 'follow': case 'followBack': {
       // Tab: to the first card this one links to; Shift-Tab: back to the card that links to it.
       const l = s.card_links.find(x => a === 'follow' ? x.from === u.cardSel : x.to === u.cardSel);
@@ -566,15 +572,16 @@ export function dispatch(a: Action, arg?: unknown): void {
       return;
     }
     case 'newCard': {
-      const canvas = effortCanvas(s, u.effort);
-      if (!canvas) return;
-      const from = s.cards.find(x => x.id === u.cardSel);
+      // Into the selected card's block, under it; else the newest block.
+      const from = cardsOnCanvas(s, u).find(x => x.id === u.cardSel);
+      const block = from?.block_id ?? effortBlocks(s, u.effort).at(-1)?.id;
+      if (!block) { toast(`Make a block first: **${keysFor('newBlock1', 'canvas')[0]?.[0] ?? ''}** offers the layouts`); return; }
       picker('New card · kind', CARD_KINDS.map(k => ({
         key: k, text: k, label: k,
         go: () => prompt(`New ${k} card · title`, title => {
           setUi({ awaitNewCard: true });
           send({
-            type: 'add_card', canvas_id: canvas.id, kind: k, x: (from?.x ?? 40) + 30, y: (from?.y ?? 20) + 150,
+            type: 'add_card', block_id: block, kind: k,
             title: title.trim(), body: '', ...(from ? { link_from: from.id } : {}),
           });
         }),
@@ -605,9 +612,8 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'accept': {
       const c = incomingOnCanvas(s, u)[u.incSel];
       if (!c) return;
-      const p = s.cards.find(x => x.id === c.under);
-      const kids = s.card_links.filter(l => l.from === c.under).length;
-      send({ type: 'place_card', incoming_id: c.id, x: (p?.x ?? 40) + 30 + kids * 18, y: (p?.y ?? 20) + 150 + kids * 26 });
+      // The core finds the spot: under the card linking to it, else in the newest block.
+      send({ type: 'place_card', incoming_id: c.id });
       const left = incomingOnCanvas(snap(), u).length;
       setUi({ cardSel: c.id, incSel: clamp(u.incSel, 0, Math.max(0, left - 1)), canvasPart: left ? 'incoming' : 'cards' });
       toast(c.under ? `Placed **${c.id}** under ${c.under}` : `Placed **${c.id}**`);
@@ -622,14 +628,10 @@ export function dispatch(a: Action, arg?: unknown): void {
       toast(`Dropped **${c.id}**`);
       return;
     }
-    // The empty canvas offers its frameworks as 1 2 3; with a canvas the keys do nothing.
-    case 'framework1': case 'framework2': case 'framework3': {
-      if (effortCanvas(s, u.effort)) return;
-      dispatch('pickFramework', FRAMEWORK_KEY[a]);
-      return;
-    }
-    case 'pickFramework': {
-      if (u.effort) send({ type: 'new_canvas', effort_id: u.effort, framework: (arg as Framework) ?? 'question_tree' });
+    // `b 1/2/3`: a new block, placed by the core in empty space (ADR 0027).
+    case 'newBlock1': case 'newBlock2': case 'newBlock3': dispatch('pickLayout', BLOCK_KEY[a]); return;
+    case 'pickLayout': {
+      if (u.effort) send({ type: 'new_block', effort_id: u.effort, layout: (arg as Layout) ?? 'free_area' });
       return;
     }
 
@@ -724,8 +726,8 @@ export function dispatch(a: Action, arg?: unknown): void {
         ...s.cards.map(c => ({
           key: 'c' + c.id, text: `card ${c.id} ${c.title}`, label: c.title, glyph: c.id, glyphClass: 'dim', detail: c.kind,
           go: () => {
-            const canvas = s.canvases.find(x => x.id === c.canvas_id);
-            if (canvas) switchEffort(canvas.effort_id, true);
+            const block = s.blocks.find(x => x.id === c.block_id);
+            if (block) switchEffort(block.effort_id, true);
             setUi({ wwi: false, cardSel: c.id, canvasPart: 'cards' });
             openMain('canvas');
           },

@@ -2,7 +2,7 @@
 // the core's Commands (translate.ts) or a change to the pending state (pending.ts). The wire
 // itself carries the generated types in ./generated, from crates/dovetail-api.
 
-import type { CardKind, EffortKind, Framework, Id } from './model';
+import type { CardKind, EffortKind, Id, Layout } from './model';
 import type { PendingAction } from './pending';
 
 /** How the user answers an inbox item. */
@@ -22,16 +22,19 @@ export type UiCommand =
   | { type: 'add_repo'; project_id: Id; path: string; name?: string }
   | { type: 'remove_repo'; project_id: Id; repo: string }
   /** A slice in `repo` (by name; may be left out when the project has one). */
-  /** The canvas and its cards (ADR 0025). Positions are canvas pixels. */
-  | { type: 'new_canvas'; effort_id: Id; framework: Framework }
-  /** Place an incoming card on its effort's canvas. */
-  | { type: 'place_card'; incoming_id: Id; x: number; y: number }
+  /** The canvas: blocks and cards (ADR 0025, ADR 0027). The core places new blocks and cards;
+   * positions are canvas pixels. */
+  | { type: 'new_block'; effort_id: Id; layout: Layout }
+  /** Place an incoming card: under the card linking to it, else in the effort's newest block. */
+  | { type: 'place_card'; incoming_id: Id }
+  /** The user selected a card an agent put into a block. */
+  | { type: 'see_card'; card_id: Id }
   | { type: 'drop_incoming'; incoming_id: Id }
   /** Only the user moves cards; agents never do (ADR 0025). */
   | { type: 'move_card'; card_id: Id; x: number; y: number }
   | { type: 'delete_card'; card_id: Id }
   /** An idea or question card, its title the first line of its text. */
-  | { type: 'add_card'; canvas_id: Id; kind: CardKind; x: number; y: number; title: string; body: string; link_from?: Id }
+  | { type: 'add_card'; block_id: Id; kind: CardKind; title: string; body: string; link_from?: Id }
   | { type: 'link_cards'; from: Id; to: Id }
   | { type: 'unlink_cards'; from: Id; to: Id }
   /** Ask the core for a card's body. */
