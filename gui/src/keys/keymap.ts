@@ -82,6 +82,7 @@ export const KEYMAP: Record<string, Binding[]> = {
     ['J', 'moveDown', 'move down', 'act'],
     ['K', 'moveUp', 'move up', 'act'],
     ['dd', 'archive', 'archive', 'act'],
+    ['<S-Tab>', 'permMode', "agent's permission mode", 'mode'],
   ],
   chat: [
     ['j', 'scrollDown', 'scroll ↓', 'move'],
@@ -93,6 +94,7 @@ export const KEYMAP: Record<string, Binding[]> = {
     ['zo', 'unfold', 'open report', 'act'],
     ['zc', 'foldEntry', 'fold', 'act'],
     ['f', 'cycleFilter', 'filter: All ⇄ effort', 'view'],
+    ['<S-Tab>', 'permMode', "coordinator's permission mode", 'mode'],
     ['C-j', 'insert', 'chat bar', 'mode'],
   ],
   canvas: [
@@ -166,6 +168,7 @@ export const KEYMAP: Record<string, Binding[]> = {
     ['<CR>', 'send', 'send', 'act'],
     ['<A-CR>', 'newline', 'new line', 'act'],
     ['C-t', 'cycleTag', 'change effort tag', 'act'],
+    ['<S-Tab>', 'permMode', "coordinator's permission mode", 'mode'],
     ['C-k', 'leaveBar', 'leave bar (keep draft)', 'mode'],
     ['<Esc>', 'normal', 'Normal mode', 'mode'],
     ['C-w', 'deleteWord', 'delete word', 'act'],
@@ -203,7 +206,7 @@ export const LEADER: Record<string, LeaderNode> = {
   s: { name: 'session', keys: {
     s: ['pickAgent', 'pick agent'],
     x: ['interrupt', 'interrupt'],
-    m: ['permMode', 'permission mode'],
+    m: ['permMode', 'permission mode (tree: its agent)'],
   } },
 };
 

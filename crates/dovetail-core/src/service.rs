@@ -1823,7 +1823,12 @@ pub(crate) fn new_agent(id: AgentId, name: String, kind: AgentKind, task: Option
 fn totals_of(state: &Snapshot) -> Totals {
     Totals {
         memory_mb: state.agents.iter().filter_map(|a| a.memory_mb).sum(),
-        needs_you: state.inbox.len() as u32,
+        // Finished turns are listed but not counted (ADR 0028).
+        needs_you: state
+            .inbox
+            .iter()
+            .filter(|i| !matches!(i.kind, dovetail_api::InboxKind::FinishedTurn { .. }))
+            .count() as u32,
         cost_usd: (state.agents.iter().map(|a| a.cost_usd).sum::<f64>() * 100.0).round() / 100.0,
     }
 }

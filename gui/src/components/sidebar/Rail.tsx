@@ -1,5 +1,6 @@
 import { dispatch } from '../../keys/actions';
 import { useSnapshot } from '../../state/store';
+import { needsYou } from '../../state/select';
 import { useUi } from '../../state/ui';
 import { tagColour } from '../chat/EffortTag';
 import { keyText } from '../overlays/Keys';
@@ -11,7 +12,7 @@ export function Rail() {
   return (
     <div className="zone sidebar rail">
       <button className="rail-inbox" title={`Inbox (${keyText('focusInbox')})`} onClick={() => dispatch('focusInbox')}>
-        {s.inbox.length ? <><span className="needs">⚠</span>&nbsp;{s.inbox.length}</> : '✓'}
+        {needsYou(s) ? <><span className="needs">⚠</span>&nbsp;{needsYou(s)}</> : '✓'}
       </button>
       {s.efforts.map(e => (
         <button key={e.id} className={`rail-effort ${e.id === effort ? 'current' : ''}`} title={e.name} onClick={() => dispatch('switchEffort', e.id)}>

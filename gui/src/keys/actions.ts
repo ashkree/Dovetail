@@ -95,6 +95,17 @@ export function effortCanvas(s: Snapshot, effort: Id | null) {
   return s.canvases.find(c => c.effort_id === effort);
 }
 
+/** The agent whose permission mode `Shift-Tab` and `Space s m` change: the one under the tree
+ * cursor while the tree has focus, else the coordinator. A subagent shares its parent's mode. */
+export function modeTarget(s: Snapshot, u: Ui): { id: Id; name: string; mode: string } {
+  const row = u.zone === 'tree' && u.mode === 'normal' ? treeRows(s, u.folded)[u.treeSel] : undefined;
+  if (row?.type === 'agent') {
+    const a = row.agent.parent_id ? s.agents.find(x => x.id === row.agent.parent_id) ?? row.agent : row.agent;
+    return { id: a.id, name: a.name, mode: a.mode };
+  }
+  return { id: COORDINATOR, name: 'coordinator', mode: s.status.permission_mode };
+}
+
 /** The slot the viewer's keys act on: the remembered one, kept inside this set's slots (another
  * slice's set may have fewer). */
 export function slotIndex(set: VariantSet | undefined, slot: number): number {
@@ -713,6 +724,6 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'interrupt': toast('Interrupt the agent in focus (not in this build)'); return;
     // The coordinator's session moves to its next mode (auto → acceptEdits → manual); the
     // bottom bar shows the new one when the core reports it.
-    case 'permMode': send({ type: 'cycle_permission_mode', agent_id: COORDINATOR }); return;
+    case 'permMode': send({ type: 'cycle_permission_mode', agent_id: modeTarget(s, u).id }); return;
   }
 }

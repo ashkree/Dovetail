@@ -63,6 +63,8 @@ export interface Agent {
   name: string;
   state: AgentState;
   branch?: string;
+  /** Its permission mode as shown: `Auto`, `Accept edits`, `Manual`. */
+  mode: string;
 }
 
 export type InboxKind = 'permission' | 'criterion' | 'question' | 'finished';

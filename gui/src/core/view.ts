@@ -28,7 +28,11 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
     // Unsorted shows only while it holds tasks.
     .filter(e => e.id !== UNSORTED_EFFORT || tasks.some(t => t.effort === e.id))
     .map(e => viewEffort(e, tasks, agents, pending));
-  const inbox = [...claims(core, nowMs), ...core.inbox.map(i => viewInboxItem(core, i, nowMs))];
+  // Items that wait on the user first; finished turns after them (ADR 0028).
+  // The coordinator's finished turn is not listed: its chat is always in view.
+  const listed = core.inbox.filter(i => !(i.agent === COORDINATOR && variant(i.kind)[0] === 'finished_turn'));
+  const all = [...claims(core, nowMs), ...listed.map(i => viewInboxItem(core, i, nowMs))];
+  const inbox = [...all.filter(i => i.kind !== 'finished'), ...all.filter(i => i.kind === 'finished')];
   const open = core.project?.id ?? null;
   const canvas = viewCanvas(core, pending);
   return {
@@ -69,7 +73,7 @@ function viewProject(
     account: profile ?? base.account,
     efforts: efforts.length,
     running: efforts.filter(e => e.running).length,
-    needs_you: inbox.length,
+    needs_you: inbox.filter(i => i.kind !== 'finished').length,
   };
 }
 
@@ -155,6 +159,7 @@ function viewAgents(core: W.Snapshot): Agent[] {
       kind,
       name: a.name,
       state: STATE[a.status],
+      mode: modeLabel(a.permission_mode),
       ...(a.worktree ? { branch: a.worktree.branch } : {}),
     });
   }
@@ -268,10 +273,13 @@ function viewStatus(core: W.Snapshot, pending: Pending): Status {
     usage: { five_hour: core.usage.five_hour?.utilization ?? 0, week: core.usage.seven_day?.utilization ?? 0 },
     model: modelName(c?.model ?? ''),
     effort_level: capital(c?.effort ?? ''),
-    permission_mode: capital((c?.permission_mode ?? '').replace('_', ' ')),
+    permission_mode: modeLabel(c?.permission_mode ?? ''),
     busy: core.agents.some(a => a.status === 'working'),
   };
 }
+
+/** A permission mode as the bottom bar shows it: `accept_edits` → `Accept edits`. */
+export const modeLabel = (mode: string): string => capital(mode.replace('_', ' '));
 
 /** When a project was last opened, as Home shows it: "today 09:12", "yesterday", "12 Nov". */
 export function openedText(ms: number | null, nowMs: number): string {

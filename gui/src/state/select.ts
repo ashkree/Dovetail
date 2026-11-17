@@ -7,6 +7,9 @@ export const effortById = (s: Snapshot, id: Id | null | undefined): Effort | und
 
 export const runningEfforts = (s: Snapshot): number => s.efforts.filter(e => e.running).length;
 
+/** Inbox items that wait on the user; finished turns are listed but not counted (ADR 0028). */
+export const needsYou = (s: Pick<Snapshot, 'inbox'>): number => s.inbox.filter(i => i.kind !== 'finished').length;
+
 export const KIND_GLYPH: Record<Effort['kind'], string> = {
   feature: '✦', fix: '⚒', cleanup: '⌫', research: '⌕', experiment: '⚗',
 };

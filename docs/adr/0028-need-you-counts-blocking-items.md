@@ -17,5 +17,6 @@ permission request that blocks a slice looks like the idle items around it.
    agent or wait for an answer: permission requests, questions, criterion reviews, errors.
 2. Finished turns stay in the inbox, one per agent as ADR 0001 says, listed after the blocking
    items and dimmed. They are not counted.
-3. The coordinator raises no finished-turn item: its chat is always docked, so its replies are
-   already in view.
+3. The GUI does not list the coordinator's finished-turn item: its chat is always docked, so its
+   replies are already in view. The core still keeps that item (one at most, as ADR 0001 says),
+   so the frozen TUI, which shows one agent at a time, is unchanged.

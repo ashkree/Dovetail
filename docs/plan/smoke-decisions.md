@@ -18,10 +18,10 @@ Each step ends with a status line here, then a commit and push.
 2. **No user-started slices in the GUI** (decision 3). Drop `Space s n`, the `newSlice` action
    and its form (repo picker) from the GUI; the core's `NewSlice` stays for the frozen TUI. Doc
    rows go.
-3. **"Need you" counts blocking items** (decision 4, ADR 0028). Core: the coordinator raises no
-   `FinishedTurn`; `Totals.needs_you` and Home's `ProjectCounts.needs_you` count everything but
+3. **"Need you" counts blocking items** (decision 4, ADR 0028). Core: `Totals.needs_you` and Home's `ProjectCounts.needs_you` count everything but
    finished turns. GUI: the bottom bar and Home read the blocking count; the inbox lists
-   blocking items first and finished turns dimmed below them.
+   blocking items first and finished turns dimmed below them, and leaves out the coordinator's
+   finished turn (the core keeps it for the frozen TUI).
 4. **Permission mode per agent, `Shift-Tab`** (decision 5). `Shift-Tab` in the chat (normal
    and insert mode) cycles the coordinator; in the tree, the agent under the cursor (the
    coordinator when the row is not an agent). `Space s m` uses the same rule from any zone. The
