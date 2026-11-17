@@ -288,7 +288,7 @@ fn replay_round(name: &str, paths: &Paths, repo: &Path) -> PathBuf {
     assert_eq!(app.snap.cards.len(), 1, "{:?}", app.snap.cards);
     let card = &app.snap.cards[0];
     assert_eq!(card.kind, dovetail_api::CardKind::Finding);
-    assert_eq!(card.canvas, None);
+    assert_eq!(card.block, None);
     assert_eq!(card.effort, dovetail_api::UNSORTED_EFFORT);
     assert!(!card.missing && !card.title.is_empty(), "{card:?}");
     assert_eq!(

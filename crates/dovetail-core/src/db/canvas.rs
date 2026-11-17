@@ -10,8 +10,8 @@
 //! checked to exist inside the same request that adds the card. A target that is gone anyway
 //! (a damaged database) makes the card read as "missing"; it never fails a load.
 
-use dovetail_api::research::FindingId;
 use dovetail_api::geometry::{BLOCK_GAP, CARD_H, CARD_W, COLUMNS, GAP, HEADER, PAD};
+use dovetail_api::research::FindingId;
 use dovetail_api::{
     Block, BlockId, Card, CardId, CardKind, CardLink, CardRef, EffortId, Layout, NewCard, RefKind,
     TaskId, UNSORTED_EFFORT, card_title,
@@ -74,11 +74,7 @@ impl Db {
     /// Places an incoming card in `block`, or in the block of the placed card that links to it,
     /// else the effort's newest block, else a new free area. Resolves to the card and the block
     /// when one was made for it.
-    pub fn place_card(
-        &self,
-        id: CardId,
-        block: Option<BlockId>,
-    ) -> Pending<(Card, Option<Block>)> {
+    pub fn place_card(&self, id: CardId, block: Option<BlockId>) -> Pending<(Card, Option<Block>)> {
         self.run(move |c, now| place_card(c.state()?, id, block, now))
     }
 
@@ -404,7 +400,9 @@ impl Board {
             "SELECT block_id, x, y FROM cards WHERE effort_id = ?1 AND block_id IS NOT NULL",
         )?;
         let cards = stmt
-            .query_map([effort.0], |r| Ok((BlockId(r.get(0)?), r.get(1)?, r.get(2)?)))?
+            .query_map([effort.0], |r| {
+                Ok((BlockId(r.get(0)?), r.get(1)?, r.get(2)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self { blocks, cards })
     }
@@ -443,10 +441,18 @@ impl Board {
     fn card_spot(&self, block: &Block, under: Option<(i64, i64)>) -> (i64, i64) {
         let step_x = CARD_W + GAP;
         let step_y = CARD_H + GAP;
-        let cell = |col: i64, row: i64| (block.x + PAD + col * step_x, block.y + HEADER + row * step_y);
+        let cell = |col: i64, row: i64| {
+            (
+                block.x + PAD + col * step_x,
+                block.y + HEADER + row * step_y,
+            )
+        };
         let free = |(x, y): (i64, i64)| {
             let r = Rect::card(x, y);
-            !self.cards.iter().any(|&(_, cx, cy)| r.overlaps(Rect::card(cx, cy)))
+            !self
+                .cards
+                .iter()
+                .any(|&(_, cx, cy)| r.overlaps(Rect::card(cx, cy)))
                 && !self
                     .blocks
                     .iter()
@@ -629,7 +635,10 @@ fn place_card(
         .optional()?
         .flatten();
     let mut made = None;
-    let target = match block.or(parent.as_ref().and_then(|p| p.block)).or(newest.map(BlockId)) {
+    let target = match block
+        .or(parent.as_ref().and_then(|p| p.block))
+        .or(newest.map(BlockId))
+    {
         Some(b) => load_block(&tx, b)?,
         None => {
             let b = create_block(&tx, card.effort, "", Layout::FreeArea, now)?;
@@ -845,10 +854,8 @@ mod tests {
     fn reference(kind: RefKind, id: &str) -> NewCard {
         NewCard {
             effort: UNSORTED_EFFORT,
-            canvas: None,
+            block: None,
             kind: kind.card_kind(),
-            x: 0,
-            y: 0,
             reference: Some(CardRef {
                 kind,
                 id: id.into(),
@@ -891,7 +898,7 @@ mod tests {
             STATE_MIGRATIONS,
         )
         .unwrap();
-        for t in ["canvases", "cards", "card_links"] {
+        for t in ["blocks", "cards", "card_links"] {
             assert!(tables(&conn).iter().any(|x| x == t), "{t}");
         }
         let after: i64 = conn
@@ -908,6 +915,63 @@ mod tests {
         )
         .unwrap();
         assert!(tables(&empty).iter().any(|t| t == "card_links"));
+    }
+
+    /// ADR 0027: state migration 0021 from version 20. Each canvas becomes a block around its
+    /// cards, `free_board` becomes `free_area`, cards keep their positions and links and are seen.
+    #[test]
+    fn canvases_become_blocks_and_cards_keep_their_places() {
+        let blocks_step = STATE_MIGRATIONS
+            .iter()
+            .position(|(name, _)| name.ends_with("0021_blocks.sql"))
+            .expect("the blocks migration is listed");
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        let at = std::path::Path::new(":memory:");
+        migrate(&mut conn, at, &STATE_MIGRATIONS[..blocks_step]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO canvases (id, effort_id, title, framework, created_ms) VALUES \
+               (1, 1, 'Which provider?', 'question_tree', 5), (2, 1, 'Notes', 'free_board', 6); \
+             INSERT INTO cards (id, effort_id, canvas_id, kind, x, y, text, added_by, created_ms) VALUES \
+               (1, 1, 1, 'question', 360, 20, 'Root', 'user', 7), \
+               (2, 1, 1, 'idea', 40, 170, 'Child', 'user', 8), \
+               (3, 1, NULL, 'idea', 0, 0, 'Waiting', 'a', 9); \
+             INSERT INTO card_links (from_card, to_card, label) VALUES (1, 2, 'answers');",
+        )
+        .unwrap();
+        migrate(&mut conn, at, STATE_MIGRATIONS).unwrap();
+        let state = load_state(&conn).unwrap();
+        let layouts: Vec<(i64, Layout, i64, i64)> = state
+            .blocks
+            .iter()
+            .map(|b| (b.id.0, b.layout, b.x, b.y))
+            .collect();
+        assert_eq!(
+            layouts,
+            [
+                (1, Layout::QuestionTree, 40 - PAD, 20 - HEADER),
+                (2, Layout::FreeArea, 0, 0)
+            ]
+        );
+        let cards: Vec<(i64, Option<i64>, i64, i64, bool)> = state
+            .cards
+            .iter()
+            .map(|c| (c.id.0, c.block.map(|b| b.0), c.x, c.y, c.seen))
+            .collect();
+        assert_eq!(
+            cards,
+            [
+                (1, Some(1), 360, 20, true),
+                (2, Some(1), 40, 170, true),
+                (3, None, 0, 0, true)
+            ]
+        );
+        assert_eq!(state.links.len(), 1);
+        // The foreign keys point at the new tables.
+        assert!(
+            conn.execute("INSERT INTO cards (effort_id, block_id, kind, added_by, created_ms) VALUES (1, 9, 'idea', 'u', 1)", [])
+                .is_err()
+        );
     }
 
     #[test]

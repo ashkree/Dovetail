@@ -247,7 +247,10 @@ impl Core {
                 self.activity(
                     ActivityKind::Task,
                     Some(agent),
-                    format!("canvas: added card {} \"{}\" to {to}", card.id.0, card.title),
+                    format!(
+                        "canvas: added card {} \"{}\" to {to}",
+                        card.id.0, card.title
+                    ),
                 );
                 ok(said)
             }
