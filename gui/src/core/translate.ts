@@ -71,6 +71,20 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
     case 'load_card': return only({ load_card: { id: coreCardId(cmd.card_id) } });
     case 'card_from_reply':
       return only({ card_from_reply: { agent: COORDINATOR, entry: Number(cmd.entry_id), effort: Number(cmd.effort_id) } });
+    case 'send_to_agent':
+      return only({ prompt: { agent: cmd.agent_id, text: cmd.text, effort: Number(cmd.effort_id) } });
+    case 'interrupt': return only({ interrupt: { agent: cmd.agent_id } });
+    case 'load_conversation': {
+      const first = core.conversations[cmd.agent_id]?.entries[0]?.id ?? null;
+      return only({ load_conversation: { agent: cmd.agent_id, before: first } });
+    }
+    case 'archive_task': return only({ archive_task: { id: Number(cmd.task_id) } });
+    case 'close_effort': return only({ update_effort: { id: Number(cmd.effort_id), patch: [{ status: 'closed' }] } });
+    case 'close_slice': return only({ close_slice: { agent: cmd.agent_id } });
+    case 'reorder_task': {
+      const delta = reorderDelta(core, Number(cmd.task_id), cmd.dir);
+      return delta ? only({ reorder_task: { id: Number(cmd.task_id), delta } }) : { core: [] };
+    }
     case 'cycle_permission_mode': return only({ cycle_permission_mode: { agent: cmd.agent_id } });
     case 'start_preview': return only({ start_preview: { agent: cmd.agent_id } });
     case 'restart_preview': return only({ restart_preview: { agent: cmd.agent_id } });
@@ -80,6 +94,21 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
     case 'open_external': return only({ open_external: { url: cmd.url } });
     default: return { core: [], pending: cmd };
   }
+}
+
+/** The core orders tasks within a bucket, which holds every effort's tasks; the tree shows one
+ * effort's. The delta that moves a task past exactly one task of its own effort; 0 at an end. */
+export function reorderDelta(core: W.Snapshot, id: number, dir: 1 | -1): number {
+  const task = core.tasks.find(t => t.id === id);
+  if (!task) return 0;
+  const peers = core.tasks
+    .filter(t => t.status !== 'archived' && (t.bucket ?? null) === (task.bucket ?? null))
+    .sort((a, b) => a.order - b.order || a.id - b.id);
+  const from = peers.findIndex(t => t.id === id);
+  for (let j = from + dir; j >= 0 && j < peers.length; j += dir) {
+    if (peers[j]?.effort === task.effort) return j - from;
+  }
+  return 0;
 }
 
 function answer(cmd: Extract<UiCommand, { type: 'answer_inbox' }>, core: W.Snapshot): Translated {

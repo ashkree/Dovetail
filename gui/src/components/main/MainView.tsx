@@ -7,8 +7,9 @@ import { InboxItemView } from './InboxItemView';
 import { ReadingView } from './ReadingView';
 import { Viewer } from '../viewer/Viewer';
 import { Canvas } from '../canvas/Canvas';
+import { AgentView } from './AgentView';
 
-const TITLE: Record<View, string> = { canvas: 'Canvas', viewer: 'Viewer', reading: 'Reading', item: 'Inbox item' };
+const TITLE: Record<View, string> = { canvas: 'Canvas', viewer: 'Viewer', reading: 'Reading', item: 'Inbox item', agent: 'Agent' };
 
 export function MainView() {
   const ui = useUi();
@@ -26,6 +27,7 @@ export function MainView() {
         {ui.main === 'reading' && <ReadingView />}
         {ui.main === 'viewer' && <Viewer />}
         {ui.main === 'canvas' && <Canvas />}
+        {ui.main === 'agent' && <AgentView />}
       </div>
     </div>
   );

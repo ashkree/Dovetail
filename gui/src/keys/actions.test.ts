@@ -102,6 +102,63 @@ describe('actions against the core', () => {
     expect(uiStore.get().awaitProject).toBe(false);
   });
 
+  it('types to the agent whose conversation is open, tagged with its effort', () => {
+    const agent = snapshotStore.get().agents.find(a => a.id === 'login-fix')!;
+    dispatch('showAgent', 'login-fix');
+    expect(uiStore.get()).toMatchObject({ main: 'agent', agent: 'login-fix', zone: 'main' });
+    dispatch('insert');
+    expect(uiStore.get()).toMatchObject({ mode: 'insert', zone: 'main' });
+    setUi({ agentDraft: 'status?', draft: 'for the coordinator' });
+    dispatch('send');
+    expect(sent).toEqual([{ prompt: { agent: 'login-fix', text: 'status?', effort: Number(agent.effort_id) } }]);
+    expect(uiStore.get()).toMatchObject({ agentDraft: '', draft: 'for the coordinator' });
+  });
+
+  it('answers the open agent\'s permission request from its view', () => {
+    dispatch('showAgent', 'login-fix');
+    dispatch('allow');
+    const item = coreStore.get().inbox.find(i => i.agent === 'login-fix' && 'permission' in (i.kind as object))!;
+    expect(sent).toEqual([{ answer_permission: { item: item.id, answer: 'allow' } }]);
+  });
+
+  it('interrupts the agent in focus, a subagent through its slice, else the coordinator', () => {
+    dispatch('showAgent', 'run-e2e');
+    dispatch('interrupt');
+    setUi({ zone: 'chat', main: null });
+    dispatch('interrupt');
+    expect(sent).toEqual([{ interrupt: { agent: 'login-fix' } }, { interrupt: { agent: 'coordinator' } }]);
+  });
+
+  it('archives a task only after the confirm', () => {
+    const rows = treeRows(snapshotStore.get(), {});
+    const i = rows.findIndex(r => r.type === 'task');
+    const task = rows[i]!.type === 'task' ? (rows[i] as { task: { id: string } }).task : null;
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: i });
+    dispatch('archive');
+    expect(sent).toEqual([]);
+    const m = uiStore.get().modal;
+    if (m?.type !== 'picker') throw new Error('no confirm');
+    m.items[1]!.go();
+    expect(sent).toEqual([{ archive_task: { id: Number(task!.id) } }]);
+  });
+
+  it('moves a task past one task of its own effort', () => {
+    const core = coreStore.get();
+    const effort = core.tasks.find(t => core.tasks.filter(x => x.effort === t.effort).length > 1)!.effort;
+    const mine = core.tasks.filter(t => t.effort === effort && t.status !== 'archived')
+      .sort((a, b) => a.order - b.order || a.id - b.id);
+    const rows = treeRows(snapshotStore.get(), {});
+    const i = rows.findIndex(r => r.type === 'task' && r.task.id === String(mine[0]!.id));
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: i });
+    dispatch('moveUp');
+    expect(sent).toEqual([]);
+    dispatch('moveDown');
+    const peers = core.tasks.filter(t => t.status !== 'archived' && t.bucket === mine[0]!.bucket)
+      .sort((a, b) => a.order - b.order || a.id - b.id);
+    const delta = peers.findIndex(t => t.id === mine[1]!.id) - peers.findIndex(t => t.id === mine[0]!.id);
+    expect(sent).toEqual([{ reorder_task: { id: mine[0]!.id, delta } }]);
+  });
+
   it('counts only items that wait on the user', () => {
     const s = snapshotStore.get();
     expect(needsYou(s)).toBe(s.inbox.filter(i => i.kind !== 'finished').length);
