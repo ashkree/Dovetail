@@ -159,6 +159,21 @@ describe('actions against the core', () => {
     expect(sent).toEqual([{ reorder_task: { id: mine[0]!.id, delta } }]);
   });
 
+  it('keeps the tree cursor on a moved task once the core reorders', () => {
+    const core = coreStore.get();
+    const [a, b] = core.tasks.filter(t => t.effort === core.tasks[0]!.effort && t.status !== 'archived')
+      .sort((x, y) => x.order - y.order || x.id - y.id);
+    const at = () => treeRows(snapshotStore.get(), {}).findIndex(r => r.type === 'task' && r.task.id === String(a!.id));
+    const before = at();
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: before });
+    dispatch('moveDown');
+    const seq = coreStore.get().seq;
+    push({ event: { seq: seq + 1, event: { task_upserted: { ...b!, order: 0 } } } });
+    push({ event: { seq: seq + 2, event: { task_upserted: { ...a!, order: 1 } } } });
+    expect(at()).toBeGreaterThan(before);
+    expect(uiStore.get().treeSel).toBe(at());
+  });
+
   it('counts only items that wait on the user', () => {
     const s = snapshotStore.get();
     expect(needsYou(s)).toBe(s.inbox.filter(i => i.kind !== 'finished').length);

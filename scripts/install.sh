@@ -17,8 +17,13 @@ target="$HOME/.local/bin/dovetail"
 gui_target="$HOME/.local/bin/dovetail-gui"
 check_only=0
 gui=1
-[[ "${1:-}" == "--check" ]] && check_only=1
-[[ "${1:-}" == "--no-gui" ]] && gui=0
+for arg in "$@"; do
+  case "$arg" in
+    --check) check_only=1 ;;
+    --no-gui) gui=0 ;;
+    *) echo "install: unknown option $arg" >&2; exit 2 ;;
+  esac
+done
 
 # 1. Any process running the installed binary (app, `dovetail mcp`, `dovetail hook`). This works
 #    from inside a Dovetail slice too, where the runtime-dir variables point at a dev directory.

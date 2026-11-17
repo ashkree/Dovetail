@@ -7,7 +7,10 @@ import { COORDINATOR, UNSORTED_EFFORT } from '../core/wire';
 import type { Agent, Block, CardKind, ChatEntry, EffortKind, Id, InboxItem, Layout, Preview, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
-import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
+import {
+  AGENT_GLYPH, agentEntries, agentItems, effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, sessionOf, taskSlices, toKebab,
+  treeRows, visibleChat,
+} from '../state/select';
 import { barAgent, focusEffort, scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
 import { keysFor } from './resolve';
 import { readingHeadings, viewport } from './viewport';
@@ -111,28 +114,18 @@ export function agentInFocus(s: Snapshot, u: Ui): Agent | undefined {
 export function modeTarget(s: Snapshot, u: Ui): { id: Id; name: string; mode: string } {
   const agent = agentInFocus(s, u);
   if (agent) {
-    const a = agent.parent_id ? s.agents.find(x => x.id === agent.parent_id) ?? agent : agent;
+    const a = sessionOf(s, agent);
     return { id: a.id, name: a.name, mode: a.mode };
   }
   return { id: COORDINATOR, name: 'coordinator', mode: s.status.permission_mode };
 }
 
-/** Open an agent's conversation in the main view; the coordinator's is the chat. */
+/** Open an agent's conversation in the main view; the coordinator's is the chat. Sessions the
+ * tree does not list (side chats, tangents) have no view in the GUI. */
 export function showAgent(id: Id): void {
   if (id === COORDINATOR) { setUi({ zone: 'chat', mode: 'normal' }); return; }
+  if (!snap().agents.some(a => a.id === id)) { toast(`**${id}** has no conversation view here`); return; }
   setUi({ main: 'agent', agent: id, zone: 'main', mode: 'normal', agentCur: -1, wwi: false });
-}
-
-/** The entries the agent view shows. */
-export function agentEntries(s: Snapshot, id: Id | null): ChatEntry[] {
-  return (id && s.conversations[id]?.entries) || [];
-}
-
-/** The open items of an agent and its subagents: what the agent view lists above its bar. */
-export function agentItems(s: Snapshot, id: Id | null): InboxItem[] {
-  if (!id) return [];
-  const own = new Set([id, ...s.agents.filter(a => a.parent_id === id).map(a => a.id)]);
-  return s.inbox.filter(i => own.has(i.agent_id) && i.kind !== 'finished');
 }
 
 /** Ask before archiving: the keep/remove picker, as removing a repo does. */
@@ -390,7 +383,7 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'zoneDown': case 'zoneUp':
       if (u.zone === 'inbox' || u.zone === 'tree') setZone(a === 'zoneDown' ? 'tree' : 'inbox');
       else if (u.zone === 'main' && u.main === 'canvas') setUi({ canvasPart: a === 'zoneDown' ? 'incoming' : 'cards' });
-      else if ((u.zone === 'chat' || barAgent(u)) && a === 'zoneDown') setUi({ mode: 'insert' });
+      else if ((u.zone === 'chat' || barAgent(u)) && a === 'zoneDown') dispatch('insert');
       return;
     case 'focusZone': setZone(arg as Zone); setUi({ mode: 'normal' }); return;
     case 'focusChat': setUi({ zone: 'chat' }); return;
@@ -400,7 +393,13 @@ export function dispatch(a: Action, arg?: unknown): void {
       setUi(x => ({ sideCollapsed: !x.sideCollapsed, zone: !x.sideCollapsed && (x.zone === 'inbox' || x.zone === 'tree') ? 'chat' : x.zone }));
       return;
     // The agent view has its own bar; everywhere else `i` goes to the coordinator's.
-    case 'insert': setUi(barAgent(u) ? { mode: 'insert' } : { mode: 'insert', zone: 'chat' }); return;
+    case 'insert': {
+      const to = s.agents.find(x => x.id === barAgent(u));
+      // A subagent runs inside its slice's turn and takes no messages of its own.
+      if (to?.parent_id) { toast(`Type to its slice, **${sessionOf(s, to).name}**`); return; }
+      setUi(to ? { mode: 'insert' } : { mode: 'insert', zone: 'chat' });
+      return;
+    }
     case 'normal': setUi({ mode: 'normal' }); return;
     case 'leaveBar': setUi(barAgent(u) ? { mode: 'normal' } : { mode: 'normal', zone: 'chat' }); return;
     case 'escape':
@@ -452,7 +451,7 @@ export function dispatch(a: Action, arg?: unknown): void {
       const d = a === 'down' ? 1 : -1;
       if (sc === 'home') setUi({ homeSel: clamp(u.homeSel + d, 0, s.projects.length - 1) });
       else if (sc === 'inbox') setUi({ inboxSel: clamp(u.inboxSel + d, 0, Math.max(0, s.inbox.length - 1)) });
-      else if (sc === 'tree') setUi({ treeSel: clamp(u.treeSel + d, 0, treeRows(s, u.folded).length - 1) });
+      else if (sc === 'tree') setUi({ followTask: null, treeSel: clamp(u.treeSel + d, 0, treeRows(s, u.folded).length - 1) });
       return;
     }
     case 'top':
@@ -495,7 +494,7 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'showAgent': showAgent(String(arg)); return;
 
     // ---- efforts tree
-    case 'selectTree': setUi({ treeSel: Number(arg) }); setZone('tree'); return;
+    case 'selectTree': setUi({ followTask: null, treeSel: Number(arg) }); setZone('tree'); return;
     case 'fold': {
       const r = treeRows(s, u.folded)[u.treeSel];
       if (!r) return;
@@ -516,7 +515,7 @@ export function dispatch(a: Action, arg?: unknown): void {
       const r = treeRow(s, u);
       if (r?.type === 'agent') showAgent(r.agent.id);
       else if (r?.type === 'task') {
-        const slice = s.agents.find(x => x.task_id === r.task.id && !x.parent_id);
+        const slice = taskSlices(s, r.task.id)[0];
         if (slice) showAgent(slice.id); else toast(`No agent works on “${r.task.title}” yet`);
       } else toast('The coordinator\'s conversation is the chat');
       return;
@@ -540,27 +539,24 @@ export function dispatch(a: Action, arg?: unknown): void {
       const r = treeRow(s, u);
       if (r?.type !== 'task') { toast('Reorder moves a task among its effort\'s tasks'); return; }
       const dir = a === 'moveDown' ? 1 : -1;
+      // The cursor follows the task when the core's new order arrives (store.ts, taskEvent).
+      setUi({ followTask: r.task.id });
       send({ type: 'reorder_task', task_id: r.task.id, dir });
-      // The cursor stays on the task once the core has moved it.
-      setUi(x => {
-        const at = treeRows(snap(), x.folded).findIndex(y => y.type === 'task' && y.task.id === r.task.id);
-        return at >= 0 ? { treeSel: at } : {};
-      });
       return;
     }
     case 'archive': {
       const r = treeRow(s, u);
       if (!r) return;
       if (r.type === 'task') {
-        const slices = s.agents.filter(x => x.task_id === r.task.id && !x.parent_id).length;
+        const slices = taskSlices(s, r.task.id).length;
         confirm(`Archive “${r.task.title}”?${slices ? ' Its slices end; worktrees and branches stay.' : ''}`, 'Archive it',
-          () => { send({ type: 'archive_task', task_id: r.task.id }); toast(`Archived “${r.task.title}”`); });
+          () => send({ type: 'archive_task', task_id: r.task.id }));
       } else if (r.type === 'effort') {
         confirm(`Close the effort ${r.effort.name}? Its tasks stay in the database.`, 'Close it',
-          () => { send({ type: 'close_effort', effort_id: r.effort.id }); toast(`Closed **${r.effort.name}**`); });
+          () => send({ type: 'close_effort', effort_id: r.effort.id }));
       } else if (r.agent.kind === 'slice') {
         confirm(`End the slice ${r.agent.name}? Its worktree and branch stay.`, 'End it',
-          () => { send({ type: 'close_slice', agent_id: r.agent.id }); toast(`Ended **${r.agent.name}**`); });
+          () => send({ type: 'close_slice', agent_id: r.agent.id }));
       } else toast('A subagent ends with its turn');
       return;
     }
@@ -840,7 +836,7 @@ export function dispatch(a: Action, arg?: unknown): void {
       picker('Everything · efforts, agents, inbox, cards', [
         ...s.efforts.map(e => ({ key: 'e' + e.id, text: 'effort ' + e.name, label: e.name, effort: e.id, detail: 'effort', go: () => switchEffort(e.id) })),
         ...s.agents.map(ag => ({
-          key: 'a' + ag.id, text: 'agent ' + ag.name, label: ag.name, glyph: ag.kind === 'slice' ? '◆' : '◇', glyphClass: 'agent-g',
+          key: 'a' + ag.id, text: 'agent ' + ag.name, label: ag.name, glyph: AGENT_GLYPH[ag.kind], glyphClass: 'agent-g',
           detail: [ag.branch, effortById(s, s.tasks.find(t => t.id === ag.task_id)?.effort_id)?.name].filter(Boolean).join(' · '),
           go: () => showAgent(ag.id),
         })),
@@ -862,8 +858,9 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'pickAgent': dispatch('picker'); setUi(x => x.modal?.type === 'picker' ? { modal: { ...x.modal, q: 'agent ' } } : {}); return;
     case 'interrupt': {
       const t = modeTarget(s, u);
+      // The core says when there is nothing to stop; the conversation shows the interruption.
       send({ type: 'interrupt', agent_id: t.id });
-      toast(`Interrupting **${t.name}**`);
+      toast(`Interrupt sent to **${t.name}**`);
       return;
     }
     // The coordinator's session moves to its next mode (auto → acceptEdits → manual); the

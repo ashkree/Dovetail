@@ -3,8 +3,8 @@
 // (answered with the inbox keys), and `i` types to it.
 
 import { useEffect, useRef } from 'react';
-import { agentEntries, agentItems, dispatch } from '../../keys/actions';
-import { INBOX_GLYPH } from '../../state/select';
+import { dispatch } from '../../keys/actions';
+import { AGENT_GLYPH, agentEntries, agentItems, INBOX_GLYPH, sessionOf } from '../../state/select';
 import { useSnapshot } from '../../state/store';
 import { useUi } from '../../state/ui';
 import { ChatBar } from '../chat/ChatBar';
@@ -31,12 +31,13 @@ export function AgentView() {
   }, [ui.agentCur, entries.length, last?.text.length, items.length, ui.agent]);
 
   if (!agent) return <div className="empty-main">This agent has ended. {keyText('escape')} goes back.</div>;
-  const parent = agent.parent_id ? s.agents.find(a => a.id === agent.parent_id) : undefined;
+  const slice = sessionOf(s, agent);
+  const parent = slice === agent ? undefined : slice;
   const focus = ui.zone === 'main';
   return (
     <div className="agentview">
       <div className="agent-head">
-        <span className="who">{agent.kind === 'slice' ? '◆' : '◇'} {agent.name}</span>
+        <span className="who">{AGENT_GLYPH[agent.kind]} {agent.name}</span>
         {parent && <span className="dim">of {parent.name}</span>}
         {agent.branch && <span className="branch">{agent.branch}</span>}
         <span className={`dim st-${agent.state}`}>{STATE_TEXT[agent.state]}</span>
@@ -77,7 +78,8 @@ export function AgentView() {
           </>}
         </div>
       ))}
-      <ChatBar agent={agent} />
+      {/* A subagent runs inside its slice's turn: messages go to the slice. */}
+      {parent ? <p className="dim agent-note">Type to its slice, {parent.name}: {keyText('openConversation', 'tree')} on it in the tree.</p> : <ChatBar agent={agent} />}
     </div>
   );
 }

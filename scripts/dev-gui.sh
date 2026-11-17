@@ -41,6 +41,10 @@ fi
 
 echo "dev-gui: state under $dev"
 if [[ $release -eq 1 ]]; then
+    if [[ ! -x target/release/dovetail-gui ]]; then
+        echo "dev-gui: no release build yet; run scripts/install.sh (or: cd gui && npx tauri build --no-bundle)" >&2
+        exit 1
+    fi
     exec target/release/dovetail-gui
 fi
 cd gui

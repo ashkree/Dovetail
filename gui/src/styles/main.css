@@ -18,3 +18,4 @@
 .agentview .agent-item.first { border-color: var(--warn); }
 .agentview .agent-item .item-head { display: flex; gap: 10px; align-items: center; }
 .agentview .agent-item pre { background: #00000033; border: 1px solid var(--edge); border-radius: 8px; padding: 8px 12px; overflow: auto; }
+.agentview .agent-note { margin: 0 22px 14px; }

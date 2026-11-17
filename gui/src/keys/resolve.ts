@@ -5,7 +5,7 @@ import type { Action } from './actions';
 import { HOME_SKIPS_GLOBAL, KEYMAP, LEADER, type Binding, type LeaderGroup, type LeaderNode } from './keymap';
 
 /** The parts of a KeyboardEvent the resolver reads. */
-export interface KeyLike { key: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }
+export interface KeyLike { key: string; code?: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }
 
 const ARROWS: Record<string, string> = { ArrowDown: 'j', ArrowUp: 'k', ArrowLeft: 'h', ArrowRight: 'l' };
 
@@ -13,7 +13,9 @@ const ARROWS: Record<string, string> = { ArrowDown: 'j', ArrowUp: 'k', ArrowLeft
  *  Arrows are h j k l in Normal mode; while typing they stay arrows (`<Down>`) so text fields keep them. */
 export function tokenOf(e: KeyLike, insert: boolean): string | null {
   if (e.metaKey) return null;
-  let k = e.key;
+  // WebKitGTK (the Tauri window on Linux) reports Shift-Tab as key `Unidentified`, code `Tab`;
+  // dropped, the browser moved focus into the chat bar instead.
+  let k = e.key === 'Unidentified' && e.code === 'Tab' ? 'Tab' : e.key;
   if (k === ' ') k = '<Space>';
   else if (k === 'Enter') k = e.altKey ? '<A-CR>' : '<CR>';
   else if (k === 'Escape') k = '<Esc>';
