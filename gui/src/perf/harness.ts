@@ -196,20 +196,11 @@ export async function runPerf(chat: number, cards: number): Promise<void> {
   });
   await counted('idle 5 s', async () => { await sleep(5000); return {}; });
   // The script samples CPU and memory in each of these windows.
-  // Each phase hides one more part of the page, to find what the idle CPU is spent on.
+  // Each phase changes the page, so the script can sample idle CPU with and without the spinner.
   const phases: [string, string][] = [
     ['idle', ''],
     ['idle-spinner-hidden', '.spin { display: none !important; }'],
   ];
-  if (import.meta.env.VITE_PERF_BISECT) {
-    phases.push(
-      ['spin-contain-strict', '.status .spin { contain: strict !important; }'],
-      ['spin-steps-4', '.status .spin { animation: spin 1s steps(4) infinite !important; }'],
-      ['spin-opacity-blink', '@keyframes blink { 50% { opacity: .3; } } .status .spin { animation: blink 1.2s steps(1) infinite !important; }'],
-      ['spin-translatez', '.status .spin { transform: translateZ(0); will-change: transform, opacity; animation: spin 1s linear infinite !important; }'],
-      ['spin-opacity-only-composited', '.status .spin { will-change: opacity; animation: blink 1.2s linear infinite !important; }'],
-    );
-  }
   const style = document.createElement('style');
   document.head.append(style);
   for (const [name, css] of phases) {

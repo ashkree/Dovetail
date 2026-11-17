@@ -14,7 +14,7 @@ out="${PERF_OUT:-/tmp/dovetail-perf.txt}"
 
 if [[ "${1:-}" != "--no-build" ]]; then
     cap='{"app":{"security":{"capabilities":[{"identifier":"perf","windows":["main"],"permissions":["core:default","allow-core-send","allow-core-subscribe","allow-perf-log"]}]}}}'
-    (cd gui && VITE_PERF=1 VITE_PERF_BISECT="${VITE_PERF_BISECT:-}" CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" \
+    (cd gui && VITE_PERF=1 CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" \
         CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
         npx tauri build --no-bundle --features perf --config "$cap")
 fi

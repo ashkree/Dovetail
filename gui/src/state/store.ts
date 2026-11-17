@@ -51,6 +51,8 @@ export function send(cmd: UiCommand): void {
 /** Streamed text waits here for the next frame and is folded in one go (a hundred deltas a second
  * would otherwise be a hundred renders a second). Anything else flushes it first, so order holds. */
 let queued: SeqEvent[] = [];
+/** How long queued deltas wait when the window is hidden and no frame comes. */
+export const DELTA_FLUSH_FALLBACK_MS = 50;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Fold the queued deltas into the core's snapshot now. */
@@ -67,10 +69,10 @@ export function flushQueued(): void {
 function queueDelta(item: SeqEvent): void {
   queued.push(item);
   if (flushTimer !== null) return;
-  // A frame, or 50 ms when the window is hidden and no frame comes.
+  // A frame, or the fallback when the window is hidden and no frame comes.
   const go = () => flushQueued();
   requestAnimationFrame(go);
-  flushTimer = setTimeout(go, 50);
+  flushTimer = setTimeout(go, DELTA_FLUSH_FALLBACK_MS);
 }
 
 function receive(msg: W.ServerMsg): void {

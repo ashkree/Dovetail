@@ -107,6 +107,6 @@ The plan (`docs/plan/gui-frontend.md`) says "stop and ask" in a few places. The 
 ## 13. The busy spinner is stepped by a timer, not animated (perf, 2026-11-17)
 
 - **Open:** the bottom bar's "a turn is running" ring was a CSS rotation. Measured in the release window (`docs/plan/gui-perf.md`), it kept WebKitGTK re-rendering the page every frame: ~26 % of a core for as long as any turn ran. Transform, `steps()`, opacity and `will-change` variants cost the same.
-- **Chose:** a small `Spinner` component that turns the ring a quarter every 250 ms from an interval (about 2 % CPU). This is an exception to decision 6's "no timers": it is only for this indicator.
+- **Chose:** a small `Spinner` component that turns the ring a quarter every `SPINNER_STEP_MS` (`BottomBar.tsx`) from an interval (about 2 % CPU). This is an exception to decision 6's "no timers": it is only for this indicator.
 - **Why:** crispness; the look is the same ring, in four steps instead of a smooth turn.
 - **Change:** `Spinner` in `gui/src/components/shell/BottomBar.tsx`, `.status .spin` in `gui/src/styles/shell.css`. Do not add other infinite CSS animations without measuring idle CPU with `scripts/perf-gui.sh`.

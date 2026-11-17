@@ -10,7 +10,7 @@ The release build used here has LTO off (`CARGO_PROFILE_RELEASE_LTO=off`): the s
 
 ## Before and after
 
-Release build, 300-entry chat, 40 cards. Milliseconds per action, mean of 20-40.
+Release build, 300-entry chat, 40 cards. Milliseconds per action, mean of 20-40, one run each on a synthetic core (the real core's IPC is not in these numbers). The like-for-like figure is paint: 127-141 ms before (256 ms for the Space leader), 17-30 ms after; `sync` is the time to the end of React's work.
 
 | Scenario | Before (sync / paint) | After (sync / paint) |
 |---|---|---|

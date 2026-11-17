@@ -8,7 +8,7 @@ import {
   type Edge, type Node, type NodeChange, type NodeProps,
 } from '@xyflow/react';
 import type { Block, Card, Layout } from '../../core/model';
-import { blockExtent, CARD_H, CARD_W } from '../../core/geometry';
+import { blockExtent, CARD_H, CARD_W, dropMissing } from '../../core/geometry';
 import { BLOCK_KEY, dispatch, effortBlocks, markSeen } from '../../keys/actions';
 import { keyText } from '../overlays/Keys';
 import { viewport } from '../../keys/viewport';
@@ -90,22 +90,25 @@ function Flow({ blocks, cards }: { blocks: Block[]; cards: Card[] }) {
   // A card's node is kept while its card, selection and position are the same, so a move of the
   // selection rebuilds two nodes, not forty.
   const kept = useRef(new Map<string, { card: Card; sel: boolean; pos: { x: number; y: number }; node: CardNode }>());
-  const nodes: (CardNode | BlockNode)[] = useMemo(() => [
-    ...frames.map((f): BlockNode => ({
-      id: `block-${f.block.id}`, type: 'block', position: { x: f.x, y: f.y }, data: { block: f.block },
-      style: { width: f.w, height: f.h }, draggable: false, focusable: false, selectable: false, zIndex: -1,
-    })),
-    ...cards.map((c): CardNode => {
-      const sel = c.id === selOnCanvas;
-      const dragged = dragging[c.id];
-      const pos = dragged ?? { x: c.x, y: c.y };
-      const old = kept.current.get(c.id);
-      if (old && old.card === c && old.sel === sel && old.pos.x === pos.x && old.pos.y === pos.y) return old.node;
-      const node: CardNode = { id: c.id, type: 'card', position: pos, data: { card: c, sel }, focusable: false, selectable: false };
-      kept.current.set(c.id, { card: c, sel, pos, node });
-      return node;
-    }),
-  ], [frames, cards, dragging, selOnCanvas]);
+  const nodes: (CardNode | BlockNode)[] = useMemo(() => {
+    dropMissing(kept.current, cards.map(c => c.id));
+    return [
+      ...frames.map((f): BlockNode => ({
+        id: `block-${f.block.id}`, type: 'block', position: { x: f.x, y: f.y }, data: { block: f.block },
+        style: { width: f.w, height: f.h }, draggable: false, focusable: false, selectable: false, zIndex: -1,
+      })),
+      ...cards.map((c): CardNode => {
+        const sel = c.id === selOnCanvas;
+        const dragged = dragging[c.id];
+        const pos = dragged ?? { x: c.x, y: c.y };
+        const old = kept.current.get(c.id);
+        if (old && old.card === c && old.sel === sel && old.pos.x === pos.x && old.pos.y === pos.y) return old.node;
+        const node: CardNode = { id: c.id, type: 'card', position: pos, data: { card: c, sel }, focusable: false, selectable: false };
+        kept.current.set(c.id, { card: c, sel, pos, node });
+        return node;
+      }),
+    ];
+  }, [frames, cards, dragging, selOnCanvas]);
   const edges: Edge[] = useMemo(() => {
     const ids = new Set(cards.map(c => c.id));
     return s.card_links.filter(l => ids.has(l.from) && ids.has(l.to))

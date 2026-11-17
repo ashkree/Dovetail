@@ -5,13 +5,16 @@ import { scopeOf, useUi } from '../../state/ui';
 import { SCOPES } from '../../keys/keymap';
 import { modeTarget } from '../../keys/actions';
 
-/** The "a turn is running" ring, turned a quarter every 250 ms from here. A CSS animation made
+/** How often the busy ring turns a quarter (gui/DECISIONS.md 13). */
+export const SPINNER_STEP_MS = 250;
+
+/** The "a turn is running" ring, turned a quarter every `SPINNER_STEP_MS` from here. A CSS animation made
  * WebKitGTK redo the whole page's rendering 60 times a second (~25 % of a core while any turn
  * ran); one small state change four times a second costs next to nothing. */
 function Spinner() {
   const [quarter, setQuarter] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setQuarter(q => (q + 1) % 4), 250);
+    const id = setInterval(() => setQuarter(q => (q + 1) % 4), SPINNER_STEP_MS);
     return () => clearInterval(id);
   }, []);
   return <span className="spin" style={{ transform: `rotate(${quarter * 90}deg)` }} />;
