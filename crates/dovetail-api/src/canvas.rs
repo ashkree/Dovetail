@@ -55,6 +55,16 @@ pub struct Block {
     pub y: i64,
 }
 
+/// A point on a canvas, in canvas pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Point {
+    /// Rightwards.
+    pub x: i64,
+    /// Downwards.
+    pub y: i64,
+}
+
 /// Sizes the core places by and the GUI draws with, in canvas pixels. A card's cell in a block is
 /// `CARD_W + GAP` wide and `CARD_H + GAP` high, starting `PAD` from the block's left edge and
 /// `HEADER` from its top.

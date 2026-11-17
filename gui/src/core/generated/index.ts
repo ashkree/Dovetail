@@ -72,6 +72,7 @@ export type { PLevel } from './PLevel';
 export type { Paste } from './Paste';
 export type { PermissionAnswer } from './PermissionAnswer';
 export type { PermissionMode } from './PermissionMode';
+export type { Point } from './Point';
 export type { PrLookup } from './PrLookup';
 export type { PrState } from './PrState';
 export type { Preview } from './Preview';

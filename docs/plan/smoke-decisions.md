@@ -67,6 +67,9 @@ Each step ends with a status line here, then a commit and push.
 - Options compare places a card in its option's column (`under` = the option card); criteria
   rows are not modelled yet. Moving a whole block is not in this build: the user moves cards.
 - The `?` map and which-key read the keymap, so the new rows show without extra work.
+- Placement limits (review): an options-compare row 0 blocked by a neighbouring block continues
+  past it; migrated canvases of one effort keep their own coordinates and may overlap as blocks.
+- The viewer's picked slice is let go when the effort changes (an implementation choice).
 
 ## Status
 

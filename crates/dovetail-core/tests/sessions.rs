@@ -5185,21 +5185,56 @@ fn blocks_cards_and_links_are_core_state_that_survives_a_restart() {
         effort,
         title: String::new(),
         layout: Layout::QuestionTree,
+        near: None,
     });
     h.send(Command::CreateBlock {
         effort: other,
         title: "Elsewhere".into(),
         layout: Layout::FreeArea,
+        near: None,
     });
     h.send(Command::CreateBlock {
         effort,
         title: "Which provider?".into(),
         layout: Layout::OptionsCompare,
+        near: None,
     });
-    h.wait_for("three blocks", |s| s.blocks.len() == 3);
+    // Where the user looks: centred there when it is empty, else the nearest empty spot.
+    h.send(Command::CreateBlock {
+        effort,
+        title: "Notes".into(),
+        layout: Layout::FreeArea,
+        near: Some(dovetail_api::Point { x: 145, y: 1000 }),
+    });
+    h.send(Command::CreateBlock {
+        effort,
+        title: "Crowded".into(),
+        layout: Layout::FreeArea,
+        near: Some(dovetail_api::Point { x: 145, y: 80 }),
+    });
+    h.wait_for("five blocks", |s| s.blocks.len() == 5);
     let tree = h.snap.blocks[0].clone();
     let elsewhere = h.snap.blocks[1].id;
     let compare = h.snap.blocks[2].clone();
+    let (w, hh) = (
+        2 * PAD + CARD_W,
+        HEADER + dovetail_api::geometry::CARD_H + PAD,
+    );
+    assert_eq!(
+        (h.snap.blocks[3].x, h.snap.blocks[3].y),
+        (145 - w / 2, 1000 - hh / 2)
+    );
+    // Centred on the tree block it would cover: moved off it, the tree did not move.
+    let crowded = h.snap.blocks[4].clone();
+    assert_ne!((crowded.x, crowded.y), (145 - w / 2, 80 - hh / 2));
+    assert!(
+        crowded.x >= tree.x + w + BLOCK_GAP / 2
+            || crowded.y >= tree.y + hh + BLOCK_GAP / 2
+            || crowded.x + w + BLOCK_GAP / 2 <= tree.x
+            || crowded.y + hh + BLOCK_GAP / 2 <= tree.y,
+        "{crowded:?}"
+    );
+    assert_eq!(h.snap.blocks[0], tree);
     assert_eq!(
         tree.title, "Question tree",
         "an empty title is the layout's name"
@@ -5246,12 +5281,12 @@ fn blocks_cards_and_links_are_core_state_that_survives_a_restart() {
         block: None,
     });
     h.wait_for("placed", |s| {
-        s.cards.iter().any(|c| c.block == Some(compare.id))
+        s.cards.iter().any(|c| c.block == Some(crowded.id))
     });
     let placed = card_titled(&h.snap, "Ask Mollie about EU-only pricing").expect("card");
     assert_eq!(
         (placed.x, placed.y, placed.seen),
-        (compare.x + PAD, compare.y + HEADER, true)
+        (crowded.x + PAD, crowded.y + HEADER, true)
     );
     assert_eq!(h.failures.len(), 4, "{:?}", h.failures);
     assert!(h.failures[0].contains("incoming"), "{:?}", h.failures);

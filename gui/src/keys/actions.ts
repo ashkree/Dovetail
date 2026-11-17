@@ -123,10 +123,10 @@ function pick(set: VariantSet, i: number, j: number): void {
 /** The layouts `b` offers for a new block, by action (`b 1`, `b 2`, `b 3`). */
 export const BLOCK_KEY = { newBlock1: 'question_tree', newBlock2: 'options_compare', newBlock3: 'free_area' } as const satisfies Record<string, Layout>;
 
-/** Select a card on the canvas; one an agent put there unseen is marked seen. */
-function selectCard(s: Snapshot, id: Id): void {
-  setUi({ cardSel: id });
-  if (s.cards.find(c => c.id === id)?.unseen) send({ type: 'see_card', card_id: id });
+/** The selected card, if an agent put it there unseen, is now seen. The canvas calls this
+ * whenever the selection changes, however it changed. */
+export function markSeen(s: Snapshot, id: Id | null): void {
+  if (id && s.cards.find(c => c.id === id)?.unseen) send({ type: 'see_card', card_id: id });
 }
 
 function switchEffort(id: Id, quiet = false): void {
@@ -542,10 +542,10 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'cardLeft': case 'cardRight': case 'cardUp': case 'cardDown': {
       const [dx, dy] = { cardLeft: [-1, 0], cardRight: [1, 0], cardUp: [0, -1], cardDown: [0, 1] }[a];
       const next = nearestCard(cardsOnCanvas(s, u), u.cardSel, dx ?? 0, dy ?? 0);
-      if (next) selectCard(s, next.id);
+      if (next) setUi({ cardSel: next.id });
       return;
     }
-    case 'selectCard': selectCard(s, String(arg)); setUi({ canvasPart: 'cards', zone: 'main' }); return;
+    case 'selectCard': setUi({ cardSel: String(arg), canvasPart: 'cards', zone: 'main' }); return;
     case 'follow': case 'followBack': {
       // Tab: to the first card this one links to; Shift-Tab: back to the card that links to it.
       const l = s.card_links.find(x => a === 'follow' ? x.from === u.cardSel : x.to === u.cardSel);
@@ -631,7 +631,9 @@ export function dispatch(a: Action, arg?: unknown): void {
     // `b 1/2/3`: a new block, placed by the core in empty space (ADR 0027).
     case 'newBlock1': case 'newBlock2': case 'newBlock3': dispatch('pickLayout', BLOCK_KEY[a]); return;
     case 'pickLayout': {
-      if (u.effort) send({ type: 'new_block', effort_id: u.effort, layout: (arg as Layout) ?? 'free_area' });
+      // It lands in the empty space nearest the middle of the view (ADR 0027).
+      const near = viewport.canvas?.centre() ?? undefined;
+      if (u.effort) send({ type: 'new_block', effort_id: u.effort, layout: (arg as Layout) ?? 'free_area', ...(near ? { near } : {}) });
       return;
     }
 

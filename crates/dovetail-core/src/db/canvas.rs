@@ -13,8 +13,8 @@
 use dovetail_api::geometry::{BLOCK_GAP, CARD_H, CARD_W, COLUMNS, GAP, HEADER, PAD};
 use dovetail_api::research::FindingId;
 use dovetail_api::{
-    Block, BlockId, Card, CardId, CardKind, CardLink, CardRef, EffortId, Layout, NewCard, RefKind,
-    TaskId, UNSORTED_EFFORT, card_title,
+    Block, BlockId, Card, CardId, CardKind, CardLink, CardRef, EffortId, Layout, NewCard, Point,
+    RefKind, TaskId, UNSORTED_EFFORT, card_title,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
@@ -47,10 +47,21 @@ impl Db {
         self.run(|c, _| load_state(c.state()?))
     }
 
-    /// Adds a block to an effort's canvas, right of everything on it. An empty title becomes the
-    /// layout's name.
-    pub fn create_block(&self, effort: EffortId, title: String, layout: Layout) -> Pending<Block> {
-        self.run(move |c, now| create_block(c.state()?, effort, &title, layout, now))
+    /// Adds a block to an effort's canvas, in the empty space nearest `near`, else right of
+    /// everything on it. An empty title becomes the layout's name.
+    pub fn create_block(
+        &self,
+        effort: EffortId,
+        title: String,
+        layout: Layout,
+        near: Option<Point>,
+    ) -> Pending<Block> {
+        self.run(move |c, now| create_block(c.state()?, effort, &title, layout, near, now))
+    }
+
+    /// One block.
+    pub fn block(&self, id: BlockId) -> Pending<Block> {
+        self.run(move |c, _| load_block(c.state()?, id))
     }
 
     /// Renames a block.
@@ -322,6 +333,7 @@ fn create_block(
     effort: EffortId,
     title: &str,
     layout: Layout,
+    near: Option<Point>,
     now: i64,
 ) -> Result<Block, DbError> {
     effort_name(conn, effort)?;
@@ -329,7 +341,7 @@ fn create_block(
         "" => layout_name(layout).to_owned(),
         t => t.to_owned(),
     };
-    let (x, y) = Board::read(conn, effort)?.new_block_spot();
+    let (x, y) = Board::read(conn, effort)?.new_block_spot(near);
     conn.execute(
         "INSERT INTO blocks (effort_id, title, layout, x, y, created_ms) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -383,6 +395,9 @@ impl Rect {
     }
 }
 
+/// How many rings of `BLOCK_GAP` steps a new block's search goes out from the view's centre.
+const NEAR_RINGS: i64 = 25;
+
 /// How far a search for a free cell looks before it gives up and goes below everything.
 const SEARCH_ROWS: i64 = 200;
 const SEARCH_COLUMNS: i64 = 50;
@@ -422,8 +437,43 @@ impl Board {
         }
     }
 
-    /// Right of every block, at the top.
-    fn new_block_spot(&self) -> (i64, i64) {
+    /// Where a new block goes: centred on `near` when that space is empty, else the empty spot
+    /// nearest it on a `BLOCK_GAP` grid; with no `near` (an agent's block), or nothing empty in
+    /// reach, right of every block at the top. Empty: its smallest frame, with `BLOCK_GAP / 2`
+    /// around it, touches no frame and no card.
+    fn new_block_spot(&self, near: Option<Point>) -> (i64, i64) {
+        let (w, h) = (2 * PAD + CARD_W, HEADER + CARD_H + PAD);
+        if let Some(p) = near {
+            let margin = BLOCK_GAP / 2;
+            let free = |x: i64, y: i64| {
+                let r = Rect {
+                    x: x - margin,
+                    y: y - margin,
+                    w: w + 2 * margin,
+                    h: h + 2 * margin,
+                };
+                !self.blocks.iter().any(|b| r.overlaps(self.extent(b)))
+                    && !self
+                        .cards
+                        .iter()
+                        .any(|&(_, cx, cy)| r.overlaps(Rect::card(cx, cy)))
+            };
+            let (x0, y0) = (p.x - w / 2, p.y - h / 2);
+            for ring in 0..NEAR_RINGS {
+                // The cells of this ring, nearest first.
+                let mut cells: Vec<(i64, i64)> = (-ring..=ring)
+                    .flat_map(|i| (-ring..=ring).map(move |j| (i, j)))
+                    .filter(|&(i, j)| i.abs().max(j.abs()) == ring)
+                    .collect();
+                cells.sort_by_key(|&(i, j)| i * i + j * j);
+                for (i, j) in cells {
+                    let (x, y) = (x0 + i * BLOCK_GAP, y0 + j * BLOCK_GAP);
+                    if free(x, y) {
+                        return (x, y);
+                    }
+                }
+            }
+        }
         let right = self
             .blocks
             .iter()
@@ -449,6 +499,12 @@ impl Board {
         };
         let free = |(x, y): (i64, i64)| {
             let r = Rect::card(x, y);
+            // The block's frame grows by PAD around a card: that must not reach another frame.
+            let grown = Rect {
+                w: CARD_W + PAD,
+                h: CARD_H + PAD,
+                ..r
+            };
             !self
                 .cards
                 .iter()
@@ -457,7 +513,7 @@ impl Board {
                     .blocks
                     .iter()
                     .filter(|b| b.id != block.id)
-                    .any(|b| r.overlaps(self.extent(b)))
+                    .any(|b| grown.overlaps(self.extent(b)))
         };
         let (rows, cols): (std::ops::Range<i64>, std::ops::Range<i64>) = match (under, block.layout)
         {
@@ -641,7 +697,7 @@ fn place_card(
     {
         Some(b) => load_block(&tx, b)?,
         None => {
-            let b = create_block(&tx, card.effort, "", Layout::FreeArea, now)?;
+            let b = create_block(&tx, card.effort, "", Layout::FreeArea, None, now)?;
             made = Some(b.clone());
             b
         }

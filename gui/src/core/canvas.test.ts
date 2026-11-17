@@ -68,7 +68,7 @@ describe('translating card commands', () => {
 
   it('asks the core for a new block of a layout', () => {
     expect(translate({ type: 'new_block', effort_id: '3', layout: 'options_compare' }, core).core)
-      .toEqual([{ create_block: { effort: 3, title: '', layout: 'options_compare' } }]);
+      .toEqual([{ create_block: { effort: 3, title: '', layout: 'options_compare', near: null } }]);
   });
 
   it('sends a new idea with its title as the first line', () => {
@@ -133,7 +133,7 @@ describe('MockCore speaks the canvas protocol', () => {
 
   it('adds a block right of the others, and makes one for a card placed where there is none', () => {
     const { mock, c } = client();
-    mock.send({ create_block: { effort: 2, title: '', layout: 'free_area' } });
+    mock.send({ create_block: { effort: 2, title: '', layout: 'free_area', near: null } });
     const [first, second] = c.state.blocks;
     expect(second).toMatchObject({ id: 2, effort: 2, title: 'Free area', layout: 'free_area', y: 0 });
     expect(second!.x).toBeGreaterThan(first!.x + 600);

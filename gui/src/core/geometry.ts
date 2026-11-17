@@ -1,5 +1,6 @@
 // Canvas sizes in canvas pixels, the same numbers the core places by
-// (`dovetail_api::canvas::geometry`; ts-rs exports no constants, so they are repeated here).
+// (`dovetail_api::canvas::geometry`; ts-rs exports no constants, so they are repeated here and
+// `crates/dovetail-api/tests/geometry.rs` checks the copies are equal).
 
 import type { Block, Card } from './model';
 

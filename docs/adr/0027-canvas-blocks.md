@@ -44,7 +44,7 @@ does all placement, so "never moves" still holds by construction: no tool takes 
 (`cards.seen = 0`) until the user selects it. A card with no block still goes to the incoming
 strip, which always shows under the canvas.
 
-**5. The user makes blocks too**, with `b` then `1 2 3`; the core places them the same way.
+**5. The user makes blocks too**, with `b` then `1 2 3`. The GUI sends the centre of the view and the core puts the block in the empty space nearest it.
 
 **6. Not now:** converting a block from one layout to another (make a new block and move the
 cards), moving a whole block, and modelled criteria rows in options compare (a card goes in its

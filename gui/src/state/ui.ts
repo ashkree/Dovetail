@@ -144,5 +144,6 @@ export function scopeOf(ui: Ui): string {
 
 /** Focus effort `id`: the next message is tagged with it and its "where was I" comes up. */
 export function focusEffort(id: Id): void {
-  setUi(u => ({ effort: id, tag: id, wwi: true, wwiFlash: 0, filter: u.filter === 'all' ? 'all' : id }));
+  // The viewer goes back to following the effort: a slice picked in another effort is let go.
+  setUi(u => ({ effort: id, tag: id, wwi: true, wwiFlash: 0, filter: u.filter === 'all' ? 'all' : id, viewerAgent: null }));
 }

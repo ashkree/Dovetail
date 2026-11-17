@@ -45,7 +45,10 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
       return only({ remove_repo: { project: cmd.project_id, repo: repo.id } });
     }
     case 'answer_inbox': return answer(cmd, core);
-    case 'new_block': return only({ create_block: { effort: Number(cmd.effort_id), title: '', layout: cmd.layout } });
+    case 'new_block': {
+      const near = cmd.near ? { x: Math.round(cmd.near.x), y: Math.round(cmd.near.y) } : null;
+      return only({ create_block: { effort: Number(cmd.effort_id), title: '', layout: cmd.layout, near } });
+    }
     case 'place_card': return only({ place_card: { id: coreCardId(cmd.incoming_id), block: null } });
     case 'see_card': return only({ see_card: { id: coreCardId(cmd.card_id) } });
     case 'drop_incoming': return only({ drop_incoming: { id: coreCardId(cmd.incoming_id) } });

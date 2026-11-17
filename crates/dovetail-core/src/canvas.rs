@@ -10,7 +10,7 @@ use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::tools::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards};
 use dovetail_api::{
     ActivityKind, AgentId, BlockId, Card, CardId, CardKind, CardRef, EffortId, EntryId, Event,
-    Layout, NewCard, RefKind, TaskId, UNSORTED_EFFORT,
+    Layout, NewCard, Point, RefKind, TaskId, UNSORTED_EFFORT,
 };
 
 use crate::db::{DbError, USER};
@@ -18,8 +18,14 @@ use crate::service::Core;
 use crate::tools::{error, ok};
 
 impl Core {
-    pub(crate) async fn create_block(&mut self, effort: EffortId, title: String, layout: Layout) {
-        match self.db.create_block(effort, title, layout).await {
+    pub(crate) async fn create_block(
+        &mut self,
+        effort: EffortId,
+        title: String,
+        layout: Layout,
+        near: Option<Point>,
+    ) {
+        match self.db.create_block(effort, title, layout, near).await {
             Ok(block) => self.emit(Event::BlockUpserted(block)),
             Err(e) => self.fail(e),
         }
@@ -171,7 +177,7 @@ impl Core {
     ) -> SocketResponseBody {
         let effort = self.tool_effort(agent, call.effort);
         let title = call.block_title().to_owned();
-        match self.db.create_block(effort, title, call.layout).await {
+        match self.db.create_block(effort, title, call.layout, None).await {
             Ok(block) => {
                 self.activity(
                     ActivityKind::Task,
@@ -199,13 +205,10 @@ impl Core {
         // A card in a block belongs to the block's effort unless the call says otherwise (and
         // then the DB refuses a mismatch).
         let block_effort = match call.block {
-            Some(id) => self
-                .db
-                .load_canvas_state()
-                .await
-                .ok()
-                .and_then(|s| s.blocks.into_iter().find(|b| b.id == id))
-                .map(|b| b.effort),
+            Some(id) => match self.db.block(id).await {
+                Ok(b) => Some(b.effort),
+                Err(e) => return error(format!("could not add the card: {e}")),
+            },
             None => None,
         };
         let effort = self.tool_effort(agent, call.effort.or(block_effort));

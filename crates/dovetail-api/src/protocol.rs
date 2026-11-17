@@ -508,8 +508,9 @@ pub enum Command {
         /// Changes, applied in order.
         patch: Vec<TaskChange>,
     },
-    /// Add a block to an effort's canvas (ADR 0027). The core places it right of everything on
-    /// that canvas. Answers with [`Event::BlockUpserted`].
+    /// Add a block to an effort's canvas (ADR 0027). The core places it in the empty space
+    /// nearest `near` (the centre of the user's view), or right of everything without it.
+    /// Answers with [`Event::BlockUpserted`].
     CreateBlock {
         /// The effort.
         effort: EffortId,
@@ -517,6 +518,9 @@ pub enum Command {
         title: String,
         /// How it lays out its cards.
         layout: crate::canvas::Layout,
+        /// Where the user is looking, if anywhere.
+        #[serde(default)]
+        near: Option<crate::canvas::Point>,
     },
     /// Rename a block.
     RenameBlock {

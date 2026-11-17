@@ -16,6 +16,7 @@ import type { NewDecision } from "./NewDecision";
 import type { NewEffort } from "./NewEffort";
 import type { NewTask } from "./NewTask";
 import type { PermissionAnswer } from "./PermissionAnswer";
+import type { Point } from "./Point";
 import type { ProjectId } from "./ProjectId";
 import type { ReasoningEffort } from "./ReasoningEffort";
 import type { RepoId } from "./RepoId";
@@ -206,7 +207,11 @@ title: string,
 /**
  * How it lays out its cards.
  */
-layout: Layout, } } | { "rename_block": { 
+layout: Layout, 
+/**
+ * Where the user is looking, if anywhere.
+ */
+near: Point | null, } } | { "rename_block": { 
 /**
  * The block.
  */

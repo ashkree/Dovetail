@@ -9,7 +9,7 @@ import {
 } from '@xyflow/react';
 import type { Block, Card, Layout } from '../../core/model';
 import { blockExtent, CARD_H, CARD_W } from '../../core/geometry';
-import { BLOCK_KEY, dispatch, effortBlocks } from '../../keys/actions';
+import { BLOCK_KEY, dispatch, effortBlocks, markSeen } from '../../keys/actions';
 import { keyText } from '../overlays/Keys';
 import { viewport } from '../../keys/viewport';
 import { effortById } from '../../state/select';
@@ -111,9 +111,16 @@ function Flow({ blocks, cards }: { blocks: Block[]; cards: Card[] }) {
         const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min((box.width - 2 * FIT_PAD) / w, (box.height - 2 * FIT_PAD) / h)));
         void flow.setViewport({ x: (box.width - w * zoom) / 2 - x0 * zoom, y: FIT_PAD - y0 * zoom, zoom });
       },
+      centre: () => {
+        const box = wrap.current?.getBoundingClientRect();
+        return box ? flow.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 }) : null;
+      },
     };
     return () => { viewport.canvas = null; };
   }, [flow]);
+
+  // A card an agent put here is "new" until it is selected, by any key, click or picker.
+  useEffect(() => { markSeen(s, ui.cardSel); }, [s, ui.cardSel]);
 
   // Keep the selected card in sight.
   useEffect(() => {

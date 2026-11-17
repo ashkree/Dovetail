@@ -720,6 +720,7 @@ fn every_command_roundtrips() {
             effort: EffortId(7),
             title: String::new(),
             layout: Layout::OptionsCompare,
+            near: Some(Point { x: 300, y: 120 }),
         },
         Command::RenameBlock {
             id: BlockId(4),

@@ -8,7 +8,7 @@ import type { CoreLink } from '../core/link';
 import { connect, coreStore, snapshotStore } from '../state/store';
 import { needsYou, treeRows } from '../state/select';
 import { setUi, uiStore } from '../state/ui';
-import { dispatch, slotIndex, viewerAgent } from './actions';
+import { dispatch, markSeen, slotIndex, viewerAgent } from './actions';
 
 let sent: W.Command[] = [];
 let push: (msg: W.ServerMsg) => void = () => {};
@@ -58,14 +58,22 @@ describe('actions against the core', () => {
   it('b 1 2 3 add a block of that layout to the focused effort', () => {
     setUi({ effort: '3' });
     dispatch('newBlock2');
-    expect(sent).toEqual([{ create_block: { effort: 3, title: '', layout: 'options_compare' } }]);
+    expect(sent).toEqual([{ create_block: { effort: 3, title: '', layout: 'options_compare', near: null } }]);
   });
 
-  it('marks an unseen card seen when it is selected', () => {
+  it('marks a selected card seen only when an agent left it unseen', () => {
     const card = coreStore.get().cards.find(c => c.block != null)!;
+    markSeen(snapshotStore.get(), `Q${card.id}`);
+    expect(sent).toEqual([]);
     push({ event: { seq: coreStore.get().seq + 1, event: { card_upserted: { ...card, seen: false } } } });
-    dispatch('selectCard', `Q${card.id}`);
+    markSeen(snapshotStore.get(), `Q${card.id}`);
     expect(sent).toEqual([{ see_card: { id: card.id } }]);
+  });
+
+  it('lets go of a picked slice when the effort changes', () => {
+    setUi({ viewerAgent: 'login-fix' });
+    dispatch('switchEffort', '2');
+    expect(uiStore.get().viewerAgent).toBeNull();
   });
 
   it('opens the viewer on a slice picked in the tree, whatever effort has focus', () => {

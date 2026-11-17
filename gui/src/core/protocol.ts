@@ -24,7 +24,7 @@ export type UiCommand =
   /** A slice in `repo` (by name; may be left out when the project has one). */
   /** The canvas: blocks and cards (ADR 0025, ADR 0027). The core places new blocks and cards;
    * positions are canvas pixels. */
-  | { type: 'new_block'; effort_id: Id; layout: Layout }
+  | { type: 'new_block'; effort_id: Id; layout: Layout; near?: { x: number; y: number } }
   /** Place an incoming card: under the card linking to it, else in the effort's newest block. */
   | { type: 'place_card'; incoming_id: Id }
   /** The user selected a card an agent put into a block. */
