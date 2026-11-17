@@ -103,3 +103,10 @@ The plan (`docs/plan/gui-frontend.md`) says "stop and ask" in a few places. The 
 - **Change:** `gui/src/components/main/AgentView.tsx`, `gui/src/keys/actions.ts` (`showAgent`, `agentInFocus`, `modeTarget`, `archive`, `moveDown`), `gui/src/core/translate.ts` (`reorderDelta`), `gui/src/keys/keymap.ts`.
 - **Added after the live pass (same day):** a subagent's view has no bar (the core takes no prompt for a subagent; it says to type to its slice); `Ctrl-t` in an agent's bar says its messages carry its task's effort; the view answers the oldest of the agent's open items; sessions the tree does not list (side chats, tangents) toast instead of opening an empty view; errors are their own inbox kind (`✕`, counted, ADR 0028). The tree lists tasks in the core's order (bucket, then position), since the core reorders only within a bucket.
 
+
+## 13. The busy spinner is stepped by a timer, not animated (perf, 2026-11-17)
+
+- **Open:** the bottom bar's "a turn is running" ring was a CSS rotation. Measured in the release window (`docs/plan/gui-perf.md`), it kept WebKitGTK re-rendering the page every frame: ~26 % of a core for as long as any turn ran. Transform, `steps()`, opacity and `will-change` variants cost the same.
+- **Chose:** a small `Spinner` component that turns the ring a quarter every 250 ms from an interval (about 2 % CPU). This is an exception to decision 6's "no timers": it is only for this indicator.
+- **Why:** crispness; the look is the same ring, in four steps instead of a smooth turn.
+- **Change:** `Spinner` in `gui/src/components/shell/BottomBar.tsx`, `.status .spin` in `gui/src/styles/shell.css`. Do not add other infinite CSS animations without measuring idle CPU with `scripts/perf-gui.sh`.

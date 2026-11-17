@@ -1,6 +1,7 @@
 // Markdown as React elements (no raw HTML is injected). On top of GFM: `[[F3 title]]` is a card
 // reference (shown `↗ F3 title`) and `[F3]` / `[S2, S3]` cite cards.
 
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -39,6 +40,9 @@ function remarkCardRefs() {
   return (tree: MdNode) => { walk(tree); };
 }
 
-export function Markdown({ text }: { text: string }) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkCardRefs]}>{text}</ReactMarkdown>;
-}
+const PLUGINS = [remarkGfm, remarkCardRefs];
+
+/** Memoised on the text: parsing is the costly part of rendering a chat. */
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  return <ReactMarkdown remarkPlugins={PLUGINS}>{text}</ReactMarkdown>;
+});

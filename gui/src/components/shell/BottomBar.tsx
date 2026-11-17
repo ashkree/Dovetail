@@ -1,8 +1,21 @@
+import { useEffect, useState } from 'react';
 import { useSnapshot } from '../../state/store';
 import { needsYou, runningEfforts } from '../../state/select';
 import { scopeOf, useUi } from '../../state/ui';
 import { SCOPES } from '../../keys/keymap';
 import { modeTarget } from '../../keys/actions';
+
+/** The "a turn is running" ring, turned a quarter every 250 ms from here. A CSS animation made
+ * WebKitGTK redo the whole page's rendering 60 times a second (~25 % of a core while any turn
+ * ran); one small state change four times a second costs next to nothing. */
+function Spinner() {
+  const [quarter, setQuarter] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setQuarter(q => (q + 1) % 4), 250);
+    return () => clearInterval(id);
+  }, []);
+  return <span className="spin" style={{ transform: `rotate(${quarter * 90}deg)` }} />;
+}
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 
@@ -37,7 +50,7 @@ export function BottomBar() {
         <span className="st" title="Usage limits of this profile">5h {pct(st.usage.five_hour)} · week {pct(st.usage.week)}</span>
         <span className="st"><b>{st.model}</b><span className="lvl">{st.effort_level}</span></span>
         <span className="st" title="Permission mode (Shift-Tab changes it)">{mt.name} · {mt.mode}</span>
-        <span className="st" title={st.busy ? 'A turn is running' : 'Idle'}>{st.busy ? <span className="spin" /> : null}</span>
+        <span className="st" title={st.busy ? 'A turn is running' : 'Idle'}>{st.busy ? <Spinner /> : null}</span>
       </>}
     </div>
   );

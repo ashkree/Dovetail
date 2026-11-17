@@ -2,7 +2,7 @@
 // on React Flow. Pan and zoom by mouse; everything else by the keymap (React Flow's own keys are
 // off). The core places new blocks and cards; only the user moves cards: a drag ends in move_card.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useViewport,
   type Edge, type Node, type NodeChange, type NodeProps,
@@ -27,13 +27,13 @@ const LAYOUT_NAME: Record<Layout, string> = { question_tree: 'question tree', op
 type CardNode = Node<{ card: Card; sel: boolean }, 'card'>;
 type BlockNode = Node<{ block: Block }, 'block'>;
 
-function CardNodeView({ data }: NodeProps<CardNode>) {
+const CardNodeView = memo(function CardNodeView({ data }: NodeProps<CardNode>) {
   return <>
     <Handle type="target" position={Position.Top} isConnectable={false} />
     <CardView card={data.card} sel={data.sel} />
     <Handle type="source" position={Position.Bottom} isConnectable={false} />
   </>;
-}
+});
 
 function BlockNodeView({ data }: NodeProps<BlockNode>) {
   return <div className="block-frame"><div className="block-title">{data.block.title} <span className="dim">· {LAYOUT_NAME[data.block.layout]}</span></div></div>;
@@ -43,9 +43,12 @@ const NODE_TYPES = { card: CardNodeView, block: BlockNodeView };
 export function Canvas() {
   const s = useSnapshot();
   const ui = useUi();
-  const blocks = effortBlocks(s, ui.effort);
-  const ids = new Set(blocks.map(b => b.id));
-  const cards = s.cards.filter(c => ids.has(c.block_id));
+  // Stable while the canvas data is: React Flow compares these, and a key press changes neither.
+  const blocks = useMemo(() => effortBlocks(s, ui.effort), [s.blocks, ui.effort]);
+  const cards = useMemo(() => {
+    const ids = new Set(blocks.map(b => b.id));
+    return s.cards.filter(c => ids.has(c.block_id));
+  }, [s.cards, blocks]);
   const e = effortById(s, ui.effort);
   return (
     <ReactFlowProvider>
@@ -80,23 +83,34 @@ function Flow({ blocks, cards }: { blocks: Block[]; cards: Card[] }) {
   /** Positions while a drag is under way; the snapshot keeps the last committed ones. */
   const [dragging, setDragging] = useState<Record<string, { x: number; y: number }>>({});
   const selOnCanvas = ui.canvasPart === 'cards' ? ui.cardSel : null;
-  const frames = blocks.map(b => ({ block: b, ...blockExtent(b, cards) }));
+  const frames = useMemo(() => blocks.map(b => ({ block: b, ...blockExtent(b, cards) })), [blocks, cards]);
   const framesRef = useRef(frames);
   framesRef.current = frames;
 
+  // A card's node is kept while its card, selection and position are the same, so a move of the
+  // selection rebuilds two nodes, not forty.
+  const kept = useRef(new Map<string, { card: Card; sel: boolean; pos: { x: number; y: number }; node: CardNode }>());
   const nodes: (CardNode | BlockNode)[] = useMemo(() => [
     ...frames.map((f): BlockNode => ({
       id: `block-${f.block.id}`, type: 'block', position: { x: f.x, y: f.y }, data: { block: f.block },
       style: { width: f.w, height: f.h }, draggable: false, focusable: false, selectable: false, zIndex: -1,
     })),
-    ...cards.map((c): CardNode => ({
-      id: c.id, type: 'card', position: dragging[c.id] ?? { x: c.x, y: c.y },
-      data: { card: c, sel: c.id === selOnCanvas }, focusable: false, selectable: false,
-    })),
+    ...cards.map((c): CardNode => {
+      const sel = c.id === selOnCanvas;
+      const dragged = dragging[c.id];
+      const pos = dragged ?? { x: c.x, y: c.y };
+      const old = kept.current.get(c.id);
+      if (old && old.card === c && old.sel === sel && old.pos.x === pos.x && old.pos.y === pos.y) return old.node;
+      const node: CardNode = { id: c.id, type: 'card', position: pos, data: { card: c, sel }, focusable: false, selectable: false };
+      kept.current.set(c.id, { card: c, sel, pos, node });
+      return node;
+    }),
   ], [frames, cards, dragging, selOnCanvas]);
-  const ids = new Set(cards.map(c => c.id));
-  const edges: Edge[] = s.card_links.filter(l => ids.has(l.from) && ids.has(l.to))
-    .map(l => ({ id: `${l.from}-${l.to}`, source: l.from, target: l.to, focusable: false, selectable: false }));
+  const edges: Edge[] = useMemo(() => {
+    const ids = new Set(cards.map(c => c.id));
+    return s.card_links.filter(l => ids.has(l.from) && ids.has(l.to))
+      .map(l => ({ id: `${l.from}-${l.to}`, source: l.from, target: l.to, focusable: false, selectable: false }));
+  }, [cards, s.card_links]);
 
   useEffect(() => {
     viewport.canvas = {

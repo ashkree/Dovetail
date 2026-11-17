@@ -1,11 +1,12 @@
 // One card: kind and id, title, body; the selected card shows "↗ chat" (r) to put its reference in
 // the chat bar. Used on the canvas and in the incoming strip.
 
+import { memo } from 'react';
 import type { Card, IncomingCard } from '../../core/model';
 import { dispatch } from '../../keys/actions';
 import { keyText } from '../overlays/Keys';
 
-export function CardView({ card, sel, under }: { card: Card | IncomingCard; sel: boolean; under?: string }) {
+export const CardView = memo(function CardView({ card, sel, under }: { card: Card | IncomingCard; sel: boolean; under?: string }) {
   const long = 'report_id' in card && !!card.report_id;
   return (
     <div className={`card ${card.kind} ${sel ? 'sel' : ''}`}>
@@ -21,4 +22,4 @@ export function CardView({ card, sel, under }: { card: Card | IncomingCard; sel:
       </div>
     </div>
   );
-}
+});

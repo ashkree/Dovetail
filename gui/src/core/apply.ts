@@ -24,6 +24,45 @@ export function apply(state: W.Snapshot, seq: number, event: W.Event): ApplyResu
   return { kind: 'applied', snapshot: { ...fold(state, event), seq } };
 }
 
+export interface SeqEvent { seq: number; event: W.Event }
+
+interface Delta { agent: W.AgentId; entry: W.EntryId; text: string }
+
+/** Folds a run of events into one snapshot, so the client renders once for all of them. Runs of
+ * streamed text for the same entry are joined first (a hundred `assistant_delta`s a second would
+ * otherwise copy the conversation a hundred times). Stops at a gap and says so; stale events are
+ * skipped, as `apply` does. */
+export function applyBatch(
+  state: W.Snapshot, events: SeqEvent[],
+): { snapshot: W.Snapshot; gap: { expected: number; got: number } | null } {
+  let snapshot = state;
+  for (let i = 0; i < events.length; i++) {
+    const { seq: firstSeq, event: firstEvent } = events[i] as SeqEvent;
+    let event = firstEvent;
+    let lastSeq = firstSeq;
+    const [tag, data] = variant(firstEvent);
+    // Only an event that applies is joined with the ones after it.
+    if (tag === 'assistant_delta' && firstSeq === snapshot.seq + 1) {
+      const head = data as Delta;
+      let text = head.text;
+      for (let j = i + 1; j < events.length; j++) {
+        const next = events[j] as SeqEvent;
+        const [t, d] = variant(next.event);
+        const nd = d as Delta;
+        if (t !== 'assistant_delta' || next.seq !== lastSeq + 1 || nd.agent !== head.agent || nd.entry !== head.entry) break;
+        text += nd.text;
+        lastSeq = next.seq;
+        i = j;
+      }
+      event = { assistant_delta: { ...head, text } };
+    }
+    const r = apply(snapshot, firstSeq, event);
+    if (r.kind === 'applied') snapshot = { ...r.snapshot, seq: lastSeq };
+    else if (r.kind === 'gap') return { snapshot, gap: { expected: r.expected, got: r.got } };
+  }
+  return { snapshot, gap: null };
+}
+
 /** Every event's tag, from the generated union: a new event makes the switch below incomplete. */
 type Tag<E> = E extends string ? E : E extends object ? keyof E : never;
 type EventTag = Tag<W.Event>;

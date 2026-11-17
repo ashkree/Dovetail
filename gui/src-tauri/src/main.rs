@@ -73,6 +73,14 @@ fn core_subscribe(shell: State<'_, Arc<Shell>>, channel: Channel<ServerMsg>) {
     }
 }
 
+/// Perf builds only (`--features perf`, scripts/perf-gui.sh): the harness in the window reports
+/// its measurements here, one line each, and they go to stderr.
+#[cfg(feature = "perf")]
+#[tauri::command]
+fn perf_log(line: String) {
+    eprintln!("PERF {line}");
+}
+
 /// Which core runs.
 enum Running {
     Home(HomeHandle),
@@ -198,6 +206,18 @@ fn start_project(setup: &Setup, id: &str) -> Result<(CoreLink, CoreHandle), Stri
     .map_err(|e| e.to_string())
 }
 
+/// The commands the window may call.
+#[cfg(feature = "perf")]
+fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![core_send, core_subscribe, perf_log]
+}
+
+/// The commands the window may call.
+#[cfg(not(feature = "perf"))]
+fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![core_send, core_subscribe]
+}
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -265,7 +285,7 @@ fn main() -> anyhow::Result<()> {
 
     let app = tauri::Builder::default()
         .manage(shell.clone())
-        .invoke_handler(tauri::generate_handler![core_send, core_subscribe])
+        .invoke_handler(handlers())
         .build(tauri::generate_context!())
         .context("building the Tauri app")?;
     app.run(move |_, event| {
