@@ -365,7 +365,7 @@ function coreChat(): W.ConversationEntry[] {
 
 /** The core's Snapshot: Home (no project) or one project. Only Shop has data. */
 export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot {
-  const base: W.Snapshot = { ...emptyCoreSnapshot(), seq, now_ms: NOW, projects: PROJECTS.map(coreProject) };
+  const base: W.Snapshot = { ...emptyCoreSnapshot(), seq, now_ms: NOW, projects: PROJECTS.map(coreProject), effort_limit: MACHINE_LIMIT };
   const index = PROJECTS.findIndex(p => p.id === projectId);
   const project = PROJECTS[index];
   if (!project) return base;
@@ -388,10 +388,7 @@ export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot 
  * columns. Effort ids are the core's, as text. */
 export function pendingFor(projectId: string | null): Pending {
   const effort = (id: string) => String(num(EFFORT_ID, id));
-  const base: Pending = {
-    ...emptyPending(),
-    status: { effort_limit: MACHINE_LIMIT, machine_running: PROJECTS.reduce((n, p) => n + p.running, 0) },
-  };
+  const base: Pending = emptyPending();
   if (projectId !== 'shop') return base;
   return {
     ...base,

@@ -51,7 +51,7 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
     variants: viewVariants(core, agents),
     previews: viewPreviews(core, agents),
     reports: [...pending.reports, ...canvas.reports],
-    status: viewStatus(core, pending),
+    status: viewStatus(core),
   };
 }
 
@@ -264,10 +264,12 @@ function viewChat(core: W.Snapshot): ChatEntry[] {
   return out;
 }
 
-function viewStatus(core: W.Snapshot, pending: Pending): Status {
+function viewStatus(core: W.Snapshot): Status {
   const c = core.agents.find(a => a.id === COORDINATOR);
   return {
-    ...pending.status,
+    effort_limit: core.effort_limit,
+    // Home counts every project's running efforts; a project's core sees only its own.
+    machine_running: core.projects.reduce((n, p) => n + p.counts.running, 0),
     account: core.profile ?? '',
     context_fill: (c?.context_pct ?? 0) / 100,
     usage: { five_hour: core.usage.five_hour?.utilization ?? 0, week: core.usage.seven_day?.utilization ?? 0 },

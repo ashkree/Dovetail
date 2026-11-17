@@ -159,4 +159,9 @@ previews: Array<Preview>,
 /**
  * The variants slices declared, with the user's picks (ADR 0026).
  */
-variants: Array<VariantSet>, };
+variants: Array<VariantSet>, 
+/**
+ * The soft limit on running efforts, from `config.toml`'s `max_efforts`: shown against the
+ * running count, never enforced.
+ */
+effort_limit: number, };

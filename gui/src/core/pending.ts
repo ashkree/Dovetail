@@ -2,14 +2,13 @@
 // It is held in the frontend and changed by the frontend's own reducer below. With the real core
 // it starts empty for every project; MockCore seeds it with the fake data. Each part moves into
 // the core's Snapshot when the core grows it, and leaves this file. (Canvases and cards left it
-// with ADR 0025, Home's project details with ADR 0021: they are core state now.)
+// with ADR 0025, Home's project details with ADR 0021, the effort limit with the smoke-test
+// decisions: they are core state now.)
 
-import type { Id, Report, Status, TagColour } from './model';
+import type { Id, Report, TagColour } from './model';
 
 export interface Pending {
   reports: Report[];
-  /** The bottom bar's machine-wide effort count and limit (design v2 open point 9). */
-  status: Pick<Status, 'effort_limit' | 'machine_running'>;
   /** Tag colours, by effort id; an effort not listed gets one from its id. */
   colours: Record<Id, TagColour>;
   /** Bodies of cards that point at something, by view card id, as `load_card` brought them. */
@@ -20,7 +19,7 @@ export interface Pending {
 
 export function emptyPending(): Pending {
   return {
-    reports: [], status: { effort_limit: 0, machine_running: 0 },
+    reports: [],
     colours: {}, bodies: {}, card_reports: {},
   };
 }

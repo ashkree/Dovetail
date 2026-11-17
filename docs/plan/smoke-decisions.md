@@ -33,8 +33,8 @@ Each step ends with a status line here, then a commit and push.
    while a slice is open in that repo).
 6. **Soft effort limit** (decision 7). `Config::max_efforts` (default 4) from `config.toml`;
    `Snapshot::effort_limit` carries it from both Home's and a project's core; the GUI reads it
-   instead of the pending state. `scripts/bootstrap.sh` and the starter config get the commented
-   line. Answers design v2 open point 9: a running effort is an open effort with an open slice
+   instead of the pending state. `config.toml` is optional and `scripts/bootstrap.sh` writes
+   none, so the key is documented with the others in `crates/dovetail-core/src/config.rs`. Answers design v2 open point 9: a running effort is an open effort with an open slice
    (as `ProjectCounts.running` already counts).
 7. **Canvas blocks** (decisions 2 and 8, ADR 0027).
    - State migration `0021_blocks.sql`: `canvases` → `blocks` (adds `x`, `y`),

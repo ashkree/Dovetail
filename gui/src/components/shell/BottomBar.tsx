@@ -17,7 +17,7 @@ export function BottomBar() {
   const st = s.status;
   const mt = modeTarget(s, ui);
   const running = ws ? runningEfforts(s) : st.machine_running;
-  // The core sends no soft limit yet (0): then only the count shows, with no warning.
+  // A limit of 0 (an older core sends none) shows only the count, with no warning.
   const limited = st.effort_limit > 0;
   const over = limited && running > st.effort_limit;
   const of = limited ? ` / ${st.effort_limit}` : '';

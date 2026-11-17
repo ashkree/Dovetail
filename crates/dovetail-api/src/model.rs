@@ -164,6 +164,10 @@ pub struct Snapshot {
     /// The variants slices declared, with the user's picks (ADR 0026).
     #[serde(default)]
     pub variants: Vec<crate::design::VariantSet>,
+    /// The soft limit on running efforts, from `config.toml`'s `max_efforts`: shown against the
+    /// running count, never enforced.
+    #[serde(default)]
+    pub effort_limit: u32,
 }
 
 /// A tangent: a question that did not belong to the project it was asked from, saved as a task

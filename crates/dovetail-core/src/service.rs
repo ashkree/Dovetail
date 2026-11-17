@@ -964,6 +964,7 @@ impl Core {
             models: self.model_options(),
             previews: self.previews.list(),
             variants: self.db.load_variants().await?,
+            effort_limit: self.config.max_efforts,
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
