@@ -75,7 +75,7 @@ export const KEYMAP: Record<string, Binding[]> = {
     ['j', 'down', 'next row', 'move'],
     ['k', 'up', 'prev row', 'move'],
     ['o', 'fold', 'fold / unfold', 'act'],
-    ['<CR>', 'openRow', 'open', 'view'],
+    ['<CR>', 'openRow', 'open (a slice: its preview)', 'view'],
     ['w', 'wwi', 'where was I', 'view'],
     ['a', 'addTask', 'add task', 'act'],
     ['e', 'rename', 'rename', 'act'],

@@ -58,6 +58,8 @@ export interface Ui {
   leader: string[] | null;
   /** The effort in focus. */
   effort: Id | null;
+  /** The slice the user opened in the viewer from the tree; null: the focused effort's slice. */
+  viewerAgent: Id | null;
   /** Chat filter: every effort, or one effort's thread. */
   filter: 'all' | Id;
   /** The "where was I" pop-up is up. */
@@ -101,7 +103,7 @@ export const initialUi: Ui = {
   screen: 'home', homeSel: 0,
   zone: 'chat', side: 'inbox', main: null, mainItem: null,
   mode: 'normal', pending: '', leader: null,
-  effort: null, filter: 'all', wwi: false, wwiFlash: 0,
+  effort: null, viewerAgent: null, filter: 'all', wwi: false, wwiFlash: 0,
   inboxSel: 0, treeSel: 0, folded: { search: true, coupon: true },
   chatCur: -1, openReports: [],
   draft: '', tag: null,
