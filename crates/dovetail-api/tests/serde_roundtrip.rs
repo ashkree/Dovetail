@@ -470,6 +470,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
             }],
             &Default::default(),
         )],
+        effort_limit: 4,
         tasks: vec![task()],
         agents: vec![subagent()],
         todos: vec![todo()],
