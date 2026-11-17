@@ -50,6 +50,20 @@ export type UiCommand =
   | { type: 'keep_variants'; agent_id: Id }
   /** Open a web page in the user's browser, through the core. */
   | { type: 'open_external'; url: string }
+  /** A message typed to a slice or subagent, tagged with its task's effort. */
+  | { type: 'send_to_agent'; agent_id: Id; text: string; effort_id: Id }
+  /** Stop an agent's current turn. */
+  | { type: 'interrupt'; agent_id: Id }
+  /** Page in an agent's older conversation entries. */
+  | { type: 'load_conversation'; agent_id: Id }
+  /** Archive a task; its slices end. */
+  | { type: 'archive_task'; task_id: Id }
+  /** Close an effort (the tree no longer lists it). */
+  | { type: 'close_effort'; effort_id: Id }
+  /** End a slice's session; its worktree and branch stay. */
+  | { type: 'close_slice'; agent_id: Id }
+  /** Move a task one place up (-1) or down (1) among its effort's tasks. */
+  | { type: 'reorder_task'; task_id: Id; dir: 1 | -1 }
   /** Move a session to its next permission mode. */
   | { type: 'cycle_permission_mode'; agent_id: Id }
   /** Ask for a fresh snapshot (after a gap). */

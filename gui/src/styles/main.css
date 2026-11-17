@@ -5,3 +5,18 @@
 .itemview .item-head .glyph { font-size: 1.3em; }
 .itemview pre, .reading pre { background: #00000033; border: 1px solid var(--edge); border-radius: 8px; padding: 10px 14px; overflow: auto; }
 .itemview pre code { color: var(--code); }
+
+/* Agent view: a slice's or subagent's conversation, its open items, its own bar. */
+.agentview { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.agentview .agent-head { flex: none; display: flex; gap: 10px; align-items: center; padding: 8px 22px 0; font-size: .92em; }
+.agentview .agent-head .who { font-weight: 700; color: var(--accent); }
+.agentview .agent-head .branch { color: var(--dim); font-family: var(--mono, monospace); font-size: .9em; }
+.agentview .agent-head .st-needs_you { color: var(--warn); }
+.agentview .tool-line { margin-top: 10px; color: var(--dim); font-size: .88em; padding: 2px 8px; white-space: pre-wrap; }
+.agentview .tool-line.cur { box-shadow: -10px 0 0 -7px var(--accent); }
+.agentview .agent-item { flex: none; max-height: 45%; overflow: auto; margin: 0 14px 6px; border: 1px solid var(--edge-hi); border-radius: var(--r); padding: 8px 14px; background: var(--panel-2); line-height: var(--lh); }
+.agentview .agent-item.first { border-color: var(--warn); }
+.agentview .agent-item .item-head { display: flex; gap: 10px; align-items: center; }
+.agentview .agent-item pre { background: #00000033; border: 1px solid var(--edge); border-radius: 8px; padding: 8px 12px; overflow: auto; }
+.agentview .agent-note { margin: 0 22px 14px; }
+.agentview .chatbar { flex: none; }

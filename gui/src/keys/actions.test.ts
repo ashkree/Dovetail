@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { coreSnapshot } from '../core/fixtures';
 import type * as W from '../core/generated';
 import type { CoreLink } from '../core/link';
+import { taskOrder } from '../core/wire';
 import { connect, coreStore, snapshotStore } from '../state/store';
 import { needsYou, treeRows } from '../state/select';
 import { setUi, uiStore } from '../state/ui';
@@ -100,6 +101,95 @@ describe('actions against the core', () => {
     push({ event: { seq: coreStore.get().seq + 1, event: { project_upserted: p } } });
     expect(uiStore.get().homeSel).toBe(snapshotStore.get().projects.findIndex(x => x.id === 'fresh'));
     expect(uiStore.get().awaitProject).toBe(false);
+  });
+
+  it('types to the agent whose conversation is open, tagged with its effort', () => {
+    const agent = snapshotStore.get().agents.find(a => a.id === 'login-fix')!;
+    dispatch('showAgent', 'login-fix');
+    expect(uiStore.get()).toMatchObject({ main: 'agent', agent: 'login-fix', zone: 'main' });
+    dispatch('insert');
+    expect(uiStore.get()).toMatchObject({ mode: 'insert', zone: 'main' });
+    setUi({ agentDraft: 'status?', draft: 'for the coordinator' });
+    dispatch('send');
+    expect(sent).toEqual([{ prompt: { agent: 'login-fix', text: 'status?', effort: Number(agent.effort_id) } }]);
+    expect(uiStore.get()).toMatchObject({ agentDraft: '', draft: 'for the coordinator' });
+  });
+
+  it('answers the open agent\'s permission request from its view', () => {
+    dispatch('showAgent', 'login-fix');
+    dispatch('allow');
+    const item = coreStore.get().inbox.find(i => i.agent === 'login-fix' && 'permission' in (i.kind as object))!;
+    expect(sent).toEqual([{ answer_permission: { item: item.id, answer: 'allow' } }]);
+  });
+
+  it('interrupts the agent in focus, a subagent through its slice, else the coordinator', () => {
+    dispatch('showAgent', 'run-e2e');
+    dispatch('interrupt');
+    setUi({ zone: 'chat', main: null });
+    dispatch('interrupt');
+    expect(sent).toEqual([{ interrupt: { agent: 'login-fix' } }, { interrupt: { agent: 'coordinator' } }]);
+  });
+
+  it('archives a task only after the confirm', () => {
+    const rows = treeRows(snapshotStore.get(), {});
+    const i = rows.findIndex(r => r.type === 'task');
+    const task = rows[i]!.type === 'task' ? (rows[i] as { task: { id: string } }).task : null;
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: i });
+    dispatch('archive');
+    expect(sent).toEqual([]);
+    const m = uiStore.get().modal;
+    if (m?.type !== 'picker') throw new Error('no confirm');
+    m.items[1]!.go();
+    expect(sent).toEqual([{ archive_task: { id: Number(task!.id) } }]);
+  });
+
+  it('moves a task past one task of its own effort', () => {
+    const core = coreStore.get();
+    const effort = core.tasks.find(t => core.tasks.filter(x => x.effort === t.effort).length > 1)!.effort;
+    const mine = core.tasks.filter(t => t.effort === effort && t.status !== 'archived').sort(taskOrder);
+    const rows = treeRows(snapshotStore.get(), {});
+    const i = rows.findIndex(r => r.type === 'task' && r.task.id === String(mine[0]!.id));
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: i });
+    dispatch('moveUp');
+    expect(sent).toEqual([]);
+    dispatch('moveDown');
+    const peers = core.tasks.filter(t => t.status !== 'archived' && t.bucket === mine[0]!.bucket).sort(taskOrder);
+    const delta = peers.findIndex(t => t.id === mine[1]!.id) - peers.findIndex(t => t.id === mine[0]!.id);
+    expect(sent).toEqual([{ reorder_task: { id: mine[0]!.id, delta } }]);
+  });
+
+  it('keeps the tree cursor on a moved task once the core reorders', () => {
+    const core = coreStore.get();
+    const [a, b] = core.tasks.filter(t => t.effort === core.tasks[0]!.effort && t.status !== 'archived')
+      .sort((x, y) => x.order - y.order || x.id - y.id);
+    const at = () => treeRows(snapshotStore.get(), {}).findIndex(r => r.type === 'task' && r.task.id === String(a!.id));
+    const before = at();
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: before });
+    dispatch('moveDown');
+    const seq = coreStore.get().seq;
+    push({ event: { seq: seq + 1, event: { task_upserted: { ...b!, order: 0 } } } });
+    push({ event: { seq: seq + 2, event: { task_upserted: { ...a!, order: 1 } } } });
+    expect(at()).toBeGreaterThan(before);
+    expect(uiStore.get().treeSel).toBe(at());
+  });
+
+  it('says why a task cannot pass one in another bucket', () => {
+    const core = coreStore.get();
+    const [a, b] = core.tasks.filter(t => t.effort === core.tasks[0]!.effort && t.status !== 'archived').sort(taskOrder);
+    push({ event: { seq: core.seq + 1, event: { task_upserted: { ...a!, bucket: 'now' } } } });
+    const rows = treeRows(snapshotStore.get(), {});
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: rows.findIndex(r => r.type === 'task' && r.task.id === String(b!.id)) });
+    dispatch('moveUp');
+    expect(sent).toEqual([]);
+    expect(uiStore.get().toast?.text).toContain('within a bucket');
+  });
+
+  it('counts an agent error as needing the user (ADR 0028)', () => {
+    const before = needsYou(snapshotStore.get());
+    const item: W.InboxItem = { id: 900, agent: 'coordinator', at_ms: 0, kind: { error: { text: 'session ended unexpectedly' } } };
+    push({ event: { seq: coreStore.get().seq + 1, event: { inbox_upserted: item } } });
+    expect(snapshotStore.get().inbox.find(i => i.id === 'i900')?.kind).toBe('error');
+    expect(needsYou(snapshotStore.get())).toBe(before + 1);
   });
 
   it('counts only items that wait on the user', () => {

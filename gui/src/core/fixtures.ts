@@ -95,12 +95,12 @@ const TASKS: Task[] = [
 ];
 
 const AGENTS: Agent[] = [
-  { id: 'research-1', task_id: 'pay-t2', kind: 'slice', name: 'research-1', state: 'needs_you', mode: 'Auto' },
-  { id: 'fees-web', task_id: 'pay-t2', parent_id: 'research-1', kind: 'subagent', name: 'fees-web', state: 'done', mode: 'Auto' },
-  { id: 'login-fix', task_id: 'login-t2', kind: 'slice', name: 'login-fix', state: 'needs_you', mode: 'Auto', branch: 'fix/login-safari' },
-  { id: 'run-e2e', task_id: 'login-t2', parent_id: 'login-fix', kind: 'subagent', name: 'run e2e', state: 'working', mode: 'Auto' },
-  { id: 'header-toggle', task_id: 'dark-t2', kind: 'slice', name: 'header-toggle', state: 'working', mode: 'Auto', branch: 'feat/dark-mode' },
-  { id: 'search-gc', task_id: 'search-t1', kind: 'slice', name: 'search-gc', state: 'working', mode: 'Auto', branch: 'chore/drop-old-index' },
+  { id: 'research-1', task_id: 'pay-t2', effort_id: 'pay', kind: 'slice', name: 'research-1', state: 'needs_you', mode: 'Auto' },
+  { id: 'fees-web', task_id: 'pay-t2', effort_id: 'pay', parent_id: 'research-1', kind: 'subagent', name: 'fees-web', state: 'done', mode: 'Auto' },
+  { id: 'login-fix', task_id: 'login-t2', effort_id: 'login', kind: 'slice', name: 'login-fix', state: 'needs_you', mode: 'Auto', branch: 'fix/login-safari' },
+  { id: 'run-e2e', task_id: 'login-t2', effort_id: 'login', parent_id: 'login-fix', kind: 'subagent', name: 'run e2e', state: 'working', mode: 'Auto' },
+  { id: 'header-toggle', task_id: 'dark-t2', effort_id: 'dark', kind: 'slice', name: 'header-toggle', state: 'working', mode: 'Auto', branch: 'feat/dark-mode' },
+  { id: 'search-gc', task_id: 'search-t1', effort_id: 'search', kind: 'slice', name: 'search-gc', state: 'working', mode: 'Auto', branch: 'chore/drop-old-index' },
 ];
 
 const INBOX: InboxItem[] = [

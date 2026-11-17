@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolve, tokenOf, type KeyState } from './resolve';
 
 const idle: KeyState = { pending: '', leader: null };
-const key = (k: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean }> = {}) =>
+const key = (k: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean; code: string }> = {}) =>
   ({ key: k, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
 
 /** Feed tokens one by one, as the key listener does. */
@@ -21,6 +21,8 @@ describe('tokenOf', () => {
     expect(tokenOf(key(' '), false)).toBe('<Space>');
     expect(tokenOf(key('Enter', { altKey: true }), true)).toBe('<A-CR>');
     expect(tokenOf(key('Tab', { shiftKey: true }), false)).toBe('<S-Tab>');
+    // WebKitGTK's Shift-Tab.
+    expect(tokenOf(key('Unidentified', { shiftKey: true, code: 'Tab' }), false)).toBe('<S-Tab>');
     expect(tokenOf(key('h', { ctrlKey: true }), false)).toBe('C-h');
     expect(tokenOf(key('ArrowDown'), false)).toBe('j');
     expect(tokenOf(key('Shift'), false)).toBeNull();

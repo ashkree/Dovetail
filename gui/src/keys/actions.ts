@@ -4,11 +4,14 @@
 
 import { hasOwnText } from '../core/canvasView';
 import { COORDINATOR, UNSORTED_EFFORT } from '../core/wire';
-import type { Agent, Block, CardKind, EffortKind, Id, InboxItem, Layout, Preview, Snapshot, VariantSet } from '../core/model';
+import type { Agent, Block, CardKind, ChatEntry, EffortKind, Id, InboxItem, Layout, Preview, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
-import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
-import { focusEffort, scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
+import {
+  AGENT_GLYPH, agentEntries, agentItems, effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, sessionOf, taskSlices, toKebab,
+  treeRows, visibleChat,
+} from '../state/select';
+import { barAgent, focusEffort, scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
 import { keysFor } from './resolve';
 import { readingHeadings, viewport } from './viewport';
 
@@ -24,12 +27,14 @@ export type Action =
   // inbox and inbox item
   | 'openItem' | 'allow' | 'allowAlways' | 'deny' | 'denyReason' | 'reply' | 'dismiss' | 'itemEffort' | 'openAgent'
   // efforts tree
-  | 'fold' | 'openRow' | 'wwi' | 'addTask' | 'rename' | 'moveDown' | 'moveUp' | 'archive'
-  // chat
+  | 'fold' | 'openRow' | 'openConversation' | 'wwi' | 'addTask' | 'rename' | 'moveDown' | 'moveUp' | 'archive'
+  // chat (and an agent's conversation)
   | 'scrollDown' | 'scrollUp' | 'nextTurn' | 'prevTurn' | 'unfold' | 'foldEntry' | 'cycleFilter' | 'pickFilter'
+  | 'openReportAgent'
   // canvas and incoming strip
   | 'cardLeft' | 'cardDown' | 'cardUp' | 'cardRight' | 'follow' | 'followBack' | 'openCard' | 'refCard' | 'newCard'
   | 'moveCardL' | 'moveCardD' | 'moveCardU' | 'moveCardR' | 'toIncoming' | 'deleteCard' | 'zoomIn' | 'zoomOut' | 'zoomFit'
+  | 'cardAgent'
   | 'incLeft' | 'incRight' | 'accept' | 'drop' | 'toCanvas'
   // viewer
   | 'slotDown' | 'slotUp' | 'optNext' | 'optPrev' | 'opt1' | 'opt2' | 'opt3' | 'keepCombo' | 'resetCombo'
@@ -44,7 +49,7 @@ export type Action =
   | 'interrupt' | 'permMode'
   // mouse (the same dispatcher; each has a key elsewhere)
   | 'showView' | 'selectHome' | 'selectInbox' | 'selectTree' | 'selectCard' | 'selectIncoming' | 'selectSlot'
-  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickLayout'
+  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickLayout' | 'showAgent'
   | 'newBlock1' | 'newBlock2' | 'newBlock3';
 
 /** Actions whose key the browser should still handle (paste into the chat bar). */
@@ -96,15 +101,39 @@ export function effortBlocks(s: Snapshot, effort: Id | null): Block[] {
   return s.blocks.filter(b => b.effort_id === effort);
 }
 
-/** The agent whose permission mode `Shift-Tab` and `Space s m` change: the one under the tree
- * cursor while the tree has focus, else the coordinator. A subagent shares its parent's mode. */
-export function modeTarget(s: Snapshot, u: Ui): { id: Id; name: string; mode: string } {
+/** The agent in focus: the agent view's while it has focus, the one under the tree cursor while
+ * the tree has focus, else none (the coordinator). */
+export function agentInFocus(s: Snapshot, u: Ui): Agent | undefined {
+  if (u.zone === 'main' && u.main === 'agent') return s.agents.find(a => a.id === u.agent);
   const row = u.zone === 'tree' && u.mode === 'normal' ? treeRows(s, u.folded)[u.treeSel] : undefined;
-  if (row?.type === 'agent') {
-    const a = row.agent.parent_id ? s.agents.find(x => x.id === row.agent.parent_id) ?? row.agent : row.agent;
+  return row?.type === 'agent' ? row.agent : undefined;
+}
+
+/** The agent whose session `Shift-Tab`, `Space s m` and `Space s x` act on: the agent in focus,
+ * else the coordinator. A subagent runs inside its slice's session, so it is that slice. */
+export function modeTarget(s: Snapshot, u: Ui): { id: Id; name: string; mode: string } {
+  const agent = agentInFocus(s, u);
+  if (agent) {
+    const a = sessionOf(s, agent);
     return { id: a.id, name: a.name, mode: a.mode };
   }
   return { id: COORDINATOR, name: 'coordinator', mode: s.status.permission_mode };
+}
+
+/** Open an agent's conversation in the main view; the coordinator's is the chat. Sessions the
+ * tree does not list (side chats, tangents) have no view in the GUI. */
+export function showAgent(id: Id): void {
+  if (id === COORDINATOR) { setUi({ zone: 'chat', mode: 'normal' }); return; }
+  if (!snap().agents.some(a => a.id === id)) { toast(`**${id}** has no conversation view here`); return; }
+  setUi({ main: 'agent', agent: id, zone: 'main', mode: 'normal', agentCur: -1, wwi: false });
+}
+
+/** Ask before archiving: the keep/remove picker, as removing a repo does. */
+function confirm(title: string, yes: string, go: () => void): void {
+  picker(title, [
+    { key: 'keep', text: 'keep', label: 'Keep it', go: () => {} },
+    { key: 'yes', text: yes, label: yes, go },
+  ]);
 }
 
 /** The slot the viewer's keys act on: the remembered one, kept inside this set's slots (another
@@ -186,9 +215,12 @@ export function nearestCard<T extends { id: Id; x: number; y: number }>(cards: T
   return best;
 }
 
-/** The inbox item an answer applies to: the one open in the main view, else the selected row. */
+/** The inbox item an answer applies to: the one open in the main view, the agent view's oldest,
+ * else the selected row. */
 function itemInFocus(s: Snapshot, u: Ui): InboxItem | undefined {
-  return u.zone === 'main' && u.main === 'item' ? s.inbox.find(x => x.id === u.mainItem) : s.inbox[u.inboxSel];
+  if (u.zone === 'main' && u.main === 'item') return s.inbox.find(x => x.id === u.mainItem);
+  if (u.zone === 'main' && u.main === 'agent') return agentItems(s, u.agent)[0];
+  return s.inbox[u.inboxSel];
 }
 
 function answer(item: InboxItem, a: InboxAnswer, reason?: string): void {
@@ -203,7 +235,7 @@ function answer(item: InboxItem, a: InboxAnswer, reason?: string): void {
 
 function answerItem(a: Action): void {
   const it = itemInFocus(snap(), ui());
-  if (!it) return;
+  if (!it) { if (scopeOf(ui()) === 'agent') toast('Nothing from this agent waits on you'); return; }
   const criterion = it.kind === 'criterion';
   switch (a) {
     case 'allow':
@@ -239,8 +271,24 @@ function moveCard(dx: number, dy: number): void {
   if (c) send({ type: 'move_card', card_id: c.id, x: c.x + dx, y: c.y + dy });
 }
 
+/** The conversation the scroll keys move through: the agent view's, else the chat's. */
+function cursorEntries(s: Snapshot, u: Ui): ChatEntry[] {
+  return scopeOf(u) === 'agent' ? agentEntries(s, u.agent) : visibleChat(s, u.filter);
+}
+
 function selectChatCursor(n: number): void {
-  setUi({ chatCur: n });
+  if (scopeOf(ui()) === 'agent') setUi({ agentCur: n });
+  else setUi({ chatCur: n });
+}
+
+const cursorOf = (u: Ui): number => (scopeOf(u) === 'agent' ? u.agentCur : u.chatCur);
+
+/** The tree row under the cursor. */
+const treeRow = (s: Snapshot, u: Ui) => treeRows(s, u.folded)[u.treeSel];
+
+/** Change the draft of the bar in use: the agent view's or the chat's. */
+function editDraft(u: Ui, f: (draft: string) => string): void {
+  setUi(barAgent(u) ? { agentDraft: f(u.agentDraft) } : { draft: f(u.draft) });
 }
 
 export function runCommand(line: string): void {
@@ -335,7 +383,7 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'zoneDown': case 'zoneUp':
       if (u.zone === 'inbox' || u.zone === 'tree') setZone(a === 'zoneDown' ? 'tree' : 'inbox');
       else if (u.zone === 'main' && u.main === 'canvas') setUi({ canvasPart: a === 'zoneDown' ? 'incoming' : 'cards' });
-      else if (u.zone === 'chat' && a === 'zoneDown') setUi({ mode: 'insert' });
+      else if ((u.zone === 'chat' || barAgent(u)) && a === 'zoneDown') dispatch('insert');
       return;
     case 'focusZone': setZone(arg as Zone); setUi({ mode: 'normal' }); return;
     case 'focusChat': setUi({ zone: 'chat' }); return;
@@ -344,12 +392,21 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'toggleSide':
       setUi(x => ({ sideCollapsed: !x.sideCollapsed, zone: !x.sideCollapsed && (x.zone === 'inbox' || x.zone === 'tree') ? 'chat' : x.zone }));
       return;
-    case 'insert': setUi({ mode: 'insert', zone: 'chat' }); return;
+    // The agent view has its own bar; everywhere else `i` goes to the coordinator's.
+    case 'insert': {
+      const to = s.agents.find(x => x.id === barAgent(u));
+      // A subagent runs inside its slice's turn and takes no messages of its own.
+      if (to?.parent_id) { toast(`Type to its slice, **${sessionOf(s, to).name}**`); return; }
+      setUi(to ? { mode: 'insert' } : { mode: 'insert', zone: 'chat' });
+      return;
+    }
     case 'normal': setUi({ mode: 'normal' }); return;
-    case 'leaveBar': setUi({ mode: 'normal', zone: 'chat' }); return;
+    case 'leaveBar': setUi(barAgent(u) ? { mode: 'normal' } : { mode: 'normal', zone: 'chat' }); return;
     case 'escape':
       if (u.wwi) setUi({ wwi: false });
       else if (u.zone === 'main' && u.main === 'item') setUi({ main: null, mainItem: null, zone: 'inbox' });
+      else if (u.zone === 'main' && u.main === 'agent' && u.agentCur >= 0) setUi({ agentCur: -1 });
+      else if (u.zone === 'main' && u.main === 'agent') setUi({ main: null, agent: null, zone: u.side });
       else if (u.zone === 'main' && u.main === 'reading' && effortBlocks(s, u.effort).length) setUi({ main: 'canvas' });
       else if (u.zone === 'chat') setUi({ chatCur: -1 });
       return;
@@ -394,17 +451,20 @@ export function dispatch(a: Action, arg?: unknown): void {
       const d = a === 'down' ? 1 : -1;
       if (sc === 'home') setUi({ homeSel: clamp(u.homeSel + d, 0, s.projects.length - 1) });
       else if (sc === 'inbox') setUi({ inboxSel: clamp(u.inboxSel + d, 0, Math.max(0, s.inbox.length - 1)) });
-      else if (sc === 'tree') setUi({ treeSel: clamp(u.treeSel + d, 0, treeRows(s, u.folded).length - 1) });
+      else if (sc === 'tree') setUi({ followTask: null, treeSel: clamp(u.treeSel + d, 0, treeRows(s, u.folded).length - 1) });
       return;
     }
     case 'top':
       if (sc === 'home') setUi({ homeSel: 0 });
       else if (sc === 'chat') selectChatCursor(0);
-      else if (sc === 'reading') { setUi({ readHead: 0 }); viewport.reading?.scrollTo({ top: 0 }); }
+      else if (sc === 'agent') {
+        selectChatCursor(0);
+        if (u.agent && s.conversations[u.agent]?.has_more) send({ type: 'load_conversation', agent_id: u.agent });
+      } else if (sc === 'reading') { setUi({ readHead: 0 }); viewport.reading?.scrollTo({ top: 0 }); }
       return;
     case 'bottom':
       if (sc === 'home') setUi({ homeSel: s.projects.length - 1 });
-      else if (sc === 'chat') selectChatCursor(-1);
+      else if (sc === 'chat' || sc === 'agent') selectChatCursor(-1);
       else if (sc === 'reading') viewport.reading?.scrollTo({ top: viewport.reading.scrollHeight });
       return;
 
@@ -428,13 +488,13 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'itemEffort': { const it = s.inbox[u.inboxSel]; if (it) switchEffort(it.effort_id); return; }
     case 'openAgent': {
       const it = s.inbox.find(x => x.id === u.mainItem);
-      if (it?.kind === 'finished') openMain('viewer');
-      else toast(`Opens **${it?.agent_id ?? 'the agent'}**'s conversation (not in this build)`);
+      if (it) showAgent(it.agent_id);
       return;
     }
+    case 'showAgent': showAgent(String(arg)); return;
 
     // ---- efforts tree
-    case 'selectTree': setUi({ treeSel: Number(arg) }); setZone('tree'); return;
+    case 'selectTree': setUi({ followTask: null, treeSel: Number(arg) }); setZone('tree'); return;
     case 'fold': {
       const r = treeRows(s, u.folded)[u.treeSel];
       if (!r) return;
@@ -448,7 +508,16 @@ export function dispatch(a: Action, arg?: unknown): void {
       if (r.type === 'effort') { switchEffort(r.effort.id); setUi(x => ({ folded: { ...x.folded, [r.effort.id]: false } })); }
       else if (r.type === 'task') toast(`Task “${r.task.title}” · its status is set by Dovetail`);
       else if (r.agent.kind === 'slice') { setUi({ viewerAgent: r.agent.id }); openMain('viewer'); }
-      else toast(`Opens **${r.agent.name}**'s conversation (not in this build)`);
+      else showAgent(r.agent.id);
+      return;
+    }
+    case 'openConversation': {
+      const r = treeRow(s, u);
+      if (r?.type === 'agent') showAgent(r.agent.id);
+      else if (r?.type === 'task') {
+        const slice = taskSlices(s, r.task.id)[0];
+        if (slice) showAgent(slice.id); else toast(`No agent works on “${r.task.title}” yet`);
+      } else toast('The coordinator\'s conversation is the chat');
       return;
     }
     case 'addTask': {
@@ -466,14 +535,38 @@ export function dispatch(a: Action, arg?: unknown): void {
       }, r.effort.name);
       return;
     }
-    case 'moveDown': case 'moveUp': toast('Reorder (not in this build)'); return;
-    case 'archive': toast('Archive, asks first (not in this build)'); return;
+    case 'moveDown': case 'moveUp': {
+      const r = treeRow(s, u);
+      if (r?.type !== 'task') { toast('Reorder moves a task among its effort\'s tasks'); return; }
+      const dir = a === 'moveDown' ? 1 : -1;
+      // The cursor follows the task when the core's new order arrives (store.ts, taskEvent).
+      setUi({ followTask: r.task.id });
+      send({ type: 'reorder_task', task_id: r.task.id, dir });
+      return;
+    }
+    case 'archive': {
+      const r = treeRow(s, u);
+      if (!r) return;
+      if (r.type === 'task') {
+        const slices = taskSlices(s, r.task.id).length;
+        confirm(`Archive “${r.task.title}”?${slices ? ' Its slices end; worktrees and branches stay.' : ''}`, 'Archive it',
+          () => send({ type: 'archive_task', task_id: r.task.id }));
+      } else if (r.type === 'effort') {
+        confirm(`Close the effort ${r.effort.name}? Its tasks stay in the database.`, 'Close it',
+          () => send({ type: 'close_effort', effort_id: r.effort.id }));
+      } else if (r.agent.kind === 'slice') {
+        confirm(`End the slice ${r.agent.name}? Its worktree and branch stay.`, 'End it',
+          () => send({ type: 'close_slice', agent_id: r.agent.id }));
+      } else toast('A subagent ends with its turn');
+      return;
+    }
 
     // ---- chat
     case 'scrollDown': case 'scrollUp':
-      if (sc === 'chat') {
-        const n = visibleChat(s, u.filter).length;
-        let c = u.chatCur < 0 ? n - 1 : u.chatCur;
+      if (sc === 'chat' || sc === 'agent') {
+        const n = cursorEntries(s, u).length;
+        const cur = cursorOf(u);
+        let c = cur < 0 ? n - 1 : cur;
         c += a === 'scrollDown' ? 1 : -1;
         selectChatCursor(c >= n ? -1 : Math.max(0, c));
       } else if (sc === 'reading') viewport.reading?.scrollBy({ top: a === 'scrollDown' ? 60 : -60 });
@@ -481,9 +574,10 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'nextTurn': case 'prevTurn':
       if (sc === 'reading') { dispatch(a === 'nextTurn' ? 'nextHeading' : 'prevHeading'); return; }
       {
-        const v = visibleChat(s, u.filter);
+        const v = cursorEntries(s, u);
         const d = a === 'nextTurn' ? 1 : -1;
-        let c = u.chatCur < 0 ? v.length : u.chatCur;
+        const cur = cursorOf(u);
+        let c = cur < 0 ? v.length : cur;
         for (c += d; c >= 0 && c < v.length; c += d) if (v[c]?.who === 'you') break;
         selectChatCursor(c >= v.length ? -1 : Math.max(0, c));
       }
@@ -491,6 +585,12 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'unfold': case 'foldEntry': {
       const m = visibleChat(s, u.filter)[u.chatCur];
       if (m?.report) setUi(x => ({ openReports: a === 'unfold' ? [...x.openReports.filter(i => i !== m.id), m.id] : x.openReports.filter(i => i !== m.id) }));
+      return;
+    }
+    case 'openReportAgent': {
+      const m = visibleChat(s, u.filter)[u.chatCur];
+      if (m?.report && s.agents.some(x => x.id === m.who)) showAgent(m.who);
+      else if (m?.report) toast(`**${m.who}** has ended`);
       return;
     }
     case 'toggleReport': {
@@ -508,6 +608,16 @@ export function dispatch(a: Action, arg?: unknown): void {
 
     // ---- insert (chat bar)
     case 'send': {
+      const to = barAgent(u);
+      if (to) {
+        const agent = s.agents.find(x => x.id === to);
+        const text = u.agentDraft.trim();
+        if (!agent) { toast('That agent has ended'); return; }
+        if (!text) return;
+        send({ type: 'send_to_agent', agent_id: agent.id, text, effort_id: agent.effort_id });
+        setUi({ agentDraft: '', agentCur: -1 });
+        return;
+      }
       const text = u.draft.trim();
       // With no effort in focus (a new project has none) the message goes to Unsorted.
       const tag = u.tag ?? u.effort ?? String(UNSORTED_EFFORT);
@@ -516,10 +626,11 @@ export function dispatch(a: Action, arg?: unknown): void {
       setUi({ draft: '', wwi: false, chatCur: -1 });
       return;
     }
-    case 'newline': setUi(x => ({ draft: x.draft + '\n' })); return;
-    case 'deleteWord': setUi(x => ({ draft: x.draft.replace(/\S+\s*$/, '') })); return;
-    case 'deleteLine': setUi(x => ({ draft: x.draft.replace(/[^\n]*$/, '') })); return;
+    case 'newline': editDraft(u, d => d + '\n'); return;
+    case 'deleteWord': editDraft(u, d => d.replace(/\S+\s*$/, '')); return;
+    case 'deleteLine': editDraft(u, d => d.replace(/[^\n]*$/, '')); return;
     case 'cycleTag': {
+      if (barAgent(u)) { toast('Messages to an agent carry its task\'s effort'); return; }
       const n = s.efforts.length;
       if (!n) return;
       const i = s.efforts.findIndex(e => e.id === u.tag);
@@ -536,7 +647,7 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'openCanvas': openMain('canvas'); return;
     case 'openViewer': openMain('viewer'); return;
     case 'openReading': openMain('reading'); return;
-    case 'closeMain': setUi(x => ({ main: null, mainItem: null, zone: x.zone === 'main' ? 'chat' : x.zone })); return;
+    case 'closeMain': setUi(x => ({ main: null, mainItem: null, agent: null, zone: x.zone === 'main' ? 'chat' : x.zone })); return;
 
     // ---- canvas
     case 'cardLeft': case 'cardRight': case 'cardUp': case 'cardDown': {
@@ -557,6 +668,14 @@ export function dispatch(a: Action, arg?: unknown): void {
       if (c?.report_id) openMain('reading');
       else if (c && hasOwnText(c.kind)) toast(`**${c.id}** · ${c.title}${c.body ? ` — ${c.body}` : ''}`);
       else if (c) { setUi({ awaitCard: c.id }); send({ type: 'load_card', card_id: c.id }); }
+      return;
+    }
+    case 'cardAgent': {
+      const c = s.cards.find(x => x.id === u.cardSel);
+      if (!c) return;
+      if (!c.added_by) toast(`You added **${c.id}**`);
+      else if (s.agents.some(x => x.id === c.added_by) || c.added_by === COORDINATOR) showAgent(c.added_by);
+      else toast(`**${c.added_by}**, who added it, has ended`);
       return;
     }
     case 'refCard': {
@@ -717,9 +836,9 @@ export function dispatch(a: Action, arg?: unknown): void {
       picker('Everything · efforts, agents, inbox, cards', [
         ...s.efforts.map(e => ({ key: 'e' + e.id, text: 'effort ' + e.name, label: e.name, effort: e.id, detail: 'effort', go: () => switchEffort(e.id) })),
         ...s.agents.map(ag => ({
-          key: 'a' + ag.id, text: 'agent ' + ag.name, label: ag.name, glyph: ag.kind === 'slice' ? '◆' : '◇', glyphClass: 'agent-g',
+          key: 'a' + ag.id, text: 'agent ' + ag.name, label: ag.name, glyph: AGENT_GLYPH[ag.kind], glyphClass: 'agent-g',
           detail: [ag.branch, effortById(s, s.tasks.find(t => t.id === ag.task_id)?.effort_id)?.name].filter(Boolean).join(' · '),
-          go: () => toast(`Opens **${ag.name}** (not in this build)`),
+          go: () => showAgent(ag.id),
         })),
         ...s.inbox.map((it, i) => ({
           key: 'i' + it.id, text: 'inbox ' + it.title, label: it.title, glyph: INBOX_GLYPH[it.kind], glyphClass: 'g-' + it.kind,
@@ -737,7 +856,13 @@ export function dispatch(a: Action, arg?: unknown): void {
       ]);
       return;
     case 'pickAgent': dispatch('picker'); setUi(x => x.modal?.type === 'picker' ? { modal: { ...x.modal, q: 'agent ' } } : {}); return;
-    case 'interrupt': toast('Interrupt the agent in focus (not in this build)'); return;
+    case 'interrupt': {
+      const t = modeTarget(s, u);
+      // The core says when there is nothing to stop; the conversation shows the interruption.
+      send({ type: 'interrupt', agent_id: t.id });
+      toast(`Interrupt sent to **${t.name}**`);
+      return;
+    }
     // The coordinator's session moves to its next mode (auto → acceptEdits → manual); the
     // bottom bar shows the new one when the core reports it.
     case 'permMode': send({ type: 'cycle_permission_mode', agent_id: modeTarget(s, u).id }); return;

@@ -55,6 +55,7 @@ export function viewCanvas(core: W.Snapshot, pending: Pending): CanvasView {
     return {
       id, kind: c.kind, title: c.title, body: c.reference ? excerpt(loaded) : restOf(c.text),
       ...(report_id ? { report_id } : {}),
+      ...(c.added_by && c.added_by !== 'user' ? { added_by: c.added_by } : {}),
     };
   };
   const cards: Card[] = core.cards.flatMap(c => (c.block == null ? [] : [{

@@ -7,12 +7,12 @@
 
 import type * as W from './generated';
 import type {
-  Agent, AgentState, ChatEntry, Criterion, Effort, Id, InboxItem, ProjectSummary, Snapshot, Status, TagColour,
-  Preview, Task, VariantSet,
+  Agent, AgentState, ChatEntry, Conversation, Criterion, Effort, Id, InboxItem, ProjectSummary, Snapshot, Status, TagColour,
+  Preview, Speaker, Task, VariantSet,
 } from './model';
 import { viewCanvas } from './canvasView';
 import type { Pending } from './pending';
-import { COORDINATOR, UNSORTED_EFFORT, variant } from './wire';
+import { COORDINATOR, taskOrder, UNSORTED_EFFORT, variant } from './wire';
 
 const COLOURS: TagColour[] = ['blue', 'coral', 'lilac', 'mint', 'gold'];
 
@@ -21,7 +21,8 @@ export const inboxId = (id: number): Id => `i${id}`;
 export const claimId = (id: number): Id => `c${id}`;
 
 export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.now()): Snapshot {
-  const tasks = core.tasks.filter(t => t.status !== 'archived');
+  // The tree lists tasks in the core's order (`reorder_task` changes it).
+  const tasks = core.tasks.filter(t => t.status !== 'archived').sort(taskOrder);
   const agents = viewAgents(core);
   const efforts = core.efforts
     .filter(e => e.status === 'open')
@@ -44,6 +45,7 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
     agents,
     inbox,
     chat: viewChat(core),
+    conversations: viewConversations(core, agents),
     blocks: canvas.blocks,
     cards: canvas.cards,
     card_links: canvas.card_links,
@@ -160,6 +162,7 @@ function viewAgents(core: W.Snapshot): Agent[] {
       name: a.name,
       state: STATE[a.status],
       mode: modeLabel(a.permission_mode),
+      effort_id: String(core.tasks.find(t => t.id === task)?.effort ?? UNSORTED_EFFORT),
       ...(a.worktree ? { branch: a.worktree.branch } : {}),
     });
   }
@@ -222,7 +225,7 @@ function viewInboxItem(core: W.Snapshot, item: W.InboxItem, nowMs: number): Inbo
     }
     case 'error': {
       const { text } = data as { text: string };
-      return { ...base, kind: 'finished', title: `Error · ${firstLine(text)}`, body: text };
+      return { ...base, kind: 'error', title: `Error · ${firstLine(text)}`, body: text };
     }
     case 'proposal': {
       const p = data as { kind: string; text: string; why: string | null };
@@ -241,7 +244,21 @@ function viewInboxItem(core: W.Snapshot, item: W.InboxItem, nowMs: number): Inbo
 
 /** The coordinator's conversation: what the user wrote, its replies, slices' reports. */
 function viewChat(core: W.Snapshot): ChatEntry[] {
-  const entries = core.conversations[COORDINATOR]?.entries ?? [];
+  return viewEntries(core, core.conversations[COORDINATOR]?.entries ?? [], 'coordinator', false);
+}
+
+/** Each slice's and subagent's own conversation; its tool activity shows as one line per turn. */
+function viewConversations(core: W.Snapshot, agents: Agent[]): Record<Id, Conversation> {
+  const out: Record<Id, Conversation> = {};
+  for (const a of agents) {
+    const tail = core.conversations[a.id];
+    out[a.id] = { entries: viewEntries(core, tail?.entries ?? [], a.id, true), has_more: tail?.has_more ?? false };
+  }
+  return out;
+}
+
+/** A conversation's entries as the chat shows them; `speaker` is who the assistant entries are. */
+function viewEntries(core: W.Snapshot, entries: W.ConversationEntry[], speaker: Speaker, tools: boolean): ChatEntry[] {
   const out: ChatEntry[] = [];
   for (const e of entries) {
     const tag = e.effort != null ? { effort_id: String(e.effort) } : {};
@@ -249,7 +266,7 @@ function viewChat(core: W.Snapshot): ChatEntry[] {
     const id = String(e.id);
     switch (e.kind) {
       case 'user': out.push({ id, who: 'you', report: false, at, text: e.text, ...tag }); break;
-      case 'assistant': out.push({ id, who: 'coordinator', report: false, at, text: e.text, ...tag }); break;
+      case 'assistant': out.push({ id, who: speaker, report: false, at, text: e.text, ...tag }); break;
       case 'notice': out.push({ id, who: 'Dovetail', report: false, at, text: `*${e.text}*`, ...tag }); break;
       case 'agent_message': {
         const [head, ...rest] = e.text.split('\n');
@@ -258,7 +275,9 @@ function viewChat(core: W.Snapshot): ChatEntry[] {
         out.push({ id, who, report: true, at, text: rest.join('\n'), ...tag });
         break;
       }
-      case 'tool_summary': break;
+      case 'tool_summary':
+        if (tools) out.push({ id, who: speaker, report: false, tool: true, at, text: e.text, ...tag });
+        break;
     }
   }
   return out;

@@ -65,9 +65,12 @@ export interface Agent {
   branch?: string;
   /** Its permission mode as shown: `Auto`, `Accept edits`, `Manual`. */
   mode: string;
+  /** The effort its task belongs to: what a message typed to it is tagged with. */
+  effort_id: Id;
 }
 
-export type InboxKind = 'permission' | 'criterion' | 'question' | 'finished';
+/** `error` blocks an agent and counts as needing you (ADR 0028); `finished` does not. */
+export type InboxKind = 'permission' | 'criterion' | 'question' | 'error' | 'finished';
 export interface InboxItem {
   id: Id;
   kind: InboxKind;
@@ -91,11 +94,16 @@ export interface ChatEntry {
   who: Speaker;
   /** A slice report: shown as one collapsed line. */
   report: boolean;
+  /** A turn's tool activity folded into one line (an agent's own conversation only). */
+  tool?: boolean;
   /** Clock time as shown ("09:14"). */
   at: string;
   /** Markdown. */
   text: string;
 }
+
+/** An agent's own conversation: the tail the core keeps, and whether older entries exist. */
+export interface Conversation { entries: ChatEntry[]; has_more: boolean }
 
 export type Layout = 'question_tree' | 'options_compare' | 'free_area';
 /** A block on an effort's canvas (ADR 0027): a framed region with a layout. */
@@ -117,6 +125,8 @@ export interface Card {
   ref?: Id;
   /** Long cards open in the reading view: the report's id. */
   report_id?: Id;
+  /** The agent that added it; absent when the user did. */
+  added_by?: Id;
 }
 export interface CardLink { from: Id; to: Id }
 
@@ -183,6 +193,8 @@ export interface Snapshot {
   agents: Agent[];
   inbox: InboxItem[];
   chat: ChatEntry[];
+  /** Each slice's and subagent's own conversation, by agent id (the coordinator's is `chat`). */
+  conversations: Record<Id, Conversation>;
   blocks: Block[];
   cards: Card[];
   card_links: CardLink[];

@@ -1,6 +1,6 @@
 // Derived views of the snapshot that several components and the dispatcher share. Pure.
 
-import type { Agent, ChatEntry, Effort, Id, Report, Snapshot, Task, TaskStatus } from '../core/model';
+import type { Agent, ChatEntry, Effort, Id, InboxItem, Report, Snapshot, Task, TaskStatus } from '../core/model';
 
 export const effortById = (s: Snapshot, id: Id | null | undefined): Effort | undefined =>
   id ? s.efforts.find(e => e.id === id) : undefined;
@@ -18,7 +18,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done',
 };
 
-export const INBOX_GLYPH = { permission: '⚠', criterion: '☑', question: '?', finished: '✓' } as const;
+export const INBOX_GLYPH = { permission: '⚠', criterion: '☑', question: '?', error: '✕', finished: '✓' } as const;
 
 /** A speaker's display name: "You", "coordinator", or the agent's name. */
 export function speakerName(s: Snapshot, who: ChatEntry['who']): string {
@@ -51,6 +51,27 @@ export function treeRows(s: Snapshot, folded: Record<Id, boolean>): TreeRow[] {
   }
   return rows;
 }
+
+/** The entries an agent's own conversation shows. */
+export function agentEntries(s: Snapshot, id: Id | null): ChatEntry[] {
+  return (id && s.conversations[id]?.entries) || [];
+}
+
+/** The open items of an agent and its subagents: what the agent view lists above its bar. */
+export function agentItems(s: Snapshot, id: Id | null): InboxItem[] {
+  if (!id) return [];
+  const own = new Set([id, ...s.agents.filter(a => a.parent_id === id).map(a => a.id)]);
+  return s.inbox.filter(i => own.has(i.agent_id) && i.kind !== 'finished');
+}
+
+/** The agent whose session a subagent runs in; any other agent is its own. */
+export const sessionOf = (s: Snapshot, agent: Agent): Agent =>
+  (agent.parent_id && s.agents.find(a => a.id === agent.parent_id)) || agent;
+
+/** The slices working on a task (not their subagents). */
+export const taskSlices = (s: Snapshot, task: Id): Agent[] => s.agents.filter(a => a.task_id === task && !a.parent_id);
+
+export const AGENT_GLYPH: Record<Agent['kind'], string> = { slice: '◆', subagent: '◇' };
 
 /** The chat entries the filter shows, in order. */
 export function visibleChat(s: Snapshot, filter: 'all' | Id): ChatEntry[] {

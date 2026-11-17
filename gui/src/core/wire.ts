@@ -17,6 +17,15 @@ export const COORDINATOR: W.AgentId = 'coordinator';
 /** The effort every project starts with (dovetail_api::UNSORTED_EFFORT). */
 export const UNSORTED_EFFORT: W.EffortId = 1;
 
+const BUCKET_RANK = { now: 0, next: 1, later: 2 } as const;
+
+/** The core's task order: by bucket (now, next, later, none), then position in it, then id.
+ * The core reorders only within a bucket (`reorder_task`), so the tree lists tasks this way. */
+export function taskOrder(a: W.Task, b: W.Task): number {
+  const rank = (t: W.Task) => (t.bucket ? BUCKET_RANK[t.bucket] : 3);
+  return rank(a) - rank(b) || a.order - b.order || a.id - b.id;
+}
+
 /** A snapshot with nothing in it: what the client holds before the core's first message. */
 export function emptyCoreSnapshot(): W.Snapshot {
   return {

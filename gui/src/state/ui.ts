@@ -7,7 +7,7 @@ import { createStore } from './observable';
 
 export type Screen = 'home' | 'ws';
 export type Zone = 'chat' | 'main' | 'inbox' | 'tree';
-export type MainView = 'canvas' | 'viewer' | 'reading' | 'item';
+export type MainView = 'canvas' | 'viewer' | 'reading' | 'item' | 'agent';
 export type Mode = 'normal' | 'insert';
 export type PanelState = 'docked' | 'detached' | 'closed';
 export type OverlayLayer = 'plain' | 'shift' | 'ctrl' | 'leader';
@@ -51,6 +51,12 @@ export interface Ui {
   side: 'inbox' | 'tree';
   main: MainView | null;
   mainItem: Id | null;
+  /** The slice or subagent whose conversation the `agent` view shows. */
+  agent: Id | null;
+  /** What is typed in the agent view's own bar. */
+  agentDraft: string;
+  /** Cursor in the agent's conversation; -1 = following the bottom. */
+  agentCur: number;
   mode: Mode;
   /** Keys typed so far of a multi-key sequence (`g` of `gg`). */
   pending: string;
@@ -84,6 +90,8 @@ export interface Ui {
   awaitEffort: boolean;
   /** The user just created a project on Home: the next one the core adds is selected. */
   awaitProject: boolean;
+  /** The task the user just moved with `J`/`K`: the tree cursor follows it when the core reorders. */
+  followTask: Id | null;
   canvasPart: 'cards' | 'incoming';
   incSel: number;
   zoom: number;
@@ -103,13 +111,13 @@ export interface Ui {
 
 export const initialUi: Ui = {
   screen: 'home', homeSel: 0,
-  zone: 'chat', side: 'inbox', main: null, mainItem: null,
+  zone: 'chat', side: 'inbox', main: null, mainItem: null, agent: null, agentDraft: '', agentCur: -1,
   mode: 'normal', pending: '', leader: null,
   effort: null, viewerAgent: null, filter: 'all', wwi: false, wwiFlash: 0,
   inboxSel: 0, treeSel: 0, folded: { search: true, coupon: true },
   chatCur: -1, openReports: [],
   draft: '', tag: null,
-  cardSel: 'Q3', awaitCard: null, awaitNewCard: false, awaitEffort: false, awaitProject: false, canvasPart: 'cards', incSel: 0, zoom: 0.85,
+  cardSel: 'Q3', awaitCard: null, awaitNewCard: false, awaitEffort: false, awaitProject: false, followTask: null, canvasPart: 'cards', incSel: 0, zoom: 0.85,
   slot: 2, panel: 'docked', previewLoads: 0, panelPos: { x: 0, y: 0 },
   readHead: 0, sideW: 330, sideCollapsed: false,
   overlay: null, modal: null, toast: null,
@@ -140,6 +148,12 @@ export function scopeOf(ui: Ui): string {
     return ui.main;
   }
   return ui.zone === 'main' ? 'chat' : ui.zone;
+}
+
+/** The agent the bar types to in Insert mode: the agent view's while it has focus; null for the
+ * coordinator's chat bar. */
+export function barAgent(u: Ui): Id | null {
+  return u.zone === 'main' && u.main === 'agent' ? u.agent : null;
 }
 
 /** Focus effort `id`: the next message is tagged with it and its "where was I" comes up. */

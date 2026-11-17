@@ -15,6 +15,7 @@ import { translate } from '../core/translate';
 import { toView } from '../core/view';
 import { emptyCoreSnapshot, variant } from '../core/wire';
 import { createStore, type Store } from './observable';
+import { treeRows } from './select';
 import { focusEffort, setUi, toast, uiStore } from './ui';
 
 export { createStore, type Store };
@@ -75,6 +76,7 @@ function receive(msg: W.ServerMsg): void {
     cardEvent(before, kind, payload);
     effortEvent(before, kind, payload);
     projectEvent(before, kind, payload);
+    taskEvent(kind);
   }
   else if (r.kind === 'gap') link?.send('resync');
 }
@@ -108,6 +110,15 @@ function effortEvent(before: W.Snapshot, kind: string, payload: unknown): void {
   if (!uiStore.get().awaitEffort || before.efforts.some(e => e.id === effort.id)) return;
   setUi({ awaitEffort: false });
   focusEffort(String(effort.id));
+}
+
+/** The tree cursor stays on a task the user moved once the core has reordered it. */
+function taskEvent(kind: string): void {
+  const id = uiStore.get().followTask;
+  if (kind !== 'task_upserted' || id === null) return;
+  const u = uiStore.get();
+  const at = treeRows(snapshotStore.get(), u.folded).findIndex(r => r.type === 'task' && r.task.id === id);
+  if (at >= 0) setUi({ treeSel: at });
 }
 
 /** A new project the user just created on Home is selected there, so `r` and `x` act on it. */

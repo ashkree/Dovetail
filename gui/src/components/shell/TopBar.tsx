@@ -12,7 +12,10 @@ export function TopBar() {
   const ui = useUi();
   const project = s.projects.find(p => p.id === s.open_project);
   const inWs = ui.screen === 'ws' && project;
-  const tabs = ui.main === 'item' ? [...TABS, ['item', 'Inbox item', 'Enter in the inbox'] as [MainView, string, string]] : TABS;
+  // An inbox item and an agent's conversation have a tab only while open.
+  const extra: [MainView, string, string][] = ui.main === 'item' ? [['item', 'Inbox item', 'Enter in the inbox']]
+    : ui.main === 'agent' ? [['agent', s.agents.find(a => a.id === ui.agent)?.name ?? 'Agent', 'c in the tree']] : [];
+  const tabs = [...TABS, ...extra];
   return (
     <div className="header">
       <span className="brand">◆ Dovetail</span>

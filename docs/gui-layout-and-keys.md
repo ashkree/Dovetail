@@ -38,6 +38,7 @@ The URL hash sets state for screenshots, for example `#screen="ws"&main="canvas"
 - **"Where was I"** comes up as a pop-up in the middle when switching effort: what the effort is, last done, what waits on you, next step, acceptance criteria. `Esc` hides it; `w` in the tree or `Space e w` brings it back.
 - **Canvas:** one per effort, from the start (ADR 0027). It holds **blocks**: framed regions, each with a layout (question tree, options compare, free area) and a title. Agents add blocks in empty space and cards into them; Dovetail places both and nothing moves. `b` then `1 2 3` adds a block. An agent's new card is marked `new` until selected. Cards: finding, source, idea, decision, question, map, each with its own edge colour. Cards an agent put in no block wait in the **incoming strip** under the canvas, which always shows. A card's "↗ chat" button (shown on the selected card) or `r` puts its reference into the chat bar. Long cards open in the reading view.
 - **Viewer:** web preview of the slice opened from the tree (`Enter` on it), else the focused effort's slice, with the native **variant panel** beside it in three levels (global, component, content). Mix and match, detach (it floats and can be dragged), close, and "Keep this combination", which tells the slice to make the mix permanent and delete the rest.
+- **Agent:** a slice's or subagent's own conversation in the main view (tab named after the agent while one is open). Messages in the chat's style, its tool activity as one dim line per turn, what it waits on you for (permission requests, questions) in boxes above its own chat bar, answered with the inbox keys. `i` types to it, tagged with its task's effort. Opened from an inbox item (`Enter`), the tree (`Enter` on a subagent, `c` on any agent or task), a slice's report line in the chat (`Enter`), a canvas card (`ga`: the agent that added it) and `Space s s`. Added 2026-11-17 (`docs/plan/usable-v2.md`); not in the mock.
 - **Inbox item:** `Enter` on an inbox row opens it in the main view in full. A permission request answers with `y A d D`; an acceptance-criterion review with `y` (approve, Dovetail ticks the criterion) or `d`/`D` (send back, with a reason).
 
 ## Look
@@ -124,13 +125,14 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `j` | next row |
 | `k` | prev row |
 | `o` | fold / unfold |
-| `Enter` | open (a slice: its preview in the viewer) |
+| `Enter` | open (a slice: its preview in the viewer; a subagent: its conversation) |
+| `c` | the agent's conversation (a task: its slice's) |
 | `w` | where was I |
 | `a` | add task |
 | `e` | rename |
-| `J` | move down |
+| `J` | move down (a task, among its effort's) |
 | `K` | move up |
-| `dd` | archive |
+| `dd` | archive, after a keep/archive picker (a task: archived, its slices end; an effort: closed; a slice: ended) |
 | `Shift-Tab` | the agent's permission mode (a subagent: its slice's) |
 
 **Chat**
@@ -146,6 +148,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `zo` | open report |
 | `zc` | fold |
 | `f` | filter: All ⇄ effort |
+| `Enter` | a report line: that agent's conversation |
 | `Shift-Tab` | coordinator's permission mode |
 | `Ctrl-j` | chat bar |
 
@@ -171,6 +174,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `+` | zoom in |
 | `-` | zoom out |
 | `0` | fit |
+| `ga` | the agent that added the card |
 | `b` `1` | new block: question tree (`b` pops up the layouts) |
 | `b` `2` | new block: options compare |
 | `b` `3` | new block: free area |
@@ -231,6 +235,26 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `x` | dismiss |
 | `Enter` | open the agent |
 
+**Agent** (a slice's or subagent's conversation)
+
+| Keys | Does |
+| --- | --- |
+| `j` | scroll ↓ |
+| `k` | scroll ↑ |
+| `gg` | top (pages in older messages) |
+| `G` | bottom |
+| `]]` | next turn |
+| `[[` | prev turn |
+| `y` | allow its oldest request |
+| `A` | always allow |
+| `d` | deny |
+| `D` | deny with reason |
+| `r` | reply to its question |
+| `x` | dismiss |
+| `Shift-Tab` | its permission mode (a subagent: its slice's) |
+| `Ctrl-j` | its chat bar |
+| `Esc` | back |
+
 **Insert (chat bar)**
 
 | Keys | Does |
@@ -238,7 +262,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `Enter` | send |
 | `Alt-Enter` | new line |
 | `Ctrl-t` | change effort tag |
-| `Shift-Tab` | coordinator's permission mode |
+| `Shift-Tab` | permission mode (coordinator; in an agent view, that agent) |
 | `Ctrl-k` | leave bar (keep draft) |
 | `Esc` | Normal mode |
 | `Ctrl-w` | delete word |
@@ -268,7 +292,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `Space p h` | project: home (all projects) |
 | `Space p r` | project: add repo |
 | `Space s s` | session: pick agent |
-| `Space s x` | session: interrupt |
+| `Space s x` | session: interrupt (the agent view's or tree cursor's agent, else the coordinator) |
 | `Space s m` | session: permission mode (in the tree: its agent) |
 
-Not mocked yet: an agent's own conversation (opening one only shows a note), rename, reorder, search, the board and maps (not in the first release).
+Not mocked yet: rename, search, the board and maps (not in the first release). The agent view, reorder and archive were built without a mock (2026-11-17, `docs/plan/usable-v2.md`); their keys (`c`, `ga`, `Enter` in the chat, the Agent scope) are proposals like the rest.
