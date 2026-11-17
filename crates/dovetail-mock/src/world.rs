@@ -548,6 +548,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         // Nor previews or variants (ADR 0026).
         previews: Vec::new(),
         variants: Vec::new(),
+        effort_limit: 4,
         tasks,
         agents: vec![
             coordinator,
