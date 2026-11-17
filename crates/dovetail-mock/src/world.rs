@@ -541,8 +541,8 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         projects: vec![project, other, research, crate::tangents::project()],
         // The mock has no efforts; every task reads as Unsorted.
         efforts: Vec::new(),
-        // Nor canvases or cards (ADR 0025): the terminal UI shows none.
-        canvases: Vec::new(),
+        // Nor blocks or cards (ADR 0025): the terminal UI shows none.
+        blocks: Vec::new(),
         cards: Vec::new(),
         card_links: Vec::new(),
         // Nor previews or variants (ADR 0026).

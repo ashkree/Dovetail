@@ -62,8 +62,8 @@ pub enum Event {
     /// A slice declared its variants, or the user picked or kept an option (ADR 0026). It
     /// carries the whole set.
     VariantsUpserted(crate::design::VariantSet),
-    /// A canvas was created or renamed (ADR 0025).
-    CanvasUpserted(crate::canvas::Canvas),
+    /// A block was created or renamed (ADR 0027).
+    BlockUpserted(crate::canvas::Block),
     /// A card was added, placed, moved or changed. It carries the whole card.
     CardUpserted(crate::canvas::Card),
     /// A card was deleted or dropped; its links go with it.
@@ -508,25 +508,27 @@ pub enum Command {
         /// Changes, applied in order.
         patch: Vec<TaskChange>,
     },
-    /// Create a canvas for an effort (ADR 0025). Answers with [`Event::CanvasUpserted`].
-    CreateCanvas {
+    /// Add a block to an effort's canvas (ADR 0027). The core places it right of everything on
+    /// that canvas. Answers with [`Event::BlockUpserted`].
+    CreateBlock {
         /// The effort.
         effort: EffortId,
-        /// Its title; empty becomes the effort's name.
+        /// Its title; empty becomes the layout's name.
         title: String,
-        /// Its layout.
-        framework: crate::canvas::Framework,
+        /// How it lays out its cards.
+        layout: crate::canvas::Layout,
     },
-    /// Rename a canvas.
-    RenameCanvas {
-        /// The canvas.
-        id: crate::canvas::CanvasId,
+    /// Rename a block.
+    RenameBlock {
+        /// The block.
+        id: crate::canvas::BlockId,
         /// The new title.
         title: String,
     },
-    /// Add a card: placed when `card.canvas` is set, else into the effort's incoming strip. With
-    /// `link_from`, the new card is also linked from that card. The core checks that a
-    /// reference's target exists and answers with [`Event::CardUpserted`].
+    /// Add a card: into `card.block` where the core finds room (under `link_from` when that card
+    /// is in the same block), else into the effort's incoming strip. With `link_from`, the new
+    /// card is also linked from that card. The core checks that a reference's target exists and
+    /// answers with [`Event::CardUpserted`].
     AddCard {
         /// The card.
         card: crate::canvas::NewCard,
@@ -534,17 +536,20 @@ pub enum Command {
         #[serde(default)]
         link_from: Option<crate::canvas::CardId>,
     },
-    /// Place an incoming card on a canvas of its effort, at a position. Refused for a card
-    /// already placed.
+    /// Place an incoming card in a block, where the core finds room: under the placed card that
+    /// links to it, if any. With no block named: that card's block, else the effort's newest
+    /// block, else a new free area. Refused for a card already placed.
     PlaceCard {
         /// The card.
         id: crate::canvas::CardId,
-        /// The canvas.
-        canvas: crate::canvas::CanvasId,
-        /// Position in canvas pixels.
-        x: i64,
-        /// Position in canvas pixels.
-        y: i64,
+        /// The block, if the user chose one.
+        #[serde(default)]
+        block: Option<crate::canvas::BlockId>,
+    },
+    /// The user has seen a card an agent put into a block (ADR 0027).
+    SeeCard {
+        /// The card.
+        id: crate::canvas::CardId,
     },
     /// Move a placed card. Refused for an incoming card.
     MoveCard {

@@ -683,10 +683,11 @@ impl MockCore {
             | Command::CloseRound { .. }
             | Command::DropRound { .. }
             | Command::SetResearchKind { .. }
-            | Command::CreateCanvas { .. }
-            | Command::RenameCanvas { .. }
+            | Command::CreateBlock { .. }
+            | Command::RenameBlock { .. }
             | Command::AddCard { .. }
             | Command::PlaceCard { .. }
+            | Command::SeeCard { .. }
             | Command::MoveCard { .. }
             | Command::DeleteCard { .. }
             | Command::DropIncoming { .. }

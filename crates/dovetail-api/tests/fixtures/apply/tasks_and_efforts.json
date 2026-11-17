@@ -133,12 +133,13 @@
   "expected": {
     "activity": [],
     "agents": [],
-    "canvases": [],
+    "blocks": [],
     "card_links": [],
     "cards": [],
     "commands": {},
     "conversations": {},
     "decisions": [],
+    "effort_limit": 0,
     "efforts": [
       {
         "criteria": [],
@@ -231,12 +232,13 @@
   "snapshot": {
     "activity": [],
     "agents": [],
-    "canvases": [],
+    "blocks": [],
     "card_links": [],
     "cards": [],
     "commands": {},
     "conversations": {},
     "decisions": [],
+    "effort_limit": 0,
     "efforts": [],
     "inbox": [],
     "maps": [],

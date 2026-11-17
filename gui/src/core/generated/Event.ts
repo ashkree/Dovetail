@@ -3,9 +3,9 @@ import type { ActivityItem } from "./ActivityItem";
 import type { Agent } from "./Agent";
 import type { AgentId } from "./AgentId";
 import type { AgentMessage } from "./AgentMessage";
+import type { Block } from "./Block";
 import type { BrowsedDoc } from "./BrowsedDoc";
 import type { BrowsedProject } from "./BrowsedProject";
-import type { Canvas } from "./Canvas";
 import type { Card } from "./Card";
 import type { CardId } from "./CardId";
 import type { CardLink } from "./CardLink";
@@ -44,7 +44,7 @@ import type { WorktreeInfo } from "./WorktreeInfo";
 /**
  * One change to the client's [`Snapshot`].
  */
-export type Event = { "task_upserted": Task } | { "task_removed": TaskId } | { "effort_upserted": Effort } | { "preview_changed": Preview } | { "variants_upserted": VariantSet } | { "canvas_upserted": Canvas } | { "card_upserted": Card } | { "card_removed": CardId } | { "card_linked": CardLink } | { "card_unlinked": { 
+export type Event = { "task_upserted": Task } | { "task_removed": TaskId } | { "effort_upserted": Effort } | { "preview_changed": Preview } | { "variants_upserted": VariantSet } | { "block_upserted": Block } | { "card_upserted": Card } | { "card_removed": CardId } | { "card_linked": CardLink } | { "card_unlinked": { 
 /**
  * The card it started at.
  */

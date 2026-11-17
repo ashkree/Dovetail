@@ -225,11 +225,11 @@ fn the_rest() -> Case {
     }
 }
 
-fn card(id: i64, kind: CardKind, canvas: Option<i64>, title: &str) -> Card {
+fn card(id: i64, kind: CardKind, block: Option<i64>, title: &str) -> Card {
     Card {
         id: CardId(id),
         effort: EffortId(2),
-        canvas: canvas.map(CanvasId),
+        block: block.map(BlockId),
         kind,
         x: 0,
         y: 0,
@@ -239,10 +239,11 @@ fn card(id: i64, kind: CardKind, canvas: Option<i64>, title: &str) -> Card {
         missing: false,
         added_by: "user".into(),
         created_ms: 1,
+        seen: true,
     }
 }
 
-/// Canvases, cards and links: a card arrives in incoming, is placed and moved, linked, relabelled
+/// Blocks, cards and links: a card arrives in incoming, is placed and moved, linked, relabelled
 /// and unlinked; removing a card drops its links.
 fn canvas() -> Case {
     let mut placed = card(1, CardKind::Question, Some(1), "Which provider?");
@@ -253,7 +254,7 @@ fn canvas() -> Case {
         id: "41".into(),
     });
     let mut on_canvas = incoming.clone();
-    on_canvas.canvas = Some(CanvasId(1));
+    on_canvas.block = Some(BlockId(1));
     on_canvas.x = 320;
     on_canvas.y = 180;
     let mut moved = on_canvas.clone();
@@ -264,11 +265,13 @@ fn canvas() -> Case {
         label: label.into(),
     };
     let events = vec![
-        Event::CanvasUpserted(Canvas {
-            id: CanvasId(1),
+        Event::BlockUpserted(Block {
+            id: BlockId(1),
             effort: EffortId(2),
             title: "guest-pay".into(),
-            framework: Framework::QuestionTree,
+            layout: Layout::QuestionTree,
+            x: 0,
+            y: 0,
         }),
         Event::CardUpserted(placed),
         Event::CardUpserted(incoming),

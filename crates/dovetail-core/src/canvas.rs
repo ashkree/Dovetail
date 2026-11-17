@@ -1,35 +1,33 @@
-//! Canvases and cards (ADR 0025): the handlers of the canvas commands and of the agents' two
+//! Blocks and cards (ADR 0025, ADR 0027): the handlers of the canvas commands and of the agents'
 //! canvas tools.
 //!
 //! The database is the only copy (the snapshot reads it, as it reads tasks), so every handler
-//! writes through the DB thread first and then announces the stored row. Only the user's
-//! commands move, place or delete a card; the agents' tools add to incoming and link.
+//! writes through the DB thread first and then announces the stored row. The DB layer chooses
+//! every position a new block or card gets; only the user's commands move or delete a card. The
+//! agents' tools add blocks, cards and links.
 
 use dovetail_api::socket::SocketResponseBody;
-use dovetail_api::tools::{CanvasAddCard, CanvasLinkCards};
+use dovetail_api::tools::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards};
 use dovetail_api::{
-    ActivityKind, AgentId, CanvasId, Card, CardId, CardKind, CardRef, EffortId, EntryId, Event,
-    Framework, NewCard, RefKind, TaskId, UNSORTED_EFFORT,
+    ActivityKind, AgentId, BlockId, Card, CardId, CardKind, CardRef, EffortId, EntryId, Event,
+    Layout, NewCard, RefKind, TaskId, UNSORTED_EFFORT,
 };
 
-use crate::db::DbError;
+use crate::db::{DbError, USER};
 use crate::service::Core;
 use crate::tools::{error, ok};
 
-/// `added_by` of a card the user made.
-const USER: &str = "user";
-
 impl Core {
-    pub(crate) async fn create_canvas(&mut self, effort: EffortId, title: String, fw: Framework) {
-        match self.db.create_canvas(effort, title, fw).await {
-            Ok(canvas) => self.emit(Event::CanvasUpserted(canvas)),
+    pub(crate) async fn create_block(&mut self, effort: EffortId, title: String, layout: Layout) {
+        match self.db.create_block(effort, title, layout).await {
+            Ok(block) => self.emit(Event::BlockUpserted(block)),
             Err(e) => self.fail(e),
         }
     }
 
-    pub(crate) async fn rename_canvas(&mut self, id: CanvasId, title: String) {
-        match self.db.rename_canvas(id, title).await {
-            Ok(canvas) => self.emit(Event::CanvasUpserted(canvas)),
+    pub(crate) async fn rename_block(&mut self, id: BlockId, title: String) {
+        match self.db.rename_block(id, title).await {
+            Ok(block) => self.emit(Event::BlockUpserted(block)),
             Err(e) => self.fail(e),
         }
     }
@@ -58,8 +56,20 @@ impl Core {
         }
     }
 
-    pub(crate) async fn place_card(&mut self, id: CardId, canvas: CanvasId, x: i64, y: i64) {
-        match self.db.place_card(id, canvas, x, y).await {
+    pub(crate) async fn place_card(&mut self, id: CardId, block: Option<BlockId>) {
+        match self.db.place_card(id, block).await {
+            Ok((card, made)) => {
+                if let Some(block) = made {
+                    self.emit(Event::BlockUpserted(block));
+                }
+                self.emit(Event::CardUpserted(card));
+            }
+            Err(e) => self.fail(e),
+        }
+    }
+
+    pub(crate) async fn see_card(&mut self, id: CardId) {
+        match self.db.see_card(id).await {
             Ok(card) => self.emit(Event::CardUpserted(card)),
             Err(e) => self.fail(e),
         }
@@ -119,10 +129,8 @@ impl Core {
         };
         let card = NewCard {
             effort,
-            canvas: None,
+            block: None,
             kind: CardKind::Idea,
-            x: 0,
-            y: 0,
             reference: None,
             text,
         };
@@ -147,16 +155,60 @@ impl Core {
         }
     }
 
+    /// The effort an agent's canvas call is about: the one it names, else the one the user last
+    /// tagged, else Unsorted.
+    fn tool_effort(&self, agent: &AgentId, named: Option<EffortId>) -> EffortId {
+        named
+            .or_else(|| self.effort_tags.get(agent).copied())
+            .unwrap_or(UNSORTED_EFFORT)
+    }
+
+    /// `canvas_add_block`: validation already checked the shape of the call.
+    pub(crate) async fn canvas_add_block_tool(
+        &mut self,
+        agent: &AgentId,
+        call: CanvasAddBlock,
+    ) -> SocketResponseBody {
+        let effort = self.tool_effort(agent, call.effort);
+        let title = call.block_title().to_owned();
+        match self.db.create_block(effort, title, call.layout).await {
+            Ok(block) => {
+                self.activity(
+                    ActivityKind::Task,
+                    Some(agent),
+                    format!("canvas: added block {} \"{}\"", block.id.0, block.title),
+                );
+                let text = format!(
+                    "Added block {} to the canvas of effort {}. Put cards in it with \
+                     canvas_add_card and `block`: {}.",
+                    block.id.0, block.effort.0, block.id.0
+                );
+                self.emit(Event::BlockUpserted(block));
+                ok(text)
+            }
+            Err(e) => error(format!("could not add the block: {e}")),
+        }
+    }
+
     /// `canvas_add_card`: validation already checked the shape of the call.
     pub(crate) async fn canvas_add_card_tool(
         &mut self,
         agent: &AgentId,
         call: CanvasAddCard,
     ) -> SocketResponseBody {
-        let effort = call
-            .effort
-            .or_else(|| self.effort_tags.get(agent).copied())
-            .unwrap_or(UNSORTED_EFFORT);
+        // A card in a block belongs to the block's effort unless the call says otherwise (and
+        // then the DB refuses a mismatch).
+        let block_effort = match call.block {
+            Some(id) => self
+                .db
+                .load_canvas_state()
+                .await
+                .ok()
+                .and_then(|s| s.blocks.into_iter().find(|b| b.id == id))
+                .map(|b| b.effort),
+            None => None,
+        };
+        let effort = self.tool_effort(agent, call.effort.or(block_effort));
         let reference = match (call.kind.has_own_text(), call.reference) {
             (false, Some(id)) => {
                 let kind = match call.kind {
@@ -172,27 +224,32 @@ impl Core {
         };
         let new = NewCard {
             effort,
-            canvas: None,
+            block: call.block,
             kind: call.kind,
-            x: 0,
-            y: 0,
             reference,
             text: call.text,
         };
-        match self.add_card_as(new, None, &agent.0).await {
+        match self.add_card_as(new, call.under, &agent.0).await {
             Ok(card) => {
+                let (to, said) = match card.block {
+                    Some(b) => (
+                        format!("block {}", b.0),
+                        format!("Added card {} to block {}.", card.id.0, b.0),
+                    ),
+                    None => (
+                        "incoming".to_owned(),
+                        format!(
+                            "Added card {} to the incoming strip of effort {}; the user places it.",
+                            card.id.0, card.effort.0
+                        ),
+                    ),
+                };
                 self.activity(
                     ActivityKind::Task,
                     Some(agent),
-                    format!(
-                        "canvas: added card {} \"{}\" to incoming",
-                        card.id.0, card.title
-                    ),
+                    format!("canvas: added card {} \"{}\" to {to}", card.id.0, card.title),
                 );
-                ok(format!(
-                    "Added card {} to the incoming strip of effort {}; the user decides whether it goes on the canvas.",
-                    card.id.0, card.effort.0
-                ))
+                ok(said)
             }
             Err(e) => error(format!("could not add the card: {e}")),
         }
