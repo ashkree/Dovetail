@@ -48,24 +48,50 @@ $0.10 over 1 turn.
 Tests: `gui/src/keys/actions.test.ts` covers 1, 2, 3, 4 and 5 against a fake core link.
 `scripts/check.sh` passes; `scripts/install.sh` rerun after the recipe change.
 
-## Decisions for the user
+## Decisions (settled with the user, 2026-11-17)
 
-1. **The viewer follows the focused effort only.** Moving the tree cursor onto a task or slice
-   does not change focus, so with Unsorted focused the viewer says no slice has a preview while
-   one exists. Should the tree cursor focus its effort, or the viewer fall back to any slice?
-2. **Agent cards are invisible until a canvas exists.** `canvas_add_card` lands in the incoming
-   strip, but an effort with no canvas shows only the framework choice. Show the strip anyway,
-   or start a canvas when the first card arrives?
-3. **"Slice ready" costs a coordinator turn and confuses it.** The notice made the coordinator
-   answer "I haven't messaged it. Tell me what to brief it on", though the form had sent the
-   brief. Should the notice name the brief (or not start a turn)?
-4. **"X finished a turn" counts as "need you"** (`⚠ 2 need you` with nothing to answer). Keep?
-5. **`Space s m` acts on the coordinator only.** Should it act on the agent selected in the tree?
-6. **After `n` on Home the new project is not selected**, and `r` (add repo) acts on the
-   selected row, so a repo is easily added to the wrong project.
-7. **The per-machine soft limit** in the bottom bar has no source in the core; it is hidden now.
-   Wanted as a `config.toml` setting?
-8. Keys `1 2 3` on the empty canvas (finding 5) extend the still-proposed keymap.
+The eight questions the run left were put to the user one by one. Answers below; the ones that
+change a written rule say which ADR or doc they amend. Nothing here is built yet: they go into
+one follow-up plan in `docs/plan/`.
+
+1. **What the viewer shows.** The slice you pick (`Enter` on a slice in the tree); with none
+   picked, the focused effort's slice. Picking never moves the chat tag. Focus stays explicit.
+   (A project-wide board where switching effort pans a camera was raised and dropped.)
+2. **Canvas: one per effort, layouts as blocks.** Amends design v2 §6 ("each starts from a
+   framework") and ADR 0025 rule 5. New ADR.
+   - Every effort has one canvas from the start; there is no framework picker.
+   - A layout (question tree, options compare, free area) is a **block** placed on it.
+   - The agent picks a fitting layout and creates a block **in empty space only**; it never
+     moves, resizes or deletes anything already there, its own touched blocks included.
+   - Agent cards land inside a block (linked to the branch or cell), marked new until seen;
+     only cards that fit no block go to the incoming strip. Tools: `canvas_add_card` gains a
+     target block and slot; new `canvas_add_block`.
+   - The user can create blocks too (decision 8).
+   - No converting a block's layout in the first release; make a new block and drag cards.
+   - "Decision rounds" (design v2, proposed) becomes a fourth block kind after the first
+     release.
+3. **Only the coordinator starts slices in the GUI.** `Space s n` and the new-slice form go;
+   the core's `NewSlice` stays for the frozen TUI. The ready signal (ADR 0004) is unchanged:
+   the coordinator that called `start_slice` is waiting for it.
+4. **"Need you" counts only items that block an agent** (permission, question, review,
+   error). Finished turns stay as dim, uncounted inbox rows below them; the coordinator makes
+   no finished-turn item (its chat is always in view). Amends ADR 0001.
+5. **Permission mode per agent.** `Shift-Tab` cycles it in the chat (also while typing:
+   coordinator) and in the sidebar tree (the agent under the cursor, else the coordinator).
+   `Space s m` stays as the alias from every zone, same target rule. Canvas and viewer keep
+   their `Tab`/`Shift-Tab`. The bottom bar names the agent next to its mode
+   (`refactor · Accept edits`).
+6. **Home.** After `n` the selection moves to the new project; the add-repo form's title names
+   its target ("Add repo to Garden"). New: a remove-repo key (`x`, picker of the project's
+   repos, confirm) sending the core's existing `RemoveRepo`; the core refuses while a slice runs
+   in that repo.
+7. **Soft effort limit.** The core reads `max_efforts` from `config.toml` (default 4; unset
+   means the default) and sends it; the bottom bar shows `efforts N / 4`, amber over it, never
+   blocking (design v2 "Running efforts"). `scripts/bootstrap.sh` writes it, commented, into the
+   starter config.
+8. **Canvas keys.** Bare `1 2 3` go (they sat next to `0`, zoom fit). `b` opens a "new block"
+   which-key pop-up: `1` question tree, `2` options compare, `3` free area (later `4` decision
+   rounds); the block lands in the nearest empty space to the view's centre.
 
 ## Not covered
 
