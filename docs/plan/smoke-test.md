@@ -76,6 +76,9 @@ one follow-up plan in `docs/plan/`: built in `docs/plan/smoke-decisions.md`.
 4. **"Need you" counts only items that block an agent** (permission, question, review,
    error). Finished turns stay as dim, uncounted inbox rows below them; the coordinator makes
    no finished-turn item (its chat is always in view). Amends ADR 0001.
+   *As built (approved by the user, 2026-11-17, "Keep it"):* the core still raises the
+   coordinator's finished-turn item and the GUI hides it, because the frozen TUI (one agent at a
+   time) and seven core tests depend on ADR 0001's one-per-agent item. ADR 0028 point 3 says so.
 5. **Permission mode per agent.** `Shift-Tab` cycles it in the chat (also while typing:
    coordinator) and in the sidebar tree (the agent under the cursor, else the coordinator).
    `Space s m` stays as the alias from every zone, same target rule. Canvas and viewer keep
