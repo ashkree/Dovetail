@@ -1,3 +1,4 @@
+import './perf/hook';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/atkinson-hyperlegible/400.css';
@@ -23,7 +24,9 @@ import { applyHash, followHash } from './state/urlHash';
 
 // Inside the app window, the real core in the app's own process (ADR 0023); in a plain browser,
 // the fake one with its fake data, loaded only then.
-if (inTauri()) {
+if (import.meta.env.VITE_PERF) {
+  // A perf build (docs/plan/gui-perf.md): the harness brings its own synthetic core.
+} else if (inTauri()) {
   connect(new TauriCore(message => toast(message)));
 } else {
   const [{ MockCore }, { pendingFor }] = await Promise.all([import('./core/mock'), import('./core/fixtures')]);
@@ -36,3 +39,8 @@ followHash();
 const root = document.getElementById('root');
 if (!root) throw new Error('index.html has no #root');
 createRoot(root).render(<StrictMode><App /></StrictMode>);
+
+if (import.meta.env.VITE_PERF) {
+  const { runPerf } = await import('./perf/harness');
+  void runPerf(Number(import.meta.env.VITE_PERF_CHAT ?? 300), Number(import.meta.env.VITE_PERF_CARDS ?? 40));
+}

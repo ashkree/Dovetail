@@ -23,8 +23,7 @@
 .status .st .lvl { color: var(--dim); margin-left: 4px; }
 .status .ctx-bar { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: var(--raise); vertical-align: 1px; margin-right: 6px; overflow: hidden; }
 .status .ctx-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
-.status .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--edge-hi); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; vertical-align: -1px; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.status .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--edge-hi); border-top-color: var(--accent); border-radius: 50%; vertical-align: -1px; }
 
 /* Workspace: framed panels (4 px corners) on the page background, 8 px apart. Focus = accent frame. */
 .ws { display: grid; grid-template-columns: var(--chat-w, 440px) 1fr var(--side-w, 330px); min-height: 0; gap: 8px; padding: 0 8px; }

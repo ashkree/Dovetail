@@ -18,5 +18,9 @@ tauri.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+[features]
+# The perf harness in the window may report to stderr (scripts/perf-gui.sh). Never in a release.
+perf = []
+
 [lints]
 workspace = true

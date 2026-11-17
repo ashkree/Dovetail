@@ -9,6 +9,7 @@ import { useSnapshot } from '../../state/store';
 import { useUi } from '../../state/ui';
 import { ChatBar } from '../chat/ChatBar';
 import { Markdown } from '../chat/Markdown';
+import { shownOf } from '../chat/Chat';
 import { Message } from '../chat/Message';
 import { keyText } from '../overlays/Keys';
 
@@ -50,7 +51,7 @@ export function AgentView() {
           const isCur = focus && ui.agentCur === i;
           return m.tool
             ? <div key={m.id} ref={isCur ? cur : undefined} className={`tool-line ${isCur ? 'cur' : ''}`}>⚙ {m.text}</div>
-            : <Message key={m.id} entry={m} cur={isCur} showTag={false} ref={isCur ? cur : undefined} />;
+            : <Message key={m.id} entry={m} shown={shownOf(s, m)} cur={isCur} showTag={false} ref={isCur ? cur : undefined} />;
         })}
         {!entries.length && <p className="dim" style={{ marginTop: 22 }}>No messages yet.</p>}
       </div>

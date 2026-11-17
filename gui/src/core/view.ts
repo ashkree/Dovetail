@@ -20,6 +20,18 @@ const COLOURS: TagColour[] = ['blue', 'coral', 'lilac', 'mint', 'gold'];
 export const inboxId = (id: number): Id => `i${id}`;
 export const claimId = (id: number): Id => `c${id}`;
 
+/** The canvas part is made again only when what it is made from changed: a stream of chat events
+ * must not hand React Flow forty new cards a frame (docs/plan/gui-perf.md). */
+let canvasFrom: [unknown, unknown, unknown, unknown] | null = null;
+let canvasView: ReturnType<typeof viewCanvas> | null = null;
+function cachedCanvas(core: W.Snapshot, pending: Pending): ReturnType<typeof viewCanvas> {
+  const from: [unknown, unknown, unknown, unknown] = [core.blocks, core.cards, core.card_links, pending];
+  if (canvasView && canvasFrom && from.every((x, i) => x === canvasFrom?.[i])) return canvasView;
+  canvasFrom = from;
+  canvasView = viewCanvas(core, pending);
+  return canvasView;
+}
+
 export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.now()): Snapshot {
   // The tree lists tasks in the core's order (`reorder_task` changes it).
   const tasks = core.tasks.filter(t => t.status !== 'archived').sort(taskOrder);
@@ -35,7 +47,7 @@ export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.
   const all = [...claims(core, nowMs), ...listed.map(i => viewInboxItem(core, i, nowMs))];
   const inbox = [...all.filter(i => i.kind !== 'finished'), ...all.filter(i => i.kind === 'finished')];
   const open = core.project?.id ?? null;
-  const canvas = viewCanvas(core, pending);
+  const canvas = cachedCanvas(core, pending);
   return {
     seq: core.seq,
     projects: core.projects.map(p => viewProject(p, open, efforts, inbox, core.profile, nowMs)),

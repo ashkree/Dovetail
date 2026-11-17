@@ -3,13 +3,20 @@
 
 import { useEffect, useRef } from 'react';
 import { dispatch } from '../../keys/actions';
-import { effortById, visibleChat } from '../../state/select';
+import { effortById, speakerName, visibleChat } from '../../state/select';
 import { useSnapshot } from '../../state/store';
 import { useUi } from '../../state/ui';
 import { ChatBar } from './ChatBar';
+import type { ChatEntry, Snapshot } from '../../core/model';
 import { tagColour } from './EffortTag';
-import { Message, ReportLine } from './Message';
+import { Message, ReportLine, type Shown } from './Message';
 import { keyText } from '../overlays/Keys';
+
+/** What a message shows besides its entry. */
+export function shownOf(s: Snapshot, m: ChatEntry): Shown {
+  const effort = effortById(s, m.effort_id);
+  return { name: speakerName(s, m.who), ...(effort ? { tag: { name: effort.name, colour: tagColour(effort) } } : {}) };
+}
 
 export function Chat() {
   const s = useSnapshot();
@@ -38,8 +45,8 @@ export function Chat() {
         {entries.map((m, i) => {
           const isCur = ui.zone === 'chat' && ui.chatCur === i;
           return m.report
-            ? <ReportLine key={m.id} entry={m} cur={isCur} open={ui.openReports.includes(m.id)} ref={isCur ? cur : undefined} />
-            : <Message key={m.id} entry={m} cur={isCur} showTag={ui.filter === 'all'} ref={isCur ? cur : undefined} />;
+            ? <ReportLine key={m.id} entry={m} from={speakerName(s, m.who)} cur={isCur} open={ui.openReports.includes(m.id)} ref={isCur ? cur : undefined} />
+            : <Message key={m.id} entry={m} shown={shownOf(s, m)} cur={isCur} showTag={ui.filter === 'all'} ref={isCur ? cur : undefined} />;
         })}
         {!entries.length && <p className="dim" style={{ marginTop: 22 }}>No messages yet.</p>}
       </div>

@@ -4,7 +4,7 @@
 // change comes back as an event folded in by apply(). A gap asks the core for a fresh snapshot.
 
 import { useSyncExternalStore } from 'react';
-import { apply } from '../core/apply';
+import { apply, applyBatch, type SeqEvent } from '../core/apply';
 import type * as W from '../core/generated';
 import type { CoreLink } from '../core/link';
 import type { Snapshot } from '../core/model';
@@ -48,8 +48,40 @@ export function send(cmd: UiCommand): void {
   for (const c of t.core) link?.send(c);
 }
 
+/** Streamed text waits here for the next frame and is folded in one go (a hundred deltas a second
+ * would otherwise be a hundred renders a second). Anything else flushes it first, so order holds. */
+let queued: SeqEvent[] = [];
+/** How long queued deltas wait when the window is hidden and no frame comes. */
+export const DELTA_FLUSH_FALLBACK_MS = 50;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Fold the queued deltas into the core's snapshot now. */
+export function flushQueued(): void {
+  if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
+  if (!queued.length) return;
+  const run = queued;
+  queued = [];
+  const { snapshot, gap } = applyBatch(coreStore.get(), run);
+  coreStore.set(snapshot);
+  if (gap) link?.send('resync');
+}
+
+function queueDelta(item: SeqEvent): void {
+  queued.push(item);
+  if (flushTimer !== null) return;
+  // A frame, or the fallback when the window is hidden and no frame comes.
+  const go = () => flushQueued();
+  requestAnimationFrame(go);
+  flushTimer = setTimeout(go, DELTA_FLUSH_FALLBACK_MS);
+}
+
 function receive(msg: W.ServerMsg): void {
   const [tag, data] = variant(msg);
+  if (tag === 'event' && started) {
+    const item = data as SeqEvent;
+    if (variant(item.event)[0] === 'assistant_delta') { queueDelta(item); return; }
+  }
+  flushQueued();
   if (tag === 'snapshot') {
     const next = data as W.Snapshot;
     const before = coreStore.get().project?.id ?? null;
