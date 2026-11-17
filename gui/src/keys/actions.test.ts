@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { coreSnapshot } from '../core/fixtures';
 import type * as W from '../core/generated';
 import type { CoreLink } from '../core/link';
+import { taskOrder } from '../core/wire';
 import { connect, coreStore, snapshotStore } from '../state/store';
 import { needsYou, treeRows } from '../state/select';
 import { setUi, uiStore } from '../state/ui';
@@ -145,16 +146,14 @@ describe('actions against the core', () => {
   it('moves a task past one task of its own effort', () => {
     const core = coreStore.get();
     const effort = core.tasks.find(t => core.tasks.filter(x => x.effort === t.effort).length > 1)!.effort;
-    const mine = core.tasks.filter(t => t.effort === effort && t.status !== 'archived')
-      .sort((a, b) => a.order - b.order || a.id - b.id);
+    const mine = core.tasks.filter(t => t.effort === effort && t.status !== 'archived').sort(taskOrder);
     const rows = treeRows(snapshotStore.get(), {});
     const i = rows.findIndex(r => r.type === 'task' && r.task.id === String(mine[0]!.id));
     setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: i });
     dispatch('moveUp');
     expect(sent).toEqual([]);
     dispatch('moveDown');
-    const peers = core.tasks.filter(t => t.status !== 'archived' && t.bucket === mine[0]!.bucket)
-      .sort((a, b) => a.order - b.order || a.id - b.id);
+    const peers = core.tasks.filter(t => t.status !== 'archived' && t.bucket === mine[0]!.bucket).sort(taskOrder);
     const delta = peers.findIndex(t => t.id === mine[1]!.id) - peers.findIndex(t => t.id === mine[0]!.id);
     expect(sent).toEqual([{ reorder_task: { id: mine[0]!.id, delta } }]);
   });
@@ -172,6 +171,25 @@ describe('actions against the core', () => {
     push({ event: { seq: seq + 2, event: { task_upserted: { ...a!, order: 1 } } } });
     expect(at()).toBeGreaterThan(before);
     expect(uiStore.get().treeSel).toBe(at());
+  });
+
+  it('says why a task cannot pass one in another bucket', () => {
+    const core = coreStore.get();
+    const [a, b] = core.tasks.filter(t => t.effort === core.tasks[0]!.effort && t.status !== 'archived').sort(taskOrder);
+    push({ event: { seq: core.seq + 1, event: { task_upserted: { ...a!, bucket: 'now' } } } });
+    const rows = treeRows(snapshotStore.get(), {});
+    setUi({ screen: 'ws', zone: 'tree', mode: 'normal', folded: {}, treeSel: rows.findIndex(r => r.type === 'task' && r.task.id === String(b!.id)) });
+    dispatch('moveUp');
+    expect(sent).toEqual([]);
+    expect(uiStore.get().toast?.text).toContain('within a bucket');
+  });
+
+  it('counts an agent error as needing the user (ADR 0028)', () => {
+    const before = needsYou(snapshotStore.get());
+    const item: W.InboxItem = { id: 900, agent: 'coordinator', at_ms: 0, kind: { error: { text: 'session ended unexpectedly' } } };
+    push({ event: { seq: coreStore.get().seq + 1, event: { inbox_upserted: item } } });
+    expect(snapshotStore.get().inbox.find(i => i.id === 'i900')?.kind).toBe('error');
+    expect(needsYou(snapshotStore.get())).toBe(before + 1);
   });
 
   it('counts only items that wait on the user', () => {

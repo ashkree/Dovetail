@@ -12,7 +12,7 @@ import type {
 } from './model';
 import { viewCanvas } from './canvasView';
 import type { Pending } from './pending';
-import { COORDINATOR, UNSORTED_EFFORT, variant } from './wire';
+import { COORDINATOR, taskOrder, UNSORTED_EFFORT, variant } from './wire';
 
 const COLOURS: TagColour[] = ['blue', 'coral', 'lilac', 'mint', 'gold'];
 
@@ -22,7 +22,7 @@ export const claimId = (id: number): Id => `c${id}`;
 
 export function toView(core: W.Snapshot, pending: Pending, nowMs: number = Date.now()): Snapshot {
   // The tree lists tasks in the core's order (`reorder_task` changes it).
-  const tasks = core.tasks.filter(t => t.status !== 'archived').sort((a, b) => a.order - b.order || a.id - b.id);
+  const tasks = core.tasks.filter(t => t.status !== 'archived').sort(taskOrder);
   const agents = viewAgents(core);
   const efforts = core.efforts
     .filter(e => e.status === 'open')
@@ -225,7 +225,7 @@ function viewInboxItem(core: W.Snapshot, item: W.InboxItem, nowMs: number): Inbo
     }
     case 'error': {
       const { text } = data as { text: string };
-      return { ...base, kind: 'finished', title: `Error · ${firstLine(text)}`, body: text };
+      return { ...base, kind: 'error', title: `Error · ${firstLine(text)}`, body: text };
     }
     case 'proposal': {
       const p = data as { kind: string; text: string; why: string | null };

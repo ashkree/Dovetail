@@ -18,7 +18,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done',
 };
 
-export const INBOX_GLYPH = { permission: '⚠', criterion: '☑', question: '?', finished: '✓' } as const;
+export const INBOX_GLYPH = { permission: '⚠', criterion: '☑', question: '?', error: '✕', finished: '✓' } as const;
 
 /** A speaker's display name: "You", "coordinator", or the agent's name. */
 export function speakerName(s: Snapshot, who: ChatEntry['who']): string {

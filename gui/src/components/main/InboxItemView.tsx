@@ -15,6 +15,7 @@ const ANSWERS: Record<InboxKind, [Action, string][]> = {
   permission: [['allow', 'allow once'], ['allowAlways', 'always allow'], ['deny', 'deny'], ['denyReason', 'deny with reason']],
   criterion: [['allow', 'approve, tick the criterion'], ['deny', 'send back'], ['denyReason', 'send back with reason']],
   question: [['reply', 'reply'], ['dismiss', 'dismiss']],
+  error: [['openAgent', 'open the agent'], ['dismiss', 'dismiss']],
   finished: [['openAgent', 'open'], ['dismiss', 'dismiss']],
 };
 

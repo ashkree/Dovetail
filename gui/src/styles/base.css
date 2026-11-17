@@ -14,7 +14,7 @@ kbd { font: 600 .82em var(--mono); color: var(--ink); background: var(--raise); 
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; align-self: center; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px; border: 1px solid var(--edge-hi); border-radius: 999px; font-size: .86em; color: var(--dim); white-space: nowrap; }
 .chip.repo::before { content: ""; width: 14px; height: 11px; background: var(--accent); -webkit-mask: var(--folder) center / contain no-repeat; mask: var(--folder) center / contain no-repeat; }
-.g-permission { color: var(--warn); } .g-criterion { color: var(--good); } .g-question { color: var(--link); } .g-finished { color: var(--dim); }
+.g-permission { color: var(--warn); } .g-criterion { color: var(--good); } .g-question { color: var(--link); } .g-finished { color: var(--dim); } .g-error { color: var(--bad); }
 .good { color: var(--good); }
 .needs { color: var(--warn); }
 .tag { display: inline-flex; align-items: center; gap: 5px; font-size: .8em; padding: 0 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }

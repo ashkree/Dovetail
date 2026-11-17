@@ -5,7 +5,7 @@ import type * as W from './generated';
 import type { PendingAction } from './pending';
 import type { UiCommand } from './protocol';
 import { coreCardId, hasOwnText } from './canvasView';
-import { COORDINATOR, variant } from './wire';
+import { COORDINATOR, taskOrder, variant } from './wire';
 
 export interface Translated {
   core: W.Command[];
@@ -82,8 +82,9 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
     case 'close_effort': return only({ update_effort: { id: Number(cmd.effort_id), patch: [{ status: 'closed' }] } });
     case 'close_slice': return only({ close_slice: { agent: cmd.agent_id } });
     case 'reorder_task': {
-      const delta = reorderDelta(core, Number(cmd.task_id), cmd.dir);
-      return delta ? only({ reorder_task: { id: Number(cmd.task_id), delta } }) : { core: [] };
+      const r = reorderDelta(core, Number(cmd.task_id), cmd.dir);
+      if ('refused' in r) return refuse(r.refused);
+      return r.delta ? only({ reorder_task: { id: Number(cmd.task_id), delta: r.delta } }) : { core: [] };
     }
     case 'cycle_permission_mode': return only({ cycle_permission_mode: { agent: cmd.agent_id } });
     case 'start_preview': return only({ start_preview: { agent: cmd.agent_id } });
@@ -96,19 +97,21 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
   }
 }
 
-/** The core orders tasks within a bucket, which holds every effort's tasks; the tree shows one
- * effort's. The delta that moves a task past exactly one task of its own effort; 0 at an end. */
-export function reorderDelta(core: W.Snapshot, id: number, dir: 1 | -1): number {
-  const task = core.tasks.find(t => t.id === id);
-  if (!task) return 0;
-  const peers = core.tasks
-    .filter(t => t.status !== 'archived' && (t.bucket ?? null) === (task.bucket ?? null))
-    .sort((a, b) => a.order - b.order || a.id - b.id);
-  const from = peers.findIndex(t => t.id === id);
-  for (let j = from + dir; j >= 0 && j < peers.length; j += dir) {
-    if (peers[j]?.effort === task.effort) return j - from;
+/** How `J`/`K` move a task past the next task of its own effort, as the tree lists them. The
+ * core orders tasks within a bucket (now, next, later, none) that holds every effort's tasks, so
+ * the delta counts the bucket's tasks in between; a neighbour in another bucket cannot be passed. */
+export function reorderDelta(core: W.Snapshot, id: number, dir: 1 | -1): { delta: number } | { refused: string } {
+  const live = core.tasks.filter(t => t.status !== 'archived').sort(taskOrder);
+  const task = live.find(t => t.id === id);
+  if (!task) return { delta: 0 };
+  const mine = live.filter(t => t.effort === task.effort);
+  const next = mine[mine.indexOf(task) + dir];
+  if (!next) return { delta: 0 };
+  if ((next.bucket ?? null) !== (task.bucket ?? null)) {
+    return { refused: `“${task.title}” cannot pass “${next.title}”: the core orders tasks within a bucket (${task.bucket ?? 'none'} and ${next.bucket ?? 'none'} here)` };
   }
-  return 0;
+  const peers = live.filter(t => (t.bucket ?? null) === (task.bucket ?? null));
+  return { delta: peers.indexOf(next) - peers.indexOf(task) };
 }
 
 function answer(cmd: Extract<UiCommand, { type: 'answer_inbox' }>, core: W.Snapshot): Translated {

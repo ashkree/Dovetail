@@ -69,7 +69,8 @@ export interface Agent {
   effort_id: Id;
 }
 
-export type InboxKind = 'permission' | 'criterion' | 'question' | 'finished';
+/** `error` blocks an agent and counts as needing you (ADR 0028); `finished` does not. */
+export type InboxKind = 'permission' | 'criterion' | 'question' | 'error' | 'finished';
 export interface InboxItem {
   id: Id;
   kind: InboxKind;

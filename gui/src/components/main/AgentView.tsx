@@ -71,7 +71,7 @@ export function AgentView() {
                   <button onClick={() => dispatch('denyReason')}>{keyText('denyReason', 'agent')} · with reason</button>
                 </>
                 : <>
-                  <button className="primary" onClick={() => dispatch('reply')}>{keyText('reply', 'agent')} · reply</button>
+                  {it.kind === 'question' && <button className="primary" onClick={() => dispatch('reply')}>{keyText('reply', 'agent')} · reply</button>}
                   <button onClick={() => dispatch('dismiss')}>{keyText('dismiss', 'agent')} · dismiss</button>
                 </>}
             </div>
