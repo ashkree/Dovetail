@@ -37,7 +37,7 @@ The URL hash sets state for screenshots, for example `#screen="ws"&main="canvas"
 - **Messages:** a header with the speaker, the effort, a rule and the time, all always visible. **You** and the **coordinator** have their own colours (blue and warm yellow), the rule tinted to match, and a 3 px bar of that colour beside each message.
 - **"Where was I"** comes up as a pop-up in the middle when switching effort: what the effort is, last done, what waits on you, next step, acceptance criteria. `Esc` hides it; `w` in the tree or `Space e w` brings it back.
 - **Canvas:** per effort, started from a framework (question tree, options compare, free board). Cards: finding, source, idea, decision, question, map, each with its own edge colour. New cards land in the **incoming strip** under the canvas first. A card's "↗ chat" button (shown on the selected card) or `r` puts its reference into the chat bar. Long cards open in the reading view.
-- **Viewer:** web preview of the focused slice, with the native **variant panel** beside it in three levels (global, component, content). Mix and match, detach (it floats and can be dragged), close, and "Keep this combination", which tells the slice to make the mix permanent and delete the rest.
+- **Viewer:** web preview of the slice opened from the tree (`Enter` on it), else the focused effort's slice, with the native **variant panel** beside it in three levels (global, component, content). Mix and match, detach (it floats and can be dragged), close, and "Keep this combination", which tells the slice to make the mix permanent and delete the rest.
 - **Inbox item:** `Enter` on an inbox row opens it in the main view in full. A permission request answers with `y A d D`; an acceptance-criterion review with `y` (approve, Dovetail ticks the criterion) or `d`/`D` (send back, with a reason).
 
 ## Look
@@ -67,7 +67,7 @@ Rejected along the way: the deep purple Iris theme, Iceberg (too blue), a fully 
 
 ## Keys
 
-**Status: proposed, not yet reviewed by the user.** The iteration covered layout and look; the keymap below is the mock's first proposal and still needs its own review round (the `?` overlay is the way to do it). It keeps the TUI's muscle memory where the nouns survive: `i`, `Esc`, `:`, Space leader, `]]`/`[[`, `zo`/`zc`, the inbox answers `y A d D r x`, `Space c`, `Space n`, `Space s s/n/x/m`.
+**Status: proposed, not yet reviewed by the user.** The iteration covered layout and look; the keymap below is the mock's first proposal and still needs its own review round (the `?` overlay is the way to do it). It keeps the TUI's muscle memory where the nouns survive: `i`, `Esc`, `:`, Space leader, `]]`/`[[`, `zo`/`zc`, the inbox answers `y A d D r x`, `Space c`, `Space n`, `Space s s/x/m`.
 
 Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space as leader with mnemonic groups (`e` effort, `v` view, `p` project, `s` session). `h`/`l` move between chat, main view and sidebar where the view has no use for them; `Ctrl-h`/`Ctrl-l` always do, including in the canvas and while typing. `Ctrl-j`/`Ctrl-k` move between inbox and tree, and between canvas and incoming strip. The mouse is optional everywhere.
 
@@ -262,7 +262,6 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `Space p h` | project: home (all projects) |
 | `Space p r` | project: add repo |
 | `Space s s` | session: pick agent |
-| `Space s n` | session: new slice |
 | `Space s x` | session: interrupt |
 | `Space s m` | session: permission mode |
 

@@ -21,7 +21,6 @@ export type UiCommand =
   /** A repo by a path inside it; `name` defaults to its folder's. */
   | { type: 'add_repo'; project_id: Id; path: string; name?: string }
   /** A slice in `repo` (by name; may be left out when the project has one). */
-  | { type: 'new_slice'; name: string; brief: string; task_id?: Id; repo?: string }
   /** The canvas and its cards (ADR 0025). Positions are canvas pixels. */
   | { type: 'new_canvas'; effort_id: Id; framework: Framework }
   /** Place an incoming card on its effort's canvas. */

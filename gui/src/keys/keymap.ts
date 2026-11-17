@@ -202,7 +202,6 @@ export const LEADER: Record<string, LeaderNode> = {
   } },
   s: { name: 'session', keys: {
     s: ['pickAgent', 'pick agent'],
-    n: ['newSlice', 'new slice'],
     x: ['interrupt', 'interrupt'],
     m: ['permMode', 'permission mode'],
   } },

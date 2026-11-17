@@ -39,11 +39,6 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
       } });
     case 'add_repo':
       return only({ add_repo: { project: cmd.project_id, path: cmd.path.trim(), name: cmd.name?.trim() || null } });
-    case 'new_slice':
-      return only({ new_slice: {
-        task: cmd.task_id ? Number(cmd.task_id) : null, name: cmd.name.trim(), brief: cmd.brief.trim(),
-        repo: cmd.repo ?? null,
-      } });
     case 'answer_inbox': return answer(cmd, core);
     case 'new_canvas': {
       const effort = Number(cmd.effort_id);

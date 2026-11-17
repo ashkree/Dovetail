@@ -167,22 +167,6 @@ export class MockCore implements CoreLink {
         this.emit({ project_upserted: { ...p, kind: 'code', repos: [...p.repos, repo] } });
         return;
       }
-      case 'new_slice': {
-        const n = data as { task: number | null; name: string; brief: string; repo: string | null };
-        const repos = s.project?.repos ?? [];
-        if (!repos.length) return this.fail('this is a research project: it has no repo, so it runs no slices');
-        if (!n.repo && repos.length > 1) {
-          return this.fail(`this project has several repos: name one with \`repo\` (${repos.map(r => r.name).join(', ')})`);
-        }
-        if (s.agents.some(a => a.name === n.name)) return this.fail(`a slice named \`${n.name}\` already exists`);
-        const coord = s.agents.find(a => a.id === COORDINATOR);
-        if (!coord) return;
-        this.emit({ agent_upserted: {
-          ...coord, id: `slice-${n.name}`, name: n.name, kind: 'slice', task: n.task, status: 'setting_up',
-          worktree: { path: `/home/you/.local/share/dovetail/projects/${s.project?.id}/worktrees/${n.name}`, branch: `dovetail/${n.name}` },
-        } });
-        return;
-      }
       case 'create_canvas': {
         const c = data as { effort: number; title: string; framework: W.Framework };
         const effort = s.efforts.find(e => e.id === c.effort);

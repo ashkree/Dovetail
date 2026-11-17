@@ -39,7 +39,7 @@ export type Action =
   | 'send' | 'newline' | 'cycleTag' | 'leaveBar' | 'normal' | 'deleteWord' | 'deleteLine' | 'paste'
   // Space leader
   | 'picker' | 'focusChat' | 'focusInbox' | 'focusTree' | 'toggleSide' | 'pickEffort' | 'newEffort' | 'criteria'
-  | 'openCanvas' | 'openViewer' | 'openReading' | 'closeMain' | 'pickProject' | 'home' | 'pickAgent' | 'newSlice'
+  | 'openCanvas' | 'openViewer' | 'openReading' | 'closeMain' | 'pickProject' | 'home' | 'pickAgent'
   | 'interrupt' | 'permMode'
   // mouse (the same dispatcher; each has a key elsewhere)
   | 'showView' | 'selectHome' | 'selectInbox' | 'selectTree' | 'selectCard' | 'selectIncoming' | 'selectSlot'
@@ -710,23 +710,6 @@ export function dispatch(a: Action, arg?: unknown): void {
       ]);
       return;
     case 'pickAgent': dispatch('picker'); setUi(x => x.modal?.type === 'picker' ? { modal: { ...x.modal, q: 'agent ' } } : {}); return;
-    case 'newSlice': {
-      const repos = s.projects.find(x => x.id === s.open_project)?.repos ?? [];
-      if (!repos.length) { toast('This project has no repo, so it runs no slices: **Space p r** adds one'); return; }
-      const row = u.zone === 'tree' ? treeRows(s, u.folded)[u.treeSel] : undefined;
-      const task = row?.type === 'task' ? row.task : undefined;
-      const form = (repo: string | undefined) => setUi({ modal: { type: 'form', sel: 0,
-        title: `New slice${repo ? ` in ${repo}` : ''}${task ? ` on “${task.title}”` : ''}`, fields: [
-          { label: 'Name', value: '', hint: 'api-guest — also its branch' },
-          { label: 'Brief', value: '', hint: 'its first prompt: goal, scope, checks' },
-        ], onDone: ([name = '', brief = '']) => {
-          send({ type: 'new_slice', name, brief: brief || name, ...(task ? { task_id: task.id } : {}), ...(repo ? { repo } : {}) });
-        } } });
-      // With several repos the slice's repo is asked first (ADR 0021).
-      if (repos.length === 1) { form(undefined); return; }
-      picker('Which repo?', repos.map(r => ({ key: r, text: r, label: r, glyph: '▣', glyphClass: 'dim', go: () => form(r) })));
-      return;
-    }
     case 'interrupt': toast('Interrupt the agent in focus (not in this build)'); return;
     // The coordinator's session moves to its next mode (auto → acceptEdits → manual); the
     // bottom bar shows the new one when the core reports it.

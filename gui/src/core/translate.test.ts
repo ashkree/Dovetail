@@ -1,4 +1,4 @@
-// The project and slice commands of ADR 0021, in the core's terms.
+// The project commands of ADR 0021, in the core's terms.
 
 import { describe, expect, it } from 'vitest';
 import { coreSnapshot } from './fixtures';
@@ -15,10 +15,5 @@ describe('translate', () => {
   it('adds a repo by its folder, named or not', () => {
     expect(translate({ type: 'add_repo', project_id: 'shop', path: '/code/web', name: '' }, core).core)
       .toEqual([{ add_repo: { project: 'shop', path: '/code/web', name: null } }]);
-  });
-
-  it('starts a slice in a named repo on a task', () => {
-    expect(translate({ type: 'new_slice', name: ' ui ', brief: 'go', task_id: '3', repo: 'shop-web' }, core).core)
-      .toEqual([{ new_slice: { task: 3, name: 'ui', brief: 'go', repo: 'shop-web' } }]);
   });
 });
