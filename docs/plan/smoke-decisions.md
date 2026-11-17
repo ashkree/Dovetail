@@ -70,3 +70,18 @@ Each step ends with a status line here, then a commit and push.
 
 ## Status
 
+1. Done: `Enter` on a slice row sets `ui.viewerAgent` and opens the viewer.
+2. Done: `newSlice`, its form, `new_slice` in the GUI protocol, translation and MockCore removed.
+3. Done, changed: the core keeps the coordinator's finished-turn item (seven core tests and the
+   frozen TUI rely on ADR 0001's one-per-agent item); the GUI leaves it out of the inbox. ADR 0028
+   says so.
+4. Done: `modeTarget()` in `actions.ts`; the view's agents carry their mode.
+5. Done: `awaitProject`; the add-repo form already named its project; `x` sends `remove_repo`.
+6. Done: `Snapshot::effort_limit`; Home sums the projects' running counts.
+7. Done: migration `0021_blocks.sql`, `Board` placement in `db/canvas.rs`, `canvas_add_block`,
+   `SeeCard`, the GUI's blocks and `b` pop-up (`PREFIX_POPUPS` in the keymap, drawn by
+   `WhichKey`). MockCore places more simply than the core (no gap search).
+8. Tests: `actions.test.ts` (viewer pick, mode target, new project, need-you count, `b`, seen),
+   `canvas.test.ts` (blocks, placement in MockCore), `sessions.rs` (block and card placement,
+   tools), `db/canvas.rs` (migration from version 20).
+

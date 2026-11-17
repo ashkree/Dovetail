@@ -51,8 +51,8 @@ Tests: `gui/src/keys/actions.test.ts` covers 1, 2, 3, 4 and 5 against a fake cor
 ## Decisions (settled with the user, 2026-11-17)
 
 The eight questions the run left were put to the user one by one. Answers below; the ones that
-change a written rule say which ADR or doc they amend. Nothing here is built yet: they go into
-one follow-up plan in `docs/plan/`.
+change a written rule say which ADR or doc they amend. They went into
+one follow-up plan in `docs/plan/`: built in `docs/plan/smoke-decisions.md`.
 
 1. **What the viewer shows.** The slice you pick (`Enter` on a slice in the tree); with none
    picked, the focused effort's slice. Picking never moves the chat tag. Focus stays explicit.
