@@ -20,6 +20,7 @@ export type UiCommand =
   | { type: 'create_project'; name: string; account?: string; repo_path?: string }
   /** A repo by a path inside it; `name` defaults to its folder's. */
   | { type: 'add_repo'; project_id: Id; path: string; name?: string }
+  | { type: 'remove_repo'; project_id: Id; repo: string }
   /** A slice in `repo` (by name; may be left out when the project has one). */
   /** The canvas and its cards (ADR 0025). Positions are canvas pixels. */
   | { type: 'new_canvas'; effort_id: Id; framework: Framework }

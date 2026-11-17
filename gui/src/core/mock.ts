@@ -167,6 +167,14 @@ export class MockCore implements CoreLink {
         this.emit({ project_upserted: { ...p, kind: 'code', repos: [...p.repos, repo] } });
         return;
       }
+      case 'remove_repo': {
+        const r = data as { project: string; repo: number };
+        const p = s.projects.find(x => x.id === r.project);
+        if (!p) return this.fail(`there is no project ${r.project}`);
+        const repos = p.repos.filter(x => x.id !== r.repo);
+        this.emit({ project_upserted: { ...p, repos, kind: repos.length ? 'code' : 'research' } });
+        return;
+      }
       case 'create_canvas': {
         const c = data as { effort: number; title: string; framework: W.Framework };
         const effort = s.efforts.find(e => e.id === c.effort);

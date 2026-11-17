@@ -56,6 +56,7 @@ export const KEYMAP: Record<string, Binding[]> = {
     ['<CR>', 'openProject', 'open project', 'view'],
     ['n', 'newProject', 'new project', 'act'],
     ['r', 'addRepo', 'add repo', 'act'],
+    ['x', 'removeRepo', 'remove repo', 'act'],
     ['h', 'none', '', ''],
     ['l', 'none', '', ''],
   ],

@@ -19,7 +19,7 @@ export type Action =
   // lists (home, inbox, tree) and scrolling views
   | 'down' | 'up' | 'top' | 'bottom'
   // home
-  | 'openProject' | 'newProject' | 'addRepo'
+  | 'openProject' | 'newProject' | 'addRepo' | 'removeRepo'
   // inbox and inbox item
   | 'openItem' | 'allow' | 'allowAlways' | 'deny' | 'denyReason' | 'reply' | 'dismiss' | 'itemEffort' | 'openAgent'
   // efforts tree
@@ -282,6 +282,7 @@ export function dispatch(a: Action, arg?: unknown): void {
         { label: 'Claude account', value: '', hint: 'a profile from config.toml; empty for the default' },
         { label: 'First repo', value: '', hint: '~/code/shop-api — a folder in a git repo; empty for research only' },
       ], onDone: ([name = '', account = '', repo = '']) => {
+        setUi({ awaitProject: true });
         send({ type: 'create_project', name, account, repo_path: repo });
       } } });
       return;
@@ -295,6 +296,17 @@ export function dispatch(a: Action, arg?: unknown): void {
       ], onDone: ([path = '', name = '']) => {
         send({ type: 'add_repo', project_id: p.id, path, name });
       } } });
+      return;
+    }
+    case 'removeRepo': {
+      const p = s.projects[u.homeSel];
+      if (!p) return;
+      if (!p.repos.length) { toast(`**${p.name}** has no repo`); return; }
+      const confirm = (repo: string) => picker(`Remove ${repo} from ${p.name}? Its files stay where they are.`, [
+        { key: 'keep', text: 'keep', label: 'Keep it', go: () => {} },
+        { key: 'remove', text: 'remove', label: `Remove ${repo}`, go: () => send({ type: 'remove_repo', project_id: p.id, repo }) },
+      ]);
+      picker(`Remove a repo from ${p.name}`, p.repos.map(r => ({ key: r, text: r, label: r, glyph: '▣', glyphClass: 'dim', go: () => confirm(r) })));
       return;
     }
     case 'pickProject':

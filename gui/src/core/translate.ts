@@ -39,6 +39,11 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
       } });
     case 'add_repo':
       return only({ add_repo: { project: cmd.project_id, path: cmd.path.trim(), name: cmd.name?.trim() || null } });
+    case 'remove_repo': {
+      const repo = core.projects.find(p => p.id === cmd.project_id)?.repos.find(r => r.name === cmd.repo);
+      if (!repo) return { core: [], refused: `${cmd.project_id} has no repo ${cmd.repo}` };
+      return only({ remove_repo: { project: cmd.project_id, repo: repo.id } });
+    }
     case 'answer_inbox': return answer(cmd, core);
     case 'new_canvas': {
       const effort = Number(cmd.effort_id);
