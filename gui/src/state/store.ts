@@ -55,7 +55,7 @@ function receive(msg: W.ServerMsg): void {
     const after = next.project?.id ?? null;
     if (!started || before !== after) pendingStore.set(seed(after));
     started = true;
-    setUi({ awaitEffort: false });
+    setUi({ awaitEffort: false, awaitProject: false });
     coreStore.set(next);
     if (before !== after) focusOpenedProject();
     return;
@@ -65,8 +65,8 @@ function receive(msg: W.ServerMsg): void {
   const [kind, payload] = variant(event);
   if (kind === 'command_failed') {
     toast((payload as { message: string }).message);
-    // A refused create_effort must not leave a later effort to take focus unasked.
-    setUi({ awaitEffort: false });
+    // A refused create must not leave a later effort or project to take focus unasked.
+    setUi({ awaitEffort: false, awaitProject: false });
   }
   const before = coreStore.get();
   const r = apply(before, seq, event);
@@ -74,6 +74,7 @@ function receive(msg: W.ServerMsg): void {
     coreStore.set(r.snapshot);
     cardEvent(before, kind, payload);
     effortEvent(before, kind, payload);
+    projectEvent(before, kind, payload);
   }
   else if (r.kind === 'gap') link?.send('resync');
 }
@@ -107,6 +108,15 @@ function effortEvent(before: W.Snapshot, kind: string, payload: unknown): void {
   if (!uiStore.get().awaitEffort || before.efforts.some(e => e.id === effort.id)) return;
   setUi({ awaitEffort: false });
   focusEffort(String(effort.id));
+}
+
+/** A new project the user just created on Home is selected there, so `r` and `x` act on it. */
+function projectEvent(before: W.Snapshot, kind: string, payload: unknown): void {
+  if (kind !== 'project_upserted' || !uiStore.get().awaitProject) return;
+  const project = payload as W.ProjectSummary;
+  if (before.projects.some(p => p.id === project.id)) return;
+  const i = snapshotStore.get().projects.findIndex(p => p.id === project.id);
+  setUi({ awaitProject: false, ...(i >= 0 ? { homeSel: i } : {}) });
 }
 
 /** A project's snapshot just arrived: focus an effort of it, as opening it from Home does. */

@@ -5,6 +5,7 @@
 
 import { apply } from './apply';
 import { CARD_BODIES, coreSnapshot } from './fixtures';
+import { blockExtent, CARD_H, CARD_W, GAP, HEADER, PAD } from './geometry';
 import type * as W from './generated';
 import type { CoreLink } from './link';
 import { COORDINATOR, variant } from './wire';
@@ -167,37 +168,25 @@ export class MockCore implements CoreLink {
         this.emit({ project_upserted: { ...p, kind: 'code', repos: [...p.repos, repo] } });
         return;
       }
-      case 'new_slice': {
-        const n = data as { task: number | null; name: string; brief: string; repo: string | null };
-        const repos = s.project?.repos ?? [];
-        if (!repos.length) return this.fail('this is a research project: it has no repo, so it runs no slices');
-        if (!n.repo && repos.length > 1) {
-          return this.fail(`this project has several repos: name one with \`repo\` (${repos.map(r => r.name).join(', ')})`);
-        }
-        if (s.agents.some(a => a.name === n.name)) return this.fail(`a slice named \`${n.name}\` already exists`);
-        const coord = s.agents.find(a => a.id === COORDINATOR);
-        if (!coord) return;
-        this.emit({ agent_upserted: {
-          ...coord, id: `slice-${n.name}`, name: n.name, kind: 'slice', task: n.task, status: 'setting_up',
-          worktree: { path: `/home/you/.local/share/dovetail/projects/${s.project?.id}/worktrees/${n.name}`, branch: `dovetail/${n.name}` },
-        } });
+      case 'remove_repo': {
+        const r = data as { project: string; repo: number };
+        const p = s.projects.find(x => x.id === r.project);
+        if (!p) return this.fail(`there is no project ${r.project}`);
+        const repos = p.repos.filter(x => x.id !== r.repo);
+        this.emit({ project_upserted: { ...p, repos, kind: repos.length ? 'code' : 'research' } });
         return;
       }
-      case 'create_canvas': {
-        const c = data as { effort: number; title: string; framework: W.Framework };
-        const effort = s.efforts.find(e => e.id === c.effort);
-        if (!effort) return this.fail(`no effort ${c.effort}`);
-        this.emit({ canvas_upserted: {
-          id: Math.max(0, ...s.canvases.map(x => x.id)) + 1, effort: c.effort,
-          title: c.title.trim() || effort.name, framework: c.framework,
-        } });
+      case 'create_block': {
+        const c = data as { effort: number; title: string; layout: W.Layout };
+        if (!s.efforts.some(e => e.id === c.effort)) return this.fail(`no effort ${c.effort}`);
+        this.emit({ block_upserted: this.newBlock(s, c.effort, c.title, c.layout) });
         return;
       }
-      case 'rename_canvas': {
+      case 'rename_block': {
         const { id, title } = data as { id: number; title: string };
-        const canvas = s.canvases.find(c => c.id === id);
-        if (!canvas || !title.trim()) return this.fail(canvas ? 'a canvas needs a title' : `no canvas ${id}`);
-        this.emit({ canvas_upserted: { ...canvas, title: title.trim() } });
+        const block = s.blocks.find(b => b.id === id);
+        if (!block || !title.trim()) return this.fail(block ? 'a block needs a title' : `no block ${id}`);
+        this.emit({ block_upserted: { ...block, title: title.trim() } });
         return;
       }
       case 'add_card': {
@@ -208,30 +197,45 @@ export class MockCore implements CoreLink {
         if (!s.efforts.some(e => e.id === card.effort)) return this.fail(`no effort ${card.effort}`);
         const from = link_from == null ? undefined : s.cards.find(c => c.id === link_from);
         if (link_from != null && !from) return this.fail(`no card ${link_from}`);
+        const block = card.block == null ? undefined : s.blocks.find(b => b.id === card.block);
+        if (card.block != null && !block) return this.fail(`no block ${card.block}`);
         const id = Math.max(0, ...s.cards.map(c => c.id)) + 1;
-        const placed = card.canvas != null;
+        const at = block ? spot(s, block, from?.block === block.id ? from : undefined) : { x: 0, y: 0 };
         this.emit({ card_upserted: {
-          id, effort: card.effort, ...(placed ? { canvas: card.canvas } : {}), kind: card.kind,
-          x: placed ? card.x : 0, y: placed ? card.y : 0, title: text.split('\n')[0] ?? text, text,
-          missing: false, added_by: 'user', created_ms: Date.now(),
+          id, effort: card.effort, ...(block ? { block: block.id } : {}), kind: card.kind,
+          ...at, title: text.split('\n')[0] ?? text, text,
+          missing: false, added_by: 'user', created_ms: Date.now(), seen: true,
         } });
         if (from) this.emit({ card_linked: { from: from.id, to: id, label: '' } });
         return;
       }
       case 'place_card': {
-        const { id, canvas, x, y } = data as { id: number; canvas: number; x: number; y: number };
+        const { id, block: named } = data as { id: number; block: number | null };
         const card = s.cards.find(c => c.id === id);
         if (!card) return this.fail(`no card ${id}`);
-        if (card.canvas != null) return this.fail(`card ${id} is already placed`);
-        if (s.canvases.find(c => c.id === canvas)?.effort !== card.effort) return this.fail(`canvas ${canvas} belongs to another effort than card ${id}`);
-        this.emit({ card_upserted: { ...card, canvas, x, y } });
+        if (card.block != null) return this.fail(`card ${id} is already placed`);
+        const parent = s.card_links.map(l => (l.to === id ? s.cards.find(c => c.id === l.from) : undefined)).find(c => c?.block != null);
+        let block = s.blocks.find(b => b.id === (named ?? parent?.block ?? Math.max(-1, ...s.blocks.filter(b => b.effort === card.effort).map(b => b.id))));
+        if (!block) {
+          block = this.newBlock(s, card.effort, '', 'free_area');
+          this.emit({ block_upserted: block });
+        }
+        if (block.effort !== card.effort) return this.fail(`block ${block.id} belongs to another effort than card ${id}`);
+        this.emit({ card_upserted: { ...card, block: block.id, ...spot(this.state, block, parent?.block === block.id ? parent : undefined), seen: true } });
+        return;
+      }
+      case 'see_card': {
+        const { id } = data as { id: number };
+        const card = s.cards.find(c => c.id === id);
+        if (!card) return this.fail(`no card ${id}`);
+        this.emit({ card_upserted: { ...card, seen: true } });
         return;
       }
       case 'move_card': {
         const { id, x, y } = data as { id: number; x: number; y: number };
         const card = s.cards.find(c => c.id === id);
         if (!card) return this.fail(`no card ${id}`);
-        if (card.canvas == null) return this.fail(`card ${id} is incoming: place it first`);
+        if (card.block == null) return this.fail(`card ${id} is incoming: place it first`);
         this.emit({ card_upserted: { ...card, x, y } });
         return;
       }
@@ -240,7 +244,7 @@ export class MockCore implements CoreLink {
         const { id } = data as { id: number };
         const card = s.cards.find(c => c.id === id);
         if (!card) return this.fail(`no card ${id}`);
-        if (tag === 'drop_incoming' && card.canvas != null) return this.fail(`card ${id} is on a canvas: delete it there`);
+        if (tag === 'drop_incoming' && card.block != null) return this.fail(`card ${id} is on the canvas: delete it there`);
         this.emit({ card_removed: id });
         return;
       }
@@ -267,7 +271,7 @@ export class MockCore implements CoreLink {
         const id = Math.max(0, ...s.cards.map(c => c.id)) + 1;
         this.emit({ card_upserted: {
           id, effort, kind: 'idea', x: 0, y: 0, title: text.split('\n')[0] ?? text, text, missing: false,
-          added_by: 'user', created_ms: Date.now(),
+          added_by: 'user', created_ms: Date.now(), seen: true,
         } });
         return;
       }
@@ -299,6 +303,14 @@ export class MockCore implements CoreLink {
     return this.state.tasks.find(t => t.id === task)?.effort ?? null;
   }
 
+  /** A new block right of the effort's others, as the core places one (ADR 0027). */
+  private newBlock(s: W.Snapshot, effort: number, title: string, layout: W.Layout): W.Block {
+    const frames = s.blocks.filter(b => b.effort === effort).map(b => blockExtent(viewBlock(b), s.cards.map(viewCard)));
+    const x = frames.length ? Math.max(...frames.map(f => f.x + f.w)) + BLOCK_GAP : 0;
+    const name = { question_tree: 'Question tree', options_compare: 'Options compare', free_area: 'Free area' }[layout];
+    return { id: Math.max(0, ...s.blocks.map(b => b.id)) + 1, effort, title: title.trim() || name, layout, x, y: 0 };
+  }
+
   private coordinator(status: W.AgentStatus): void {
     const c = this.state.agents.find(a => a.id === COORDINATOR);
     if (c) this.emit({ agent_upserted: { ...c, status } });
@@ -321,6 +333,22 @@ export class MockCore implements CoreLink {
   private broadcast(msg: W.ServerMsg): void {
     for (const fn of this.subs) fn(msg);
   }
+}
+
+const BLOCK_GAP = 80;
+const viewBlock = (b: W.Block) => ({ id: String(b.id), effort_id: String(b.effort), layout: b.layout, title: b.title, x: b.x, y: b.y });
+const viewCard = (c: W.Card) => ({ block_id: c.block == null ? '' : String(c.block), x: c.x, y: c.y });
+
+/** Where a new card goes in a block: below `under` in its column, else the next cell of a
+ * four-wide grid. Simpler than the core's search (it does not look for gaps). */
+function spot(s: W.Snapshot, block: W.Block, under?: W.Card): { x: number; y: number } {
+  const inBlock = s.cards.filter(c => c.block === block.id);
+  if (under) {
+    const below = inBlock.filter(c => Math.abs(c.x - under.x) < CARD_W && c.y > under.y);
+    return { x: under.x, y: Math.max(under.y, ...below.map(c => c.y)) + CARD_H + GAP };
+  }
+  const n = inBlock.length;
+  return { x: block.x + PAD + (n % 4) * (CARD_W + GAP), y: block.y + HEADER + Math.floor(n / 4) * (CARD_H + GAP) };
 }
 
 /** As the core does (dovetail_api::effort_name): lower case, runs of anything else to one hyphen. */

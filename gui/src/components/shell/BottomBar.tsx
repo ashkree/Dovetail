@@ -1,7 +1,8 @@
 import { useSnapshot } from '../../state/store';
-import { runningEfforts } from '../../state/select';
+import { needsYou, runningEfforts } from '../../state/select';
 import { scopeOf, useUi } from '../../state/ui';
 import { SCOPES } from '../../keys/keymap';
+import { modeTarget } from '../../keys/actions';
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 
@@ -14,8 +15,9 @@ export function BottomBar() {
   const cls = ui.mode === 'insert' ? 'insert' : ui.leader ? 'leader' : '';
   const scope = SCOPES[scopeOf(ui)];
   const st = s.status;
+  const mt = modeTarget(s, ui);
   const running = ws ? runningEfforts(s) : st.machine_running;
-  // The core sends no soft limit yet (0): then only the count shows, with no warning.
+  // A limit of 0 (an older core sends none) shows only the count, with no warning.
   const limited = st.effort_limit > 0;
   const over = limited && running > st.effort_limit;
   const of = limited ? ` / ${st.effort_limit}` : '';
@@ -24,7 +26,7 @@ export function BottomBar() {
       <span className={`mode ${cls}`}>{mode}</span>
       <span className="pending">{ui.leader ? ['Space', ...ui.leader].join(' ') : ui.pending}</span>
       <span className="st">{scope?.name ?? ''}</span>
-      {ws && s.inbox.length > 0 && <span className="st warn">⚠ {s.inbox.length} need you</span>}
+      {ws && needsYou(s) > 0 && <span className="st warn">⚠ {needsYou(s)} need you</span>}
       <span className="grow" />
       <span className={`st ${over ? 'warn' : ''}`} title="Running efforts on this machine against the soft limit">
         {ws ? `efforts ${running}${of}${over ? ' ▲' : ''}` : `${running}${of} efforts running${over ? ' ▲' : ''}`}
@@ -34,7 +36,7 @@ export function BottomBar() {
         <span className="st" title="Coordinator context fill"><span className="ctx-bar"><i style={{ width: pct(st.context_fill) }} /></span>ctx {pct(st.context_fill)}</span>
         <span className="st" title="Usage limits of this profile">5h {pct(st.usage.five_hour)} · week {pct(st.usage.week)}</span>
         <span className="st"><b>{st.model}</b><span className="lvl">{st.effort_level}</span></span>
-        <span className="st">{st.permission_mode}</span>
+        <span className="st" title="Permission mode (Shift-Tab changes it)">{mt.name} · {mt.mode}</span>
         <span className="st" title={st.busy ? 'A turn is running' : 'Idle'}>{st.busy ? <span className="spin" /> : null}</span>
       </>}
     </div>

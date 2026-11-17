@@ -127,6 +127,7 @@ fn run(
             project: None,
             projects: projects.iter().map(|p| summary(db, paths, p)).collect(),
             warnings,
+            effort_limit: config.max_efforts,
             ..Snapshot::default()
         }
     };

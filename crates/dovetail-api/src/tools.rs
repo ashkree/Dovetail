@@ -102,8 +102,8 @@ pub enum Suite {
     Research,
     /// Maps (decision 25).
     Maps,
-    /// The effort canvas: add a card to incoming, link two cards (ADR 0025). Coordinator only
-    /// for now.
+    /// The effort canvas: add a block, add a card (into a block or incoming), link two cards
+    /// (ADR 0025, ADR 0027). Coordinator only for now.
     Canvas,
     /// What a slice's previewed page can switch: `design_declare_variants` (ADR 0026).
     Design,
@@ -248,7 +248,9 @@ tools! {
     ClaimCriterion(ClaimCriterion) = "coordination_claim_criterion", Coordination;
     /// `maps_draw` (decision 25, M15).
     DrawMap(DrawMap) = "maps_draw", Maps, was "draw_map";
-    /// `canvas_add_card` (ADR 0025): a card into an effort's incoming strip.
+    /// `canvas_add_block` (ADR 0027): a block where the effort's canvas has room.
+    CanvasAddBlock(CanvasAddBlock) = "canvas_add_block", Canvas;
+    /// `canvas_add_card` (ADR 0025, ADR 0027): a card into a block, or the incoming strip.
     CanvasAddCard(CanvasAddCard) = "canvas_add_card", Canvas;
     /// `canvas_link_cards` (ADR 0025): link two cards.
     CanvasLinkCards(CanvasLinkCards) = "canvas_link_cards", Canvas;
@@ -459,7 +461,18 @@ impl Tool {
                 }
                 text("evidence", &c.evidence)
             }
+            Tool::CanvasAddBlock(b) => {
+                if b.block_title().is_empty() {
+                    return Err(ToolError::Empty("title"));
+                }
+                Ok(())
+            }
             Tool::CanvasAddCard(c) => {
+                if c.under.is_some() && c.block.is_none() {
+                    return Err(ToolError::BadCard(
+                        "`under` places a card in a block: name the `block` too",
+                    ));
+                }
                 if c.kind.has_own_text() {
                     if c.reference.is_some() {
                         return Err(ToolError::BadCard(
@@ -614,14 +627,44 @@ pub struct ClaimCriterion {
     pub evidence: String,
 }
 
-/// `canvas_add_card` (ADR 0025): put a card into an effort's incoming strip. The user decides
-/// whether it goes on the canvas; there is no tool to place, move or delete a card.
+/// `canvas_add_block` (ADR 0027): add a block to an effort's canvas. The core places it in empty
+/// space; nothing already on the canvas moves.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct CanvasAddCard {
+pub struct CanvasAddBlock {
     /// The effort; `None` means the one the user last tagged (Unsorted when none).
     #[serde(default)]
     pub effort: Option<crate::EffortId>,
+    /// `question_tree`, `options_compare` or `free_area`.
+    pub layout: crate::Layout,
+    /// What the block is about: the root question, the choice being compared.
+    pub title: String,
+}
+
+impl CanvasAddBlock {
+    /// The title, trimmed.
+    pub fn block_title(&self) -> &str {
+        self.title.trim()
+    }
+}
+
+/// `canvas_add_card` (ADR 0025, ADR 0027): put a card into a block, where the core finds room,
+/// or into the effort's incoming strip. Nothing already on the canvas moves; there is no tool to
+/// move or delete a card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CanvasAddCard {
+    /// The effort; `None` means the one the user last tagged (Unsorted when none), or the
+    /// block's effort when `block` is given.
+    #[serde(default)]
+    pub effort: Option<crate::EffortId>,
+    /// The block to put it in; `None` puts it in the incoming strip.
+    #[serde(default)]
+    pub block: Option<crate::BlockId>,
+    /// A card in that block to put it under and link it from: in a question tree the question
+    /// it answers, in an options compare the option it is evidence for.
+    #[serde(default)]
+    pub under: Option<crate::CardId>,
     /// What the card is: `idea` or `question` with `text`, or `finding`, `source`, `decision`,
     /// `map` or `task` with `reference`.
     pub kind: crate::CardKind,

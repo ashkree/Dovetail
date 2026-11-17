@@ -30,14 +30,14 @@ The URL hash sets state for screenshots, for example `#screen="ws"&main="canvas"
 - **Home** is the first screen: recent projects as tiles, then all projects as a list (name, repos, account, efforts running, needs-you count, last opened). `Enter` opens a project's workspace.
 - **Workspace, left to right:** the coordinator **chat**; the **main view** (canvas, viewer, reading, an inbox item; later map and board); the **sidebar** with the **inbox** above the **efforts tree**. With no main view open the chat takes its space, its reading column centred.
 - **Top bar:** brand, `Projects / <project>`, the project's repos (folder icon), and the **view tabs** `Chat · Canvas · Viewer · Reading` (plain words, a line under the open one; `Inbox item` appears while one is open). Nothing else.
-- **Bottom bar (all statuses, Claude-desktop style):** left, the mode (`NORMAL`, `INSERT`, `SPACE`), pending keys, the zone in focus, `⚠ N need you`; right, `efforts 5 / 4 ▲` (running efforts against the per-machine soft limit), the Claude profile, context fill with a small bar, the usage limits, the model and its effort level (`Opus 5.5 Medium`), the permission mode, an activity spinner.
+- **Bottom bar (all statuses, Claude-desktop style):** left, the mode (`NORMAL`, `INSERT`, `SPACE`), pending keys, the zone in focus, `⚠ N need you` (items that block an agent; finished turns are listed dimmed below them and not counted, ADR 0028); right, `efforts 5 / 4 ▲` (running efforts against `max_efforts` in `config.toml`, default 4; it never blocks), the Claude profile, context fill with a small bar, the usage limits, the model and its effort level (`Opus 5.5 Medium`), the permission mode of the agent `Shift-Tab` would change (`coordinator · Auto`, or the tree's agent), an activity spinner.
 - **Sidebar:** the inbox takes only as many rows as it has items and grows downward, up to 40 % of the height; the tree gets the rest. Drag the sidebar's left edge to widen it. `Space z` or the ⇥ button in the inbox title folds it to a rail showing the inbox count and one dot per effort; the rail's ⇤, `Space z` again, or moving to the inbox or tree opens it.
 - **Chat width** with a view open: 440 px. Sidebar default 330 px.
 - **Chat:** one coordinator chat per project. Each message carries an effort tag, shown as a coloured dot and the effort name in its header. A compact `All efforts ▾` control (`f`) filters to one effort's thread. Slice reports are one collapsed line (`▸ research-1 · …`), `zo` opens one. The input bar shows the effort the next message is tagged with (`Ctrl-t` changes it).
 - **Messages:** a header with the speaker, the effort, a rule and the time, all always visible. **You** and the **coordinator** have their own colours (blue and warm yellow), the rule tinted to match, and a 3 px bar of that colour beside each message.
 - **"Where was I"** comes up as a pop-up in the middle when switching effort: what the effort is, last done, what waits on you, next step, acceptance criteria. `Esc` hides it; `w` in the tree or `Space e w` brings it back.
-- **Canvas:** per effort, started from a framework (question tree, options compare, free board). Cards: finding, source, idea, decision, question, map, each with its own edge colour. New cards land in the **incoming strip** under the canvas first. A card's "↗ chat" button (shown on the selected card) or `r` puts its reference into the chat bar. Long cards open in the reading view.
-- **Viewer:** web preview of the focused slice, with the native **variant panel** beside it in three levels (global, component, content). Mix and match, detach (it floats and can be dragged), close, and "Keep this combination", which tells the slice to make the mix permanent and delete the rest.
+- **Canvas:** one per effort, from the start (ADR 0027). It holds **blocks**: framed regions, each with a layout (question tree, options compare, free area) and a title. Agents add blocks in empty space and cards into them; Dovetail places both and nothing moves. `b` then `1 2 3` adds a block. An agent's new card is marked `new` until selected. Cards: finding, source, idea, decision, question, map, each with its own edge colour. Cards an agent put in no block wait in the **incoming strip** under the canvas, which always shows. A card's "↗ chat" button (shown on the selected card) or `r` puts its reference into the chat bar. Long cards open in the reading view.
+- **Viewer:** web preview of the slice opened from the tree (`Enter` on it), else the focused effort's slice, with the native **variant panel** beside it in three levels (global, component, content). Mix and match, detach (it floats and can be dragged), close, and "Keep this combination", which tells the slice to make the mix permanent and delete the rest.
 - **Inbox item:** `Enter` on an inbox row opens it in the main view in full. A permission request answers with `y A d D`; an acceptance-criterion review with `y` (approve, Dovetail ticks the criterion) or `d`/`D` (send back, with a reason).
 
 ## Look
@@ -67,7 +67,7 @@ Rejected along the way: the deep purple Iris theme, Iceberg (too blue), a fully 
 
 ## Keys
 
-**Status: proposed, not yet reviewed by the user.** The iteration covered layout and look; the keymap below is the mock's first proposal and still needs its own review round (the `?` overlay is the way to do it). It keeps the TUI's muscle memory where the nouns survive: `i`, `Esc`, `:`, Space leader, `]]`/`[[`, `zo`/`zc`, the inbox answers `y A d D r x`, `Space c`, `Space n`, `Space s s/n/x/m`.
+**Status: proposed, not yet reviewed by the user.** The iteration covered layout and look; the keymap below is the mock's first proposal and still needs its own review round (the `?` overlay is the way to do it). It keeps the TUI's muscle memory where the nouns survive: `i`, `Esc`, `:`, Space leader, `]]`/`[[`, `zo`/`zc`, the inbox answers `y A d D r x`, `Space c`, `Space n`, `Space s s/x/m`.
 
 Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space as leader with mnemonic groups (`e` effort, `v` view, `p` project, `s` session). `h`/`l` move between chat, main view and sidebar where the view has no use for them; `Ctrl-h`/`Ctrl-l` always do, including in the canvas and while typing. `Ctrl-j`/`Ctrl-k` move between inbox and tree, and between canvas and incoming strip. The mouse is optional everywhere.
 
@@ -98,8 +98,9 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `gg` | first |
 | `G` | last |
 | `Enter` | open project |
-| `n` | new project |
+| `n` | new project (selected once made) |
 | `r` | add repo |
+| `x` | remove repo (picker, then confirm) |
 
 **Inbox**
 
@@ -123,13 +124,14 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `j` | next row |
 | `k` | prev row |
 | `o` | fold / unfold |
-| `Enter` | open |
+| `Enter` | open (a slice: its preview in the viewer) |
 | `w` | where was I |
 | `a` | add task |
 | `e` | rename |
 | `J` | move down |
 | `K` | move up |
 | `dd` | archive |
+| `Shift-Tab` | the agent's permission mode (a subagent: its slice's) |
 
 **Chat**
 
@@ -144,6 +146,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `zo` | open report |
 | `zc` | fold |
 | `f` | filter: All ⇄ effort |
+| `Shift-Tab` | coordinator's permission mode |
 | `Ctrl-j` | chat bar |
 
 **Canvas**
@@ -168,7 +171,9 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `+` | zoom in |
 | `-` | zoom out |
 | `0` | fit |
-| `1` `2` `3` | no canvas yet: question tree, options compare, free board (temporary; to be replaced by `b`, the new-block pop-up: `docs/plan/smoke-test.md` decisions 2 and 8) |
+| `b` `1` | new block: question tree (`b` pops up the layouts) |
+| `b` `2` | new block: options compare |
+| `b` `3` | new block: free area |
 
 **Incoming strip**
 
@@ -176,7 +181,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | --- | --- |
 | `h` | prev card |
 | `l` | next card |
-| `a` | place on canvas |
+| `a` | place on canvas (under the card linking to it, else in the newest block) |
 | `x` | drop |
 | `r` | ref → chat |
 | `k` | back to canvas |
@@ -233,6 +238,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `Enter` | send |
 | `Alt-Enter` | new line |
 | `Ctrl-t` | change effort tag |
+| `Shift-Tab` | coordinator's permission mode |
 | `Ctrl-k` | leave bar (keep draft) |
 | `Esc` | Normal mode |
 | `Ctrl-w` | delete word |
@@ -262,8 +268,7 @@ Modal: **Normal** (navigate and act), **Insert** (typing in the chat bar), Space
 | `Space p h` | project: home (all projects) |
 | `Space p r` | project: add repo |
 | `Space s s` | session: pick agent |
-| `Space s n` | session: new slice |
 | `Space s x` | session: interrupt |
-| `Space s m` | session: permission mode |
+| `Space s m` | session: permission mode (in the tree: its agent) |
 
 Not mocked yet: an agent's own conversation (opening one only shows a note), rename, reorder, search, the board and maps (not in the first release).

@@ -95,12 +95,12 @@ const TASKS: Task[] = [
 ];
 
 const AGENTS: Agent[] = [
-  { id: 'research-1', task_id: 'pay-t2', kind: 'slice', name: 'research-1', state: 'needs_you' },
-  { id: 'fees-web', task_id: 'pay-t2', parent_id: 'research-1', kind: 'subagent', name: 'fees-web', state: 'done' },
-  { id: 'login-fix', task_id: 'login-t2', kind: 'slice', name: 'login-fix', state: 'needs_you', branch: 'fix/login-safari' },
-  { id: 'run-e2e', task_id: 'login-t2', parent_id: 'login-fix', kind: 'subagent', name: 'run e2e', state: 'working' },
-  { id: 'header-toggle', task_id: 'dark-t2', kind: 'slice', name: 'header-toggle', state: 'working', branch: 'feat/dark-mode' },
-  { id: 'search-gc', task_id: 'search-t1', kind: 'slice', name: 'search-gc', state: 'working', branch: 'chore/drop-old-index' },
+  { id: 'research-1', task_id: 'pay-t2', kind: 'slice', name: 'research-1', state: 'needs_you', mode: 'Auto' },
+  { id: 'fees-web', task_id: 'pay-t2', parent_id: 'research-1', kind: 'subagent', name: 'fees-web', state: 'done', mode: 'Auto' },
+  { id: 'login-fix', task_id: 'login-t2', kind: 'slice', name: 'login-fix', state: 'needs_you', mode: 'Auto', branch: 'fix/login-safari' },
+  { id: 'run-e2e', task_id: 'login-t2', parent_id: 'login-fix', kind: 'subagent', name: 'run e2e', state: 'working', mode: 'Auto' },
+  { id: 'header-toggle', task_id: 'dark-t2', kind: 'slice', name: 'header-toggle', state: 'working', mode: 'Auto', branch: 'feat/dark-mode' },
+  { id: 'search-gc', task_id: 'search-t1', kind: 'slice', name: 'search-gc', state: 'working', mode: 'Auto', branch: 'chore/drop-old-index' },
 ];
 
 const INBOX: InboxItem[] = [
@@ -172,16 +172,16 @@ export const CARD_BODIES: Record<number, string> = Object.fromEntries(
   FIXTURE_CARDS.filter(c => !['idea', 'question'].includes(c.kind)).map(c => [c.id, c.body]),
 );
 
-function coreCanvasState(): Pick<W.Snapshot, 'canvases' | 'cards' | 'card_links'> {
+function coreCanvasState(): Pick<W.Snapshot, 'blocks' | 'cards' | 'card_links'> {
   return {
-    canvases: [{ id: 1, effort: PAY_EFFORT, title: 'Which provider?', framework: 'question_tree' }],
+    blocks: [{ id: 1, effort: PAY_EFFORT, title: 'Which provider?', layout: 'question_tree', x: 20, y: -20 }],
     cards: FIXTURE_CARDS.map((c): W.Card => {
       const own = c.kind === 'idea' || c.kind === 'question';
       return {
-        id: c.id, effort: PAY_EFFORT, ...(isIncoming(c) ? {} : { canvas: 1 }), kind: c.kind, x: c.x ?? 0, y: c.y ?? 0,
+        id: c.id, effort: PAY_EFFORT, ...(isIncoming(c) ? {} : { block: 1 }), kind: c.kind, x: c.x ?? 0, y: c.y ?? 0,
         ...(own ? {} : { reference: { kind: c.kind as W.RefKind, id: String(c.id) } }),
         title: c.title, text: own ? `${c.title}\n${c.body}` : '', missing: false,
-        added_by: isIncoming(c) ? 'research-1' : 'user', created_ms: NOW,
+        added_by: isIncoming(c) ? 'research-1' : 'user', created_ms: NOW, seen: true,
       };
     }),
     card_links: FIXTURE_LINKS.map(([from, to]) => ({ from, to, label: '' })),
@@ -365,7 +365,7 @@ function coreChat(): W.ConversationEntry[] {
 
 /** The core's Snapshot: Home (no project) or one project. Only Shop has data. */
 export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot {
-  const base: W.Snapshot = { ...emptyCoreSnapshot(), seq, now_ms: NOW, projects: PROJECTS.map(coreProject) };
+  const base: W.Snapshot = { ...emptyCoreSnapshot(), seq, now_ms: NOW, projects: PROJECTS.map(coreProject), effort_limit: MACHINE_LIMIT };
   const index = PROJECTS.findIndex(p => p.id === projectId);
   const project = PROJECTS[index];
   if (!project) return base;
@@ -388,10 +388,7 @@ export function coreSnapshot(seq: number, projectId: string | null): W.Snapshot 
  * columns. Effort ids are the core's, as text. */
 export function pendingFor(projectId: string | null): Pending {
   const effort = (id: string) => String(num(EFFORT_ID, id));
-  const base: Pending = {
-    ...emptyPending(),
-    status: { effort_limit: MACHINE_LIMIT, machine_running: PROJECTS.reduce((n, p) => n + p.running, 0) },
-  };
+  const base: Pending = emptyPending();
   if (projectId !== 'shop') return base;
   return {
     ...base,

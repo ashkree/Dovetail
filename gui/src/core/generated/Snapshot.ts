@@ -3,7 +3,7 @@ import type { ActivityItem } from "./ActivityItem";
 import type { Agent } from "./Agent";
 import type { AgentId } from "./AgentId";
 import type { AgentMessage } from "./AgentMessage";
-import type { Canvas } from "./Canvas";
+import type { Block } from "./Block";
 import type { Card } from "./Card";
 import type { CardLink } from "./CardLink";
 import type { ConversationTail } from "./ConversationTail";
@@ -51,11 +51,11 @@ projects: Array<ProjectSummary>,
  */
 efforts: Array<Effort>, 
 /**
- * The open project's canvases, in id order.
+ * The blocks on the open project's canvases (one canvas per effort), in id order.
  */
-canvases: Array<Canvas>, 
+blocks: Array<Block>, 
 /**
- * The open project's cards, in id order: placed ones and the incoming strip's (no canvas).
+ * The open project's cards, in id order: placed ones and the incoming strip's (no block).
  * Titles only; a card's body comes with [`crate::Command::LoadCard`].
  */
 cards: Array<Card>, 
@@ -159,4 +159,9 @@ previews: Array<Preview>,
 /**
  * The variants slices declared, with the user's picks (ADR 0026).
  */
-variants: Array<VariantSet>, };
+variants: Array<VariantSet>, 
+/**
+ * The soft limit on running efforts, from `config.toml`'s `max_efforts`: shown against the
+ * running count, never enforced.
+ */
+effort_limit: number, };

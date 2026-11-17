@@ -46,7 +46,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
             state.variants.retain(|v| v.agent != set.agent)
         }
         Event::VariantsUpserted(set) => upsert(&mut state.variants, set, |v| v.agent.clone()),
-        Event::CanvasUpserted(canvas) => upsert(&mut state.canvases, canvas, |c| c.id),
+        Event::BlockUpserted(block) => upsert(&mut state.blocks, block, |b| b.id),
         Event::CardUpserted(card) => upsert(&mut state.cards, card, |c| c.id),
         Event::CardRemoved(id) => {
             state.cards.retain(|c| c.id != id);

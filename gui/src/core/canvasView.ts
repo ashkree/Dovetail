@@ -1,10 +1,10 @@
-// The canvas part of the view (ADR 0025): canvases, cards, links and the incoming strip, made
-// from the core's Snapshot. Pure. A card's view id is its kind's letter and its core number
+// The canvas part of the view (ADR 0025, ADR 0027): blocks, cards, links and the incoming strip,
+// made from the core's Snapshot. Pure. A card's view id is its kind's letter and its core number
 // (`Q4`, `F90`): short, shown, and what a chat reference names. Bodies of cards that point at
 // something come with `load_card` and are kept in the pending state (`bodies`).
 
 import type * as W from './generated';
-import type { Canvas, Card, CardLink, Id, IncomingCard, Report } from './model';
+import type { Block, Card, CardLink, Id, IncomingCard, Report } from './model';
 import type { Pending } from './pending';
 
 const LETTER: Record<W.CardKind, string> = {
@@ -24,7 +24,7 @@ export const hasOwnText = (kind: string): boolean => kind === 'idea' || kind ===
 const SHORT_BODY = 160;
 
 export interface CanvasView {
-  canvases: Canvas[];
+  blocks: Block[];
   cards: Card[];
   card_links: CardLink[];
   incoming: IncomingCard[];
@@ -33,8 +33,8 @@ export interface CanvasView {
 }
 
 export function viewCanvas(core: W.Snapshot, pending: Pending): CanvasView {
-  const canvases: Canvas[] = core.canvases.map(c => ({
-    id: String(c.id), effort_id: String(c.effort), framework: c.framework, title: c.title,
+  const blocks: Block[] = core.blocks.map(b => ({
+    id: String(b.id), effort_id: String(b.effort), layout: b.layout, title: b.title, x: b.x, y: b.y,
   }));
   const viewId = new Map(core.cards.map(c => [c.id, cardViewId(c)]));
   const card_links: CardLink[] = core.card_links.flatMap(l => {
@@ -57,21 +57,20 @@ export function viewCanvas(core: W.Snapshot, pending: Pending): CanvasView {
       ...(report_id ? { report_id } : {}),
     };
   };
-  const cards: Card[] = core.cards.flatMap(c => (c.canvas == null ? [] : [{
-    ...base(c), canvas_id: String(c.canvas), x: c.x, y: c.y,
+  const cards: Card[] = core.cards.flatMap(c => (c.block == null ? [] : [{
+    ...base(c), block_id: String(c.block), x: c.x, y: c.y, ...(c.seen ? {} : { unseen: true }),
   }]));
   const incoming: IncomingCard[] = core.cards.flatMap(c => {
-    if (c.canvas != null) return [];
-    const canvas = core.canvases.find(k => k.effort === c.effort);
-    // The card it would hang under: the one that links to it, if it is on a canvas.
+    if (c.block != null) return [];
+    // The card it would hang under: the one that links to it, if it is placed.
     const parent = core.card_links.map(l => (l.to === c.id ? core.cards.find(p => p.id === l.from) : undefined))
-      .find(p => p?.canvas != null);
+      .find(p => p?.block != null);
     return [{
-      ...base(c), canvas_id: canvas ? String(canvas.id) : '',
+      ...base(c), effort_id: String(c.effort),
       ...(parent ? { under: cardViewId(parent) } : {}),
     }];
   });
-  return { canvases, cards, card_links, incoming, reports };
+  return { blocks, cards, card_links, incoming, reports };
 }
 
 /** What follows the first line: an idea's or question's title is its first line. */

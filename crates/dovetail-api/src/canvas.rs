@@ -1,20 +1,21 @@
-//! Canvases and cards (ADR 0025, `docs/design-v2.md` §6).
+//! Canvases, blocks and cards (ADR 0025, ADR 0027, `docs/design-v2.md` §6).
 //!
-//! A canvas is a board of cards for one effort. A card either holds the user's or an agent's own
-//! words (an idea, a question) or points at something stored elsewhere (a finding, a source, a
-//! decision, a map, a task) by [`CardRef`]. A card with no canvas is in the effort's **incoming**
-//! strip until the user places it. Only the user moves or deletes a card: the agent tools add to
-//! incoming and link, nothing more.
+//! Each effort has one canvas: its blocks and their cards. A block is a framed region with a
+//! [`Layout`]. A card either holds the user's or an agent's own words (an idea, a question) or
+//! points at something stored elsewhere (a finding, a source, a decision, a map, a task) by
+//! [`CardRef`]. A card in no block is in the effort's **incoming** strip until the user places it.
+//! The core places every new block and every card added into a block; only the user moves or
+//! deletes a card. Agents add blocks, cards and links, nothing more.
 
 use serde::{Deserialize, Serialize};
 
 use crate::effort::EffortId;
 
-/// Identifies a canvas. Matches the `canvases.id` row id in `state.db`.
+/// Identifies a block. Matches the `blocks.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
-pub struct CanvasId(pub i64);
+pub struct BlockId(pub i64);
 
 /// Identifies a card. Matches the `cards.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -22,31 +23,66 @@ pub struct CanvasId(pub i64);
 #[serde(transparent)]
 pub struct CardId(pub i64);
 
-/// How a canvas is laid out and what it is for.
+/// How a block lays out its cards and what it is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
-pub enum Framework {
-    /// A root question and the questions, findings and ideas under it.
+pub enum Layout {
+    /// A root question and the questions, findings and ideas under it: a card added under
+    /// another goes one row below it.
     QuestionTree,
-    /// Options side by side against the same criteria.
+    /// Options side by side: each option heads a column and its evidence goes below it.
     OptionsCompare,
-    /// No structure.
-    FreeBoard,
+    /// No structure: cards fill a grid row by row.
+    FreeArea,
 }
 
-/// A canvas of an effort.
+/// A block on an effort's canvas: a framed region with a layout, at a position the core chose.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct Canvas {
-    /// Canvas id.
-    pub id: CanvasId,
-    /// The effort it belongs to.
+pub struct Block {
+    /// Block id.
+    pub id: BlockId,
+    /// The effort whose canvas it is on.
     pub effort: EffortId,
     /// Its title.
     pub title: String,
-    /// Its layout.
-    pub framework: Framework,
+    /// How it lays out its cards.
+    pub layout: Layout,
+    /// Its top-left corner on the canvas, in canvas pixels.
+    pub x: i64,
+    /// Its top-left corner on the canvas, in canvas pixels.
+    pub y: i64,
+}
+
+/// A point on a canvas, in canvas pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Point {
+    /// Rightwards.
+    pub x: i64,
+    /// Downwards.
+    pub y: i64,
+}
+
+/// Sizes the core places by and the GUI draws with, in canvas pixels. A card's cell in a block is
+/// `CARD_W + GAP` wide and `CARD_H + GAP` high, starting `PAD` from the block's left edge and
+/// `HEADER` from its top.
+pub mod geometry {
+    /// A card's width.
+    pub const CARD_W: i64 = 250;
+    /// A card's height, as placed (a long card may draw taller).
+    pub const CARD_H: i64 = 100;
+    /// Space between two cards.
+    pub const GAP: i64 = 40;
+    /// The block's title band.
+    pub const HEADER: i64 = 40;
+    /// Space between a block's frame and its cards.
+    pub const PAD: i64 = 20;
+    /// Space between two blocks.
+    pub const BLOCK_GAP: i64 = 80;
+    /// Columns a free area or a row of a question tree fills before it wraps.
+    pub const COLUMNS: i64 = 4;
 }
 
 /// What a card is.
@@ -125,9 +161,9 @@ pub struct Card {
     pub id: CardId,
     /// The effort it belongs to.
     pub effort: EffortId,
-    /// The canvas it is placed on; `None`: it is in the effort's incoming strip.
+    /// The block it is placed in; `None`: it is in the effort's incoming strip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub canvas: Option<CanvasId>,
+    pub block: Option<BlockId>,
     /// What it is.
     pub kind: CardKind,
     /// Position on the canvas, in canvas pixels; 0 while incoming.
@@ -150,6 +186,14 @@ pub struct Card {
     pub added_by: String,
     /// When it was added, in Unix milliseconds.
     pub created_ms: i64,
+    /// The user has seen it. A card an agent puts into a block is unseen until the user selects
+    /// it (ADR 0027).
+    #[serde(default = "seen_default")]
+    pub seen: bool,
+}
+
+fn seen_default() -> bool {
+    true
 }
 
 /// A link between two cards of one effort.
@@ -171,17 +215,11 @@ pub struct CardLink {
 pub struct NewCard {
     /// The effort it belongs to.
     pub effort: EffortId,
-    /// The canvas to place it on, at `x`, `y`; `None` puts it in incoming.
+    /// The block to put it in, where the core finds room; `None` puts it in incoming.
     #[serde(default)]
-    pub canvas: Option<CanvasId>,
+    pub block: Option<BlockId>,
     /// What it is. A reference's `kind` must match [`RefKind::card_kind`].
     pub kind: CardKind,
-    /// Position on the canvas; ignored for incoming.
-    #[serde(default)]
-    pub x: i64,
-    /// Position on the canvas; ignored for incoming.
-    #[serde(default)]
-    pub y: i64,
     /// What it points at; required for a finding, source, decision, map or task card, and absent
     /// for an idea or a question.
     #[serde(default)]

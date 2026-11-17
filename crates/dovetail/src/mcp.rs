@@ -582,22 +582,44 @@ fn tool_defs() -> Vec<ToolDef> {
             schema: dovetail_maps::input_schema,
         },
         ToolDef {
+            name: "canvas_add_block",
+            description: "Add a block to an effort's canvas, to lay out what you found in a \
+                shape that shows the gaps. `question_tree`: a root question with sub-questions \
+                and the findings that answer them. `options_compare`: options side by side, \
+                each with its evidence below it. `free_area`: no structure. Dovetail puts the \
+                block in empty space; nothing on the canvas moves. Pick the layout that fits \
+                the question. `effort` defaults to the effort the user last tagged. Returns the \
+                block's id, for `canvas_add_card`.",
+            schema: || {
+                json!({"type": "object", "properties": {
+                    "layout": {"type": "string", "enum": ["question_tree", "options_compare", "free_area"], "description": "How the block lays out its cards."},
+                    "title": {"type": "string", "description": "What the block is about: the root question, the choice being compared."},
+                    "effort": {"type": "integer", "description": "The effort's id; defaults to the one the user last tagged."}
+                }, "required": ["layout", "title"]})
+            },
+        },
+        ToolDef {
             name: "canvas_add_card",
-            description: "Put a card into an effort's incoming strip on its canvas, so the user \
-                sees what you found or thought. The user decides whether it goes on the canvas; \
-                you cannot place, move or delete a card. An `idea` or `question` carries its own \
-                `text`. A `finding`, `source`, `decision`, `map` or `task` card points at \
-                something that already exists: give its id as `reference` (a finding's or \
-                source's number, a decision's number, a map's id, a task's number); the card \
-                shows its title and nothing is copied. Fails for a reference that does not \
-                exist. `effort` defaults to the effort the user last tagged. Returns the \
-                card's id, for `canvas_link_cards`.",
+            description: "Add a card to an effort's canvas, so the user sees what you found or \
+                thought. With `block`, Dovetail puts it in that block where there is room: \
+                with `under`, below that card and linked from it (a question tree: the \
+                question it answers; an options compare: the option it is evidence for). \
+                Without `block` it goes to the incoming strip and the user places it. You \
+                cannot move or delete a card. An `idea` or `question` carries its own `text`. \
+                A `finding`, `source`, `decision`, `map` or `task` card points at something \
+                that already exists: give its id as `reference` (a finding's or source's \
+                number, a decision's number, a map's id, a task's number); the card shows its \
+                title and nothing is copied. Fails for a reference that does not exist. \
+                `effort` defaults to the block's effort, else the one the user last tagged. \
+                Returns the card's id, for `under` and `canvas_link_cards`.",
             schema: || {
                 json!({"type": "object", "properties": {
                     "kind": {"type": "string", "enum": ["idea", "question", "finding", "source", "decision", "map", "task"], "description": "What the card is."},
                     "text": {"type": "string", "description": "The words of an idea or question card; leave out for the other kinds."},
                     "reference": {"type": "string", "description": "The id of the finding, source, decision, map or task the card points at; leave out for an idea or question."},
-                    "effort": {"type": "integer", "description": "The effort's id; defaults to the one the user last tagged."}
+                    "block": {"type": "integer", "description": "The block to put it in (from `canvas_add_block`); leave out for the incoming strip."},
+                    "under": {"type": "integer", "description": "A card in that block to put it under and link it from."},
+                    "effort": {"type": "integer", "description": "The effort's id; defaults to the block's, else the one the user last tagged."}
                 }, "required": ["kind"]})
             },
         },

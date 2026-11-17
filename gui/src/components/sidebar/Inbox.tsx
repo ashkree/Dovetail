@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { dispatch } from '../../keys/actions';
-import { effortById, INBOX_GLYPH } from '../../state/select';
+import { effortById, INBOX_GLYPH, needsYou } from '../../state/select';
 import { useSnapshot } from '../../state/store';
 import { useUi } from '../../state/ui';
 import { tagColour } from '../chat/EffortTag';
@@ -16,7 +16,7 @@ export function Inbox() {
   return (
     <div className={`part ${focus}`}>
       <div className={`zone-title ${focus}`} onClick={() => dispatch('focusZone', 'inbox')}>
-        Inbox · {s.inbox.length}<span className="spacer" />
+        Inbox · {needsYou(s)}<span className="spacer" />
         <button className="dim collapse-btn" title={`Collapse the sidebar (${keyText('toggleSide')})`}
           onClick={e => { e.stopPropagation(); dispatch('toggleSide'); }}>⇥</button>
       </div>
@@ -24,7 +24,7 @@ export function Inbox() {
         {s.inbox.length ? s.inbox.map((it, i) => {
           const e = effortById(s, it.effort_id);
           return (
-            <div key={it.id} ref={i === selIdx ? sel : undefined} className={`row ${i === selIdx ? 'sel' : ''}`}
+            <div key={it.id} ref={i === selIdx ? sel : undefined} className={`row ${i === selIdx ? 'sel' : ''} ${it.kind === 'finished' ? 'quiet' : ''}`}
               onClick={ev => { dispatch('selectInbox', i); if (ev.detail >= 2) dispatch('openItem'); }}>
               <span className={`g-${it.kind}`}>{INBOX_GLYPH[it.kind]}</span>
               <span className="dot" style={{ background: tagColour(e) }} title={e?.name} />

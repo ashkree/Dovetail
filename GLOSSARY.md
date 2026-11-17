@@ -193,7 +193,7 @@ A question that does not belong to the current project, answered in Tangents, a 
 _Avoid_: side chat (which is project-scoped), aside
 
 **Suite**:
-A named group of MCP tools; a role's config lists the suites it gets, and each tool name carries its suite as a prefix (ADR 0016). The suites are Core, Tasks, Project, Coordination (`coordination_report`, ADR 0022; `coordination_claim_criterion`), Research, Maps, Canvas (`canvas_add_card`, `canvas_link_cards`; coordinator only, ADR 0025) and Design (`design_declare_variants`; slices, ADR 0026); by default the coordinator gets all of them, a slice Core, Coordination and Maps, a side chat Core. Tool names read `<suite>_<verb>`: `core_ask_user`, `tasks_create`, `project_start_slice`, `maps_draw`.
+A named group of MCP tools; a role's config lists the suites it gets, and each tool name carries its suite as a prefix (ADR 0016). The suites are Core, Tasks, Project, Coordination (`coordination_report`, ADR 0022; `coordination_claim_criterion`), Research, Maps, Canvas (`canvas_add_block`, `canvas_add_card`, `canvas_link_cards`; coordinator only, ADR 0025, ADR 0027) and Design (`design_declare_variants`; slices, ADR 0026); by default the coordinator gets all of them, a slice Core, Coordination and Maps, a side chat Core. Tool names read `<suite>_<verb>`: `core_ask_user`, `tasks_create`, `project_start_slice`, `maps_draw`.
 _Avoid_: toolset, plugin, namespace
 
 **Altitude**:
@@ -223,19 +223,23 @@ _Avoid_: GUI, viewer, canvas window, desktop app
 ### Canvas and viewer
 
 **Canvas** (v2):
-A board belonging to an effort, started from a framework: question tree, options compare or free board. An effort can have any number.
+An effort's board: one per effort, from the start, holding its blocks and their cards (ADR 0027).
 _Avoid_: board (the v1 kanban view), whiteboard, map
 
+**Block** (v2):
+A framed region on a canvas with a layout (question tree, options compare, free area) and a title. Agents and the user add blocks; Dovetail places them in empty space (ADR 0027).
+_Avoid_: framework (the old name of a layout), frame, group
+
 **Card** (v2):
-One item on a canvas, of a fixed kind: finding, source, idea, decision, question or map. The agent adds and links cards but never moves the user's.
+One item on a canvas, in a block, of a fixed kind: finding, source, idea, decision, question or map. Agents add and link cards; Dovetail places them and nothing already placed moves.
 _Avoid_: node (a map's item), note, sticky
 
 **Incoming strip** (v2):
-The edge of a canvas where research output arrives as cards before the user places them.
+The edge of a canvas where cards an agent put in no block wait until the user places them.
 _Avoid_: inbox (the attention list), queue
 
 **Viewer** (v2):
-The main-view display of a running web preview, started from the project's preview command per slice; it follows the focused slice.
+The main-view display of a running web preview, started from the project's preview command per slice; it shows the slice opened from the tree, else the focused effort's.
 _Avoid_: preview pane, browser, Companion
 
 **Variant** (v2):

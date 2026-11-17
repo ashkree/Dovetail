@@ -58,6 +58,8 @@ export interface Ui {
   leader: string[] | null;
   /** The effort in focus. */
   effort: Id | null;
+  /** The slice the user opened in the viewer from the tree; null: the focused effort's slice. */
+  viewerAgent: Id | null;
   /** Chat filter: every effort, or one effort's thread. */
   filter: 'all' | Id;
   /** The "where was I" pop-up is up. */
@@ -80,6 +82,8 @@ export interface Ui {
   awaitNewCard: boolean;
   /** The user just created an effort: the next one the core adds takes focus. */
   awaitEffort: boolean;
+  /** The user just created a project on Home: the next one the core adds is selected. */
+  awaitProject: boolean;
   canvasPart: 'cards' | 'incoming';
   incSel: number;
   zoom: number;
@@ -101,11 +105,11 @@ export const initialUi: Ui = {
   screen: 'home', homeSel: 0,
   zone: 'chat', side: 'inbox', main: null, mainItem: null,
   mode: 'normal', pending: '', leader: null,
-  effort: null, filter: 'all', wwi: false, wwiFlash: 0,
+  effort: null, viewerAgent: null, filter: 'all', wwi: false, wwiFlash: 0,
   inboxSel: 0, treeSel: 0, folded: { search: true, coupon: true },
   chatCur: -1, openReports: [],
   draft: '', tag: null,
-  cardSel: 'Q3', awaitCard: null, awaitNewCard: false, awaitEffort: false, canvasPart: 'cards', incSel: 0, zoom: 0.85,
+  cardSel: 'Q3', awaitCard: null, awaitNewCard: false, awaitEffort: false, awaitProject: false, canvasPart: 'cards', incSel: 0, zoom: 0.85,
   slot: 2, panel: 'docked', previewLoads: 0, panelPos: { x: 0, y: 0 },
   readHead: 0, sideW: 330, sideCollapsed: false,
   overlay: null, modal: null, toast: null,
@@ -140,5 +144,6 @@ export function scopeOf(ui: Ui): string {
 
 /** Focus effort `id`: the next message is tagged with it and its "where was I" comes up. */
 export function focusEffort(id: Id): void {
-  setUi(u => ({ effort: id, tag: id, wwi: true, wwiFlash: 0, filter: u.filter === 'all' ? 'all' : id }));
+  // The viewer goes back to following the effort: a slice picked in another effort is let go.
+  setUi(u => ({ effort: id, tag: id, wwi: true, wwiFlash: 0, filter: u.filter === 'all' ? 'all' : id, viewerAgent: null }));
 }

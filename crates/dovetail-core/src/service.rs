@@ -940,7 +940,7 @@ impl Core {
             project: Some(self.project.summary(&self.paths)),
             projects,
             efforts: self.efforts.values().cloned().collect(),
-            canvases: canvas.canvases,
+            blocks: canvas.blocks,
             cards: canvas.cards,
             card_links: canvas.links,
             tasks,
@@ -964,6 +964,7 @@ impl Core {
             models: self.model_options(),
             previews: self.previews.list(),
             variants: self.db.load_variants().await?,
+            effort_limit: self.config.max_efforts,
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
@@ -1495,14 +1496,16 @@ impl Core {
                 Ok(tasks) => self.emit_tasks(tasks),
                 Err(e) => self.fail(e.to_string()),
             },
-            Command::CreateCanvas {
+            Command::CreateBlock {
                 effort,
                 title,
-                framework,
-            } => self.create_canvas(effort, title, framework).await,
-            Command::RenameCanvas { id, title } => self.rename_canvas(id, title).await,
+                layout,
+                near,
+            } => self.create_block(effort, title, layout, near).await,
+            Command::RenameBlock { id, title } => self.rename_block(id, title).await,
             Command::AddCard { card, link_from } => self.add_card(card, link_from).await,
-            Command::PlaceCard { id, canvas, x, y } => self.place_card(id, canvas, x, y).await,
+            Command::PlaceCard { id, block } => self.place_card(id, block).await,
+            Command::SeeCard { id } => self.see_card(id).await,
             Command::MoveCard { id, x, y } => self.move_card(id, x, y).await,
             Command::DeleteCard { id } => self.delete_card(id, false).await,
             Command::DropIncoming { id } => self.delete_card(id, true).await,
@@ -1823,7 +1826,12 @@ pub(crate) fn new_agent(id: AgentId, name: String, kind: AgentKind, task: Option
 fn totals_of(state: &Snapshot) -> Totals {
     Totals {
         memory_mb: state.agents.iter().filter_map(|a| a.memory_mb).sum(),
-        needs_you: state.inbox.len() as u32,
+        // Finished turns are listed but not counted (ADR 0028).
+        needs_you: state
+            .inbox
+            .iter()
+            .filter(|i| !matches!(i.kind, dovetail_api::InboxKind::FinishedTurn { .. }))
+            .count() as u32,
         cost_usd: (state.agents.iter().map(|a| a.cost_usd).sum::<f64>() * 100.0).round() / 100.0,
     }
 }

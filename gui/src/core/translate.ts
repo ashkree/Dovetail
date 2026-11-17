@@ -39,34 +39,29 @@ export function translate(cmd: UiCommand, core: W.Snapshot): Translated {
       } });
     case 'add_repo':
       return only({ add_repo: { project: cmd.project_id, path: cmd.path.trim(), name: cmd.name?.trim() || null } });
-    case 'new_slice':
-      return only({ new_slice: {
-        task: cmd.task_id ? Number(cmd.task_id) : null, name: cmd.name.trim(), brief: cmd.brief.trim(),
-        repo: cmd.repo ?? null,
-      } });
+    case 'remove_repo': {
+      const repo = core.projects.find(p => p.id === cmd.project_id)?.repos.find(r => r.name === cmd.repo);
+      if (!repo) return { core: [], refused: `${cmd.project_id} has no repo ${cmd.repo}` };
+      return only({ remove_repo: { project: cmd.project_id, repo: repo.id } });
+    }
     case 'answer_inbox': return answer(cmd, core);
-    case 'new_canvas': {
-      const effort = Number(cmd.effort_id);
-      return only({ create_canvas: { effort, title: '', framework: cmd.framework } });
+    case 'new_block': {
+      const near = cmd.near ? { x: Math.round(cmd.near.x), y: Math.round(cmd.near.y) } : null;
+      return only({ create_block: { effort: Number(cmd.effort_id), title: '', layout: cmd.layout, near } });
     }
-    case 'place_card': {
-      const id = coreCardId(cmd.incoming_id);
-      const card = core.cards.find(c => c.id === id);
-      const canvas = card && core.canvases.find(c => c.effort === card.effort);
-      if (!card || !canvas) return refuse('That card has no canvas to go on.');
-      return only({ place_card: { id, canvas: canvas.id, x: cmd.x, y: cmd.y } });
-    }
+    case 'place_card': return only({ place_card: { id: coreCardId(cmd.incoming_id), block: null } });
+    case 'see_card': return only({ see_card: { id: coreCardId(cmd.card_id) } });
     case 'drop_incoming': return only({ drop_incoming: { id: coreCardId(cmd.incoming_id) } });
     case 'move_card': return only({ move_card: { id: coreCardId(cmd.card_id), x: cmd.x, y: cmd.y } });
     case 'delete_card': return only({ delete_card: { id: coreCardId(cmd.card_id) } });
     case 'add_card': {
-      const canvas = core.canvases.find(c => String(c.id) === cmd.canvas_id);
-      if (!canvas) return refuse('That canvas is gone.');
+      const block = core.blocks.find(b => String(b.id) === cmd.block_id);
+      if (!block) return refuse('That block is gone.');
       if (!hasOwnText(cmd.kind)) return refuse(`A ${cmd.kind} card points at something that exists: research files it.`);
       const text = cmd.body ? `${cmd.title}\n${cmd.body}` : cmd.title;
       return only({
         add_card: {
-          card: { effort: canvas.effort, canvas: canvas.id, kind: cmd.kind, x: cmd.x, y: cmd.y, reference: null, text },
+          card: { effort: block.effort, block: block.id, kind: cmd.kind, reference: null, text },
           link_from: cmd.link_from ? coreCardId(cmd.link_from) : null,
         },
       });

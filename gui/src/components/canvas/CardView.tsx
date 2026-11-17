@@ -10,7 +10,7 @@ export function CardView({ card, sel, under }: { card: Card | IncomingCard; sel:
   return (
     <div className={`card ${card.kind} ${sel ? 'sel' : ''}`}>
       <div className="ct">
-        {card.kind} · {card.id}
+        {card.kind} · {card.id}{'unseen' in card && card.unseen && <span className="new-mark">new</span>}
         <button className="refbtn nodrag" title={`Insert this card's reference into the chat (${keyText('refCard', 'canvas')})`}
           onClick={e => { e.stopPropagation(); dispatch('refCardId', card.id); }}>↗ chat</button>
       </div>

@@ -7,6 +7,7 @@
 .row .t { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .row .tm { color: var(--dim); font-size: .85em; }
 .row.sel { background: var(--sel-solid); }
+.row.quiet { color: var(--dim); }
 .zone:not(.focus) .row.sel, .part:not(.focus) .row.sel { background: color-mix(in srgb, var(--sel-solid) 55%, transparent); }
 .row.indent1 { padding-left: 26px; } .row.indent2 { padding-left: 44px; } .row.indent3 { padding-left: 62px; } .row.indent4 { padding-left: 80px; }
 .effort-row { font-weight: 650; }

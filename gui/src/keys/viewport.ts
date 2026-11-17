@@ -5,6 +5,8 @@ export interface CanvasHandle {
   zoomIn(): void;
   zoomOut(): void;
   fit(): void;
+  /** The centre of the visible canvas, in canvas pixels. */
+  centre(): { x: number; y: number } | null;
 }
 
 export const viewport: {

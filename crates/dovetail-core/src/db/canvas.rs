@@ -1,13 +1,19 @@
-//! Canvases, cards and links in `state.db` (ADR 0025).
+//! Blocks, cards and links in `state.db` (ADR 0025, ADR 0027).
+//!
+//! Every position a block or a new card gets is chosen here, inside the request that stores it,
+//! from what is already on the effort's canvas: a new block goes right of everything, a card in
+//! a block goes to the first free cell (under its parent when it has one). Nothing already placed
+//! moves.
 //!
 //! A card that points at something keeps no text of its own: its title is read from the target
 //! when the card is read, and its body only on request ([`Db::load_card_body`]). The target is
 //! checked to exist inside the same request that adds the card. A target that is gone anyway
 //! (a damaged database) makes the card read as "missing"; it never fails a load.
 
+use dovetail_api::geometry::{BLOCK_GAP, CARD_H, CARD_W, COLUMNS, GAP, HEADER, PAD};
 use dovetail_api::research::FindingId;
 use dovetail_api::{
-    Canvas, CanvasId, Card, CardId, CardKind, CardLink, CardRef, EffortId, Framework, NewCard,
+    Block, BlockId, Card, CardId, CardKind, CardLink, CardRef, EffortId, Layout, NewCard, Point,
     RefKind, TaskId, UNSORTED_EFFORT, card_title,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
@@ -21,11 +27,14 @@ pub const MISSING_TITLE: &str = "(missing)";
 /// Longest body [`Db::load_card_body`] sends: a source's page can be long.
 const BODY_MAX: usize = 20_000;
 
+/// `added_by` of a card the user made: it starts seen.
+pub const USER: &str = "user";
+
 /// Everything canvas-shaped in a project.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CanvasState {
-    /// Canvases, in id order.
-    pub canvases: Vec<Canvas>,
+    /// Blocks, in id order.
+    pub blocks: Vec<Block>,
     /// Cards, in id order.
     pub cards: Vec<Card>,
     /// Links.
@@ -33,28 +42,37 @@ pub struct CanvasState {
 }
 
 impl Db {
-    /// Every canvas, card and link of the open project.
+    /// Every block, card and link of the open project.
     pub fn load_canvas_state(&self) -> Pending<CanvasState> {
         self.run(|c, _| load_state(c.state()?))
     }
 
-    /// Creates a canvas for an effort. An empty title becomes the effort's name.
-    pub fn create_canvas(
+    /// Adds a block to an effort's canvas, in the empty space nearest `near`, else right of
+    /// everything on it. An empty title becomes the layout's name.
+    pub fn create_block(
         &self,
         effort: EffortId,
         title: String,
-        framework: Framework,
-    ) -> Pending<Canvas> {
-        self.run(move |c, now| create_canvas(c.state()?, effort, &title, framework, now))
+        layout: Layout,
+        near: Option<Point>,
+    ) -> Pending<Block> {
+        self.run(move |c, now| create_block(c.state()?, effort, &title, layout, near, now))
     }
 
-    /// Renames a canvas.
-    pub fn rename_canvas(&self, id: CanvasId, title: String) -> Pending<Canvas> {
-        self.run(move |c, _| rename_canvas(c.state()?, id, &title))
+    /// One block.
+    pub fn block(&self, id: BlockId) -> Pending<Block> {
+        self.run(move |c, _| load_block(c.state()?, id))
     }
 
-    /// Adds a card, checking in this request that its effort, canvas and target exist, and links
-    /// it from `link_from` when given. Resolves to the card and the link.
+    /// Renames a block.
+    pub fn rename_block(&self, id: BlockId, title: String) -> Pending<Block> {
+        self.run(move |c, _| rename_block(c.state()?, id, &title))
+    }
+
+    /// Adds a card, checking in this request that its effort, block and target exist, and links
+    /// it from `link_from` when given. A card with a block goes to its first free cell, under
+    /// `link_from` when that card is in the same block; one an agent adds there starts unseen.
+    /// Resolves to the card and the link.
     pub fn add_card(
         &self,
         card: NewCard,
@@ -64,9 +82,16 @@ impl Db {
         self.run(move |c, now| add_card_linked(c.state()?, card, link_from, &added_by, now))
     }
 
-    /// Places an incoming card on a canvas of its effort.
-    pub fn place_card(&self, id: CardId, canvas: CanvasId, x: i64, y: i64) -> Pending<Card> {
-        self.run(move |c, _| place_card(c.state()?, id, canvas, x, y))
+    /// Places an incoming card in `block`, or in the block of the placed card that links to it,
+    /// else the effort's newest block, else a new free area. Resolves to the card and the block
+    /// when one was made for it.
+    pub fn place_card(&self, id: CardId, block: Option<BlockId>) -> Pending<(Card, Option<Block>)> {
+        self.run(move |c, now| place_card(c.state()?, id, block, now))
+    }
+
+    /// Marks a card seen.
+    pub fn see_card(&self, id: CardId) -> Pending<Card> {
+        self.run(move |c, _| see_card(c.state()?, id))
     }
 
     /// Moves a placed card.
@@ -107,7 +132,7 @@ impl Db {
 }
 
 const CARD_COLUMNS: &str =
-    "id, effort_id, canvas_id, kind, x, y, ref_kind, ref_id, text, added_by, created_ms";
+    "id, effort_id, block_id, kind, x, y, ref_kind, ref_id, text, added_by, created_ms, seen";
 
 type RawCard = (
     i64,
@@ -121,6 +146,7 @@ type RawCard = (
     String,
     String,
     i64,
+    bool,
 );
 
 fn raw_card(r: &Row<'_>) -> rusqlite::Result<RawCard> {
@@ -136,12 +162,13 @@ fn raw_card(r: &Row<'_>) -> rusqlite::Result<RawCard> {
         r.get(8)?,
         r.get(9)?,
         r.get(10)?,
+        r.get(11)?,
     ))
 }
 
 /// A card from its row, with its title read from the target.
 fn make_card(conn: &Connection, raw: RawCard) -> Result<Card, DbError> {
-    let (id, effort, canvas, kind, x, y, ref_kind, ref_id, text, added_by, created_ms) = raw;
+    let (id, effort, block, kind, x, y, ref_kind, ref_id, text, added_by, created_ms, seen) = raw;
     let reference = match (ref_kind, ref_id) {
         (Some(kind), Some(id)) => Some(CardRef {
             kind: from_text("card reference kind", &kind)?,
@@ -159,7 +186,7 @@ fn make_card(conn: &Connection, raw: RawCard) -> Result<Card, DbError> {
     Ok(Card {
         id: CardId(id),
         effort: EffortId(effort),
-        canvas: canvas.map(CanvasId),
+        block: block.map(BlockId),
         kind: from_text("card kind", &kind)?,
         x,
         y,
@@ -169,6 +196,7 @@ fn make_card(conn: &Connection, raw: RawCard) -> Result<Card, DbError> {
         missing,
         added_by,
         created_ms,
+        seen,
     })
 }
 
@@ -209,30 +237,41 @@ fn no_card(id: CardId) -> DbError {
     DbError::NotFound(format!("no card {}", id.0))
 }
 
-fn no_canvas(id: CanvasId) -> DbError {
-    DbError::NotFound(format!("no canvas {}", id.0))
+fn no_block(id: BlockId) -> DbError {
+    DbError::NotFound(format!("no block {}", id.0))
+}
+
+const BLOCK_COLUMNS: &str = "id, effort_id, title, layout, x, y";
+
+type RawBlock = (i64, i64, String, String, i64, i64);
+
+fn raw_block(r: &Row<'_>) -> rusqlite::Result<RawBlock> {
+    Ok((
+        r.get(0)?,
+        r.get(1)?,
+        r.get(2)?,
+        r.get(3)?,
+        r.get(4)?,
+        r.get(5)?,
+    ))
+}
+
+fn make_block((id, effort, title, layout, x, y): RawBlock) -> Result<Block, DbError> {
+    Ok(Block {
+        id: BlockId(id),
+        effort: EffortId(effort),
+        title,
+        layout: from_text("block layout", &layout)?,
+        x,
+        y,
+    })
 }
 
 fn load_state(conn: &Connection) -> Result<CanvasState, DbError> {
-    let mut canvases = Vec::new();
-    let mut stmt =
-        conn.prepare("SELECT id, effort_id, title, framework FROM canvases ORDER BY id")?;
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, i64>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, String>(3)?,
-        ))
-    })?;
-    for row in rows {
-        let (id, effort, title, framework) = row?;
-        canvases.push(Canvas {
-            id: CanvasId(id),
-            effort: EffortId(effort),
-            title,
-            framework: from_text("canvas framework", &framework)?,
-        });
+    let mut blocks = Vec::new();
+    let mut stmt = conn.prepare(&format!("SELECT {BLOCK_COLUMNS} FROM blocks ORDER BY id"))?;
+    for row in stmt.query_map([], raw_block)? {
+        blocks.push(make_block(row?)?);
     }
     let mut cards = Vec::new();
     let mut stmt = conn.prepare(&format!("SELECT {CARD_COLUMNS} FROM cards ORDER BY id"))?;
@@ -254,27 +293,22 @@ fn load_state(conn: &Connection) -> Result<CanvasState, DbError> {
         links.push(row?);
     }
     Ok(CanvasState {
-        canvases,
+        blocks,
         cards,
         links,
     })
 }
 
-fn load_canvas(conn: &Connection, id: CanvasId) -> Result<Canvas, DbError> {
-    let (effort, title, framework): (i64, String, String) = conn
+fn load_block(conn: &Connection, id: BlockId) -> Result<Block, DbError> {
+    let raw = conn
         .query_row(
-            "SELECT effort_id, title, framework FROM canvases WHERE id = ?1",
+            &format!("SELECT {BLOCK_COLUMNS} FROM blocks WHERE id = ?1"),
             [id.0],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            raw_block,
         )
         .optional()?
-        .ok_or_else(|| no_canvas(id))?;
-    Ok(Canvas {
-        id,
-        effort: EffortId(effort),
-        title,
-        framework: from_text("canvas framework", &framework)?,
-    })
+        .ok_or_else(|| no_block(id))?;
+    make_block(raw)
 }
 
 fn effort_name(conn: &Connection, id: EffortId) -> Result<String, DbError> {
@@ -285,37 +319,229 @@ fn effort_name(conn: &Connection, id: EffortId) -> Result<String, DbError> {
     .ok_or_else(|| DbError::NotFound(format!("no effort {}", id.0)))
 }
 
-fn create_canvas(
+/// What an untitled block is called.
+fn layout_name(layout: Layout) -> &'static str {
+    match layout {
+        Layout::QuestionTree => "Question tree",
+        Layout::OptionsCompare => "Options compare",
+        Layout::FreeArea => "Free area",
+    }
+}
+
+fn create_block(
     conn: &Connection,
     effort: EffortId,
     title: &str,
-    framework: Framework,
+    layout: Layout,
+    near: Option<Point>,
     now: i64,
-) -> Result<Canvas, DbError> {
-    let name = effort_name(conn, effort)?;
+) -> Result<Block, DbError> {
+    effort_name(conn, effort)?;
     let title = match title.trim() {
-        "" => name,
+        "" => layout_name(layout).to_owned(),
         t => t.to_owned(),
     };
+    let (x, y) = Board::read(conn, effort)?.new_block_spot(near);
     conn.execute(
-        "INSERT INTO canvases (effort_id, title, framework, created_ms) VALUES (?1, ?2, ?3, ?4)",
-        params![effort.0, title, to_text(&framework)?, now],
+        "INSERT INTO blocks (effort_id, title, layout, x, y, created_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![effort.0, title, to_text(&layout)?, x, y, now],
     )?;
-    load_canvas(conn, CanvasId(conn.last_insert_rowid()))
+    load_block(conn, BlockId(conn.last_insert_rowid()))
 }
 
-fn rename_canvas(conn: &Connection, id: CanvasId, title: &str) -> Result<Canvas, DbError> {
+fn rename_block(conn: &Connection, id: BlockId, title: &str) -> Result<Block, DbError> {
     if title.trim().is_empty() {
-        return Err(DbError::Refused("a canvas needs a title".into()));
+        return Err(DbError::Refused("a block needs a title".into()));
     }
     let changed = conn.execute(
-        "UPDATE canvases SET title = ?2 WHERE id = ?1",
+        "UPDATE blocks SET title = ?2 WHERE id = ?1",
         params![id.0, title.trim()],
     )?;
     if changed == 0 {
-        return Err(no_canvas(id));
+        return Err(no_block(id));
     }
-    load_canvas(conn, id)
+    load_block(conn, id)
+}
+
+/// What is on one effort's canvas, for choosing where something new goes.
+struct Board {
+    blocks: Vec<Block>,
+    /// Every placed card of the effort: its block and position.
+    cards: Vec<(BlockId, i64, i64)>,
+}
+
+/// A rectangle in canvas pixels.
+#[derive(Debug, Clone, Copy)]
+struct Rect {
+    x: i64,
+    y: i64,
+    w: i64,
+    h: i64,
+}
+
+impl Rect {
+    fn card(x: i64, y: i64) -> Self {
+        Self {
+            x,
+            y,
+            w: CARD_W,
+            h: CARD_H,
+        }
+    }
+
+    fn overlaps(self, o: Rect) -> bool {
+        self.x < o.x + o.w && o.x < self.x + self.w && self.y < o.y + o.h && o.y < self.y + self.h
+    }
+}
+
+/// How many rings of `BLOCK_GAP` steps a new block's search goes out from the view's centre.
+const NEAR_RINGS: i64 = 25;
+
+/// How far a search for a free cell looks before it gives up and goes below everything.
+const SEARCH_ROWS: i64 = 200;
+const SEARCH_COLUMNS: i64 = 50;
+
+impl Board {
+    fn read(conn: &Connection, effort: EffortId) -> Result<Self, DbError> {
+        let mut blocks = Vec::new();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {BLOCK_COLUMNS} FROM blocks WHERE effort_id = ?1 ORDER BY id"
+        ))?;
+        for row in stmt.query_map([effort.0], raw_block)? {
+            blocks.push(make_block(row?)?);
+        }
+        let mut stmt = conn.prepare(
+            "SELECT block_id, x, y FROM cards WHERE effort_id = ?1 AND block_id IS NOT NULL",
+        )?;
+        let cards = stmt
+            .query_map([effort.0], |r| {
+                Ok((BlockId(r.get(0)?), r.get(1)?, r.get(2)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { blocks, cards })
+    }
+
+    /// The frame a block draws: around its cards, at least one cell big.
+    fn extent(&self, b: &Block) -> Rect {
+        let (mut right, mut bottom) = (b.x + 2 * PAD + CARD_W, b.y + HEADER + CARD_H + PAD);
+        for &(_, x, y) in self.cards.iter().filter(|c| c.0 == b.id) {
+            right = right.max(x + CARD_W + PAD);
+            bottom = bottom.max(y + CARD_H + PAD);
+        }
+        Rect {
+            x: b.x,
+            y: b.y,
+            w: right - b.x,
+            h: bottom - b.y,
+        }
+    }
+
+    /// Where a new block goes: centred on `near` when that space is empty, else the empty spot
+    /// nearest it on a `BLOCK_GAP` grid; with no `near` (an agent's block), or nothing empty in
+    /// reach, right of every block at the top. Empty: its smallest frame, with `BLOCK_GAP / 2`
+    /// around it, touches no frame and no card.
+    fn new_block_spot(&self, near: Option<Point>) -> (i64, i64) {
+        let (w, h) = (2 * PAD + CARD_W, HEADER + CARD_H + PAD);
+        if let Some(p) = near {
+            let margin = BLOCK_GAP / 2;
+            let free = |x: i64, y: i64| {
+                let r = Rect {
+                    x: x - margin,
+                    y: y - margin,
+                    w: w + 2 * margin,
+                    h: h + 2 * margin,
+                };
+                !self.blocks.iter().any(|b| r.overlaps(self.extent(b)))
+                    && !self
+                        .cards
+                        .iter()
+                        .any(|&(_, cx, cy)| r.overlaps(Rect::card(cx, cy)))
+            };
+            let (x0, y0) = (p.x - w / 2, p.y - h / 2);
+            for ring in 0..NEAR_RINGS {
+                // The cells of this ring, nearest first.
+                let mut cells: Vec<(i64, i64)> = (-ring..=ring)
+                    .flat_map(|i| (-ring..=ring).map(move |j| (i, j)))
+                    .filter(|&(i, j)| i.abs().max(j.abs()) == ring)
+                    .collect();
+                cells.sort_by_key(|&(i, j)| i * i + j * j);
+                for (i, j) in cells {
+                    let (x, y) = (x0 + i * BLOCK_GAP, y0 + j * BLOCK_GAP);
+                    if free(x, y) {
+                        return (x, y);
+                    }
+                }
+            }
+        }
+        let right = self
+            .blocks
+            .iter()
+            .map(|b| {
+                let e = self.extent(b);
+                e.x + e.w + BLOCK_GAP
+            })
+            .max();
+        (right.unwrap_or(0), 0)
+    }
+
+    /// The first free cell of `block` for a new card: under `under` (a card of that block, at
+    /// its position) when given, else as the layout fills. A cell is free when it touches no
+    /// card and no other block's frame.
+    fn card_spot(&self, block: &Block, under: Option<(i64, i64)>) -> (i64, i64) {
+        let step_x = CARD_W + GAP;
+        let step_y = CARD_H + GAP;
+        let cell = |col: i64, row: i64| {
+            (
+                block.x + PAD + col * step_x,
+                block.y + HEADER + row * step_y,
+            )
+        };
+        let free = |(x, y): (i64, i64)| {
+            let r = Rect::card(x, y);
+            // The block's frame grows by PAD around a card: that must not reach another frame.
+            let grown = Rect {
+                w: CARD_W + PAD,
+                h: CARD_H + PAD,
+                ..r
+            };
+            !self
+                .cards
+                .iter()
+                .any(|&(_, cx, cy)| r.overlaps(Rect::card(cx, cy)))
+                && !self
+                    .blocks
+                    .iter()
+                    .filter(|b| b.id != block.id)
+                    .any(|b| grown.overlaps(self.extent(b)))
+        };
+        let (rows, cols): (std::ops::Range<i64>, std::ops::Range<i64>) = match (under, block.layout)
+        {
+            (Some((ux, uy)), layout) => {
+                let col = ((ux - block.x - PAD) / step_x).max(0);
+                let row = ((uy - block.y - HEADER) / step_y).max(0) + 1;
+                let cols = match layout {
+                    // Evidence stays in its option's column.
+                    Layout::OptionsCompare => col..col + 1,
+                    Layout::QuestionTree | Layout::FreeArea => col..col + COLUMNS,
+                };
+                (row..row + SEARCH_ROWS, cols)
+            }
+            // A new option heads the next column.
+            (None, Layout::OptionsCompare) => (0..1, 0..SEARCH_COLUMNS),
+            (None, Layout::QuestionTree | Layout::FreeArea) => (0..SEARCH_ROWS, 0..COLUMNS),
+        };
+        for row in rows {
+            for col in cols.clone() {
+                if free(cell(col, row)) {
+                    return cell(col, row);
+                }
+            }
+        }
+        // Nowhere free in reach: below everything in the block.
+        let e = self.extent(block);
+        (block.x + PAD, e.y + e.h)
+    }
 }
 
 fn add_card_linked(
@@ -326,7 +552,15 @@ fn add_card_linked(
     now: i64,
 ) -> Result<(Card, Option<CardLink>), DbError> {
     let tx = conn.transaction()?;
-    let id = insert_card(&tx, &new, added_by, now)?;
+    // The parent's position, when it sits in the block the card goes to.
+    let under = match (link_from, new.block) {
+        (Some(from), Some(block)) => {
+            let parent = load_card(&tx, from)?;
+            (parent.block == Some(block)).then_some((parent.x, parent.y))
+        }
+        _ => None,
+    };
+    let id = insert_card(&tx, &new, under, added_by, now)?;
     let link = match link_from {
         Some(from) => Some(link_cards(&tx, from, id, "")?),
         None => None,
@@ -336,24 +570,30 @@ fn add_card_linked(
     Ok((card, link))
 }
 
-/// Inserts a card after checking it: its effort and canvas, its kind against its reference, and
-/// that the reference's target exists.
+/// Inserts a card after checking it: its effort and block, its kind against its reference, and
+/// that the reference's target exists. In a block it goes to the first free cell, under the card
+/// at `under` when given.
 fn insert_card(
     tx: &Transaction<'_>,
     new: &NewCard,
+    under: Option<(i64, i64)>,
     added_by: &str,
     now: i64,
 ) -> Result<CardId, DbError> {
     effort_name(tx, new.effort)?;
-    if let Some(canvas) = new.canvas {
-        let canvas = load_canvas(tx, canvas)?;
-        if canvas.effort != new.effort {
-            return Err(DbError::Refused(format!(
-                "canvas {} belongs to another effort",
-                canvas.id.0
-            )));
+    let block = match new.block {
+        Some(id) => {
+            let block = load_block(tx, id)?;
+            if block.effort != new.effort {
+                return Err(DbError::Refused(format!(
+                    "block {} belongs to another effort",
+                    block.id.0
+                )));
+            }
+            Some(block)
         }
-    }
+        None => None,
+    };
     let (ref_kind, ref_id, text) = if new.kind.has_own_text() {
         if new.reference.is_some() {
             return Err(DbError::Refused(
@@ -389,17 +629,18 @@ fn insert_card(
         }
         (Some(to_text(&r.kind)?), Some(r.id.clone()), String::new())
     };
-    let (x, y) = if new.canvas.is_some() {
-        (new.x, new.y)
-    } else {
-        (0, 0)
+    let (x, y) = match &block {
+        Some(block) => Board::read(tx, new.effort)?.card_spot(block, under),
+        None => (0, 0),
     };
+    // A card the user makes, or one waiting in incoming, needs no "new" mark.
+    let seen = block.is_none() || added_by == USER;
     tx.execute(
-        "INSERT INTO cards (effort_id, canvas_id, kind, x, y, ref_kind, ref_id, text, added_by, \
-         created_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO cards (effort_id, block_id, kind, x, y, ref_kind, ref_id, text, added_by, \
+         created_ms, seen) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             new.effort.0,
-            new.canvas.map(|c| c.0),
+            new.block.map(|b| b.0),
             to_text(&new.kind)?,
             x,
             y,
@@ -407,40 +648,89 @@ fn insert_card(
             ref_id,
             text,
             added_by,
-            now
+            now,
+            seen
         ],
     )?;
     Ok(CardId(tx.last_insert_rowid()))
 }
 
 fn place_card(
-    conn: &Connection,
+    conn: &mut Connection,
     id: CardId,
-    canvas: CanvasId,
-    x: i64,
-    y: i64,
-) -> Result<Card, DbError> {
-    let card = load_card(conn, id)?;
-    if card.canvas.is_some() {
+    block: Option<BlockId>,
+    now: i64,
+) -> Result<(Card, Option<Block>), DbError> {
+    let tx = conn.transaction()?;
+    let card = load_card(&tx, id)?;
+    if card.block.is_some() {
         return Err(DbError::Refused(format!("card {} is already placed", id.0)));
     }
-    let target = load_canvas(conn, canvas)?;
+    // The placed card that links to it: it goes under that one.
+    let parent: Option<Card> = {
+        let mut stmt = tx.prepare("SELECT from_card FROM card_links WHERE to_card = ?1")?;
+        let froms = stmt
+            .query_map([id.0], |r| r.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut found = None;
+        for from in froms {
+            let c = load_card(&tx, CardId(from))?;
+            if c.block.is_some() {
+                found = Some(c);
+                break;
+            }
+        }
+        found
+    };
+    let newest: Option<i64> = tx
+        .query_row(
+            "SELECT MAX(id) FROM blocks WHERE effort_id = ?1",
+            [card.effort.0],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    let mut made = None;
+    let target = match block
+        .or(parent.as_ref().and_then(|p| p.block))
+        .or(newest.map(BlockId))
+    {
+        Some(b) => load_block(&tx, b)?,
+        None => {
+            let b = create_block(&tx, card.effort, "", Layout::FreeArea, None, now)?;
+            made = Some(b.clone());
+            b
+        }
+    };
     if target.effort != card.effort {
         return Err(DbError::Refused(format!(
-            "canvas {} belongs to another effort than card {}",
-            canvas.0, id.0
+            "block {} belongs to another effort than card {}",
+            target.id.0, id.0
         )));
     }
-    conn.execute(
-        "UPDATE cards SET canvas_id = ?2, x = ?3, y = ?4 WHERE id = ?1",
-        params![id.0, canvas.0, x, y],
+    let under = parent
+        .filter(|p| p.block == Some(target.id))
+        .map(|p| (p.x, p.y));
+    let (x, y) = Board::read(&tx, card.effort)?.card_spot(&target, under);
+    tx.execute(
+        "UPDATE cards SET block_id = ?2, x = ?3, y = ?4, seen = 1 WHERE id = ?1",
+        params![id.0, target.id.0, x, y],
     )?;
+    let card = load_card(&tx, id)?;
+    tx.commit()?;
+    Ok((card, made))
+}
+
+fn see_card(conn: &Connection, id: CardId) -> Result<Card, DbError> {
+    if conn.execute("UPDATE cards SET seen = 1 WHERE id = ?1", [id.0])? == 0 {
+        return Err(no_card(id));
+    }
     load_card(conn, id)
 }
 
 fn move_card(conn: &Connection, id: CardId, x: i64, y: i64) -> Result<Card, DbError> {
     let card = load_card(conn, id)?;
-    if card.canvas.is_none() {
+    if card.block.is_none() {
         return Err(DbError::Refused(format!(
             "card {} is incoming: place it first",
             id.0
@@ -456,9 +746,9 @@ fn move_card(conn: &Connection, id: CardId, x: i64, y: i64) -> Result<Card, DbEr
 fn delete_card(conn: &mut Connection, id: CardId, incoming_only: bool) -> Result<(), DbError> {
     let tx = conn.transaction()?;
     let card = load_card(&tx, id)?;
-    if incoming_only && card.canvas.is_some() {
+    if incoming_only && card.block.is_some() {
         return Err(DbError::Refused(format!(
-            "card {} is on a canvas: delete it there",
+            "card {} is on the canvas: delete it there",
             id.0
         )));
     }
@@ -528,17 +818,15 @@ fn add_finding_card(
     };
     let new = NewCard {
         effort: effort.map_or(UNSORTED_EFFORT, EffortId),
-        canvas: None,
+        block: None,
         kind: CardKind::Finding,
-        x: 0,
-        y: 0,
         reference: Some(CardRef {
             kind: RefKind::Finding,
             id: finding.0.to_string(),
         }),
         text: String::new(),
     };
-    let id = insert_card(&tx, &new, added_by, now)?;
+    let id = insert_card(&tx, &new, None, added_by, now)?;
     let card = load_card(&tx, id)?;
     tx.commit()?;
     Ok(card)
@@ -622,10 +910,8 @@ mod tests {
     fn reference(kind: RefKind, id: &str) -> NewCard {
         NewCard {
             effort: UNSORTED_EFFORT,
-            canvas: None,
+            block: None,
             kind: kind.card_kind(),
-            x: 0,
-            y: 0,
             reference: Some(CardRef {
                 kind,
                 id: id.into(),
@@ -668,7 +954,7 @@ mod tests {
             STATE_MIGRATIONS,
         )
         .unwrap();
-        for t in ["canvases", "cards", "card_links"] {
+        for t in ["blocks", "cards", "card_links"] {
             assert!(tables(&conn).iter().any(|x| x == t), "{t}");
         }
         let after: i64 = conn
@@ -685,6 +971,63 @@ mod tests {
         )
         .unwrap();
         assert!(tables(&empty).iter().any(|t| t == "card_links"));
+    }
+
+    /// ADR 0027: state migration 0021 from version 20. Each canvas becomes a block around its
+    /// cards, `free_board` becomes `free_area`, cards keep their positions and links and are seen.
+    #[test]
+    fn canvases_become_blocks_and_cards_keep_their_places() {
+        let blocks_step = STATE_MIGRATIONS
+            .iter()
+            .position(|(name, _)| name.ends_with("0021_blocks.sql"))
+            .expect("the blocks migration is listed");
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        let at = std::path::Path::new(":memory:");
+        migrate(&mut conn, at, &STATE_MIGRATIONS[..blocks_step]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO canvases (id, effort_id, title, framework, created_ms) VALUES \
+               (1, 1, 'Which provider?', 'question_tree', 5), (2, 1, 'Notes', 'free_board', 6); \
+             INSERT INTO cards (id, effort_id, canvas_id, kind, x, y, text, added_by, created_ms) VALUES \
+               (1, 1, 1, 'question', 360, 20, 'Root', 'user', 7), \
+               (2, 1, 1, 'idea', 40, 170, 'Child', 'user', 8), \
+               (3, 1, NULL, 'idea', 0, 0, 'Waiting', 'a', 9); \
+             INSERT INTO card_links (from_card, to_card, label) VALUES (1, 2, 'answers');",
+        )
+        .unwrap();
+        migrate(&mut conn, at, STATE_MIGRATIONS).unwrap();
+        let state = load_state(&conn).unwrap();
+        let layouts: Vec<(i64, Layout, i64, i64)> = state
+            .blocks
+            .iter()
+            .map(|b| (b.id.0, b.layout, b.x, b.y))
+            .collect();
+        assert_eq!(
+            layouts,
+            [
+                (1, Layout::QuestionTree, 40 - PAD, 20 - HEADER),
+                (2, Layout::FreeArea, 0, 0)
+            ]
+        );
+        let cards: Vec<(i64, Option<i64>, i64, i64, bool)> = state
+            .cards
+            .iter()
+            .map(|c| (c.id.0, c.block.map(|b| b.0), c.x, c.y, c.seen))
+            .collect();
+        assert_eq!(
+            cards,
+            [
+                (1, Some(1), 360, 20, true),
+                (2, Some(1), 40, 170, true),
+                (3, None, 0, 0, true)
+            ]
+        );
+        assert_eq!(state.links.len(), 1);
+        // The foreign keys point at the new tables.
+        assert!(
+            conn.execute("INSERT INTO cards (effort_id, block_id, kind, added_by, created_ms) VALUES (1, 9, 'idea', 'u', 1)", [])
+                .is_err()
+        );
     }
 
     #[test]

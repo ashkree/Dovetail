@@ -4,11 +4,12 @@
 
 import { hasOwnText } from '../core/canvasView';
 import { COORDINATOR, UNSORTED_EFFORT } from '../core/wire';
-import type { Agent, CardKind, EffortKind, Framework, Id, InboxItem, Preview, Snapshot, VariantSet } from '../core/model';
+import type { Agent, Block, CardKind, EffortKind, Id, InboxItem, Layout, Preview, Snapshot, VariantSet } from '../core/model';
 import type { InboxAnswer } from '../core/protocol';
 import { send, snapshotStore } from '../state/store';
 import { effortById, INBOX_GLYPH, KIND_GLYPH, readingReport, toKebab, treeRows, visibleChat } from '../state/select';
 import { focusEffort, scopeOf, setUi, toast, uiStore, type MainView, type PickItem, type Ui, type Zone } from '../state/ui';
+import { keysFor } from './resolve';
 import { readingHeadings, viewport } from './viewport';
 
 export type Action =
@@ -19,7 +20,7 @@ export type Action =
   // lists (home, inbox, tree) and scrolling views
   | 'down' | 'up' | 'top' | 'bottom'
   // home
-  | 'openProject' | 'newProject' | 'addRepo'
+  | 'openProject' | 'newProject' | 'addRepo' | 'removeRepo'
   // inbox and inbox item
   | 'openItem' | 'allow' | 'allowAlways' | 'deny' | 'denyReason' | 'reply' | 'dismiss' | 'itemEffort' | 'openAgent'
   // efforts tree
@@ -39,12 +40,12 @@ export type Action =
   | 'send' | 'newline' | 'cycleTag' | 'leaveBar' | 'normal' | 'deleteWord' | 'deleteLine' | 'paste'
   // Space leader
   | 'picker' | 'focusChat' | 'focusInbox' | 'focusTree' | 'toggleSide' | 'pickEffort' | 'newEffort' | 'criteria'
-  | 'openCanvas' | 'openViewer' | 'openReading' | 'closeMain' | 'pickProject' | 'home' | 'pickAgent' | 'newSlice'
+  | 'openCanvas' | 'openViewer' | 'openReading' | 'closeMain' | 'pickProject' | 'home' | 'pickAgent'
   | 'interrupt' | 'permMode'
   // mouse (the same dispatcher; each has a key elsewhere)
   | 'showView' | 'selectHome' | 'selectInbox' | 'selectTree' | 'selectCard' | 'selectIncoming' | 'selectSlot'
-  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickFramework'
-  | 'framework1' | 'framework2' | 'framework3';
+  | 'pickOption' | 'focusZone' | 'toggleReport' | 'refCardId' | 'switchEffort' | 'pickLayout'
+  | 'newBlock1' | 'newBlock2' | 'newBlock3';
 
 /** Actions whose key the browser should still handle (paste into the chat bar). */
 export const PASS_THROUGH: ReadonlySet<Action> = new Set<Action>(['paste']);
@@ -58,12 +59,18 @@ const snap = (): Snapshot => snapshotStore.get();
 const ui = (): Ui => uiStore.get();
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
-/** The slice the viewer follows: in the focused effort the one with variants or a preview already,
- * else its first slice with a worktree. With no effort focused, any effort's. */
-export function viewerAgent(s: Snapshot, effort: Id | null): Agent | undefined {
+/** What the viewer's choice of slice depends on: the focused effort and the slice the user picked. */
+type ViewerFocus = Pick<Ui, 'effort' | 'viewerAgent'>;
+
+/** The slice the viewer shows: the one the user picked in the tree while it is still a slice;
+ * else, in the focused effort, the one with variants or a preview already, else its first slice
+ * with a worktree. With no effort focused, any effort's. */
+export function viewerAgent(s: Snapshot, u: ViewerFocus): Agent | undefined {
+  const picked = s.agents.find(a => a.id === u.viewerAgent && a.kind === 'slice');
+  if (picked) return picked;
   const taskEffort = new Map(s.tasks.map(t => [t.id, t.effort_id]));
   const slices = s.agents.filter(a =>
-    a.kind === 'slice' && (effort === null || taskEffort.get(a.task_id) === effort));
+    a.kind === 'slice' && (u.effort === null || taskEffort.get(a.task_id) === u.effort));
   return slices.find(a => s.variants.some(v => v.agent_id === a.id))
     ?? slices.find(a => s.previews.some(p => p.agent_id === a.id && p.state !== 'not_started'))
     ?? slices.find(a => a.branch)
@@ -71,21 +78,33 @@ export function viewerAgent(s: Snapshot, effort: Id | null): Agent | undefined {
 }
 
 /** The variant set of the slice the viewer shows. */
-export function viewerSet(s: Snapshot, effort: Id | null): VariantSet | undefined {
-  const agent = viewerAgent(s, effort);
+export function viewerSet(s: Snapshot, u: ViewerFocus): VariantSet | undefined {
+  const agent = viewerAgent(s, u);
   return agent && s.variants.find(v => v.agent_id === agent.id);
 }
 
 /** The preview state of the slice the viewer shows; `not_started` until the core says more. */
-export function viewerPreview(s: Snapshot, effort: Id | null): Preview | undefined {
-  const agent = viewerAgent(s, effort);
+export function viewerPreview(s: Snapshot, u: ViewerFocus): Preview | undefined {
+  const agent = viewerAgent(s, u);
+  const effort = agent ? s.tasks.find(t => t.id === agent.task_id)?.effort_id : undefined;
   return agent && (s.previews.find(p => p.agent_id === agent.id)
-    ?? { agent_id: agent.id, effort_id: effort ?? '', state: 'not_started' });
+    ?? { agent_id: agent.id, effort_id: effort ?? u.effort ?? '', state: 'not_started' });
 }
 
-/** The canvas the main view shows: the focused effort's first canvas. */
-export function effortCanvas(s: Snapshot, effort: Id | null) {
-  return s.canvases.find(c => c.effort_id === effort);
+/** The blocks on an effort's canvas (ADR 0027), oldest first. */
+export function effortBlocks(s: Snapshot, effort: Id | null): Block[] {
+  return s.blocks.filter(b => b.effort_id === effort);
+}
+
+/** The agent whose permission mode `Shift-Tab` and `Space s m` change: the one under the tree
+ * cursor while the tree has focus, else the coordinator. A subagent shares its parent's mode. */
+export function modeTarget(s: Snapshot, u: Ui): { id: Id; name: string; mode: string } {
+  const row = u.zone === 'tree' && u.mode === 'normal' ? treeRows(s, u.folded)[u.treeSel] : undefined;
+  if (row?.type === 'agent') {
+    const a = row.agent.parent_id ? s.agents.find(x => x.id === row.agent.parent_id) ?? row.agent : row.agent;
+    return { id: a.id, name: a.name, mode: a.mode };
+  }
+  return { id: COORDINATOR, name: 'coordinator', mode: s.status.permission_mode };
 }
 
 /** The slot the viewer's keys act on: the remembered one, kept inside this set's slots (another
@@ -101,8 +120,14 @@ function pick(set: VariantSet, i: number, j: number): void {
   if (slot && option !== undefined) send({ type: 'select_variant', agent_id: set.agent_id, slot: slot.name, option });
 }
 
-/** The frameworks an empty canvas offers, in their key order (`1 2 3`). */
-export const FRAMEWORK_KEY = { framework1: 'question_tree', framework2: 'options_compare', framework3: 'free_board' } as const satisfies Record<string, Framework>;
+/** The layouts `b` offers for a new block, by action (`b 1`, `b 2`, `b 3`). */
+export const BLOCK_KEY = { newBlock1: 'question_tree', newBlock2: 'options_compare', newBlock3: 'free_area' } as const satisfies Record<string, Layout>;
+
+/** The selected card, if an agent put it there unseen, is now seen. The canvas calls this
+ * whenever the selection changes, however it changed. */
+export function markSeen(s: Snapshot, id: Id | null): void {
+  if (id && s.cards.find(c => c.id === id)?.unseen) send({ type: 'see_card', card_id: id });
+}
 
 function switchEffort(id: Id, quiet = false): void {
   const e = effortById(snap(), id);
@@ -135,13 +160,12 @@ function insertRef(text: string): void {
 }
 
 function cardsOnCanvas(s: Snapshot, u: Ui) {
-  const canvas = effortCanvas(s, u.effort);
-  return canvas ? s.cards.filter(c => c.canvas_id === canvas.id) : [];
+  const blocks = new Set(effortBlocks(s, u.effort).map(b => b.id));
+  return s.cards.filter(c => blocks.has(c.block_id));
 }
 
 function incomingOnCanvas(s: Snapshot, u: Ui) {
-  const canvas = effortCanvas(s, u.effort);
-  return canvas ? s.incoming.filter(c => c.canvas_id === canvas.id) : [];
+  return s.incoming.filter(c => c.effort_id === u.effort);
 }
 
 /** The nearest card in a direction: along the direction, with sideways distance counted double. */
@@ -264,6 +288,7 @@ export function dispatch(a: Action, arg?: unknown): void {
         { label: 'Claude account', value: '', hint: 'a profile from config.toml; empty for the default' },
         { label: 'First repo', value: '', hint: '~/code/shop-api — a folder in a git repo; empty for research only' },
       ], onDone: ([name = '', account = '', repo = '']) => {
+        setUi({ awaitProject: true });
         send({ type: 'create_project', name, account, repo_path: repo });
       } } });
       return;
@@ -277,6 +302,17 @@ export function dispatch(a: Action, arg?: unknown): void {
       ], onDone: ([path = '', name = '']) => {
         send({ type: 'add_repo', project_id: p.id, path, name });
       } } });
+      return;
+    }
+    case 'removeRepo': {
+      const p = s.projects[u.homeSel];
+      if (!p) return;
+      if (!p.repos.length) { toast(`**${p.name}** has no repo`); return; }
+      const confirm = (repo: string) => picker(`Remove ${repo} from ${p.name}? Its files stay where they are.`, [
+        { key: 'keep', text: 'keep', label: 'Keep it', go: () => {} },
+        { key: 'remove', text: 'remove', label: `Remove ${repo}`, go: () => send({ type: 'remove_repo', project_id: p.id, repo }) },
+      ]);
+      picker(`Remove a repo from ${p.name}`, p.repos.map(r => ({ key: r, text: r, label: r, glyph: '▣', glyphClass: 'dim', go: () => confirm(r) })));
       return;
     }
     case 'pickProject':
@@ -314,7 +350,7 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'escape':
       if (u.wwi) setUi({ wwi: false });
       else if (u.zone === 'main' && u.main === 'item') setUi({ main: null, mainItem: null, zone: 'inbox' });
-      else if (u.zone === 'main' && u.main === 'reading' && effortCanvas(s, u.effort)) setUi({ main: 'canvas' });
+      else if (u.zone === 'main' && u.main === 'reading' && effortBlocks(s, u.effort).length) setUi({ main: 'canvas' });
       else if (u.zone === 'chat') setUi({ chatCur: -1 });
       return;
     case 'command': setUi({ modal: { type: 'command', value: '' } }); return;
@@ -411,6 +447,7 @@ export function dispatch(a: Action, arg?: unknown): void {
       if (!r) return;
       if (r.type === 'effort') { switchEffort(r.effort.id); setUi(x => ({ folded: { ...x.folded, [r.effort.id]: false } })); }
       else if (r.type === 'task') toast(`Task “${r.task.title}” · its status is set by Dovetail`);
+      else if (r.agent.kind === 'slice') { setUi({ viewerAgent: r.agent.id }); openMain('viewer'); }
       else toast(`Opens **${r.agent.name}**'s conversation (not in this build)`);
       return;
     }
@@ -535,15 +572,16 @@ export function dispatch(a: Action, arg?: unknown): void {
       return;
     }
     case 'newCard': {
-      const canvas = effortCanvas(s, u.effort);
-      if (!canvas) return;
-      const from = s.cards.find(x => x.id === u.cardSel);
+      // Into the selected card's block, under it; else the newest block.
+      const from = cardsOnCanvas(s, u).find(x => x.id === u.cardSel);
+      const block = from?.block_id ?? effortBlocks(s, u.effort).at(-1)?.id;
+      if (!block) { toast(`Make a block first: **${keysFor('newBlock1', 'canvas')[0]?.[0] ?? ''}** offers the layouts`); return; }
       picker('New card · kind', CARD_KINDS.map(k => ({
         key: k, text: k, label: k,
         go: () => prompt(`New ${k} card · title`, title => {
           setUi({ awaitNewCard: true });
           send({
-            type: 'add_card', canvas_id: canvas.id, kind: k, x: (from?.x ?? 40) + 30, y: (from?.y ?? 20) + 150,
+            type: 'add_card', block_id: block, kind: k,
             title: title.trim(), body: '', ...(from ? { link_from: from.id } : {}),
           });
         }),
@@ -574,9 +612,8 @@ export function dispatch(a: Action, arg?: unknown): void {
     case 'accept': {
       const c = incomingOnCanvas(s, u)[u.incSel];
       if (!c) return;
-      const p = s.cards.find(x => x.id === c.under);
-      const kids = s.card_links.filter(l => l.from === c.under).length;
-      send({ type: 'place_card', incoming_id: c.id, x: (p?.x ?? 40) + 30 + kids * 18, y: (p?.y ?? 20) + 150 + kids * 26 });
+      // The core finds the spot: under the card linking to it, else in the newest block.
+      send({ type: 'place_card', incoming_id: c.id });
       const left = incomingOnCanvas(snap(), u).length;
       setUi({ cardSel: c.id, incSel: clamp(u.incSel, 0, Math.max(0, left - 1)), canvasPart: left ? 'incoming' : 'cards' });
       toast(c.under ? `Placed **${c.id}** under ${c.under}` : `Placed **${c.id}**`);
@@ -591,26 +628,24 @@ export function dispatch(a: Action, arg?: unknown): void {
       toast(`Dropped **${c.id}**`);
       return;
     }
-    // The empty canvas offers its frameworks as 1 2 3; with a canvas the keys do nothing.
-    case 'framework1': case 'framework2': case 'framework3': {
-      if (effortCanvas(s, u.effort)) return;
-      dispatch('pickFramework', FRAMEWORK_KEY[a]);
-      return;
-    }
-    case 'pickFramework': {
-      if (u.effort) send({ type: 'new_canvas', effort_id: u.effort, framework: (arg as Framework) ?? 'question_tree' });
+    // `b 1/2/3`: a new block, placed by the core in empty space (ADR 0027).
+    case 'newBlock1': case 'newBlock2': case 'newBlock3': dispatch('pickLayout', BLOCK_KEY[a]); return;
+    case 'pickLayout': {
+      // It lands in the empty space nearest the middle of the view (ADR 0027).
+      const near = viewport.canvas?.centre() ?? undefined;
+      if (u.effort) send({ type: 'new_block', effort_id: u.effort, layout: (arg as Layout) ?? 'free_area', ...(near ? { near } : {}) });
       return;
     }
 
     // ---- viewer
     case 'slotDown': case 'slotUp': {
-      const set = viewerSet(s, u.effort);
+      const set = viewerSet(s, u);
       if (set) setUi({ slot: clamp(slotIndex(set, u.slot) + (a === 'slotDown' ? 1 : -1), 0, set.slots.length - 1) });
       return;
     }
     case 'selectSlot': setUi({ slot: Number(arg), zone: 'main' }); return;
     case 'optNext': case 'optPrev': case 'opt1': case 'opt2': case 'opt3': {
-      const set = viewerSet(s, u.effort);
+      const set = viewerSet(s, u);
       const i = slotIndex(set, u.slot);
       const slot = set?.slots[i];
       if (!set || !slot) return;
@@ -623,20 +658,20 @@ export function dispatch(a: Action, arg?: unknown): void {
     }
     case 'pickOption': {
       const [slot, j] = arg as [number, number];
-      const set = viewerSet(s, u.effort);
+      const set = viewerSet(s, u);
       setUi({ slot, zone: 'main' });
       if (set) pick(set, slot, j);
       return;
     }
     case 'keepCombo': {
-      const set = viewerSet(s, u.effort);
+      const set = viewerSet(s, u);
       if (!set) return;
       send({ type: 'keep_variants', agent_id: set.agent_id });
       toast(`Combination kept and sent to **${set.agent_id}**`);
       return;
     }
     case 'resetCombo': {
-      const set = viewerSet(s, u.effort);
+      const set = viewerSet(s, u);
       set?.slots.forEach((_, i) => { if ((set.choice[i] ?? 0) !== (set.kept[i] ?? 0)) pick(set, i, set.kept[i] ?? 0); });
       return;
     }
@@ -647,7 +682,7 @@ export function dispatch(a: Action, arg?: unknown): void {
       setUi(x => x.panel === 'detached' ? { panel: 'docked' } : { panel: 'detached', panelPos: { x: Math.max(16, window.innerWidth - 820), y: 120 } });
       return;
     case 'reload': {
-      const p = viewerPreview(s, u.effort);
+      const p = viewerPreview(s, u);
       if (p && (p.state === 'failed' || p.state === 'no_command')) {
         send({ type: 'restart_preview', agent_id: p.agent_id });
         toast('Preview restarting');
@@ -658,7 +693,7 @@ export function dispatch(a: Action, arg?: unknown): void {
       return;
     }
     case 'browser': {
-      const url = viewerPreview(s, u.effort)?.url;
+      const url = viewerPreview(s, u)?.url;
       if (url) send({ type: 'open_external', url });
       else toast('The preview is not running');
       return;
@@ -693,8 +728,8 @@ export function dispatch(a: Action, arg?: unknown): void {
         ...s.cards.map(c => ({
           key: 'c' + c.id, text: `card ${c.id} ${c.title}`, label: c.title, glyph: c.id, glyphClass: 'dim', detail: c.kind,
           go: () => {
-            const canvas = s.canvases.find(x => x.id === c.canvas_id);
-            if (canvas) switchEffort(canvas.effort_id, true);
+            const block = s.blocks.find(x => x.id === c.block_id);
+            if (block) switchEffort(block.effort_id, true);
             setUi({ wwi: false, cardSel: c.id, canvasPart: 'cards' });
             openMain('canvas');
           },
@@ -702,26 +737,9 @@ export function dispatch(a: Action, arg?: unknown): void {
       ]);
       return;
     case 'pickAgent': dispatch('picker'); setUi(x => x.modal?.type === 'picker' ? { modal: { ...x.modal, q: 'agent ' } } : {}); return;
-    case 'newSlice': {
-      const repos = s.projects.find(x => x.id === s.open_project)?.repos ?? [];
-      if (!repos.length) { toast('This project has no repo, so it runs no slices: **Space p r** adds one'); return; }
-      const row = u.zone === 'tree' ? treeRows(s, u.folded)[u.treeSel] : undefined;
-      const task = row?.type === 'task' ? row.task : undefined;
-      const form = (repo: string | undefined) => setUi({ modal: { type: 'form', sel: 0,
-        title: `New slice${repo ? ` in ${repo}` : ''}${task ? ` on “${task.title}”` : ''}`, fields: [
-          { label: 'Name', value: '', hint: 'api-guest — also its branch' },
-          { label: 'Brief', value: '', hint: 'its first prompt: goal, scope, checks' },
-        ], onDone: ([name = '', brief = '']) => {
-          send({ type: 'new_slice', name, brief: brief || name, ...(task ? { task_id: task.id } : {}), ...(repo ? { repo } : {}) });
-        } } });
-      // With several repos the slice's repo is asked first (ADR 0021).
-      if (repos.length === 1) { form(undefined); return; }
-      picker('Which repo?', repos.map(r => ({ key: r, text: r, label: r, glyph: '▣', glyphClass: 'dim', go: () => form(r) })));
-      return;
-    }
     case 'interrupt': toast('Interrupt the agent in focus (not in this build)'); return;
     // The coordinator's session moves to its next mode (auto → acceptEdits → manual); the
     // bottom bar shows the new one when the core reports it.
-    case 'permMode': send({ type: 'cycle_permission_mode', agent_id: COORDINATOR }); return;
+    case 'permMode': send({ type: 'cycle_permission_mode', agent_id: modeTarget(s, u).id }); return;
   }
 }

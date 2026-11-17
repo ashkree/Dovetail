@@ -13,9 +13,9 @@ import { VariantPanel } from './VariantPanel';
 export function Viewer() {
   const s = useSnapshot();
   const ui = useUi();
-  const agent = viewerAgent(s, ui.effort);
-  const preview = viewerPreview(s, ui.effort);
-  const set = viewerSet(s, ui.effort);
+  const agent = viewerAgent(s, ui);
+  const preview = viewerPreview(s, ui);
+  const set = viewerSet(s, ui);
   const frame = useRef<HTMLIFrameElement>(null);
 
   // The first time the viewer opens on a slice, the core starts its preview.

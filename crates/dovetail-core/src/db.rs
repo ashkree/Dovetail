@@ -22,7 +22,7 @@ pub mod research;
 mod sessions;
 mod tasks;
 
-pub use canvas::CanvasState;
+pub use canvas::{CanvasState, USER};
 pub use efforts::CriterionStep;
 pub use maps::{Drawn, NewMapVersion};
 pub use sessions::{AgentRow, ModelChoice, QueuedSlice};
@@ -89,6 +89,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0018_canvases.sql"),
     migration!("state", "0019_agent_repo.sql"),
     migration!("state", "0020_design_variants.sql"),
+    migration!("state", "0021_blocks.sql"),
 ];
 
 /// Errors from the database layer.

@@ -45,7 +45,8 @@ pub(super) fn read(path: &Path) -> Result<ProjectCounts, DbError> {
              WHERE e.status = 'open' AND e.id != ?1 AND a.kind = 'slice' AND a.closed_ms IS NULL",
         )?,
         needs_you: count(
-            "SELECT (SELECT COUNT(*) FROM inbox_items WHERE resolved_ms IS NULL) \
+            "SELECT (SELECT COUNT(*) FROM inbox_items \
+             WHERE resolved_ms IS NULL AND kind != 'finished_turn') \
              + (SELECT COUNT(*) FROM criteria WHERE state = 'claimed') + 0 * ?1",
         )?,
     })

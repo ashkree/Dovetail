@@ -155,7 +155,7 @@ fn canvas_card() -> Card {
     Card {
         id: CardId(90),
         effort: EffortId(7),
-        canvas: Some(CanvasId(4)),
+        block: Some(BlockId(4)),
         kind: CardKind::Finding,
         x: 320,
         y: 180,
@@ -168,6 +168,7 @@ fn canvas_card() -> Card {
         missing: false,
         added_by: "user".into(),
         created_ms: 1_700_000_000_000,
+        seen: true,
     }
 }
 
@@ -421,23 +422,26 @@ fn hello_and_a_full_snapshot_roundtrip() {
         project: Some(project.clone()),
         projects: vec![project, research],
         efforts: vec![effort()],
-        canvases: vec![Canvas {
-            id: CanvasId(4),
+        blocks: vec![Block {
+            id: BlockId(4),
             effort: EffortId(7),
             title: "payment-providers".into(),
-            framework: Framework::QuestionTree,
+            layout: Layout::QuestionTree,
+            x: 0,
+            y: 0,
         }],
         cards: vec![
             canvas_card(),
             Card {
                 id: CardId(92),
-                canvas: None,
+                block: None,
                 kind: CardKind::Idea,
                 x: 0,
                 y: 0,
                 reference: None,
                 title: "Ask Mollie".into(),
                 text: "Ask Mollie\nabout EU-only pricing".into(),
+                seen: false,
                 ..canvas_card()
             },
         ],
@@ -470,6 +474,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
             }],
             &Default::default(),
         )],
+        effort_limit: 4,
         tasks: vec![task()],
         agents: vec![subagent()],
         todos: vec![todo()],
@@ -539,11 +544,13 @@ fn every_event_roundtrips() {
     let events = vec![
         Event::TaskUpserted(task()),
         Event::TaskRemoved(TaskId(3)),
-        Event::CanvasUpserted(Canvas {
-            id: CanvasId(4),
+        Event::BlockUpserted(Block {
+            id: BlockId(4),
             effort: EffortId(7),
             title: "payment-providers".into(),
-            framework: Framework::FreeBoard,
+            layout: Layout::FreeArea,
+            x: 400,
+            y: 0,
         }),
         Event::CardUpserted(canvas_card()),
         Event::CardRemoved(CardId(90)),
@@ -709,22 +716,21 @@ fn every_command_roundtrips() {
             }],
             effort: Some(EffortId(7)),
         },
-        Command::CreateCanvas {
+        Command::CreateBlock {
             effort: EffortId(7),
             title: String::new(),
-            framework: Framework::OptionsCompare,
+            layout: Layout::OptionsCompare,
+            near: Some(Point { x: 300, y: 120 }),
         },
-        Command::RenameCanvas {
-            id: CanvasId(4),
+        Command::RenameBlock {
+            id: BlockId(4),
             title: "options".into(),
         },
         Command::AddCard {
             card: NewCard {
                 effort: EffortId(7),
-                canvas: None,
+                block: Some(BlockId(4)),
                 kind: CardKind::Idea,
-                x: 0,
-                y: 0,
                 reference: None,
                 text: "Ask Mollie".into(),
             },
@@ -732,10 +738,9 @@ fn every_command_roundtrips() {
         },
         Command::PlaceCard {
             id: CardId(92),
-            canvas: CanvasId(4),
-            x: 40,
-            y: 60,
+            block: None,
         },
+        Command::SeeCard { id: CardId(92) },
         Command::MoveCard {
             id: CardId(92),
             x: 41,

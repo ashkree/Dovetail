@@ -7,6 +7,7 @@
 //! side_chat_model = "sonnet" # model of side chats (ADR 0011); default: sonnet
 //! extra_models = ["claude-sonnet-5"] # offered by the model selector after the built-in ones
 //! max_slices = 3             # running slices at once
+//! max_efforts = 4            # soft limit on running efforts; shows, never blocks (design v2)
 //! [memory]
 //! coordinator_gb = 4         # cgroup cap for the coordinator session
 //! slice_gb = 3               # cgroup cap for each slice session
@@ -46,6 +47,9 @@ pub struct Config {
     pub extra_models: Vec<String>,
     /// Most slice sessions running at once.
     pub max_slices: u32,
+    /// The soft limit on running efforts (efforts with an open slice): the bottom bar warns
+    /// above it and nothing is blocked (design v2 "Running efforts").
+    pub max_efforts: u32,
     /// Memory caps.
     pub memory: MemoryCaps,
     /// Claude Code config directories by profile name; a project picks one in its recipe.
@@ -116,6 +120,7 @@ impl Default for Config {
             side_chat_model: Some("sonnet".into()),
             extra_models: Vec::new(),
             max_slices: 3,
+            max_efforts: 4,
             memory: MemoryCaps::default(),
             profiles: BTreeMap::new(),
             suites: RoleSuites::default(),

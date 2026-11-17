@@ -5155,15 +5155,13 @@ fn an_agent_claims_a_criterion_and_only_the_user_approves_it() {
     h.quit();
 }
 
-// --- canvases and cards (ADR 0025) ---
+// --- blocks and cards (ADR 0025, ADR 0027) ---
 
 fn idea(effort: dovetail_api::EffortId, text: &str) -> dovetail_api::NewCard {
     dovetail_api::NewCard {
         effort,
-        canvas: None,
+        block: None,
         kind: dovetail_api::CardKind::Idea,
-        x: 0,
-        y: 0,
         reference: None,
         text: text.into(),
     }
@@ -5173,32 +5171,78 @@ fn card_titled<'a>(s: &'a Snapshot, title: &str) -> Option<&'a dovetail_api::Car
     s.cards.iter().find(|c| c.title == title)
 }
 
-/// A canvas, a card made incoming, placed, moved and linked, all still there after a restart;
-/// the commands that make no sense are refused and change nothing.
+/// Blocks placed by the core, a card made incoming, placed, moved and linked, all still there
+/// after a restart; the commands that make no sense are refused and change nothing.
 #[test]
-fn canvases_cards_and_links_are_core_state_that_survives_a_restart() {
-    use dovetail_api::{CanvasId, Framework};
+fn blocks_cards_and_links_are_core_state_that_survives_a_restart() {
+    use dovetail_api::Layout;
+    use dovetail_api::geometry::{BLOCK_GAP, CARD_W, HEADER, PAD};
 
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     let effort = create_effort(&mut h, "providers", "providers");
     let other = create_effort(&mut h, "other", "other");
-    h.send(Command::CreateCanvas {
+    h.send(Command::CreateBlock {
         effort,
         title: String::new(),
-        framework: Framework::QuestionTree,
+        layout: Layout::QuestionTree,
+        near: None,
     });
-    h.send(Command::CreateCanvas {
+    h.send(Command::CreateBlock {
         effort: other,
         title: "Elsewhere".into(),
-        framework: Framework::FreeBoard,
+        layout: Layout::FreeArea,
+        near: None,
     });
-    h.wait_for("two canvases", |s| s.canvases.len() == 2);
-    let canvas = h.snap.canvases[0].id;
-    let elsewhere = h.snap.canvases[1].id;
-    assert_eq!(
-        h.snap.canvases[0].title, "providers",
-        "an empty title is the effort's name"
+    h.send(Command::CreateBlock {
+        effort,
+        title: "Which provider?".into(),
+        layout: Layout::OptionsCompare,
+        near: None,
+    });
+    // Where the user looks: centred there when it is empty, else the nearest empty spot.
+    h.send(Command::CreateBlock {
+        effort,
+        title: "Notes".into(),
+        layout: Layout::FreeArea,
+        near: Some(dovetail_api::Point { x: 145, y: 1000 }),
+    });
+    h.send(Command::CreateBlock {
+        effort,
+        title: "Crowded".into(),
+        layout: Layout::FreeArea,
+        near: Some(dovetail_api::Point { x: 145, y: 80 }),
+    });
+    h.wait_for("five blocks", |s| s.blocks.len() == 5);
+    let tree = h.snap.blocks[0].clone();
+    let elsewhere = h.snap.blocks[1].id;
+    let compare = h.snap.blocks[2].clone();
+    let (w, hh) = (
+        2 * PAD + CARD_W,
+        HEADER + dovetail_api::geometry::CARD_H + PAD,
     );
+    assert_eq!(
+        (h.snap.blocks[3].x, h.snap.blocks[3].y),
+        (145 - w / 2, 1000 - hh / 2)
+    );
+    // Centred on the tree block it would cover: moved off it, the tree did not move.
+    let crowded = h.snap.blocks[4].clone();
+    assert_ne!((crowded.x, crowded.y), (145 - w / 2, 80 - hh / 2));
+    assert!(
+        crowded.x >= tree.x + w + BLOCK_GAP / 2
+            || crowded.y >= tree.y + hh + BLOCK_GAP / 2
+            || crowded.x + w + BLOCK_GAP / 2 <= tree.x
+            || crowded.y + hh + BLOCK_GAP / 2 <= tree.y,
+        "{crowded:?}"
+    );
+    assert_eq!(h.snap.blocks[0], tree);
+    assert_eq!(
+        tree.title, "Question tree",
+        "an empty title is the layout's name"
+    );
+    assert_eq!((tree.x, tree.y), (0, 0));
+    // The second block of an effort goes right of the first; another effort's canvas starts empty.
+    assert_eq!(h.snap.blocks[1].x, 0);
+    assert_eq!((compare.x, compare.y), (2 * PAD + CARD_W + BLOCK_GAP, 0));
 
     h.send(Command::AddCard {
         card: idea(effort, "Ask Mollie about EU-only pricing"),
@@ -5210,10 +5254,10 @@ fn canvases_cards_and_links_are_core_state_that_survives_a_restart() {
     let first = card_titled(&h.snap, "Ask Mollie about EU-only pricing")
         .expect("card")
         .clone();
-    assert_eq!((first.canvas, first.added_by.as_str()), (None, "user"));
+    assert_eq!((first.block, first.added_by.as_str()), (None, "user"));
 
-    // Refused: moving an incoming card, placing it on another effort's canvas, dropping a
-    // card that does not exist, a link to itself.
+    // Refused: moving an incoming card, placing it in another effort's block, dropping a card
+    // that does not exist, a link to itself.
     h.send(Command::MoveCard {
         id: first.id,
         x: 1,
@@ -5221,9 +5265,7 @@ fn canvases_cards_and_links_are_core_state_that_survives_a_restart() {
     });
     h.send(Command::PlaceCard {
         id: first.id,
-        canvas: elsewhere,
-        x: 1,
-        y: 1,
+        block: Some(elsewhere),
     });
     h.send(Command::DropIncoming {
         id: dovetail_api::CardId(999),
@@ -5233,23 +5275,25 @@ fn canvases_cards_and_links_are_core_state_that_survives_a_restart() {
         to: first.id,
         label: String::new(),
     });
+    // Placed with no block named: the effort's newest block, in its first cell.
     h.send(Command::PlaceCard {
         id: first.id,
-        canvas,
-        x: 40,
-        y: 60,
+        block: None,
     });
     h.wait_for("placed", |s| {
-        s.cards.iter().any(|c| c.canvas == Some(canvas))
+        s.cards.iter().any(|c| c.block == Some(crowded.id))
     });
+    let placed = card_titled(&h.snap, "Ask Mollie about EU-only pricing").expect("card");
+    assert_eq!(
+        (placed.x, placed.y, placed.seen),
+        (crowded.x + PAD, crowded.y + HEADER, true)
+    );
     assert_eq!(h.failures.len(), 4, "{:?}", h.failures);
     assert!(h.failures[0].contains("incoming"), "{:?}", h.failures);
     assert!(h.failures[1].contains("another effort"), "{:?}", h.failures);
     h.send(Command::PlaceCard {
         id: first.id,
-        canvas,
-        x: 5,
-        y: 5,
+        block: None,
     });
     h.send(Command::DropIncoming { id: first.id });
     h.send(Command::MoveCard {
@@ -5298,7 +5342,7 @@ fn canvases_cards_and_links_are_core_state_that_survives_a_restart() {
 
     // Everything is the same after a restart, and the ids go on from where they were.
     let before = (
-        h.snap.canvases.clone(),
+        h.snap.blocks.clone(),
         h.snap.cards.clone(),
         h.snap.card_links.clone(),
     );
@@ -5308,7 +5352,7 @@ fn canvases_cards_and_links_are_core_state_that_survives_a_restart() {
     h.wait_for("the first snapshot", |s| !s.efforts.is_empty());
     assert_eq!(
         (
-            h.snap.canvases.clone(),
+            h.snap.blocks.clone(),
             h.snap.cards.clone(),
             h.snap.card_links.clone()
         ),
@@ -5317,11 +5361,11 @@ fn canvases_cards_and_links_are_core_state_that_survives_a_restart() {
     h.send(Command::DeleteCard { id: second });
     h.wait_for("deleted", |s| s.cards.len() == 2);
     assert!(h.snap.card_links.is_empty(), "a card's links go with it");
-    h.send(Command::RenameCanvas {
-        id: CanvasId(1),
+    h.send(Command::RenameBlock {
+        id: tree.id,
         title: "Providers".into(),
     });
-    h.wait_for("renamed", |s| s.canvases[0].title == "Providers");
+    h.wait_for("renamed", |s| s.blocks[0].title == "Providers");
     h.quit();
 }
 
@@ -5363,14 +5407,12 @@ fn a_reply_becomes_an_idea_and_a_reference_must_exist() {
         s.cards.iter().any(|c| c.kind == CardKind::Idea)
     });
     assert_eq!(h.snap.cards[0].text, reply.text, "the words are copied");
-    assert_eq!(h.snap.cards[0].canvas, None);
+    assert_eq!(h.snap.cards[0].block, None);
 
     let reference = |kind: RefKind, id: &str| NewCard {
         effort,
-        canvas: None,
+        block: None,
         kind: kind.card_kind(),
-        x: 0,
-        y: 0,
         reference: Some(CardRef {
             kind,
             id: id.into(),
@@ -5419,29 +5461,43 @@ fn a_reply_becomes_an_idea_and_a_reference_must_exist() {
     h.quit();
 }
 
-/// The coordinator's canvas tools add to incoming and link; no tool moves, places or deletes.
+/// The coordinator's canvas tools add blocks, cards and links; no tool moves or deletes. A block
+/// goes in empty space, a card under its parent, marked unseen; nothing already placed moves.
 #[test]
 fn the_canvas_tools_add_and_link_and_nothing_else() {
-    use dovetail_api::CardKind;
-    use dovetail_api::tools::{CanvasAddCard, CanvasLinkCards, Suite, TOOLS};
+    use dovetail_api::geometry::{CARD_H, GAP};
+    use dovetail_api::tools::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards, Suite, TOOLS};
+    use dovetail_api::{BlockId, CardId, CardKind, Layout};
 
     let canvas_tools: Vec<&str> = TOOLS
         .iter()
         .filter(|t| t.suite == Suite::Canvas)
         .map(|t| t.name)
         .collect();
-    assert_eq!(canvas_tools, ["canvas_add_card", "canvas_link_cards"]);
+    assert_eq!(
+        canvas_tools,
+        ["canvas_add_block", "canvas_add_card", "canvas_link_cards"]
+    );
 
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     let effort = create_effort(&mut h, "providers", "providers");
     let socket = h.socket();
-    let add = |kind: CardKind, text: &str, reference: Option<&str>| {
+    let add_to = |kind: CardKind,
+                  text: &str,
+                  reference: Option<&str>,
+                  block: Option<BlockId>,
+                  under: Option<CardId>| {
         Tool::CanvasAddCard(CanvasAddCard {
             effort: Some(effort),
+            block,
+            under,
             kind,
             text: text.into(),
             reference: reference.map(Into::into),
         })
+    };
+    let add = |kind: CardKind, text: &str, reference: Option<&str>| {
+        add_to(kind, text, reference, None, None)
     };
     let (text, is_error) = result_text(socket_call(
         &socket,
@@ -5461,7 +5517,7 @@ fn the_canvas_tools_add_and_link_and_nothing_else() {
         h.snap
             .cards
             .iter()
-            .all(|c| c.canvas.is_none() && c.added_by == COORDINATOR)
+            .all(|c| c.block.is_none() && c.added_by == COORDINATOR && c.seen)
     );
     let (from, to) = (h.snap.cards[0].id, h.snap.cards[1].id);
     let (text, is_error) = result_text(socket_call(
@@ -5478,7 +5534,63 @@ fn the_canvas_tools_add_and_link_and_nothing_else() {
     assert!(!is_error, "{text}");
     h.wait_for("the link", |s| s.card_links.len() == 1);
 
-    // Refused: a reference that does not exist, text on a reference card, an idea without text.
+    // A block, a root question in it and a finding-like idea under the root.
+    let (text, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            COORDINATOR,
+            Tool::CanvasAddBlock(CanvasAddBlock {
+                effort: Some(effort),
+                layout: Layout::QuestionTree,
+                title: "Which provider?".into(),
+            }),
+        ),
+    ));
+    assert!(!is_error && text.contains("block"), "{text}");
+    h.wait_for("the block", |s| s.blocks.len() == 1);
+    let block = h.snap.blocks[0].clone();
+    let (_, is_error) = result_text(socket_call(
+        &socket,
+        tool(
+            COORDINATOR,
+            add_to(CardKind::Question, "Fees?", None, Some(block.id), None),
+        ),
+    ));
+    assert!(!is_error);
+    h.wait_for("the root", |s| card_titled(s, "Fees?").is_some());
+    let root = card_titled(&h.snap, "Fees?").expect("root").clone();
+    assert_eq!((root.block, root.seen), (Some(block.id), false));
+    for text in ["Stripe 1.5 %", "Adyen: no list price"] {
+        let (_, is_error) = result_text(socket_call(
+            &socket,
+            tool(
+                COORDINATOR,
+                add_to(CardKind::Idea, text, None, Some(block.id), Some(root.id)),
+            ),
+        ));
+        assert!(!is_error);
+    }
+    h.wait_for("the answers and their links", |s| {
+        s.cards.len() == 5 && s.card_links.len() == 3
+    });
+    let a = card_titled(&h.snap, "Stripe 1.5 %").expect("a").clone();
+    let b = card_titled(&h.snap, "Adyen: no list price")
+        .expect("b")
+        .clone();
+    // One row below the root, side by side, linked from it; the root did not move.
+    assert_eq!((a.x, a.y), (root.x, root.y + CARD_H + GAP));
+    assert_eq!(b.y, a.y);
+    assert!(b.x > a.x);
+    assert!(
+        h.snap
+            .card_links
+            .iter()
+            .any(|l| l.from == root.id && l.to == b.id)
+    );
+    assert_eq!(card_titled(&h.snap, "Fees?").expect("root"), &root);
+
+    // Refused: a reference that does not exist, text on a reference card, an idea without text,
+    // `under` with no block.
     for (call, wanted) in [
         (
             add(CardKind::Finding, "", Some("41")),
@@ -5486,12 +5598,16 @@ fn the_canvas_tools_add_and_link_and_nothing_else() {
         ),
         (add(CardKind::Finding, "words", Some("41")), "no `text`"),
         (add(CardKind::Idea, " ", None), "`text`"),
+        (
+            add_to(CardKind::Idea, "x", None, None, Some(root.id)),
+            "name the `block`",
+        ),
     ] {
         let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, call)));
         assert!(is_error && text.contains(wanted), "{text}");
     }
     h.drain(Duration::from_millis(100));
-    assert_eq!(h.snap.cards.len(), 2);
+    assert_eq!(h.snap.cards.len(), 5);
     h.quit();
 }
 

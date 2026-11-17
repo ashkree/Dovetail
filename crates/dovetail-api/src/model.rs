@@ -88,10 +88,10 @@ pub struct Snapshot {
     /// The open project's efforts, closed ones included, in id order.
     #[serde(default)]
     pub efforts: Vec<Effort>,
-    /// The open project's canvases, in id order.
+    /// The blocks on the open project's canvases (one canvas per effort), in id order.
     #[serde(default)]
-    pub canvases: Vec<crate::canvas::Canvas>,
-    /// The open project's cards, in id order: placed ones and the incoming strip's (no canvas).
+    pub blocks: Vec<crate::canvas::Block>,
+    /// The open project's cards, in id order: placed ones and the incoming strip's (no block).
     /// Titles only; a card's body comes with [`crate::Command::LoadCard`].
     #[serde(default)]
     pub cards: Vec<crate::canvas::Card>,
@@ -164,6 +164,10 @@ pub struct Snapshot {
     /// The variants slices declared, with the user's picks (ADR 0026).
     #[serde(default)]
     pub variants: Vec<crate::design::VariantSet>,
+    /// The soft limit on running efforts, from `config.toml`'s `max_efforts`: shown against the
+    /// running count, never enforced.
+    #[serde(default)]
+    pub effort_limit: u32,
 }
 
 /// A tangent: a question that did not belong to the project it was asked from, saved as a task
