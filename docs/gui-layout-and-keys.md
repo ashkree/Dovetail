@@ -1,5 +1,7 @@
 # GUI layout and keys
 
+> **Shelved (ADR 0030, 2026-11-18).** The TUI is the main client again and the Tauri GUI moves to the `gui-shelved` branch. This file is kept for reference only; it specifies nothing current. The TUI's layout and keys are in `docs/ui-session-brief.md` and `docs/screens/ui/`, and the TUI design session will settle the new main layout.
+
 The settled layout, look and proposed keymap of the Dovetail GUI (the Tauri 2 + React client), worked out with the user in a clickable mock on 2026-11-15. The mock is reference, not product code: it shows what to build. Where this file and `docs/design-v2.md` disagree on nouns or behaviour, the design doc wins; this file wins on layout, look and keys.
 
 ## The mock

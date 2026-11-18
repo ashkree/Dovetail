@@ -2,32 +2,37 @@
 
 Agreed with the user in the grilling session of 2026-11-15. This is the new baseline. `docs/design.md` stays as the frozen v1 baseline and is never edited; where the two differ, this file wins. ADRs written after this file win over it on the decision they name.
 
+ADR 0030 (2026-11-18) made the TUI the main client again and shelved the GUI. §1, §2, §7, §8 and §9 are rewritten to match it.
+
 Anything this file does not decide is listed under [Open points](#open-points). Do not fill those in from guesswork.
 
 ---
 
 ## 1. Goal
 
-By **mid-December 2026** the user's daily brainstorming, coding and web design run in the Dovetail GUI, including building Dovetail itself.
+By **mid-December 2026** the user's daily brainstorming and coding run in Dovetail's TUI, including building Dovetail itself.
 
-- **TUI v1 is frozen as built.** No new features. The user decides later whether it catches up. SSH and tmux use are parked with it.
-- **Open v1 checks:** only those that test the core stay open: worktree cleanup, out-of-memory recovery, subagent cost. M16's working week and the 100 MB RSS target are dropped.
+- **The TUI is the main client** (ADR 0030). It is no longer frozen: polishing it comes first, and new features are built in it.
+- **Long reading and canvases** go to one local page the core serves (§7).
+- **SSH and tmux use** come with the daemon, `dovetail serve`, which is built last.
+- **Open v1 checks:** only those that test the core stay open: worktree cleanup, out-of-memory recovery, subagent cost. M16's working week stays dropped. The 100 MB RSS target is back.
 
 ## 2. App
 
 | | v2 |
 | --- | --- |
-| Shell | Tauri 2, web frontend in React + TypeScript |
-| Canvas | React Flow |
-| Core | Hosted **in-process** by the GUI process. A full daemon stays for later |
-| Input | Keyboard-first, modal (Normal / Insert, Space leader), one `Action` table. Mouse optional |
-| Memory budget | 500 MB for the app window plus one preview page, measured in a first spike |
+| Client | The TUI (`ratatui` + `crossterm`). The target terminal is kitty; other terminals fall back quietly |
+| Page | One local web page served by the core on `127.0.0.1`: the reader, then canvases (React + TypeScript, React Flow) |
+| Core | Hosted **in-process** by the TUI. `dovetail serve` comes last |
+| Input | Keyboard-first, modal (Normal / Insert, Space leader), one `Action` table. In the TUI the mouse wheel scrolls the pane under the pointer, and the mouse does nothing else. On the page the mouse is welcome on the canvas but is never the only way |
+| Memory budget | About 100 MB RSS for the TUI with its core. The browser tab is the user's own and is not budgeted |
 
-This replaces ADR 0019's egui Companion and its rule that the GUI never holds the only way to do something: in v2 the GUI is the app.
+ADR 0030 supersedes ADR 0019's Companion, ADR 0020's GUI and ADR 0023's Tauri shell. A GUI may come back later as one more client of the core.
 
 ```
-GUI process (Tauri 2)
-├── web frontend (React + TS, React Flow)   ── Commands in / Snapshot + events out
+TUI process (dovetail, also dvtl)
+├── TUI (ratatui)                      ── Commands in / Snapshot + events out
+├── page server (127.0.0.1, planned)   ── reader and canvases in a browser tab, same API types
 └── core (Rust, in-process)
       ├── SQLite on one DB thread
       ├── SessionDriver ── headless Claude Code sessions (NDJSON)
@@ -38,7 +43,7 @@ GUI process (Tauri 2)
 
 ### Terms
 
-- **Home**: the first screen. It lists all projects, like the Google Docs file list. Entering a project opens its workspace. A project can open in a second window.
+- **Home**: the first screen. It lists all projects, like the Google Docs file list. Entering a project opens its workspace. In the TUI it is a provisional start screen: `dvtl` opens it and `dvtl <project>` goes straight into a project (ADR 0030; the design session settles it).
 - **Project**: a named workspace. It holds any number of repos (including none) and one Claude account. It is not tied to a folder and is never found from the current folder.
 - **Repo**: a git repository attached to a project.
 - **Account**: the Claude Code account a project's sessions run under (v1's "profile", ADR 0009).
@@ -184,29 +189,31 @@ Question tree                  Options compare                 Free board
 - Long reports keep a reading view. Findings are cards only.
 - A structured map (Decision 23, `maps_draw`) can sit on a canvas as a card. The canvas model and the map model stay separate.
 
-## 7. Viewer
+## 7. Reader page
 
-For web UI previews.
+The reader is the escape hatch for anything a terminal draws badly (ADR 0030 §4).
 
-- The project recipe gets a **preview command**, started per slice on a free port. The viewer follows the focused slice.
-- A native **variant panel** with three levels:
-  - global (e.g. theme, layout),
-  - component (e.g. header, footer),
-  - content (e.g. one line of text).
-- Variants mix and match. The panel is detachable and closable.
-- "Keep this combination" tells the agent to make it permanent and delete the rest.
-- The agent writes variants in the slice's code and declares them in a list.
-- No in-app screenshot key. Agent self-capture may come later.
+- It shows the focused conversation, report, block or document with real typography: proportional fonts, true heading sizes, line spacing, rendered tables, highlighted code and rendered diagrams.
+- It follows the TUI's focus. One key in the TUI opens it, or brings an open tab up to date.
+- The user still reads chat in the TUI.
+- Canvases (§6) live on the same page and are built after the reader.
+- The page is a client like the TUI: it receives events and sends `Command`s through the API types. Until the daemon lands, the TUI's in-process core serves it.
 
-## 8. Release split
+**Previews are dropped** (ADR 0026 withdrawn): no preview viewer, no declared variants, no preview command in the recipe. The user's design-iteration skill owns previews.
 
-Order of work: the GUI shell for the daily loop first, project-management data and tools in the core in parallel, then the viewer, then the canvas. The canvas is the first thing to move out if the date slips.
+## 8. Order of work
+
+ADR 0030 §7:
+
+1. **A readability spike and a TUI design session, in parallel.** The spike covers ADR 0030 §5 on real transcripts. The design session covers the user's declutter audit, the main layout, the effort screen and Home. No screen code until the design session is done.
+2. **v2 views in the TUI.** The tree becomes project → efforts → tasks → agents. The Now / Next / Later buckets are dropped, and existing tasks move to the Unsorted effort. There is one project chat with effort tags and a filter for one effort's thread. Efforts get a screen of their own.
+3. **The page:** the reader, then the canvas.
+4. **The daemon** (`dovetail serve`).
 
 | | |
 | --- | --- |
-| **First GUI release** | Chat, sidebar tree, inbox with approvals, reading view; then viewer; then canvas |
-| **Later** (still usable in the frozen TUI meanwhile) | Board, maps, daily review, tangents, side chats, take-over, worktree view, quick capture, cross-project inbox, Home counts |
-| **Dropped** | Focus mode, message timeline |
+| **Later** | Board, maps, daily review, tangents, side chats, take-over, worktree view, quick capture, cross-project inbox, Home counts. What TUI v1 already has keeps working meanwhile |
+| **Dropped** | Focus mode, message timeline, previews and declared variants |
 | **Not built** | Provisions for messages from outside agents |
 
 ## 9. What v2 replaces, refines and keeps
@@ -215,14 +222,14 @@ Order of work: the GUI shell for the daily loop first, project-management data a
 
 | v1 item | Was | In v2 |
 | --- | --- | --- |
-| Decision 4b, process ownership | Single TUI app; daemon later | GUI process hosts the core in-process; daemon still later |
-| Decision 6a, pane model | Buffers, fixed layout, splits later | Three zones (sidebar, main view, chat docked right); exact layout open |
-| Decision 6b, project focus | One active project | Home lists all projects; a project can open in a second window |
-| Decision 11, tasks | User tasks with agents under them; In progress when a slice starts, Done when the user marks it | Every task belongs to an effort; Dovetail sets status (To do → In progress → Review → Done); starting an agent needs a task |
+| Decision 4b, process ownership | Single TUI app; daemon later | The TUI hosts the core in-process; `dovetail serve` last (ADR 0030) |
+| Decision 6a, pane model | Buffers, fixed layout, splits later | Settled in the TUI design session (ADR 0030 §7) |
+| Decision 6b, project focus | One active project | Home lists all projects: a provisional start screen in the TUI (ADR 0030) |
+| Decision 11, tasks | User tasks with agents under them; In progress when a slice starts, Done when the user marks it | Every task belongs to an effort; Dovetail sets status (To do → In progress → Review → Done); starting an agent needs a task; Now / Next / Later buckets dropped (ADR 0030) |
 | Decision 12, worktrees | Coordinator in the main checkout | Coordinator in the project's state folder with every repo attached; a slice works in exactly one repo |
-| Decision 15, layout B (+ ADR 0006, ADR 0008) | Conversation left, inbox over tree right | Sidebar (inbox over efforts tree), main view, coordinator chat docked right; not settled |
+| Decision 15, layout B (+ ADR 0006, ADR 0008) | Conversation left, inbox over tree right | Binds the TUI as built; the design session settles the new main layout |
 | Decision 16, extra views | Board, worktree view, focus mode | Board and worktree view later; focus mode dropped |
-| Decision 16a–c, readability | Terminal cells, 120-col column, transparent | Superseded by the GUI; details with the layout |
+| Decision 16a–c, readability | Terminal cells, 120-col column, transparent | Refined by ADR 0030 §5: kitty target, centred column, heading sizes, wide blocks scroll sideways, solid backgrounds on content panes |
 | Decision 17, daily cycle | Morning review, end-of-day | Later |
 | Decision 21, quick capture | `<leader>t`, `dovetail add`, Unsorted | Later; "Unsorted" is now an effort |
 | Decision 22, context fill / handoff | Coordinator writes a handoff | A fresh coordinator gets every effort's "where was I" card as its handoff |
@@ -234,24 +241,23 @@ Order of work: the GUI shell for the daily loop first, project-management data a
 | ADR 0012, end-of-day handoff | | Later (daily review) |
 | ADR 0013, focus mode | | Dropped |
 | ADR 0015, research capture | Research-only project kind; finding = raw report | Research output arrives as canvas cards; long reports keep a reading view; project kind see Open points |
-| ADR 0018, reading mode | TUI layout preset | A reading view in the main view |
-| ADR 0019, Companion (egui) | Optional window; never the only way | Replaced: the Tauri GUI is the app |
-| ADR 0020, GUI main client | egui GUI, TUI remote kit, `dovetail serve` | Tauri + React; TUI frozen, not a remote kit; core in the GUI process |
-| AGENTS.md: `ratatui` + `crossterm` | The UI toolkit | Bind only the frozen TUI |
-| AGENTS.md: "any terminal", kitty graphics | Hard constraint | Applies only to the frozen TUI |
-| AGENTS.md: TUI redraw rules, 100 MB RSS target | Hard constraint | TUI target dropped; GUI budget 500 MB (window + one preview page) |
-| AGENTS.md: transparent terminals | Hard constraint | Applies only to the frozen TUI |
+| ADR 0018, reading mode | TUI layout preset | TUI readability per ADR 0030 §5; long reading goes to the reader page (§7) |
+| ADR 0019, Companion (egui) | Optional window; never the only way | Superseded (ADR 0030) |
+| ADR 0020, GUI main client | egui GUI, TUI remote kit, `dovetail serve` | Superseded on the client by ADR 0030: the TUI is the main client; `dovetail serve` kept, built last |
+| ADR 0023, Tauri shell hosts the core | | Superseded by ADR 0030; the GUI is shelved on the `gui-shelved` branch |
+| ADR 0026, slice previews and declared variants | | Withdrawn by ADR 0030 |
+| AGENTS.md: `ratatui` + `crossterm` | The UI toolkit | The main client's toolkit |
+| AGENTS.md: "any terminal", kitty graphics | Hard constraint | Kitty is the target; elsewhere, kitty-only features fall back quietly |
+| AGENTS.md: TUI redraw rules, 100 MB RSS target | Hard constraint | Kept |
+| AGENTS.md: transparent terminals | Hard constraint | Transparent by default; solid backgrounds on content panes as a toggle (ADR 0030 §5) |
 | v1 open checks | All of them | Only core checks stay: worktree cleanup, out-of-memory recovery, subagent cost. M16 working week dropped |
 
-### v2 against ADR 0020
+### Client history
 
-ADR 0020 was approved the morning of 2026-11-15, before the v2 grill, which ran without knowing about it. The user has since seen the conflict and confirmed v2's choices.
-
-- **Toolkit:** Tauri 2 + React replaces egui. Why: after ADR 0020 the user asked for in-app web UI previews, which need a browser engine egui cannot provide; one web technology then serves chat, canvas and viewer. Consequence: the `gui-text` spike's egui result (216 MB, accepted) no longer applies; the 500 MB budget needs its own spike.
-- **Process model:** the GUI process hosts the core (confirmed 2026-11-15, after seeing ADR 0020's `dovetail serve`). `dovetail serve` is dropped for now. Consequences: closing a project's window stops its sessions, which resume on open as in v1; a second window for another project is a second process with its own core.
-- **TUI:** frozen as built, not cut to a remote kit. SSH and tmux are parked; the user decides later whether it catches up.
-- **Layout:** not Layout B carried over; settled in the mock session.
-- **Kept from ADR 0020:** keyboard-first with one keymap table shared through `Action`s; mouse never the only way; its reasons for a GUI (readable text, density).
+- **2026-11-15, ADR 0020:** an egui GUI as the main client, the TUI cut to a remote kit, and `dovetail serve`.
+- **2026-11-15, v2 grill:** Tauri 2 + React replaced egui, because in-app web previews needed a browser engine. The GUI process hosted the core, and the TUI was frozen.
+- **2026-11-18, ADR 0030:** the GUI proved a step back for daily use, and previews moved to the user's own skill. The TUI is the main client again, a page served by the core takes long reading and canvases, and `dovetail serve` returns as the last step. The 500 MB GUI budget is withdrawn.
+- **Kept throughout:** keyboard-first, one keymap table shared through `Action`s, and the mouse never the only way.
 
 ### Kept
 
@@ -353,17 +359,17 @@ Note for the plan: SQLite cannot drop or relax columns in place, so moving the r
 
 Not decided yet. Do not build on a guess.
 
-1. **Layout and keymap.** The three zones (sidebar with inbox over efforts tree, main view for canvas / viewer / reading, coordinator chat docked right) and the keymap are being designed with the user in a separate clickable-mock session.
+1. **TUI layout and keymap.** The main layout, the effort screen and Home are settled in the TUI design session (ADR 0030 §7). Its result goes into `docs/ui-session-brief.md` and `docs/screens/ui/`.
 2. **Multi-repo coordinator launch.** How the coordinator is started in the state folder with every repo attached as an extra directory (flags, what happens when a repo is added or removed while it runs, role prompt wording).
-3. **How variants are declared.** The format and place of the agent's variant list, and how the panel switches variants in the running preview.
+3. ~~How variants are declared.~~ Dropped with previews (ADR 0030).
 4. **Session naming scheme.** Names must be unique and include project and effort; the exact format is open.
 5. **Project kind.** ADR 0015's `code` / `research` project kind against "a project holds any number of repos, including none": whether the kind stays.
-6. **Research findings vs finding cards.** How ADR 0015's stored findings, sources and reports map onto finding and source cards and the reading view.
-7. **P-levels and buckets** (Decision 17e). Not mentioned in v2; whether they stay alongside efforts.
-8. **Preview command format** in the project recipe, and where the recipe lives now that a project can hold several repos.
+6. **Research findings vs finding cards.** How ADR 0015's stored findings, sources and reports map onto finding and source cards and the reader page.
+7. **P-levels** (Decision 17e). Buckets are dropped (ADR 0030); whether P-levels stay alongside efforts is open.
+8. **Where the recipe lives** now that a project can hold several repos. (The preview command is dropped.)
 9. **Running-effort limit**: what counts as a "running" effort, and the config key.
 10. **Code landscape tool**: its MCP name, suite and output shape.
-11. **Memory spike**: procedure and pass/fail for the 500 MB budget.
+11. **Memory spikes**: `serve-page-memory`, the cost of the page server in the core, against the TUI's 100 MB target.
 
 ### Proposed: brainstorming on the canvas (not decided)
 
@@ -390,27 +396,21 @@ round 2                                         settled
 
 ### Edits other docs will need
 
-Not made in this change.
+Not made yet. `AGENTS.md`, `docs/architecture.md`, `README.md` and `GLOSSARY.md` were brought in line with ADR 0030 on 2026-11-18.
 
-**`AGENTS.md`**
+**Role prompts**
 
-- "What this is": a Tauri GUI for projects with efforts, not "a keyboard-driven terminal UI … on one feature".
-- Reading order: add `docs/design-v2.md` above `docs/design.md`.
-- "Known conflicts": replace the ADR 0020 egui note with v2's Tauri + React; layout per the mock session.
-- Hard constraints: `ratatui` + `crossterm`, "any terminal", kitty graphics, redraw rules and transparent terminals bind the frozen TUI only; add Tauri 2, React + TypeScript, React Flow; GUI memory budget 500 MB.
-- Architecture rules: crate list gains the Tauri app crate and the web frontend; core hosted in the GUI process.
-- Dogfooding: role prompts must describe efforts, effort tags, "where was I" cards and the multi-repo coordinator.
-- Scope: target is v2's first GUI release, not v1.
+- `config/roles/`: describe efforts, effort tags, "where was I" cards and the multi-repo coordinator.
 
 **`docs/implementation-plan.md`**
 
-- The "GUI track" G1–G7 was written for egui and `dovetail serve`; redo it in the v2 implementation plan.
+- The "GUI track" G1–G7 was written for egui and `dovetail serve`; replace it with ADR 0030's order of work (v2 views in the TUI, the page, the daemon).
 
 **`docs/design-digest.md`**
 
 - Header: point to `docs/design-v2.md` as the baseline that wins.
 - §1 decision log: mark the replaced decisions from the table above.
-- §2 architecture diagram: GUI process hosting the core.
+- §2 architecture diagram: the TUI hosting the core, the page server, `dovetail serve` last.
 - §7 data: project not tied to a folder; projects with 0..n repos; efforts; a project is no longer identified by a folder or git common dir (a repo may still be).
 - §8 coordination: slice reports through Dovetail's tools; message timeline dropped.
 - §10 UI essentials: Layout B replaced (pending the mock).

@@ -72,7 +72,7 @@ Every claim links to the file that proves it. Read the keywords first; the rest 
 
 Two rules hold the design together:
 
-1. **The UI and the core never share memory.** They exchange plain values over `CoreLink`. That is why a mock core, and later a GUI, can stand in without the other side changing.
+1. **The UI and the core never share memory.** They exchange plain values over `CoreLink`. That is why a mock core, and later the page, can stand in without the other side changing.
 2. **One loop changes state.** Slow work (git, the clipboard, a build) runs elsewhere and comes back to the loop as an `Input`. So two things never change the same state at once, and there are no locks to get wrong.
 
 **Example.** The TUI never reads `state.db`. To show tasks it reads `snapshot.tasks`; to add one it sends `Command::CreateTask`; the new task arrives as `Event::TaskUpserted`. `scripts/check.sh` fails the build if the TUI writes a file or starts a process.
@@ -251,18 +251,19 @@ A crash of one `claude` process is handled live: `on_exit` ([`session/mod.rs`](.
 
 # Part 2: today against v2
 
-The v2 design keeps the skeleton of Part 1: one loop, `Snapshot`/`Event`/`Command`, the driver, the DB thread, the bridge. It changes what a project is, adds a layer above tasks, and swaps the UI.
+The v2 design keeps the skeleton of Part 1: one loop, `Snapshot`/`Event`/`Command`, the driver, the DB thread, the bridge. It changes what a project is and adds a layer above tasks. The TUI stays the main client (ADR 0030); a page served by the core joins it for long reading and canvases.
 
 Size: **S** = days, additive. **M** = about a week, touches existing paths. **L** = more than a week, or changes how something fundamental works.
 
 | Layer | Today | v2 | Change | Size | Decided in |
 | --- | --- | --- | --- | --- | --- |
-| UI | Terminal UI in the same process | Tauri window with a React frontend; TUI frozen | New client on the same `CoreLink`. **Wiring built** (`gui/src-tauri`). | L (frontend), S (wiring) | ADR 0023 |
-| Core / UI seam | Two Rust channels | The same messages as JSON across Tauri | Types exported to TypeScript; `apply` written twice and tested against shared cases. **Built.** | S | ADR 0023 |
+| UI | Terminal UI in the same process | The same TUI, with v2 views and ADR 0030 §5 readability; plus one local page (reader, then canvases) | TUI views after the design session. Page: a small HTTP server in the core on `127.0.0.1`. The Tauri GUI is shelved on `gui-shelved`. | L | ADR 0030 |
+| Core / UI seam | Two Rust channels | Channels for the TUI; the same messages as JSON for the page | Types exported to TypeScript (ts-rs) and `apply` written twice, tested against shared cases. **Built** for the GUI; the page reuses them. | S | ADR 0023, ADR 0030 |
+| Process | One process: TUI and core | The same until `dovetail serve`, built last; clients then attach over the project socket | Socket carries commands and an update stream to several clients, a snapshot on attach, a core that outlives its clients | L | ADR 0020, ADR 0030 |
 | Project | A folder; one repo in the `projects` row | A name, 0..n repos, one account | New `repos` table; opening by id, not by folder. **Built.** | M | ADR 0021 |
 | Coordinator | Runs in the repo's main checkout | Runs in its own folder, every repo attached | New working folder means a fresh coordinator session once. **Built.** | M | ADR 0021 |
 | Slice | Worktree of *the* repo | Worktree of one named repo | `project_start_slice` gains `repo`; `agents.repo_id`. **Built.** | S | ADR 0021 |
-| Work model | Tasks in buckets | Efforts → criteria → tasks | New tables, types, commands. **Built in this change.** | M | this PR |
+| Work model | Tasks in buckets | Efforts → criteria → tasks; buckets dropped | New tables, types, commands. **Built in this change.** Dropping buckets comes with the TUI's v2 views. | M | this PR, ADR 0030 |
 | Chat | One conversation per agent, no tags | One coordinator chat; every line has an effort tag | `conversation_entries.effort_id`. **Built in this change.** | S | this PR |
 | Task status | Set by hand, except "in progress" on slice start | Dovetail sets all of it | New `review` status; PR state drives the transitions. **Built** (stacked PR). | M | ADR 0024 |
 | Session names | `coordinator`, same in every project | Unique per project: `<project>.<name>` | Changes what Claude Code sees as the name. **Built** (stacked PR). | S | ADR 0022 |
@@ -303,16 +304,17 @@ Size: **S** = days, additive. **M** = about a week, touches existing paths. **L*
 
 Existing tasks land in one effort named `unsorted`. Existing chat lines keep no tag.
 
-### How the GUI talks to the core
+### How the page talks to the core
 
 ```
- TODAY                                    V2
- TUI ── std channel ──► core              React ── invoke("core_send", command) ──► core
- TUI ◄── std channel ── core              React ◄── Tauri channel: ServerMsg ────── core
-        (same process)                           (same process; values cross as JSON)
+ TODAY                                    V2 (planned, ADR 0030 §4)
+ TUI ── std channel ──► core              TUI ── std channel ──► core ◄── Command (JSON) ── page
+ TUI ◄── std channel ── core              TUI ◄── std channel ── core ── ServerMsg (JSON) ─► page
+        (same process)                     (TUI and core in one process; page in a browser tab,
+                                            over HTTP on 127.0.0.1)
 ```
 
-Nothing new is invented: `ServerMsg` and `Command` already have JSON forms, built for exactly this. The frontend's `CoreLink` interface ("subscribe", "send") maps onto the two Rust channels one to one.
+Nothing new is invented: `ServerMsg` and `Command` already have JSON forms, and the shelved GUI's TypeScript `CoreLink` ("subscribe", "send") and `apply` carry over to the page. The page follows the TUI's focus. When `dovetail serve` lands, the TUI moves from channels to the project socket.
 
 ### Task status
 
@@ -327,4 +329,4 @@ The first arrow exists today (`start_slice` in [`slice.rs`](../crates/dovetail-c
 
 Built in this change: migration `0017`, the effort and criterion types, their commands and events, `apply`, the core handlers, and the effort tag on chat lines. No screen changes.
 
-Decided and approved, not built yet: ADRs 0021 to 0025 in [`docs/adr/`](adr/).
+Decided and approved, not built yet: ADRs 0021 to 0025 in [`docs/adr/`](adr/), and ADR 0030's v2 TUI views, page and daemon. ADR 0023 (the Tauri shell) is superseded and ADR 0026 (previews) withdrawn.
