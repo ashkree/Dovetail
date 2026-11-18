@@ -75,6 +75,16 @@ fi
 cargo install --locked --path crates/dovetail --root "$HOME/.local"
 echo "installed $target"
 
+# `dvtl`, the short name (ADR 0030 §8): a relative symlink beside the binary, so upgrades that
+# replace `dovetail` keep it pointing at the new build. A real file by that name is the user's.
+short="$(dirname "$target")/dvtl"
+if [[ -e "$short" && ! -L "$short" ]]; then
+  echo "warning: $short exists and is not a symlink; left it alone (\`dovetail\` still works)" >&2
+else
+  ln -sfn dovetail "$short"
+  echo "installed $short -> dovetail"
+fi
+
 if [[ $gui -eq 1 ]]; then
   # `tauri build` runs `npm run build` and embeds gui/dist in the binary; --no-bundle skips the
   # .deb/AppImage packaging, which a local install does not need.

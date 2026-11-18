@@ -85,6 +85,8 @@ else
 fi
 command -v cargo >/dev/null && ok "$(cargo --version)" || fail "cargo not found (install rustup)"
 command -v git   >/dev/null && ok "$(git --version)"   || fail "git not found"
+# `dvtl` is the short name for `dovetail` (ADR 0030 §8); scripts/install.sh makes the symlink.
+command -v dvtl  >/dev/null && ok "dvtl (short name for dovetail)" || warn "dvtl not found on PATH (scripts/install.sh installs it next to dovetail)"
 command -v nvim  >/dev/null && ok "nvim (notes and worktree hand-off)" || warn "nvim not found (needed later for notes hand-off)"
 if [[ "${TERM:-}" == *kitty* || -n "${KITTY_WINDOW_ID:-}" ]]; then
   ok "kitty detected (map image canvas available)"
