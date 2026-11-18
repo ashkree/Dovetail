@@ -1,0 +1,28 @@
+[package]
+name = "tui-readability-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Throwaway spike (ADR 0030 §5, `tui-readability`, with `kitty-text-sizing` folded in). Not a
+# workspace member: this empty table keeps cargo from looking upward.
+[workspace]
+
+[features]
+# The highlighter under test, so RSS can be compared with it on and off.
+default = ["highlight"]
+highlight = ["dep:syntect"]
+
+[dependencies]
+ratatui = { version = "0.30", features = ["unstable-backend-writer"] }
+crossterm = "0.29"
+pulldown-cmark = { version = "0.13", default-features = false }
+serde_json = "1"
+unicode-width = "0.2"
+# Sublime grammars, pure Rust regexes (fancy-regex), no theme files: scopes map onto Mist.
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy"], optional = true }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
