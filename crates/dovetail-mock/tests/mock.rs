@@ -551,13 +551,13 @@ fn fresh_simulates_a_handoff_and_a_new_coordinator() {
     };
     // Not while a turn runs.
     if status(&core) == Some(AgentStatus::Working) {
-        core.handle(Command::FreshStart);
+        core.handle(Command::Handoff);
         assert!(core.state().journal.as_ref().is_none_or(|j| !j.closing));
         core.handle(Command::Interrupt {
             agent: coordinator.clone(),
         });
     }
-    core.handle(Command::FreshStart);
+    core.handle(Command::Handoff);
     let keep = |core: &MockCore| {
         core.state().inbox.iter().find_map(|i| match &i.kind {
             InboxKind::Permission { tool, .. } if tool == FRESH_COORDINATOR_PERMISSION => {
@@ -703,4 +703,26 @@ fn the_seeded_maps_pass_draw_map_validation_and_load() {
             ..
         }
     ));
+}
+
+#[test]
+fn fresh_session_raises_the_keep_item_without_a_handoff() {
+    let mut core = MockCore::new(config(1));
+    let coordinator = AgentId("coordinator".into());
+    if core
+        .state()
+        .agents
+        .iter()
+        .any(|a| a.id == coordinator && a.status == AgentStatus::Working)
+    {
+        core.handle(Command::Interrupt {
+            agent: coordinator.clone(),
+        });
+    }
+    core.handle(Command::FreshSession);
+    assert!(core.state().inbox.iter().any(|i| matches!(
+        &i.kind,
+        InboxKind::Permission { tool, .. } if tool == FRESH_COORDINATOR_PERMISSION
+    )));
+    assert!(core.state().journal.as_ref().is_none_or(|j| !j.closing));
 }

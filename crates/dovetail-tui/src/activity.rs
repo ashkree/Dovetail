@@ -139,7 +139,7 @@ fn basename(path: &str) -> &str {
 pub enum Busy {
     /// `:eod`, waiting for the coordinator's handoff.
     ClosingDay,
-    /// `:fresh`, waiting for the same handoff.
+    /// `:handoff`, waiting for the same handoff.
     FreshStart,
     /// `:upgrade`, building in the background.
     Upgrade,

@@ -202,6 +202,15 @@ impl ConversationBuffer {
         self.completion.reset();
     }
 
+    /// Puts `text` back in `agent`'s chat bar, cursor at its end (a refused slash command).
+    pub fn keep_draft(&mut self, agent: AgentId, text: &str) {
+        let view = self.views.entry(agent.clone()).or_default();
+        view.draft = text.to_string();
+        view.draft_cursor = text.len();
+        view.draft_images.clear();
+        self.begin_chat(agent);
+    }
+
     /// How many images the message being typed carries: those whose marker is still in the text.
     pub fn attachment_count(&self) -> usize {
         let text = self.chat.as_ref().map_or("", |c| c.text());

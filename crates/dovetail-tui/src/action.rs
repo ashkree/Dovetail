@@ -41,8 +41,10 @@ pub enum Action {
     /// Close the day (`:eod`, ADR 0012): the coordinator writes its handoff and Dovetail the
     /// day's journal file.
     EndOfDay,
-    /// A mid-day fresh coordinator with a handoff (`:fresh`, ADR 0012 amendment).
-    FreshStart,
+    /// A mid-day fresh coordinator with a handoff (`:handoff`, ADR 0012 amendment).
+    Handoff,
+    /// A fresh coordinator with no handoff (`:fresh`).
+    FreshSession,
     /// Build the next Dovetail in the background (`:upgrade`, ADR 0014); `:upgrade --local` builds
     /// the checkout instead of `origin/main`.
     Upgrade,
@@ -396,7 +398,8 @@ registry! {
     ForceQuit: App, "quit without asking";
     QuitOnRepeat: App, "quit: press twice";
     EndOfDay: App, "close the day: handoff and journal";
-    FreshStart: App, "fresh coordinator with a handoff";
+    Handoff: App, "fresh coordinator seeded with a handoff";
+    FreshSession: App, "fresh coordinator, no handoff";
     Upgrade: App, "build the next Dovetail (--local: this checkout)";
     StartRound: Reading, "open or close a research round on a task";
     ListResearch: Views, "list tasks that have research";

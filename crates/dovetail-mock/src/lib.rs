@@ -452,7 +452,7 @@ impl MockCore {
                     }));
                 });
             }
-            Command::FreshStart => {
+            Command::Handoff => {
                 let coordinator = agent_id(COORDINATOR);
                 if self
                     .agent(&coordinator)
@@ -511,6 +511,38 @@ impl MockCore {
                         },
                     );
                 });
+            }
+            Command::FreshSession => {
+                let coordinator = agent_id(COORDINATOR);
+                if self
+                    .agent(&coordinator)
+                    .is_some_and(|a| a.status == AgentStatus::Working)
+                {
+                    return self.fail("turn running; try again when it finishes".into());
+                }
+                self.append(
+                    &coordinator,
+                    EntryKind::Notice,
+                    "Fresh coordinator: a new session with no handoff. The previous session is \
+                     kept; y on its Needs-you item goes back to it."
+                        .into(),
+                );
+                self.update_agent(&coordinator, |a| a.context_pct = Some(0));
+                self.raise(
+                    &coordinator,
+                    InboxKind::Permission {
+                        tool: FRESH_COORDINATOR_PERMISSION.into(),
+                        input: serde_json::json!({
+                            "journal": world::civil_date(self.state.now_ms),
+                            "session_id": "previous-session",
+                            "transcript_path": null,
+                        }),
+                        reason: Some(
+                            "Fresh coordinator started. y: go back to the previous one.".into(),
+                        ),
+                        suggestions: Vec::new(),
+                    },
+                );
             }
             Command::NewSideChat { question } => {
                 let n = (1..)

@@ -382,13 +382,17 @@ enum Fresh {
     NewDay { date: Date },
     /// `:fresh` at `time` (HH:MM) today: the handoff is the last block of today's file.
     MidDay { date: Date, time: String },
+    /// `:fresh` at `time` (HH:MM) today: no handoff, no seed; nothing is written to the journal.
+    Clean { date: Date, time: String },
 }
 
 impl Fresh {
     /// The date of the journal file that holds the handoff.
     fn date(&self) -> Date {
         match self {
-            Fresh::NewDay { date } | Fresh::MidDay { date, .. } => *date,
+            Fresh::NewDay { date } | Fresh::MidDay { date, .. } | Fresh::Clean { date, .. } => {
+                *date
+            }
         }
     }
 }
@@ -398,7 +402,8 @@ impl Fresh {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PendingFresh {
     kind: Fresh,
-    seed: String,
+    /// `None` for a clean start: the new session gets no first message.
+    seed: Option<String>,
 }
 
 /// The first prompt of a fresh coordinator: a new day's, or a mid-day `:fresh`'s. Both hold the
@@ -410,6 +415,7 @@ fn seed_prompt(today: Date, kind: &Fresh, handoff: &str, tasks: &str) -> String 
             "This is a fresh coordinator session for {today}. Yesterday's coordinator left the \
              handoff below in journal/{date}.md; its conversation is kept but not continued."
         ),
+        Fresh::Clean { .. } => unreachable!("a clean start has no seed"),
         Fresh::MidDay { time, .. } => format!(
             "This is a fresh coordinator session, started at {time} on {today}. The previous \
              coordinator left the handoff below in journal/{date}.md; its conversation is kept \
@@ -465,9 +471,9 @@ impl Core {
         self.ask_for_handoff(None);
     }
 
-    /// `:fresh`: the same request, and a new coordinator once the handoff is written. Refused
+    /// `:handoff`: the same request, and a new coordinator once the handoff is written. Refused
     /// while the coordinator's turn runs (it is not interrupted) or before it has run at all.
-    pub(crate) fn fresh_start(&mut self) {
+    pub(crate) fn handoff_start(&mut self) {
         let id = AgentId(COORDINATOR.into());
         if self.live.get(&id).is_some_and(|l| l.turn.running) {
             self.fail("turn running; try again when it finishes");
@@ -483,6 +489,43 @@ impl Core {
         }
         let time = jiff::Zoned::now().strftime("%H:%M").to_string();
         self.ask_for_handoff(Some(time));
+    }
+
+    /// `:fresh`: a new coordinator session with no handoff. The same refusals as `:handoff`;
+    /// nothing is written to the journal.
+    pub(crate) fn fresh_session(&mut self) {
+        let id = AgentId(COORDINATOR.into());
+        if self.live.get(&id).is_some_and(|l| l.turn.running) {
+            self.fail("turn running; try again when it finishes");
+            return;
+        }
+        if self.closing.is_some() {
+            self.fail("already closing the day: waiting for the coordinator's handoff");
+            return;
+        }
+        if self.pending_fresh.is_some() {
+            self.fail("a fresh coordinator is starting");
+            return;
+        }
+        if self
+            .agents
+            .get(&id)
+            .is_none_or(|r| r.transcript_path.is_none())
+        {
+            self.fail("the coordinator has no session yet, nothing to clear");
+            return;
+        }
+        let date = today();
+        let time = jiff::Zoned::now().strftime("%H:%M").to_string();
+        self.activity(
+            dovetail_api::ActivityKind::Lifecycle,
+            Some(&id),
+            format!("fresh coordinator at {time}, no handoff"),
+        );
+        self.begin_fresh(PendingFresh {
+            kind: Fresh::Clean { date, time },
+            seed: None,
+        });
     }
 
     fn ask_for_handoff(&mut self, fresh: Option<String>) {
@@ -619,7 +662,10 @@ impl Core {
                 if let (Some(time), Ok(handoff)) = (fresh, &reply) {
                     let kind = Fresh::MidDay { date, time };
                     let seed = seed_prompt(today(), &kind, handoff.trim(), &open_tasks(&tasks));
-                    self.begin_fresh(PendingFresh { kind, seed });
+                    self.begin_fresh(PendingFresh {
+                        kind,
+                        seed: Some(seed),
+                    });
                 }
             }
             Err(e) => self.fail(format!("writing journal/{date}.md: {e}")),
@@ -714,7 +760,7 @@ impl Core {
         let tasks = self.db.load_tasks().await.unwrap_or_default();
         let kind = Fresh::NewDay { date };
         let seed = seed_prompt(today, &kind, handoff(&text), &open_tasks(&tasks));
-        self.fresh_coordinator(&kind, &seed);
+        self.fresh_coordinator(&kind, Some(&seed));
     }
 
     /// The coordinator moved to its own folder (ADR 0021 point 8): a new session there, seeded
@@ -803,7 +849,7 @@ impl Core {
 
     /// Gives the coordinator a new session and sends it `seed`. The old session id and
     /// transcript go in a Needs-you item whose `y` brings them back.
-    fn fresh_coordinator(&mut self, kind: &Fresh, seed: &str) {
+    fn fresh_coordinator(&mut self, kind: &Fresh, seed: Option<&str>) {
         let date = kind.date();
         let id = AgentId(COORDINATOR.into());
         let Some(row) = self.agents.get(&id) else {
@@ -826,9 +872,17 @@ impl Core {
                  journal/{date}.md. The previous session is kept; y on its Needs-you item goes \
                  back to it."
             ),
+            Fresh::Clean { time, .. } => format!(
+                "Fresh coordinator at {time}: a new session with no handoff. The previous \
+                 session is kept; y on its Needs-you item goes back to it."
+            ),
         };
         self.notice(&id, notice);
-        if let Err(e) = self.send_text(&id, seed, EntryKind::Notice, format!("Dovetail: {seed}")) {
+        let started = match seed {
+            Some(seed) => self.send_text(&id, seed, EntryKind::Notice, format!("Dovetail: {seed}")),
+            None => self.ensure_live(&id),
+        };
+        if let Err(e) = started {
             self.fail(e);
         }
         let input = json!({
@@ -844,7 +898,7 @@ impl Core {
                      yesterday's session (the fresh one stops); d keeps the fresh one."
                 ),
             ),
-            Fresh::MidDay { .. } => (
+            Fresh::MidDay { .. } | Fresh::Clean { .. } => (
                 FRESH_COORDINATOR_PERMISSION,
                 "Fresh coordinator started. y: go back to the previous one (the fresh one \
                  stops); d keeps the fresh one."
@@ -909,7 +963,7 @@ impl Core {
         }
         if let Some(PendingFresh { kind, seed }) = self.pending_fresh.take() {
             if self.quitting.is_none() {
-                self.fresh_coordinator(&kind, &seed);
+                self.fresh_coordinator(&kind, seed.as_deref());
             }
             return;
         }

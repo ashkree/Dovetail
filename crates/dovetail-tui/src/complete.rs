@@ -15,6 +15,8 @@ use dovetail_api::SlashCommand;
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32Str};
 
+use crate::slash::DOVETAIL_SLASH;
+
 /// Most rows the popup shows.
 pub const MAX_ROWS: usize = 8;
 
@@ -305,23 +307,28 @@ fn empty_row() -> Row {
     }
 }
 
+/// Dovetail's own slash commands first, then Claude Code's, minus any Dovetail answers itself
+/// (so the user's `handoff` skill and Claude Code's `/model` are hidden).
 fn command_rows(commands: &[SlashCommand]) -> Vec<Row> {
-    commands
+    let row = |name: &str, description: &str, hint: &str| {
+        let detail = if hint.is_empty() {
+            description.to_owned()
+        } else {
+            format!("{hint} · {description}")
+        };
+        Row {
+            label: format!("/{name}"),
+            detail,
+            insert: format!("/{name}"),
+            is_dir: false,
+        }
+    };
+    let own = DOVETAIL_SLASH.iter().map(|(n, d, h)| row(n, d, h));
+    let theirs = commands
         .iter()
-        .map(|c| {
-            let detail = if c.argument_hint.is_empty() {
-                c.description.clone()
-            } else {
-                format!("{} · {}", c.argument_hint, c.description)
-            };
-            Row {
-                label: format!("/{}", c.name),
-                detail,
-                insert: format!("/{}", c.name),
-                is_dir: false,
-            }
-        })
-        .collect()
+        .filter(|c| !DOVETAIL_SLASH.iter().any(|(n, ..)| *n == c.name))
+        .map(|c| row(&c.name, &c.description, &c.argument_hint));
+    own.chain(theirs).collect()
 }
 
 /// Rows for a listing. In a directory, entries starting with a dot show only once a dot is
@@ -393,7 +400,17 @@ mod tests {
         let mut c = Completion::default();
         let commands = [cmd("compact"), cmd("context"), cmd("grilling")];
         assert_eq!(c.update("/", 1, &commands), None);
-        assert_eq!(labels(&c), vec!["/compact", "/context", "/grilling"]);
+        assert_eq!(
+            labels(&c),
+            vec![
+                "/model",
+                "/handoff",
+                "/fresh",
+                "/compact",
+                "/context",
+                "/grilling"
+            ]
+        );
         c.update("/gril", 5, &commands);
         assert_eq!(labels(&c), vec!["/grilling"]);
         assert_eq!(
@@ -402,6 +419,20 @@ mod tests {
                 range: 0..5,
                 text: "/grilling ".into()
             })
+        );
+    }
+
+    #[test]
+    fn dovetail_commands_come_first_and_hide_claude_codes_namesakes() {
+        let mut c = Completion::default();
+        let commands = [cmd("compact"), cmd("handoff"), cmd("model")];
+        c.update("/", 1, &commands);
+        assert_eq!(labels(&c), vec!["/model", "/handoff", "/fresh", "/compact"]);
+        assert!(
+            c.rows
+                .iter()
+                .take(3)
+                .all(|r| r.detail.contains("Dovetail: "))
         );
     }
 

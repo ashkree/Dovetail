@@ -170,7 +170,65 @@ fn a_failed_write_keeps_its_reason() {
 #[test]
 fn fresh_asks_the_core_for_a_mid_day_fresh_start() {
     let mut app = app_with(idle_world(None));
-    assert_eq!(run(&mut app, "fresh"), vec![Command::FreshStart]);
+    assert_eq!(run(&mut app, "handoff"), vec![Command::Handoff]);
+}
+
+#[test]
+fn fresh_asks_the_core_for_a_new_session_with_no_handoff() {
+    let mut app = app_with(idle_world(None));
+    assert_eq!(run(&mut app, "fresh"), vec![Command::FreshSession]);
+}
+
+/// Opens the coordinator's chat bar, types `text` and presses Enter.
+fn chat_line(app: &mut dovetail_tui::App, text: &str) -> Vec<Command> {
+    type_keys(app, " c");
+    press(app, "i");
+    type_keys(app, text);
+    app.on_key(enter(), 500);
+    app.take_commands()
+}
+
+#[test]
+fn slash_handoff_and_slash_fresh_run_the_commands_and_are_never_sent() {
+    let mut app = app_with(idle_world(None));
+    assert_eq!(chat_line(&mut app, "/handoff"), vec![Command::Handoff]);
+    let mut app = app_with(idle_world(None));
+    assert_eq!(chat_line(&mut app, "/fresh"), vec![Command::FreshSession]);
+}
+
+#[test]
+fn slash_fresh_with_trailing_text_is_refused_and_the_text_stays_in_the_bar() {
+    let mut app = app_with(idle_world(None));
+    assert_eq!(chat_line(&mut app, "/fresh now"), vec![]);
+    assert_eq!(
+        app.note(),
+        Some("/fresh takes nothing after it; nothing was sent")
+    );
+    assert_eq!(app.mode(), dovetail_tui::mode::Mode::Insert);
+    assert!(render(&mut app, 120, 30).contains("/fresh now"));
+}
+
+#[test]
+fn with_a_slice_focused_both_commands_send_nothing_and_say_why() {
+    let mut app = app_with(idle_world(None));
+    select(&mut app, "slice-4");
+    assert_eq!(run(&mut app, "handoff"), vec![]);
+    assert_eq!(
+        app.note(),
+        Some("`:handoff` and `:fresh` act on the coordinator")
+    );
+    assert_eq!(run(&mut app, "fresh"), vec![]);
+
+    let mut app = app_with(idle_world(None));
+    select(&mut app, "slice-4");
+    press(&mut app, "i");
+    type_keys(&mut app, "/fresh");
+    app.on_key(enter(), 500);
+    assert_eq!(app.take_commands(), vec![]);
+    assert_eq!(
+        app.note(),
+        Some("`:handoff` and `:fresh` act on the coordinator")
+    );
 }
 
 /// The b.png world with the coordinator's context fill set.
@@ -190,9 +248,9 @@ fn the_status_bar_hints_at_fresh_above_80_percent_context() {
     let mut app = app_with(world_at_context(80));
     let at_80 = render(&mut app, 160, 30);
     assert!(at_80.contains("ctx 80%"), "{at_80}");
-    assert!(!at_80.contains(":fresh"), "{at_80}");
+    assert!(!at_80.contains(":handoff"), "{at_80}");
 
     let mut app = app_with(world_at_context(81));
     let at_81 = render(&mut app, 160, 30);
-    assert!(at_81.contains("ctx 81% :fresh"), "{at_81}");
+    assert!(at_81.contains("ctx 81% :handoff"), "{at_81}");
 }

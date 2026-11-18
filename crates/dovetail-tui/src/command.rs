@@ -40,7 +40,8 @@ pub const COMMANDS: &[(&str, Action)] = &[
     ("q!", Action::ForceQuit),
     ("quit!", Action::ForceQuit),
     ("eod", Action::EndOfDay),
-    ("fresh", Action::FreshStart),
+    ("handoff", Action::Handoff),
+    ("fresh", Action::FreshSession),
     ("upgrade", Action::Upgrade),
     ("round", Action::StartRound),
     ("research", Action::ListResearch),
@@ -126,7 +127,8 @@ mod tests {
         assert_eq!(parse(" quit ").map(|p| p.action), Ok(Action::Quit));
         assert_eq!(parse("q!").map(|p| p.action), Ok(Action::ForceQuit));
         assert_eq!(parse("eod").map(|p| p.action), Ok(Action::EndOfDay));
-        assert_eq!(parse("fresh").map(|p| p.action), Ok(Action::FreshStart));
+        assert_eq!(parse("handoff").map(|p| p.action), Ok(Action::Handoff));
+        assert_eq!(parse("fresh").map(|p| p.action), Ok(Action::FreshSession));
     }
 
     #[test]

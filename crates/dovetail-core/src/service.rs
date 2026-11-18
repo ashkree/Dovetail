@@ -1459,7 +1459,8 @@ impl Core {
             Command::DropTangent { tangent } => self.drop_tangent(tangent).await,
             Command::LoadTangent { tangent, what } => self.load_tangent(tangent, what).await,
             Command::EndOfDay => self.end_of_day(),
-            Command::FreshStart => self.fresh_start(),
+            Command::Handoff => self.handoff_start(),
+            Command::FreshSession => self.fresh_session(),
             Command::Upgrade { local } => self.start_upgrade(local),
             Command::NewSlice {
                 task,

@@ -13,7 +13,7 @@ use ratatui::widgets::{Block, Clear};
 use super::App;
 use super::overlay::{Overlay, Purpose};
 
-/// The coordinator context fill above which the status bar hints at `:fresh`.
+/// The coordinator context fill above which the status bar hints at `:handoff`.
 const FRESH_HINT_PCT: u8 = 80;
 
 use crate::buffers::{self, InputTarget, ViewCx, spread_fit};
@@ -424,9 +424,9 @@ impl App {
             .and_then(|a| a.context_pct)
         {
             left.push(Span::styled(format!(" · ctx {pct}%"), theme.context(pct)));
-            // A manual fresh start, text only: `:fresh` is the command (ADR 0012 amendment).
+            // A manual fresh start, text only: `:handoff` is the command (ADR 0012 amendment).
             if pct > FRESH_HINT_PCT {
-                left.push(Span::styled(" :fresh", theme.dim()));
+                left.push(Span::styled(" :handoff", theme.dim()));
             }
         }
         if self.reading_mode() {

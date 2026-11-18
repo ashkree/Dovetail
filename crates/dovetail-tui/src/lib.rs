@@ -22,6 +22,7 @@ pub mod model_select;
 pub mod picker;
 pub mod region;
 pub mod render;
+pub mod slash;
 pub mod switcher;
 pub mod tabs;
 pub mod theme;

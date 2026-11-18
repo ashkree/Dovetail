@@ -135,7 +135,7 @@ repo: string | null, } } | { "close_slice": {
 /**
  * The slice or side chat.
  */
-agent: AgentId, } } | "end_of_day" | "fresh_start" | { "new_side_chat": { 
+agent: AgentId, } } | "end_of_day" | "handoff" | "fresh_session" | { "new_side_chat": { 
 /**
  * The first prompt.
  */

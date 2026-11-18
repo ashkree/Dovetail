@@ -43,6 +43,7 @@ use crate::input::{InputOutcome, TextInput};
 use crate::keymap::{Key, Keymap, Resolved, Resolver};
 use crate::mode::Mode;
 use crate::region::{BufferKind, RegionId, Regions};
+use crate::slash;
 use crate::theme::Theme;
 use overlay::Overlay;
 
@@ -904,18 +905,35 @@ impl App {
             let sent = view.chat_key(event, commands);
             let paths = view.take_path_request();
             let chatting = view.is_chatting();
-            // `/model` is Dovetail's selector, never a prompt for Claude Code (task #39).
+            // `/model`, `/handoff` and `/fresh` are Dovetail's, never prompts for Claude Code
+            // (tasks #39, #34).
             if let Some((agent, text, attachments)) = &sent
-                && let Some(arg) = model_command(text)
+                && let Some(found) = slash::intercept(text)
             {
                 let agent = agent.clone();
-                let arg = arg.to_owned();
                 let dropped = attachments.len();
-                self.open_model_selector_for(agent, (!arg.is_empty()).then_some(&arg));
+                let verb = match found {
+                    slash::Intercept::Model(arg) => {
+                        let arg = arg.to_owned();
+                        self.open_model_selector_for(agent, (!arg.is_empty()).then_some(&arg));
+                        "/model opens the model selector"
+                    }
+                    slash::Intercept::Run(action) => {
+                        self.run_on_coordinator(Some(&agent), action);
+                        "the command ran"
+                    }
+                    slash::Intercept::Refused(name) => {
+                        let text = text.clone();
+                        chat_view_of(&mut self.buffers, self.chat_site).keep_draft(agent, &text);
+                        self.note =
+                            Some(format!("{name} takes nothing after it; nothing was sent"));
+                        return;
+                    }
+                };
                 if dropped > 0 {
-                    // The selector may have set its own note; this one matters more.
+                    // The command may have set its own note; this one matters more.
                     self.note = Some(format!(
-                        "/model opens the model selector; {dropped} attached image{} not sent",
+                        "{verb}; {dropped} attached image{} not sent",
                         if dropped == 1 { " was" } else { "s were" }
                     ));
                 }
@@ -1159,6 +1177,27 @@ impl App {
         self.focus_mode
     }
 
+    /// `:handoff` and `:fresh` (also `/handoff`, `/fresh`): act on the coordinator only. `from`
+    /// is the session whose chat bar typed it, else the session the keys now talk to. For any
+    /// other session this sets a note and sends nothing.
+    fn run_on_coordinator(&mut self, from: Option<&AgentId>, action: Action) {
+        let target = from.cloned().or_else(|| self.chat_target());
+        if target.is_some() && target != self.coordinator() {
+            self.note = Some("`:handoff` and `:fresh` act on the coordinator".into());
+            return;
+        }
+        match action {
+            Action::Handoff => {
+                self.outbox.push(Command::Handoff);
+                self.note = Some("handoff: asking the coordinator for its handoff".into());
+            }
+            _ => {
+                self.outbox.push(Command::FreshSession);
+                self.note = Some("fresh: starting a new coordinator session".into());
+            }
+        }
+    }
+
     /// Runs an action: global ones here, the rest in the focused buffer.
     pub fn run(&mut self, action: Action) {
         self.dirty = true;
@@ -1277,10 +1316,7 @@ impl App {
             Action::NewProject => self.run_with_arg(Action::NewProject, ""),
             Action::Quit => self.quit_asking(true),
             Action::EndOfDay => self.close_day(false),
-            Action::FreshStart => {
-                self.outbox.push(Command::FreshStart);
-                self.note = Some("fresh start: asking the coordinator for its handoff".into());
-            }
+            Action::Handoff | Action::FreshSession => self.run_on_coordinator(None, action),
             Action::Upgrade => self.run_with_arg(Action::Upgrade, ""),
             Action::StartRound => self.run_with_arg(Action::StartRound, ""),
             Action::ForceQuit => self.quit = true,
@@ -1435,12 +1471,6 @@ pub(crate) fn commands_for<'a>(snap: &'a Snapshot, agent: &AgentId) -> &'a [Slas
         .get(agent)
         .or_else(|| snap.commands.values().find(|c| !c.is_empty()))
         .map_or(&[], Vec::as_slice)
-}
-
-/// The argument of a `/model` chat line (empty for none); `None` for any other line.
-fn model_command(text: &str) -> Option<&str> {
-    let rest = text.trim().strip_prefix("/model")?;
-    (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim())
 }
 
 /// This UI is frozen as built before the review status (ADR 0024): it shows a task in review as

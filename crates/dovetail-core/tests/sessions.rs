@@ -4154,7 +4154,7 @@ fn fresh_appends_the_handoff_seeds_a_new_coordinator_and_y_goes_back() {
     h.wait_for("the first reply", |s| finished_turns(s) == 1);
     let old = fake.started_specs()[0].session_id.clone();
 
-    h.send(Command::FreshStart);
+    h.send(Command::Handoff);
     h.wait_for("the handoff request", |s| journal(s).closing);
     fake.resume();
     let keep_item = |s: &Snapshot| {
@@ -4215,6 +4215,76 @@ fn fresh_appends_the_handoff_seeds_a_new_coordinator_and_y_goes_back() {
 }
 
 #[test]
+fn fresh_session_starts_a_new_coordinator_with_no_seed_and_y_goes_back() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "first");
+    h.wait_for("the first reply", |s| finished_turns(s) == 1);
+    let old = fake.started_specs()[0].session_id.clone();
+    let users_before = fake
+        .sent()
+        .into_iter()
+        .filter(|s| matches!(s, Sent::User(_)))
+        .count();
+
+    h.send(Command::FreshSession);
+    let keep_item = |s: &Snapshot| {
+        s.inbox.iter().find_map(|i| match &i.kind {
+            InboxKind::Permission { tool, input, .. }
+                if tool == dovetail_api::FRESH_COORDINATOR_PERMISSION =>
+            {
+                Some((i.id, input.clone()))
+            }
+            _ => None,
+        })
+    };
+    h.wait_for("the fresh item", |s| keep_item(s).is_some());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < 2 {
+        assert!(Instant::now() < deadline, "the new session never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // A new session, no handoff written, and no first message.
+    let specs = fake.started_specs();
+    assert!(!specs[1].resume);
+    assert_ne!(specs[1].session_id, old);
+    let users_after = fake
+        .sent()
+        .into_iter()
+        .filter(|s| matches!(s, Sent::User(_)))
+        .count();
+    assert_eq!(
+        users_before, users_after,
+        "nothing was sent to the new session"
+    );
+    assert!(!journal(&h.snap).closing);
+    let file = h
+        .paths
+        .data
+        .join("projects/p/journal")
+        .join(format!("{}.md", local_date(0)));
+    assert!(!file.exists(), "nothing is written to the journal");
+    let (item, input) = keep_item(&h.snap).expect("item");
+    assert_eq!(input["session_id"], old.as_str());
+
+    // `y`: the fresh session stops and the previous one resumes.
+    h.send(Command::AnswerPermission {
+        item,
+        answer: PermissionAnswer::Allow,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < 3 {
+        assert!(Instant::now() < deadline, "the old session never resumed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let back = &fake.started_specs()[2];
+    assert!(back.resume);
+    assert_eq!(back.session_id, old);
+    h.quit();
+}
+
+#[test]
 fn fresh_is_refused_while_a_turn_runs() {
     // Held before the `result`: the first turn is still running.
     let fake = fresh_fixture(3);
@@ -4229,7 +4299,7 @@ fn fresh_is_refused_while_a_turn_runs() {
                     .any(|e| e.kind == EntryKind::Assistant && e.text == "one")
             })
     });
-    h.send(Command::FreshStart);
+    h.send(Command::Handoff);
     h.drain(Duration::from_millis(300));
     assert_eq!(
         h.failures,

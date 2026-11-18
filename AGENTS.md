@@ -58,7 +58,7 @@ Which skill when:
 - **Reviews:** `code-review`, then `retro`.
 - **Failures:** `diagnosing-bugs`.
 - **Research:** `research`.
-- **Context running low:** `handoff`.
+- **Context running low:** ask the user to run `:handoff`.
 - **Slice PRs:** the convention in `config/roles/slice.md`.
 
 `retro` and `handoff` are user-invoked: ask the user to run them.
