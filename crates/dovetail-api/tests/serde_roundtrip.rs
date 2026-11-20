@@ -1218,7 +1218,7 @@ fn values_from_before_efforts_still_parse() {
     assert!(parsed.efforts.is_empty());
 }
 
-/// The names the GUI's TypeScript reads: kinds and states are lower snake case, ids are bare
+/// The names the page's TypeScript will read: kinds and states are lower snake case, ids are bare
 /// numbers, and an unclaimed criterion has no `evidence` key.
 #[test]
 fn an_effort_has_the_json_shape_the_page_reads() {

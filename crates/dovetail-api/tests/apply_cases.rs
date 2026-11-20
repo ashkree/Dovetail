@@ -1,11 +1,12 @@
-//! Shared cases for the two copies of `apply()` (ADR 0023, point 5): this crate's and the GUI's
+//! Shared cases for the two copies of `apply()` (ADR 0023, point 5): this crate's and the page's
 //! `page/src/core/apply.ts`. Each case is a snapshot, numbered events and the snapshot Rust's
-//! `apply` makes of them, written to `tests/fixtures/apply/<name>.json`; the GUI's test replays
-//! the same files through its own reducer.
+//! `apply` makes of them, written to `tests/fixtures/apply/<name>.json`; kept for the page, whose
+//! tests will replay the same files through its reducer once it is built (nothing runs the
+//! TypeScript side yet).
 //!
 //! This test fails when a file differs from what Rust computes now. After a deliberate change,
 //! rewrite them with `DOVETAIL_BLESS=1 cargo test -p dovetail-api --test apply_cases`, and the
-//! GUI's test then says whether its reducer agrees.
+//! page's tests, once built, say whether its reducer agrees.
 
 use std::path::Path;
 
@@ -673,8 +674,8 @@ fn shared_apply_cases_match_the_files() {
         assert_eq!(
             stored,
             computed,
-            "{} differs from what apply() computes now; rewrite it with DOVETAIL_BLESS=1 and run \
-             the GUI's tests",
+            "{} differs from what apply() computes now; rewrite it with DOVETAIL_BLESS=1 and check \
+             the page's replay once it exists",
             path.display()
         );
     }

@@ -30,7 +30,7 @@ fn the_pages_canvas_sizes_are_the_cores() {
         assert_eq!(
             value(name),
             core,
-            "{name} differs between the GUI and the core"
+            "{name} differs between the page's TypeScript and the core"
         );
     }
 }

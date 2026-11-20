@@ -1,6 +1,6 @@
 // The reducer: the only way the client's copy of the core's Snapshot changes. Pure; a port of
 // crates/dovetail-api/src/apply.rs, held to it by the shared cases in
-// crates/dovetail-api/tests/fixtures/apply/ (apply.test.ts runs them here, the Rust test there).
+// crates/dovetail-api/tests/fixtures/apply/ (the page's apply.test.ts will replay them once the page is built; the Rust test runs now).
 // Only the event with seq == snapshot.seq + 1 applies; a later one is a gap (the client asks for
 // a fresh snapshot), an earlier one is stale (ignored).
 
