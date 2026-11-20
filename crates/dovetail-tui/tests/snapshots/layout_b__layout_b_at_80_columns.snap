@@ -2,31 +2,31 @@
 source: crates/dovetail-tui/tests/layout_b.rs
 expression: "render(&mut app, 80, 28)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ◐ working · 1.2G · $3.1┐┌ inbox · needs you (3) ───────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading    │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ coordinator ─────────────────────────┐┌ inbox ───────────────────────────────┐
 │                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
-│                                      ││   ? slice-4  Which route pref… 10:12 │
-│   Told slice-4 to stay out of        ││   ✓ slice-4  Handler wired; t… 10:09 │
-│   src/decision.rs until slice-7      ││                                      │
+│   Told slice-4 to stay out of        ││   ? slice-4  Which route pref… 10:12 │
+│   src/decision.rs until slice-7      ││   ✓ slice-4  Handler wired; t… 10:09 │
 │   hands it back.                     ││                                      │
 │                                      ││                                      │
 │                                      ││                                      │
-│   ── You · 10:14 ─────────────────   ││ y allow · d deny · r reply · x dism… │
-│                                      │└──────────────────────────────────────┘
-│   What's blocking slice-7?           │┌ tasks · business ────────────────────┐
-│                                      ││ ◐ ◆ coordinator   working 1.2G $3.10 │
-│                                      ││ ▾ Now (2)                            │
-│   ── coordinator · 10:14 ◐ ───────   ││ ▾ ⚠ business surface P1     PR #1231 │
-│                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│   It needs a key. slice-7 can only   ││         ⎇ dovetail/slice-4           │
-│   reach the eval path with           ││         ✓ write route tests          │
-│   FS_EVAL_VIRTUAL_KEY set.▌          ││         ◐ wire handler to registry   │
-│                                      ││         ○ update OpenAPI spec ⊘ blo… │
-│   ⠋ Mortising… 0s                    ││       ✓ ◇ rebase          done $0.21 │
-│                                      ││       ◐ ◇ explore c… 12 tools · Grep │
-└──────────────────────────────────────┘│ ▾ ⚠ get_decision 500 P0              │
-┌ chat › coordinator ──────────────────┐│   ▾ ⚠ ◆ slice-7  manual    needs you │
+│   ── You · 10:14 ─────────────────   ││                                      │
+│                                      ││ y allow · d deny · r reply · x dism… │
+│   What's blocking slice-7?           │└──────────────────────────────────────┘
+│                                      │┌ tasks 4 · agents 3 ──────────────────┐
+│                                      ││ ◐ ◆ coordinator              working │
+│   ── coordinator · 10:14 ◐ ───────   ││ ▾ Now (2)                            │
+│                                      ││ ▾ ⚠ #1 business surface P1  PR #1231 │
+│   It needs a key. slice-7 can only   ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│   reach the eval path with           ││         ⎇ dovetail/slice-4           │
+│   FS_EVAL_VIRTUAL_KEY set.▌          ││         ✓ write route tests          │
+│                                      ││         ◐ wire handler to registry   │
+│   ⠋ Mortising… 0s                    ││         ○ update OpenAPI spec ⊘ blo… │
+│                                      ││       ✓ ◇ rebase                done │
+└──────────────────────────────────────┘│       ◐ ◇ explore c… 12 tools · Grep │
+┌ chat › coordinator ──────────────────┐│ ▾ ⚠ #2 get_decision 500 P0           │
 │   › i or ^j to type · ]] [[ turns…   ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 6… ⏎ open · : command
+ NORMAL   business                                                      ctx 62%

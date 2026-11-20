@@ -774,7 +774,7 @@ impl ReportState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CreateTask {
-    /// Short imperative title.
+    /// Short title, 6 words at most.
     pub title: String,
     /// Context, acceptance criteria, links.
     #[serde(default)]

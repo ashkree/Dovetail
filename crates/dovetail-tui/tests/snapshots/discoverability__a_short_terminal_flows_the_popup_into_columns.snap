@@ -2,10 +2,10 @@
 source: crates/dovetail-tui/tests/discoverability.rs
 expression: "render(&mut app, 100, 18)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ◐ wo┌ ␣ ───────────────────────────────────────────────────────────────────────────┐
-│                   │ Move                                       Agents                            │
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                        │
+└───────────────────┌ ␣ ───────────────────────────────────────────────────────────────────────────┐
+┌ coordinator ──────│ Move                                       Agents                            │
 │                   │ n   focus the inbox                        c   show the coordinator          │
 │                   │ ␣   find any task, agent or inbox item     ⇥   back to the previous agent    │
 │   ── coordinator ·│ Views                                      s…  +agents                       │
@@ -19,4 +19,4 @@ expression: "render(&mut app, 100, 18)"
 ┌ chat › coordinator│ ?   show or hide the side chats                                              │
 │   › i or ^j to typ│ r   reading mode: library, reader and Ask                                    │
 └───────────────────└──────────────────────────────────────────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%  ␣ …      ⏎ open · o fold · : command
+ NORMAL   business  ␣ …                                                                     ctx 62%

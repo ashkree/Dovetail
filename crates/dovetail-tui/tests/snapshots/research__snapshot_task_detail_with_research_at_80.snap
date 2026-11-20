@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/research.rs
 expression: "render(&mut app, 80, 50)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ task · #1 ───────────────────────────┐┌ inbox · needs you (3) ───────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading    │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ task · #1 ───────────────────────────┐┌ inbox ───────────────────────────────┐
 │ business surface                     ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │ P1 · Now · in progress · PR #1231    ││   ? slice-4  Which route pref… 10:12 │
 │                                      ││   ✓ slice-4  Handler wired; t… 10:09 │
@@ -20,29 +21,28 @@ expression: "render(&mut app, 80, 50)"
 │                                      ││                                      │
 │ Research                             ││                                      │
 │                                      ││                                      │
-│ 2 rounds · 3 findings · 2 sources    ││                                      │
-│                                      ││ y allow · d deny · r reply · x dism… │
-│ ◆ Report  written Nov 1 09:45        │└──────────────────────────────────────┘
-│                                      │┌ tasks · business ────────────────────┐
-│ Round 1 · closed · 2 findings · Oct  ││ ◐ ◆ coordinator   working 1.2G $3.10 │
-│     per seat or flat?                ││ ▾ Now (2)                            │
-│   F1   01 seat-plans  · 1 source     ││ ▾ ⚠ business surface P1     PR #1231 │
-│   F2   02 flat-plans  · 1 source     ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│                                      ││         ⎇ dovetail/slice-4           │
-│ Round 2 · open · 0 findings · Nov 1  ││         ✓ write route tests          │
-│     what does churn look like?       ││         ◐ wire handler to registry   │
-│                                      ││         ○ update OpenAPI spec ⊘ blo… │
-│ Quick findings                       ││       ✓ ◇ rebase          done $0.21 │
-│   F3   01 churn-note  · 1 source     ││       ◐ ◇ explore c… 12 tools · Grep │
-│                                      ││ ▾ ⚠ get_decision 500 P0              │
-│ Sources (2)                          ││   ▾ ⚠ ◆ slice-7  manual    needs you │
-│   S1   web    https://example.com/p… ││         ⎇ dovetail/slice-7           │
-│   S2   search seat pricing churn     ││ ▾ Next (1)                           │
-│                                      ││   ○ idea: eval key flow P2           │
-│ Decisions                            ││ ▸ Later (1)                          │
-│                                      ││ ▸ Done (1)                           │
-│ (none yet · a to add one)            ││                                      │
+│ 2 rounds · 3 findings · 2 sources    ││ y allow · d deny · r reply · x dism… │
+│                                      │└──────────────────────────────────────┘
+│ ◆ Report  written Nov 1 09:45        │┌ tasks 4 · agents 3 ──────────────────┐
+│                                      ││ ◐ ◆ coordinator              working │
+│ Round 1 · closed · 2 findings · Oct  ││ ▾ Now (2)                            │
+│     per seat or flat?                ││ ▾ ⚠ #1 business surface P1  PR #1231 │
+│   F1   01 seat-plans  · 1 source     ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│   F2   02 flat-plans  · 1 source     ││         ⎇ dovetail/slice-4           │
+│                                      ││         ✓ write route tests          │
+│ Round 2 · open · 0 findings · Nov 1  ││         ◐ wire handler to registry   │
+│     what does churn look like?       ││         ○ update OpenAPI spec ⊘ blo… │
+│                                      ││       ✓ ◇ rebase                done │
+│ Quick findings                       ││       ◐ ◇ explore c… 12 tools · Grep │
+│   F3   01 churn-note  · 1 source     ││ ▾ ⚠ #2 get_decision 500 P0           │
+│                                      ││   ▾ ⚠ ◆ slice-7  manual    needs you │
+│ Sources (2)                          ││         ⎇ dovetail/slice-7           │
+│   S1   web    https://example.com/p… ││ ▾ Next (1)                           │
+│   S2   search seat pricing churn     ││   ○ #3 idea: eval key flow P2        │
+│                                      ││ ▸ Later (1)                          │
+│ Decisions                            ││ ▸ Done (1)                           │
 │                                      ││                                      │
+│ (none yet · a to add one)            ││                                      │
 │                                      ││                                      │
 │                                      ││                                      │
 │                                      ││                                      │
@@ -51,4 +51,4 @@ expression: "render(&mut app, 80, 50)"
 │                                      ││                                      │
 │ ⇥ row · ⏎ read · e edit · esc back   ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx… s status · : command
+ NORMAL   business                                                      ctx 62%

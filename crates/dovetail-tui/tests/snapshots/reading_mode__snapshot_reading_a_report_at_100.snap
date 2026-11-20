@@ -2,8 +2,9 @@
 source: crates/dovetail-tui/tests/reading_mode.rs
 expression: "snapshot_at(100, 30)"
 ---
- folder /home/you/src/dovetail                          maveron · opus-5-5 high · 5h 34% · week 18%
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ library ─────────────┐┌ reading · #3 report ─────────────────────────┐┌ ask ─────────────────────┐
 │ ▾ Dovetail · open    ││                                              ││ › i to ask about #3's    │
 │   ▾ #3 Fuzzy picker  ││    Which fuzzy matcher for the picker?       ││ report. A read-only      │
@@ -27,8 +28,7 @@ expression: "snapshot_at(100, 30)"
 │                      ││                                              ││                          │
 │                      ││    If non-ASCII paths score badly in         ││                          │
 │                      ││    round 2 [S2], revisit.                    ││                          │
-│                      ││                                              ││                          │
 │                      ││    end · ]s [s · gd · gx · i ask             ││                          │
 │ ⏎ read · o fold      ││                                              ││                          │
 └──────────────────────┘└──────────────────────────────────────────────┘└──────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%   READING  [F1] … ]s cite · : command
+ NORMAL   Dovetail   READING  [F1] 1/7        maveron · opus-5-5 high · ctx 18% · 5h 34% · week 18%

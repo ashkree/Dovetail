@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/maps.rs
 expression: "render(&mut app, 70, 24)"
 ---
- folder /home/you/src/dovetail                      5h 34% · week 18%
- ␣c ␣b ␣g ␣M ␣R ␣r
-┌ Dovetail at a glance · structure┐┌ inbox · needs you (3) ──────────┐
+┌ screens ───────────────────────────────────────────────────────────┐
+│ ␣c ␣b ␣g ␣M ␣R ␣r                                                  │
+└────────────────────────────────────────────────────────────────────┘
+┌ Dovetail at a glance · structure┐┌ inbox ──────────────────────────┐
 │   ◉ You  actor                  ││ ▸ ⚠ inbox-keys  Bash · c… 08:59 │
 │ ▾ ▣ dovetail-tui  part          ││   ↗ coordinator  2 new t… 08:58 │
 │     ▤ keymap.rs  file           ││   ✓ coordinator  M2 spli… 08:58 │
@@ -12,17 +13,16 @@ expression: "render(&mut app, 70, 24)"
 │     ƒ apply()  logic            ││                                 │
 │   ▣ dovetail-core  part         ││ y allow · d deny · r reply · x… │
 │   ▥ state.db  data              │└─────────────────────────────────┘
-│                                 │┌ tasks · Dovetail ───────────────┐
-│ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││ ○ ◆ coordinator idle 245M $0.84 │
+│                                 │┌ tasks 8 · agents 6 ─────────────┐
+│ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││ ○ ◆ coordinator  planning… idle │
 │                                 ││ ○ ◆ side-1  read-only      idle │
 │ ◉ You  actor                    ││ ▾ Unsorted (1)                  │
-│                                 ││   ○ Check the kitty graphics f… │
+│                                 ││   ○ #8 Check the kitty graphic… │
 │ Works with the coordinator.     ││ ▾ Now (3)                       │
-│                                 ││ ▾ ◐ Task tree with bu… PR #1231 │
+│                                 ││ ▾ ◐ #1 Task tree with… PR #1231 │
 │ → dovetail-tui  types keys      ││   ▾ ◐ ◆ tree-view   working 34% │
 │                                 ││         ⎇ dovetail/tree-view    │
-│ flow A prompt's trip            ││         ✓ Group tasks by bucket │
-│                                 ││         ◐ Sort by P-level with… │
+│                                 ││         ✓ Group tasks by bucket │
 │ ␣v o f ]] [[                    ││ ⏎ open · o fold · dd archive    │
 └─────────────────────────────────┘└─────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠… ␣v map mode · : command
+ NORMAL   Dovetail                        ctx 18% · 5h 34% · week 18%

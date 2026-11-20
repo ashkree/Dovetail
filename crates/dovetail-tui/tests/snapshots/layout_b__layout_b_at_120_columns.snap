@@ -2,13 +2,13 @@
 source: crates/dovetail-tui/tests/layout_b.rs
 expression: "render(&mut app, 120, 32)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ coordinator ────────────────────────────────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
-│   ── You · 10:08 ────────────────────────────────────────────────────   ││   ? slice-4  Which route prefix sh… 10:12 │
-│                                                                         ││   ✓ slice-4  Handler wired; tests … 10:09 │
-│   Make sure slice-4 doesn't touch the 500 path.                         ││                                           │
+│                                                                         ││   ? slice-4  Which route prefix sh… 10:12 │
+│   Make sure slice-4 doesn't touch the 500 path.                         ││   ✓ slice-4  Handler wired; tests … 10:09 │
 │                                                                         ││                                           │
 │                                                                         ││                                           │
 │   ── coordinator · 10:08 ────────────────────────────────────────────   ││                                           │
@@ -16,21 +16,21 @@ expression: "render(&mut app, 120, 32)"
 │   Told slice-4 to stay out of src/decision.rs until slice-7 hands it    ││                                           │
 │   back.                                                                 ││ y allow · d deny · r reply · x dismiss    │
 │                                                                         │└───────────────────────────────────────────┘
-│                                                                         │┌ tasks · business ─────────────────────────┐
-│   ── You · 10:14 ────────────────────────────────────────────────────   ││ ◐ ◆ coordinator        working 1.2G $3.10 │
+│                                                                         │┌ tasks 4 · agents 3 ───────────────────────┐
+│   ── You · 10:14 ────────────────────────────────────────────────────   ││ ◐ ◆ coordinator                   working │
 │                                                                         ││ ▾ Now (2)                                 │
-│   What's blocking slice-7?                                              ││ ▾ ⚠ business surface P1          PR #1231 │
-│                                                                         ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+│   What's blocking slice-7?                                              ││ ▾ ⚠ #1 business surface P1       PR #1231 │
+│                                                                         ││   ▾ ◐ ◆ slice-4  edits        working 71% │
 │                                                                         ││         ⎇ dovetail/slice-4                │
 │   ── coordinator · 10:14 ◐ ──────────────────────────────────────────   ││         ✓ write route tests               │
 │                                                                         ││         ◐ wire handler to registry        │
 │   It needs a key. slice-7 can only reach the eval path with             ││         ○ update OpenAPI spec ⊘ blocked   │
-│   FS_EVAL_VIRTUAL_KEY set.▌                                             ││       ✓ ◇ rebase               done $0.21 │
+│   FS_EVAL_VIRTUAL_KEY set.▌                                             ││       ✓ ◇ rebase                     done │
 │                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
-│   ⠋ Mortising… 0s                                                       ││ ▾ ⚠ get_decision 500 P0                   │
+│   ⠋ Mortising… 0s                                                       ││ ▾ ⚠ #2 get_decision 500 P0                │
 │                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 └─────────────────────────────────────────────────────────────────────────┘│         ⎇ dovetail/slice-7                │
 ┌ chat › coordinator ─────────────────────────────────────────────────────┐│ ▾ Next (1)                                │
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn       ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%            ⏎ open · o fold · s status · a add · : command
+ NORMAL   business                                                                                              ctx 62%

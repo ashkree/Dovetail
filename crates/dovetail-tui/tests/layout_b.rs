@@ -124,15 +124,18 @@ fn a_coordinator_item_marks_no_task() {
 }
 
 #[test]
-fn the_status_bar_counts_tasks_agents_and_needs_you() {
+fn the_tasks_header_counts_tasks_and_agents_and_the_status_bar_does_not() {
     let mut app = app_with(world());
     let screen = render(&mut app, 120, 32);
     let bar = screen.lines().last().expect("status bar");
     assert!(bar.contains("NORMAL"), "{bar}");
-    assert!(
-        bar.contains("business · 4 tasks · 3 agents · 3 ⚠ · 2.1G"),
-        "{bar}"
-    );
+    assert!(bar.contains("business"), "{bar}");
+    for gone in ["tasks", "agents", "⚠", "2.1G"] {
+        assert!(!bar.contains(gone), "{gone} left the status bar: {bar}");
+    }
+    assert!(screen.contains("┌ tasks 4 · agents 3 "), "{screen}");
+    assert!(screen.contains("┌ inbox "), "{screen}");
+    assert!(screen.contains("┌ screens "), "{screen}");
 }
 
 #[test]
@@ -319,7 +322,7 @@ fn long_inbox_items_take_one_line_each() {
     let screen = render(&mut app, 120, 32);
     let rows: Vec<&str> = screen
         .lines()
-        .skip_while(|l| !l.contains("inbox · needs you (4)"))
+        .skip_while(|l| !l.contains("┌ inbox "))
         .skip(1)
         .take(5)
         .collect();
@@ -386,10 +389,9 @@ fn focus_mode_hides_the_side_column_and_l_brings_it_back() {
     press(&mut app, " z");
     assert!(app.focus_mode());
     let screen = render(&mut app, 100, 30);
-    assert!(!screen.contains("inbox ·"), "{screen}");
-    assert!(screen.contains("3 ⚠"), "{screen}");
+    assert!(!screen.contains("┌ inbox "), "{screen}");
     press(&mut app, "l");
     assert!(!app.focus_mode());
     let screen = render(&mut app, 100, 30);
-    assert!(screen.contains("inbox ·"), "{screen}");
+    assert!(screen.contains("┌ inbox "), "{screen}");
 }

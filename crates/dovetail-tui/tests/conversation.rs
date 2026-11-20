@@ -206,7 +206,7 @@ fn double_bracket_jumps_between_turns() {
     let screen = render(&mut app, 100, 30);
     let first_row = screen
         .lines()
-        .nth(5)
+        .nth(6)
         .expect("header row below the turn's blank row");
     assert!(first_row.contains("── You · "), "{first_row}");
     assert!(screen.contains("question 1"), "{screen}");
@@ -656,5 +656,5 @@ fn a_side_chat_asked_for_opens_when_it_appears() {
         event: Event::AgentUpserted(chat),
     });
     let screen = render(&mut app, 100, 30);
-    assert!(screen.contains("┌ side-1 ·"), "{screen}");
+    assert!(screen.contains("┌ side-1 "), "{screen}");
 }

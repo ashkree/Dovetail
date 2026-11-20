@@ -91,15 +91,15 @@ fn leader_question_mark_toggles_the_panel_in_place_of_the_tree() {
     assert_eq!(app.panel_agent(), Some(&agent_id("side-1")));
     let screen = render(&mut app, 120, 34);
     // The conversation stays on the left, the inbox on top, the panel below it.
-    assert!(screen.contains("coordinator ·"), "{screen}");
-    assert!(screen.contains("inbox · needs you"), "{screen}");
-    assert!(screen.contains("side-1 · ○ idle"), "{screen}");
+    assert!(screen.contains("┌ coordinator "), "{screen}");
+    assert!(screen.contains("┌ inbox "), "{screen}");
+    assert!(screen.contains("┌ side-1 "), "{screen}");
     assert!(!screen.contains("Now (2)"), "the tree gives way: {screen}");
     press(&mut app, " ?");
     assert!(!app.side_panel_open());
     let screen = render(&mut app, 120, 34);
     assert!(screen.contains("Now (2)"), "the tree is back: {screen}");
-    assert!(!screen.contains("side-1 · ○ idle"), "{screen}");
+    assert!(!screen.contains("┌ side-1 "), "{screen}");
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn tab_switches_side_chats_inside_the_panel() {
     app.on_key(tab(), 0);
     assert_eq!(app.panel_agent(), Some(&agent_id("side-2")));
     let screen = render(&mut app, 120, 34);
-    assert!(screen.contains("side-2 · ◐ working"), "{screen}");
+    assert!(screen.contains("┌ side-2 "), "{screen}");
     assert!(screen.contains("2/2 ⇥"), "{screen}");
     app.on_key(tab(), 1);
     assert_eq!(app.panel_agent(), Some(&agent_id("side-1")), "it wraps");
@@ -211,12 +211,12 @@ fn focus_mode_hides_the_panel_and_brings_it_back() {
     press(&mut app, " z");
     assert!(app.focus_mode());
     let screen = render(&mut app, 120, 34);
-    assert!(!screen.contains("side-1 · ○ idle"), "{screen}");
+    assert!(!screen.contains("┌ side-1 "), "{screen}");
     press(&mut app, " z");
     assert!(app.side_panel_open());
     press(&mut app, "l");
     assert_eq!(app.focus(), RegionId::SideBottom);
-    assert!(render(&mut app, 120, 34).contains("side-1 · ○ idle"));
+    assert!(render(&mut app, 120, 34).contains("┌ side-1 "));
 }
 
 #[test]

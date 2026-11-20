@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/layout_b.rs
 expression: screen
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ inbox item ─────────────────────────────────────────────────────────────┐┌ inbox · needs you (4) ────────────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ inbox item ─────────────────────────────────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │ ? slice-4  Question  10:14                                              ││   ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:13 │
 │                                                                         ││ ▸ ? slice-4  Should the new route … 10:14 │
 │ Should the new route live under /v2/decisions or stay under /api? The   ││   ✗ slice-7  Claude Code exited wi… 10:12 │
@@ -13,24 +14,23 @@ expression: screen
 │ • /v2 matches the OpenAPI spec draft                                    ││                                           │
 │                                                                         ││                                           │
 │ • /api keeps the gateway config as it is                                ││                                           │
-│                                                                         ││                                           │
-│ I'd go with /v2 and add the redirect in the same PR.                    ││ y allow · d deny · r reply · x dismiss    │
-│                                                                         │└───────────────────────────────────────────┘
-│                                                                         │┌ tasks · business ─────────────────────────┐
-│                                                                         ││ ◐ ◆ coordinator        working 1.2G $3.10 │
+│                                                                         ││ y allow · d deny · r reply · x dismiss    │
+│ I'd go with /v2 and add the redirect in the same PR.                    │└───────────────────────────────────────────┘
+│                                                                         │┌ tasks 4 · agents 3 ───────────────────────┐
+│                                                                         ││ ◐ ◆ coordinator                   working │
 │                                                                         ││ ▾ Now (2)                                 │
-│                                                                         ││ ▾ ⚠ business surface P1          PR #1231 │
-│                                                                         ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+│                                                                         ││ ▾ ⚠ #1 business surface P1       PR #1231 │
+│                                                                         ││   ▾ ◐ ◆ slice-4  edits        working 71% │
 │                                                                         ││         ⎇ dovetail/slice-4                │
 │                                                                         ││         ✓ write route tests               │
 │                                                                         ││         ◐ wire handler to registry        │
 │                                                                         ││         ○ update OpenAPI spec ⊘ blocked   │
-│                                                                         ││       ✓ ◇ rebase               done $0.21 │
+│                                                                         ││       ✓ ◇ rebase                     done │
 │                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
-│                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
+│                                                                         ││ ▾ ⚠ #2 get_decision 500 P0                │
 │                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                         ││         ⎇ dovetail/slice-7                │
 │                                                                         ││ ▾ Next (1)                                │
 │ r reply · ⏎ open agent · esc back                                       ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 4 ⚠ · 2.1G · ctx 62%        y allow · d deny · r reply · x dismiss · : command
+ NORMAL   business                                                                                              ctx 62%

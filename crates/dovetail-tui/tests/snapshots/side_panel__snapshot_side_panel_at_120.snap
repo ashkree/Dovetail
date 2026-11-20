@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/side_panel.rs
 expression: "render(&mut app, 120, 34)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ coordinator ────────────────────────────────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
 │                                                                         ││   ? slice-4  Which route prefix sh… 10:12 │
 │   ── You · 10:08 ────────────────────────────────────────────────────   ││   ✓ slice-4  Handler wired; tests … 10:09 │
@@ -16,18 +17,17 @@ expression: "render(&mut app, 120, 34)"
 │                                                                         ││                                           │
 │   Told slice-4 to stay out of src/decision.rs until slice-7 hands it    ││ y allow · d deny · r reply · x dismiss    │
 │   back.                                                                 │└───────────────────────────────────────────┘
-│                                                                         │┌ side-1 · ○ idle · 210M · $0.03 · 1/2 ⇥ ───┐
+│                                                                         │┌ side-1 · 1/2 ⇥ ───────────────────────────┐
 │                                                                         ││                                           │
-│   ── You · 10:14 ────────────────────────────────────────────────────   ││   Why does the reducer refuse a gap in    │
-│                                                                         ││   seq?                                    │
+│   ── You · 10:14 ────────────────────────────────────────────────────   ││   seq?                                    │
+│                                                                         ││                                           │
 │   What's blocking slice-7?                                              ││                                           │
-│                                                                         ││                                           │
 │                                                                         ││  ▎── side-1 · 10:12 ───────────────────   │
-│   ── coordinator · 10:14 ◐ ──────────────────────────────────────────   ││                                           │
-│                                                                         ││  ▎A gap means an event was lost. apply    │
-│   It needs a key. slice-7 can only reach the eval path with             ││  ▎returns Gap instead of guessing, and    │
-│   FS_EVAL_VIRTUAL_KEY set.▌                                             ││  ▎the UI asks for a resync                │
-│                                                                         ││  ▎(crates/dovetail-api/src/apply.rs).     │
+│                                                                         ││                                           │
+│   ── coordinator · 10:14 ◐ ──────────────────────────────────────────   ││  ▎A gap means an event was lost. apply    │
+│                                                                         ││  ▎returns Gap instead of guessing, and    │
+│   It needs a key. slice-7 can only reach the eval path with             ││  ▎the UI asks for a resync                │
+│   FS_EVAL_VIRTUAL_KEY set.▌                                             ││  ▎(crates/dovetail-api/src/apply.rs).     │
 │                                                                         ││                                           │
 │   ⠋ Mortising… 0s                                                       ││                                           │
 │                                                                         ││                                           │
@@ -35,4 +35,4 @@ expression: "render(&mut app, 120, 34)"
 ┌ chat › coordinator ─────────────────────────────────────────────────────┐┌ chat › side-1 ────────────────────────────┐
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn       ││   › i or ^j to type · ⇥ next chat · dd…   │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 5 agents · 3 ⚠ · 2.1G · ctx 62%        i chat · ⇥ next · dd close · T tangent · : command
+ NORMAL   business                                                                                              ctx 62%

@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 120, 32)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ task · #1 ──────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ task · #1 ──────────────────────────────────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │ business surface                                                        ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
 │ P1 · Now · in progress · PR #1231                                       ││   ? slice-4  Which route prefix sh… 10:12 │
 │ waits for #2 get_decision 500                                           ││   ✓ slice-4  Handler wired; tests … 10:09 │
@@ -13,24 +14,23 @@ expression: "render(&mut app, 120, 32)"
 │                                                                         ││                                           │
 │ Eval lives in apps/backend.                                             ││                                           │
 │ Never log the key.                                                      ││                                           │
-│                                                                         ││                                           │
-│ Agents                                                                  ││ y allow · d deny · r reply · x dismiss    │
-│                                                                         │└───────────────────────────────────────────┘
-│ ◐ ◆ slice-4  working  ⎇ dovetail/slice-4                                │┌ tasks · business ─────────────────────────┐
-│ ✓ ◇ rebase  done                                                        ││ ◐ ◆ coordinator        working 1.2G $3.10 │
-│ ◐ ◇ explore callers  working                                            ││ ▾ Now (2)                                 │
-│                                                                         ││ ▾ ⚠ business surface P1          PR #1231 │
-│ Decisions                                                               ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
-│                                                                         ││         ⎇ dovetail/slice-4                │
-│ (none yet · a to add one)                                               ││         ✓ write route tests               │
-│                                                                         ││         ◐ wire handler to registry        │
+│                                                                         ││ y allow · d deny · r reply · x dismiss    │
+│ Agents                                                                  │└───────────────────────────────────────────┘
+│                                                                         │┌ tasks 4 · agents 3 ───────────────────────┐
+│ ◐ ◆ slice-4  working  ⎇ dovetail/slice-4                                ││ ◐ ◆ coordinator                   working │
+│ ✓ ◇ rebase  done                                                        ││ ▾ Now (2)                                 │
+│ ◐ ◇ explore callers  working                                            ││ ▾ ⚠ #1 business surface P1       PR #1231 │
+│                                                                         ││   ▾ ◐ ◆ slice-4  edits        working 71% │
+│ Decisions                                                               ││         ⎇ dovetail/slice-4                │
+│                                                                         ││         ✓ write route tests               │
+│ (none yet · a to add one)                                               ││         ◐ wire handler to registry        │
 │                                                                         ││         ○ update OpenAPI spec ⊘ blocked   │
-│                                                                         ││       ✓ ◇ rebase               done $0.21 │
+│                                                                         ││       ✓ ◇ rebase                     done │
 │                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
-│                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
+│                                                                         ││ ▾ ⚠ #2 get_decision 500 P0                │
 │                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                         ││         ⎇ dovetail/slice-7                │
 │                                                                         ││ ▾ Next (1)                                │
 │ s b p cycle · R relate · a decision · esc back                          ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%      s status · e notes · a decide · R relate · : command
+ NORMAL   business                                                                                              ctx 62%

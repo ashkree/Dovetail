@@ -2,19 +2,20 @@
 source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 120, 34)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
-│                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ coordinator ────────────────────────────────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │ ┌ Switch ──────────────────────────────────────────┐┌ Preview ─────────────────────────────────────────────────────┐ │
 │ │›                                              5/5││ ◐ slice-4                                                    │ │
-│ │                                                  ││ slice · dovetail/slice-4 · 412M · working                    │ │
+│ │                                                  ││ slice · dovetail/slice-4 · working                           │ │
 │ │Agents                                            ││                                                              │ │
 │ │▌◐ slice-4                   dovetail/slice-4  now││                                                              │ │
 │ │ ✓   └ rebase                dovetail/slice-4  now││                                                              │ │
 │ │ ◐   └ explore callers       dovetail/slice-4  now││                                                              │ │
 │ │ ⚠ slice-7                   dovetail/slice-7  now││                                                              │ │
 │ │ ◐ coordinator                                 now││                                                              │ │
+│ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │─┘
 │ │                                                  ││                                                              │─┐
 │ │                                                  ││                                                              │ │
@@ -30,9 +31,8 @@ expression: "render(&mut app, 120, 34)"
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
-│ │                                                  ││                                                              │ │
 └─└──────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────┘ │
-┌ chat › coordinator ─────────────────────────────────────────────────────┐│ ▸ Later (1)                               │
+┌ chat › coordinator ─────────────────────────────────────────────────────┐│   ○ #3 idea: eval key flow P2             │
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn       ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%            ⏎ open · o fold · s status · a add · : command
+ INSERT   business                                                                                              ctx 62%

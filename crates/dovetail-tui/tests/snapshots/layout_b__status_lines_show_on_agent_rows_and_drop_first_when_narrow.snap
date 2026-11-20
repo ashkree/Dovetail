@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/layout_b.rs
 expression: wide
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ◐ working · 1.2G · $3.10 ──────────────────────────────────────────────────────────────────────────────────┐┌ inbox · needs you (3) ───────────────────────────────────────────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                                                                                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ coordinator ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ inbox ───────────────────────────────────────────────────────────────────┐
 │                                                                                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUAL_KEY=dev cargo test -p api get… 10:15 │
 │                                                                                                                          ││   ? slice-4  Which route prefix should the handler use?            10:12 │
 │   ── You · 10:08 ─────────────────────────────────────────────────────────────────────────────────────────────────────   ││   ✓ slice-4  Handler wired; tests next.                            10:09 │
@@ -13,24 +14,23 @@ expression: wide
 │                                                                                                                          ││                                                                          │
 │                                                                                                                          ││                                                                          │
 │   ── coordinator · 10:08 ─────────────────────────────────────────────────────────────────────────────────────────────   ││                                                                          │
-│                                                                                                                          ││                                                                          │
-│   Told slice-4 to stay out of src/decision.rs until slice-7 hands it back.                                               ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
-│                                                                                                                          │└──────────────────────────────────────────────────────────────────────────┘
-│                                                                                                                          │┌ tasks · business ────────────────────────────────────────────────────────┐
-│   ── You · 10:14 ─────────────────────────────────────────────────────────────────────────────────────────────────────   ││ ◐ ◆ coordinator                                       working 1.2G $3.10 │
-│                                                                                                                          ││ ▾ Now (2)                                                                │
-│   What's blocking slice-7?                                                                                               ││ ▾ ⚠ business surface P1                                         PR #1231 │
-│                                                                                                                          ││   ▾ ◐ ◆ slice-4  edits   rebasing the business s… working 412M 71% $1.84 │
+│                                                                                                                          ││ y allow · A always · d deny · D reason · r reply · x dismiss · ⏎ open    │
+│   Told slice-4 to stay out of src/decision.rs until slice-7 hands it back.                                               │└──────────────────────────────────────────────────────────────────────────┘
+│                                                                                                                          │┌ tasks 4 · agents 3 ──────────────────────────────────────────────────────┐
+│                                                                                                                          ││ ◐ ◆ coordinator                                                  working │
+│   ── You · 10:14 ─────────────────────────────────────────────────────────────────────────────────────────────────────   ││ ▾ Now (2)                                                                │
+│                                                                                                                          ││ ▾ ⚠ #1 business surface P1                                      PR #1231 │
+│   What's blocking slice-7?                                                                                               ││   ▾ ◐ ◆ slice-4  edits   rebasing the business surface onto… working 71% │
 │                                                                                                                          ││         ⎇ dovetail/slice-4                                               │
-│   ── coordinator · 10:14 ◐ ───────────────────────────────────────────────────────────────────────────────────────────   ││         ✓ write route tests                                              │
-│                                                                                                                          ││         ◐ wire handler to registry                                       │
-│   It needs a key. slice-7 can only reach the eval path with FS_EVAL_VIRTUAL_KEY set.▌                                    ││         ○ update OpenAPI spec ⊘ blocked                                  │
-│                                                                                                                          ││       ✓ ◇ rebase                                              done $0.21 │
+│                                                                                                                          ││         ✓ write route tests                                              │
+│   ── coordinator · 10:14 ◐ ───────────────────────────────────────────────────────────────────────────────────────────   ││         ◐ wire handler to registry                                       │
+│                                                                                                                          ││         ○ update OpenAPI spec ⊘ blocked                                  │
+│   It needs a key. slice-7 can only reach the eval path with FS_EVAL_VIRTUAL_KEY set.▌                                    ││       ✓ ◇ rebase                                                    done │
 │                                                                                                                          ││       ◐ ◇ explore callers                                12 tools · Grep │
-│   ⠋ Mortising… 0s                                                                                                        ││ ▾ ⚠ get_decision 500 P0                                                  │
-│                                                                                                                          ││   ▾ ⚠ ◆ slice-7  manual                         needs you 388M 85% $0.92 │
+│   ⠋ Mortising… 0s                                                                                                        ││ ▾ ⚠ #2 get_decision 500 P0                                               │
+│                                                                                                                          ││   ▾ ⚠ ◆ slice-7  manual                                    needs you 85% │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘│         ⎇ dovetail/slice-7                                               │
 ┌ chat › coordinator ──────────────────────────────────────────────────────────────────────────────────────────────────────┐│ ▾ Next (1)                                                               │
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn                                                        ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%                                                              ⏎ open · o fold · s status · a add · dd archive · :keys all keys · : command
+ NORMAL   business                                                                                                                                                                              ctx 62%

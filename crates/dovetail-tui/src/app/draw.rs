@@ -1,8 +1,6 @@
-//! Drawing: the header row, the regions, the status bar, the prompt row and the overlays.
+//! Drawing: the screens bar, the regions, the status bar, the prompt row and the overlays.
 
-use std::path::Path;
-
-use dovetail_api::{AgentId, AgentStatus, UNREGISTERED_WARNING};
+use dovetail_api::{AgentId, UNREGISTERED_WARNING};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
@@ -13,12 +11,8 @@ use ratatui::widgets::{Block, Clear};
 use super::App;
 use super::overlay::{Overlay, Purpose};
 
-/// The coordinator context fill above which the status bar hints at `:handoff`.
-const FRESH_HINT_PCT: u8 = 80;
-
 use crate::buffers::{self, InputTarget, ViewCx, spread_fit};
 use crate::capture::{self, Capture};
-use crate::fmt;
 use crate::help;
 use crate::keymap::Key;
 use crate::mode::Mode;
@@ -59,7 +53,6 @@ impl App {
         if full {
             areas = areas.focused();
         }
-        self.draw_header(frame, areas.header);
         self.draw_tabs(frame, areas.tabs);
         let cx = ViewCx {
             snap: &self.snap,
@@ -92,7 +85,6 @@ impl App {
     /// Reading mode: library, reading column and Ask, between the header and the status bar.
     fn draw_reading(&mut self, frame: &mut Frame, prompting: bool) {
         let areas = reading_layout(frame.area(), prompting);
-        self.draw_header(frame, areas.header);
         self.draw_tabs(frame, areas.tabs);
         let cx = ViewCx {
             snap: &self.snap,
@@ -258,88 +250,19 @@ impl App {
         );
     }
 
-    /// The folder the agent in view works in (a slice's worktree, otherwise the project
-    /// folder), and a warning while that folder is not a Dovetail project yet.
-    fn draw_header(&self, frame: &mut Frame, area: Rect) {
-        let theme = &self.theme;
-        let snap = &self.snap;
-        let in_view = self
-            .buffers
-            .conversation
-            .agent()
-            .and_then(|id| snap.agents.iter().find(|a| &a.id == id));
-        let worktree = in_view.and_then(|a| a.worktree.as_ref());
-        let mut left = vec![Span::raw(" ")];
-        match (worktree, &snap.project) {
-            (Some(wt), _) => {
-                left.push(Span::styled("worktree ", theme.dim()));
-                left.push(Span::styled(home_relative(&wt.path), theme.body()));
-                left.push(Span::styled(" on ", theme.dim()));
-                left.push(Span::styled(wt.branch.clone(), theme.fg(theme.code)));
-            }
-            (None, Some(project)) => {
-                left.push(Span::styled("folder ", theme.dim()));
-                left.push(Span::styled(
-                    home_relative(&project.repo_path),
-                    theme.body(),
-                ));
-            }
-            (None, None) => left.push(Span::styled("no folder open", theme.dim())),
-        }
-        let unregistered = snap.warnings.iter().any(|w| w.id.0 == UNREGISTERED_WARNING);
-        let warnings = if unregistered {
-            vec![
-                vec![Span::styled(
-                    "⚠ not a Dovetail project yet: :project add keeps it ",
-                    theme.fg(theme.needs_you),
-                )],
-                vec![Span::styled(
-                    "⚠ not a project yet ",
-                    theme.fg(theme.needs_you),
-                )],
-            ]
-        } else {
-            Vec::new()
-        };
-        // Task #16: the project's profile (ADR 0009), the model of the conversation in view and
-        // the profile's usage limits.
-        let usage = usage::variants(
-            &snap.usage,
-            snap.profile.as_deref(),
-            in_view.and_then(|a| a.model.as_deref()),
-            in_view.and_then(|a| a.effort),
-            self.now_ms,
-            &self.tz,
-            theme,
-        );
-        // Every warning version with every usage version: the usage shortens through all of its
-        // versions before the warning shortens.
-        let rights: Vec<Vec<Span<'static>>> = match (warnings.is_empty(), usage.is_empty()) {
-            (true, _) => usage,
-            (false, true) => warnings,
-            (false, false) => warnings
-                .iter()
-                .flat_map(|w| {
-                    usage.iter().map(move |u| {
-                        let mut both = w.clone();
-                        both.push(Span::raw(" "));
-                        both.extend(u.iter().cloned());
-                        both
-                    })
-                })
-                .collect(),
-        };
-        frame.render_widget(
-            Paragraph::new(spread_fit(left, &rights, usize::from(area.width))),
-            area,
-        );
-    }
-
-    /// The view-tab row (task #20); the tab table and its marking live in [`tabs`].
+    /// The screens bar (task #20), boxed like the other regions; the tab table and its marking
+    /// live in [`tabs`].
     fn draw_tabs(&self, frame: &mut Frame, area: Rect) {
         if area.height == 0 {
             return;
         }
+        let inner = buffers::pane(
+            frame,
+            area,
+            buffers::title("screens", false, &self.theme),
+            false,
+            &self.theme,
+        );
         let view = tabs::ViewState {
             main: self.regions.buffer(RegionId::Main),
             reading: self.reading_mode(),
@@ -348,8 +271,8 @@ impl App {
                 Some(Overlay::Picker(picker, Purpose::Open)) if picker.title() == "Research"
             ),
         };
-        let spans = tabs::spans(&view, &self.theme, usize::from(area.width));
-        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        let spans = tabs::spans(&view, &self.theme, usize::from(inner.width));
+        frame.render_widget(Paragraph::new(Line::from(spans)), inner);
     }
 
     fn draw_status(&self, frame: &mut Frame, area: Rect) {
@@ -361,22 +284,6 @@ impl App {
             Mode::Map => theme.mode_map,
         };
         let snap = &self.snap;
-        let tasks = snap
-            .tasks
-            .iter()
-            .filter(|t| {
-                !matches!(
-                    t.status,
-                    dovetail_api::TaskStatus::Done | dovetail_api::TaskStatus::Archived
-                )
-            })
-            .count();
-        let agents = snap
-            .agents
-            .iter()
-            .filter(|a| a.kind.is_session() && a.status != AgentStatus::Done)
-            .count();
-        let needs_you = snap.inbox.len();
         let mut left = vec![
             Span::styled(
                 format!(" {} ", self.mode_label()),
@@ -386,23 +293,11 @@ impl App {
             ),
             Span::styled(
                 format!(
-                    "  {} · {tasks} tasks · {agents} agents · ",
+                    "  {}",
                     snap.project
                         .as_ref()
                         .map_or("no project", |p| p.name.as_str())
                 ),
-                theme.body(),
-            ),
-            Span::styled(
-                format!("{needs_you} ⚠"),
-                if needs_you > 0 {
-                    theme.fg(theme.needs_you)
-                } else {
-                    theme.dim()
-                },
-            ),
-            Span::styled(
-                format!(" · {}", fmt::memory(snap.totals.memory_mb)),
                 theme.body(),
             ),
         ];
@@ -417,17 +312,6 @@ impl App {
                 self.now_ms,
             ));
             left.splice(1..1, spans);
-        }
-        if let Some(pct) = self
-            .coordinator()
-            .and_then(|id| snap.agents.iter().find(|a| a.id == id))
-            .and_then(|a| a.context_pct)
-        {
-            left.push(Span::styled(format!(" · ctx {pct}%"), theme.context(pct)));
-            // A manual fresh start, text only: `:handoff` is the command (ADR 0012 amendment).
-            if pct > FRESH_HINT_PCT {
-                left.push(Span::styled(" :handoff", theme.dim()));
-            }
         }
         if self.reading_mode() {
             left.push(Span::raw("  "));
@@ -447,7 +331,6 @@ impl App {
                 theme.fg(theme.italic),
             ));
         }
-        // The header row carries the not-a-project warning.
         if let Some(warning) = snap
             .warnings
             .iter()
@@ -460,19 +343,64 @@ impl App {
         }
         let rights = match &self.note {
             Some(note) => vec![vec![Span::styled(note.clone(), theme.fg(theme.needs_you))]],
-            // The keys of the view in focus, read from the keymap (`help::view_hints`).
-            None => help::hint_variants(
-                &self.keymap,
-                self.mode,
-                self.regions.focused_buffer(),
-                &self.scopes(),
-                theme,
-            ),
+            None => self.status_rights(),
         };
         frame.render_widget(
             Paragraph::new(spread_fit(left, &rights, usize::from(area.width))),
             area,
         );
+    }
+
+    /// The right of the status bar: the not-a-project warning (when it applies) and the usage
+    /// line with the context fill, each in versions from fullest to shortest.
+    fn status_rights(&self) -> Vec<Vec<Span<'static>>> {
+        let theme = &self.theme;
+        let snap = &self.snap;
+        let in_view = self
+            .buffers
+            .conversation
+            .agent()
+            .and_then(|id| snap.agents.iter().find(|a| &a.id == id));
+        let context_pct = self
+            .coordinator()
+            .and_then(|id| snap.agents.iter().find(|a| a.id == id))
+            .and_then(|a| a.context_pct);
+        // Task #16: the project's profile (ADR 0009), the model of the conversation in view and
+        // the profile's usage limits.
+        let usage = usage::variants(
+            &snap.usage,
+            snap.profile.as_deref(),
+            in_view.and_then(|a| a.model.as_deref()),
+            in_view.and_then(|a| a.effort),
+            context_pct,
+            self.now_ms,
+            &self.tz,
+            theme,
+        );
+        if !snap.warnings.iter().any(|w| w.id.0 == UNREGISTERED_WARNING) {
+            return usage;
+        }
+        let warnings = [
+            "⚠ not a Dovetail project yet: :project add keeps it ",
+            "⚠ not a project yet ",
+        ]
+        .map(|text| vec![Span::styled(text, theme.fg(theme.needs_you))]);
+        // Every warning version with every usage version: the usage shortens through all of its
+        // versions before the warning shortens.
+        if usage.is_empty() {
+            return warnings.into();
+        }
+        warnings
+            .iter()
+            .flat_map(|w| {
+                usage.iter().map(move |u| {
+                    let mut both = w.clone();
+                    both.push(Span::raw(" "));
+                    both.extend(u.iter().cloned());
+                    both
+                })
+            })
+            .collect()
     }
 
     /// Mode label for the status bar; while chatting it names the agent (as in the mocks).
@@ -536,18 +464,6 @@ impl App {
             .iter()
             .find(|a| &a.id == id)
             .map_or_else(|| id.0.clone(), |a| a.name.clone())
-    }
-}
-
-/// `path` with the home directory shown as `~`.
-fn home_relative(path: &Path) -> String {
-    match std::env::var_os("HOME").map(std::path::PathBuf::from) {
-        Some(home) if !home.as_os_str().is_empty() => match path.strip_prefix(&home) {
-            Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
-            Ok(rest) => format!("~/{}", rest.display()),
-            Err(_) => path.display().to_string(),
-        },
-        _ => path.display().to_string(),
     }
 }
 

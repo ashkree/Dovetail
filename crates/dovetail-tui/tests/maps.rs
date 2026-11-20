@@ -97,7 +97,7 @@ fn enter_asks_for_the_map_and_shows_the_outline_when_it_arrives() {
 #[test]
 fn the_swimlane_outline_lists_nodes_in_flow_order_with_lanes_and_the_flow() {
     let (_core, mut app) = outline(0);
-    insta::assert_snapshot!(render(&mut app, 120, 40));
+    insta::assert_snapshot!(render(&mut app, 120, 44));
 }
 
 #[test]
@@ -105,24 +105,24 @@ fn the_structure_outline_nests_groups_and_shows_the_selected_node_in_full() {
     let (_core, mut app) = outline(1);
     // user, tui, keymap (inside tui): move onto keymap.
     press_seq(&mut app, "jj");
-    insta::assert_snapshot!(render(&mut app, 120, 40));
+    insta::assert_snapshot!(render(&mut app, 120, 44));
 }
 
 #[test]
 fn o_folds_a_group_and_the_cursor_stays_on_it() {
     let (_core, mut app) = outline(1);
     press_seq(&mut app, "j");
-    let open = render(&mut app, 120, 40);
+    let open = render(&mut app, 120, 44);
     assert!(open.contains("keymap.rs"));
     press_seq(&mut app, "o");
-    let folded = render(&mut app, 120, 40);
+    let folded = render(&mut app, 120, 44);
     assert!(folded.contains("1 inside"), "{folded}");
     assert!(
         !folded.lines().any(|l| l.contains("▤ keymap.rs")),
         "{folded}"
     );
     press_seq(&mut app, "o");
-    assert!(render(&mut app, 120, 40).contains("▤ keymap.rs"));
+    assert!(render(&mut app, 120, 44).contains("▤ keymap.rs"));
 }
 
 #[test]
@@ -131,13 +131,13 @@ fn square_brackets_walk_the_flow_and_unfold_what_hides_the_step() {
     // Fold tui, then walk: user -> tui -> core (tui has no hidden step), cursor follows.
     press_seq(&mut app, "jo");
     press_seq(&mut app, "gg]]");
-    let at_tui = render(&mut app, 120, 41);
+    let at_tui = render(&mut app, 120, 45);
     assert!(at_tui.contains("▸ 2 dovetail-tui"), "{at_tui}");
     press_seq(&mut app, "]]");
-    let at_core = render(&mut app, 120, 41);
+    let at_core = render(&mut app, 120, 45);
     assert!(at_core.contains("▸ 3 dovetail-core"), "{at_core}");
     press_seq(&mut app, "[[[[");
-    assert!(render(&mut app, 120, 41).contains("▸ 1 You"));
+    assert!(render(&mut app, 120, 45).contains("▸ 1 You"));
     // Before the first step: a note, not a wrap.
     press_seq(&mut app, "[[");
     assert!(app.note().is_some_and(|n| n.contains("first step")));
@@ -156,7 +156,7 @@ fn esc_goes_outline_then_shelf_then_conversation() {
 fn a_newer_version_of_the_open_map_is_fetched_and_keeps_the_cursor() {
     let (_core, mut app) = outline(0);
     press_seq(&mut app, "jj");
-    let before = render(&mut app, 120, 40);
+    let before = render(&mut app, 120, 44);
     let mut summary = app.snapshot().maps[0].clone();
     summary.version += 1;
     let seq = app.snapshot().seq + 1;
@@ -170,7 +170,7 @@ fn a_newer_version_of_the_open_map_is_fetched_and_keeps_the_cursor() {
         [Command::LoadMap { version: None, .. }]
     ));
     // Nothing else changes while the new version is on its way.
-    assert_eq!(render(&mut app, 120, 40), before);
+    assert_eq!(render(&mut app, 120, 44), before);
 }
 
 #[test]

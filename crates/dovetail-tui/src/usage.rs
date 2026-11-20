@@ -1,10 +1,11 @@
-//! The usage indicator on the right of the header row (task #16):
-//! `maveron · opus-5-5 high · 5h 34% (resets 14:20) · week 18% (resets Thu)`. The model's
-//! effort follows it once the session has confirmed one (task #39).
+//! The usage indicator at the bottom right, on the status row (task #16):
+//! `maveron · opus-5-5 high · ctx 24% · 5h 34% (resets 14:20) · week 18% (resets Thu)`. The
+//! model's effort follows it once the session has confirmed one (task #39); the coordinator's
+//! context fill comes right after the model (task #40).
 //!
 //! The project's Claude profile leads (ADR 0009): limits are per account, so the figures are that
 //! profile's. Parts drop as the row narrows: the reset times, then the profile and model, then the
-//! week; the 5-hour figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
+//! week, then the context fill; the 5-hour figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
 
 use dovetail_api::{ReasoningEffort, UsageLimits, UsageWindow};
 use jiff::{Timestamp, tz::TimeZone};
@@ -13,6 +14,9 @@ use ratatui::text::Span;
 use crate::theme::Theme;
 
 const DAY_MS: i64 = 86_400_000;
+
+/// The coordinator context fill above which the line hints at `:handoff`.
+const FRESH_HINT_PCT: u8 = 80;
 
 /// `claude-opus-5-5` → `opus-5-5`; a trailing date (`-20251001`) goes too.
 pub fn short_model(model: &str) -> &str {
@@ -90,6 +94,7 @@ pub fn variants(
     profile: Option<&str>,
     model: Option<&str>,
     effort: Option<ReasoningEffort>,
+    context_pct: Option<u8>,
     now_ms: i64,
     tz: &TimeZone,
     theme: &Theme,
@@ -102,7 +107,7 @@ pub fn variants(
         Some(e) => format!("{} {}", short_model(m), e.as_str()),
         None => short_model(m).to_owned(),
     });
-    let build = |lead: bool, with_week: bool, resets: bool| {
+    let build = |lead: bool, with_ctx: bool, with_week: bool, resets: bool| {
         let mut items: Vec<Span<'static>> = Vec::new();
         let mut push = |spans: Vec<Span<'static>>| {
             if !items.is_empty() {
@@ -116,6 +121,14 @@ pub fn variants(
             .filter(|_| lead)
         {
             push(vec![Span::styled(name.to_owned(), theme.dim())]);
+        }
+        if let Some(pct) = context_pct.filter(|_| with_ctx) {
+            let mut spans = vec![Span::styled(format!("ctx {pct}%"), theme.context(pct))];
+            // A manual fresh start, text only: `:handoff` is the command (ADR 0012 amendment).
+            if pct > FRESH_HINT_PCT {
+                spans.push(Span::styled(" :handoff", theme.dim()));
+            }
+            push(spans);
         }
         for p in [five.as_ref(), week.as_ref().filter(|_| with_week)]
             .into_iter()
@@ -135,10 +148,11 @@ pub fn variants(
     };
     let mut out: Vec<Vec<Span<'static>>> = Vec::new();
     for v in [
-        build(true, true, true),
-        build(true, true, false),
-        build(false, true, false),
-        build(false, false, false),
+        build(true, true, true, true),
+        build(true, true, true, false),
+        build(false, true, true, false),
+        build(false, true, false, false),
+        build(false, false, false, false),
     ] {
         // A variant that drops nothing new (no resets known, no model yet) is skipped.
         if !v.is_empty() && out.last() != Some(&v) {
@@ -190,6 +204,7 @@ mod tests {
             None,
             Some("claude-opus-5-5"),
             None,
+            None,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -214,6 +229,7 @@ mod tests {
             Some("maveron"),
             Some("claude-opus-5-5"),
             None,
+            None,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -231,6 +247,7 @@ mod tests {
             None,
             Some("claude-sonnet-5-5"),
             Some(ReasoningEffort::Xhigh),
+            None,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -243,6 +260,7 @@ mod tests {
         let theme = Theme::default();
         let v = variants(
             &usage(0.72, 0.95, NOW_S),
+            None,
             None,
             None,
             None,
@@ -262,6 +280,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -278,6 +297,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             later,
             &TimeZone::UTC,
             &theme,
@@ -285,6 +305,7 @@ mod tests {
         assert_eq!(text(&v[0]), "5h — · week 18% (resets Thu) ");
         let none = variants(
             &UsageLimits::default(),
+            None,
             None,
             None,
             None,
@@ -297,6 +318,7 @@ mod tests {
             &UsageLimits::default(),
             None,
             Some("claude-opus-5-5"),
+            None,
             None,
             later,
             &TimeZone::UTC,
@@ -311,12 +333,41 @@ mod tests {
         let theme = Theme::default();
         let mut u = usage(0.34, 0.06, NOW_S);
         u.five_hour = None;
-        let v = variants(&u, None, None, None, NOW_S * 1_000, &TimeZone::UTC, &theme);
+        let v = variants(&u, None, None, None, None, NOW_S * 1_000, &TimeZone::UTC, &theme);
         let texts: Vec<String> = v.iter().map(|s| text(s)).collect();
         assert_eq!(
             texts,
             vec!["5h — · week 6% (resets Thu) ", "5h — · week 6% ", "5h — "]
         );
+    }
+
+    #[test]
+    fn context_fill_follows_the_model_and_hints_at_handoff_above_80() {
+        let theme = Theme::default();
+        let at = |pct| {
+            let v = variants(
+                &usage(0.54, 0.76, NOW_S),
+                None,
+                Some("claude-opus-5-5"),
+                Some(ReasoningEffort::Medium),
+                Some(pct),
+                NOW_S * 1_000,
+                &TimeZone::UTC,
+                &theme,
+            );
+            v.iter().map(|s| text(s)).collect::<Vec<_>>()
+        };
+        let texts = at(24);
+        assert_eq!(
+            texts[0],
+            "opus-5-5 medium · ctx 24% · 5h 54% (resets 14:00) · week 76% (resets Thu) "
+        );
+        // The context fill outlives the model and the week as the row narrows.
+        assert_eq!(texts[2], "ctx 24% · 5h 54% · week 76% ");
+        assert_eq!(texts[3], "ctx 24% · 5h 54% ");
+        assert_eq!(texts[4], "5h 54% ");
+        assert!(!texts[0].contains(":handoff"));
+        assert!(at(81)[0].contains("ctx 81% :handoff · 5h"));
     }
 
     #[test]

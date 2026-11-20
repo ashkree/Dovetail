@@ -1,0 +1,10 @@
+---
+source: crates/dovetail-tui/tests/usage_header.rs
+expression: "rows.join(\"\\n\")"
+---
+120 | NORMAL   business                                   opus-5-5 · ctx 62% · 5h 34% (resets 12:35) · week 18% (resets Wed)
+ 80 | NORMAL   business                       opus-5-5 · ctx 62% · 5h 34% · week 18%
+ 60 | NORMAL   business   opus-5-5 · ctx 62% · 5h 34% · week 18%
+ 44 | NORMAL   business         ctx 62% · 5h 34%
+ 34 | NORMAL   business         5h 34%
+ 24 | NORMAL   busin… 5h 34%

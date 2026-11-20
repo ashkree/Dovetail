@@ -2,11 +2,11 @@
 source: crates/dovetail-tui/tests/m4.rs
 expression: "render(&mut app, 100, 30)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ ┌ Switch ─────────────────────────────────┐┌ Preview ──────────────────────────────────────────┐─┐
-│ │› slice                               4/5││ ◐ slice-4                                         │ │
-│ │                                         ││ slice · dovetail/slice-4 · 412M · working         │ │
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                        │
+└─┌ Switch ─────────────────────────────────┐┌ Preview ──────────────────────────────────────────┐─┘
+┌ │› slice                               4/5││ ◐ slice-4                                         │─┐
+│ │                                         ││ slice · dovetail/slice-4 · working                │ │
 │ │▌◐ slice-4          dovetail/slice-4  now││                                                   │ │
 │ │ ⚠ slice-7          dovetail/slice-7  now││                                                   │ │
 │ │ ✓   └ rebase       dovetail/slice-4  now││                                                   │ │
@@ -31,4 +31,4 @@ expression: "render(&mut app, 100, 30)"
 ┌ │                                         ││                                                   │ │
 │ └─────────────────────────────────────────┘└───────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
- INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%           ⏎ open · o fold · : command
+ INSERT   business                                                                          ctx 62%

@@ -2,33 +2,33 @@
 source: crates/dovetail-tui/tests/working.rs
 expression: screen
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ◐ working · 1.2G · $3.10 ──────────────────┐┌ inbox · needs you (3) ───────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ coordinator ─────────────────────────────────────────────┐┌ inbox ───────────────────────────────┐
 │                                                          ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
-│                                                          ││   ? slice-4  Which route pref… 10:12 │
-│   What I checked                                         ││   ✓ slice-4  Handler wired; t… 10:09 │
-│                                                          ││                                      │
+│   What I checked                                         ││   ? slice-4  Which route pref… 10:12 │
+│                                                          ││   ✓ slice-4  Handler wired; t… 10:09 │
 │   • the handler in crates/api/src/routes.rs              ││                                      │
 │                                                          ││                                      │
 │   • the eval path, which fails before it logs            ││                                      │
 │                                                          ││                                      │
 │   • the CI config                                        ││ y allow · d deny · r reply · x dism… │
 │                                                          │└──────────────────────────────────────┘
-│   rust                                                   │┌ tasks · business ────────────────────┐
-│     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;     ││ ◐ ◆ coordinator   working 1.2G $3.10 │
+│   rust                                                   │┌ tasks 4 · agents 3 ──────────────────┐
+│     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;     ││ ◐ ◆ coordinator              working │
 │                                                          ││ ▾ Now (2)                            │
-│   Slice   │ State                                        ││ ▾ ⚠ business surface P1     PR #1231 │
+│   Slice   │ State                                        ││ ▾ ⚠ #1 business surface P1  PR #1231 │
 │   ────────┼────────                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
 │   slice-4 │ editing                                      ││         ⎇ dovetail/slice-4           │
 │   slice-7 │ blocked                                      ││         ✓ write route tests          │
 │                                                          ││         ◐ wire handler to registry   │
 │   │ Merge order: #1231 first, then the 500 fix.▌         ││         ○ update OpenAPI spec ⊘ blo… │
-│                                                          ││       ✓ ◇ rebase          done $0.21 │
+│                                                          ││       ✓ ◇ rebase                done │
 │   ⠋ Reading plan.md… 1m 05s                              ││       ◐ ◇ explore c… 12 tools · Grep │
-│                                                          ││ ▾ ⚠ get_decision 500 P0              │
+│                                                          ││ ▾ ⚠ #2 get_decision 500 P0           │
 └──────────────────────────────────────────────────────────┘│   ▾ ⚠ ◆ slice-7  manual    needs you │
 ┌ chat › coordinator ──────────────────────────────────────┐│         ⎇ dovetail/slice-7           │
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry …   ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%           ⏎ open · o fold · : command
+ NORMAL   business                                                                          ctx 62%

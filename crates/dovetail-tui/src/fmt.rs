@@ -19,15 +19,6 @@ pub fn when(ms: i64, tz: &TimeZone) -> String {
     }
 }
 
-/// Memory as `412M` or `2.1G`.
-pub fn memory(mb: u32) -> String {
-    if mb >= 1024 {
-        format!("{:.1}G", f64::from(mb) / 1024.0)
-    } else {
-        format!("{mb}M")
-    }
-}
-
 /// A file size as `412 KB` or `1.2 MB` (binary units, at least `1 KB`).
 pub fn bytes(size: u64) -> String {
     dovetail_api::size_text(size)
@@ -57,11 +48,6 @@ pub fn duration(ms: u64) -> String {
     } else {
         format!("{s}s")
     }
-}
-
-/// Cost as `$1.84`.
-pub fn cost(usd: f64) -> String {
-    format!("${usd:.2}")
 }
 
 /// Cuts `text` to at most `width` terminal cells, ending in `…` when it was cut.
@@ -142,12 +128,6 @@ pub fn ago(now_ms: i64, then_ms: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn memory_switches_to_gigabytes() {
-        assert_eq!(memory(412), "412M");
-        assert_eq!(memory(2150), "2.1G");
-    }
 
     #[test]
     fn ago_picks_a_unit() {

@@ -407,7 +407,7 @@ fn tool_defs() -> Vec<ToolDef> {
                 `core_log_decision`.",
             schema: || {
                 json!({"type": "object", "properties": {
-                    "title": {"type": "string", "description": "Short imperative title."},
+                    "title": {"type": "string", "description": "Short title, 6 words at most."},
                     "notes": {"type": "string", "description": "Context, acceptance criteria, links."},
                     "p_level": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "Priority, P0 highest. Omit if unsure."},
                     "bucket": {"type": "string", "enum": ["next", "later"], "description": "Omit to land in Unsorted. Never Now: the user decides what is current."},

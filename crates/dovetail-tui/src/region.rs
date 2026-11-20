@@ -234,9 +234,7 @@ impl Regions {
 /// Screen areas of reading mode (ADR 0018).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadingAreas {
-    /// Header row, as in Layout B.
-    pub header: Rect,
-    /// The view-tab row (task #20).
+    /// The boxed screens bar (task #20).
     pub tabs: Rect,
     /// The library, left.
     pub library: Rect,
@@ -266,8 +264,7 @@ impl ReadingAreas {
 /// 120-column reading width with its border and padding.
 pub fn reading_layout(screen: Rect, with_prompt: bool) -> ReadingAreas {
     let rows = RatLayout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
+        Constraint::Length(TABS_HEIGHT),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(u16::from(with_prompt)),
@@ -281,24 +278,24 @@ pub fn reading_layout(screen: Rect, with_prompt: bool) -> ReadingAreas {
         Constraint::Min(10),
         Constraint::Length(ask),
     ])
-    .split(rows[2]);
+    .split(rows[1]);
     ReadingAreas {
-        header: rows[0],
-        tabs: rows[1],
+        tabs: rows[0],
         library: columns[0],
         reader: columns[1],
         ask: columns[2],
-        status: rows[3],
-        prompt: with_prompt.then_some(rows[4]),
+        status: rows[2],
+        prompt: with_prompt.then_some(rows[3]),
     }
 }
+
+/// Rows of the boxed screens bar: a border, one line of tabs, a border.
+const TABS_HEIGHT: u16 = 3;
 
 /// Screen areas of Layout B.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Areas {
-    /// Header row: the folder in view, and whether it is a project.
-    pub header: Rect,
-    /// The view-tab row (task #20); no height while hidden.
+    /// The boxed screens bar (task #20): [`TABS_HEIGHT`] rows, none while hidden.
     pub tabs: Rect,
     /// Side column, top (the inbox by default).
     pub side_top: Rect,
@@ -338,8 +335,7 @@ impl Areas {
 /// 40 % of it and the bottom region (tree) the rest (ADR 0008). The conversation takes the rest, on the left.
 pub fn layout(screen: Rect, with_prompt: bool, with_tabs: bool) -> Areas {
     let rows = RatLayout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(u16::from(with_tabs)),
+        Constraint::Length(if with_tabs { TABS_HEIGHT } else { 0 }),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(u16::from(with_prompt)),
@@ -347,17 +343,16 @@ pub fn layout(screen: Rect, with_prompt: bool, with_tabs: bool) -> Areas {
     .split(screen);
     let side_width = (screen.width * 38 / 100).max(40).min(screen.width / 2);
     let columns =
-        RatLayout::horizontal([Constraint::Min(10), Constraint::Length(side_width)]).split(rows[2]);
+        RatLayout::horizontal([Constraint::Min(10), Constraint::Length(side_width)]).split(rows[1]);
     let left = RatLayout::vertical([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(columns[1]);
     Areas {
-        header: rows[0],
-        tabs: rows[1],
+        tabs: rows[0],
         side_top: left[0],
         side_bottom: left[1],
         main: columns[0],
-        status: rows[3],
-        prompt: with_prompt.then_some(rows[4]),
+        status: rows[2],
+        prompt: with_prompt.then_some(rows[3]),
     }
 }
 
@@ -427,20 +422,19 @@ mod tests {
     }
 
     #[test]
-    fn layout_fills_the_screen_and_reserves_the_header_and_prompt_rows() {
+    fn layout_fills_the_screen_and_reserves_the_tabs_box_and_prompt_rows() {
         let screen = Rect::new(0, 0, 100, 30);
         let a = layout(screen, false, true);
-        assert_eq!(a.header.y, 0);
-        assert_eq!((a.tabs.y, a.tabs.height), (1, 1));
-        assert_eq!(a.main.y, 2);
-        assert_eq!(a.side_top.height + a.side_bottom.height, 27);
-        assert_eq!(a.main.height, 27);
+        assert_eq!((a.tabs.y, a.tabs.height), (0, 3));
+        assert_eq!(a.main.y, 3);
+        assert_eq!(a.side_top.height + a.side_bottom.height, 26);
+        assert_eq!(a.main.height, 26);
         assert_eq!(a.prompt, None);
         let b = layout(screen, true, true);
-        assert_eq!(b.main.height, 26);
+        assert_eq!(b.main.height, 25);
         assert_eq!(b.prompt.map(|p| p.y), Some(29));
-        // Hidden tabs give the row back.
+        // Hidden tabs give the rows back.
         let c = layout(screen, false, false);
-        assert_eq!((c.tabs.height, c.main.y, c.main.height), (0, 1, 28));
+        assert_eq!((c.tabs.height, c.main.y, c.main.height), (0, 0, 29));
     }
 }

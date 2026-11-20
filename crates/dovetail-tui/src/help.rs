@@ -1,10 +1,9 @@
-//! Discoverability (task #19): what the keymap table offers, shown three ways. The which-key
+//! Discoverability (task #19): what the keymap table offers, shown two ways. The which-key
 //! popup lists the keys that can follow a half-typed sequence; `:keys` lists every action with its
-//! keys; the status bar shows a few keys of the view in focus.
+//! keys. (The status bar no longer carries a key hint row, task #40.)
 //!
 //! None of it keeps a copy of the keymap. Keys come from [`Keymap`] and descriptions from the
-//! action registry ([`Action::describe`]); the only hand-written data is [`view_hints`], the short
-//! list of primary actions per view, which names actions (never keys) and a one-word label.
+//! action registry ([`Action::describe`]).
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -18,7 +17,6 @@ use crate::command::COMMANDS;
 use crate::keymap::{Key, Keymap, Scope, label_sequence};
 use crate::mode::Mode;
 use crate::picker::{PickerItem, PickerKey};
-use crate::region::BufferKind;
 use crate::theme::Theme;
 
 // --- the which-key popup ---
@@ -344,196 +342,10 @@ pub fn keys_preview(
     lines
 }
 
-// --- the status bar ---
-
-/// What a hint shows as its key.
-#[derive(Debug, Clone, Copy)]
-pub enum HintKey {
-    /// The keys bound to this action in the view, read from the keymap; no hint if unbound.
-    Action(Action),
-    /// Fixed text, for a key pair shown as one (`H L`) or a `:` command.
-    Text(&'static str),
-}
-
-/// One entry of the status-bar hint: a key and a word.
-#[derive(Debug, Clone, Copy)]
-pub struct Hint {
-    /// The key.
-    pub key: HintKey,
-    /// One word for what it does.
-    pub label: &'static str,
-}
-
-const fn act(action: Action, label: &'static str) -> Hint {
-    Hint {
-        key: HintKey::Action(action),
-        label,
-    }
-}
-
-const fn text(text: &'static str, label: &'static str) -> Hint {
-    Hint {
-        key: HintKey::Text(text),
-        label,
-    }
-}
-
-/// The primary actions of each view, most useful first. This is the one hand-picked list: it
-/// names actions, so the keys shown follow the keymap. Everything else is behind `:keys`.
-pub fn view_hints(kind: BufferKind) -> Vec<Hint> {
-    use Action::*;
-    match kind {
-        BufferKind::Conversation => vec![
-            act(EnterInsert, "chat"),
-            act(PickAgent, "switch"),
-            act(QuickCapture, "capture"),
-            act(Search, "search"),
-            act(FocusInbox, "inbox"),
-            text(":keys", "all keys"),
-        ],
-        BufferKind::Tree => vec![
-            act(TreeOpen, "open"),
-            act(TreeToggleFold, "fold"),
-            act(TaskCycleStatus, "status"),
-            act(QuickCapture, "add"),
-            act(TaskArchive, "archive"),
-            text(":keys", "all keys"),
-        ],
-        BufferKind::Inbox | BufferKind::InboxDetail => vec![
-            act(InboxAllow, "allow"),
-            act(InboxDeny, "deny"),
-            act(InboxReply, "reply"),
-            act(InboxDismiss, "dismiss"),
-            act(InboxOpen, "open"),
-        ],
-        BufferKind::Activity | BufferKind::Messages => vec![
-            act(FeedOpen, "open"),
-            act(BackToConversation, "back"),
-            text(":keys", "all keys"),
-        ],
-        BufferKind::TaskDetail => vec![
-            act(TaskCycleStatus, "status"),
-            act(TaskEditNotes, "notes"),
-            act(TaskAddDecision, "decide"),
-            act(TaskRelate, "relate"),
-            act(BackToConversation, "back"),
-        ],
-        BufferKind::Board => vec![
-            act(BoardColumnRight, "column"),
-            text("H L", "move card"),
-            text("< >", "reorder"),
-            act(BoardOpen, "open"),
-            act(QuickCapture, "add"),
-            act(BackToConversation, "back"),
-        ],
-        BufferKind::Worktrees => vec![
-            act(WorktreeOpen, "open"),
-            act(WorktreeEdit, "edit"),
-            act(WorktreeCopyPath, "copy path"),
-            act(WorktreeRemove, "remove"),
-            act(BackToConversation, "back"),
-        ],
-        BufferKind::MapShelf => vec![act(MapOpen, "open"), act(BackToConversation, "back")],
-        BufferKind::MapOutline => vec![
-            act(MapMode, "map mode"),
-            act(MapToggleFold, "fold"),
-            act(MapNextFlow, "flow"),
-            act(MapNextStep, "step"),
-            act(BackToConversation, "back"),
-        ],
-        BufferKind::SidePanel => vec![
-            act(EnterInsert, "chat"),
-            act(NextSideChat, "next"),
-            act(CloseSideChat, "close"),
-            act(NewTangent, "tangent"),
-            act(AttachTangent, "attach"),
-        ],
-        BufferKind::Library => vec![
-            act(LibraryOpen, "open"),
-            act(LibraryToggleFold, "fold"),
-            act(BrowseProjectLibrary, "projects"),
-            act(LeaveReadingMode, "leave"),
-        ],
-        BufferKind::Reader => vec![
-            act(NextCitation, "cite"),
-            act(OpenCitation, "open"),
-            act(BrowseCitation, "browser"),
-            act(ReaderBack, "back"),
-            act(AskAboutReport, "ask"),
-            act(LeaveReadingMode, "leave"),
-        ],
-        BufferKind::Ask => vec![
-            act(AskAboutReport, "ask"),
-            act(NextCitation, "cite"),
-            act(OpenCitation, "open"),
-            act(CloseAsk, "close"),
-            act(LeaveReadingMode, "leave"),
-        ],
-        BufferKind::Tangents => vec![
-            act(TangentOpen, "read"),
-            act(TangentFile, "file"),
-            act(TangentStart, "start task"),
-            act(AttachTangent, "attach"),
-            act(TangentDrop, "drop"),
-            act(BackToConversation, "back"),
-        ],
-    }
-}
-
-/// MAP mode's hint: its keys are not tied to a buffer.
-const MAP_MODE_HINTS: &[Hint] = &[
-    text("hjkl", "select"),
-    act(Action::MapFollow, "follow"),
-    act(Action::MapDrillIn, "in"),
-    act(Action::MapDrillOut, "out"),
-    text("+ -", "zoom"),
-    act(Action::LeaveMapMode, "leave"),
-];
-
-/// The command hint that is always last, so `:` is never lost.
-const COMMAND_HINT: &str = ": command";
-
-/// The versions of the right-hand status hint for the view in `scopes[0]` (or MAP mode), longest
-/// first, each ending in `: command`. `spread_fit` takes the longest that fits.
-pub fn hint_variants(
-    map: &Keymap,
-    mode: Mode,
-    kind: BufferKind,
-    scopes: &[Scope],
-    theme: &Theme,
-) -> Vec<Vec<Span<'static>>> {
-    let (hints, key_mode, key_scopes) = if mode == Mode::Map {
-        (MAP_MODE_HINTS.to_vec(), Mode::Map, &[Scope::Global][..])
-    } else {
-        (view_hints(kind), Mode::Normal, scopes)
-    };
-    let shown: Vec<String> = hints
-        .iter()
-        .filter_map(|hint| {
-            let key = match hint.key {
-                HintKey::Action(action) => map.label_for(action, key_mode, key_scopes)?,
-                HintKey::Text(text) => text.to_owned(),
-            };
-            Some(format!("{key} {}", hint.label))
-        })
-        .collect();
-    // The shortest version keeps one hint and `: command`; `spread_fit` falls back to it, clipping
-    // the left side, when nothing fits whole (as the fixed hint did before). With no hint at all
-    // there is only `: command`.
-    (1..=shown.len().max(1))
-        .rev()
-        .map(|n| {
-            let n = n.min(shown.len());
-            let mut parts: Vec<&str> = shown[..n].iter().map(String::as_str).collect();
-            parts.push(COMMAND_HINT);
-            vec![Span::styled(parts.join(" · "), theme.dim())]
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::region::BufferKind;
     use crate::keymap::Resolver;
 
     fn rows(scopes: &[Scope], keys: &str) -> Vec<WhichKeyRow> {
@@ -605,40 +417,6 @@ mod tests {
                 "{:?} is not in ALL",
                 binding.action
             );
-        }
-    }
-
-    #[test]
-    fn every_hinted_action_has_a_key_in_its_view() {
-        let map = Keymap::default_map();
-        let kinds = [
-            BufferKind::Tree,
-            BufferKind::Inbox,
-            BufferKind::Conversation,
-            BufferKind::TaskDetail,
-            BufferKind::InboxDetail,
-            BufferKind::Activity,
-            BufferKind::Messages,
-            BufferKind::Board,
-            BufferKind::Worktrees,
-            BufferKind::MapShelf,
-            BufferKind::MapOutline,
-            BufferKind::SidePanel,
-            BufferKind::Library,
-            BufferKind::Reader,
-            BufferKind::Ask,
-            BufferKind::Tangents,
-        ];
-        for kind in kinds {
-            let scopes = [Scope::Buffer(kind), Scope::Global];
-            for hint in view_hints(kind) {
-                if let HintKey::Action(action) = hint.key {
-                    assert!(
-                        map.label_for(action, Mode::Normal, &scopes).is_some(),
-                        "{kind:?}: {action:?} has no key there"
-                    );
-                }
-            }
         }
     }
 }

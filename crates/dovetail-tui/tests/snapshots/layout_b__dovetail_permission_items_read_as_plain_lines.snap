@@ -2,13 +2,14 @@
 source: crates/dovetail-tui/tests/layout_b.rs
 expression: all
 ---
-┌ inbox · needs you (3) ────────────────────┐
+┌ inbox ────────────────────────────────────┐
 │ ▸ ⚠ slice-7  Write · /w/a.txt       10:15 │
 │   ⚠ slice-4  Remove worktree · dov… 10:15 │
 │   ⚠ coordinator  start slice demo-… 10:15 │
 │                                           │
 ----
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+└──────────────────────────────────────────────────────────────────────────
 ┌ inbox item ─────────────────────────────────────────────────────────────┐
 │ ⚠ slice-7  Write  10:15                                                 │
 │                                                                         │
@@ -21,9 +22,9 @@ expression: all
 │                                                                         │
 │                                                                         │
 │                                                                         │
-│                                                                         │
 ----
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+└──────────────────────────────────────────────────────────────────────────
 ┌ inbox item ─────────────────────────────────────────────────────────────┐
 │ ⚠ slice-4  Remove worktree  10:15                                       │
 │                                                                         │
@@ -36,9 +37,9 @@ expression: all
 │                                                                         │
 │                                                                         │
 │                                                                         │
-│                                                                         │
 ----
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+└──────────────────────────────────────────────────────────────────────────
 ┌ inbox item ─────────────────────────────────────────────────────────────┐
 │ ⚠ coordinator  Start slice  10:15                                       │
 │                                                                         │
@@ -48,7 +49,6 @@ expression: all
 │                                                                         │
 │ “It needs a key. slice-7 can only reach the eval path with              │
 │ FS_EVAL_VIRTUAL_KEY set.”                                               │
-│                                                                         │
 │                                                                         │
 │                                                                         │
 │                                                                         │

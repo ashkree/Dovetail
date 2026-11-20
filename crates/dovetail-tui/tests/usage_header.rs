@@ -1,4 +1,4 @@
-//! The usage indicator in the header row (task #16).
+//! The usage line at the bottom right of the status bar (task #16, moved in task #40).
 
 mod support;
 
@@ -31,16 +31,18 @@ fn app_with_usage() -> dovetail_tui::App {
     app_with(snap)
 }
 
+/// The status row, the last on screen.
 fn header(app: &mut dovetail_tui::App, width: u16) -> String {
     render(app, width, 12)
         .lines()
-        .next()
+        .last()
         .unwrap_or("")
+        .trim_end()
         .to_string()
 }
 
 #[test]
-fn the_header_drops_resets_then_model_then_week() {
+fn the_usage_line_drops_resets_then_model_then_week() {
     let mut app = app_with_usage();
     let rows: Vec<String> = [120, 80, 60, 44, 34, 24]
         .into_iter()
@@ -50,14 +52,14 @@ fn the_header_drops_resets_then_model_then_week() {
 }
 
 #[test]
-fn with_no_turn_yet_only_the_model_shows() {
+fn with_no_turn_yet_only_the_model_and_context_show() {
     let mut snap = world();
     for a in &mut snap.agents {
         a.model = Some("claude-opus-5-5".into());
     }
     let mut app = app_with(snap);
     let row = header(&mut app, 120);
-    assert!(row.ends_with("opus-5-5"), "{row}");
+    assert!(row.ends_with("opus-5-5 · ctx 62%"), "{row}");
     assert!(!row.contains("5h"), "{row}");
 }
 
@@ -70,7 +72,7 @@ fn a_reset_passing_redraws_once_and_shows_a_dash() {
     app.set_now(reset_ms - 1);
     assert!(!app.is_dirty(), "nothing changes before the reset");
     app.set_now(reset_ms);
-    assert!(app.is_dirty(), "the reset passing redraws the header");
+    assert!(app.is_dirty(), "the reset passing redraws the usage line");
     let row = header(&mut app, 120);
     assert!(row.contains("5h —"), "{row}");
     assert!(!row.contains("5h 34%"), "{row}");
@@ -107,4 +109,29 @@ fn a_report_without_the_5h_window_shows_a_dash() {
     assert!(row.contains("5h — · week 6% (resets Wed)"), "{row}");
     let narrow = header(&mut app, 44);
     assert!(narrow.contains("5h —"), "{narrow}");
+}
+
+/// Task #40: the not-a-project warning sits in the status bar, only while it applies, and falls
+/// back to its short text before the usage line gives way.
+#[test]
+fn the_not_a_project_warning_shows_in_the_status_bar_only_while_it_applies() {
+    let mut snap = world();
+    snap.usage = usage(0.34, 0.18);
+    let mut app = app_with(snap.clone());
+    assert!(!header(&mut app, 160).contains("not a"), "no warning, none shown");
+
+    snap.warnings.push(dovetail_api::Warning {
+        id: dovetail_api::WarningId(dovetail_api::UNREGISTERED_WARNING.into()),
+        text: "not a Dovetail project".into(),
+    });
+    let mut app = app_with(snap);
+    let wide = header(&mut app, 200);
+    assert!(
+        wide.contains("⚠ not a Dovetail project yet: :project add keeps it"),
+        "{wide}"
+    );
+    assert!(wide.contains("5h 34%"), "{wide}");
+    let narrow = header(&mut app, 60);
+    assert!(narrow.contains("⚠ not a project yet"), "{narrow}");
+    assert!(!narrow.contains("Dovetail project yet"), "{narrow}");
 }

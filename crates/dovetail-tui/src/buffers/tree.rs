@@ -210,6 +210,7 @@ impl TreeBuffer {
         let mut left = vec![
             Span::styled(glyph, theme.fg(color)),
             Span::raw(" "),
+            Span::styled(format!("#{} ", task.id.0), theme.dim()),
             Span::styled(
                 task.title.clone(),
                 if done {
@@ -459,6 +460,21 @@ fn task_glyph(task: &Task, waiting: bool, theme: &Theme) -> (&'static str, ratat
     }
 }
 
+/// The open tasks and the live sessions, for the pane title.
+pub(crate) fn counts(snap: &Snapshot) -> (usize, usize) {
+    let tasks = snap
+        .tasks
+        .iter()
+        .filter(|t| !matches!(t.status, TaskStatus::Done | TaskStatus::Archived))
+        .count();
+    let agents = snap
+        .agents
+        .iter()
+        .filter(|a| a.kind.is_session() && a.status != AgentStatus::Done)
+        .count();
+    (tasks, agents)
+}
+
 /// Fewest characters of a status line worth showing; below this it is dropped.
 const STATUS_MIN: usize = 8;
 
@@ -557,21 +573,14 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
             (word.clone(), word)
         }
     };
-    let memory = agent
-        .memory_mb
-        .map(|mb| Span::styled(format!(" {}", fmt::memory(mb)), theme.dim()));
-    let cost = (agent.cost_usd > 0.0)
-        .then(|| Span::styled(format!(" {}", fmt::cost(agent.cost_usd)), theme.dim()));
     // Context fill shows for slices (Decision 22): plain, amber above 60 %, red above 80 %.
     let context = agent
         .context_pct
         .filter(|_| agent.kind == AgentKind::Slice)
         .map(|p| Span::styled(format!(" {p}%"), theme.context(p)));
-    // Fullest first; a narrow pane drops cost, then memory, then the rest but the status.
+    // Fullest first; a narrow pane drops the context fill, then the rest but the status.
     let versions = [
-        vec![Some(word.clone()), memory.clone(), context.clone(), cost],
-        vec![Some(word.clone()), memory, context.clone()],
-        vec![Some(word.clone()), context],
+        vec![Some(word.clone()), context.clone()],
         vec![Some(word)],
         vec![Some(short_word)],
     ];
@@ -588,15 +597,11 @@ impl Buffer for TreeBuffer {
     }
 
     fn render(&mut self, cx: &ViewCx, frame: &mut Frame, area: Rect, focused: bool) {
-        let name = cx
-            .snap
-            .project
-            .as_ref()
-            .map_or("no project", |p| p.name.as_str());
+        let (tasks, agents) = counts(cx.snap);
         let inner = pane(
             frame,
             area,
-            title(&format!("tasks · {name}"), focused, cx.theme),
+            title(&format!("tasks {tasks} · agents {agents}"), focused, cx.theme),
             focused,
             cx.theme,
         );

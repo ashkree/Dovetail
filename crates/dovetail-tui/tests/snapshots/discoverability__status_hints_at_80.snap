@@ -1,9 +1,0 @@
----
-source: crates/dovetail-tui/tests/discoverability.rs
-expression: out
----
-conversation | NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 6… i chat · : command
-board        | NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx… ⇥ column · : command
-worktrees    | NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 6… ⏎ open · : command
-tree         | NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 6… ⏎ open · : command
-reading      | NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 6… ⏎ open · : command

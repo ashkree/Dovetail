@@ -30,7 +30,7 @@ fn world_with_research() -> dovetail_api::Snapshot {
     snap
 }
 
-/// The tab row (screen row 1) of an app after `setup`.
+/// The tabs inside the screens box (screen row 1) of an app after `setup`, borders removed.
 fn tab_row(width: u16, setup: impl FnOnce(&mut App)) -> String {
     let mut app = app_with(world_with_research());
     setup(&mut app);
@@ -38,6 +38,8 @@ fn tab_row(width: u16, setup: impl FnOnce(&mut App)) -> String {
         .lines()
         .nth(1)
         .unwrap_or_default()
+        .trim_matches('│')
+        .trim_end()
         .to_string()
 }
 

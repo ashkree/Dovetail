@@ -401,11 +401,7 @@ impl Buffer for InboxBuffer {
         let inner = pane(
             frame,
             area,
-            title(
-                &format!("inbox · needs you ({})", items.len()),
-                focused,
-                theme,
-            ),
+            title("inbox", focused, theme),
             focused,
             theme,
         );

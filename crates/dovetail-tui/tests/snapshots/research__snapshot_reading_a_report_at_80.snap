@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/research.rs
 expression: "render(&mut app, 80, 30)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ task · #1 · report ──────────────────┐┌ inbox · needs you (3) ───────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading    │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ task · #1 · report ──────────────────┐┌ inbox ───────────────────────────────┐
 │                                      ││ ▸ ⚠ slice-7  Bash · FS_EVAL_V… 10:15 │
 │    Per seat or flat?                 ││   ? slice-4  Which route pref… 10:12 │
 │                                      ││   ✓ slice-4  Handler wired; t… 10:09 │
@@ -12,23 +13,22 @@ expression: "render(&mut app, 80, 30)"
 │    [F1][S1]. Confidence: medium.     ││                                      │
 │                                      ││                                      │
 │    Evidence                          ││                                      │
-│                                      ││                                      │
-│    • Churn is lower on seat plans    ││ y allow · d deny · r reply · x dism… │
-│      [F1, S2].                       │└──────────────────────────────────────┘
-│                                      │┌ tasks · business ────────────────────┐
-│    • Flat plans leave money          ││ ◐ ◆ coordinator   working 1.2G $3.10 │
-│      behind [3].                     ││ ▾ Now (2)                            │
-│                                      ││ ▾ ⚠ business surface P1     PR #1231 │
-│    A long paragraph so that the      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
-│    reading column has something      ││         ⎇ dovetail/slice-4           │
-│    to wrap at narrow widths:         ││         ✓ write route tests          │
-│    pricing research is mostly        ││         ◐ wire handler to registry   │
-│    reading, and reading wants        ││         ○ update OpenAPI spec ⊘ blo… │
-│    calm lines of text that do not    ││       ✓ ◇ rebase          done $0.21 │
-│    run across a whole wide           ││       ◐ ◇ explore c… 12 tools · Grep │
-│    terminal.                         ││ ▾ ⚠ get_decision 500 P0              │
-│                                      ││   ▾ ⚠ ◆ slice-7  manual    needs you │
+│                                      ││ y allow · d deny · r reply · x dism… │
+│    • Churn is lower on seat plans    │└──────────────────────────────────────┘
+│      [F1, S2].                       │┌ tasks 4 · agents 3 ──────────────────┐
+│                                      ││ ◐ ◆ coordinator              working │
+│    • Flat plans leave money          ││ ▾ Now (2)                            │
+│      behind [3].                     ││ ▾ ⚠ #1 business surface P1  PR #1231 │
+│                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│    A long paragraph so that the      ││         ⎇ dovetail/slice-4           │
+│    reading column has something      ││         ✓ write route tests          │
+│    to wrap at narrow widths:         ││         ◐ wire handler to registry   │
+│    pricing research is mostly        ││         ○ update OpenAPI spec ⊘ blo… │
+│    reading, and reading wants        ││       ✓ ◇ rebase                done │
+│    calm lines of text that do not    ││       ◐ ◇ explore c… 12 tools · Grep │
+│    run across a whole wide           ││ ▾ ⚠ #2 get_decision 500 P0           │
+│    terminal.                         ││   ▾ ⚠ ◆ slice-7  manual    needs you │
 │                                      ││         ⎇ dovetail/slice-7           │
 │ j k scroll · e edit · esc back       ││ ⏎ open · o fold · dd archive         │
 └──────────────────────────────────────┘└──────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx… s status · : command
+ NORMAL   business                                                      ctx 62%

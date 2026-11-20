@@ -2,13 +2,13 @@
 source: crates/dovetail-tui/tests/conversation.rs
 expression: "render(&mut reading_app(), 120, 40)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ○ idle · 1.2G · $3.10 ────────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ coordinator ────────────────────────────────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
-│   What's blocking slice-7?                                              ││   ? slice-4  Which route prefix sh… 10:12 │
+│                                                                         ││   ? slice-4  Which route prefix sh… 10:12 │
 │                                                                         ││   ✓ slice-4  Handler wired; tests … 10:09 │
-│                                                                         ││                                           │
 │   ── coordinator · 10:14 ────────────────────────────────────────────   ││                                           │
 │                                                                         ││                                           │
 │   ▸ read 2 files · checked slice-7's stream · 4 s                       ││                                           │
@@ -19,26 +19,26 @@ expression: "render(&mut reading_app(), 120, 40)"
 │                                                                         ││                                           │
 │  ▎What I checked                                                        ││ y allow · d deny · r reply · x dismiss    │
 │                                                                         │└───────────────────────────────────────────┘
-│  ▎• the handler in crates/api/src/routes.rs                             │┌ tasks · business ─────────────────────────┐
-│                                                                         ││ ○ ◆ coordinator           idle 1.2G $3.10 │
+│  ▎• the handler in crates/api/src/routes.rs                             │┌ tasks 4 · agents 3 ───────────────────────┐
+│                                                                         ││ ○ ◆ coordinator                      idle │
 │  ▎• the eval path, which fails before it logs                           ││ ▾ Now (2)                                 │
-│                                                                         ││ ▾ ⚠ business surface P1          PR #1231 │
-│  ▎• the CI config                                                       ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
+│                                                                         ││ ▾ ⚠ #1 business surface P1       PR #1231 │
+│  ▎• the CI config                                                       ││   ▾ ◐ ◆ slice-4  edits        working 71% │
 │                                                                         ││         ⎇ dovetail/slice-4                │
 │  ▎rust                                                                  ││         ✓ write route tests               │
 │  ▎  let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                    ││         ◐ wire handler to registry        │
 │                                                                         ││         ○ update OpenAPI spec ⊘ blocked   │
-│  ▎Slice   │ State                                                       ││       ✓ ◇ rebase               done $0.21 │
+│  ▎Slice   │ State                                                       ││       ✓ ◇ rebase                     done │
 │  ▎────────┼────────                                                     ││       ◐ ◇ explore callers 12 tools · Grep │
-│  ▎slice-4 │ editing                                                     ││ ▾ ⚠ get_decision 500 P0                   │
+│  ▎slice-4 │ editing                                                     ││ ▾ ⚠ #2 get_decision 500 P0                │
 │  ▎slice-7 │ blocked                                                     ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                         ││         ⎇ dovetail/slice-7                │
 │  ▎│ Merge order: #1231 first, then the 500 fix.                         ││ ▾ Next (1)                                │
-│                                                                         ││   ○ idea: eval key flow P2                │
+│                                                                         ││   ○ #3 idea: eval key flow P2             │
 │                                                                         ││ ▸ Later (1)                               │
 │                                                                         ││ ▸ Done (1)                                │
 └─────────────────────────────────────────────────────────────────────────┘│                                           │
 ┌ chat › coordinator ─────────────────────────────────────────────────────┐│                                           │
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn       ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%   i chat · ␣ss switch · ␣t capture · / search · : command
+ NORMAL   business                                                                                              ctx 62%

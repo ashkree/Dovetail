@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/research.rs
 expression: "render(&mut app, 120, 30)"
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ task · #1 · report ─────────────────────────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ task · #1 · report ─────────────────────────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
 │    Per seat or flat?                                                    ││   ? slice-4  Which route prefix sh… 10:12 │
 │                                                                         ││   ✓ slice-4  Handler wired; tests … 10:09 │
@@ -12,23 +13,22 @@ expression: "render(&mut app, 120, 30)"
 │                                                                         ││                                           │
 │    Evidence                                                             ││                                           │
 │                                                                         ││                                           │
-│    • Churn is lower on seat plans [F1, S2].                             ││                                           │
-│                                                                         ││ y allow · d deny · r reply · x dismiss    │
-│    • Flat plans leave money behind [3].                                 │└───────────────────────────────────────────┘
-│                                                                         │┌ tasks · business ─────────────────────────┐
-│    A long paragraph so that the reading column has something to wrap    ││ ◐ ◆ coordinator        working 1.2G $3.10 │
-│    at narrow widths: pricing research is mostly reading, and reading    ││ ▾ Now (2)                                 │
-│    wants calm lines of text that do not run across a whole wide         ││ ▾ ⚠ business surface P1          PR #1231 │
-│    terminal.                                                            ││   ▾ ◐ ◆ slice-4  edits   working 412M 71% │
-│                                                                         ││         ⎇ dovetail/slice-4                │
+│    • Churn is lower on seat plans [F1, S2].                             ││ y allow · d deny · r reply · x dismiss    │
+│                                                                         │└───────────────────────────────────────────┘
+│    • Flat plans leave money behind [3].                                 │┌ tasks 4 · agents 3 ───────────────────────┐
+│                                                                         ││ ◐ ◆ coordinator                   working │
+│    A long paragraph so that the reading column has something to wrap    ││ ▾ Now (2)                                 │
+│    at narrow widths: pricing research is mostly reading, and reading    ││ ▾ ⚠ #1 business surface P1       PR #1231 │
+│    wants calm lines of text that do not run across a whole wide         ││   ▾ ◐ ◆ slice-4  edits        working 71% │
+│    terminal.                                                            ││         ⎇ dovetail/slice-4                │
 │                                                                         ││         ✓ write route tests               │
 │                                                                         ││         ◐ wire handler to registry        │
 │                                                                         ││         ○ update OpenAPI spec ⊘ blocked   │
-│                                                                         ││       ✓ ◇ rebase               done $0.21 │
+│                                                                         ││       ✓ ◇ rebase                     done │
 │                                                                         ││       ◐ ◇ explore callers 12 tools · Grep │
-│                                                                         ││ ▾ ⚠ get_decision 500 P0                   │
+│                                                                         ││ ▾ ⚠ #2 get_decision 500 P0                │
 │                                                                         ││   ▾ ⚠ ◆ slice-7  manual     needs you 85% │
 │                                                                         ││         ⎇ dovetail/slice-7                │
 │ j k scroll · gg G · e edit file · / search · esc back                   ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%      s status · e notes · a decide · R relate · : command
+ NORMAL   business                                                                                              ctx 62%

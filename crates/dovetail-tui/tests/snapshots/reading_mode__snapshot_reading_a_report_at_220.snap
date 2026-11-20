@@ -2,8 +2,9 @@
 source: crates/dovetail-tui/tests/reading_mode.rs
 expression: "snapshot_at(220, 50)"
 ---
- folder /home/you/src/dovetail                                                                                                                      maveron · opus-5-5 high · 5h 34% (resets 11:20) · week 18% (resets Wed)
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                                                                                                                                │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ library ────────────────────────────┐┌ reading · #3 report ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐┌ ask ─────────────────────────────────────────────┐
 │ ▾ Dovetail · open                   ││                                                                                                                               ││ › i to ask about #3's report. A read-only        │
 │   ▾ #3 Fuzzy picker                 ││               Which fuzzy matcher for the picker?                                                                             ││ session answers from the report and its sources, │
@@ -47,8 +48,7 @@ expression: "snapshot_at(220, 50)"
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
 │                                     ││                                                                                                                               ││                                                  │
-│                                     ││                                                                                                                               ││                                                  │
 │                                     ││               end · ]s [s cite · gd open · gx browser · ^o back · i ask · ⎋ leave                                             ││                                                  │
 │ ⏎ read · o fold                     ││                                                                                                                               ││                                                  │
 └─────────────────────────────────────┘└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%   READING  [F1] 1/7                                                                    ]s cite · gd open · gx browser · ^o back · i ask · ⎋ leave · : command
+ NORMAL   Dovetail   READING  [F1] 1/7                                                                                                    maveron · opus-5-5 high · ctx 18% · 5h 34% (resets 11:20) · week 18% (resets Wed)

@@ -355,9 +355,6 @@ fn agent_preview(
     if let Some(branch) = branch_of(snap, agent) {
         facts.push(branch.to_string());
     }
-    if let Some(mb) = agent.memory_mb {
-        facts.push(fmt::memory(mb));
-    }
     facts.push(status_word(agent.status).to_string());
     if agent.subagent_tokens > 0 {
         facts.push(format!(

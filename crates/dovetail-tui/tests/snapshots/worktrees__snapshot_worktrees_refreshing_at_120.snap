@@ -2,9 +2,10 @@
 source: crates/dovetail-tui/tests/worktrees.rs
 expression: "render(&mut app, 120, 34)"
 ---
- folder /home/you/src/dovetail                  maveron · opus-5-5 high · 5h 34% (resets 11:20) · week 18% (resets Wed)
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ worktrees · Dovetail · 3 · refreshing… ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ worktrees · Dovetail · 3 · refreshing… ─────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │ slice         branch               sync  changes  unpushed  PR  setup   ││ ▸ ⚠ inbox-keys  Bash · cargo test … 08:59 │
 │ ⚠ inbox-keys  dovetail/inbox-keys  —     —        —         —   —       ││   ↗ coordinator  2 new tangents · … 08:58 │
 │ ◌ picker      dovetail/picker      —     —        —         —   —       ││   ✓ coordinator  M2 splits into th… 08:58 │
@@ -16,23 +17,22 @@ expression: "render(&mut app, 120, 34)"
 │ path     /home/you/.local/share/dovetail/projects/dovetail/worktrees/i… ││                                           │
 │ base     —                                                              ││ y allow · d deny · r reply · x dismiss    │
 │ sync     —                                                              │└───────────────────────────────────────────┘
-│ changes  —                                                              │┌ tasks · Dovetail ─────────────────────────┐
-│ unpushed —                                                              ││ ○ ◆ coordinator  plannin… idle 245M $0.84 │
-│ PR       —                                                              ││ ○ ◆ side-1  read-only     idle 210M $0.03 │
+│ changes  —                                                              │┌ tasks 8 · agents 6 ───────────────────────┐
+│ unpushed —                                                              ││ ○ ◆ coordinator  planning M2         idle │
+│ PR       —                                                              ││ ○ ◆ side-1  read-only                idle │
 │ setup    —                                                              ││ ▾ Unsorted (1)                            │
-│ checked  —                                                              ││   ○ Check the kitty graphics fallback ✦ … │
+│ checked  —                                                              ││   ○ #8 Check the kitty graphics fallback… │
 │                                                                         ││ ▾ Now (3)                                 │
-│                                                                         ││ ▾ ◐ Task tree with bucket group… PR #1231 │
-│                                                                         ││   ▾ ◐ ◆ tree-view  working 232M 34% $0.41 │
+│                                                                         ││ ▾ ◐ #1 Task tree with bucket gr… PR #1231 │
+│                                                                         ││   ▾ ◐ ◆ tree-view  grouping…  working 34% │
 │                                                                         ││         ⎇ dovetail/tree-view              │
 │                                                                         ││         ✓ Group tasks by bucket           │
 │                                                                         ││         ◐ Sort by P-level within a bucket │
 │                                                                         ││         ○ Mark P-level and bucket mismat… │
 │                                                                         ││         ○ Fold Done into one row          │
-│                                                                         ││       ◐ ◇ explore-keymap    working $0.05 │
-│                                                                         ││ ▾ ⚠ Inbox keys and preview P0 ↔ 1         │
+│                                                                         ││       ◐ ◇ explore-keymap          working │
+│                                                                         ││ ▾ ⚠ #2 Inbox keys and preview P0 ↔ 1      │
 │                                                                         ││   ▾ ⚠ ◆ inbox-keys  edits   needs you 52% │
-│                                                                         ││         ⎇ dovetail/inbox-keys             │
 │ ⏎ open · e editor · c copy path · X remove                              ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- NORMAL   Dovetail · 8 tasks · 6 agents · 3 ⚠ · 1.3G · ctx 18%      ⏎ open · e edit · c copy path · X remove · : command
+ NORMAL   Dovetail                    maveron · opus-5-5 high · ctx 18% · 5h 34% (resets 11:20) · week 18% (resets Wed)

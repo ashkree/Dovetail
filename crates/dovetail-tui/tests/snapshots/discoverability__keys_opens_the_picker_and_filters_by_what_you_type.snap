@@ -1,12 +1,11 @@
 ---
 source: crates/dovetail-tui/tests/discoverability.rs
-assertion_line: 148
 expression: filtered
 ---
- folder /src/business
- ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading
-┌ coordinator · ◐ working · 1.2G · $3.10 ─────────────────────────────────┐┌ inbox · needs you (3) ────────────────────┐
-│                                                                         ││ ▸ ⚠ slice-7  Bash · FS_EVAL_VIRTUA… 10:15 │
+┌ screens ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ␣c session · ␣b board · ␣g worktrees · ␣M maps · ␣R research · ␣r reading                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ coordinator ────────────────────────────────────────────────────────────┐┌ inbox ────────────────────────────────────┐
 │ ┌ Keys ────────────────────────────────────────────┐┌ Keys ────────────────────────────────────────────────────────┐ │
 │ │› worktrees                                  6/139││ worktrees                                                    │ │
 │ │                                                  ││ Views                                                        │ │
@@ -16,6 +15,7 @@ expression: filtered
 │ │ · worktrees: open in the editor      Worktrees: e││   :worktrees                                                 │ │
 │ │ · worktrees: copy the path           Worktrees: c││                                                              │ │
 │ │ · worktrees: remove (archives the sl Worktrees: X││ Enter runs it                                                │ │
+│ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │─┘
 │ │                                                  ││                                                              │─┐
 │ │                                                  ││                                                              │ │
@@ -31,9 +31,8 @@ expression: filtered
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
 │ │                                                  ││                                                              │ │
-│ │                                                  ││                                                              │ │
 └─└──────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────┘ │
-┌ chat › coordinator ─────────────────────────────────────────────────────┐│ ▸ Later (1)                               │
+┌ chat › coordinator ─────────────────────────────────────────────────────┐│   ○ #3 idea: eval key flow P2             │
 │   › i or ^j to type · ]] [[ turns · zc zo fold entry · zC zO turn       ││ ⏎ open · o fold · dd archive              │
 └─────────────────────────────────────────────────────────────────────────┘└───────────────────────────────────────────┘
- INSERT   business · 4 tasks · 3 agents · 3 ⚠ · 2.1G · ctx 62%            ⏎ open · o fold · s status · a add · : command
+ INSERT   business                                                                                              ctx 62%

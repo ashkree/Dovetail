@@ -65,7 +65,7 @@ pub struct DecisionId(pub u64);
 pub struct WarningId(pub String);
 
 /// Id of the warning shown while the open folder is not a Dovetail project yet (ADR 0005). The
-/// TUI shows it in the header row instead of the status bar.
+/// TUI shows it at the right of the status bar, ahead of the usage line.
 pub const UNREGISTERED_WARNING: &str = "unregistered";
 
 /// The id of Tangents, the built-in research project every tangent is saved in (ADR 0017,

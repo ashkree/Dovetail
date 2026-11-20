@@ -89,8 +89,8 @@ pub fn spans(view: &ViewState, theme: &Theme, width: usize) -> Vec<Span<'static>
         .filter_map(|tab| Some((key_label(tab.action)?, tab)))
         .collect();
     let build = |with_labels: bool, limit: usize| {
-        let mut out = vec![Span::raw(" ")];
-        let mut used = 1;
+        let mut out = Vec::new();
+        let mut used = 0;
         let mut complete = true;
         for (i, (key, tab)) in shown.iter().enumerate() {
             let text = if with_labels {

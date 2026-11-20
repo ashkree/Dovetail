@@ -653,7 +653,7 @@ fn enter_on_an_activity_row_opens_its_agent() {
     app.on_key(key('j'), 50);
     app.on_key(enter(), 51);
     assert_eq!(app.open_agent(), Some(&agent_id("slice-4")));
-    assert!(render(&mut app, 120, 30).contains("slice-4 ·"));
+    assert!(render(&mut app, 120, 30).contains("┌ slice-4 "));
 }
 
 #[test]

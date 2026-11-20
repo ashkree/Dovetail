@@ -13,7 +13,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
 
-use super::{Buffer, Effect, ViewCx, pane, status_glyph, status_word, title};
+use super::{Buffer, Effect, ViewCx, pane, title};
 use crate::action::Action;
 use crate::complete::{self, Completion, KeyResult};
 use crate::fmt;
@@ -603,12 +603,7 @@ impl Buffer for ConversationBuffer {
             .and_then(|id| cx.snap.agents.iter().find(|a| &a.id == id));
         let heading = match agent {
             Some(a) => {
-                let (glyph, _) = status_glyph(a.status, theme);
-                let mut parts = vec![a.name.clone(), format!("{glyph} {}", status_word(a.status))];
-                if let Some(mb) = a.memory_mb {
-                    parts.push(fmt::memory(mb));
-                }
-                parts.push(fmt::cost(a.cost_usd));
+                let mut parts = vec![a.name.clone()];
                 parts.extend(self.heading_suffix.clone());
                 parts.join(" · ")
             }

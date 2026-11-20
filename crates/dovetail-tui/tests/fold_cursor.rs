@@ -60,20 +60,20 @@ fn marked_rows(screen: &str) -> Vec<String> {
 #[test]
 fn the_newest_reply_is_never_cut_even_when_long() {
     let mut app = long_reply_app(false);
-    render(&mut app, 100, 60);
+    render(&mut app, 100, 64);
     type_keys(&mut app, "gg");
-    let top = render(&mut app, 100, 60);
+    let top = render(&mut app, 100, 64);
     assert!(!top.contains(CUT), "{top}");
     type_keys(&mut app, "G");
-    assert!(render(&mut app, 100, 60).contains("line 99"));
+    assert!(render(&mut app, 100, 64).contains("line 99"));
 }
 
 #[test]
 fn an_older_long_reply_is_cut_once_a_newer_one_exists() {
     let mut app = long_reply_app(true);
-    render(&mut app, 100, 60);
+    render(&mut app, 100, 64);
     type_keys(&mut app, "gg");
-    let screen = render(&mut app, 100, 60);
+    let screen = render(&mut app, 100, 64);
     assert!(screen.contains(CUT), "{screen}");
     assert!(screen.contains("line 0"));
     assert!(!screen.contains("line 99"));
@@ -82,27 +82,27 @@ fn an_older_long_reply_is_cut_once_a_newer_one_exists() {
 #[test]
 fn zo_and_zc_act_on_the_long_entry_under_the_cursor() {
     let mut app = long_reply_app(true);
-    render(&mut app, 100, 60);
+    render(&mut app, 100, 64);
     type_keys(&mut app, "gg");
-    render(&mut app, 100, 60);
+    render(&mut app, 100, 64);
     // The viewport top is the prompt, not the long reply: the cursor (middle of the view) is.
     type_keys(&mut app, "zo");
-    let open = render(&mut app, 100, 60);
+    let open = render(&mut app, 100, 64);
     assert!(!open.contains(CUT), "{open}");
     type_keys(&mut app, "zc");
-    assert!(render(&mut app, 100, 60).contains(CUT));
+    assert!(render(&mut app, 100, 64).contains(CUT));
 }
 
 #[test]
 fn zc_cuts_the_newest_reply_when_asked_and_zo_restores_it() {
     let mut app = long_reply_app(false);
-    render(&mut app, 100, 60);
+    render(&mut app, 100, 64);
     type_keys(&mut app, "gg");
-    render(&mut app, 100, 60);
+    render(&mut app, 100, 64);
     type_keys(&mut app, "zc");
-    assert!(render(&mut app, 100, 60).contains(CUT));
+    assert!(render(&mut app, 100, 64).contains(CUT));
     type_keys(&mut app, "zo");
-    assert!(!render(&mut app, 100, 60).contains(CUT));
+    assert!(!render(&mut app, 100, 64).contains(CUT));
 }
 
 #[test]
