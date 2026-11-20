@@ -25,6 +25,15 @@ The rules a review checks code against. The hard constraints in `AGENTS.md` appl
 - Doc comments on every public type in the API crate.
 - **One source for each limit or constant.** User-facing text that names a limit (a cap, a timeout, a count) reads it from the same constant the code uses.
 
+## Maintainability
+
+The project is maintained for the long term, so code is judged on how easy it is to change later, not only on whether it works.
+- **Reuse before writing.** Search for an existing function, type, component or helper that does the job or nearly does. Extend it rather than adding a parallel one.
+- **Consolidate what you touch.** Two pieces of code doing the same thing in the area a change touches become one. Consolidation outside that area is proposed to the coordinator as its own task, never slipped into another change.
+- **Extension points only where the roadmap names the next step.** For example, ADR 0030's order of work says the page and the daemon come next, so clients stay behind the `Snapshot`/`Command` boundary. No generic layers, plugin hooks or configuration for needs nobody has named.
+- **Say what was reused.** A slice's `done` report names what it reused or extended, or why the code had to be new. The review checks that claim.
+- Spikes and other throwaway code are exempt.
+
 ## Readability (the user has poor eyesight: a requirement, not polish)
 
 120-column reading column centred in wide panes; blank rows between paragraphs, list items, code blocks and headings; markdown keeps bold/italic/code styling and each also gets its own colour; off-white body text, never pure white; tool activity folded into one summary line per turn; thinking hidden; long output truncated with "show more"; no solid backgrounds on areas (panes, columns, views): the selection highlight and badges are the only exceptions (ADR 0018 amendment, 2026-11-11). Details in `docs/ui-session-brief.md`.
