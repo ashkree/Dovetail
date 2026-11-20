@@ -4129,8 +4129,15 @@ fn fresh_fixture(pause_before: usize) -> FakeDriver {
         })
 }
 
+/// No fresh start raises a Needs-you item: the old transcript just stays on disk (task #38).
+fn no_permission_item(s: &Snapshot) -> bool {
+    s.inbox
+        .iter()
+        .all(|i| !matches!(i.kind, InboxKind::Permission { .. }))
+}
+
 #[test]
-fn fresh_appends_the_handoff_seeds_a_new_coordinator_and_y_goes_back() {
+fn fresh_appends_the_handoff_and_seeds_a_new_coordinator_with_no_item() {
     let fake = fresh_fixture(4);
     let mut h = Harness::start(fake.clone(), true, Config::default());
     // A journal file for today already exists: `:fresh` adds to it.
@@ -4157,17 +4164,8 @@ fn fresh_appends_the_handoff_seeds_a_new_coordinator_and_y_goes_back() {
     h.send(Command::Handoff);
     h.wait_for("the handoff request", |s| journal(s).closing);
     fake.resume();
-    let keep_item = |s: &Snapshot| {
-        s.inbox.iter().find_map(|i| match &i.kind {
-            InboxKind::Permission { tool, input, .. }
-                if tool == dovetail_api::FRESH_COORDINATOR_PERMISSION =>
-            {
-                Some((i.id, input.clone()))
-            }
-            _ => None,
-        })
-    };
-    h.wait_for("the fresh-start item", |s| keep_item(s).is_some());
+    wait_started(&fake, 2);
+    h.wait_for("the journal block", |s| !journal(s).closing);
 
     // The day's file was added to, not replaced.
     let text = std::fs::read_to_string(&path).expect("the journal file");
@@ -4193,29 +4191,12 @@ fn fresh_appends_the_handoff_seeds_a_new_coordinator_and_y_goes_back() {
     assert!(seed.contains("Open: PR 20 waits on review."), "{seed}");
     assert!(seed.contains("# Open tasks"), "{seed}");
     assert!(seed.contains("#1 ship the journal"), "{seed}");
-    let (item, input) = keep_item(&h.snap).expect("item");
-    assert_eq!(input["session_id"], old.as_str());
-
-    // `y`: the fresh session stops and the previous one resumes.
-    h.send(Command::AnswerPermission {
-        item,
-        answer: PermissionAnswer::Allow,
-    });
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while fake.started_specs().len() < 3 {
-        assert!(Instant::now() < deadline, "the old session never resumed");
-        // The new session replays the script too, and stops at the same line.
-        fake.resume();
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let back = &fake.started_specs()[2];
-    assert!(back.resume);
-    assert_eq!(back.session_id, old);
+    assert!(no_permission_item(&h.snap));
     h.quit();
 }
 
 #[test]
-fn fresh_session_starts_a_new_coordinator_with_no_seed_and_y_goes_back() {
+fn fresh_session_starts_a_new_coordinator_with_no_seed_and_no_item() {
     let fake = fixture("plain_turn");
     let mut h = Harness::start(fake.clone(), true, Config::default());
     prompt(&h, "first");
@@ -4228,17 +4209,6 @@ fn fresh_session_starts_a_new_coordinator_with_no_seed_and_y_goes_back() {
         .count();
 
     h.send(Command::FreshSession);
-    let keep_item = |s: &Snapshot| {
-        s.inbox.iter().find_map(|i| match &i.kind {
-            InboxKind::Permission { tool, input, .. }
-                if tool == dovetail_api::FRESH_COORDINATOR_PERMISSION =>
-            {
-                Some((i.id, input.clone()))
-            }
-            _ => None,
-        })
-    };
-    h.wait_for("the fresh item", |s| keep_item(s).is_some());
     let deadline = Instant::now() + Duration::from_secs(5);
     while fake.started_specs().len() < 2 {
         assert!(Instant::now() < deadline, "the new session never started");
@@ -4265,22 +4235,7 @@ fn fresh_session_starts_a_new_coordinator_with_no_seed_and_y_goes_back() {
         .join("projects/p/journal")
         .join(format!("{}.md", local_date(0)));
     assert!(!file.exists(), "nothing is written to the journal");
-    let (item, input) = keep_item(&h.snap).expect("item");
-    assert_eq!(input["session_id"], old.as_str());
-
-    // `y`: the fresh session stops and the previous one resumes.
-    h.send(Command::AnswerPermission {
-        item,
-        answer: PermissionAnswer::Allow,
-    });
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while fake.started_specs().len() < 3 {
-        assert!(Instant::now() < deadline, "the old session never resumed");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let back = &fake.started_specs()[2];
-    assert!(back.resume);
-    assert_eq!(back.session_id, old);
+    assert!(no_permission_item(&h.snap));
     h.quit();
 }
 
@@ -4350,7 +4305,7 @@ fn an_unregistered_folder_has_no_journal() {
 }
 
 #[test]
-fn the_first_open_of_a_new_day_starts_a_fresh_coordinator_and_y_goes_back() {
+fn the_first_open_of_a_new_day_starts_a_fresh_coordinator_with_no_item() {
     let fake = fixture("plain_turn");
     let mut h = Harness::start(fake.clone(), true, Config::default());
     prompt(&h, "hello");
@@ -4377,25 +4332,12 @@ fn the_first_open_of_a_new_day_starts_a_fresh_coordinator_and_y_goes_back() {
     .expect("handoff");
 
     let fake = fixture("plain_turn");
-    let mut h = Harness::start_on(fake.clone(), paths.clone());
-    let keep_item = |s: &Snapshot| {
-        s.inbox.iter().find_map(|i| match &i.kind {
-            InboxKind::Permission { tool, input, .. }
-                if tool == dovetail_api::KEEP_COORDINATOR_PERMISSION =>
-            {
-                Some((i.id, input.clone()))
-            }
-            _ => None,
-        })
-    };
-    h.wait_for("the keep-yesterday item", |s| keep_item(s).is_some());
+    let h = Harness::start_on(fake.clone(), paths.clone());
+    wait_started(&fake, 1);
     let specs = fake.started_specs();
     assert_eq!(specs.len(), 1);
     assert!(!specs[0].resume, "a new session, not --resume");
     assert_ne!(specs[0].session_id, old);
-    let (item, input) = keep_item(&h.snap).expect("item");
-    assert_eq!(input["journal"], yesterday.as_str());
-    assert_eq!(input["session_id"], old.as_str());
     let seed = fake
         .sent()
         .into_iter()
@@ -4407,35 +4349,14 @@ fn the_first_open_of_a_new_day_starts_a_fresh_coordinator_and_y_goes_back() {
     assert!(seed.contains("First thing: merge PR 20."), "{seed}");
     assert!(seed.contains("# Open tasks"), "{seed}");
 
-    // `y`: the fresh session stops and yesterday's resumes.
-    h.send(Command::AnswerPermission {
-        item,
-        answer: PermissionAnswer::Allow,
-    });
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while fake.started_specs().len() < 2 {
-        assert!(
-            Instant::now() < deadline,
-            "yesterday's session never resumed"
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let back = &fake.started_specs()[1];
-    assert!(back.resume);
-    assert_eq!(back.session_id, old);
-    h.wait_for("the notice", |s| {
-        s.conversations[&AgentId(COORDINATOR.into())]
-            .entries
-            .iter()
-            .any(|e| e.text == "Back on yesterday's coordinator session")
-    });
+    assert!(no_permission_item(&h.snap));
     h.quit();
 
     // The day is not new any more: the next open resumes as before, with no item.
     let fake = fixture("plain_turn");
     let mut h = Harness::start_on(fake.clone(), paths);
     h.drain(Duration::from_millis(300));
-    assert!(keep_item(&h.snap).is_none());
+    assert!(no_permission_item(&h.snap));
     let specs = fake.started_specs();
     assert_eq!(specs.len(), 1);
     assert!(specs[0].resume);
@@ -4485,16 +4406,13 @@ fn a_day_that_was_never_closed_keeps_its_coordinator_and_says_so() {
             .iter()
             .any(|i| matches!(&i.kind, InboxKind::Error { text } if *text == unclosed))
     });
-    // The same session resumes, with no fresh seed and no keep-yesterday item.
+    // The same session resumes, with no fresh seed and no item.
     wait_started(&fake, 1);
     let specs = fake.started_specs();
     assert_eq!(specs.len(), 1);
     assert!(specs[0].resume);
     assert_eq!(specs[0].session_id, old);
-    assert!(h.snap.inbox.iter().all(|i| !matches!(
-        &i.kind,
-        InboxKind::Permission { tool, .. } if tool == dovetail_api::KEEP_COORDINATOR_PERMISSION
-    )));
+    assert!(no_permission_item(&h.snap));
     h.quit();
 }
 

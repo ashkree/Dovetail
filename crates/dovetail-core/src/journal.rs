@@ -10,20 +10,19 @@
 //!   the Handoff section. If it cannot answer, the file still gets the facts and says why.
 //! - **`:fresh`.** The manual, mid-day half of decision 22: the same handoff request, appended
 //!   as a "Handoff (fresh start HH:MM)" block, then a new coordinator session seeded as the
-//!   morning one is. The previous session stays resumable (one Needs-you item).
+//!   morning one is. The previous transcript stays on disk; no item is raised.
 //! - **A new day.** On open, when the newest journal file is from an earlier day and the
 //!   coordinator was last used before today, the coordinator gets a new Claude Code session
-//!   seeded with that file's handoff and the open tasks. Yesterday's session is kept: one
-//!   Needs-you item (`y`) goes back to it.
+//!   seeded with that file's handoff and the open tasks. Yesterday's transcript stays on disk;
+//!   no item is raised.
 
 use std::path::{Path, PathBuf};
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, AgentStatus, Bucket, EntryKind, FRESH_COORDINATOR_PERMISSION,
-    InboxItem, InboxKind, JournalState, KEEP_COORDINATOR_PERMISSION, Task, TaskStatus,
+    Agent, AgentId, AgentKind, AgentStatus, Bucket, EntryKind, InboxItem, InboxKind, JournalState,
+    Task, TaskStatus,
 };
 use jiff::civil::Date;
-use serde_json::json;
 
 use crate::inbox::Waiter;
 use crate::service::{COORDINATOR, Core, Input};
@@ -848,34 +847,37 @@ impl Core {
     }
 
     /// Gives the coordinator a new session and sends it `seed`. The old session id and
-    /// transcript go in a Needs-you item whose `y` brings them back.
+    /// transcript stay on disk; the notice names the transcript when it is known.
     fn fresh_coordinator(&mut self, kind: &Fresh, seed: Option<&str>) {
         let date = kind.date();
         let id = AgentId(COORDINATOR.into());
         let Some(row) = self.agents.get(&id) else {
             return;
         };
-        let old_session = row.session_id.clone();
         let old_transcript = row.transcript_path.clone();
         self.update_agent(&id, |row| {
             row.session_id = Some(uuid::Uuid::new_v4().to_string());
             row.transcript_path = None;
         });
         tracing::info!(journal = %date, ?kind, "fresh coordinator");
+        let kept = match &old_transcript {
+            Some(path) => format!(
+                "The previous session's transcript is kept at {}.",
+                path.display()
+            ),
+            None => "The previous session's transcript is kept.".to_owned(),
+        };
         let notice = match kind {
             Fresh::NewDay { .. } => format!(
-                "New day: a fresh coordinator session, seeded with the {date} handoff. \
-                 Yesterday's session is kept; y on its Needs-you item goes back to it."
+                "New day: a fresh coordinator session, seeded with the {date} handoff. {kept}"
             ),
             Fresh::MidDay { time, .. } => format!(
                 "Fresh start at {time}: a new coordinator session, seeded with the handoff in \
-                 journal/{date}.md. The previous session is kept; y on its Needs-you item goes \
-                 back to it."
+                 journal/{date}.md. {kept}"
             ),
-            Fresh::Clean { time, .. } => format!(
-                "Fresh coordinator at {time}: a new session with no handoff. The previous \
-                 session is kept; y on its Needs-you item goes back to it."
-            ),
+            Fresh::Clean { time, .. } => {
+                format!("Fresh coordinator at {time}: a new session with no handoff. {kept}")
+            }
         };
         self.notice(&id, notice);
         let started = match seed {
@@ -885,74 +887,14 @@ impl Core {
         if let Err(e) = started {
             self.fail(e);
         }
-        let input = json!({
-            "journal": date.to_string(),
-            "session_id": old_session,
-            "transcript_path": old_transcript,
-        });
-        let (tool, reason) = match kind {
-            Fresh::NewDay { .. } => (
-                KEEP_COORDINATOR_PERMISSION,
-                format!(
-                    "A fresh coordinator started from the {date} handoff. y goes back to \
-                     yesterday's session (the fresh one stops); d keeps the fresh one."
-                ),
-            ),
-            Fresh::MidDay { .. } | Fresh::Clean { .. } => (
-                FRESH_COORDINATOR_PERMISSION,
-                "Fresh coordinator started. y: go back to the previous one (the fresh one \
-                 stops); d keeps the fresh one."
-                    .to_owned(),
-            ),
-        };
-        self.raise(
-            &id,
-            InboxKind::Permission {
-                tool: tool.into(),
-                input,
-                reason: Some(reason),
-                suggestions: Vec::new(),
-            },
-            Waiter::KeepCoordinator {
-                session_id: old_session,
-                transcript_path: old_transcript,
-            },
-        );
     }
 
-    /// `y` on the keep-yesterday item: the fresh session stops, and yesterday's resumes once it
-    /// has exited ([`Core::coordinator_exited`]).
-    pub(crate) fn keep_previous_coordinator(
-        &mut self,
-        session_id: Option<String>,
-        transcript_path: Option<PathBuf>,
-    ) {
-        let id = AgentId(COORDINATOR.into());
-        self.revert_coordinator = Some((session_id, transcript_path));
-        match self.live.get_mut(&id) {
-            Some(live) => {
-                live.stopping = true;
-                live.session.shutdown(crate::shutdown::QUIT_GRACE);
-            }
-            None => self.coordinator_exited(),
-        }
-    }
-
-    /// `d` on the keep-yesterday item: the fresh session stays.
-    pub(crate) fn kept_fresh_coordinator(&mut self) {
-        self.activity(
-            dovetail_api::ActivityKind::Lifecycle,
-            Some(&AgentId(COORDINATOR.into())),
-            "kept the fresh coordinator; yesterday's transcript stays on disk".into(),
-        );
-    }
-
-    /// The coordinator's session exited: if yesterday's was asked back, it resumes now; if it
-    /// stopped to take in changed repos, it resumes now with them and is told.
+    /// The coordinator's session exited: if it stopped to take in changed repos, it resumes now
+    /// with them and is told; if a fresh start was waiting, it begins now.
     pub(crate) fn coordinator_exited(&mut self) {
         if let Some(note) = self.reattach.take() {
             self.hold_for_coordinator(note);
-            if self.pending_fresh.is_none() && self.revert_coordinator.is_none() {
+            if self.pending_fresh.is_none() {
                 if self.quitting.is_none()
                     && let Err(e) = self.ensure_live(&AgentId(COORDINATOR.into()))
                 {
@@ -965,21 +907,6 @@ impl Core {
             if self.quitting.is_none() {
                 self.fresh_coordinator(&kind, seed.as_deref());
             }
-            return;
-        }
-        let Some((session_id, transcript_path)) = self.revert_coordinator.take() else {
-            return;
-        };
-        let id = AgentId(COORDINATOR.into());
-        self.update_agent(&id, |row| {
-            row.session_id = session_id;
-            row.transcript_path = transcript_path;
-        });
-        self.notice(&id, "Back on yesterday's coordinator session");
-        if self.quitting.is_none()
-            && let Err(e) = self.ensure_live(&id)
-        {
-            self.fail(e);
         }
     }
 }

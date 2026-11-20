@@ -1,11 +1,13 @@
 # `:handoff` and `:fresh` (task #34)
 
+> Update (task #38, decision #15, which supersedes #10): no fresh start raises a go-back Needs-you item any more. The old session's transcript just stays on disk, and the notice says so. Where this plan describes the item, `Waiter::KeepCoordinator` or `FRESH_COORDINATOR_PERMISSION`, it is out of date.
+
 Two coordinator commands, each reachable as a `:` command and as a chat-bar slash command:
 
-- **`:handoff`** (and `/handoff`): today's `:fresh`, renamed. The coordinator writes its handoff into `journal/<date>.md`, a new coordinator session starts seeded with it, and the old one is kept behind a Needs-you item (`y` goes back, `d` keeps the new one).
-- **`:fresh`** (and `/fresh`): new. A new coordinator session with no handoff and no seed message. The old session is kept behind the same Needs-you item.
+- **`:handoff`** (and `/handoff`): today's `:fresh`, renamed. The coordinator writes its handoff into `journal/<date>.md`, a new coordinator session starts seeded with it, and the old transcript stays on disk (no Needs-you item).
+- **`:fresh`** (and `/fresh`): new. A new coordinator session with no handoff and no seed message. The old transcript stays on disk (no Needs-you item).
 
-Decisions (task #34 log): Dovetail intercepts both slash forms, so they never reach Claude Code, and this hides the user's `handoff` skill inside Dovetail (#8). Both act on the coordinator only (#9). The old session is kept after `:fresh` (#10). The fresh session is still the coordinator, with its role prompt and MCP tools (#11). Only an exact `/handoff` or `/fresh` is intercepted; trailing text is refused with a hint (#12).
+Decisions (task #34 log): Dovetail intercepts both slash forms, so they never reach Claude Code, and this hides the user's `handoff` skill inside Dovetail (#8). Both act on the coordinator only (#9). The old transcript stays on disk after `:fresh`, with no item (#10, superseded by #15). The fresh session is still the coordinator, with its role prompt and MCP tools (#11). Only an exact `/handoff` or `/fresh` is intercepted; trailing text is refused with a hint (#12).
 
 ## Today
 
@@ -17,7 +19,7 @@ Decisions (task #34 log): Dovetail intercepts both slash forms, so they never re
      - gives the agent row a new `session_id`;
      - posts a notice;
      - sends the seed with `send_text`, which starts the process;
-     - raises the `FRESH_COORDINATOR_PERMISSION` Needs-you item with `Waiter::KeepCoordinator { session_id, transcript_path }`.
+     - (as built in #34 it raised a go-back item here; removed in #38).
 - `/model` in the chat bar is already intercepted: `model_command` in `app.rs` runs before `Command::Prompt` is pushed. Completion lists only Claude Code's commands (`commands_for` → `complete::command_rows`).
 
 ## Changes
@@ -38,8 +40,8 @@ Decisions (task #34 log): Dovetail intercepts both slash forms, so they never re
 - **`fresh_coordinator(kind, seed: Option<&str>)`:**
   - With a seed, nothing changes.
   - Without one, it calls `ensure_live` after the new `session_id` and does not call `send_text`. The session starts with the role prompt and MCP flags as usual, and the conversation is empty.
-  - The notice reads "Fresh coordinator at HH:MM: a new session with no handoff. The previous session is kept; y on its Needs-you item goes back to it."
-  - The Needs-you item reuses `FRESH_COORDINATOR_PERMISSION` and `Waiter::KeepCoordinator`. `restore.rs` already rebuilds that item after a restart.
+  - The notice reads "Fresh coordinator at HH:MM: a new session with no handoff. The previous session's transcript is kept at <path>."
+  - No Needs-you item is raised. `restore.rs` still quietly expires such items stored by older builds.
 - **`service.rs`:** `Command::Handoff => self.handoff_start()` and `Command::FreshSession => self.fresh_session()`.
 - **`dovetail-mock`:** mirror both commands.
 

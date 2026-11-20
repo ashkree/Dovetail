@@ -17,10 +17,16 @@
 //! running at quit reads as cut off next time.
 
 use dovetail_api::{
-    ActivityKind, AgentId, AgentStatus, EntryKind, Event, FRESH_COORDINATOR_PERMISSION, InboxItem,
-    InboxKind, KEEP_COORDINATOR_PERMISSION, RELEASE_TAKEOVER_PERMISSION,
-    REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, UPGRADE_READY_PERMISSION,
+    ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind,
+    RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION,
+    UPGRADE_READY_PERMISSION,
 };
+
+/// The `tool` names of the go-back items older builds raised for a fresh coordinator. No build
+/// raises them now (task #38); they are matched here only to expire ones stored in an existing
+/// `state.db`.
+const LEGACY_KEEP_COORDINATOR: &str = "Keep yesterday's coordinator";
+const LEGACY_FRESH_COORDINATOR: &str = "Fresh coordinator started";
 
 use crate::inbox::Waiter;
 use crate::service::{COORDINATOR, Core, InboxEntry, Input};
@@ -194,7 +200,8 @@ impl Core {
                     if tool == UPGRADE_READY_PERMISSION {
                         continue;
                     }
-                    if tool == KEEP_COORDINATOR_PERMISSION || tool == FRESH_COORDINATOR_PERMISSION {
+                    // Legacy go-back items from before task #38 expire quietly.
+                    if tool == LEGACY_KEEP_COORDINATOR || tool == LEGACY_FRESH_COORDINATOR {
                         self.activity(
                             ActivityKind::Lifecycle,
                             Some(&item.agent),

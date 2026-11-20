@@ -294,17 +294,6 @@ impl MockCore {
                         format!("{tool}: {verdict}"),
                     );
                 }
-                if matches!(&found.kind, InboxKind::Permission { tool, .. }
-                    if tool == FRESH_COORDINATOR_PERMISSION)
-                    && !matches!(answer, PermissionAnswer::Deny { .. })
-                {
-                    self.append(
-                        &found.agent,
-                        EntryKind::Notice,
-                        "Back on the previous coordinator session".into(),
-                    );
-                    self.update_agent(&found.agent, |a| a.context_pct = Some(91));
-                }
                 let removal = matches!(&found.kind, InboxKind::Permission { tool, .. }
                     if tool == REMOVE_WORKTREE_PERMISSION);
                 if removal {
@@ -491,25 +480,10 @@ impl MockCore {
                         &coordinator,
                         EntryKind::Notice,
                         "Fresh start: a new coordinator session, seeded with the handoff. The \
-                         previous session is kept; y on its Needs-you item goes back to it."
+                         previous session's transcript is kept."
                             .into(),
                     );
                     core.update_agent(&coordinator, |a| a.context_pct = Some(3));
-                    core.raise(
-                        &coordinator,
-                        InboxKind::Permission {
-                            tool: FRESH_COORDINATOR_PERMISSION.into(),
-                            input: serde_json::json!({
-                                "journal": date,
-                                "session_id": "previous-session",
-                                "transcript_path": null,
-                            }),
-                            reason: Some(
-                                "Fresh coordinator started. y: go back to the previous one.".into(),
-                            ),
-                            suggestions: Vec::new(),
-                        },
-                    );
                 });
             }
             Command::FreshSession => {
@@ -523,26 +497,11 @@ impl MockCore {
                 self.append(
                     &coordinator,
                     EntryKind::Notice,
-                    "Fresh coordinator: a new session with no handoff. The previous session is \
-                     kept; y on its Needs-you item goes back to it."
+                    "Fresh coordinator: a new session with no handoff. The previous session's \
+                     transcript is kept."
                         .into(),
                 );
                 self.update_agent(&coordinator, |a| a.context_pct = Some(0));
-                self.raise(
-                    &coordinator,
-                    InboxKind::Permission {
-                        tool: FRESH_COORDINATOR_PERMISSION.into(),
-                        input: serde_json::json!({
-                            "journal": world::civil_date(self.state.now_ms),
-                            "session_id": "previous-session",
-                            "transcript_path": null,
-                        }),
-                        reason: Some(
-                            "Fresh coordinator started. y: go back to the previous one.".into(),
-                        ),
-                        suggestions: Vec::new(),
-                    },
-                );
             }
             Command::NewSideChat { question } => {
                 let n = (1..)

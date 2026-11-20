@@ -558,21 +558,19 @@ fn fresh_simulates_a_handoff_and_a_new_coordinator() {
         });
     }
     core.handle(Command::Handoff);
-    let keep = |core: &MockCore| {
-        core.state().inbox.iter().find_map(|i| match &i.kind {
-            InboxKind::Permission { tool, .. } if tool == FRESH_COORDINATOR_PERMISSION => {
-                Some(i.id)
-            }
-            _ => None,
-        })
+    let started = |core: &MockCore| {
+        core.state().conversations[&coordinator]
+            .entries
+            .iter()
+            .any(|e| e.text.starts_with("Fresh start: a new coordinator session"))
     };
     for _ in 0..200 {
-        if keep(&core).is_some() {
+        if started(&core) {
             break;
         }
         core.next_message().expect("the mock runs until quit");
     }
-    let item = keep(&core).expect("the fresh-start item");
+    assert!(started(&core), "the fresh start happened");
     assert_eq!(
         core.state().journal,
         Some(JournalState {
@@ -581,11 +579,13 @@ fn fresh_simulates_a_handoff_and_a_new_coordinator() {
             fresh: false,
         })
     );
-    core.handle(Command::AnswerPermission {
-        item,
-        answer: PermissionAnswer::Allow,
-    });
-    assert!(keep(&core).is_none());
+    // No go-back item: the old transcript just stays on disk (task #38).
+    assert!(
+        core.state()
+            .inbox
+            .iter()
+            .all(|i| !matches!(i.kind, InboxKind::Permission { .. }))
+    );
 }
 
 /// A stored map as the `maps_draw` input that would draw it again.
@@ -706,7 +706,7 @@ fn the_seeded_maps_pass_draw_map_validation_and_load() {
 }
 
 #[test]
-fn fresh_session_raises_the_keep_item_without_a_handoff() {
+fn fresh_session_raises_no_item_without_a_handoff() {
     let mut core = MockCore::new(config(1));
     let coordinator = AgentId("coordinator".into());
     if core
@@ -720,9 +720,11 @@ fn fresh_session_raises_the_keep_item_without_a_handoff() {
         });
     }
     core.handle(Command::FreshSession);
-    assert!(core.state().inbox.iter().any(|i| matches!(
-        &i.kind,
-        InboxKind::Permission { tool, .. } if tool == FRESH_COORDINATOR_PERMISSION
-    )));
+    assert!(
+        core.state()
+            .inbox
+            .iter()
+            .all(|i| !matches!(i.kind, InboxKind::Permission { .. }))
+    );
     assert!(core.state().journal.as_ref().is_none_or(|j| !j.closing));
 }

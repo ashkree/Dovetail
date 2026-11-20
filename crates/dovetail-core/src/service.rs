@@ -457,9 +457,6 @@ pub(crate) struct Core {
     pub(crate) oom: crate::oom::Oom,
     /// An `:eod` waiting for the coordinator's handoff (ADR 0012, `journal`).
     pub(crate) closing: Option<crate::journal::Closing>,
-    /// Yesterday's coordinator session (id, transcript), asked back with `y`: it resumes once
-    /// the fresh session has exited (ADR 0012).
-    pub(crate) revert_coordinator: Option<(Option<String>, Option<PathBuf>)>,
     /// A `:fresh` whose handoff is written: the new coordinator starts once the old exits.
     pub(crate) pending_fresh: Option<crate::journal::PendingFresh>,
     /// `:upgrade`: the background build, the "Upgrade ready" item, the wait for idle (ADR 0014).
@@ -588,7 +585,6 @@ impl Core {
             next_sample: tokio::time::Instant::now(),
             oom: Default::default(),
             closing: None,
-            revert_coordinator: None,
             pending_fresh: None,
             upgrade: Default::default(),
             switch_to: Default::default(),

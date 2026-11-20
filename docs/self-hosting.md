@@ -17,7 +17,7 @@ From M10 on, the rest of the build runs inside Dovetail: the installed release d
 - Archive a slice with `dd` on its row, or archive its task. Dovetail asks before removing a worktree with uncommitted or unpushed work.
 - Quit with `:q`, or `Ctrl-C` twice. Either asks first if a turn is running. Every session ends with the app, and nothing runs in the background.
 - **End of day (ADR 0012).** On the first quit of a day Dovetail asks "Close the day?". `y` asks the coordinator for its handoff and writes `~/.local/share/dovetail/projects/<id>/journal/YYYY-MM-DD.md` (its Handoff plus Dovetail's Facts), then quits; `n` quits now; `Esc` stays. `:eod` does the same without quitting. A handoff file the coordinator wrote there by hand works too.
-- **Next morning** the coordinator starts as a new session, seeded with the newest journal file and your open tasks. Yesterday's session is kept: `y` on "Keep yesterday's coordinator" in Needs you goes back to it, `d` keeps the fresh one.
+- **Next morning** the coordinator starts as a new session, seeded with the newest journal file and your open tasks. Yesterday's transcript stays on disk; the coordinator's chat says where.
 
 ## After a restart
 
