@@ -903,10 +903,10 @@ impl Core {
                 return;
             }
         }
-        if let Some(PendingFresh { kind, seed }) = self.pending_fresh.take() {
-            if self.quitting.is_none() {
-                self.fresh_coordinator(&kind, seed.as_deref());
-            }
+        if let Some(PendingFresh { kind, seed }) = self.pending_fresh.take()
+            && self.quitting.is_none()
+        {
+            self.fresh_coordinator(&kind, seed.as_deref());
         }
     }
 }
