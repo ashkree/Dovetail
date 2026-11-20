@@ -398,13 +398,7 @@ impl Buffer for InboxBuffer {
     fn render(&mut self, cx: &ViewCx, frame: &mut Frame, area: Rect, focused: bool) {
         let theme = cx.theme;
         let items = ordered(cx.snap);
-        let inner = pane(
-            frame,
-            area,
-            title("inbox", focused, theme),
-            focused,
-            theme,
-        );
+        let inner = pane(frame, area, title("inbox", focused, theme), focused, theme);
         let width = usize::from(inner.width);
         let selected = self.resolve(&items);
         if let Some(i) = selected {

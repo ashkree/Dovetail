@@ -345,8 +345,8 @@ pub fn keys_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::region::BufferKind;
     use crate::keymap::Resolver;
+    use crate::region::BufferKind;
 
     fn rows(scopes: &[Scope], keys: &str) -> Vec<WhichKeyRow> {
         let map = Keymap::default_map();

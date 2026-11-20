@@ -87,18 +87,35 @@ fn part(label: &str, window: Option<&UsageWindow>, now_ms: i64, tz: &TimeZone) -
     }
 }
 
+/// What leads the line, before the limits: the account, the model in view and the coordinator's
+/// context fill.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Lead<'a> {
+    /// The Claude profile of the project (ADR 0009).
+    pub profile: Option<&'a str>,
+    /// The model of the conversation in view, as Claude Code names it.
+    pub model: Option<&'a str>,
+    /// The model's confirmed effort.
+    pub effort: Option<ReasoningEffort>,
+    /// The coordinator's context fill, in percent.
+    pub context_pct: Option<u8>,
+}
+
 /// Versions of the indicator, fullest first and each ending in a space, for
 /// [`crate::buffers::spread_fit`]. Empty when nothing is known yet.
 pub fn variants(
     usage: &UsageLimits,
-    profile: Option<&str>,
-    model: Option<&str>,
-    effort: Option<ReasoningEffort>,
-    context_pct: Option<u8>,
+    lead: &Lead,
     now_ms: i64,
     tz: &TimeZone,
     theme: &Theme,
 ) -> Vec<Vec<Span<'static>>> {
+    let Lead {
+        profile,
+        model,
+        effort,
+        context_pct,
+    } = *lead;
     // Nothing shows until a first report; after it, both windows always do.
     let known = usage.five_hour.is_some() || usage.seven_day.is_some();
     let five = known.then(|| part("5h", usage.five_hour.as_ref(), now_ms, tz));
@@ -201,10 +218,10 @@ mod tests {
         let theme = Theme::default();
         let v = variants(
             &usage(0.34, 0.18, NOW_S),
-            None,
-            Some("claude-opus-5-5"),
-            None,
-            None,
+            &Lead {
+                model: Some("claude-opus-5-5"),
+                ..Lead::default()
+            },
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -226,10 +243,11 @@ mod tests {
         let theme = Theme::default();
         let v = variants(
             &usage(0.34, 0.18, NOW_S),
-            Some("maveron"),
-            Some("claude-opus-5-5"),
-            None,
-            None,
+            &Lead {
+                profile: Some("maveron"),
+                model: Some("claude-opus-5-5"),
+                ..Lead::default()
+            },
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -242,12 +260,14 @@ mod tests {
     #[test]
     fn the_effort_follows_the_model_once_confirmed() {
         let theme = Theme::default();
+        let lead = Lead {
+            model: Some("claude-sonnet-5-5"),
+            effort: Some(ReasoningEffort::Xhigh),
+            ..Lead::default()
+        };
         let v = variants(
             &UsageLimits::default(),
-            None,
-            Some("claude-sonnet-5-5"),
-            Some(ReasoningEffort::Xhigh),
-            None,
+            &lead,
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -260,10 +280,7 @@ mod tests {
         let theme = Theme::default();
         let v = variants(
             &usage(0.72, 0.95, NOW_S),
-            None,
-            None,
-            None,
-            None,
+            &Lead::default(),
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -277,10 +294,7 @@ mod tests {
         assert_eq!(colour_of("week 95%"), Some(theme.error));
         let low = variants(
             &usage(0.1, 0.1, NOW_S),
-            None,
-            None,
-            None,
-            None,
+            &Lead::default(),
             NOW_S * 1_000,
             &TimeZone::UTC,
             &theme,
@@ -294,10 +308,7 @@ mod tests {
         let later = (NOW_S + 3 * 3_600) * 1_000;
         let v = variants(
             &usage(0.34, 0.18, NOW_S),
-            None,
-            None,
-            None,
-            None,
+            &Lead::default(),
             later,
             &TimeZone::UTC,
             &theme,
@@ -305,21 +316,19 @@ mod tests {
         assert_eq!(text(&v[0]), "5h — · week 18% (resets Thu) ");
         let none = variants(
             &UsageLimits::default(),
-            None,
-            None,
-            None,
-            None,
+            &Lead::default(),
             later,
             &TimeZone::UTC,
             &theme,
         );
         assert!(none.is_empty());
+        let lead = Lead {
+            model: Some("claude-opus-5-5"),
+            ..Lead::default()
+        };
         let model_only = variants(
             &UsageLimits::default(),
-            None,
-            Some("claude-opus-5-5"),
-            None,
-            None,
+            &lead,
             later,
             &TimeZone::UTC,
             &theme,
@@ -333,7 +342,7 @@ mod tests {
         let theme = Theme::default();
         let mut u = usage(0.34, 0.06, NOW_S);
         u.five_hour = None;
-        let v = variants(&u, None, None, None, None, NOW_S * 1_000, &TimeZone::UTC, &theme);
+        let v = variants(&u, &Lead::default(), NOW_S * 1_000, &TimeZone::UTC, &theme);
         let texts: Vec<String> = v.iter().map(|s| text(s)).collect();
         assert_eq!(
             texts,
@@ -347,10 +356,12 @@ mod tests {
         let at = |pct| {
             let v = variants(
                 &usage(0.54, 0.76, NOW_S),
-                None,
-                Some("claude-opus-5-5"),
-                Some(ReasoningEffort::Medium),
-                Some(pct),
+                &Lead {
+                    model: Some("claude-opus-5-5"),
+                    effort: Some(ReasoningEffort::Medium),
+                    context_pct: Some(pct),
+                    ..Lead::default()
+                },
                 NOW_S * 1_000,
                 &TimeZone::UTC,
                 &theme,

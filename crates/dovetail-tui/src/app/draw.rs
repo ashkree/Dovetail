@@ -369,10 +369,12 @@ impl App {
         // the profile's usage limits.
         let usage = usage::variants(
             &snap.usage,
-            snap.profile.as_deref(),
-            in_view.and_then(|a| a.model.as_deref()),
-            in_view.and_then(|a| a.effort),
-            context_pct,
+            &usage::Lead {
+                profile: snap.profile.as_deref(),
+                model: in_view.and_then(|a| a.model.as_deref()),
+                effort: in_view.and_then(|a| a.effort),
+                context_pct,
+            },
             self.now_ms,
             &self.tz,
             theme,

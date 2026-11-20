@@ -601,7 +601,11 @@ impl Buffer for TreeBuffer {
         let inner = pane(
             frame,
             area,
-            title(&format!("tasks {tasks} · agents {agents}"), focused, cx.theme),
+            title(
+                &format!("tasks {tasks} · agents {agents}"),
+                focused,
+                cx.theme,
+            ),
             focused,
             cx.theme,
         );

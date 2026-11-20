@@ -118,7 +118,10 @@ fn the_not_a_project_warning_shows_in_the_status_bar_only_while_it_applies() {
     let mut snap = world();
     snap.usage = usage(0.34, 0.18);
     let mut app = app_with(snap.clone());
-    assert!(!header(&mut app, 160).contains("not a"), "no warning, none shown");
+    assert!(
+        !header(&mut app, 160).contains("not a"),
+        "no warning, none shown"
+    );
 
     snap.warnings.push(dovetail_api::Warning {
         id: dovetail_api::WarningId(dovetail_api::UNREGISTERED_WARNING.into()),
