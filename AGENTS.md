@@ -61,7 +61,7 @@ Which skill when:
 - **Context running low:** ask the user to run `:handoff`.
 - **Slice PRs:** the convention in `config/roles/slice.md`.
 
-`retro` and `handoff` are user-invoked: ask the user to run them.
+`retro` is user-invoked: ask the user to run it. The user runs `:handoff` in Dovetail (its chat bar catches `/handoff` too).
 
 ## Hard constraints
 

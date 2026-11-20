@@ -202,12 +202,18 @@ impl ConversationBuffer {
         self.completion.reset();
     }
 
-    /// Puts `text` back in `agent`'s chat bar, cursor at its end (a refused slash command).
-    pub fn keep_draft(&mut self, agent: AgentId, text: &str) {
+    /// Puts `text` back in `agent`'s chat bar, cursor at its end (a refused slash command). The
+    /// images come back as chips ahead of the text, since `take_markers` took theirs out.
+    pub fn keep_draft(&mut self, agent: AgentId, text: &str, images: Vec<Attachment>) {
         let view = self.views.entry(agent.clone()).or_default();
-        view.draft = text.to_string();
-        view.draft_cursor = text.len();
-        view.draft_images.clear();
+        let chips: String = images
+            .iter()
+            .enumerate()
+            .map(|(i, a)| format!("{} ", marker(i, a)))
+            .collect();
+        view.draft = format!("{chips}{text}");
+        view.draft_cursor = view.draft.len();
+        view.draft_images = images;
         self.begin_chat(agent);
     }
 

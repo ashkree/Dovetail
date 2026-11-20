@@ -919,12 +919,16 @@ impl App {
                         "/model opens the model selector"
                     }
                     slash::Intercept::Run(action) => {
-                        self.run_on_coordinator(Some(&agent), action);
+                        if !self.run_on_coordinator(Some(&agent), action) {
+                            // Refused: its note says so, and the command did not run.
+                            return;
+                        }
                         "the command ran"
                     }
                     slash::Intercept::Refused(name) => {
-                        let text = text.clone();
-                        chat_view_of(&mut self.buffers, self.chat_site).keep_draft(agent, &text);
+                        let (text, images) = (text.clone(), attachments.clone());
+                        chat_view_of(&mut self.buffers, self.chat_site)
+                            .keep_draft(agent, &text, images);
                         self.note =
                             Some(format!("{name} takes nothing after it; nothing was sent"));
                         return;
@@ -1179,23 +1183,27 @@ impl App {
 
     /// `:handoff` and `:fresh` (also `/handoff`, `/fresh`): act on the coordinator only. `from`
     /// is the session whose chat bar typed it, else the session the keys now talk to. For any
-    /// other session this sets a note and sends nothing.
-    fn run_on_coordinator(&mut self, from: Option<&AgentId>, action: Action) {
+    /// other session this sets a note and sends nothing. Returns whether the command ran.
+    fn run_on_coordinator(&mut self, from: Option<&AgentId>, action: Action) -> bool {
         let target = from.cloned().or_else(|| self.chat_target());
         if target.is_some() && target != self.coordinator() {
             self.note = Some("`:handoff` and `:fresh` act on the coordinator".into());
-            return;
+            return false;
         }
         match action {
             Action::Handoff => {
                 self.outbox.push(Command::Handoff);
                 self.note = Some("handoff: asking the coordinator for its handoff".into());
             }
-            _ => {
+            Action::FreshSession => {
                 self.outbox.push(Command::FreshSession);
                 self.note = Some("fresh: starting a new coordinator session".into());
             }
+            other => {
+                unreachable!("only Handoff and FreshSession reach here, got {other:?}")
+            }
         }
+        true
     }
 
     /// Runs an action: global ones here, the rest in the focused buffer.
@@ -1316,7 +1324,9 @@ impl App {
             Action::NewProject => self.run_with_arg(Action::NewProject, ""),
             Action::Quit => self.quit_asking(true),
             Action::EndOfDay => self.close_day(false),
-            Action::Handoff | Action::FreshSession => self.run_on_coordinator(None, action),
+            Action::Handoff | Action::FreshSession => {
+                self.run_on_coordinator(None, action);
+            }
             Action::Upgrade => self.run_with_arg(Action::Upgrade, ""),
             Action::StartRound => self.run_with_arg(Action::StartRound, ""),
             Action::ForceQuit => self.quit = true,

@@ -231,6 +231,69 @@ fn with_a_slice_focused_both_commands_send_nothing_and_say_why() {
     );
 }
 
+/// The core's answer to a Ctrl-V: one small PNG for `who`.
+fn paste_image(app: &mut dovetail_tui::App, who: &str) {
+    app.on_key(ctrl('v'), 10);
+    app.take_commands();
+    let seq = app.snapshot().seq + 1;
+    app.on_server(ServerMsg::Event {
+        seq,
+        event: Event::ClipboardPasted {
+            agent: agent_id(who),
+            paste: Paste::Image(Attachment {
+                path: std::path::PathBuf::from("/data/attachments/1.png"),
+                media_type: ImageType::Png,
+                size: 24,
+            }),
+        },
+    });
+}
+
+#[test]
+fn a_refused_slash_fresh_keeps_its_image_in_the_bar() {
+    let mut app = app_with(idle_world(None));
+    type_keys(&mut app, " c");
+    press(&mut app, "i");
+    paste_image(&mut app, "coordinator");
+    type_keys(&mut app, "/fresh now");
+    app.on_key(enter(), 500);
+    assert_eq!(app.take_commands(), vec![]);
+    assert!(render(&mut app, 120, 30).contains("[image 1"));
+    // Sending it again, edited to a plain prompt, still carries the image.
+    for _ in 0.."/fresh now".len() {
+        app.on_key(
+            crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Backspace,
+                crossterm::event::KeyModifiers::NONE,
+            ),
+            501,
+        );
+    }
+    type_keys(&mut app, "look");
+    app.on_key(enter(), 502);
+    let sent = app.take_commands();
+    assert!(
+        matches!(&sent[..], [Command::Prompt { text, attachments, .. }]
+            if text == "look" && attachments.len() == 1),
+        "{sent:?}"
+    );
+}
+
+#[test]
+fn a_refused_slash_fresh_with_an_image_in_a_slice_does_not_claim_it_ran() {
+    let mut app = app_with(idle_world(None));
+    select(&mut app, "slice-4");
+    press(&mut app, "i");
+    paste_image(&mut app, "slice-4");
+    type_keys(&mut app, "/fresh");
+    app.on_key(enter(), 500);
+    assert_eq!(app.take_commands(), vec![]);
+    assert_eq!(
+        app.note(),
+        Some("`:handoff` and `:fresh` act on the coordinator")
+    );
+}
+
 /// The b.png world with the coordinator's context fill set.
 fn world_at_context(pct: u8) -> Snapshot {
     let mut snap = idle_world(None);
