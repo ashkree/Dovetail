@@ -5,34 +5,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 cargo fmt --check
-# --workspace takes in the GUI shell (gui/src-tauri), which default-members leaves out of plain cargo runs.
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --all-targets -- -D warnings
+cargo test
 
-# The Tauri window loads the Vite dev server: one port, the same in both files (gui/DECISIONS.md 1).
-vite_port=$(grep -E '^ *server:' gui/vite.config.ts | grep -oE 'port: [0-9]+' | grep -oE '[0-9]+')
-tauri_port=$(grep -oE '"devUrl": "http://127.0.0.1:[0-9]+"' gui/src-tauri/tauri.conf.json | grep -oE '[0-9]+"$' | tr -d '"')
-if [[ -z $vite_port || $vite_port != "$tauri_port" ]]; then
-    echo "check.sh: gui/vite.config.ts port ($vite_port) and tauri.conf.json devUrl port ($tauri_port) differ" >&2
-    exit 1
-fi
-
-# ADR 0023: the GUI's TypeScript types are generated from dovetail-api and committed. Regenerate
-# them; a Rust change the GUI has not taken in shows as a difference.
+# ADR 0030 §4: the page's TypeScript types are generated from dovetail-api and committed. Regenerate
+# them; a Rust change the page has not taken in shows as a difference.
 cargo test -q -p dovetail-api --features ts --test ts_export >/dev/null
-if [[ -n $(git status --porcelain -- gui/src/core/generated) ]]; then
-    echo "check.sh: gui/src/core/generated is out of date with dovetail-api; commit the regenerated files:" >&2
-    git status --short -- gui/src/core/generated >&2
+if [[ -n $(git status --porcelain -- page/src/core/generated) ]]; then
+    echo "check.sh: page/src/core/generated is out of date with dovetail-api; commit the regenerated files:" >&2
+    git status --short -- page/src/core/generated >&2
     exit 1
 fi
 
-# The GUI frontend's own gate: type check, unit tests (its apply() against the shared cases in
-# crates/dovetail-api/tests/fixtures/apply), production build.
-if [[ ! -d gui/node_modules ]]; then
-    echo "check.sh: gui/node_modules is missing; run: npm --prefix gui install" >&2
-    exit 1
-fi
-npm --prefix gui run --silent check
 # Also enforced by `cargo test` (CODING_STANDARDS.md "Architecture", schema changes go through
 # migrations): migrations are contiguous and listed in order
 # (dovetail-core `db::tests::migrations_are_contiguous_and_listed_in_order`).
@@ -106,27 +90,10 @@ declared=$(awk '
             name = $0; sub(/[.[:space:]=].*/, "", name)
             if (in_ws || (in_member && $0 !~ /workspace[[:space:]]*=[[:space:]]*true/)) print name
         }
-    ' Cargo.toml crates/*/Cargo.toml gui/src-tauri/Cargo.toml | grep -v '^dovetail' | sort -u)
+    ' Cargo.toml crates/*/Cargo.toml | grep -v '^dovetail' | sort -u)
 missing=$(comm -23 <(echo "$declared") <(echo "$plan_deps"))
 if [[ -n $missing ]]; then
     echo "check.sh: dependencies with no stated reason; add a row to the table in docs/implementation-plan.md:" >&2
-    echo "$missing" >&2
-    exit 1
-fi
-
-# The same for the GUI frontend: every package in gui/package.json needs a row in the npm table.
-plan_npm=$(awk -F'|' '
-        /^\| Package \|/ { in_table = 1; next }
-        in_table && !/^\|/ { exit }
-        in_table { print $2 }
-    ' docs/implementation-plan.md | grep -o '`[^`]*`' | tr -d '`' | sort -u)
-declared_npm=$(node -e '
-    const p = require("./gui/package.json");
-    for (const k of Object.keys({ ...p.dependencies, ...p.devDependencies })) console.log(k);
-' | sort -u)
-missing=$(comm -23 <(echo "$declared_npm") <(echo "$plan_npm"))
-if [[ -n $missing ]]; then
-    echo "check.sh: GUI packages with no stated reason; add a row to the npm table in docs/implementation-plan.md:" >&2
     echo "$missing" >&2
     exit 1
 fi

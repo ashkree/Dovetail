@@ -2,7 +2,7 @@
 // the chat bar. Used on the canvas and in the incoming strip.
 
 import { memo } from 'react';
-import type { Card, IncomingCard } from '../../core/model';
+import type { Card, IncomingCard } from '../core/model';
 import { dispatch } from '../../keys/actions';
 import { keyText } from '../overlays/Keys';
 

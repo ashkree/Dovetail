@@ -1,5 +1,5 @@
 //! Shared cases for the two copies of `apply()` (ADR 0023, point 5): this crate's and the GUI's
-//! `gui/src/core/apply.ts`. Each case is a snapshot, numbered events and the snapshot Rust's
+//! `page/src/core/apply.ts`. Each case is a snapshot, numbered events and the snapshot Rust's
 //! `apply` makes of them, written to `tests/fixtures/apply/<name>.json`; the GUI's test replays
 //! the same files through its own reducer.
 //!
@@ -607,7 +607,7 @@ fn tag(event: &Event) -> String {
 #[test]
 fn every_stored_event_has_a_shared_case() {
     let generated =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gui/src/core/generated/Event.ts");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../page/src/core/generated/Event.ts");
     let text = std::fs::read_to_string(&generated).expect("generated Event.ts");
     let mut tags: Vec<String> = text
         .split('"')

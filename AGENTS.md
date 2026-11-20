@@ -22,7 +22,7 @@ The design phase is finished. **All decisions are locked.** Do not reopen them; 
 Work follows ADR 0030 §7, one step at a time: readability spike and TUI design session → v2 views in the TUI → the page (reader, then canvas) → the daemon (`dovetail serve`). No screen code until the design session is done. Features the design docs park are out of scope unless a plan in `docs/plan/` says otherwise; leave the seams for them.
 
 Known conflicts, already resolved:
-- **Clients:** ADR 0030 supersedes ADR 0020 and ADR 0023 on the client. The TUI hosts the core in-process until the daemon lands. The Tauri GUI is shelved: `gui/` moves to the `gui-shelved` branch; build nothing new in it.
+- **Clients:** ADR 0030 supersedes ADR 0020 and ADR 0023 on the client. The TUI hosts the core in-process until the daemon lands. The Tauri GUI is shelved: `gui/` lives on the `gui-shelved` branch; build nothing new in it. `page/` holds the frontend code the page will reuse.
 - **Layout:** Decision 15 (Layout B) binds the TUI as built; the design session settles the new main layout.
 - **Edition:** the workspace uses edition 2024 (already in `Cargo.toml`).
 
@@ -43,7 +43,7 @@ Self-hosting never weakens the rules: slices working on Dovetail still get their
 4. Keep changes scoped to the task. No speculative features, no drive-by refactors.
 5. User-facing decisions (UX, keys, visible naming) → ask. Implementation details with sensible defaults → decide, note in the summary.
 6. Never add a dependency without stating why. Prefer the standard library and small crates.
-7. **Never run real Claude Code sessions against the user's real projects** during development. Use a scratch git repo under the target dir or `/tmp`, and keep Dovetail's state under `target/dovetail-dev/` by setting `DOVETAIL_DATA_DIR`, `DOVETAIL_CONFIG_DIR`, `DOVETAIL_STATE_DIR` and `DOVETAIL_RUNTIME_DIR` (see `scripts/dev-gui.sh` until a TUI dev script replaces it). Real sessions cost money: keep integration tests behind an opt-in flag (`DOVETAIL_LIVE_TESTS=1`) with tiny prompts.
+7. **Never run real Claude Code sessions against the user's real projects** during development. Use a scratch git repo under the target dir or `/tmp`, and keep Dovetail's state under `target/dovetail-dev/` by setting `DOVETAIL_DATA_DIR`, `DOVETAIL_CONFIG_DIR`, `DOVETAIL_STATE_DIR` and `DOVETAIL_RUNTIME_DIR` (`scripts/dev.sh` does this and runs the TUI). Real sessions cost money: keep integration tests behind an opt-in flag (`DOVETAIL_LIVE_TESTS=1`) with tiny prompts.
 
 ## Conventions for skills
 

@@ -7,8 +7,8 @@ import {
   Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useViewport,
   type Edge, type Node, type NodeChange, type NodeProps,
 } from '@xyflow/react';
-import type { Block, Card, Layout } from '../../core/model';
-import { blockExtent, CARD_H, CARD_W, dropMissing } from '../../core/geometry';
+import type { Block, Card, Layout } from '../core/model';
+import { blockExtent, CARD_H, CARD_W, dropMissing } from '../core/geometry';
 import { BLOCK_KEY, dispatch, effortBlocks, markSeen } from '../../keys/actions';
 import { keyText } from '../overlays/Keys';
 import { viewport } from '../../keys/viewport';

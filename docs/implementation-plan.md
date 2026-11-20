@@ -184,9 +184,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `rusqlite` 0.41 | core | `bundled` (FTS5 included) | Required |
 | `rusqlite_migration` | core | none | Small migration layer; check it supports this `rusqlite` version |
 | `toml` | core | default | Recipe and `config.toml` |
-| `ts-rs` 12 | api (optional feature `ts`) | `serde-compat`, `serde-json-impl`, `no-serde-warnings` | TypeScript declarations of the protocol for the GUI (ADR 0023); only the export test and `scripts/check.sh` turn it on |
-| `tauri` 2 | gui (`gui/src-tauri`) | default | The GUI window around the web frontend; its process hosts the core (ADR 0023). npm side: `@tauri-apps/api` (the two calls) and `@tauri-apps/cli` (dev and build) |
-| `tauri-build` 2 | gui (build) | default | Tauri's build step: reads `tauri.conf.json` and declares the shell's two commands for its capability |
+| `ts-rs` 12 | api (optional feature `ts`) | `serde-compat`, `serde-json-impl`, `no-serde-warnings` | TypeScript declarations of the protocol for the page (ADR 0030 §4); only the export test and `scripts/check.sh` turn it on |
 | `thiserror`, `anyhow` | libraries, binary | none | Required by conventions |
 | `tracing`, `tracing-subscriber`, `tracing-appender` | core, tui, binary | `fmt`, `env-filter` | File logging only. The TUI uses only the `tracing` macros; the binary sets up the file writer (M2) |
 | `jiff` | core, tui, binary | default | Local-time display with no unsafe of ours; the binary passes the system time zone to the UI; the core names journal files by local date (ADR 0012) |
@@ -200,20 +198,6 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `rustix` 1 | core | `std`, `process` only | `waitpid` with `WUNTRACED` and `SIGCONT`, so an editor or native `claude` that stops itself (Ctrl-Z) is continued instead of hanging the terminal (task #32); no unsafe of ours, and already in the tree through `crossterm` and `tempfile` |
 | `signal-hook` | tui, binary | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; the binary's `dovetail upgrade` sets a flag on SIGINT/SIGTERM so a Ctrl-C stops and reaps cargo (ADR 0014); no unsafe of ours |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
-
-The GUI frontend's npm packages (`gui/package.json`, dependencies and devDependencies), checked by `scripts/check.sh` the same way:
-
-| Package | Reason |
-| --- | --- |
-| `react`, `react-dom` | The frontend's UI library; React Flow needs it |
-| `@xyflow/react` | React Flow: canvases (ADR 0025) |
-| `react-markdown`, `remark-gfm` | Chat, reports and cards render markdown, with GitHub tables and task lists |
-| `@fontsource/atkinson-hyperlegible` | The settled font, bundled so the app needs no network (`docs/gui-layout-and-keys.md`) |
-| `@tauri-apps/api` | The frontend's two calls into the core (`core_send`, `core_subscribe`; ADR 0023) |
-| `@tauri-apps/cli` | `tauri dev` and `tauri build` |
-| `vite`, `@vitejs/plugin-react` | Dev server and production build |
-| `typescript`, `@types/react`, `@types/react-dom` | Type checking (`npm run typecheck`) |
-| `vitest` | Unit tests, including `apply()` against the shared cases in `crates/dovetail-api/tests/fixtures/apply` |
 
 **Deliberately not added**
 - `clap`: four subcommands are parsed by hand.

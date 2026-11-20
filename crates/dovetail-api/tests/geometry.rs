@@ -1,13 +1,13 @@
-//! The canvas sizes the core places by are repeated in the GUI, which draws the frames
-//! (`gui/src/core/geometry.ts`; ts-rs exports no constants). This keeps the two copies equal.
+//! The canvas sizes the core places by are repeated in the page, which draws the frames
+//! (`page/src/core/geometry.ts`; ts-rs exports no constants). This keeps the two copies equal.
 
 use std::path::Path;
 
 use dovetail_api::geometry::{CARD_H, CARD_W, GAP, HEADER, PAD};
 
 #[test]
-fn the_guis_canvas_sizes_are_the_cores() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gui/src/core/geometry.ts");
+fn the_pages_canvas_sizes_are_the_cores() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../page/src/core/geometry.ts");
     let text = std::fs::read_to_string(&path).expect("geometry.ts");
     let value = |name: &str| -> i64 {
         let line = text

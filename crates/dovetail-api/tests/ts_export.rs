@@ -1,7 +1,7 @@
-//! Writes the protocol's TypeScript declarations to `gui/src/core/generated/` (ADR 0023).
+//! Writes the protocol's TypeScript declarations to `page/src/core/generated/` (ADR 0030 §4).
 //!
 //! Run with `cargo test -p dovetail-api --features ts --test ts_export`. The files are committed;
-//! `scripts/check.sh` runs this and fails when they changed, so a Rust change that the GUI has
+//! `scripts/check.sh` runs this and fails when they changed, so a Rust change that the page has
 //! not taken in cannot merge.
 
 use std::path::Path;
@@ -10,8 +10,8 @@ use dovetail_api::{Command, ServerMsg};
 use ts_rs::{Config, TS};
 
 #[test]
-fn export_the_protocol_for_the_gui() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gui/src/core/generated");
+fn export_the_protocol_for_the_page() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../page/src/core/generated");
     // Start clean, so a type that left the protocol leaves the folder too.
     if dir.exists() {
         for entry in std::fs::read_dir(&dir).expect("read the folder") {

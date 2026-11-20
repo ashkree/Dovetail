@@ -1221,7 +1221,7 @@ fn values_from_before_efforts_still_parse() {
 /// The names the GUI's TypeScript reads: kinds and states are lower snake case, ids are bare
 /// numbers, and an unclaimed criterion has no `evidence` key.
 #[test]
-fn an_effort_has_the_json_shape_the_gui_reads() {
+fn an_effort_has_the_json_shape_the_page_reads() {
     let value = serde_json::to_value(effort()).unwrap();
     assert_eq!(value["id"], json!(7));
     assert_eq!(value["kind"], json!("research"));

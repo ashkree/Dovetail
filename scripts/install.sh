@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Install (or upgrade) the stable Dovetail into ~/.local/bin: `dovetail` (the core, the frozen TUI,
-# and the hooks and MCP bridge every session runs) and `dovetail-gui` (the window, ADR 0023: a
-# release build with the web files inside, no dev server).
+# Install (or upgrade) the stable Dovetail into ~/.local/bin: `dovetail` (the core, the TUI, and the
+# hooks and MCP bridge every session runs) and its short name `dvtl`.
 #
-#   scripts/install.sh            # check, then install both (plus the launcher entry and icon)
-#   scripts/install.sh --no-gui   # only `dovetail`
+#   scripts/install.sh            # check, then install
 #   scripts/install.sh --check    # only check whether Dovetail is running (exit 1 if so)
 #
 # Refuses while anything runs the installed binary: the app itself, and the hooks and MCP
@@ -14,13 +12,10 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 target="$HOME/.local/bin/dovetail"
-gui_target="$HOME/.local/bin/dovetail-gui"
 check_only=0
-gui=1
 for arg in "$@"; do
   case "$arg" in
     --check) check_only=1 ;;
-    --no-gui) gui=0 ;;
     *) echo "install: unknown option $arg" >&2; exit 2 ;;
   esac
 done
@@ -28,9 +23,8 @@ done
 # 1. Any process running the installed binary (app, `dovetail mcp`, `dovetail hook`). This works
 #    from inside a Dovetail slice too, where the runtime-dir variables point at a dev directory.
 running=()
-for bin in "$target" "$gui_target"; do
-  [[ -e "$bin" ]] || continue
-  real="$(readlink -f "$bin")"
+if [[ -e "$target" ]]; then
+  real="$(readlink -f "$target")"
   for exe in /proc/[0-9]*/exe; do
     link="$(readlink "$exe" 2>/dev/null)" || continue
     # A binary replaced while running shows as "<path> (deleted)".
@@ -39,7 +33,7 @@ for bin in "$target" "$gui_target"; do
       running+=("pid $pid")
     fi
   done
-done
+fi
 
 # 2. A listening app socket in the live runtime dir: XDG_RUNTIME_DIR, else the temp dir Rust's
 #    std::env::temp_dir() uses (TMPDIR, else /tmp). Never DOVETAIL_RUNTIME_DIR: inside a slice
@@ -85,32 +79,6 @@ else
   echo "installed $short -> dovetail"
 fi
 
-if [[ $gui -eq 1 ]]; then
-  # `tauri build` runs `npm run build` and embeds gui/dist in the binary; --no-bundle skips the
-  # .deb/AppImage packaging, which a local install does not need.
-  [[ -d gui/node_modules ]] || npm --prefix gui ci
-  (cd gui && npx tauri build --no-bundle)
-  install -m 755 target/release/dovetail-gui "$gui_target"
-  echo "installed $gui_target (start it with: dovetail-gui)"
-
-  # The launcher entry (wofi/rofi drun, GNOME and KDE read ~/.local/share/applications) and its
-  # icon, rewritten on every install so they always point at this build.
-  data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-  icon="$data_home/icons/hicolor/scalable/apps/dovetail.svg"
-  desktop="$data_home/applications/dovetail.desktop"
-  install -D -m 644 gui/src-tauri/icons/icon.svg "$icon"
-  mkdir -p "$(dirname "$desktop")"
-  printf '%s\n' \
-    '[Desktop Entry]' \
-    'Type=Application' \
-    'Name=Dovetail' \
-    'Comment=Run Claude Code agents across your projects' \
-    "Exec=$gui_target" \
-    "Icon=$icon" \
-    'Terminal=false' \
-    'Categories=Development;' >"$desktop"
-  echo "installed $desktop (launcher entry)"
-fi
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) echo "note: $HOME/.local/bin is not on PATH; add it so \`dovetail\` runs the installed build" ;;
