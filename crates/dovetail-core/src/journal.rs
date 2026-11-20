@@ -396,6 +396,31 @@ impl Fresh {
     }
 }
 
+/// The notice posted in the coordinator's chat when it gets a new session. It says where the
+/// previous transcript is, when that is known: no item is raised (task #38).
+fn fresh_notice(kind: &Fresh, old_transcript: Option<&Path>) -> String {
+    let date = kind.date();
+    let kept = match old_transcript {
+        Some(path) => format!(
+            "The previous session's transcript is kept at {}.",
+            path.display()
+        ),
+        None => "The previous session's transcript is kept.".to_owned(),
+    };
+    match kind {
+        Fresh::NewDay { .. } => {
+            format!("New day: a fresh coordinator session, seeded with the {date} handoff. {kept}")
+        }
+        Fresh::MidDay { time, .. } => format!(
+            "Fresh start at {time}: a new coordinator session, seeded with the handoff in \
+             journal/{date}.md. {kept}"
+        ),
+        Fresh::Clean { time, .. } => {
+            format!("Fresh coordinator at {time}: a new session with no handoff. {kept}")
+        }
+    }
+}
+
 /// A `:fresh` whose handoff is written: the coordinator's old session is stopping, and the new
 /// one starts when it has exited ([`Core::coordinator_exited`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -860,26 +885,7 @@ impl Core {
             row.transcript_path = None;
         });
         tracing::info!(journal = %date, ?kind, "fresh coordinator");
-        let kept = match &old_transcript {
-            Some(path) => format!(
-                "The previous session's transcript is kept at {}.",
-                path.display()
-            ),
-            None => "The previous session's transcript is kept.".to_owned(),
-        };
-        let notice = match kind {
-            Fresh::NewDay { .. } => format!(
-                "New day: a fresh coordinator session, seeded with the {date} handoff. {kept}"
-            ),
-            Fresh::MidDay { time, .. } => format!(
-                "Fresh start at {time}: a new coordinator session, seeded with the handoff in \
-                 journal/{date}.md. {kept}"
-            ),
-            Fresh::Clean { time, .. } => {
-                format!("Fresh coordinator at {time}: a new session with no handoff. {kept}")
-            }
-        };
-        self.notice(&id, notice);
+        self.notice(&id, fresh_notice(kind, old_transcript.as_deref()));
         let started = match seed {
             Some(seed) => self.send_text(&id, seed, EntryKind::Notice, format!("Dovetail: {seed}")),
             None => self.ensure_live(&id),
@@ -918,6 +924,46 @@ mod tests {
 
     fn d(s: &str) -> Date {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn the_fresh_notice_names_the_kept_transcript_or_says_it_is_kept() {
+        let path = Path::new("/home/u/.claude/projects/p/abc.jsonl");
+        let kinds = [
+            Fresh::NewDay {
+                date: d("2026-11-10"),
+            },
+            Fresh::MidDay {
+                date: d("2026-11-11"),
+                time: "14:05".into(),
+            },
+            Fresh::Clean {
+                date: d("2026-11-11"),
+                time: "14:05".into(),
+            },
+        ];
+        for kind in &kinds {
+            let known = fresh_notice(kind, Some(path));
+            assert!(
+                known.ends_with(
+                    "The previous session's transcript is kept at \
+                                 /home/u/.claude/projects/p/abc.jsonl."
+                ),
+                "{known}"
+            );
+            let unknown = fresh_notice(kind, None);
+            assert!(
+                unknown.ends_with("The previous session's transcript is kept."),
+                "{unknown}"
+            );
+            for text in [&known, &unknown] {
+                assert!(!text.contains("Needs-you"), "{text}");
+            }
+        }
+        assert!(
+            fresh_notice(&kinds[1], None).contains("journal/2026-11-11.md"),
+            "the mid-day notice names the handoff file"
+        );
     }
 
     const HOUR: i64 = 60 * 60 * 1000;

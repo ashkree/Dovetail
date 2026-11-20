@@ -4363,6 +4363,81 @@ fn the_first_open_of_a_new_day_starts_a_fresh_coordinator_with_no_item() {
     h.quit();
 }
 
+/// Go-back items stored by builds before task #38 are cleared at the next open, quietly, with
+/// their own Activity line (not the generic "request expired").
+#[test]
+fn legacy_go_back_items_in_an_old_state_db_expire_quietly() {
+    let h = Harness::start(fixture("plain_turn"), true, Config::default());
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    let db = rusqlite::Connection::open(paths.state_db("p")).expect("state db");
+    let legacy = [
+        ("Keep yesterday's coordinator", Some("/old/yesterday.jsonl")),
+        ("Fresh coordinator started", None),
+    ];
+    for (n, (tool, transcript)) in legacy.iter().enumerate() {
+        let payload = serde_json::to_string(&InboxKind::Permission {
+            tool: (*tool).into(),
+            input: serde_json::json!({
+                "journal": "2026-11-10",
+                "session_id": "old-session",
+                "transcript_path": transcript,
+            }),
+            reason: None,
+            suggestions: Vec::new(),
+        })
+        .expect("payload");
+        db.execute(
+            "INSERT INTO inbox_items (id, agent_id, kind, payload, blocking, created_ms) \
+             VALUES (?1, 'coordinator', 'permission', ?2, 1, 1)",
+            rusqlite::params![9_000 + n as i64, payload],
+        )
+        .expect("legacy item");
+    }
+    drop(db);
+
+    let mut h = Harness::start_on(fixture("plain_turn"), paths);
+    h.wait_for("both legacy items cleared", |s| {
+        s.activity
+            .iter()
+            .filter(|a| {
+                a.text
+                    .contains("an old 'go back to the previous coordinator' offer")
+            })
+            .count()
+            == 2
+    });
+    let texts: Vec<&str> = h.snap.activity.iter().map(|a| a.text.as_str()).collect();
+    assert!(
+        texts.contains(
+            &"an old 'go back to the previous coordinator' offer was cleared; its transcript \
+              is kept at /old/yesterday.jsonl"
+        ),
+        "{texts:?}"
+    );
+    assert!(
+        texts.contains(
+            &"an old 'go back to the previous coordinator' offer was cleared; its transcript \
+              is kept"
+        ),
+        "{texts:?}"
+    );
+    assert!(
+        !texts
+            .iter()
+            .any(|t| t.contains("request expired at restart")),
+        "{texts:?}"
+    );
+    assert!(
+        h.snap
+            .inbox
+            .iter()
+            .all(|i| !matches!(i.kind, InboxKind::Permission { .. }))
+    );
+    h.quit();
+}
+
 #[test]
 fn a_day_that_was_never_closed_keeps_its_coordinator_and_says_so() {
     let fake = fixture("plain_turn");

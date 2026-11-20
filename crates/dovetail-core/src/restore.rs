@@ -22,16 +22,16 @@ use dovetail_api::{
     UPGRADE_READY_PERMISSION,
 };
 
+use crate::inbox::Waiter;
+use crate::service::{COORDINATOR, Core, InboxEntry, Input};
+use crate::worktree;
+use serde_json::json;
+
 /// The `tool` names of the go-back items older builds raised for a fresh coordinator. No build
 /// raises them now (task #38); they are matched here only to expire ones stored in an existing
 /// `state.db`.
 const LEGACY_KEEP_COORDINATOR: &str = "Keep yesterday's coordinator";
 const LEGACY_FRESH_COORDINATOR: &str = "Fresh coordinator started";
-
-use crate::inbox::Waiter;
-use crate::service::{COORDINATOR, Core, InboxEntry, Input};
-use crate::worktree;
-use serde_json::json;
 
 /// A directory under the worktrees directory that no agent owns, as the sweep found it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,12 +202,17 @@ impl Core {
                     }
                     // Legacy go-back items from before task #38 expire quietly.
                     if tool == LEGACY_KEEP_COORDINATOR || tool == LEGACY_FRESH_COORDINATOR {
+                        let kept = match input.get("transcript_path").and_then(|v| v.as_str()) {
+                            Some(path) => format!("its transcript is kept at {path}"),
+                            None => "its transcript is kept".to_owned(),
+                        };
                         self.activity(
                             ActivityKind::Lifecycle,
                             Some(&item.agent),
-                            "the offer to keep yesterday's coordinator expired at restart; its \
-                             transcript stays on disk"
-                                .into(),
+                            format!(
+                                "an old 'go back to the previous coordinator' offer was \
+                                 cleared; {kept}"
+                            ),
                         );
                         continue;
                     }
