@@ -557,6 +557,7 @@ fn fresh_simulates_a_handoff_and_a_new_coordinator() {
             agent: coordinator.clone(),
         });
     }
+    let inbox_before = core.state().inbox.len();
     core.handle(Command::Handoff);
     let started = |core: &MockCore| {
         core.state().conversations[&coordinator]
@@ -580,12 +581,7 @@ fn fresh_simulates_a_handoff_and_a_new_coordinator() {
         })
     );
     // No go-back item: the old transcript just stays on disk (task #38).
-    assert!(
-        core.state()
-            .inbox
-            .iter()
-            .all(|i| !matches!(i.kind, InboxKind::Permission { .. }))
-    );
+    assert_eq!(core.state().inbox.len(), inbox_before);
 }
 
 /// A stored map as the `maps_draw` input that would draw it again.
@@ -719,12 +715,8 @@ fn fresh_session_raises_no_item_without_a_handoff() {
             agent: coordinator.clone(),
         });
     }
+    let inbox_before = core.state().inbox.len();
     core.handle(Command::FreshSession);
-    assert!(
-        core.state()
-            .inbox
-            .iter()
-            .all(|i| !matches!(i.kind, InboxKind::Permission { .. }))
-    );
+    assert_eq!(core.state().inbox.len(), inbox_before);
     assert!(core.state().journal.as_ref().is_none_or(|j| !j.closing));
 }
