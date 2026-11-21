@@ -381,6 +381,18 @@ pub(crate) fn spread(
     spread_fit(left, &[right], width)
 }
 
+/// Index of the right-hand version [`spread_fit`] uses beside a left of `left_w` cells: the first
+/// that fits, else the last.
+pub fn pick_right(left_w: usize, rights: &[Vec<Span<'static>>], width: usize) -> usize {
+    rights
+        .iter()
+        .position(|r| {
+            let w = spans_width(r);
+            left_w + w + usize::from(w > 0) <= width
+        })
+        .unwrap_or(rights.len().saturating_sub(1))
+}
+
 /// Like [`spread`], with several versions of the right side, fullest first. The first one that
 /// leaves `left` unclipped is used; if none does, the last (shortest) is.
 pub fn spread_fit(
@@ -388,14 +400,8 @@ pub fn spread_fit(
     rights: &[Vec<Span<'static>>],
     width: usize,
 ) -> Line<'static> {
-    let left_w = spans_width(&left);
     let right = rights
-        .iter()
-        .find(|r| {
-            let w = spans_width(r);
-            left_w + w + usize::from(w > 0) <= width
-        })
-        .or(rights.last())
+        .get(pick_right(spans_width(&left), rights, width))
         .cloned()
         .unwrap_or_default();
     let right_w = spans_width(&right);

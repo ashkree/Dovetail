@@ -16,7 +16,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     Buffer, Effect, InputTarget, ViewCx, footer, next_bucket, next_p_level, next_status, pane,
-    scroll_to, spans_width, spread_fit, status_glyph, status_word, step, title,
+    pick_right, scroll_to, spans_width, spread_fit, status_glyph, status_word, step, title,
 };
 use crate::action::Action;
 use crate::activity;
@@ -83,6 +83,9 @@ struct Row {
     /// An agent's one-line status (`core_report_status`): dim, after the name, cut to the room left
     /// by the fullest right side, and the first thing dropped in a narrow pane.
     status: Option<String>,
+    /// How many of the leading `right` versions carry a spinner; a draw that picks one of them
+    /// needs the animation tick, any other does not.
+    spinner_versions: usize,
 }
 
 impl Row {
@@ -198,6 +201,7 @@ impl TreeBuffer {
                 )],
                 right: vec![],
                 status: None,
+                spinner_versions: 0,
             });
             if !open {
                 continue;
@@ -270,6 +274,7 @@ impl TreeBuffer {
             left,
             right,
             status: None,
+            spinner_versions: 0,
         });
         if open && group != Group::Done {
             for agent in sessions {
@@ -308,7 +313,7 @@ impl TreeBuffer {
                     now_ms: cx.now_ms,
                 }
             });
-        let (left, right) = agent_line(theme, agent, working.as_ref());
+        let (left, right, spinner_versions) = agent_line(theme, agent, working.as_ref());
         let status = Some(agent.status_line.trim().to_owned()).filter(|s| !s.is_empty());
         rows.push(Row {
             key,
@@ -317,6 +322,7 @@ impl TreeBuffer {
             left,
             right,
             status,
+            spinner_versions,
         });
         if !open {
             return;
@@ -329,6 +335,7 @@ impl TreeBuffer {
                 left: vec![Span::styled(format!("⎇ {}", wt.branch), theme.dim())],
                 right: vec![],
                 status: None,
+                spinner_versions: 0,
             });
         }
         for todo in todos {
@@ -352,6 +359,7 @@ impl TreeBuffer {
                 left,
                 right: vec![],
                 status: None,
+                spinner_versions: 0,
             });
         }
         for child in children {
@@ -576,7 +584,7 @@ fn agent_line(
     theme: &Theme,
     agent: &Agent,
     working: Option<&Working>,
-) -> (Vec<Span<'static>>, Vec<Vec<Span<'static>>>) {
+) -> (Vec<Span<'static>>, Vec<Vec<Span<'static>>>, usize) {
     let (glyph, color) = status_glyph(agent.status, theme);
     let kind = if agent.kind.is_session() {
         "◆"
@@ -674,16 +682,22 @@ fn agent_line(
         spans.extend(model);
         spans
     };
-    let right = vec![
-        build(&timed_status, true, model_span(theme, agent, true)),
-        build(&plain_status, true, model_span(theme, agent, true)),
-        build(&plain_status, true, model_span(theme, agent, false)),
+    let model = |effort| model_span(theme, agent, effort);
+    let word = std::slice::from_ref(&word);
+    let mut right = vec![
+        build(&timed_status, true, model(true)),
+        build(&plain_status, true, model(true)),
+        build(&plain_status, true, model(false)),
         build(&plain_status, true, None),
-        build(std::slice::from_ref(&word), true, None),
-        build(&[word], false, None),
-        vec![short_word],
     ];
-    (left, right)
+    // Without a spinner these four repeat the word, which is harmless.
+    let spinner_versions = if spinner.is_some() { right.len() } else { 0 };
+    right.extend([
+        build(word, true, None),
+        build(word, false, None),
+        vec![short_word],
+    ]);
+    (left, right, spinner_versions)
 }
 
 impl Buffer for TreeBuffer {
@@ -737,14 +751,7 @@ impl Buffer for TreeBuffer {
             if let Some(status) = &row.status {
                 left.extend(status_spans(status, &left, &row.right, width, cx.theme));
             }
-            if let RowKey::Agent(id) = &row.key
-                && cx.activity.working_for(id, cx.now_ms).is_some()
-                && cx
-                    .snap
-                    .agents
-                    .iter()
-                    .any(|a| &a.id == id && a.kind != AgentKind::Coordinator)
-            {
+            if pick_right(spans_width(&left), &row.right, width) < row.spinner_versions {
                 self.shows_working = true;
             }
             let line = spread_fit(left, &row.right, width);
@@ -947,7 +954,7 @@ mod tests {
     #[test]
     fn a_running_subagent_shows_its_progress_and_drops_tokens_when_narrow() {
         let theme = Theme::default();
-        let (left, right) = agent_line(&theme, &subagent(AgentStatus::Working, None), None);
+        let (left, right, _) = agent_line(&theme, &subagent(AgentStatus::Working, None), None);
         assert_eq!(text(&left), "◐ ◇ Background sleep task");
         assert_eq!(text(&right[0]), "2 tools · Bash · 17k tok");
         assert_eq!(text(right.last().expect("narrowest")), "2 tools · Bash");
@@ -956,7 +963,7 @@ mod tests {
     #[test]
     fn a_finished_subagent_shows_its_status_word() {
         let theme = Theme::default();
-        let (_, right) = agent_line(&theme, &subagent(AgentStatus::Done, Some("bg-done")), None);
+        let (_, right, _) = agent_line(&theme, &subagent(AgentStatus::Done, Some("bg-done")), None);
         assert_eq!(text(&right[0]), "done");
     }
 
@@ -978,7 +985,7 @@ mod tests {
     /// The right side `agent_line` picks at `width`, as `spread_fit` would.
     fn right_at(agent: &Agent, working: Option<&Working>, width: usize) -> String {
         let theme = Theme::default();
-        let (left, right) = agent_line(&theme, agent, working);
+        let (left, right, _) = agent_line(&theme, agent, working);
         let line = spread_fit(left.clone(), &right, width);
         let all = text(&line.spans);
         let left_w = text(&left).width();

@@ -255,7 +255,40 @@ fn a_working_slice_row_in_the_tree_keeps_the_ui_animating() {
         .expect("a slice");
     slice.status = AgentStatus::Working;
     let mut app = app_with(snap);
-    draw(&mut app);
+    render(&mut app, 200, 40);
     assert!(app.animating());
     assert!(app.next_animation_in().is_some());
+}
+
+#[test]
+fn a_subagent_showing_progress_does_not_keep_the_ui_animating() {
+    let mut snap = world();
+    for a in &mut snap.agents {
+        a.status = AgentStatus::Idle;
+    }
+    let sub = snap
+        .agents
+        .iter_mut()
+        .find(|a| matches!(a.kind, AgentKind::Subagent { .. }) && a.progress.is_some())
+        .expect("a subagent with progress");
+    sub.status = AgentStatus::Working;
+    let mut app = app_with(snap);
+    draw(&mut app);
+    assert!(!app.animating());
+}
+
+#[test]
+fn a_pane_too_narrow_for_any_spinner_does_not_animate() {
+    let mut snap = world();
+    for a in &mut snap.agents {
+        a.status = AgentStatus::Idle;
+    }
+    snap.agents
+        .iter_mut()
+        .find(|a| a.kind == AgentKind::Slice)
+        .expect("a slice")
+        .status = AgentStatus::Working;
+    let mut app = app_with(snap);
+    render(&mut app, 40, 30);
+    assert!(!app.animating());
 }
