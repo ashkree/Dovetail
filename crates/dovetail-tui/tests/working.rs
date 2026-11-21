@@ -6,9 +6,17 @@ mod support;
 use dovetail_api::*;
 use support::*;
 
-/// The b.png world with the coordinator working, its conversation in view.
+/// The b.png world with the coordinator working, its conversation in view. The slices are idle,
+/// so the only spinner is the chat's.
 fn working_app() -> dovetail_tui::App {
     let mut snap = world();
+    for a in snap
+        .agents
+        .iter_mut()
+        .filter(|a| a.status == AgentStatus::Working)
+    {
+        a.status = AgentStatus::Idle;
+    }
     snap.conversations
         .insert(agent_id("coordinator"), rich_conversation(NOW_MS));
     snap.agents[0].status = AgentStatus::Working;
@@ -232,4 +240,22 @@ fn app_agent(app: &dovetail_tui::App, id: &str) -> Agent {
         .find(|a| a.id.0 == id)
         .cloned()
         .expect("agent")
+}
+
+#[test]
+fn a_working_slice_row_in_the_tree_keeps_the_ui_animating() {
+    let mut snap = world();
+    for a in &mut snap.agents {
+        a.status = AgentStatus::Idle;
+    }
+    let slice = snap
+        .agents
+        .iter_mut()
+        .find(|a| a.kind == AgentKind::Slice)
+        .expect("a slice");
+    slice.status = AgentStatus::Working;
+    let mut app = app_with(snap);
+    draw(&mut app);
+    assert!(app.animating());
+    assert!(app.next_animation_in().is_some());
 }

@@ -252,9 +252,10 @@ impl App {
     }
 
     /// Whether a spinner is on screen: a long command in the status bar, or a working agent's
-    /// line under a conversation drawn last frame. Only then does the UI animate.
+    /// line under a conversation or row in the tree drawn last frame. Only then does the UI animate.
     pub fn animating(&self) -> bool {
         self.activity.busy(self.now_ms).is_some()
+            || self.buffers.tree.shows_working()
             || self.buffers.conversation.shows_working()
             || self.buffers.panel.conversation().shows_working()
             || self.buffers.ask.conversation().shows_working()

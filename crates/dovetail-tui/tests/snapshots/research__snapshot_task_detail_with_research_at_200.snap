@@ -27,7 +27,7 @@ expression: "render(&mut app, 200, 50)"
 │                                                                                                                          ││ ◐ ◆ coordinator                                                  working │
 │ Round 1 · closed · 2 findings · Oct 31 10:15                                                                             ││ ▾ Now (2)                                                                │
 │     per seat or flat?                                                                                                    ││ ▾ ⚠ #1 business surface P1                                      PR #1231 │
-│   F1   01 seat-plans  · 1 source                                                                                         ││   ▾ ◐ ◆ slice-4  edits                                       working 71% │
+│   F1   01 seat-plans  · 1 source                                                                                         ││   ▾ ◐ ◆ slice-4  edits                             ⠋ Dovetailing… 0s 71% │
 │   F2   02 flat-plans  · 1 source                                                                                         ││         ⎇ dovetail/slice-4                                               │
 │                                                                                                                          ││         ✓ write route tests                                              │
 │ Round 2 · open · 0 findings · Nov 1 10:05                                                                                ││         ◐ wire handler to registry                                       │

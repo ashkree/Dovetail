@@ -21,23 +21,23 @@ expression: "render(&mut app, 200, 40)"
 │ unpushed none                                                                                                            │└──────────────────────────────────────────────────────────────────────────┘
 │ PR       — (gh is not installed)                                                                                         │┌ tasks 8 · agents 6 ──────────────────────────────────────────────────────┐
 │ setup    ✗ failed: `cargo fetch` exited with exit status: 101                                                            ││ ○ ◆ coordinator  planning M2                                        idle │
-│ checked  Nov 1 09:00                                                                                                     ││ ○ ◆ side-1  read-only                                               idle │
+│ checked  Nov 1 09:00                                                                                                     ││ ○ ◆ side-1  read-only                                     idle  sonnet h │
 │                                                                                                                          ││ ▾ Unsorted (1)                                                           │
 │                                                                                                                          ││   ○ #8 Check the kitty graphics fallback ✦ ↳#4                           │
 │                                                                                                                          ││ ▾ Now (3)                                                                │
 │                                                                                                                          ││ ▾ ◐ #1 Task tree with bucket grouping P1 ↔ 1                    PR #1231 │
-│                                                                                                                          ││   ▾ ◐ ◆ tree-view  grouping tasks by bucket                  working 34% │
+│                                                                                                                          ││   ▾ ◐ ◆ tree-view  grouping tasks by bucket   ⠋ Tenoning… 0s 34%  opus h │
 │                                                                                                                          ││         ⎇ dovetail/tree-view                                             │
 │                                                                                                                          ││         ✓ Group tasks by bucket                                          │
 │                                                                                                                          ││         ◐ Sort by P-level within a bucket                                │
 │                                                                                                                          ││         ○ Mark P-level and bucket mismatches                             │
 │                                                                                                                          ││         ○ Fold Done into one row                                         │
-│                                                                                                                          ││       ◐ ◇ explore-keymap  reading keymap.rs                      working │
+│                                                                                                                          ││       ◐ ◇ explore-keymap  reading keymap.rs            ⠋ Dovetailing… 0s │
 │                                                                                                                          ││ ▾ ⚠ #2 Inbox keys and preview P0 ↔ 1                                     │
-│                                                                                                                          ││   ▾ ⚠ ◆ inbox-keys  edits   wiring y/A/d/D                 needs you 52% │
+│                                                                                                                          ││   ▾ ⚠ ◆ inbox-keys  edits   wiring y/A/d/D         needs you 52%  opus h │
 │                                                                                                                          ││         ⎇ dovetail/inbox-keys                                            │
 │                                                                                                                          ││ ▾ ◐ #3 Fuzzy picker P3 ≠                                                 │
-│                                                                                                                          ││   ▾ ◌ ◆ picker  setup: cargo fetch                         setting up 0% │
+│                                                                                                                          ││   ▾ ◌ ◆ picker  setup: cargo fetch                 setting up 0%  opus h │
 │                                                                                                                          ││         ⎇ dovetail/picker                                                │
 │ ⏎ open session · e open in editor · c copy path · X remove (asks if work is unpushed)                                    ││ ⏎ open · o fold · s status · b bucket · p P-level · dd archive           │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────┘

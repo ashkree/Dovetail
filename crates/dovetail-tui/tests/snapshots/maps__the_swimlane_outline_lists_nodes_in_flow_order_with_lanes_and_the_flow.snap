@@ -23,23 +23,23 @@ expression: "render(&mut app, 120, 44)"
 │                                                                         │└───────────────────────────────────────────┘
 │                                                                         │┌ tasks 8 · agents 6 ───────────────────────┐
 │                                                                         ││ ○ ◆ coordinator  planning M2         idle │
-│                                                                         ││ ○ ◆ side-1  read-only                idle │
+│                                                                         ││ ○ ◆ side-1  read-only      idle  sonnet h │
 │                                                                         ││ ▾ Unsorted (1)                            │
 │ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ││   ○ #8 Check the kitty graphics fallback… │
 │                                                                         ││ ▾ Now (3)                                 │
 │ ◇ can_use_tool  external                                                ││ ▾ ◐ #1 Task tree with bucket gr… PR #1231 │
-│                                                                         ││   ▾ ◐ ◆ tree-view  grouping…  working 34% │
+│                                                                         ││   ▾ ◐ ◆ tree-view ⠋ Tenoning… 34%  opus h │
 │ The session asks to run Bash.                                           ││         ⎇ dovetail/tree-view              │
 │                                                                         ││         ✓ Group tasks by bucket           │
 │ flow Allow once                                                         ││         ◐ Sort by P-level within a bucket │
 │                                                                         ││         ○ Mark P-level and bucket mismat… │
 │ ▸ 1 can_use_tool — Claude Code sends a control request.                 ││         ○ Fold Done into one row          │
-│                                                                         ││       ◐ ◇ explore-keymap          working │
+│                                                                         ││       ◐ ◇ explore-keymap   ⠋ Dovetailing… │
 │   2 (control request) raise — Filed as an inbox item.                   ││ ▾ ⚠ #2 Inbox keys and preview P0 ↔ 1      │
 │                                                                         ││   ▾ ⚠ ◆ inbox-keys  edits   needs you 52% │
 │   3 (InboxUpserted) Needs you — Shown under Needs you.                  ││         ⎇ dovetail/inbox-keys             │
 │                                                                         ││ ▾ ◐ #3 Fuzzy picker P3 ≠                  │
-│   4 (shows) You — You press y.                                          ││   ▾ ◌ ◆ picker  setup: car… setting up 0% │
+│   4 (shows) You — You press y.                                          ││   ▾ ◌ ◆ picker      setting up 0%  opus h │
 │                                                                         ││         ⎇ dovetail/picker                 │
 │   5 (allow) Allowed — The answer goes back.                             ││ ▾ Next (2)                                │
 │                                                                         ││   ○ #5 Quick capture parser P1            │

@@ -20,7 +20,7 @@ expression: wide
 │                                                                                                                          ││ ◐ ◆ coordinator                                                  working │
 │   ── You · 10:14 ─────────────────────────────────────────────────────────────────────────────────────────────────────   ││ ▾ Now (2)                                                                │
 │                                                                                                                          ││ ▾ ⚠ #1 business surface P1                                      PR #1231 │
-│   What's blocking slice-7?                                                                                               ││   ▾ ◐ ◆ slice-4  edits   rebasing the business surface onto… working 71% │
+│   What's blocking slice-7?                                                                                               ││   ▾ ◐ ◆ slice-4  edits   rebasing the business su… ⠋ Dovetailing… 0s 71% │
 │                                                                                                                          ││         ⎇ dovetail/slice-4                                               │
 │                                                                                                                          ││         ✓ write route tests                                              │
 │   ── coordinator · 10:14 ◐ ───────────────────────────────────────────────────────────────────────────────────────────   ││         ◐ wire handler to registry                                       │

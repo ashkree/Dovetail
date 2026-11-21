@@ -28,6 +28,7 @@ impl App {
         let prompting = self.input.is_some() || self.confirm.is_some();
         // Each conversation says again, as it draws, whether a spinner is on screen.
         self.buffers.conversation.clear_working();
+        self.buffers.tree.clear_working();
         self.buffers.panel.conversation_mut().clear_working();
         self.buffers.ask.conversation_mut().clear_working();
         // Whatever moved focus to the side column (a picker choice, Esc from an inbox item)

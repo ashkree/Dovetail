@@ -19,9 +19,12 @@ use super::{
     scroll_to, spans_width, spread_fit, status_glyph, status_word, step, title,
 };
 use crate::action::Action;
+use crate::activity;
 use crate::fmt;
 use crate::region::BufferKind;
+use crate::render::working;
 use crate::theme::Theme;
+use crate::usage;
 
 /// The groups the tree sorts tasks into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -97,9 +100,21 @@ pub struct TreeBuffer {
     /// Fold overrides; absent means the default for the row.
     folds: HashMap<RowKey, bool>,
     offset: usize,
+    /// The last draw put a spinner on screen (a working agent's row).
+    shows_working: bool,
 }
 
 impl TreeBuffer {
+    /// Whether the last draw put a spinner on screen, so the UI must keep animating.
+    pub fn shows_working(&self) -> bool {
+        self.shows_working
+    }
+
+    /// Forgets the spinner; the next draw says again.
+    pub fn clear_working(&mut self) {
+        self.shows_working = false;
+    }
+
     /// The agent under the cursor: an agent row, or a to-do item's creator.
     pub fn selected_agent(&self, cx: &ViewCx) -> Option<AgentId> {
         match self.selected_key(cx)? {
@@ -157,7 +172,7 @@ impl TreeBuffer {
             // A tangent belongs to Tangents, not this project: it shows in the side panel.
             .filter(|a| a.task.is_none() && a.parent.is_none() && a.kind != AgentKind::Tangent)
         {
-            self.agent_rows(snap, theme, agent, 0, &mut rows);
+            self.agent_rows(cx, agent, 0, &mut rows);
         }
 
         for group in [
@@ -188,7 +203,7 @@ impl TreeBuffer {
                 continue;
             }
             for task in tasks {
-                self.task_rows(snap, theme, task, group, &waiting, &mut rows);
+                self.task_rows(cx, task, group, &waiting, &mut rows);
             }
         }
         rows
@@ -196,13 +211,13 @@ impl TreeBuffer {
 
     fn task_rows(
         &self,
-        snap: &Snapshot,
-        theme: &Theme,
+        cx: &ViewCx,
         task: &Task,
         group: Group,
         waiting: &HashSet<TaskId>,
         rows: &mut Vec<Row>,
     ) {
+        let (snap, theme) = (cx.snap, cx.theme);
         let key = RowKey::Task(task.id);
         let open = self.is_expanded(&key);
         let (glyph, color) = task_glyph(task, waiting.contains(&task.id), theme);
@@ -258,19 +273,13 @@ impl TreeBuffer {
         });
         if open && group != Group::Done {
             for agent in sessions {
-                self.agent_rows(snap, theme, agent, 2, rows);
+                self.agent_rows(cx, agent, 2, rows);
             }
         }
     }
 
-    fn agent_rows(
-        &self,
-        snap: &Snapshot,
-        theme: &Theme,
-        agent: &Agent,
-        depth: usize,
-        rows: &mut Vec<Row>,
-    ) {
+    fn agent_rows(&self, cx: &ViewCx, agent: &Agent, depth: usize, rows: &mut Vec<Row>) {
+        let (snap, theme) = (cx.snap, cx.theme);
         let key = RowKey::Agent(agent.id.clone());
         let open = self.is_expanded(&key);
         let todos: Vec<_> = snap
@@ -285,7 +294,21 @@ impl TreeBuffer {
             .collect();
         let has_branch = agent.worktree.is_some() && agent.kind == AgentKind::Slice;
         let foldable = has_branch || !todos.is_empty() || !children.is_empty();
-        let (left, right) = agent_line(theme, agent);
+        let working = cx
+            .activity
+            .working_for(&agent.id, cx.now_ms)
+            .map(|since_ms| {
+                let entries = snap
+                    .conversations
+                    .get(&agent.id)
+                    .map_or(&[][..], |t| &t.entries);
+                Working {
+                    label: working::label_of(agent, entries),
+                    since_ms,
+                    now_ms: cx.now_ms,
+                }
+            });
+        let (left, right) = agent_line(theme, agent, working.as_ref());
         let status = Some(agent.status_line.trim().to_owned()).filter(|s| !s.is_empty());
         rows.push(Row {
             key,
@@ -332,7 +355,7 @@ impl TreeBuffer {
             });
         }
         for child in children {
-            self.agent_rows(snap, theme, child, depth + 1, rows);
+            self.agent_rows(cx, child, depth + 1, rows);
         }
     }
 
@@ -507,7 +530,53 @@ fn status_spans(
     vec![Span::raw("  "), Span::styled(text, theme.dim())]
 }
 
-fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span<'static>>>) {
+/// A working subagent with progress shows that instead of a spinner.
+fn word_is_progress(agent: &Agent) -> bool {
+    matches!(
+        (&agent.kind, &agent.progress),
+        (AgentKind::Subagent { .. }, Some(p)) if p.summary.is_none()
+    )
+}
+
+/// A working agent's spinner, as the chat's working line shows it.
+struct Working {
+    label: String,
+    since_ms: i64,
+    now_ms: i64,
+}
+
+/// Longest working label in a tree row, in cells.
+const LABEL_MAX: usize = 24;
+/// Longest model name in a tree row, in cells.
+const MODEL_MAX: usize = 12;
+
+/// Model and effort, dim: `  sonnet m`. Nothing for the coordinator (the usage line shows its
+/// model) or while neither is known.
+fn model_span(theme: &Theme, agent: &Agent, with_effort: bool) -> Option<Span<'static>> {
+    if agent.kind == AgentKind::Coordinator {
+        return None;
+    }
+    let model = agent
+        .model
+        .as_deref()
+        .map(|m| fmt::truncate(usage::model_family(m), MODEL_MAX));
+    let effort = agent
+        .effort
+        .filter(|_| with_effort)
+        .map(usage::effort_shorthand);
+    let text = [model.as_deref(), effort]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!text.is_empty()).then(|| Span::styled(format!("  {text}"), theme.dim()))
+}
+
+fn agent_line(
+    theme: &Theme,
+    agent: &Agent,
+    working: Option<&Working>,
+) -> (Vec<Span<'static>>, Vec<Vec<Span<'static>>>) {
     let (glyph, color) = status_glyph(agent.status, theme);
     let kind = if agent.kind.is_session() {
         "◆"
@@ -578,16 +647,42 @@ fn agent_line(theme: &Theme, agent: &Agent) -> (Vec<Span<'static>>, Vec<Vec<Span
         .context_pct
         .filter(|_| agent.kind == AgentKind::Slice)
         .map(|p| Span::styled(format!(" {p}%"), theme.context(p)));
-    // Fullest first; a narrow pane drops the context fill, then the rest but the status.
-    let versions = [
-        vec![Some(word.clone()), context.clone()],
-        vec![Some(word)],
-        vec![Some(short_word)],
+    // A working slice or subagent shows the chat's spinner line in place of the status word; its
+    // timer is the first thing a narrow pane drops. The coordinator keeps its word.
+    let spinner = working.filter(|_| {
+        agent.status == AgentStatus::Working
+            && agent.kind != AgentKind::Coordinator
+            && !word_is_progress(agent)
+    });
+    let status = |timed: bool| -> Vec<Span<'static>> {
+        match spinner {
+            Some(w) => {
+                let time = timed.then(|| activity::elapsed(w.since_ms));
+                let label = fmt::truncate(&w.label, LABEL_MAX);
+                working::spinner_spans(theme, &label, time, w.now_ms)
+            }
+            None => vec![word.clone()],
+        }
+    };
+    let (timed_status, plain_status) = (status(true), status(false));
+    // Fullest first. A narrow pane drops the timer, then the effort, then the model, then the
+    // spinner's label for the plain word (a slice keeps its context fill as long as it can), then
+    // the context fill.
+    let build = |status: &[Span<'static>], ctx: bool, model: Option<Span<'static>>| {
+        let mut spans = status.to_vec();
+        spans.extend(context.clone().filter(|_| ctx));
+        spans.extend(model);
+        spans
+    };
+    let right = vec![
+        build(&timed_status, true, model_span(theme, agent, true)),
+        build(&plain_status, true, model_span(theme, agent, true)),
+        build(&plain_status, true, model_span(theme, agent, false)),
+        build(&plain_status, true, None),
+        build(std::slice::from_ref(&word), true, None),
+        build(&[word], false, None),
+        vec![short_word],
     ];
-    let right = versions
-        .into_iter()
-        .map(|v| v.into_iter().flatten().collect())
-        .collect();
     (left, right)
 }
 
@@ -641,6 +736,16 @@ impl Buffer for TreeBuffer {
             left.extend(row.left.iter().cloned());
             if let Some(status) = &row.status {
                 left.extend(status_spans(status, &left, &row.right, width, cx.theme));
+            }
+            if let RowKey::Agent(id) = &row.key
+                && cx.activity.working_for(id, cx.now_ms).is_some()
+                && cx
+                    .snap
+                    .agents
+                    .iter()
+                    .any(|a| &a.id == id && a.kind != AgentKind::Coordinator)
+            {
+                self.shows_working = true;
             }
             let line = spread_fit(left, &row.right, width);
             let rect = Rect {
@@ -842,7 +947,7 @@ mod tests {
     #[test]
     fn a_running_subagent_shows_its_progress_and_drops_tokens_when_narrow() {
         let theme = Theme::default();
-        let (left, right) = agent_line(&theme, &subagent(AgentStatus::Working, None));
+        let (left, right) = agent_line(&theme, &subagent(AgentStatus::Working, None), None);
         assert_eq!(text(&left), "◐ ◇ Background sleep task");
         assert_eq!(text(&right[0]), "2 tools · Bash · 17k tok");
         assert_eq!(text(right.last().expect("narrowest")), "2 tools · Bash");
@@ -851,7 +956,95 @@ mod tests {
     #[test]
     fn a_finished_subagent_shows_its_status_word() {
         let theme = Theme::default();
-        let (_, right) = agent_line(&theme, &subagent(AgentStatus::Done, Some("bg-done")));
+        let (_, right) = agent_line(&theme, &subagent(AgentStatus::Done, Some("bg-done")), None);
         assert_eq!(text(&right[0]), "done");
+    }
+
+    fn slice(status: AgentStatus) -> Agent {
+        Agent {
+            id: AgentId("slice-a".into()),
+            name: "slice-a".into(),
+            kind: AgentKind::Slice,
+            parent: None,
+            progress: None,
+            status,
+            context_pct: Some(41),
+            model: Some("claude-sonnet-5-5".into()),
+            effort: Some(dovetail_api::ReasoningEffort::Medium),
+            ..subagent(status, None)
+        }
+    }
+
+    /// The right side `agent_line` picks at `width`, as `spread_fit` would.
+    fn right_at(agent: &Agent, working: Option<&Working>, width: usize) -> String {
+        let theme = Theme::default();
+        let (left, right) = agent_line(&theme, agent, working);
+        let line = spread_fit(left.clone(), &right, width);
+        let all = text(&line.spans);
+        let left_w = text(&left).width();
+        all.chars()
+            .skip(left_w.min(all.chars().count()))
+            .collect::<String>()
+    }
+
+    fn working_now() -> Working {
+        Working {
+            label: "Dovetailing…".into(),
+            since_ms: 12_000,
+            now_ms: 0,
+        }
+    }
+
+    #[test]
+    fn a_working_slice_row_reads_status_then_context_then_model() {
+        let agent = slice(AgentStatus::Working);
+        let wide = right_at(&agent, Some(&working_now()), 120);
+        assert!(
+            wide.ends_with("⠋ Dovetailing… 12s 41%  sonnet m"),
+            "{wide:?}"
+        );
+    }
+
+    #[test]
+    fn an_idle_slice_row_keeps_its_status_word() {
+        let agent = slice(AgentStatus::Idle);
+        let wide = right_at(&agent, None, 120);
+        assert!(wide.ends_with("idle 41%  sonnet m"), "{wide:?}");
+    }
+
+    #[test]
+    fn a_narrow_row_drops_timer_then_effort_then_model() {
+        let agent = slice(AgentStatus::Working);
+        let w = Some(&working_now());
+        let left = text(&agent_line(&Theme::default(), &agent, None).0).width();
+        let right = |extra: usize| right_at(&agent, w, left + extra).trim().to_owned();
+        assert_eq!(right(34), "⠋ Dovetailing… 12s 41%  sonnet m");
+        assert_eq!(right(30), "⠋ Dovetailing… 41%  sonnet m");
+        assert_eq!(right(28), "⠋ Dovetailing… 41%  sonnet");
+        assert_eq!(right(19), "⠋ Dovetailing… 41%");
+        assert_eq!(right(15), "working 41%");
+        assert_eq!(right(8), "working");
+    }
+
+    #[test]
+    fn unknown_model_and_effort_are_left_out() {
+        let mut agent = slice(AgentStatus::Idle);
+        agent.effort = None;
+        assert!(right_at(&agent, None, 120).ends_with("idle 41%  sonnet"));
+        agent.model = None;
+        assert!(right_at(&agent, None, 120).ends_with("idle 41%"));
+    }
+
+    #[test]
+    fn the_coordinator_row_shows_no_model() {
+        let mut agent = slice(AgentStatus::Idle);
+        agent.kind = AgentKind::Coordinator;
+        agent.context_pct = None;
+        assert_eq!(right_at(&agent, None, 120).trim(), "idle");
+        agent.status = AgentStatus::Working;
+        assert_eq!(
+            right_at(&agent, Some(&working_now()), 120).trim(),
+            "working"
+        );
     }
 }

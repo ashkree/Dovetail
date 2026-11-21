@@ -19,18 +19,18 @@ expression: "render(&mut app, 120, 34)"
 │ sync     ↑3 ↓0                                                          │└───────────────────────────────────────────┘
 │ changes  1 staged · 2 changed · 1 untracked                             │┌ tasks 8 · agents 6 ───────────────────────┐
 │ unpushed 1 commit                                                       ││ ○ ◆ coordinator  planning M2         idle │
-│ PR       #1231 open · https://github.com/you/dovetail/pull/1231         ││ ○ ◆ side-1  read-only                idle │
+│ PR       #1231 open · https://github.com/you/dovetail/pull/1231         ││ ○ ◆ side-1  read-only      idle  sonnet h │
 │ setup    ✓ done                                                         ││ ▾ Unsorted (1)                            │
 │ checked  Nov 1 09:00                                                    ││   ○ #8 Check the kitty graphics fallback… │
 │                                                                         ││ ▾ Now (3)                                 │
 │                                                                         ││ ▾ ◐ #1 Task tree with bucket gr… PR #1231 │
-│                                                                         ││   ▾ ◐ ◆ tree-view  grouping…  working 34% │
+│                                                                         ││   ▾ ◐ ◆ tree-view ⠋ Tenoning… 34%  opus h │
 │                                                                         ││         ⎇ dovetail/tree-view              │
 │                                                                         ││         ✓ Group tasks by bucket           │
 │                                                                         ││         ◐ Sort by P-level within a bucket │
 │                                                                         ││         ○ Mark P-level and bucket mismat… │
 │                                                                         ││         ○ Fold Done into one row          │
-│                                                                         ││       ◐ ◇ explore-keymap          working │
+│                                                                         ││       ◐ ◇ explore-keymap   ⠋ Dovetailing… │
 │                                                                         ││ ▾ ⚠ #2 Inbox keys and preview P0 ↔ 1      │
 │                                                                         ││   ▾ ⚠ ◆ inbox-keys  edits   needs you 52% │
 │ ⏎ open · e editor · c copy path · X remove                              ││ ⏎ open · o fold · dd archive              │

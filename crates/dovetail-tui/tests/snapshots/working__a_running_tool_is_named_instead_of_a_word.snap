@@ -19,13 +19,13 @@ expression: screen
 │     let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;     ││ ◐ ◆ coordinator              working │
 │                                                          ││ ▾ Now (2)                            │
 │   Slice   │ State                                        ││ ▾ ⚠ #1 business surface P1  PR #1231 │
-│   ────────┼────────                                      ││   ▾ ◐ ◆ slice-4  edits   working 71% │
+│   ────────┼────────                                      ││   ▾ ○ ◆ slice-4  edits      idle 71% │
 │   slice-4 │ editing                                      ││         ⎇ dovetail/slice-4           │
 │   slice-7 │ blocked                                      ││         ✓ write route tests          │
 │                                                          ││         ◐ wire handler to registry   │
 │   │ Merge order: #1231 first, then the 500 fix.▌         ││         ○ update OpenAPI spec ⊘ blo… │
 │                                                          ││       ✓ ◇ rebase                done │
-│   ⠋ Reading plan.md… 1m 05s                              ││       ◐ ◇ explore c… 12 tools · Grep │
+│   ⠋ Reading plan.md… 1m 05s                              ││       ○ ◇ explore callers       idle │
 │                                                          ││ ▾ ⚠ #2 get_decision 500 P0           │
 └──────────────────────────────────────────────────────────┘│   ▾ ⚠ ◆ slice-7  manual    needs you │
 ┌ chat › coordinator ──────────────────────────────────────┐│         ⎇ dovetail/slice-7           │

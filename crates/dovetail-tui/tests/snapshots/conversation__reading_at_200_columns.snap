@@ -23,7 +23,7 @@ expression: "render(&mut reading_app(), 200, 40)"
 │                                                                                                                          ││ ○ ◆ coordinator                                                     idle │
 │  ▎• the eval path, which fails before it logs                                                                            ││ ▾ Now (2)                                                                │
 │                                                                                                                          ││ ▾ ⚠ #1 business surface P1                                      PR #1231 │
-│  ▎• the CI config                                                                                                        ││   ▾ ◐ ◆ slice-4  edits                                       working 71% │
+│  ▎• the CI config                                                                                                        ││   ▾ ◐ ◆ slice-4  edits                             ⠋ Dovetailing… 0s 71% │
 │                                                                                                                          ││         ⎇ dovetail/slice-4                                               │
 │  ▎rust                                                                                                                   ││         ✓ write route tests                                              │
 │  ▎  let key = std::env::var("FS_EVAL_VIRTUAL_KEY")?;                                                                     ││         ◐ wire handler to registry                                       │

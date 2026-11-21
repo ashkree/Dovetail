@@ -15,12 +15,12 @@ expression: "render(&mut app, 120, 24)"
 │                                                                         │└───────────────────────────────────────────┘
 │                                                                         │┌ tasks 8 · agents 6 ───────────────────────┐
 │                                                                         ││ ○ ◆ coordinator  planning M2         idle │
-│                                                                         ││ ○ ◆ side-1  read-only                idle │
+│                                                                         ││ ○ ◆ side-1  read-only      idle  sonnet h │
 │                                                                         ││ ▾ Unsorted (1)                            │
 │                                                                         ││   ○ #8 Check the kitty graphics fallback… │
 │                                                                         ││ ▾ Now (3)                                 │
 │                                                                         ││ ▾ ◐ #1 Task tree with bucket gr… PR #1231 │
-│                                                                         ││   ▾ ◐ ◆ tree-view  grouping…  working 34% │
+│                                                                         ││   ▾ ◐ ◆ tree-view ⠋ Tenoning… 34%  opus h │
 │                                                                         ││         ⎇ dovetail/tree-view              │
 │                                                                         ││         ✓ Group tasks by bucket           │
 │ ⏎ open in the outline · / search · Esc back                             ││ ⏎ open · o fold · dd archive              │

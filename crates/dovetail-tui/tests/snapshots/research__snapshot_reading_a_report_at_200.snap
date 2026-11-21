@@ -19,7 +19,7 @@ expression: "render(&mut app, 200, 30)"
 │                                                                                                                          ││ ◐ ◆ coordinator                                                  working │
 │             A long paragraph so that the reading column has something to wrap at narrow widths: pricing                  ││ ▾ Now (2)                                                                │
 │             research is mostly reading, and reading wants calm lines of text that do not run across a whole              ││ ▾ ⚠ #1 business surface P1                                      PR #1231 │
-│             wide terminal.                                                                                               ││   ▾ ◐ ◆ slice-4  edits                                       working 71% │
+│             wide terminal.                                                                                               ││   ▾ ◐ ◆ slice-4  edits                             ⠋ Dovetailing… 0s 71% │
 │                                                                                                                          ││         ⎇ dovetail/slice-4                                               │
 │                                                                                                                          ││         ✓ write route tests                                              │
 │                                                                                                                          ││         ◐ wire handler to registry                                       │

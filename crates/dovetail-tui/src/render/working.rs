@@ -19,8 +19,12 @@ pub fn working_line(
     now_ms: i64,
     width: usize,
 ) -> Line<'static> {
-    let label = activity::label(agent.tool.as_ref(), activity::turn_seed(entries));
-    spinner_line(theme, &label, since_ms, now_ms, width)
+    spinner_line(theme, &label_of(agent, entries), since_ms, now_ms, width)
+}
+
+/// What an agent's working line says: the running tool, or the turn's woodworking word.
+pub fn label_of(agent: &Agent, entries: &[ConversationEntry]) -> String {
+    activity::label(agent.tool.as_ref(), activity::turn_seed(entries))
 }
 
 /// `⠋ Closing the day… 12s` for the status bar.
@@ -38,12 +42,30 @@ fn spinner_line(
     let time = activity::elapsed(since_ms);
     // Spinner, space, label, space, time.
     let room = width.saturating_sub(2 + 1 + time.width());
-    let label = fmt::truncate(label, room);
-    Line::from(vec![
+    Line::from(spinner_spans(
+        theme,
+        &fmt::truncate(label, room),
+        Some(time),
+        now_ms,
+    ))
+}
+
+/// The spinner, the label and, when given, the elapsed time: the one picture of "working" that
+/// the chat's line and the task tree's rows share.
+pub fn spinner_spans(
+    theme: &Theme,
+    label: &str,
+    time: Option<String>,
+    now_ms: i64,
+) -> Vec<Span<'static>> {
+    let mut spans = vec![
         Span::styled(activity::spinner(now_ms), theme.fg(theme.working)),
         Span::raw(" "),
-        Span::styled(label, theme.fg(theme.working)),
-        Span::raw(" "),
-        Span::styled(time, theme.dim()),
-    ])
+        Span::styled(label.to_owned(), theme.fg(theme.working)),
+    ];
+    if let Some(time) = time {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(time, theme.dim()));
+    }
+    spans
 }

@@ -27,6 +27,31 @@ pub fn short_model(model: &str) -> &str {
     }
 }
 
+/// The model's family for a tight spot: `claude-sonnet-5-5` → `sonnet`. Any other id is returned
+/// as [`short_model`] has it.
+pub fn model_family(model: &str) -> &str {
+    let short = short_model(model);
+    ["opus", "sonnet", "haiku", "fable"]
+        .into_iter()
+        .find(|f| {
+            short
+                .strip_prefix(f)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
+        })
+        .unwrap_or(short)
+}
+
+/// `low` → `l`, `medium` → `m`, `high` → `h`, `xhigh` → `xh`, `max` → `max`.
+pub fn effort_shorthand(effort: ReasoningEffort) -> &'static str {
+    match effort {
+        ReasoningEffort::Low => "l",
+        ReasoningEffort::Medium => "m",
+        ReasoningEffort::High => "h",
+        ReasoningEffort::Xhigh => "xh",
+        ReasoningEffort::Max => "max",
+    }
+}
+
 /// A reset time in `tz`: `14:20` within 24 hours of `now_ms`, otherwise the weekday (`Thu`).
 pub fn reset_label(resets_at_ms: i64, now_ms: i64, tz: &TimeZone) -> String {
     let Ok(ts) = Timestamp::from_millisecond(resets_at_ms) else {
@@ -211,6 +236,15 @@ mod tests {
         assert_eq!(short_model("claude-opus-5-5"), "opus-5-5");
         assert_eq!(short_model("claude-haiku-4-5-20251001"), "haiku-4-5");
         assert_eq!(short_model("opus"), "opus");
+        assert_eq!(model_family("claude-sonnet-5-5"), "sonnet");
+        assert_eq!(model_family("claude-haiku-4-5-20251001"), "haiku");
+        assert_eq!(model_family("claude-opus-5-5"), "opus");
+        assert_eq!(model_family("claude-fable-5-2"), "fable");
+        assert_eq!(model_family("sonnet"), "sonnet");
+        assert_eq!(model_family("claude-sonnetish-1"), "sonnetish-1");
+        assert_eq!(model_family("gpt-x"), "gpt-x");
+        let shorthand: Vec<_> = ReasoningEffort::ALL.map(effort_shorthand).to_vec();
+        assert_eq!(shorthand, ["l", "m", "h", "xh", "max"]);
     }
 
     #[test]

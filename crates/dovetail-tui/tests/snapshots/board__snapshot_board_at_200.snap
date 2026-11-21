@@ -21,7 +21,7 @@ expression: "render(&mut app, 200, 34)"
 │ └────────────────────────────────────┘  └────────────────────────────────────┘                                           ││ ◐ ◆ coordinator                                                  working │
 │                                                                                                                          ││ ▾ Now (2)                                                                │
 │                                                                                                                          ││ ▾ ⚠ #1 business surface P1                                      PR #1231 │
-│                                                                                                                          ││   ▾ ◐ ◆ slice-4  edits                                       working 71% │
+│                                                                                                                          ││   ▾ ◐ ◆ slice-4  edits                             ⠋ Dovetailing… 0s 71% │
 │                                                                                                                          ││         ⎇ dovetail/slice-4                                               │
 │                                                                                                                          ││         ✓ write route tests                                              │
 │                                                                                                                          ││         ◐ wire handler to registry                                       │
