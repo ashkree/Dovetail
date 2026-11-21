@@ -237,6 +237,7 @@ function fold(s: W.Snapshot, event: W.Event): W.Snapshot {
     case 'docs_listed':
     case 'lend_terminal':
     case 'map_loaded':
+    case 'mcp_reply':
     case 'opening_project':
     case 'paths_listed':
     case 'project_browsed':

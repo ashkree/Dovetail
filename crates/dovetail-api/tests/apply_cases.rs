@@ -584,6 +584,7 @@ const PASSED_THROUGH: &[&str] = &[
     "docs_listed",
     "lend_terminal",
     "map_loaded",
+    "mcp_reply",
     "opening_project",
     "paths_listed",
     "project_browsed",

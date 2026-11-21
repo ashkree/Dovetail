@@ -19,6 +19,8 @@ import type { InboxItem } from "./InboxItem";
 import type { JournalState } from "./JournalState";
 import type { Map } from "./Map";
 import type { MapSummary } from "./MapSummary";
+import type { McpOutcome } from "./McpOutcome";
+import type { McpRequest } from "./McpRequest";
 import type { ModelOption } from "./ModelOption";
 import type { Paste } from "./Paste";
 import type { Preview } from "./Preview";
@@ -149,7 +151,19 @@ doc: BrowsedDoc,
 /**
  * Its text; HTML is left as it is, for the UI to convert.
  */
-document: ResearchDocument, } } | { "models_changed": Array<ModelOption> } | { "command_failed": { 
+document: ResearchDocument, } } | { "models_changed": Array<ModelOption> } | { "mcp_reply": { 
+/**
+ * The session asked.
+ */
+agent: AgentId, 
+/**
+ * What was asked, so the menu knows which action this finishes.
+ */
+request: McpRequest, 
+/**
+ * The answer.
+ */
+outcome: McpOutcome, } } | { "command_failed": { 
 /**
  * What went wrong.
  */

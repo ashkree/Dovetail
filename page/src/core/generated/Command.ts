@@ -11,6 +11,7 @@ import type { EntryId } from "./EntryId";
 import type { InboxId } from "./InboxId";
 import type { Layout } from "./Layout";
 import type { MapId } from "./MapId";
+import type { McpRequest } from "./McpRequest";
 import type { NewCard } from "./NewCard";
 import type { NewDecision } from "./NewDecision";
 import type { NewEffort } from "./NewEffort";
@@ -111,7 +112,15 @@ model: string,
 /**
  * The effort; `None` leaves it to the model's default (a model with no levels).
  */
-effort: ReasoningEffort | null, } } | { "cycle_permission_mode": { 
+effort: ReasoningEffort | null, } } | { "mcp": { 
+/**
+ * The session; a subagent's is its parent's.
+ */
+agent: AgentId, 
+/**
+ * What to ask.
+ */
+request: McpRequest, } } | { "cycle_permission_mode": { 
 /**
  * The session.
  */

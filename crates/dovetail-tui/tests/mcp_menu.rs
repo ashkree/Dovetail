@@ -50,6 +50,14 @@ fn mcp_requests(sent: &[Command]) -> Vec<McpRequest> {
         .collect()
 }
 
+/// `/mcp` typed into the chat bar: the `/` opens the skill picker, Esc closes it, the rest goes
+/// into the bar.
+fn slash_mcp(app: &mut App) {
+    type_keys(app, "/");
+    app.on_key(esc(), 0);
+    type_keys(app, "mcp");
+}
+
 /// `:name` then Enter, from Normal mode.
 fn colon(app: &mut App, line: &str) {
     type_keys(app, line);
@@ -60,7 +68,7 @@ fn colon(app: &mut App, line: &str) {
 fn slash_mcp_opens_the_menu_and_asks_for_the_servers() {
     let mut pair = connected();
     press(&mut pair.0, "i");
-    type_command(&mut pair.0, "/mcp");
+    slash_mcp(&mut pair.0);
     pair.0.on_key(enter(), 100);
     let sent = pump(&mut pair);
     assert_eq!(mcp_requests(&sent), vec![McpRequest::Status]);
@@ -74,14 +82,15 @@ fn slash_mcp_opens_the_menu_and_asks_for_the_servers() {
 }
 
 #[test]
-fn esc_closes_the_menu_back_to_the_chat_bar() {
+fn esc_closes_the_menu_and_the_sent_command_leaves_no_bar_open() {
     let mut pair = connected();
     press(&mut pair.0, "i");
-    type_command(&mut pair.0, "/mcp");
+    slash_mcp(&mut pair.0);
     pair.0.on_key(enter(), 100);
     pump(&mut pair);
     pair.0.on_key(esc(), 101);
-    assert_eq!(pair.0.mode(), Mode::Insert);
+    // Enter sent the line, so the bar is closed: back to Normal, as after any sent message.
+    assert_eq!(pair.0.mode(), Mode::Normal);
     assert!(!render(&mut pair.0, 130, 32).contains("MCP servers"));
 }
 
