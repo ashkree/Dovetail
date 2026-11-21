@@ -13,10 +13,10 @@ Proposal: `docs/plan/tui-readability-spike.md`. Code: `spikes/tui-readability/` 
 ```
 spikes/tui-readability/fetch-fixtures.sh     # cp (read-only) + jq trim into fixtures/ (git-ignored)
 spikes/tui-readability/bench.sh              # headless numbers below, out/bench.txt
-spikes/tui-readability/run.sh                # the user's run: from kitty; `run.sh kitty` or `run.sh tmux` for one half
+spikes/tui-readability/run.sh                # the user's run: from kitty, phases 1 and 2
 ```
 
-`run.sh` runs `--probe`, then variant B's headings (phase 1, `kitty-text-sizing`), every variant on every fixture in kitty (phase 2), then tmux on a private server (`-L dvtl-spike`, your tmux is untouched) with `allow-passthrough` off and on (phase 3). It prints what to look at before each step. Judged in kitty and kitty under tmux only; no non-kitty terminal (decision on #36). `--no-osc66` shows the fallback.
+`run.sh` runs `--probe`, then variant B's headings (phase 1, `kitty-text-sizing`), then every variant on every fixture in kitty (phase 2). It prints what to look at before each step. Judged in kitty only. **Phase 3 (kitty under tmux) was dropped on 2026-11-21 by the user's decision**: the script no longer has a tmux phase or argument, and the tmux rows below are marked *dropped*. No non-kitty terminal (decision on #36). `--no-osc66` shows the fallback.
 
 Fixtures (trimmed to text blocks and one line per tool call, so 7.7 MB becomes 222 KB): `v2-rework` (419 lines), `tui-return` (46), `skills-grill` (152). The optional plain-markdown report was not in the tree, so there is no fourth. Nothing from `fixtures/`, `out/` or screenshots is committed.
 
@@ -38,8 +38,8 @@ Flags: `--variant a|b|c`, `--fixture PATH`, `--no-osc66`, `--force-osc66` (under
 | `--probe` in kitty | detect ON; `w=2` and `s=2` both move the cursor | *pending* |
 | Scaled headings draw, scroll, resize, clear | no ghost cells or stripes, no flicker over a long scroll | *pending* |
 | Heading cut by the top or bottom edge | drawn at normal size | *pending* (implemented: only headings fully in view are drawn scaled) |
-| `--probe` under tmux | detect OFF (tmux answers CPR itself); record the forced probe | tmux without passthrough: detect OFF, forced probe skipped by default. *Rest pending* (needs kitty behind tmux) |
-| OSC 66 forced through tmux, passthrough on and off | works cleanly, or breaks (the proposal expects a desync) | *pending* |
+| `--probe` under tmux | detect OFF (tmux answers CPR itself); record the forced probe | tmux without passthrough: detect OFF, forced probe skipped by default. *Dropped 2026-11-21 (user's decision; phase 3 removed).* |
+| OSC 66 forced through tmux, passthrough on and off | works cleanly, or breaks (the proposal expects a desync) | *dropped 2026-11-21 (user's decision; phase 3 removed)* |
 | Bytes written per frame, OSC 66 on vs off | small | **+36 B per frame** (B on `v2-rework`: p50 2 312 vs 2 276 B with OSC 66 off) |
 
 The heading pass re-emits every fully visible scaled heading after each `terminal.draw` (a `MoveTo`, colour and OSC 66 per heading). It is cheap in bytes; whether kitty and ratatui's diff fight over the multicell cells is what only the user's run shows. If B's scaling cannot be drawn cleanly, phase 2 keeps B without it (`--no-osc66` is already that).
@@ -54,7 +54,7 @@ The heading pass re-emits every fully visible scaled heading after each `termina
 | Tinted code, highlighting on/off (`H`) | highlighting earns its place | *pending* |
 | Solid vs transparent (`S`) | legibility gain worth the toggle | *pending* |
 | Sideways-scroll keys (`Tab`, `h`/`l`, `0`/`$`) | usable | *pending* |
-| Under tmux, OSC 66 off by default | B falls back cleanly | *pending* |
+| Under tmux, OSC 66 off by default | B falls back cleanly | *dropped 2026-11-21 (user's decision; phase 3 removed)* |
 
 ## Redraw cost (measured, headless)
 
