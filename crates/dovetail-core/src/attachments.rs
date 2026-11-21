@@ -16,7 +16,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use dovetail_api::{clipboard::Paste, conversation::MAX_ATTACHMENT_BYTES};
+use dovetail_api::{
+    clipboard::Paste,
+    conversation::{ImageType, MAX_ATTACHMENT_BYTES},
+};
 
 use crate::clipboard::{self, Clip, ClipError};
 
@@ -42,6 +45,21 @@ pub fn paste_text(text: String, dir: &Path, home: Option<&Path>) -> Paste {
     }
 }
 
+/// The format the file's first bytes show, if it is one of the accepted ones.
+pub(crate) fn sniff(bytes: &[u8]) -> Option<ImageType> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some(ImageType::Png)
+    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some(ImageType::Jpeg)
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some(ImageType::Gif)
+    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some(ImageType::Webp)
+    } else {
+        None
+    }
+}
+
 fn read_image(path: &Path) -> Result<Clip, ClipError> {
     let meta = std::fs::metadata(path).map_err(|e| ClipError::Failed(e.to_string()))?;
     if !meta.is_file() {
@@ -52,7 +70,7 @@ fn read_image(path: &Path) -> Result<Clip, ClipError> {
     }
     let bytes = std::fs::read(path).map_err(|e| ClipError::Failed(e.to_string()))?;
     // The extension only filtered; the bytes decide the format (and refuse a mislabelled file).
-    match dovetail_api::conversation::ImageType::sniff(&bytes) {
+    match sniff(&bytes) {
         Some(found) => clipboard::check_image(found, bytes),
         None => Err(ClipError::Unsupported(path.display().to_string())),
     }
@@ -333,5 +351,18 @@ mod tests {
         assert_eq!(n, 1);
         assert!(!inside.exists());
         assert!(outside.exists());
+    }
+
+    #[test]
+    fn sniff_identifies_accepted_formats_and_rejects_others() {
+        assert_eq!(sniff(PNG), Some(ImageType::Png));
+        assert_eq!(sniff(b"\xff\xd8\xff\xe0"), Some(ImageType::Jpeg));
+        assert_eq!(sniff(b"GIF87a.."), Some(ImageType::Gif));
+        assert_eq!(sniff(b"GIF89a.."), Some(ImageType::Gif));
+        assert_eq!(sniff(b"RIFF\x00\x00\x00\x00WEBP"), Some(ImageType::Webp));
+        assert_eq!(sniff(b"RIFF\x00\x00\x00\x00AVI "), None);
+        assert_eq!(sniff(b"RIFFWEBP"), None);
+        assert_eq!(sniff(b""), None);
+        assert_eq!(sniff(b"BM...."), None);
     }
 }

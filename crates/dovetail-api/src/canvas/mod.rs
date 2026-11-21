@@ -59,7 +59,7 @@ pub struct Point {
     pub y: i64,
 }
 
-/// Sizes the core places by and the GUI draws with, in canvas pixels. A card's cell in a block is
+/// Sizes the core places by and clients draw with, in canvas pixels. A card's cell in a block is
 /// `CARD_W + GAP` wide and `CARD_H + GAP` high, starting `PAD` from the block's left edge and
 /// `HEADER` from its top.
 pub mod geometry {

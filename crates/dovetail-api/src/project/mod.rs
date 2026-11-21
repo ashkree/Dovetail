@@ -28,11 +28,11 @@ pub struct ProjectSummary {
     pub id: ProjectId,
     /// Display name.
     pub name: String,
-    /// For the frozen TUI: the first repo's main checkout, or, for a project with no repos,
-    /// Dovetail's own state folder for it. The GUI reads `repos`.
+    /// The first repo's main checkout, or, for a project with no repos, Dovetail's own state
+    /// folder for it. Multi-repo clients read `repos`.
     pub repo_path: PathBuf,
-    /// For the frozen TUI: `Research` when the project has no repos. A peer that does not send
-    /// it means a code project.
+    /// `Research` when the project has no repos. A peer that does not send it means a code
+    /// project.
     #[serde(default)]
     pub kind: ProjectKind,
     /// Its repos, in the order they were added. Empty: a research-only project.

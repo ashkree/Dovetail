@@ -81,21 +81,6 @@ impl ImageType {
         }
     }
 
-    /// The format the file's first bytes show, if it is one of the accepted ones.
-    pub fn sniff(bytes: &[u8]) -> Option<Self> {
-        if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-            Some(Self::Png)
-        } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-            Some(Self::Jpeg)
-        } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-            Some(Self::Gif)
-        } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-            Some(Self::Webp)
-        } else {
-            None
-        }
-    }
-
     /// File extension for a saved image.
     pub fn extension(self) -> &'static str {
         match self {

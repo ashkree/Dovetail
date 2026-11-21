@@ -125,7 +125,7 @@ pub fn check_image(offered: ImageType, bytes: Vec<u8>) -> Result<Clip, ClipError
     if size > MAX_ATTACHMENT_BYTES {
         return Err(ClipError::TooLarge(size));
     }
-    let media_type = match ImageType::sniff(&bytes) {
+    let media_type = match crate::attachments::sniff(&bytes) {
         Some(found) => found,
         None => return Err(ClipError::Unsupported(offered.mime().to_string())),
     };

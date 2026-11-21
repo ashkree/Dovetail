@@ -54,10 +54,61 @@ impl Core {
         match self.db.keep_variants(agent.clone()).await {
             Ok((before, after)) => {
                 self.emit(Event::Design(DesignEvent::VariantsUpserted(after)));
-                self.prompt(&agent, before.keep_prompt(), Vec::new(), None)
+                self.prompt(&agent, keep_prompt(&before), Vec::new(), None)
                     .await;
             }
             Err(e) => self.fail(e),
         }
+    }
+}
+
+/// The text that asks the slice to make the current selection permanent.
+fn keep_prompt(set: &VariantSet) -> String {
+    let chosen = set
+        .slots
+        .iter()
+        .map(|s| {
+            let pick = set.selection.get(&s.name).cloned().unwrap_or_default();
+            format!("{} ({}): {}", s.name, s.level.as_str(), pick)
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!(
+        "Keep this combination of variants: {chosen}. Make it permanent in the code, \
+         delete the other options and the code that switches them (including the \
+         `dovetailVariants` message handling when nothing is left to switch), then call \
+         `design_declare_variants` again with the slots that remain, or an empty list."
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dovetail_api::design::{VariantLevel, VariantSlot};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn keep_prompt_lists_chosen_variants() {
+        let set = VariantSet {
+            agent: AgentId("slice-1".into()),
+            slots: vec![
+                VariantSlot {
+                    name: "theme".into(),
+                    level: VariantLevel::Global,
+                    options: vec!["light".into(), "dark".into()],
+                    kept: None,
+                },
+                VariantSlot {
+                    name: "header".into(),
+                    level: VariantLevel::Component,
+                    options: vec!["plain".into(), "bold".into()],
+                    kept: None,
+                },
+            ],
+            selection: BTreeMap::from([("theme".into(), "dark".into())]),
+        };
+        let prompt = keep_prompt(&set);
+        assert!(prompt.contains("theme (global): dark; header (component): "));
+        assert!(prompt.contains("design_declare_variants"));
     }
 }

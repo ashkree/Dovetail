@@ -127,23 +127,4 @@ impl VariantSet {
             selection,
         }
     }
-
-    /// The text that asks the slice to make the current selection permanent.
-    pub fn keep_prompt(&self) -> String {
-        let chosen = self
-            .slots
-            .iter()
-            .map(|s| {
-                let pick = self.selection.get(&s.name).cloned().unwrap_or_default();
-                format!("{} ({}): {}", s.name, s.level.as_str(), pick)
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-        format!(
-            "Keep this combination of variants: {chosen}. Make it permanent in the code, \
-             delete the other options and the code that switches them (including the \
-             `dovetailVariants` message handling when nothing is left to switch), then call \
-             `design_declare_variants` again with the slots that remain, or an empty list."
-        )
-    }
 }
