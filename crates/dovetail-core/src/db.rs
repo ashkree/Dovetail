@@ -702,28 +702,9 @@ impl Db {
 
     // --- the slice queue ---
 
-    /// Queues a slice start; resolves to its row id.
-    pub fn enqueue_slice(
-        &self,
-        task: Option<TaskId>,
-        name: String,
-        brief: String,
-        by_coordinator: bool,
-        repo: Option<String>,
-        model_choice: Option<ModelChoice>,
-    ) -> Pending<i64> {
-        self.run(move |c, now| {
-            sessions::enqueue_slice(
-                c.state()?,
-                task,
-                &name,
-                &brief,
-                by_coordinator,
-                repo.as_deref(),
-                model_choice.as_ref(),
-                now,
-            )
-        })
+    /// Queues a slice start (its `id` is ignored); resolves to its row id.
+    pub fn enqueue_slice(&self, slice: QueuedSlice) -> Pending<i64> {
+        self.run(move |c, now| sessions::enqueue_slice(c.state()?, &slice, now))
     }
 
     /// Removes a queued start (it started, or its task was archived).
@@ -1268,19 +1249,20 @@ mod tests {
 
         agents[0].repo = Some(dovetail_api::RepoId(7));
         db.upsert_agent(agents[0].clone()).wait().unwrap();
-        db.enqueue_slice(
-            None,
-            "c".into(),
-            "go".into(),
-            false,
-            Some("web".into()),
-            Some(ModelChoice {
+        db.enqueue_slice(QueuedSlice {
+            id: 0,
+            task: None,
+            name: "c".into(),
+            brief: "go".into(),
+            by_coordinator: false,
+            repo: Some("web".into()),
+            model_choice: Some(ModelChoice {
                 model: "haiku".into(),
                 effort: Some(dovetail_api::ReasoningEffort::Low),
             }),
-        )
-            .wait()
-            .unwrap();
+        })
+        .wait()
+        .unwrap();
         drop(db);
         let db = Db::open(&paths, Some("p")).unwrap();
         assert_eq!(

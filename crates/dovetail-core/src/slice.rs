@@ -167,26 +167,17 @@ impl Core {
                     self.config.max_slices
                 ),
             );
-            let id = self
-                .db
-                .enqueue_slice(
-                    request.task,
-                    name.clone(),
-                    request.brief.clone(),
-                    request.by_coordinator,
-                    request.repo.clone(),
-                    request.model_choice.clone(),
-                )
-                .await?;
-            self.queue.push_back(QueuedSlice {
-                id,
+            let mut queued = QueuedSlice {
+                id: 0,
                 task: request.task,
                 name: name.clone(),
                 brief: request.brief,
                 by_coordinator: request.by_coordinator,
                 repo: request.repo,
                 model_choice: request.model_choice,
-            });
+            };
+            queued.id = self.db.enqueue_slice(queued.clone()).await?;
+            self.queue.push_back(queued);
             return Ok(SliceStart::Queued(name));
         }
         self.start_slice(request).await?;

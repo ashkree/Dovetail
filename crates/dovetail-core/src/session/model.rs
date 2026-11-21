@@ -118,7 +118,11 @@ impl Core {
 
     /// The listed models' names, comma-separated, for an error.
     pub(crate) fn model_catalog_names(&self) -> String {
-        let names: Vec<&str> = self.model_catalog.iter().map(|m| m.value.as_str()).collect();
+        let names: Vec<&str> = self
+            .model_catalog
+            .iter()
+            .map(|m| m.value.as_str())
+            .collect();
         names.join(", ")
     }
 

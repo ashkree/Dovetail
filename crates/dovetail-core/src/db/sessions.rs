@@ -550,24 +550,20 @@ pub struct QueuedSlice {
 
 pub(super) fn enqueue_slice(
     conn: &mut Connection,
-    task: Option<TaskId>,
-    name: &str,
-    brief: &str,
-    by_coordinator: bool,
-    repo: Option<&str>,
-    model_choice: Option<&ModelChoice>,
+    slice: &QueuedSlice,
     now: i64,
 ) -> Result<i64, DbError> {
+    let model_choice = slice.model_choice.as_ref();
     conn.execute(
         "INSERT INTO slice_queue (task_id, name, brief, by_coordinator, created_ms, repo, model, effort) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
-            task.map(|t| t.0),
-            name,
-            brief,
-            by_coordinator,
+            slice.task.map(|t| t.0),
+            slice.name,
+            slice.brief,
+            slice.by_coordinator,
             now,
-            repo,
+            slice.repo,
             model_choice.map(|c| c.model.as_str()),
             model_choice.and_then(|c| c.effort).map(ReasoningEffort::as_str),
         ],
