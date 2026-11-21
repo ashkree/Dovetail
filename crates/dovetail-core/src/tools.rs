@@ -12,6 +12,7 @@ use dovetail_api::{
 use serde_json::json;
 use tokio::sync::oneshot;
 
+use crate::db::ModelChoice;
 use crate::error::SliceError;
 use crate::inbox::Waiter;
 use crate::service::Core;
@@ -239,6 +240,10 @@ impl Core {
                     brief: start.brief,
                     by_coordinator: true,
                     repo: start.repo,
+                    model_choice: start.model.map(|model| ModelChoice {
+                        model: model.trim().to_owned(),
+                        effort: start.effort,
+                    }),
                 };
                 if let Err(reason) = self.check_slice(&request).await {
                     let _ = reply.send(error(format!("denied: {reason}")));
@@ -256,6 +261,8 @@ impl Core {
                         "name": request.name,
                         "brief": request.brief,
                         "repo": request.repo,
+                        "model": request.model_choice.as_ref().map(|c| &c.model),
+                        "effort": request.model_choice.as_ref().and_then(|c| c.effort),
                     });
                     self.raise(
                         &agent,

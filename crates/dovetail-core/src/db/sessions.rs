@@ -544,6 +544,8 @@ pub struct QueuedSlice {
     pub by_coordinator: bool,
     /// The repo asked for, by name (ADR 0021); `None` for the project's only repo.
     pub repo: Option<String>,
+    /// The model and effort the coordinator asked for (task #42); `None` for the default.
+    pub model_choice: Option<ModelChoice>,
 }
 
 pub(super) fn enqueue_slice(
@@ -553,12 +555,22 @@ pub(super) fn enqueue_slice(
     brief: &str,
     by_coordinator: bool,
     repo: Option<&str>,
+    model_choice: Option<&ModelChoice>,
     now: i64,
 ) -> Result<i64, DbError> {
     conn.execute(
-        "INSERT INTO slice_queue (task_id, name, brief, by_coordinator, created_ms, repo) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![task.map(|t| t.0), name, brief, by_coordinator, now, repo],
+        "INSERT INTO slice_queue (task_id, name, brief, by_coordinator, created_ms, repo, model, effort) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            task.map(|t| t.0),
+            name,
+            brief,
+            by_coordinator,
+            now,
+            repo,
+            model_choice.map(|c| c.model.as_str()),
+            model_choice.and_then(|c| c.effort).map(ReasoningEffort::as_str),
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -570,19 +582,35 @@ pub(super) fn dequeue_slice(conn: &mut Connection, id: i64) -> Result<(), DbErro
 
 pub(super) fn load_queue(conn: &mut Connection) -> Result<Vec<QueuedSlice>, DbError> {
     let mut stmt = conn.prepare(
-        "SELECT id, task_id, name, brief, by_coordinator, repo FROM slice_queue ORDER BY id",
+        "SELECT id, task_id, name, brief, by_coordinator, repo, model, effort \
+         FROM slice_queue ORDER BY id",
     )?;
     let rows = stmt.query_map([], |r| {
-        Ok(QueuedSlice {
-            id: r.get(0)?,
-            task: r.get::<_, Option<i64>>(1)?.map(TaskId),
-            name: r.get(2)?,
-            brief: r.get(3)?,
-            by_coordinator: r.get(4)?,
-            repo: r.get(5)?,
-        })
+        Ok((
+            QueuedSlice {
+                id: r.get(0)?,
+                task: r.get::<_, Option<i64>>(1)?.map(TaskId),
+                name: r.get(2)?,
+                brief: r.get(3)?,
+                by_coordinator: r.get(4)?,
+                repo: r.get(5)?,
+                model_choice: None,
+            },
+            r.get::<_, Option<String>>(6)?,
+            r.get::<_, Option<String>>(7)?,
+        ))
     })?;
-    Ok(rows.collect::<Result<_, _>>()?)
+    rows.map(|row| {
+        let (mut slice, model, effort) = row?;
+        let effort = effort
+            .map(|e| {
+                ReasoningEffort::parse(&e).ok_or_else(|| DbError::Corrupt(format!("effort {e:?}")))
+            })
+            .transpose()?;
+        slice.model_choice = model.map(|model| ModelChoice { model, effort });
+        Ok(slice)
+    })
+    .collect()
 }
 
 pub(super) fn load_open_inbox(conn: &mut Connection) -> Result<Vec<InboxItem>, DbError> {

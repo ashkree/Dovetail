@@ -1145,6 +1145,8 @@ fn slices_cannot_call_coordinator_tools_and_bad_names_are_refused() {
     let start = |name: &str| {
         Tool::StartSlice(StartSlice {
             repo: None,
+            model: None,
+            effort: None,
             task: TaskId(1),
             name: name.into(),
             brief: "go".into(),
@@ -1394,6 +1396,8 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
             COORDINATOR,
             Tool::StartSlice(StartSlice {
                 repo: None,
+                model: None,
+                effort: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -1420,6 +1424,8 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
             COORDINATOR,
             Tool::StartSlice(StartSlice {
                 repo: None,
+                model: None,
+                effort: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -2037,6 +2043,8 @@ fn pending_start(h: &mut Harness) {
             COORDINATOR,
             Tool::StartSlice(StartSlice {
                 repo: None,
+                model: None,
+                effort: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -6733,5 +6741,173 @@ fn declared_variants_and_picks_survive_a_restart() {
     assert_eq!(h.snap.variants.len(), 1, "{:?}", h.snap.variants);
     assert_eq!(h.snap.variants[0].selection["theme"], "dark");
     drop(dir);
+    h.quit();
+}
+
+// --- slices started on a chosen model and effort (task #42) ---
+
+fn start_on(
+    name: &str,
+    model: Option<&str>,
+    effort: Option<dovetail_api::ReasoningEffort>,
+) -> Tool {
+    Tool::StartSlice(StartSlice {
+        repo: None,
+        model: model.map(str::to_owned),
+        effort,
+        task: TaskId(1),
+        name: name.into(),
+        brief: "go".into(),
+    })
+}
+
+fn make_task(h: &mut Harness) {
+    h.send(Command::CreateTask(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+        effort: Default::default(),
+        criterion: None,
+    }));
+    h.wait_for("the task", |s| !s.tasks.is_empty());
+}
+
+fn wait_specs(fake: &FakeDriver, n: usize) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < n {
+        assert!(Instant::now() < deadline, "session {n} never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn call_coordinator(h: &Harness, call: Tool) -> (String, bool) {
+    result_text(socket_call(&h.socket(), tool(COORDINATOR, call)))
+}
+
+#[test]
+fn a_slice_starts_on_the_model_and_effort_asked_for_and_defaults_when_left_out() {
+    use dovetail_api::ReasoningEffort;
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    make_task(&mut h);
+    let (text, is_error) = call_coordinator(
+        &h,
+        start_on("cheap", Some("haiku"), Some(ReasoningEffort::Low)),
+    );
+    assert!(!is_error && text.starts_with("started"), "{text}");
+    wait_specs(&fake, 1);
+    let spec = &fake.started_specs()[0];
+    assert_eq!(spec.model.as_deref(), Some("haiku"));
+    assert_eq!(spec.effort, Some(ReasoningEffort::Low));
+
+    let (text, is_error) = call_coordinator(&h, start_on("plain", None, None));
+    assert!(!is_error && text.starts_with("started"), "{text}");
+    wait_specs(&fake, 2);
+    let spec = &fake.started_specs()[1];
+    assert_eq!(spec.model, None);
+    assert_eq!(spec.effort, None);
+    h.quit();
+}
+
+#[test]
+fn an_unknown_model_is_denied_once_models_are_listed_and_an_effort_alone_is_refused() {
+    use dovetail_api::ReasoningEffort;
+    use dovetail_driver::{DriverEvent, ModelInfo};
+    let fake = fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![0],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    make_task(&mut h);
+    prompt(&h, "hi");
+    wait_specs(&fake, 1);
+    fake.send_event(DriverEvent::Models(vec![ModelInfo {
+        value: "sonnet".into(),
+        resolved: Some("claude-sonnet-5-5".into()),
+        display_name: None,
+        efforts: ReasoningEffort::ALL.to_vec(),
+    }]));
+    h.wait_for("the models", |s| {
+        s.models
+            .iter()
+            .any(|m| m.name == "sonnet" && m.efforts.is_some())
+    });
+    let (text, is_error) = call_coordinator(&h, start_on("odd", Some("gpt-9"), None));
+    assert!(
+        is_error && text.starts_with("denied") && text.contains("sonnet"),
+        "{text}"
+    );
+    assert!(!h.snap.agents.iter().any(|a| a.name == "odd"));
+    // A full name Claude Code lists is fine.
+    let (text, is_error) = call_coordinator(&h, start_on("full", Some("claude-sonnet-5-5"), None));
+    assert!(!is_error && text.starts_with("started"), "{text}");
+    let (text, is_error) =
+        call_coordinator(&h, start_on("alone", None, Some(ReasoningEffort::Low)));
+    assert!(
+        is_error && text.contains("`effort` needs a `model`"),
+        "{text}"
+    );
+    h.quit();
+}
+
+#[test]
+fn a_queued_slice_keeps_its_model_and_effort_and_a_refused_effort_is_reported() {
+    use dovetail_api::ReasoningEffort;
+    let fake = fixture("plain_turn");
+    // Claude Code ignores the effort asked for and keeps `high`.
+    fake.apply_effort_at_start(ReasoningEffort::High);
+    let config = Config {
+        max_slices: 1,
+        ..Config::default()
+    };
+    let mut h = Harness::start(fake.clone(), true, config);
+    make_task(&mut h);
+    let (text, _) = call_coordinator(&h, start_on("first", None, None));
+    assert!(text.starts_with("started"), "{text}");
+    let (text, is_error) = call_coordinator(
+        &h,
+        start_on("second", Some("haiku"), Some(ReasoningEffort::Low)),
+    );
+    assert!(!is_error && text.starts_with("queued"), "{text}");
+    h.send(Command::CloseSlice {
+        agent: AgentId("slice-first".into()),
+    });
+    h.wait_for("the queued slice", |s| {
+        s.agents.iter().any(|a| a.name == "second")
+    });
+    // The coordinator is woken by "slice ready" and starts too: find the slice's own session.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let spec = loop {
+        let found = fake
+            .started_specs()
+            .into_iter()
+            .find(|s| s.name.as_deref() == Some("p.second"));
+        if let Some(spec) = found {
+            break spec;
+        }
+        assert!(Instant::now() < deadline, "second never started");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(spec.model.as_deref(), Some("haiku"));
+    assert_eq!(spec.effort, Some(ReasoningEffort::Low));
+
+    h.wait_for("the applied effort", |s| {
+        s.agents
+            .iter()
+            .any(|a| a.name == "second" && a.effort == Some(ReasoningEffort::High))
+    });
+    h.wait_for("the notice", |s| {
+        s.conversations
+            .get(&AgentId("slice-second".into()))
+            .is_some_and(|t| {
+                t.entries
+                    .iter()
+                    .any(|e| e.text.contains("did not get what you asked for"))
+            })
+    });
     h.quit();
 }

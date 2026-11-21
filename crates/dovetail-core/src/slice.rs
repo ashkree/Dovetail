@@ -22,7 +22,7 @@ use dovetail_api::{
 use serde_json::json;
 use tokio::sync::oneshot;
 
-use crate::db::{AgentRow, QueuedSlice, now_ms};
+use crate::db::{AgentRow, ModelChoice, QueuedSlice, now_ms};
 use crate::error::{SessionError, SetupFailure, SliceError};
 use crate::inbox::Waiter;
 use crate::projects;
@@ -43,6 +43,8 @@ pub(crate) struct SliceRequest {
     pub(crate) by_coordinator: bool,
     /// The repo by name (ADR 0021); `None` when the project has one.
     pub(crate) repo: Option<String>,
+    /// The model and effort the coordinator picked (task #42); `None`: the default.
+    pub(crate) model_choice: Option<ModelChoice>,
 }
 
 /// What became of a request.
@@ -138,6 +140,14 @@ impl Core {
         {
             return Err(SliceError::NoTask(task.0));
         }
+        if let Some(choice) = &request.model_choice
+            && self.model_listed(&choice.model) == Some(false)
+        {
+            return Err(SliceError::UnknownModel {
+                model: choice.model.clone(),
+                known: self.model_catalog_names(),
+            });
+        }
         Ok(())
     }
 
@@ -165,6 +175,7 @@ impl Core {
                     request.brief.clone(),
                     request.by_coordinator,
                     request.repo.clone(),
+                    request.model_choice.clone(),
                 )
                 .await?;
             self.queue.push_back(QueuedSlice {
@@ -174,6 +185,7 @@ impl Core {
                 brief: request.brief,
                 by_coordinator: request.by_coordinator,
                 repo: request.repo,
+                model_choice: request.model_choice,
             });
             return Ok(SliceStart::Queued(name));
         }
@@ -194,6 +206,7 @@ impl Core {
                 brief: queued.brief,
                 by_coordinator: queued.by_coordinator,
                 repo: queued.repo,
+                model_choice: queued.model_choice,
             };
             let name = request.name.clone();
             let by_coordinator = request.by_coordinator;
@@ -265,7 +278,7 @@ impl Core {
             tool_use_id: None,
             claude_home: None,
             takeover: None,
-            model_choice: None,
+            model_choice: request.model_choice.clone(),
             // An unregistered folder's repo (id 0) is never stored.
             repo: Some(repo.id).filter(|r| r.0 > 0),
         };
@@ -305,6 +318,8 @@ impl Core {
         };
         live.brief = Some(first_prompt);
         live.setting_up = true;
+        // Checked against what Claude Code reports at start-up (`on_model_settings`).
+        live.launch_choice = request.model_choice;
         let generation = live.generation;
         if git {
             self.watch_setup(id, name, generation);

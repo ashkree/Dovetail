@@ -98,6 +98,14 @@ pub enum SliceError {
         /// The project's repo names, comma-separated.
         known: String,
     },
+    /// The `model` asked for is not one Claude Code lists (task #42).
+    #[error("there is no model `{model}`; the models are: {known}")]
+    UnknownModel {
+        /// The name asked for.
+        model: String,
+        /// The models Claude Code listed, comma-separated.
+        known: String,
+    },
     /// `project_archive_slice` named the coordinator.
     #[error("the coordinator cannot be archived")]
     ArchiveCoordinator,

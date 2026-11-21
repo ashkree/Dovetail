@@ -91,14 +91,73 @@ impl Core {
 
     /// Whether `row`'s session already runs `model` (an alias or a full name).
     fn runs_model(&self, row: &AgentRow, model: &str) -> bool {
-        let Some(running) = row.agent.model.as_deref() else {
-            return false;
-        };
+        row.agent
+            .model
+            .as_deref()
+            .is_some_and(|running| self.runs_model_named(running, model))
+    }
+
+    /// Whether `running` (a resolved name) is `model` (an alias or a full name).
+    fn runs_model_named(&self, running: &str, model: &str) -> bool {
         running == model
             || self
                 .model_catalog
                 .iter()
                 .any(|m| m.value == model && m.resolved.as_deref() == Some(running))
+    }
+
+    /// Whether Claude Code lists `model` (by alias or full name): `None` while no session has
+    /// listed its models, when it cannot be told.
+    pub(crate) fn model_listed(&self, model: &str) -> Option<bool> {
+        (!self.model_catalog.is_empty()).then(|| {
+            self.model_catalog
+                .iter()
+                .any(|m| m.value == model || m.resolved.as_deref() == Some(model))
+        })
+    }
+
+    /// The listed models' names, comma-separated, for an error.
+    pub(crate) fn model_catalog_names(&self) -> String {
+        let names: Vec<&str> = self.model_catalog.iter().map(|m| m.value.as_str()).collect();
+        names.join(", ")
+    }
+
+    /// A slice started with a model and effort: the start-up read says what Claude Code applied.
+    /// A mismatch is told to the coordinator; the agent row keeps the applied values.
+    fn check_launch_choice(
+        &mut self,
+        agent: &AgentId,
+        choice: ModelChoice,
+        model: Option<&str>,
+        effort: Option<ReasoningEffort>,
+    ) {
+        let name = self.agent_name(agent);
+        let mut problems = Vec::new();
+        // The applied model is the resolved name: compare it only when the catalog can map it.
+        if let Some(applied) = model
+            && self.model_listed(&choice.model) == Some(true)
+            && !self.runs_model_named(applied, &choice.model)
+        {
+            problems.push(format!("model {} (it runs {applied})", choice.model));
+        }
+        if let Some(wanted) = choice.effort
+            && effort != Some(wanted)
+        {
+            problems.push(format!(
+                "effort {} (it runs at {})",
+                wanted.as_str(),
+                effort.map_or("none", ReasoningEffort::as_str)
+            ));
+        }
+        if problems.is_empty() {
+            return;
+        }
+        let text = format!(
+            "slice {name} did not get what you asked for: {}",
+            problems.join(" and ")
+        );
+        self.notice(agent, text.clone());
+        self.tell_coordinator(text);
     }
 
     /// `get_settings`' answer: the start-up read (`switch` is `None`) or the end of a switch.
@@ -117,8 +176,12 @@ impl Core {
             return;
         }
         let asked = live.switching.take_if(|p| Some(p.id) == switch);
+        let launched = live.launch_choice.take();
         self.set_model(agent, model.as_deref());
         self.update_agent(agent, |row| row.agent.effort = effort);
+        if let Some(choice) = launched {
+            self.check_launch_choice(agent, choice, model.as_deref(), effort);
+        }
         let Some(PendingSwitch { mut choice, .. }) = asked else {
             return;
         };

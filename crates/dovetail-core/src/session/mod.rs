@@ -63,6 +63,9 @@ pub(crate) struct Live {
     pub(crate) setting_up: bool,
     /// The first prompt, held until setup succeeds.
     pub(crate) brief: Option<String>,
+    /// The model and effort a slice was started with, until Claude Code's start-up read
+    /// confirms them or reports what it applied instead (task #42).
+    pub(crate) launch_choice: Option<crate::db::ModelChoice>,
     /// The first `system/init` has arrived.
     pub(crate) inited: bool,
     /// Pending `SendMessage` calls, by tool use id.
@@ -327,6 +330,7 @@ impl Core {
                 stopping: false,
                 setting_up: false,
                 brief: None,
+                launch_choice: None,
                 inited: false,
                 sends: HashMap::new(),
                 close_after: None,

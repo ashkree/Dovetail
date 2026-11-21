@@ -90,6 +90,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0019_agent_repo.sql"),
     migration!("state", "0020_design_variants.sql"),
     migration!("state", "0021_blocks.sql"),
+    migration!("state", "0022_slice_queue_model.sql"),
 ];
 
 /// Errors from the database layer.
@@ -709,6 +710,7 @@ impl Db {
         brief: String,
         by_coordinator: bool,
         repo: Option<String>,
+        model_choice: Option<ModelChoice>,
     ) -> Pending<i64> {
         self.run(move |c, now| {
             sessions::enqueue_slice(
@@ -718,6 +720,7 @@ impl Db {
                 &brief,
                 by_coordinator,
                 repo.as_deref(),
+                model_choice.as_ref(),
                 now,
             )
         })
@@ -1265,7 +1268,17 @@ mod tests {
 
         agents[0].repo = Some(dovetail_api::RepoId(7));
         db.upsert_agent(agents[0].clone()).wait().unwrap();
-        db.enqueue_slice(None, "c".into(), "go".into(), false, Some("web".into()))
+        db.enqueue_slice(
+            None,
+            "c".into(),
+            "go".into(),
+            false,
+            Some("web".into()),
+            Some(ModelChoice {
+                model: "haiku".into(),
+                effort: Some(dovetail_api::ReasoningEffort::Low),
+            }),
+        )
             .wait()
             .unwrap();
         drop(db);
@@ -1277,6 +1290,13 @@ mod tests {
         assert_eq!(
             db.load_queue().wait().unwrap()[1].repo.as_deref(),
             Some("web")
+        );
+        assert_eq!(
+            db.load_queue().wait().unwrap()[1].model_choice,
+            Some(ModelChoice {
+                model: "haiku".into(),
+                effort: Some(dovetail_api::ReasoningEffort::Low)
+            })
         );
     }
 

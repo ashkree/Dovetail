@@ -115,6 +115,9 @@ struct Recorder {
     hold_models: std::sync::atomic::AtomicBool,
     /// Held model switch answers, in the order the switches were asked.
     held: Mutex<Vec<DriverEvent>>,
+    /// Every session reports this effort as applied, with the model it started on, as the
+    /// start-up `get_settings` read does ([`FakeDriver::apply_effort_at_start`]).
+    applied_effort: Mutex<Option<dovetail_api::ReasoningEffort>>,
     /// The latest session's event stream, for [`FakeDriver::send_event`].
     latest: Mutex<Option<UnboundedSender<DriverEvent>>>,
 }
@@ -165,6 +168,14 @@ impl FakeDriver {
             recorder: Arc::default(),
             gate: Arc::default(),
         })
+    }
+
+    /// From now on, every session reports `effort` as applied at start, with the model it was
+    /// started on (Claude Code's start-up `get_settings` read), whatever it was asked for.
+    pub fn apply_effort_at_start(&self, effort: dovetail_api::ReasoningEffort) {
+        if let Ok(mut applied) = self.recorder.applied_effort.lock() {
+            *applied = Some(effort);
+        }
     }
 
     /// Replace the replay options.
@@ -257,6 +268,14 @@ impl SessionDriver for FakeDriver {
         let (tx, rx) = unbounded_channel();
         if let Ok(mut latest) = self.recorder.latest.lock() {
             *latest = Some(tx.clone());
+        }
+        let applied = self.recorder.applied_effort.lock().ok().and_then(|e| *e);
+        if let Some(effort) = applied {
+            let _ = tx.send(DriverEvent::ModelSettings {
+                switch: None,
+                model: spec.model.clone(),
+                effort: Some(effort),
+            });
         }
         let shared = Arc::new(Shared::default());
         handle.spawn(replay(

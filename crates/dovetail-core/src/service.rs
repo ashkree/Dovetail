@@ -1470,6 +1470,7 @@ impl Core {
                     brief,
                     by_coordinator: false,
                     repo,
+                    model_choice: None,
                 };
                 if let Err(message) = self.request_slice(request).await {
                     self.fail(message);

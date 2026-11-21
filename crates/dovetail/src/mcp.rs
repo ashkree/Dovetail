@@ -448,13 +448,18 @@ fn tool_defs() -> Vec<ToolDef> {
                 ready\"; a setup failure arrives the same way. The brief becomes the slice's \
                 first prompt, so make it complete: goal, scope, files, checks to run. The \
                 slice works in one of the project's repos: name it with `repo` when the \
-                project has several (refused without it); with one it may be left out.",
+                project has several (refused without it); with one it may be left out. Pick the \
+                session's `model` and `effort` for the work; leave both out for the project's \
+                default. An unknown model is `denied`; if the model or effort did not take, \
+                you are told in a message.",
             schema: || {
                 json!({"type": "object", "properties": {
                     "task": {"type": "integer", "description": "Id of an existing task."},
                     "name": {"type": "string", "description": "Short slice name, used for the branch and worktree."},
                     "brief": {"type": "string", "description": "The slice's first prompt."},
-                    "repo": {"type": "string", "description": "The repo it works in, by name, as Dovetail listed it to you. Required when the project has several repos."}
+                    "repo": {"type": "string", "description": "The repo it works in, by name, as Dovetail listed it to you. Required when the project has several repos."},
+                    "model": {"type": "string", "description": "The model the slice runs on: an alias (`haiku`, `sonnet`, `opus`) or a full model id."},
+                    "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"], "description": "The slice's effort level. Needs `model`."}
                 }, "required": ["task", "name", "brief"]})
             },
         },

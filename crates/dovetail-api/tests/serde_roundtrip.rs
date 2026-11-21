@@ -1338,3 +1338,42 @@ fn review_is_a_status_and_agents_cannot_set_status() {
     let other = Tool::parse("tasks_update", json!({"id": 1, "title": "renamed"})).unwrap();
     assert_eq!(other.validate(Role::Coordinator), Ok(()));
 }
+
+#[test]
+fn start_slice_takes_an_optional_model_and_effort_and_an_effort_needs_a_model() {
+    use dovetail_api::tools::{Role, StartSlice, Tool};
+    let base = json!({"task": 3, "name": "x", "brief": "go"});
+    // Left out: nothing changes for old callers.
+    let plain = Tool::parse("project_start_slice", base.clone()).expect("parses");
+    assert!(matches!(
+        &plain,
+        Tool::StartSlice(StartSlice {
+            model: None,
+            effort: None,
+            ..
+        })
+    ));
+    assert_eq!(plain.validate(Role::Coordinator), Ok(()));
+    // Given: an alias and a level.
+    let mut args = base.clone();
+    args["model"] = json!("haiku");
+    args["effort"] = json!("low");
+    let chosen = Tool::parse("project_start_slice", args).expect("parses");
+    match &chosen {
+        Tool::StartSlice(s) => {
+            assert_eq!(s.model.as_deref(), Some("haiku"));
+            assert_eq!(s.effort, Some(ReasoningEffort::Low));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(chosen.validate(Role::Coordinator), Ok(()));
+    // An unknown level is refused when parsed; an effort alone when validated.
+    let mut bad = base.clone();
+    bad["model"] = json!("haiku");
+    bad["effort"] = json!("bogus");
+    assert!(Tool::parse("project_start_slice", bad).is_err());
+    let mut alone = base;
+    alone["effort"] = json!("low");
+    let alone = Tool::parse("project_start_slice", alone).expect("parses");
+    assert!(alone.validate(Role::Coordinator).is_err());
+}

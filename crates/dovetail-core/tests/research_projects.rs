@@ -307,6 +307,8 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
             called_as: None,
             call: Tool::StartSlice(StartSlice {
                 repo: None,
+                model: None,
+                effort: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
