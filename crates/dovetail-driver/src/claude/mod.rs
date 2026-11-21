@@ -10,6 +10,7 @@ pub mod parse;
 mod reader;
 mod switch;
 pub mod transcript;
+mod usage;
 
 pub use args::ClaudeOptions;
 
@@ -70,6 +71,10 @@ impl ClaudeDriver {
 impl SessionDriver for ClaudeDriver {
     fn kind(&self) -> DriverKind {
         DriverKind::Claude
+    }
+
+    fn usage(&self, query: crate::UsageQuery) -> crate::UsageFuture {
+        Box::pin(usage::usage(self.program.clone(), query))
     }
 
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {

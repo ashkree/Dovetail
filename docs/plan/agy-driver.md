@@ -40,7 +40,7 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
 | `f5d2955` | main | Spike: `docs/spikes/agy-headless.md`, probes in `spikes/agy-headless/` |
 | `37ae2fb` | main | Step A: driver crate split into `claude/`, `process.rs`; `ClaudeOptions` on `SessionSpec`; `dovetail_api::DriverKind` |
 | `9727ac8` | main | Step B: the agy ACP driver (`crates/dovetail-driver/src/agy/`), `AgyOptions`, `McpServerSpec`, `FakeDriver::for_agy`, fixtures in `tests/fixtures/agy/`, `tests/agy_live.rs` |
-| `bf6bd30` | branch `agy-wip` | Step C1 in progress: the usage readers (see below). `check.sh` fails on it |
+| C1 commit (see `git log --grep "Usage readers"`) | main | Step C1: the usage readers. The `agy-wip` branch (`bf6bd30`) was its WIP and is superseded |
 
 ## Rules
 
@@ -66,7 +66,7 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
 
 ### C1. Usage readers in the driver crate
 
-- [ ] Finish and land what is on `agy-wip` (`bf6bd30`). It holds:
+- [x] Finish and land what is on `agy-wip` (`bf6bd30`). It holds:
   - `dovetail_api::{DriverUsage, UsageGroup, LimitWindow}` in `crates/dovetail-api/src/driver.rs`
     (`DriverUsage { driver, plan, groups, note, failed }`, `DriverUsage::failed(driver, why)`;
     `used_fraction` is 0–1).
@@ -91,7 +91,7 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
   - `FakeDriver::set_usage`, `FakeDriver::usage_queries`.
   - Unit tests for both parsers and for `query::ask`; `tests/usage_live.rs` (opt-in; it passed
     against the real CLIs on 2026-11-21).
-- [ ] Fix the one `check.sh` failure: `query::ask` returns `Result<Value, String>`. Add a
+- [x] Fix the one `check.sh` failure: `query::ask` returns `Result<Value, String>`. Add a
   `QueryError` (`thiserror`: `Spawn(DriverError)`, `Io(std::io::Error)`, `NoAnswer`,
   `Timeout(u64)`) and have both `usage()` functions turn it into `DriverUsage::failed(kind,
   err.to_string())`.

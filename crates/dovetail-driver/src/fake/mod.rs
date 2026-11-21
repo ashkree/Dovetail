@@ -136,6 +136,10 @@ struct Recorder {
     mcp_closed: std::sync::atomic::AtomicBool,
     /// The latest session's event stream, for [`FakeDriver::send_event`].
     latest: Mutex<Option<UnboundedSender<DriverEvent>>>,
+    /// What `usage` reports ([`FakeDriver::set_usage`]); `None` reports an empty one.
+    usage: Mutex<Option<dovetail_api::DriverUsage>>,
+    /// The queries `usage` was asked.
+    usage_queries: Mutex<Vec<crate::UsageQuery>>,
 }
 
 /// Replays a fixture as the event stream of every session it starts, and records what it is
@@ -253,6 +257,22 @@ impl FakeDriver {
         }
     }
 
+    /// What `usage` reports from now on.
+    pub fn set_usage(&self, usage: dovetail_api::DriverUsage) {
+        if let Ok(mut u) = self.recorder.usage.lock() {
+            *u = Some(usage);
+        }
+    }
+
+    /// The queries `usage` was asked, in order.
+    pub fn usage_queries(&self) -> Vec<crate::UsageQuery> {
+        self.recorder
+            .usage_queries
+            .lock()
+            .map(|q| q.clone())
+            .unwrap_or_default()
+    }
+
     /// From now on `mcp` fails with `SessionClosed`, as when the process is gone.
     pub fn close_mcp(&self) {
         self.recorder
@@ -306,6 +326,26 @@ impl FakeDriver {
 impl SessionDriver for FakeDriver {
     fn kind(&self) -> DriverKind {
         self.kind
+    }
+
+    fn usage(&self, query: crate::UsageQuery) -> crate::UsageFuture {
+        if let Ok(mut q) = self.recorder.usage_queries.lock() {
+            q.push(query);
+        }
+        let usage = self
+            .recorder
+            .usage
+            .lock()
+            .ok()
+            .and_then(|u| u.clone())
+            .unwrap_or(dovetail_api::DriverUsage {
+                driver: self.kind,
+                plan: None,
+                groups: Vec::new(),
+                note: None,
+                failed: false,
+            });
+        Box::pin(async move { usage })
     }
 
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {

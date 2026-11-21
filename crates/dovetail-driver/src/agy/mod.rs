@@ -11,6 +11,7 @@ mod models;
 mod permission;
 mod rpc;
 mod turn;
+mod usage;
 
 pub use args::{AgyOptions, McpServerSpec};
 
@@ -113,6 +114,10 @@ impl Link {
 impl SessionDriver for AgyDriver {
     fn kind(&self) -> DriverKind {
         DriverKind::Agy
+    }
+
+    fn usage(&self, query: crate::UsageQuery) -> crate::UsageFuture {
+        Box::pin(usage::usage(self.program.clone(), query))
     }
 
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {

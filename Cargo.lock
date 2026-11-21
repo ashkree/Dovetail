@@ -546,6 +546,7 @@ name = "dovetail-driver"
 version = "0.0.0"
 dependencies = [
  "dovetail-api",
+ "jiff",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

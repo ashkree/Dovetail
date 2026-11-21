@@ -6,13 +6,15 @@ mod claude;
 mod event;
 mod fake;
 mod process;
+mod query;
 mod spec;
 
 pub use agy::{AgyDriver, AgyOptions, McpServerSpec};
 pub use claude::{ClaudeDriver, ClaudeOptions, parse, transcript};
-pub use dovetail_api::DriverKind;
+pub use dovetail_api::{DriverKind, DriverUsage};
 pub use event::*;
 pub use fake::{FakeDriver, ReplayOptions, ReplayTiming, Sent};
+pub use query::UsageQuery;
 pub use spec::{PermissionMode, SessionSpec, SystemdScope};
 
 use serde_json::Value;
@@ -49,7 +51,15 @@ pub trait SessionDriver: Send + Sync + 'static {
     /// Start (or, with [`SessionSpec::resume`], resume) a session. Must be called inside a tokio
     /// runtime. Returns once the process is spawned; events arrive on the session's stream.
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError>;
+    /// The account's limits and current usage, read by a short-lived process that makes no
+    /// model call (limits are per account, not per session). Never fails: a report that could
+    /// not be read comes back with [`DriverUsage::failed`] set and the reason.
+    fn usage(&self, query: UsageQuery) -> UsageFuture;
 }
+
+/// What [`SessionDriver::usage`] returns: run it on the tokio runtime.
+pub type UsageFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = DriverUsage> + Send + 'static>>;
 
 /// One running session. Methods only enqueue: they never wait on the process, so a held
 /// permission request can never block anything else.

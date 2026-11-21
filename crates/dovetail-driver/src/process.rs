@@ -91,14 +91,24 @@ pub(crate) fn spawn(
     args: Vec<OsString>,
     spec: &SessionSpec,
 ) -> Result<Spawned, DriverError> {
+    spawn_in(program, args, &spec.cwd, &spec.env)
+}
+
+/// Spawns `program args` in `cwd` with `env` added, every stdio piped.
+pub(crate) fn spawn_in(
+    program: OsString,
+    args: Vec<OsString>,
+    cwd: &std::path::Path,
+    env: &[(String, String)],
+) -> Result<Spawned, DriverError> {
     let mut cmd = Command::new(program);
     cmd.args(args)
-        .current_dir(&spec.cwd)
+        .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    for (k, v) in &spec.env {
+    for (k, v) in env {
         cmd.env(k, v);
     }
     let mut child = cmd.spawn().map_err(DriverError::Spawn)?;
