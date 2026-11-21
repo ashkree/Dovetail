@@ -1,6 +1,6 @@
 [package]
 name = "dovetail-driver"
-description = "SessionDriver: runs headless Claude Code sessions over the NDJSON stream protocol"
+description = "SessionDriver: runs headless agent CLI sessions (Claude Code over stream-json, agy over ACP)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

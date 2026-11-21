@@ -1,9 +1,13 @@
-//! `FakeDriver`: replays a recorded fixture through the real parser and records what it is sent.
+//! `FakeDriver`: replays a recorded fixture through the real driver's mapping and records what
+//! it is sent.
 //!
 //! Fixtures are NDJSON, one `{"t": <ms>, "dir": "in"|"out"|"err", "msg": <line>}` per line
-//! (`tests/fixtures/`). A bare stream-json line without those keys is treated as `out`. Only
-//! `out` lines are replayed; `in` and `err` lines are skipped (what the recording sent is not
-//! what the code under test sends).
+//! (`tests/fixtures/`). A bare line without those keys is treated as `out`. Only `out` lines
+//! are replayed as events; `err` lines are skipped, and `in` lines are never sent (what the
+//! recording sent is not what the code under test sends). An agy fixture
+//! ([`FakeDriver::for_agy`]) still reads its `in` lines, so each recorded answer finds the
+//! request it answers, as in the live driver. Pieces: `replay` (the loop), `session` (the
+//! handle).
 //!
 //! ```ignore
 //! let fake = FakeDriver::from_file("tests/fixtures/concurrent_permissions.ndjson")?
@@ -14,19 +18,21 @@
 //! assert_eq!(fake.sent(), vec![/* Sent::Answer { .. } */]);
 //! ```
 
+mod replay;
+mod session;
+
 use crate::event::*;
-use crate::parse;
 use crate::{
     ControlAnswer, DriverError, DriverKind, PermissionMode, Session, SessionDriver, SessionSpec,
-    UserInput,
 };
+use replay::Shared;
 use serde_json::Value;
-use std::collections::HashSet;
+use session::FakeSession;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 /// How the recorded `t` timestamps are honoured.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,9 +108,12 @@ pub enum Sent {
     Kill,
 }
 
+/// One recorded line the replay reads.
 #[derive(Debug, Clone)]
 struct Line {
     t: u64,
+    /// `out` (the CLI wrote it) rather than `in` (the recording sent it).
+    out: bool,
     msg: Value,
 }
 
@@ -166,8 +175,12 @@ impl FakeDriver {
                 ),
                 _ => (0, "out".to_owned(), v),
             };
-            if dir == "out" {
-                lines.push(Line { t, msg });
+            if dir == "out" || dir == "in" {
+                lines.push(Line {
+                    t,
+                    out: dir == "out",
+                    msg,
+                });
             }
         }
         Ok(Self {
@@ -190,6 +203,12 @@ impl FakeDriver {
         if let Ok(mut applied) = self.recorder.applied.lock() {
             *applied = Some((model.map(str::to_owned), effort));
         }
+    }
+
+    /// Replays the fixture as an agy (ACP) recording, and reports [`DriverKind::Agy`].
+    pub fn for_agy(mut self) -> Self {
+        self.kind = DriverKind::Agy;
+        self
     }
 
     /// Replace the replay options.
@@ -327,10 +346,11 @@ impl SessionDriver for FakeDriver {
                 )],
             }));
         } else {
-            handle.spawn(replay(
+            handle.spawn(replay::replay(
                 self.lines.clone(),
                 options,
-                spec.cwd.to_string_lossy().into_owned(),
+                spec.clone(),
+                self.kind,
                 tx.clone(),
                 shared.clone(),
                 self.gate.clone(),
@@ -343,281 +363,5 @@ impl SessionDriver for FakeDriver {
             recorder: self.recorder.clone(),
             shared,
         }))
-    }
-}
-
-#[derive(Default)]
-struct Shared {
-    /// Permission requests the session has emitted and not yet seen answered.
-    outstanding: Mutex<HashSet<String>>,
-    answered: Notify,
-    closed: Mutex<bool>,
-}
-
-impl Shared {
-    fn is_closed(&self) -> bool {
-        self.closed.lock().map(|c| *c).unwrap_or(true)
-    }
-}
-
-/// Replays `lines`. Each init reports `cwd`, the folder the session was started in, as a real
-/// `claude` does, not the folder the fixture was recorded in.
-async fn replay(
-    lines: Arc<Vec<Line>>,
-    options: ReplayOptions,
-    cwd: String,
-    tx: UnboundedSender<DriverEvent>,
-    shared: Arc<Shared>,
-    gate: Arc<Notify>,
-) {
-    let mut prev_t = 0u64;
-    for (n, line) in lines.iter().enumerate() {
-        if shared.is_closed() {
-            break;
-        }
-        if options.pause_before.contains(&n) {
-            gate.notified().await;
-        }
-        if let Some((at, signal)) = options.kill_first_before
-            && at == n
-        {
-            let _ = tx.send(DriverEvent::Exited(ExitInfo {
-                code: None,
-                signal: Some(signal),
-                success: false,
-                stderr_tail: Vec::new(),
-            }));
-            return;
-        }
-        match options.timing {
-            ReplayTiming::Instant => {}
-            ReplayTiming::Fixed(d) => tokio::time::sleep(d).await,
-            ReplayTiming::Recorded { speed, max_gap } => {
-                let gap = Duration::from_millis(line.t.saturating_sub(prev_t));
-                tokio::time::sleep(gap.div_f64(speed.max(f64::MIN_POSITIVE)).min(max_gap)).await;
-            }
-        }
-        prev_t = line.t;
-        for mut ev in parse::map_value(line.msg.clone()) {
-            if let DriverEvent::Init(init) = &mut ev
-                && init.cwd.is_some()
-            {
-                init.cwd = Some(cwd.clone());
-            }
-            if let DriverEvent::PermissionRequest(req) = &ev
-                && let Ok(mut o) = shared.outstanding.lock()
-            {
-                o.insert(req.id.0.clone());
-            }
-            if tx.send(ev).is_err() {
-                return;
-            }
-        }
-        if options.wait_for_answers && is_permission_request(&line.msg) {
-            // Requests of one burst arrive together, possibly with the assistant lines of the
-            // calls between them (the `concurrent_permissions` recording): wait only after the
-            // last request before the next tool result or `result`.
-            let more_in_burst = lines[n + 1..]
-                .iter()
-                .take_while(|l| {
-                    !matches!(
-                        l.msg.get("type").and_then(Value::as_str),
-                        Some("user" | "result")
-                    )
-                })
-                .any(|l| is_permission_request(&l.msg));
-            if !more_in_burst {
-                loop {
-                    let empty = shared
-                        .outstanding
-                        .lock()
-                        .map(|o| o.is_empty())
-                        .unwrap_or(true);
-                    if empty || shared.is_closed() {
-                        break;
-                    }
-                    shared.answered.notified().await;
-                }
-            }
-        }
-    }
-    let _ = tx.send(DriverEvent::Exited(ExitInfo {
-        code: Some(0),
-        signal: None,
-        success: true,
-        stderr_tail: Vec::new(),
-    }));
-}
-
-fn is_permission_request(msg: &Value) -> bool {
-    msg.get("type").and_then(Value::as_str) == Some("control_request")
-        && msg.pointer("/request/subtype").and_then(Value::as_str) == Some("can_use_tool")
-}
-
-struct FakeSession {
-    session_id: String,
-    events: Option<UnboundedReceiver<DriverEvent>>,
-    /// For answering a model switch, which no fixture records.
-    events_tx: UnboundedSender<DriverEvent>,
-    recorder: Arc<Recorder>,
-    shared: Arc<Shared>,
-}
-
-impl FakeSession {
-    fn record(&self, s: Sent) {
-        if let Ok(mut v) = self.recorder.sent.lock() {
-            v.push(s);
-        }
-    }
-
-    fn close(&self) {
-        if let Ok(mut c) = self.shared.closed.lock() {
-            *c = true;
-        }
-        self.shared.answered.notify_one();
-    }
-}
-
-impl Drop for FakeSession {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
-impl Session for FakeSession {
-    fn session_id(&self) -> &str {
-        &self.session_id
-    }
-
-    fn pid(&self) -> Option<u32> {
-        None
-    }
-
-    fn send(&self, input: UserInput) -> Result<(), DriverError> {
-        if let Ok(mut lines) = self.recorder.user_lines.lock() {
-            lines.push(input.to_stream_json());
-        }
-        self.record(Sent::User(input.text));
-        Ok(())
-    }
-
-    fn interrupt(&self) -> Result<(), DriverError> {
-        self.record(Sent::Interrupt);
-        Ok(())
-    }
-
-    fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), DriverError> {
-        self.record(Sent::Mode(mode));
-        Ok(())
-    }
-
-    /// Records the switch and confirms it at once with exactly what was asked, except a model
-    /// named `bogus…`, which is refused as Claude Code refuses an unknown model.
-    fn set_model(
-        &self,
-        model: Option<&str>,
-        effort: Option<dovetail_api::ReasoningEffort>,
-    ) -> Result<SwitchId, DriverError> {
-        // Numbered across the fake's sessions; only distinctness matters.
-        let switch = SwitchId(
-            self.recorder
-                .sent
-                .lock()
-                .map(|s| s.iter().filter(|s| matches!(s, Sent::Model { .. })).count() as u64)
-                .unwrap_or(0),
-        );
-        self.record(Sent::Model {
-            model: model.map(str::to_owned),
-            effort,
-        });
-        let event = match model {
-            Some(m) if m.starts_with("bogus") => DriverEvent::ModelSwitchFailed {
-                switch,
-                error: format!("Model '{m}' not found"),
-            },
-            _ => DriverEvent::ModelSettings {
-                switch: Some(switch),
-                model: model.map(str::to_owned),
-                effort,
-            },
-        };
-        if self
-            .recorder
-            .hold_models
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
-            if let Ok(mut held) = self.recorder.held.lock() {
-                held.push(event);
-            }
-        } else {
-            let _ = self.events_tx.send(event);
-        }
-        Ok(switch)
-    }
-
-    /// Records the request and answers it at once from [`FakeDriver::set_mcp_servers`]: a list
-    /// for a status request, `Done` for an action on a listed server (an `AuthUrl` for a
-    /// log-in), `Failed` for an unknown one.
-    fn mcp(&self, request: dovetail_api::McpRequest) -> Result<(), DriverError> {
-        use dovetail_api::{McpOutcome, McpRequest};
-        if self
-            .recorder
-            .mcp_closed
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
-            return Err(DriverError::SessionClosed);
-        }
-        self.record(Sent::Mcp(request.clone()));
-        let servers = self
-            .recorder
-            .mcp_servers
-            .lock()
-            .map(|s| s.clone())
-            .unwrap_or_default();
-        let outcome = match (&request, request.server()) {
-            (McpRequest::Status, _) => McpOutcome::Status(servers),
-            (_, Some(name)) if !servers.iter().any(|s| s.name == name) => {
-                McpOutcome::Failed(format!("Server not found: {name}"))
-            }
-            (McpRequest::Authenticate { .. }, _) => McpOutcome::AuthUrl {
-                url: "https://login.example/start".into(),
-                callback_expected: false,
-            },
-            _ => McpOutcome::Done,
-        };
-        let _ = self
-            .events_tx
-            .send(DriverEvent::McpReply { request, outcome });
-        Ok(())
-    }
-
-    fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError> {
-        let known = self
-            .shared
-            .outstanding
-            .lock()
-            .map(|mut o| o.remove(&id.0))
-            .unwrap_or(false);
-        if !known {
-            return Err(DriverError::UnknownControl(id));
-        }
-        self.record(Sent::Answer { id, answer });
-        self.shared.answered.notify_one();
-        Ok(())
-    }
-
-    fn take_events(&mut self) -> UnboundedReceiver<DriverEvent> {
-        self.events.take().unwrap_or_else(|| unbounded_channel().1)
-    }
-
-    /// Graceful, like a real session whose stdin closes: the replay goes on to its end (a turn
-    /// in progress can still finish); only `kill` stops it.
-    fn shutdown(&self, grace: Duration) {
-        self.record(Sent::Shutdown(grace));
-    }
-
-    fn kill(&self) {
-        self.record(Sent::Kill);
-        self.close();
     }
 }

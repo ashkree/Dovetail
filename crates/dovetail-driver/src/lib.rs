@@ -1,5 +1,6 @@
 #![doc = include_str!("../ARCHITECTURE.md")]
 
+mod agy;
 mod base64;
 mod claude;
 mod event;
@@ -7,6 +8,7 @@ mod fake;
 mod process;
 mod spec;
 
+pub use agy::{AgyDriver, AgyOptions, McpServerSpec};
 pub use claude::{ClaudeDriver, ClaudeOptions, parse, transcript};
 pub use dovetail_api::DriverKind;
 pub use event::*;

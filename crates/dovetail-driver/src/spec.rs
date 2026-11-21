@@ -1,5 +1,6 @@
 //! Launch options and argv construction.
 
+use crate::agy::AgyOptions;
 use crate::claude::ClaudeOptions;
 use std::path::PathBuf;
 
@@ -125,6 +126,8 @@ pub struct SessionSpec {
     pub env: Vec<(String, String)>,
     /// What only Claude Code takes.
     pub claude: ClaudeOptions,
+    /// What only agy takes.
+    pub agy: AgyOptions,
     /// Wrap in `systemd-run --user --scope`.
     pub systemd_scope: Option<SystemdScope>,
     /// If set, every line in both directions is appended here in the fixture format
@@ -147,6 +150,7 @@ impl SessionSpec {
             add_dirs: Vec::new(),
             env: Vec::new(),
             claude: ClaudeOptions::default(),
+            agy: AgyOptions::default(),
             systemd_scope: None,
             log_path: None,
         }
