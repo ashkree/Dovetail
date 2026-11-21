@@ -1,0 +1,220 @@
+{
+  "events": [
+    {
+      "event": {
+        "inbox_upserted": {
+          "agent": "slice-a",
+          "at_ms": 7,
+          "id": 1,
+          "kind": {
+            "question": {
+              "text": "which one?"
+            }
+          }
+        }
+      },
+      "seq": 4
+    },
+    {
+      "event": {
+        "task_removed": 1
+      },
+      "seq": 9
+    },
+    {
+      "event": {
+        "task_removed": 1
+      },
+      "seq": 4
+    },
+    {
+      "event": {
+        "agent_removed": "slice-a"
+      },
+      "seq": 5
+    },
+    {
+      "event": {
+        "inbox_resolved": {
+          "id": 1
+        }
+      },
+      "seq": 6
+    },
+    {
+      "event": {
+        "warning_set": {
+          "id": "w",
+          "text": "careful"
+        }
+      },
+      "seq": 7
+    },
+    {
+      "event": {
+        "command_failed": {
+          "message": "nothing stored"
+        }
+      },
+      "seq": 8
+    }
+  ],
+  "expected": {
+    "activity": [],
+    "agents": [
+      {
+        "context_pct": null,
+        "cost_usd": 0.0,
+        "id": "slice-b",
+        "kind": "slice",
+        "last_activity_ms": 0,
+        "lock": "headless",
+        "memory_mb": null,
+        "name": "slice-b",
+        "parent": null,
+        "permission_mode": "auto",
+        "progress": null,
+        "status": "working",
+        "status_line": "",
+        "subagent_tokens": 0,
+        "task": 1,
+        "worktree": null
+      }
+    ],
+    "blocks": [],
+    "card_links": [],
+    "cards": [],
+    "commands": {},
+    "conversations": {},
+    "decisions": [],
+    "effort_limit": 0,
+    "efforts": [],
+    "inbox": [],
+    "maps": [],
+    "messages": [],
+    "models": [],
+    "now_ms": 0,
+    "previews": [],
+    "project": null,
+    "projects": [],
+    "research": [],
+    "seq": 8,
+    "tangents": [],
+    "tasks": [],
+    "todos": [],
+    "totals": {
+      "cost_usd": 0.0,
+      "memory_mb": 0,
+      "needs_you": 0
+    },
+    "upgrade_building": false,
+    "usage": {
+      "five_hour": null,
+      "seven_day": null
+    },
+    "variants": [],
+    "warnings": [
+      {
+        "id": "w",
+        "text": "careful"
+      }
+    ],
+    "worktrees": []
+  },
+  "results": [
+    "applied",
+    "gap",
+    "stale",
+    "applied",
+    "applied",
+    "applied",
+    "applied"
+  ],
+  "snapshot": {
+    "activity": [],
+    "agents": [
+      {
+        "context_pct": null,
+        "cost_usd": 0.0,
+        "id": "slice-a",
+        "kind": "slice",
+        "last_activity_ms": 0,
+        "lock": "headless",
+        "memory_mb": null,
+        "name": "slice-a",
+        "parent": null,
+        "permission_mode": "auto",
+        "progress": null,
+        "status": "working",
+        "status_line": "",
+        "subagent_tokens": 0,
+        "task": 1,
+        "worktree": null
+      },
+      {
+        "context_pct": null,
+        "cost_usd": 0.0,
+        "id": "slice-b",
+        "kind": "slice",
+        "last_activity_ms": 0,
+        "lock": "headless",
+        "memory_mb": null,
+        "name": "slice-b",
+        "parent": null,
+        "permission_mode": "auto",
+        "progress": null,
+        "status": "working",
+        "status_line": "",
+        "subagent_tokens": 0,
+        "task": 1,
+        "worktree": null
+      }
+    ],
+    "blocks": [],
+    "card_links": [],
+    "cards": [],
+    "commands": {},
+    "conversations": {
+      "slice-a": {
+        "entries": [
+          {
+            "at_ms": 1000,
+            "id": 1,
+            "kind": "user",
+            "text": "go"
+          }
+        ],
+        "has_more": false
+      }
+    },
+    "decisions": [],
+    "effort_limit": 0,
+    "efforts": [],
+    "inbox": [],
+    "maps": [],
+    "messages": [],
+    "models": [],
+    "now_ms": 0,
+    "previews": [],
+    "project": null,
+    "projects": [],
+    "research": [],
+    "seq": 3,
+    "tangents": [],
+    "tasks": [],
+    "todos": [],
+    "totals": {
+      "cost_usd": 0.0,
+      "memory_mb": 0,
+      "needs_you": 0
+    },
+    "upgrade_building": false,
+    "usage": {
+      "five_hour": null,
+      "seven_day": null
+    },
+    "variants": [],
+    "warnings": [],
+    "worktrees": []
+  }
+}
