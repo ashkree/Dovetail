@@ -5,7 +5,16 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg, Snapshot,
+    agent::{AgentCommand, AgentEvent, AgentStatus, PermissionMode, SessionLock},
+    app::AppEvent,
+    conversation::{ConversationTail, EntryKind},
+    decision::{Alternative, Decision, DecisionAuthor, DecisionCommand, DecisionId, NewDecision},
+    inbox::{InboxCommand, InboxId},
+    task::{Bucket, NewTask, PLevel, Task, TaskChange, TaskCommand, TaskEvent, TaskId, TaskStatus},
+    terminal::TerminalCommand,
+};
 use dovetail_tui::Mode;
 use dovetail_tui::region::RegionId;
 use ratatui::Terminal;
@@ -52,12 +61,12 @@ fn spawn_with_a_name_and_brief_starts_a_slice_on_the_focused_task() {
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::NewSlice {
+        vec![Command::Agent(AgentCommand::NewSlice {
             repo: None,
             task: Some(TaskId(2)),
             name: "eval-fix".into(),
             brief: "reproduce the 500 with the key set".into()
-        }]
+        })]
     );
 }
 
@@ -68,12 +77,12 @@ fn spawn_with_no_task_in_focus_makes_a_slice_with_no_task() {
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::NewSlice {
+        vec![Command::Agent(AgentCommand::NewSlice {
             repo: None,
             task: None,
             name: "scratch".into(),
             brief: String::new()
-        }]
+        })]
     );
 }
 
@@ -91,12 +100,12 @@ fn leader_s_n_asks_for_a_name_then_a_brief() {
     app.on_key(enter(), 100);
     assert_eq!(
         app.take_commands(),
-        vec![Command::NewSlice {
+        vec![Command::Agent(AgentCommand::NewSlice {
             repo: None,
             task: Some(TaskId(3)),
             name: "keyflow".into(),
             brief: "sketch it".into()
-        }]
+        })]
     );
     assert_eq!(app.mode(), Mode::Normal);
 }
@@ -117,17 +126,17 @@ fn interrupt_works_by_key_by_command_and_by_name() {
     leader(&mut app, "sx");
     assert_eq!(
         app.take_commands(),
-        vec![Command::Interrupt {
+        vec![Command::Agent(AgentCommand::Interrupt {
             agent: agent_id("slice-7")
-        }]
+        })]
     );
     type_keys(&mut app, ":interrupt slice-4");
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Interrupt {
+        vec![Command::Agent(AgentCommand::Interrupt {
             agent: agent_id("slice-4")
-        }]
+        })]
     );
     type_keys(&mut app, ":interrupt nobody");
     app.on_key(enter(), 199);
@@ -156,9 +165,9 @@ fn interrupting_a_subagent_asks_before_stopping_its_session() {
     app.on_key(key('y'), 20);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Interrupt {
+        vec![Command::Agent(AgentCommand::Interrupt {
             agent: agent_id("slice-4")
-        }]
+        })]
     );
 }
 
@@ -189,9 +198,9 @@ fn leader_s_m_cycles_the_mode_of_the_agent_under_the_cursor() {
     leader(&mut app, "sm");
     assert_eq!(
         app.take_commands(),
-        vec![Command::CyclePermissionMode {
+        vec![Command::Agent(AgentCommand::CyclePermissionMode {
             agent: agent_id("slice-4")
-        }]
+        })]
     );
     assert_eq!(app.note(), Some("slice-4: permission mode → manual"));
 }
@@ -214,9 +223,9 @@ fn on_a_subagent_the_mode_applies_to_its_session_with_a_note() {
     leader(&mut app, "sm");
     assert_eq!(
         app.take_commands(),
-        vec![Command::CyclePermissionMode {
+        vec![Command::Agent(AgentCommand::CyclePermissionMode {
             agent: agent_id("slice-4")
-        }]
+        })]
     );
     assert!(
         app.note()
@@ -242,7 +251,7 @@ fn the_badge_follows_the_mode_the_core_reports() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::AgentUpserted(agent),
+        event: Event::Agent(AgentEvent::Upserted(agent)),
     });
     assert!(!render(&mut app, 120, 40).contains(" edits "));
 }
@@ -286,7 +295,7 @@ fn leader_t_opens_capture_and_enter_saves_with_its_tokens() {
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::CreateTask(NewTask {
+        vec![Command::Task(TaskCommand::Create(NewTask {
             title: "fix eval key".into(),
             p_level: Some(PLevel::P1),
             bucket: Some(Bucket::Now),
@@ -296,7 +305,7 @@ fn leader_t_opens_capture_and_enter_saves_with_its_tokens() {
             related: vec![],
             effort: Default::default(),
             criterion: None,
-        })]
+        }))]
     );
     assert_eq!(app.mode(), Mode::Normal);
     assert_eq!(
@@ -326,7 +335,7 @@ fn the_link_to_the_focused_task_shows_and_ctrl_l_unlinks() {
     app.on_key(ctrl('l'), 51);
     app.on_key(enter(), 52);
     match app.take_commands().as_slice() {
-        [Command::CreateTask(task)] => {
+        [Command::Task(TaskCommand::Create(task))] => {
             assert_eq!(task.related, vec![TaskId(2)]);
             assert_eq!(
                 task.follow_up_of, None,
@@ -346,7 +355,7 @@ fn unlinked_capture_makes_a_task_with_no_relation() {
     app.on_key(ctrl('l'), 50);
     app.on_key(enter(), 52);
     match app.take_commands().as_slice() {
-        [Command::CreateTask(task)] => assert!(task.related.is_empty()),
+        [Command::Task(TaskCommand::Create(task))] => assert!(task.related.is_empty()),
         other => panic!("{other:?}"),
     }
 }
@@ -394,7 +403,7 @@ fn tab_saves_and_opens_the_detail_once_the_core_announces_the_task() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::TaskUpserted(Task {
+        event: Event::Task(TaskEvent::Upserted(Task {
             id: TaskId(40),
             title: "brand new idea".into(),
             status: TaskStatus::Todo,
@@ -409,7 +418,7 @@ fn tab_saves_and_opens_the_detail_once_the_core_announces_the_task() {
             related: vec![],
             effort: Default::default(),
             criterion: None,
-        }),
+        })),
     });
     let screen = render(&mut app, 120, 40);
     assert!(screen.contains("task · #40"), "{screen}");
@@ -424,7 +433,7 @@ fn the_tree_a_key_opens_the_same_capture() {
     type_keys(&mut app, "write the docs");
     app.on_key(enter(), 99);
     match app.take_commands().as_slice() {
-        [Command::CreateTask(task)] => assert_eq!(task.title, "write the docs"),
+        [Command::Task(TaskCommand::Create(task))] => assert_eq!(task.title, "write the docs"),
         other => panic!("{other:?}"),
     }
 }
@@ -550,7 +559,7 @@ fn choosing_an_inbox_item_in_the_finder_jumps_to_it() {
     // The finished turn is the selected item now: `x` dismisses it.
     assert_eq!(
         press(&mut app, "x"),
-        vec![Command::DismissInbox { item: InboxId(3) }]
+        vec![Command::Inbox(InboxCommand::Dismiss { item: InboxId(3) })]
     );
 }
 
@@ -589,24 +598,24 @@ fn the_detail_cycles_status_bucket_and_p_level_and_stubs_notes() {
     app.on_key(enter(), 0);
     assert_eq!(
         press(&mut app, "s"),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(3),
             patch: vec![TaskChange::Status(TaskStatus::InProgress)]
-        }]
+        })]
     );
     assert_eq!(
         press(&mut app, "b"),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(3),
             patch: vec![TaskChange::Bucket(Some(Bucket::Later))]
-        }]
+        })]
     );
     assert_eq!(
         press(&mut app, "p"),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(3),
             patch: vec![TaskChange::PLevel(Some(PLevel::P3))]
-        }]
+        })]
     );
     press(&mut app, "e");
     assert_eq!(
@@ -734,7 +743,7 @@ fn search_in_the_inbox_moves_its_cursor() {
     // The finished turn's preview says "Handler wired".
     assert_eq!(
         press(&mut app, "x"),
-        vec![Command::DismissInbox { item: InboxId(3) }]
+        vec![Command::Inbox(InboxCommand::Dismiss { item: InboxId(3) })]
     );
 }
 
@@ -807,9 +816,9 @@ fn leader_s_t_lends_the_terminal_for_the_session_under_the_cursor() {
     );
     assert_eq!(
         app.take_handoff(),
-        Some(Command::TakeOver {
+        Some(Command::Terminal(TerminalCommand::TakeOver {
             agent: agent_id("slice-7")
-        })
+        }))
     );
     assert!(app.terminal_away());
 }
@@ -829,9 +838,9 @@ fn taking_over_a_session_mid_turn_asks_first_and_a_subagent_means_its_session() 
     app.on_key(key('y'), 20);
     assert_eq!(
         app.take_handoff(),
-        Some(Command::TakeOver {
+        Some(Command::Terminal(TerminalCommand::TakeOver {
             agent: agent_id("slice-4")
-        })
+        }))
     );
 }
 
@@ -954,14 +963,14 @@ fn a_failed_save_does_not_leave_tab_waiting_for_a_task_of_that_title() {
     let mut seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::CommandFailed {
+        event: Event::App(AppEvent::CommandFailed {
             message: "disk full".into(),
-        },
+        }),
     });
     seq += 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::TaskUpserted(Task {
+        event: Event::Task(TaskEvent::Upserted(Task {
             id: TaskId(41),
             title: "doomed".into(),
             status: TaskStatus::Todo,
@@ -976,7 +985,7 @@ fn a_failed_save_does_not_leave_tab_waiting_for_a_task_of_that_title() {
             related: vec![],
             effort: Default::default(),
             criterion: None,
-        }),
+        })),
     });
     assert!(!render(&mut app, 120, 30).contains("task · #41"));
 }
@@ -988,16 +997,16 @@ fn sm_and_sx_from_the_inbox_act_on_the_selected_items_agent() {
     leader(&mut app, "sx");
     assert_eq!(
         app.take_commands(),
-        vec![Command::Interrupt {
+        vec![Command::Agent(AgentCommand::Interrupt {
             agent: agent_id("slice-7")
-        }]
+        })]
     );
     leader(&mut app, "sm");
     assert_eq!(
         app.take_commands(),
-        vec![Command::CyclePermissionMode {
+        vec![Command::Agent(AgentCommand::CyclePermissionMode {
             agent: agent_id("slice-7")
-        }]
+        })]
     );
 }
 
@@ -1106,13 +1115,13 @@ fn a_in_the_detail_logs_a_decision_on_that_task() {
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::LogDecision(NewDecision {
+        vec![Command::Decision(DecisionCommand::Log(NewDecision {
             task: TaskId(3),
             text: "Ship it behind a flag".into(),
             why: None,
             alternatives: vec![],
             supersedes: None,
-        })]
+        }))]
     );
 }
 
@@ -1123,7 +1132,7 @@ fn colon_decide_logs_on_the_task_in_focus_or_says_there_is_none() {
     type_keys(&mut app, ":decide Key comes from the vault");
     app.on_key(enter(), 99);
     match app.take_commands().as_slice() {
-        [Command::LogDecision(d)] => {
+        [Command::Decision(DecisionCommand::Log(d))] => {
             assert_eq!(d.task, TaskId(2));
             assert_eq!(d.text, "Key comes from the vault");
         }
@@ -1157,19 +1166,19 @@ fn capital_r_in_the_detail_relates_through_the_picker_and_unrelates_a_linked_one
     app.on_key(enter(), 50);
     assert_eq!(
         app.take_commands(),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(1),
             patch: vec![TaskChange::Relate(TaskId(3))]
-        }]
+        })]
     );
     press(&mut app, "R");
     type_keys(&mut app, "get_decision");
     app.on_key(enter(), 90);
     assert_eq!(
         app.take_commands(),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(1),
             patch: vec![TaskChange::Unrelate(TaskId(2))]
-        }]
+        })]
     );
 }

@@ -4,19 +4,22 @@
 //! instead of the whole core: the core always has a project, and none of its paths has to learn
 //! to run without one. It speaks the same [`CoreLink`] as the core: `Hello`, then a [`Snapshot`]
 //! with `project: None` and every registered project, then events. Picking a project answers
-//! [`Event::OpeningProject`] and ends the loop, as the core does when the user switches project;
+//! [`ProjectEvent::Opening`] and ends the loop, as the core does when the user switches project;
 //! the caller then spawns the core for it.
 //!
 //! Home also creates projects and changes them (ADR 0021): the five project commands
 //! ([`crate::project_admin::ProjectOp`]) touch only the registry, so Home serves them itself and
-//! answers each with [`Event::ProjectUpserted`]. Each project's counts come from its `state.db`,
+//! answers each with [`ProjectEvent::Upserted`]. Each project's counts come from its `state.db`,
 //! read without migrating it.
 
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
 use dovetail_api::{
-    Command, CoreLink, Event, PROTOCOL_VERSION, ServerMsg, Snapshot, Warning, WarningId,
+    Command, CoreLink, Event, PROTOCOL_VERSION, ServerMsg, Snapshot,
+    app::{AppCommand, AppEvent},
+    project::{ProjectCommand, ProjectEvent},
+    status::{Warning, WarningId},
 };
 
 use crate::CoreError;
@@ -71,7 +74,7 @@ pub fn spawn_home(
 }
 
 /// `project` as Home lists it, with its counts (zero, logged, when they cannot be read).
-fn summary(db: &Db, paths: &Paths, project: &Project) -> dovetail_api::ProjectSummary {
+fn summary(db: &Db, paths: &Paths, project: &Project) -> dovetail_api::project::ProjectSummary {
     let mut summary = project.summary(paths);
     match db.project_counts(paths.state_db(&project.id)).wait() {
         Ok(counts) => summary.counts = counts,
@@ -92,11 +95,11 @@ fn project_op(db: &Db, paths: &Paths, config: &Config, op: ProjectOp) -> Event {
             {
                 tracing::warn!(project = %project.id, "Home: writing its starter recipe: {e}");
             }
-            Event::ProjectUpserted(summary(db, paths, &project))
+            Event::Project(ProjectEvent::Upserted(summary(db, paths, &project)))
         }
-        Err(e) => Event::CommandFailed {
+        Err(e) => Event::App(AppEvent::CommandFailed {
             message: e.to_string(),
-        },
+        }),
     }
 }
 
@@ -146,33 +149,35 @@ fn run(
             continue;
         }
         let event = match command {
-            Command::Resync => {
+            Command::App(AppCommand::Resync) => {
                 out.send(ServerMsg::Snapshot(snapshot(seq))).ok()?;
                 continue;
             }
-            Command::Quit { .. } => return None,
-            Command::OpenProject { id } => match (&blocked, db.get_project(id.0.clone()).wait()) {
-                (Some(why), _) => Event::CommandFailed {
-                    message: why.clone(),
-                },
-                (None, Ok(Some(_))) => {
-                    seq += 1;
-                    let _ = out.send(ServerMsg::Event {
-                        seq,
-                        event: Event::OpeningProject { id: id.clone() },
-                    });
-                    return Some(id.0);
+            Command::App(AppCommand::Quit { .. }) => return None,
+            Command::Project(ProjectCommand::Open { id }) => {
+                match (&blocked, db.get_project(id.0.clone()).wait()) {
+                    (Some(why), _) => Event::App(AppEvent::CommandFailed {
+                        message: why.clone(),
+                    }),
+                    (None, Ok(Some(_))) => {
+                        seq += 1;
+                        let _ = out.send(ServerMsg::Event {
+                            seq,
+                            event: Event::Project(ProjectEvent::Opening { id: id.clone() }),
+                        });
+                        return Some(id.0);
+                    }
+                    (None, Ok(None)) => Event::App(AppEvent::CommandFailed {
+                        message: format!("there is no project {}", id.0),
+                    }),
+                    (None, Err(e)) => Event::App(AppEvent::CommandFailed {
+                        message: e.to_string(),
+                    }),
                 }
-                (None, Ok(None)) => Event::CommandFailed {
-                    message: format!("there is no project {}", id.0),
-                },
-                (None, Err(e)) => Event::CommandFailed {
-                    message: e.to_string(),
-                },
-            },
-            _ => Event::CommandFailed {
+            }
+            _ => Event::App(AppEvent::CommandFailed {
                 message: "open a project first".into(),
-            },
+            }),
         };
         seq += 1;
         out.send(ServerMsg::Event { seq, event }).ok()?;
@@ -184,7 +189,11 @@ fn run(
 mod tests {
     use std::time::Duration;
 
-    use dovetail_api::ProjectId;
+    use dovetail_api::{
+        app::{AppCommand, AppEvent},
+        project::{ProjectCommand, ProjectEvent, ProjectId},
+        worktree::WorktreeCommand,
+    };
 
     use super::*;
 
@@ -223,39 +232,43 @@ mod tests {
         assert_eq!(snapshot.projects[0].name, "Notes");
 
         // Anything but opening, resyncing or quitting is refused, and numbered.
-        link.commands.send(Command::RefreshWorktrees).unwrap();
+        link.commands
+            .send(Command::Worktree(WorktreeCommand::Refresh))
+            .unwrap();
         assert!(matches!(
             next(&link),
             ServerMsg::Event {
                 seq: 1,
-                event: Event::CommandFailed { .. }
+                event: Event::App(AppEvent::CommandFailed { .. })
             }
         ));
         link.commands
-            .send(Command::OpenProject {
+            .send(Command::Project(ProjectCommand::Open {
                 id: ProjectId("nope".into()),
-            })
+            }))
             .unwrap();
         assert!(matches!(
             next(&link),
             ServerMsg::Event {
                 seq: 2,
-                event: Event::CommandFailed { .. }
+                event: Event::App(AppEvent::CommandFailed { .. })
             }
         ));
-        link.commands.send(Command::Resync).unwrap();
+        link.commands
+            .send(Command::App(AppCommand::Resync))
+            .unwrap();
         assert!(matches!(next(&link), ServerMsg::Snapshot(s) if s.seq == 2));
 
         link.commands
-            .send(Command::OpenProject {
+            .send(Command::Project(ProjectCommand::Open {
                 id: ProjectId("notes".into()),
-            })
+            }))
             .unwrap();
         assert!(matches!(
             next(&link),
             ServerMsg::Event {
                 seq: 3,
-                event: Event::OpeningProject { .. }
+                event: Event::Project(ProjectEvent::Opening { .. })
             }
         ));
         assert_eq!(home.wait().as_deref(), Some("notes"));
@@ -273,10 +286,10 @@ mod tests {
         dir.canonicalize().unwrap()
     }
 
-    fn upserted(link: &CoreLink) -> dovetail_api::ProjectSummary {
+    fn upserted(link: &CoreLink) -> dovetail_api::project::ProjectSummary {
         match next(link) {
             ServerMsg::Event {
-                event: Event::ProjectUpserted(p),
+                event: Event::Project(ProjectEvent::Upserted(p)),
                 ..
             } => p,
             other => panic!("expected a project, got {other:?}"),
@@ -286,7 +299,7 @@ mod tests {
     fn failed(link: &CoreLink) -> String {
         match next(link) {
             ServerMsg::Event {
-                event: Event::CommandFailed { message },
+                event: Event::App(AppEvent::CommandFailed { message }),
                 ..
             } => message,
             other => panic!("expected a failure, got {other:?}"),
@@ -316,26 +329,26 @@ mod tests {
         next(&link);
 
         link.commands
-            .send(Command::CreateProject {
+            .send(Command::Project(ProjectCommand::Create {
                 name: "Shop front".into(),
                 account: None,
                 repo: Some(api.join(".")),
-            })
+            }))
             .unwrap();
         let shop = upserted(&link);
         assert_eq!(shop.id.0, "shop-front");
-        assert_eq!(shop.kind, dovetail_api::ProjectKind::Code);
+        assert_eq!(shop.kind, dovetail_api::project::ProjectKind::Code);
         assert_eq!(shop.repos.len(), 1);
         assert_eq!(shop.repos[0].name, "shop-api");
         assert_eq!(shop.repos[0].path, api);
         assert!(paths.recipe("shop-front").exists(), "starter recipe");
 
         link.commands
-            .send(Command::AddRepo {
+            .send(Command::Project(ProjectCommand::AddRepo {
                 project: shop.id.clone(),
                 path: web.clone(),
                 name: Some("Web".into()),
-            })
+            }))
             .unwrap();
         let two = upserted(&link);
         let names: Vec<&str> = two.repos.iter().map(|r| r.name.as_str()).collect();
@@ -343,22 +356,22 @@ mod tests {
 
         // The same repo cannot join twice, here or in another project.
         link.commands
-            .send(Command::AddRepo {
+            .send(Command::Project(ProjectCommand::AddRepo {
                 project: shop.id.clone(),
                 path: web.join("."),
                 name: None,
-            })
+            }))
             .unwrap();
         assert!(failed(&link).contains("already a repo"));
         // A folder outside git is refused.
         let plain = dir.path().join("plain");
         std::fs::create_dir_all(&plain).unwrap();
         link.commands
-            .send(Command::AddRepo {
+            .send(Command::Project(ProjectCommand::AddRepo {
                 project: shop.id.clone(),
                 path: plain,
                 name: None,
-            })
+            }))
             .unwrap();
         assert!(failed(&link).contains("not inside a git repository"));
 
@@ -373,64 +386,66 @@ mod tests {
             )
             .unwrap();
         link.commands
-            .send(Command::RemoveRepo {
+            .send(Command::Project(ProjectCommand::RemoveRepo {
                 project: shop.id.clone(),
                 repo: two.repos[1].id,
-            })
+            }))
             .unwrap();
         assert!(failed(&link).contains("open slices (ui)"));
         link.commands
-            .send(Command::RemoveRepo {
+            .send(Command::Project(ProjectCommand::RemoveRepo {
                 project: shop.id.clone(),
                 repo: two.repos[0].id,
-            })
+            }))
             .unwrap();
         assert_eq!(upserted(&link).repos.len(), 1);
 
         link.commands
-            .send(Command::RenameProject {
+            .send(Command::Project(ProjectCommand::Rename {
                 id: shop.id.clone(),
                 name: "Shop".into(),
-            })
+            }))
             .unwrap();
         assert_eq!(upserted(&link).name, "Shop");
         link.commands
-            .send(Command::SetProjectAccount {
+            .send(Command::Project(ProjectCommand::SetAccount {
                 id: shop.id.clone(),
                 account: Some("home".into()),
-            })
+            }))
             .unwrap();
         assert!(failed(&link).contains("no profile `home`"));
         link.commands
-            .send(Command::SetProjectAccount {
+            .send(Command::Project(ProjectCommand::SetAccount {
                 id: shop.id.clone(),
                 account: Some("work".into()),
-            })
+            }))
             .unwrap();
         assert_eq!(upserted(&link).account.as_deref(), Some("work"));
 
         // No repos: research-only.
         link.commands
-            .send(Command::CreateProject {
+            .send(Command::Project(ProjectCommand::Create {
                 name: "Market notes".into(),
                 account: None,
                 repo: None,
-            })
+            }))
             .unwrap();
         let notes = upserted(&link);
         assert!(notes.repos.is_empty());
-        assert_eq!(notes.kind, dovetail_api::ProjectKind::Research);
+        assert_eq!(notes.kind, dovetail_api::project::ProjectKind::Research);
         link.commands
-            .send(Command::CreateProject {
+            .send(Command::Project(ProjectCommand::Create {
                 name: "  ".into(),
                 account: None,
                 repo: None,
-            })
+            }))
             .unwrap();
         assert!(failed(&link).contains("needs a name"));
 
         // A fresh snapshot lists both, with counts.
-        link.commands.send(Command::Resync).unwrap();
+        link.commands
+            .send(Command::App(AppCommand::Resync))
+            .unwrap();
         let ServerMsg::Snapshot(snapshot) = next(&link) else {
             panic!("a snapshot");
         };
@@ -457,13 +472,13 @@ mod tests {
         };
         assert_eq!(snapshot.warnings[0].text, why);
         link.commands
-            .send(Command::OpenProject {
+            .send(Command::Project(ProjectCommand::Open {
                 id: ProjectId("notes".into()),
-            })
+            }))
             .unwrap();
         assert!(matches!(
             next(&link),
-            ServerMsg::Event { event: Event::CommandFailed { message }, .. } if message == why
+            ServerMsg::Event { event: Event::App(AppEvent::CommandFailed { message }), .. } if message == why
         ));
         drop(link);
         assert_eq!(home.wait(), None);

@@ -27,8 +27,23 @@ mod tangents;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dovetail_api::{
-    AgentId, AgentKind, AgentStatus, ApplyResult, Command, Event, InboxKind, PROTOCOL_VERSION,
-    PermissionAnswer, ServerMsg, SlashCommand, Snapshot, TaskChange, apply,
+    ApplyResult, Command, Event, PROTOCOL_VERSION, ServerMsg, Snapshot,
+    agent::{AgentCommand, AgentEvent, AgentId, AgentKind, AgentStatus, SlashCommand},
+    app::{AppCommand, AppEvent},
+    apply,
+    clipboard::{ClipboardCommand, ClipboardEvent},
+    conversation::{ConversationCommand, ConversationEvent},
+    decision::DecisionCommand,
+    inbox::{InboxCommand, InboxKind, PermissionAnswer},
+    journal::{JournalCommand, JournalEvent},
+    map::MapCommand,
+    mcp::McpEvent,
+    project::{ProjectCommand, ProjectEvent},
+    research::{ResearchCommand, ResearchEvent},
+    task::{TaskChange, TaskCommand, TaskEvent},
+    terminal::{TerminalCommand, TerminalEvent},
+    upgrade::UpgradeEvent,
+    worktree::WorktreeCommand,
 };
 use jiff::tz::TimeZone;
 
@@ -71,7 +86,7 @@ enum Then {
     Action(Action),
     /// Send commands to the core.
     Commands(Vec<Command>),
-    /// Close the day ([`Command::EndOfDay`]), then quit once the journal is written.
+    /// Close the day ([`JournalCommand::EndOfDay`]), then quit once the journal is written.
     CloseDayThenQuit,
     /// Quit without closing the day, still asking first when a turn is running.
     QuitDayOpen,
@@ -126,10 +141,10 @@ pub struct App {
     open_after_create: Option<String>,
     note: Option<String>,
     outbox: Vec<Command>,
-    /// A command that needs the terminal ([`Command::OpenEditor`], [`Command::TakeOver`]), for
+    /// A command that needs the terminal ([`TerminalCommand::OpenEditor`], [`TerminalCommand::TakeOver`]), for
     /// the loop to send once it has let go of the terminal.
     handoff: Option<Command>,
-    /// The terminal is lent out until the core sends [`Event::TerminalReturned`].
+    /// The terminal is lent out until the core sends [`TerminalEvent::Returned`].
     terminal_away: bool,
     /// `OpenEditor` is out and the core has not answered yet: the loop keeps the terminal and
     /// reads no key until it does ([`App::awaiting_lend`]).
@@ -150,9 +165,9 @@ pub struct App {
     /// Whose chat bar is open (or was open last): the main region's, the side panel's or Ask's.
     chat_site: ChatSite,
     /// `i` asked for a new Ask session for this task: type in it when it appears.
-    pending_ask: Option<dovetail_api::TaskId>,
+    pending_ask: Option<dovetail_api::task::TaskId>,
     /// A tangent whose latest answer opens once its listing arrives (ADR 0017).
-    pending_tangent_read: Option<dovetail_api::TaskId>,
+    pending_tangent_read: Option<dovetail_api::task::TaskId>,
     /// Focus mode (`<leader>z`): the side column is hidden.
     focus_mode: bool,
     /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
@@ -304,7 +319,7 @@ impl App {
     /// A command that must run with the terminal lent out (`e` in the worktree view,
     /// `<leader>st`). The loop
     /// lets go of the terminal (alternate screen, raw mode, key reading) and then sends it; from
-    /// here until [`Event::TerminalReturned`] arrives, [`App::terminal_away`] is true.
+    /// here until [`TerminalEvent::Returned`] arrives, [`App::terminal_away`] is true.
     pub fn take_handoff(&mut self) -> Option<Command> {
         let command = self.handoff.take();
         if command.is_some() {
@@ -320,7 +335,7 @@ impl App {
 
     /// Whether the core has yet to say if it will take the terminal (it checks the editor's
     /// path first). The loop keeps the terminal and reads no key meanwhile; the answer is
-    /// either a hand-off ([`Event::LendTerminal`]) or a note ([`Event::CommandFailed`]).
+    /// either a hand-off ([`TerminalEvent::Lend`]) or a note ([`AppEvent::CommandFailed`]).
     pub fn awaiting_lend(&self) -> bool {
         self.awaiting_lend
     }
@@ -426,11 +441,11 @@ impl App {
                 self.offer_new_project();
             }
             ServerMsg::Event { seq, mut event } => {
-                if let Event::TaskUpserted(task) = &mut event {
+                if let Event::Task(TaskEvent::Upserted(task)) = &mut event {
                     without_review(task);
                 }
                 let failure = match &event {
-                    Event::CommandFailed { message } => Some(message.clone()),
+                    Event::App(AppEvent::CommandFailed { message }) => Some(message.clone()),
                     _ => None,
                 };
                 if failure.is_some() {
@@ -455,7 +470,7 @@ impl App {
                     self.regions.set_focus(RegionId::Main);
                     self.note = None;
                 }
-                if let Event::ResearchUpserted(summary) = &event
+                if let Event::Research(ResearchEvent::Upserted(summary)) = &event
                     && self.buffers.task_detail.task() == Some(summary.task)
                 {
                     self.request_research_listing(summary.task);
@@ -465,43 +480,49 @@ impl App {
                 }
                 if self.awaiting_lend {
                     match &event {
-                        Event::LendTerminal => {
+                        Event::Terminal(TerminalEvent::Lend) => {
                             self.awaiting_lend = false;
-                            self.handoff = Some(Command::TerminalReleased);
+                            self.handoff = Some(Command::Terminal(TerminalCommand::Released));
                         }
-                        Event::CommandFailed { .. } => self.awaiting_lend = false,
+                        Event::App(AppEvent::CommandFailed { .. }) => self.awaiting_lend = false,
                         _ => {}
                     }
                 }
-                if let Event::TerminalReturned { error } = &event {
+                if let Event::Terminal(TerminalEvent::Returned { error }) = &event {
                     self.terminal_away = false;
                     if let Some(error) = error {
                         self.note = Some(error.clone());
                     }
                 }
                 self.reading_event(&event);
-                if let Event::PathsListed { agent, dir, paths } = &event {
+                if let Event::Conversation(ConversationEvent::PathsListed { agent, dir, paths }) =
+                    &event
+                {
                     let view = chat_view_of(&mut self.buffers, self.chat_site);
                     view.receive_paths(agent, dir.clone(), paths.clone());
                     if let Some((agent, dir)) = view.take_path_request() {
-                        self.outbox.push(Command::ListPaths { agent, dir });
+                        self.outbox
+                            .push(Command::Conversation(ConversationCommand::ListPaths {
+                                agent,
+                                dir,
+                            }));
                     }
                 }
-                if let Event::McpReply {
+                if let Event::Mcp(McpEvent::Reply {
                     agent,
                     request,
                     outcome,
-                } = &event
+                }) = &event
                 {
                     self.mcp_reply(agent, request, outcome.clone());
                 }
-                if let Event::ClipboardPasted { agent, paste } = &event
+                if let Event::Clipboard(ClipboardEvent::Pasted { agent, paste }) = &event
                     && let Some(notice) = self.chat_view_mut().receive_paste(agent, paste.clone())
                 {
                     self.note = Some(notice);
                 }
                 let side_chat = match &event {
-                    Event::AgentUpserted(agent)
+                    Event::Agent(AgentEvent::Upserted(agent))
                         if self.open_side_chat
                             && matches!(agent.kind, AgentKind::SideChat | AgentKind::Tangent)
                             && !self.snap.agents.iter().any(|a| a.id == agent.id) =>
@@ -511,7 +532,7 @@ impl App {
                     _ => None,
                 };
                 let created = match &event {
-                    Event::TaskUpserted(task)
+                    Event::Task(TaskEvent::Upserted(task))
                         if self.open_after_create.as_deref() == Some(task.title.as_str())
                             && !self.snap.tasks.iter().any(|t| t.id == task.id) =>
                     {
@@ -519,18 +540,20 @@ impl App {
                     }
                     _ => None,
                 };
-                let journal = matches!(event, Event::JournalChanged(_));
+                let journal = matches!(event, Event::Journal(JournalEvent::Changed(_)));
                 let ask = match &event {
-                    Event::AgentUpserted(a) if a.kind == AgentKind::Ask => Some(event.clone()),
+                    Event::Agent(AgentEvent::Upserted(a)) if a.kind == AgentKind::Ask => {
+                        Some(event.clone())
+                    }
                     _ => None,
                 };
                 let recipe = match &event {
-                    Event::RecipeStarted {
+                    Event::Project(ProjectEvent::RecipeStarted {
                         project,
                         name,
                         path,
                         profiles,
-                    } => Some((
+                    }) => Some((
                         project.clone(),
                         name.clone(),
                         path.clone(),
@@ -543,7 +566,8 @@ impl App {
                 // Likewise when the user picked another project (B24) and said yes.
                 if matches!(
                     event,
-                    Event::UpgradeRestarting | Event::OpeningProject { .. }
+                    Event::Upgrade(UpgradeEvent::Restarting)
+                        | Event::Project(ProjectEvent::Opening { .. })
                 ) {
                     self.quit = true;
                 }
@@ -582,7 +606,7 @@ impl App {
                         tracing::warn!(expected, got, "event gap; asking for a resync");
                         if !self.resyncing {
                             self.resyncing = true;
-                            self.outbox.push(Command::Resync);
+                            self.outbox.push(Command::App(AppCommand::Resync));
                         }
                     }
                     ApplyResult::Stale => {}
@@ -668,7 +692,7 @@ impl App {
             .iter()
             .find(|i| &i.agent == agent && matches!(i.kind, InboxKind::FinishedTurn { .. }));
         if let Some(item) = pending {
-            let command = Command::DismissInbox { item: item.id };
+            let command = Command::Inbox(InboxCommand::Dismiss { item: item.id });
             if !self.outbox.contains(&command) {
                 self.outbox.push(command);
             }
@@ -720,7 +744,7 @@ impl App {
 
     /// Handles pasted or dropped text (a bracketed paste). In an open chat bar it goes to the core,
     /// which attaches it when it is a path to an image and hands back the text otherwise
-    /// ([`Command::PasteText`]). Into any other input it is typed as keys, one line. In Normal
+    /// ([`ClipboardCommand::PasteText`]). Into any other input it is typed as keys, one line. In Normal
     /// and MAP mode it is ignored, as the keys it would have been are not commands.
     pub fn on_paste(&mut self, text: &str, mono_ms: u64) {
         if self.confirm.is_some()
@@ -735,10 +759,11 @@ impl App {
         {
             self.dirty = true;
             self.note = None;
-            self.outbox.push(Command::PasteText {
-                agent,
-                text: text.to_string(),
-            });
+            self.outbox
+                .push(Command::Clipboard(ClipboardCommand::PasteText {
+                    agent,
+                    text: text.to_string(),
+                }));
             return;
         }
         let line = text.lines().next().unwrap_or("");
@@ -867,12 +892,12 @@ impl App {
         );
         self.confirm = Some(Confirm {
             prompt: format!("Ask the coordinator to redraw \"{}\"?", map.content.title),
-            then: Then::Commands(vec![Command::Prompt {
+            then: Then::Commands(vec![Command::Conversation(ConversationCommand::Prompt {
                 agent: coordinator,
                 text,
                 attachments: Vec::new(),
                 effort: None,
-            }]),
+            })]),
             otherwise: None,
         });
     }
@@ -957,15 +982,20 @@ impl App {
                 return;
             }
             if let Some((agent, text, attachments)) = sent {
-                self.outbox.push(Command::Prompt {
-                    agent,
-                    text,
-                    attachments,
-                    effort: None,
-                });
+                self.outbox
+                    .push(Command::Conversation(ConversationCommand::Prompt {
+                        agent,
+                        text,
+                        attachments,
+                        effort: None,
+                    }));
             }
             if let Some((agent, dir)) = paths {
-                self.outbox.push(Command::ListPaths { agent, dir });
+                self.outbox
+                    .push(Command::Conversation(ConversationCommand::ListPaths {
+                        agent,
+                        dir,
+                    }));
             }
             if wants_commands {
                 self.open_command_picker(true);
@@ -995,13 +1025,14 @@ impl App {
     }
 
     /// Ctrl-V in the chat bar: ask the core to read the clipboard. It answers with
-    /// [`Event::ClipboardPasted`]: an image saved as an attachment, text, or a refusal.
+    /// [`ClipboardEvent::Pasted`]: an image saved as an attachment, text, or a refusal.
     fn paste_clipboard(&mut self) {
         if !self.chat_view().is_chatting() {
             return;
         }
         if let Some(agent) = self.chat_view().agent().cloned() {
-            self.outbox.push(Command::PasteClipboard { agent });
+            self.outbox
+                .push(Command::Clipboard(ClipboardCommand::Paste { agent }));
         }
     }
 
@@ -1033,18 +1064,22 @@ impl App {
             InputTarget::Prompt(_) => {}
             InputTarget::Reason(item) => {
                 let message = (!text.is_empty()).then_some(text);
-                self.outbox.push(Command::AnswerPermission {
-                    item,
-                    answer: PermissionAnswer::Deny { message },
-                });
+                self.outbox
+                    .push(Command::Inbox(InboxCommand::AnswerPermission {
+                        item,
+                        answer: PermissionAnswer::Deny { message },
+                    }));
             }
             InputTarget::Reply(item) if !text.is_empty() => {
-                self.outbox.push(Command::AnswerQuestion { item, text });
+                self.outbox
+                    .push(Command::Inbox(InboxCommand::AnswerQuestion { item, text }));
             }
-            InputTarget::Title(id) if !text.is_empty() => self.outbox.push(Command::UpdateTask {
-                id,
-                patch: vec![TaskChange::Title(text)],
-            }),
+            InputTarget::Title(id) if !text.is_empty() => {
+                self.outbox.push(Command::Task(TaskCommand::Update {
+                    id,
+                    patch: vec![TaskChange::Title(text)],
+                }))
+            }
             InputTarget::SliceName if !text.is_empty() => {
                 self.start_input(InputTarget::SliceBrief(text), "");
             }
@@ -1057,32 +1092,34 @@ impl App {
         }
     }
 
-    fn log_decision(&mut self, task: dovetail_api::TaskId, text: String) {
-        self.outbox
-            .push(Command::LogDecision(dovetail_api::NewDecision {
+    fn log_decision(&mut self, task: dovetail_api::task::TaskId, text: String) {
+        self.outbox.push(Command::Decision(DecisionCommand::Log(
+            dovetail_api::decision::NewDecision {
                 task,
                 text,
                 why: None,
                 alternatives: Vec::new(),
                 supersedes: None,
-            }));
+            },
+        )));
     }
 
     /// Asks the core for a side chat; the first one to appear afterwards opens in the side
     /// panel.
     fn new_side_chat(&mut self, question: String) {
         self.open_side_chat = true;
-        self.outbox.push(Command::NewSideChat { question });
+        self.outbox
+            .push(Command::Agent(AgentCommand::NewSideChat { question }));
     }
 
     fn new_slice(&mut self, name: String, brief: String) {
         let task = self.focused_task();
-        self.outbox.push(Command::NewSlice {
+        self.outbox.push(Command::Agent(AgentCommand::NewSlice {
             task,
             name,
             brief,
             repo: None,
-        });
+        }));
     }
 
     /// Today's date on the UI's clock, `YYYY-MM-DD`, as journal files are named.
@@ -1149,7 +1186,7 @@ impl App {
             self.quit_after_close = Some(journal.latest.clone());
             self.close_failure = None;
         }
-        self.outbox.push(Command::EndOfDay);
+        self.outbox.push(Command::Journal(JournalCommand::EndOfDay));
         self.note = Some(if quit {
             "closing the day: Dovetail quits once the coordinator's handoff is saved".into()
         } else {
@@ -1209,11 +1246,12 @@ impl App {
         }
         match action {
             Action::Handoff => {
-                self.outbox.push(Command::Handoff);
+                self.outbox.push(Command::Journal(JournalCommand::Handoff));
                 self.note = Some("handoff: asking the coordinator for its handoff".into());
             }
             Action::FreshSession => {
-                self.outbox.push(Command::FreshSession);
+                self.outbox
+                    .push(Command::Journal(JournalCommand::FreshSession));
                 self.note = Some("fresh: starting a new coordinator session".into());
             }
             other => {
@@ -1292,7 +1330,8 @@ impl App {
                 self.toggle_main(BufferKind::Worktrees);
                 if opening {
                     self.buffers.worktrees.begin_refresh(&self.snap);
-                    self.outbox.push(Command::RefreshWorktrees);
+                    self.outbox
+                        .push(Command::Worktree(WorktreeCommand::Refresh));
                 }
             }
             Action::BackToConversation => {
@@ -1336,7 +1375,8 @@ impl App {
                     .as_ref()
                     .map(|p| p.repo_path.clone())
                     .unwrap_or_default();
-                self.outbox.push(Command::RegisterProject { path });
+                self.outbox
+                    .push(Command::Project(ProjectCommand::Register { path }));
             }
             Action::SwitchProject => self.open_project_picker(),
             Action::NewProject => self.run_with_arg(Action::NewProject, ""),
@@ -1394,14 +1434,16 @@ impl App {
             Effect::OpenInboxItem(id) => self.open_inbox_item(id),
             Effect::OpenMap(id) => {
                 self.buffers.map_outline.await_map(id.clone());
-                self.outbox.push(Command::LoadMap { id, version: None });
+                self.outbox
+                    .push(Command::Map(MapCommand::Load { id, version: None }));
                 self.note = Some("loading map…".into());
             }
             Effect::OpenResearch { task, what, title } => {
                 self.buffers
                     .task_detail
                     .await_document(task, what.clone(), title);
-                self.outbox.push(Command::LoadResearch { task, what });
+                self.outbox
+                    .push(Command::Research(ResearchCommand::Load { task, what }));
                 self.note = Some("loading…".into());
             }
             Effect::StartInput { target, initial } => self.start_input(target, &initial),
@@ -1417,7 +1459,8 @@ impl App {
             Effect::Note(text) => self.note = Some(text),
             Effect::OpenEditor(path) => {
                 // The core checks the path before the terminal is let go of.
-                self.outbox.push(Command::OpenEditor { path });
+                self.outbox
+                    .push(Command::Terminal(TerminalCommand::OpenEditor { path }));
                 self.awaiting_lend = true;
             }
             Effect::Read {
@@ -1503,8 +1546,8 @@ pub(crate) fn commands_for<'a>(snap: &'a Snapshot, agent: &AgentId) -> &'a [Slas
 
 /// This UI is frozen as built before the review status (ADR 0024): it shows a task in review as
 /// in progress. Done once, where tasks arrive, so nothing downstream meets the status.
-fn without_review(task: &mut dovetail_api::Task) {
-    if task.status == dovetail_api::TaskStatus::Review {
-        task.status = dovetail_api::TaskStatus::InProgress;
+fn without_review(task: &mut dovetail_api::task::Task) {
+    if task.status == dovetail_api::task::TaskStatus::Review {
+        task.status = dovetail_api::task::TaskStatus::InProgress;
     }
 }

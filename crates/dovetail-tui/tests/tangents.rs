@@ -5,7 +5,13 @@
 
 mod support;
 
-use dovetail_api::*;
+use dovetail_api::{
+    Command,
+    inbox::InboxKind,
+    project::ProjectId,
+    tangent::{TangentCommand, tangent_agent},
+    task::TaskId,
+};
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;
 use support::*;
@@ -115,9 +121,9 @@ fn the_side_panel_shows_tangents_beside_side_chats_and_asks_one_with_t() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        vec![Command::NewTangent {
+        vec![Command::Tangent(TangentCommand::New {
             question: "Which rye flour?".into()
-        }]
+        })]
     );
     deliver(&mut core, &mut app, commands);
     assert_eq!(app.panel_agent(), Some(&tangent_agent(TaskId(3))));
@@ -149,9 +155,9 @@ fn the_side_panel_shows_tangents_beside_side_chats_and_asks_one_with_t() {
     app.on_key(enter(), 2_000);
     assert_eq!(
         app.take_commands(),
-        vec![Command::NewTangent {
+        vec![Command::Tangent(TangentCommand::New {
             question: "And spelt?".into()
-        }]
+        })]
     );
 }
 
@@ -183,10 +189,10 @@ fn a_attaches_the_tangent_shown_to_the_task_in_focus_after_asking() {
     let commands = press(&mut app, "y");
     assert_eq!(
         commands,
-        vec![Command::AttachTangent {
+        vec![Command::Tangent(TangentCommand::Attach {
             tangent: TaskId(1),
             task,
-        }]
+        })]
     );
     deliver(&mut core, &mut app, commands);
     assert!(core.state().tangents.iter().all(|t| t.task.id != TaskId(1)));
@@ -228,10 +234,10 @@ fn the_morning_item_opens_the_list_to_file_start_or_drop_each_tangent() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        vec![Command::FileTangent {
+        vec![Command::Tangent(TangentCommand::File {
             tangent: TaskId(1),
             project: ProjectId("market-sizing".into()),
-        }]
+        })]
     );
     deliver(&mut core, &mut app, commands);
     assert_eq!(tangents_item(&core), Some(1));
@@ -244,10 +250,10 @@ fn the_morning_item_opens_the_list_to_file_start_or_drop_each_tangent() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        vec![Command::StartFromTangent {
+        vec![Command::Tangent(TangentCommand::StartFrom {
             tangent: TaskId(2),
             project: ProjectId("dovetail".into()),
-        }]
+        })]
     );
     deliver(&mut core, &mut app, commands);
     assert!(
@@ -264,7 +270,12 @@ fn the_morning_item_opens_the_list_to_file_start_or_drop_each_tangent() {
     assert!(press(&mut app, "d").is_empty());
     assert!(screen(&mut app).contains("Drop the tangent"));
     let commands = press(&mut app, "y");
-    assert_eq!(commands, vec![Command::DropTangent { tangent: TaskId(2) }]);
+    assert_eq!(
+        commands,
+        vec![Command::Tangent(TangentCommand::Drop {
+            tangent: TaskId(2)
+        })]
+    );
     deliver(&mut core, &mut app, commands);
     assert!(screen(&mut app).contains("No tangents."));
 }

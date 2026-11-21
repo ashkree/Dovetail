@@ -1,6 +1,6 @@
 //! Drawing: the screens bar, the regions, the status bar, the prompt row and the overlays.
 
-use dovetail_api::{AgentId, UNREGISTERED_WARNING};
+use dovetail_api::{agent::AgentId, status::UNREGISTERED_WARNING};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};

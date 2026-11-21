@@ -6,7 +6,10 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::*;
+use dovetail_api::{
+    Command, ServerMsg,
+    task::{TaskChange, TaskCommand, TaskId, TaskStatus},
+};
 use dovetail_tui::App;
 use dovetail_tui::region::RegionId;
 use support::*;
@@ -27,17 +30,17 @@ fn board() -> App {
 }
 
 fn status_to(id: i64, status: TaskStatus) -> Command {
-    Command::UpdateTask {
+    Command::Task(TaskCommand::Update {
         id: TaskId(id),
         patch: vec![TaskChange::Status(status)],
-    }
+    })
 }
 
 fn reorder(id: i64, delta: i32) -> Command {
-    Command::ReorderTask {
+    Command::Task(TaskCommand::Reorder {
         id: TaskId(id),
         delta,
-    }
+    })
 }
 
 /// Presses `keys` in order and returns the commands that produced. `⇥` is Tab and `⇤` is

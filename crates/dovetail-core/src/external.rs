@@ -1,4 +1,4 @@
-//! Opens a web page in the user's browser ([`dovetail_api::Command::OpenExternal`], `gx` in
+//! Opens a web page in the user's browser ([`dovetail_api::AppCommand::OpenExternal`], `gx` in
 //! reading mode, ADR 0018). The TUI never spawns processes; the core does, here.
 //!
 //! The program is `$BROWSER` (its first entry, as the `BROWSER` convention allows a

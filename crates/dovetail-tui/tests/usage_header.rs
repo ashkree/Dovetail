@@ -2,7 +2,10 @@
 
 mod support;
 
-use dovetail_api::{Event, ServerMsg, UsageLimits, UsageStatus, UsageWindow};
+use dovetail_api::{
+    Event, ServerMsg,
+    usage::{UsageEvent, UsageLimits, UsageStatus, UsageWindow},
+};
 use support::*;
 
 fn usage(five: f64, week: f64) -> UsageLimits {
@@ -84,7 +87,7 @@ fn a_reset_passing_redraws_once_and_shows_a_dash() {
     }
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::UsageChanged(next),
+        event: Event::Usage(UsageEvent::Changed(next)),
     });
     let row = header(&mut app, 120);
     assert!(row.contains("5h 2%"), "{row}");
@@ -123,8 +126,8 @@ fn the_not_a_project_warning_shows_in_the_status_bar_only_while_it_applies() {
         "no warning, none shown"
     );
 
-    snap.warnings.push(dovetail_api::Warning {
-        id: dovetail_api::WarningId(dovetail_api::UNREGISTERED_WARNING.into()),
+    snap.warnings.push(dovetail_api::status::Warning {
+        id: dovetail_api::status::WarningId(dovetail_api::status::UNREGISTERED_WARNING.into()),
         text: "not a Dovetail project".into(),
     });
     let mut app = app_with(snap);

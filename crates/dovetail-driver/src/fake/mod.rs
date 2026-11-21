@@ -98,10 +98,10 @@ pub enum Sent {
         /// The model asked for; `None` keeps it.
         model: Option<String>,
         /// The effort asked for.
-        effort: Option<dovetail_api::ReasoningEffort>,
+        effort: Option<dovetail_api::model::ReasoningEffort>,
     },
     /// An MCP menu request.
-    Mcp(dovetail_api::McpRequest),
+    Mcp(dovetail_api::mcp::McpRequest),
     /// `shutdown(grace)`.
     Shutdown(Duration),
     /// `kill()`.
@@ -129,9 +129,9 @@ struct Recorder {
     held: Mutex<Vec<DriverEvent>>,
     /// Every session reports these settings as applied, as the start-up `get_settings` read
     /// does ([`FakeDriver::apply_at_start`]).
-    applied: Mutex<Option<(Option<String>, Option<dovetail_api::ReasoningEffort>)>>,
+    applied: Mutex<Option<(Option<String>, Option<dovetail_api::model::ReasoningEffort>)>>,
     /// What the fake's `mcp_status` lists ([`FakeDriver::set_mcp_servers`]).
-    mcp_servers: Mutex<Vec<dovetail_api::McpServer>>,
+    mcp_servers: Mutex<Vec<dovetail_api::mcp::McpServer>>,
     /// Sessions refuse MCP requests, as a closed one does ([`FakeDriver::close_mcp`]).
     mcp_closed: std::sync::atomic::AtomicBool,
     /// The latest session's event stream, for [`FakeDriver::send_event`].
@@ -198,7 +198,7 @@ impl FakeDriver {
     pub fn apply_at_start(
         &self,
         model: Option<&str>,
-        effort: Option<dovetail_api::ReasoningEffort>,
+        effort: Option<dovetail_api::model::ReasoningEffort>,
     ) {
         if let Ok(mut applied) = self.recorder.applied.lock() {
             *applied = Some((model.map(str::to_owned), effort));
@@ -247,7 +247,7 @@ impl FakeDriver {
 
     /// What every session's `mcp_status` lists from now on. Actions on a server not in the list
     /// are refused, as Claude Code refuses an unknown server.
-    pub fn set_mcp_servers(&self, servers: Vec<dovetail_api::McpServer>) {
+    pub fn set_mcp_servers(&self, servers: Vec<dovetail_api::mcp::McpServer>) {
         if let Ok(mut list) = self.recorder.mcp_servers.lock() {
             *list = servers;
         }

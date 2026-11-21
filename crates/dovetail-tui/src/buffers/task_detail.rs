@@ -1,9 +1,16 @@
 //! One task in full: title, fields, related tasks, notes, the agents working on it and its
 //! decision log (in v1 since 2026-11-03, ADR 0003). Notes are edited in `$EDITOR` from M5.
 
-use dovetail_api::research::{ResearchContent, ResearchWhat};
 use dovetail_api::{
-    Agent, Command, Decision, DecisionAuthor, Event, Snapshot, Task, TaskChange, TaskId,
+    Command, Event, Snapshot,
+    agent::Agent,
+    decision::{Decision, DecisionAuthor},
+    task::{Task, TaskChange, TaskId},
+};
+use dovetail_api::{
+    app::AppEvent,
+    research::{ResearchContent, ResearchEvent, ResearchWhat},
+    task::TaskCommand,
 };
 use jiff::tz::TimeZone;
 use ratatui::Frame;
@@ -330,11 +337,11 @@ impl TaskDetailBuffer {
     /// Takes in a core answer. Returns whether a document arrived that should now be shown.
     pub fn on_event(&mut self, event: &Event) -> bool {
         match event {
-            Event::ResearchLoaded {
+            Event::Research(ResearchEvent::Loaded {
                 task,
                 what,
                 content,
-            } => match content {
+            }) => match content {
                 ResearchContent::Listing(listing) => {
                     self.loaded = Some(Loaded {
                         task: *task,
@@ -364,7 +371,7 @@ impl TaskDetailBuffer {
                     true
                 }
             },
-            Event::CommandFailed { .. } => {
+            Event::App(AppEvent::CommandFailed { .. }) => {
                 self.awaiting = None;
                 false
             }
@@ -566,10 +573,10 @@ impl Buffer for TaskDetailBuffer {
             .task
             .and_then(|id| cx.snap.tasks.iter().find(|t| t.id == id));
         let change = |c: TaskChange, t: &Task| {
-            Effect::Command(Command::UpdateTask {
+            Effect::Command(Command::Task(TaskCommand::Update {
                 id: t.id,
                 patch: vec![c],
-            })
+            }))
         };
         match (action, task) {
             // `j`/`k` scroll line by line; `Tab`/`Shift-Tab` pick between the research rows.

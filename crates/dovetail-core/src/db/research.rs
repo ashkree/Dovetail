@@ -3,7 +3,7 @@
 //! core resolves (`research::files`).
 
 use dovetail_api::research::{FindingId, SourceId, SourceKind};
-use dovetail_api::{AgentId, TaskId};
+use dovetail_api::{agent::AgentId, task::TaskId};
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 

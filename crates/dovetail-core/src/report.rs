@@ -8,7 +8,11 @@
 use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::tools::{Report, ReportState};
 use dovetail_api::{
-    ActivityKind, AgentId, EffortId, EntryKind, TaskChange, TaskStatus, agent_message_text,
+    activity::ActivityKind,
+    agent::AgentId,
+    conversation::{EntryKind, agent_message_text},
+    effort::EffortId,
+    task::{TaskChange, TaskStatus},
 };
 use dovetail_driver::UserInput;
 

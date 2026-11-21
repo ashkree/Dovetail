@@ -8,7 +8,11 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use dovetail_api::{AgentId, AgentStatus, ConversationEntry, EntryKind, RunningTool, Snapshot};
+use dovetail_api::{
+    Snapshot,
+    agent::{AgentId, AgentStatus, RunningTool},
+    conversation::{ConversationEntry, EntryKind},
+};
 
 use crate::fmt;
 

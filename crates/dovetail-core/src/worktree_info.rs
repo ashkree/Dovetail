@@ -11,8 +11,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, Changes, Event, PrLookup, PrState, PullRequest, SyncState,
-    TaskChange, TaskId, TaskStatus, WorktreeInfo, WorktreeSetup,
+    Event,
+    activity::ActivityKind,
+    agent::{AgentId, AgentKind},
+    task::{TaskChange, TaskId, TaskStatus},
+    worktree::{
+        Changes, PrLookup, PrState, PullRequest, SyncState, WorktreeEvent, WorktreeInfo,
+        WorktreeSetup,
+    },
 };
 use serde::Deserialize;
 
@@ -485,9 +491,9 @@ impl Context {
 
 impl Core {
     /// Gathers every slice worktree's state afresh, with a fetch and PR lookups
-    /// ([`Command::RefreshWorktrees`]).
+    /// ([`WorktreeCommand::Refresh`]).
     ///
-    /// [`Command::RefreshWorktrees`]: dovetail_api::Command::RefreshWorktrees
+    /// [`WorktreeCommand::Refresh`]: dovetail_api::WorktreeCommand::Refresh
     pub(crate) fn refresh_worktrees(&mut self) {
         let slices: Vec<AgentId> = self
             .agents
@@ -595,7 +601,7 @@ impl Core {
         }
         let task = self.agents.get(&info.agent).and_then(|r| r.agent.task);
         let (agent, pr) = (info.agent.clone(), info.pr.clone());
-        self.emit(Event::WorktreeUpserted(info));
+        self.emit(Event::Worktree(WorktreeEvent::Upserted(info)));
         if let Some(task) = task
             && pr_checked
         {

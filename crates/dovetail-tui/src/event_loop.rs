@@ -5,13 +5,13 @@
 //! the timeout of a half-typed key sequence, or a usage-limit reset passing. With nothing
 //! changing it sleeps forever.
 //!
-//! **Lending the terminal** (`e` in the worktree view, [`Command::OpenEditor`]; `<leader>st`,
-//! [`Command::TakeOver`]). The input thread reads one key, hands it over, and waits for a go
+//! **Lending the terminal** (`e` in the worktree view, [`TerminalCommand::OpenEditor`]; `<leader>st`,
+//! [`TerminalCommand::TakeOver`]). The input thread reads one key, hands it over, and waits for a go
 //! before reading the next, so it is never inside a read when a key asks for the terminal. If
 //! the key leaves a hand-off in the app ([`App::take_handoff`]), the loop sends the commands
 //! already queued, leaves the alternate screen and raw mode ([`Lend::release`]), sends the
 //! hand-off command, and holds the go back: the editor or native `claude` the core starts gets
-//! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::Event::TerminalReturned`] the loop takes the
+//! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::TerminalEvent::Returned`] the loop takes the
 //! terminal back ([`Lend::reclaim`]), redraws it in full and lets the input thread read again.
 //!
 //! **The map canvas** (M15 f). Mouse capture is switched on only while the app is in MAP mode
@@ -37,7 +37,7 @@ use crossterm::event::{
     Event as TermEvent, KeyEventKind, KeyboardEnhancementFlags, MouseEvent,
     PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
-use dovetail_api::{Command, CoreLink, ServerMsg};
+use dovetail_api::{Command, CoreLink, ServerMsg, app::AppCommand};
 
 use crate::app::{App, Signal};
 use crate::canvas::kitty::{self, Scene};
@@ -456,7 +456,9 @@ fn drive<B: ratatui::backend::Backend>(
         io.send_all(app);
         if app.should_quit() {
             // Sessions end with the app: there is no daemon in v1 (plan B23).
-            let _ = io.commands.send(Command::Quit { end_sessions: true });
+            let _ = io
+                .commands
+                .send(Command::App(AppCommand::Quit { end_sessions: true }));
             return Ok(());
         }
 
@@ -559,7 +561,10 @@ mod tests {
     /// With no input at all, core events must still reach the screen.
     #[test]
     fn core_events_redraw_the_screen_with_no_key_pressed() {
-        use dovetail_api::{Event, Snapshot, Task, TaskId, TaskStatus};
+        use dovetail_api::{
+            Event, Snapshot,
+            task::{Task, TaskEvent, TaskId, TaskStatus},
+        };
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("terminal");
         let mut app = App::new(jiff::tz::TimeZone::UTC);
@@ -579,7 +584,7 @@ mod tests {
             thread::sleep(Duration::from_millis(150));
             send(ServerMsg::Event {
                 seq: 1,
-                event: Event::TaskUpserted(Task {
+                event: Event::Task(TaskEvent::Upserted(Task {
                     id: TaskId(1),
                     title: "alpha from the core".into(),
                     status: TaskStatus::Todo,
@@ -594,7 +599,7 @@ mod tests {
                     related: vec![],
                     effort: Default::default(),
                     criterion: None,
-                }),
+                })),
             });
             // Long enough for the 33 ms draw window; then end the loop with no key pressed.
             thread::sleep(Duration::from_millis(200));
@@ -663,8 +668,12 @@ mod tests {
     fn press_on(path: &std::path::Path, keys: &'static [char]) -> (Vec<String>, App) {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         use dovetail_api::{
-            Agent, AgentId, AgentKind, AgentStatus, Event, PermissionMode, SessionLock, Snapshot,
-            WorktreeRef,
+            Event, Snapshot,
+            agent::{
+                Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock, WorktreeRef,
+            },
+            app::{AppCommand, AppEvent},
+            terminal::{TerminalCommand, TerminalEvent},
         };
 
         let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -723,19 +732,26 @@ mod tests {
                 match command {
                     // Like the core: a path that is gone is refused, else the UI is asked to
                     // let go, and the editor runs once it says it has.
-                    Command::OpenEditor { path } if path.exists() => answer(Event::LendTerminal),
-                    Command::OpenEditor { path } => answer(Event::CommandFailed {
-                        message: format!("{} does not exist", path.display()),
-                    }),
-                    Command::TerminalReleased | Command::TakeOver { .. } => {
+                    Command::Terminal(TerminalCommand::OpenEditor { path }) if path.exists() => {
+                        answer(Event::Terminal(TerminalEvent::Lend))
+                    }
+                    Command::Terminal(TerminalCommand::OpenEditor { path }) => {
+                        answer(Event::App(AppEvent::CommandFailed {
+                            message: format!("{} does not exist", path.display()),
+                        }))
+                    }
+                    Command::Terminal(TerminalCommand::Released)
+                    | Command::Terminal(TerminalCommand::TakeOver { .. }) => {
                         let what = match &command {
-                            Command::TakeOver { agent } => format!("native {}", agent.0),
+                            Command::Terminal(TerminalCommand::TakeOver { agent }) => {
+                                format!("native {}", agent.0)
+                            }
                             _ => "editor".into(),
                         };
                         note(&core_log, &what);
-                        answer(Event::TerminalReturned { error: None });
+                        answer(Event::Terminal(TerminalEvent::Returned { error: None }));
                     }
-                    Command::Quit { .. } => return,
+                    Command::App(AppCommand::Quit { .. }) => return,
                     other => note(&core_log, &format!("{other:?}")),
                 }
             }
@@ -763,7 +779,7 @@ mod tests {
         // The fake core logs on its own thread, so the refresh `␣g` sent may land anywhere;
         // check it, then leave it out of the ordered steps.
         if keys.contains(&'g') {
-            let refresh = log.iter().position(|l| l == "RefreshWorktrees");
+            let refresh = log.iter().position(|l| l == "Worktree(Refresh)");
             log.remove(refresh.expect("␣g asked for a refresh"));
         }
         (log, app)

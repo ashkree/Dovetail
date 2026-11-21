@@ -7,7 +7,13 @@ mod support;
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg,
+    clipboard::{ClipboardCommand, ClipboardEvent, Paste},
+    conversation::{
+        Attachment, ConversationCommand, ConversationEvent, EntryKind, ImageType, MAX_ATTACHMENTS,
+    },
+};
 use dovetail_mock::{MockConfig, MockCore};
 use support::*;
 
@@ -27,9 +33,9 @@ fn paste(app: &mut dovetail_tui::App, at: u64, answer: Paste) {
     let agent = agent_id("coordinator");
     let commands = app.take_commands();
     assert!(
-        commands.contains(&Command::PasteClipboard {
+        commands.contains(&Command::Clipboard(ClipboardCommand::Paste {
             agent: agent.clone()
-        }),
+        })),
         "{commands:?}"
     );
     reply(app, answer);
@@ -40,10 +46,10 @@ fn reply(app: &mut dovetail_tui::App, answer: Paste) {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::ClipboardPasted {
+        event: Event::Clipboard(ClipboardEvent::Pasted {
             agent: agent_id("coordinator"),
             paste: answer,
-        },
+        }),
     });
 }
 
@@ -72,12 +78,12 @@ fn a_pasted_image_shows_as_a_chip_and_goes_out_with_the_prompt() {
 
     let commands = app.take_commands();
     let [
-        Command::Prompt {
+        Command::Conversation(ConversationCommand::Prompt {
             agent,
             text,
             attachments,
             effort: None,
-        },
+        }),
     ] = commands.as_slice()
     else {
         panic!("one prompt: {commands:?}");
@@ -101,9 +107,9 @@ fn an_image_only_message_is_sent_and_the_history_shows_its_chip() {
     paste(&mut app, 10, image(1));
     app.on_key(enter(), 11);
     let commands = app.take_commands();
-    let Some(Command::Prompt {
+    let Some(Command::Conversation(ConversationCommand::Prompt {
         text, attachments, ..
-    }) = commands.first()
+    })) = commands.first()
     else {
         panic!("a prompt: {commands:?}");
     };
@@ -116,10 +122,10 @@ fn an_image_only_message_is_sent_and_the_history_shows_its_chip() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::ConversationAppended {
+        event: Event::Conversation(ConversationEvent::Appended {
             agent: agent_id("coordinator"),
             entry,
-        },
+        }),
     });
     let screen = render(&mut app, 100, 30);
     assert!(screen.contains("[image 1 · 1 KB]"), "{screen}");
@@ -138,12 +144,12 @@ fn text_on_the_clipboard_is_pasted_at_the_cursor() {
     app.on_key(enter(), 3);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("coordinator"),
             text: "hello brave new world".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
 }
 
@@ -169,7 +175,9 @@ fn at_most_ten_images_per_message() {
     assert_eq!(app.note(), Some("at most 10 images per message"));
     app.on_key(enter(), 20);
     let commands = app.take_commands();
-    let Some(Command::Prompt { attachments, .. }) = commands.first() else {
+    let Some(Command::Conversation(ConversationCommand::Prompt { attachments, .. })) =
+        commands.first()
+    else {
         panic!("a prompt: {commands:?}");
     };
     assert_eq!(attachments.len(), MAX_ATTACHMENTS);
@@ -187,7 +195,7 @@ fn ctrl_v_outside_the_chat_bar_asks_for_nothing() {
     assert!(
         !app.take_commands()
             .iter()
-            .any(|c| matches!(c, Command::PasteClipboard { .. }))
+            .any(|c| matches!(c, Command::Clipboard(ClipboardCommand::Paste { .. })))
     );
 }
 
@@ -213,7 +221,7 @@ fn backspace_with_text_typed_deletes_text_and_keeps_the_chip() {
     assert!(
         matches!(
             commands.as_slice(),
-            [Command::Prompt { text, attachments, .. }] if text == "a" && attachments.len() == 1
+            [Command::Conversation(ConversationCommand::Prompt { text, attachments, .. })] if text == "a" && attachments.len() == 1
         ),
         "{commands:?}"
     );
@@ -269,7 +277,7 @@ fn a_paste_round_trips_through_the_mock_core() {
     assert!(
         commands.iter().any(|c| matches!(
             c,
-            Command::Prompt { attachments, .. } if attachments == &vec![saved.clone()]
+            Command::Conversation(ConversationCommand::Prompt { attachments, .. }) if attachments == &vec![saved.clone()]
         )),
         "{commands:?}"
     );
@@ -283,10 +291,10 @@ fn pasted_text_in_the_chat_bar_goes_to_the_core_and_its_answer_is_used() {
     let agent = agent_id("coordinator");
     assert_eq!(
         app.take_commands(),
-        vec![Command::PasteText {
+        vec![Command::Clipboard(ClipboardCommand::PasteText {
             agent,
             text: "'/tmp/a b.png'".into()
-        }]
+        })]
     );
     reply(&mut app, image(1));
     assert!(render(&mut app, 100, 30).contains("[image 1"));
@@ -332,9 +340,9 @@ fn a_pasted_marker_sits_in_the_text_where_the_cursor_was() {
     app.on_key(enter(), 3);
     let commands = app.take_commands();
     let [
-        Command::Prompt {
+        Command::Conversation(ConversationCommand::Prompt {
             text, attachments, ..
-        },
+        }),
     ] = commands.as_slice()
     else {
         panic!("one prompt: {commands:?}");
@@ -356,7 +364,9 @@ fn a_marker_edited_by_hand_loses_its_image() {
     type_keys(&mut app, "hi");
     app.on_key(enter(), 4);
     let commands = app.take_commands();
-    let [Command::Prompt { attachments, .. }] = commands.as_slice() else {
+    let [Command::Conversation(ConversationCommand::Prompt { attachments, .. })] =
+        commands.as_slice()
+    else {
         panic!("one prompt: {commands:?}");
     };
     assert!(attachments.is_empty(), "{commands:?}");

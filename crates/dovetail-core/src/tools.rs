@@ -2,13 +2,17 @@
 //! the core checks the role again: a slice must not reach a coordinator tool even through a
 //! hand-written socket client.
 
-use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
 use dovetail_api::tools::{Tool, UpdateTask};
 use dovetail_api::{
-    Agent, AgentKind, DecisionAuthor, EntryKind, Event, InboxKind, NewDecision, NewTask,
-    PermissionMode, TaskChange, TaskId, TaskStatus,
+    Event,
+    agent::{Agent, AgentKind, PermissionMode},
+    conversation::EntryKind,
+    decision::{DecisionAuthor, NewDecision},
+    inbox::InboxKind,
+    task::{NewTask, TaskChange, TaskId, TaskStatus},
 };
+use dovetail_api::{decision::DecisionEvent, socket::SocketResponseBody};
 use serde_json::json;
 use tokio::sync::oneshot;
 
@@ -228,7 +232,7 @@ impl Core {
                                     "Logged decision #{} on task #{}.",
                                     logged.id.0, task.0
                                 );
-                                self.emit(Event::DecisionAdded(logged));
+                                self.emit(Event::Decision(DecisionEvent::Added(logged)));
                                 ok(text)
                             }
                             Err(e) => error(format!("could not log the decision: {e}")),
@@ -274,7 +278,7 @@ impl Core {
                     self.raise(
                         &agent,
                         InboxKind::Permission {
-                            tool: dovetail_api::START_SLICE_PERMISSION.into(),
+                            tool: dovetail_api::inbox::START_SLICE_PERMISSION.into(),
                             input,
                             reason: Some("the coordinator wants to start a slice".into()),
                             suggestions: Vec::new(),
@@ -416,14 +420,14 @@ impl Core {
             Some(t) if t.status == TaskStatus::Archived => {
                 return error(format!("task #{} is archived", id.0));
             }
-            Some(t) => t.bucket == Some(dovetail_api::Bucket::Now),
+            Some(t) => t.bucket == Some(dovetail_api::task::Bucket::Now),
         };
         // Validation refused a status: Dovetail sets it (ADR 0024).
         let mut patch = Vec::new();
         if let Some(bucket) = update.new_bucket() {
             patch.push(TaskChange::Bucket(bucket));
             // The user did not put it in Now, so it carries the marker new tasks have.
-            if bucket == Some(dovetail_api::Bucket::Now) && !was_in_now {
+            if bucket == Some(dovetail_api::task::Bucket::Now) && !was_in_now {
                 patch.push(TaskChange::Unseen);
             }
         }

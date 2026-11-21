@@ -1,9 +1,9 @@
 //! Runs the user's editor in the terminal the UI has let go of
-//! ([`dovetail_api::Command::OpenEditor`]).
+//! ([`dovetail_api::TerminalCommand::OpenEditor`]).
 //!
 //! The UI leaves the alternate screen and raw mode and stops reading keys before it asks; the
 //! core then runs the editor with the terminal as its stdin, stdout and stderr, waits for it on
-//! a blocking thread, and answers [`dovetail_api::Event::TerminalReturned`] so the UI takes the
+//! a blocking thread, and answers [`dovetail_api::TerminalEvent::Returned`] so the UI takes the
 //! terminal back. The command line is `$EDITOR` (as git reads it: through `sh`, so it may carry
 //! arguments such as `code -w`), else `nvim`.
 

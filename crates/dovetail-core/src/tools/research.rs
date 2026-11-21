@@ -2,16 +2,23 @@
 //! `research_write_report`, `research_propose` and `research_get`, and what happens when the user
 //! answers a proposal.
 //!
-//! Rounds open through the same core path as `Command::StartRound`. A report is validated
+//! Rounds open through the same core path as `ResearchCommand::StartRound`. A report is validated
 //! (`research::report`) before anything is written. A proposal never writes anything itself: it
 //! raises an inbox item, and `y` does the write.
 
-use dovetail_api::research::{Evidence, ProposalKind, ResearchContent};
 use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::tools::{ResearchGet, ResearchPropose, ResearchStartRound, ResearchWriteReport};
 use dovetail_api::{
-    ActivityKind, AgentId, DecisionAuthor, Event, InboxId, InboxKind, NewDecision, NewTask,
-    PermissionAnswer, TaskId, TaskStatus,
+    Event,
+    activity::ActivityKind,
+    agent::AgentId,
+    decision::{DecisionAuthor, NewDecision},
+    inbox::{InboxId, InboxKind, PermissionAnswer},
+    task::{NewTask, TaskId, TaskStatus},
+};
+use dovetail_api::{
+    decision::DecisionEvent,
+    research::{Evidence, ProposalKind, ResearchContent},
 };
 use serde_json::json;
 
@@ -53,7 +60,7 @@ fn known(r: &TaskResearch) -> Known {
 
 impl Core {
     /// The task, if it exists and is not archived; else the error to return.
-    async fn live_task(&self, id: TaskId) -> Result<dovetail_api::Task, SocketResponseBody> {
+    async fn live_task(&self, id: TaskId) -> Result<dovetail_api::task::Task, SocketResponseBody> {
         match self.task(id).await {
             None => Err(error(format!("there is no task #{}", id.0))),
             Some(t) if t.status == TaskStatus::Archived => {
@@ -359,7 +366,7 @@ impl Core {
                              evidence",
                             logged.id.0, task.0
                         );
-                        self.emit(Event::DecisionAdded(logged));
+                        self.emit(Event::Decision(DecisionEvent::Added(logged)));
                         text
                     }
                     Err(e) => format!(

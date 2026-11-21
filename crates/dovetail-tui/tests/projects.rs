@@ -4,7 +4,11 @@
 
 mod support;
 
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg, Snapshot,
+    app::AppEvent,
+    project::{ProjectCommand, ProjectEvent, ProjectId, ProjectKind, ProjectSummary},
+};
 use support::*;
 
 fn leader(app: &mut dovetail_tui::App, keys: &str) {
@@ -96,17 +100,17 @@ fn picking_a_project_asks_then_sends_open_project() {
     app.on_key(key('y'), 100);
     assert_eq!(
         app.take_commands(),
-        vec![Command::OpenProject {
+        vec![Command::Project(ProjectCommand::Open {
             id: ProjectId("market-sizing".into())
-        }]
+        })]
     );
     // The core answers by quitting; the UI quits with it, without asking.
     assert!(!app.should_quit());
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::OpeningProject {
+        event: Event::Project(ProjectEvent::Opening {
             id: ProjectId("market-sizing".into()),
-        },
+        }),
     });
     assert!(app.should_quit());
 }
@@ -128,9 +132,9 @@ fn project_new_research_sends_the_name() {
     app.on_key(enter(), 500);
     assert_eq!(
         app.take_commands(),
-        vec![Command::NewResearchProject {
+        vec![Command::Project(ProjectCommand::NewResearch {
             name: "Market sizing 2".into()
-        }]
+        })]
     );
 }
 
@@ -140,7 +144,9 @@ fn create_project(app: &mut dovetail_tui::App, name: &str) {
     app.on_key(enter(), 500);
     assert_eq!(
         app.take_commands(),
-        vec![Command::NewResearchProject { name: name.into() }]
+        vec![Command::Project(ProjectCommand::NewResearch {
+            name: name.into()
+        })]
     );
     let mut snap = with_projects(false);
     snap.projects.push(research("market-sizing-2", name));
@@ -159,9 +165,9 @@ fn a_new_research_project_asks_to_open_it_now_and_y_switches() {
     app.on_key(key('y'), 600);
     assert_eq!(
         app.take_commands(),
-        vec![Command::OpenProject {
+        vec![Command::Project(ProjectCommand::Open {
             id: ProjectId("market-sizing-2".into())
-        }]
+        })]
     );
 }
 
@@ -189,9 +195,9 @@ fn a_refused_new_project_asks_nothing() {
     // The name is taken: the core says so, and a later snapshot still lists the old project.
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::CommandFailed {
+        event: Event::App(AppEvent::CommandFailed {
             message: "there is already a research project named `Market sizing`".into(),
-        },
+        }),
     });
     app.on_server(ServerMsg::Snapshot(with_projects(false)));
     let screen = render(&mut app, 120, 30);
@@ -221,12 +227,12 @@ fn a_research_project_has_no_worktree_view() {
 fn recipe_started(profiles: &[&str]) -> ServerMsg {
     ServerMsg::Event {
         seq: 1,
-        event: Event::RecipeStarted {
+        event: Event::Project(ProjectEvent::RecipeStarted {
             project: ProjectId("business".into()),
             name: "business".into(),
             path: "/home/you/.config/dovetail/projects/business.toml".into(),
             profiles: profiles.iter().map(|p| p.to_string()).collect(),
-        },
+        }),
     }
 }
 
@@ -255,10 +261,10 @@ fn picking_a_profile_sends_it_for_the_recipe() {
     app.on_key(enter(), 90);
     assert_eq!(
         app.take_commands(),
-        vec![Command::SetRecipeProfile {
+        vec![Command::Project(ProjectCommand::SetRecipeProfile {
             project: ProjectId("business".into()),
             profile: "work".into(),
-        }]
+        })]
     );
 }
 

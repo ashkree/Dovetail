@@ -4,7 +4,12 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{Command, ModelOption, ReasoningEffort, SlashCommand};
+use dovetail_api::{
+    Command,
+    agent::SlashCommand,
+    conversation::ConversationCommand,
+    model::{ModelOption, ReasoningEffort},
+};
 use dovetail_tui::Mode;
 use support::*;
 
@@ -38,12 +43,12 @@ fn app_with_skills() -> dovetail_tui::App {
 }
 
 fn prompt(text: &str) -> Vec<Command> {
-    vec![Command::Prompt {
+    vec![Command::Conversation(ConversationCommand::Prompt {
         agent: agent_id("coordinator"),
         text: text.into(),
         attachments: Vec::new(),
         effort: None,
-    }]
+    })]
 }
 
 #[test]

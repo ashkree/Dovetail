@@ -3,7 +3,10 @@
 
 mod support;
 
-use dovetail_api::*;
+use dovetail_api::{
+    agent::AgentStatus,
+    conversation::{ConversationTail, EntryKind},
+};
 use support::*;
 
 /// A prompt and a reply of 100 one-line paragraphs (about 200 rows), then optionally a second

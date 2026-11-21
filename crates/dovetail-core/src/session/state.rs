@@ -5,7 +5,10 @@
 //! but the session is only done when no background tasks remain: never on the first `result`
 //! alone (stream rule 2).
 
-use dovetail_api::{AgentStatus, EntryId, PermissionMode};
+use dovetail_api::{
+    agent::{AgentStatus, PermissionMode},
+    conversation::EntryId,
+};
 use dovetail_driver::PermissionMode as CliMode;
 
 /// Maps the UI's mode to the CLI's.

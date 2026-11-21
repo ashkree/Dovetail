@@ -1,6 +1,6 @@
 //! Slice previews (ADR 0026): the recipe's `preview` command, run per slice.
 //!
-//! The viewer asks for a preview ([`dovetail_api::Command::StartPreview`]) the first time it
+//! The viewer asks for a preview ([`dovetail_api::DesignCommand::StartPreview`]) the first time it
 //! opens on a slice. The core picks a free port, runs the command in the slice's worktree with
 //! the recipe's `[env]`, inside a capped scope like the slice's session when caps are on, and
 //! reports its state: starting until the port accepts a connection (checked every
@@ -13,7 +13,11 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use dovetail_api::{AgentId, AgentKind, Event, OUTPUT_LINES, Preview, PreviewState};
+use dovetail_api::{
+    Event,
+    agent::{AgentId, AgentKind},
+    design::{DesignEvent, OUTPUT_LINES, Preview, PreviewState},
+};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::{mpsc, oneshot};
 
@@ -88,10 +92,10 @@ impl Core {
             .state(agent)
             .cloned()
             .unwrap_or(PreviewState::NotStarted);
-        self.emit(Event::PreviewChanged(Preview {
+        self.emit(Event::Design(DesignEvent::PreviewChanged(Preview {
             agent: agent.clone(),
             state,
-        }));
+        })));
     }
 
     fn set_preview_state(&mut self, agent: &AgentId, state: PreviewState) {
@@ -109,7 +113,7 @@ impl Core {
         self.announce_preview(agent);
     }
 
-    /// `Command::StartPreview`: starts the slice's preview unless it starts or runs already.
+    /// `DesignCommand::StartPreview`: starts the slice's preview unless it starts or runs already.
     pub(crate) fn start_preview(&mut self, agent: AgentId) {
         if matches!(
             self.previews.state(&agent),
@@ -129,7 +133,7 @@ impl Core {
         }
     }
 
-    /// `Command::RestartPreview`.
+    /// `DesignCommand::RestartPreview`.
     pub(crate) fn restart_preview(&mut self, agent: AgentId) {
         self.stop_preview(&agent, false);
         self.start_preview(agent);

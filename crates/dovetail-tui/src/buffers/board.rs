@@ -5,7 +5,9 @@
 use std::collections::HashSet;
 
 use dovetail_api::{
-    AgentKind, AgentStatus, Bucket, Command, Snapshot, Task, TaskChange, TaskId, TaskStatus,
+    Command, Snapshot,
+    agent::{AgentKind, AgentStatus},
+    task::{Bucket, Task, TaskChange, TaskCommand, TaskId, TaskStatus},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -87,7 +89,7 @@ impl BoardBuffer {
     }
 
     /// `<`/`>`: moves the card past its neighbour in the column. The order is the task's place
-    /// in its bucket ([`Command::ReorderTask`]), so a card moves past neighbours of its own
+    /// in its bucket ([`TaskCommand::Reorder`]), so a card moves past neighbours of its own
     /// bucket only; a column lists Now, Next, Later, then Unsorted.
     fn reorder(&mut self, snap: &Snapshot, delta: isize, effects: &mut Vec<Effect>) {
         let cards = cards(snap, COLUMNS[self.column]);
@@ -119,10 +121,10 @@ impl BoardBuffer {
         peers.sort_by_key(|t| (t.order, t.id));
         let place = |id: TaskId| peers.iter().position(|t| t.id == id);
         if let (Some(from), Some(to)) = (place(task.id), place(neighbour.id)) {
-            effects.push(Effect::Command(Command::ReorderTask {
+            effects.push(Effect::Command(Command::Task(TaskCommand::Reorder {
                 id: task.id,
                 delta: to as i32 - from as i32,
-            }));
+            })));
         }
     }
 
@@ -148,10 +150,10 @@ impl BoardBuffer {
     /// once the core confirms it ([`Self::follow`]).
     fn send_to(&mut self, id: TaskId, to: usize, effects: &mut Vec<Effect>) {
         self.pending = Some((id, COLUMNS[to]));
-        effects.push(Effect::Command(Command::UpdateTask {
+        effects.push(Effect::Command(Command::Task(TaskCommand::Update {
             id,
             patch: vec![TaskChange::Status(COLUMNS[to])],
-        }));
+        })));
     }
 
     fn draw_column(

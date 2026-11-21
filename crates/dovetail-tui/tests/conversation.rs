@@ -3,7 +3,11 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg,
+    agent::{AgentCommand, AgentEvent, AgentKind, AgentStatus, SlashCommand},
+    conversation::{ConversationCommand, ConversationEvent, ConversationTail, EntryId, EntryKind},
+};
 use dovetail_tui::Mode;
 use dovetail_tui::region::RegionId;
 use ratatui::Terminal;
@@ -286,12 +290,12 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("coordinator"),
             text: "hello".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
     // Typing moved focus to the main pane; `h` goes back to the tree.
     app.on_key(key('l'), 300);
@@ -301,12 +305,12 @@ fn i_from_the_tree_targets_the_coordinator_unless_an_agent_is_selected() {
     app.on_key(enter(), 199);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("slice-7"),
             text: "key is dev".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
     assert_eq!(
         app.open_agent(),
@@ -324,12 +328,12 @@ fn i_from_the_inbox_targets_the_coordinator() {
     app.on_key(enter(), 50);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("coordinator"),
             text: "x".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
 }
 
@@ -344,12 +348,12 @@ fn i_in_the_main_region_targets_the_agent_it_shows() {
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("slice-4"),
             text: "go".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
 }
 
@@ -372,12 +376,12 @@ fn the_chat_input_takes_enter_shift_enter_alt_enter_ctrl_w_and_ctrl_u() {
     app.on_key(enter(), 200);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("coordinator"),
             text: "first line\nsecond\nthird".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
     assert_eq!(app.mode(), Mode::Normal);
 }
@@ -401,12 +405,12 @@ fn ctrl_k_leaves_the_chat_bar_and_ctrl_j_comes_back_to_the_cursor() {
     app.on_key(enter(), 103);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("coordinator"),
             text: "abc".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
 }
 
@@ -491,11 +495,11 @@ fn a_streamed_reply_grows_in_place_with_a_cursor() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::AssistantDelta {
+        event: Event::Conversation(ConversationEvent::AssistantDelta {
             agent: agent_id("coordinator"),
             entry: EntryId(7),
             text: " now **bold**".into(),
-        },
+        }),
     });
     assert!(render(&mut app, 120, 50).contains("Streaming now bold▌"));
 }
@@ -515,10 +519,10 @@ fn reaching_the_top_with_older_history_asks_for_it_once() {
     let asked = app.take_commands();
     assert_eq!(
         asked,
-        vec![Command::LoadConversation {
+        vec![Command::Conversation(ConversationCommand::Load {
             agent: agent_id("coordinator"),
             before: Some(EntryId(1))
-        }]
+        })]
     );
     render(&mut app, 120, 20);
     type_keys(&mut app, "gg");
@@ -574,11 +578,11 @@ fn older_history_arriving_above_keeps_the_lines_being_read_in_place() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::ConversationPage {
+        event: Event::Conversation(ConversationEvent::Page {
             agent: agent_id("coordinator"),
             entries: older,
             has_more: false,
-        },
+        }),
     });
     assert_eq!(row(&render(&mut app, 120, 14)), reading);
 }
@@ -615,29 +619,29 @@ fn slash_picks_a_command_and_at_asks_the_core_for_paths() {
     type_keys(&mut app, "the plan @READ");
     assert_eq!(
         app.take_commands(),
-        vec![Command::ListPaths {
+        vec![Command::Conversation(ConversationCommand::ListPaths {
             agent: agent_id("coordinator"),
             dir: None
-        }]
+        })]
     );
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::PathsListed {
+        event: Event::Conversation(ConversationEvent::PathsListed {
             agent: agent_id("coordinator"),
             dir: None,
             paths: vec!["README.md".into(), "src/main.rs".into()],
-        },
+        }),
     });
     app.on_key(enter(), 101);
     app.on_key(enter(), 102);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("coordinator"),
             text: "/grilling the plan @README.md".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
 }
 
@@ -649,14 +653,14 @@ fn a_side_chat_asked_for_opens_when_it_appears() {
     app.on_key(enter(), 100);
     assert_eq!(
         app.take_commands(),
-        vec![Command::NewSideChat {
+        vec![Command::Agent(AgentCommand::NewSideChat {
             question: "why is the build slow?".into()
-        }]
+        })]
     );
     let chat = agent("side-1", AgentKind::SideChat, AgentStatus::Working, None);
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::AgentUpserted(chat),
+        event: Event::Agent(AgentEvent::Upserted(chat)),
     });
     let screen = render(&mut app, 100, 30);
     assert!(screen.contains("┌ side-1 "), "{screen}");

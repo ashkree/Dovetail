@@ -36,9 +36,13 @@ use std::task::{Context, Poll};
 
 use dovetail_api::map::{Map, MapId, MapSummary, NodeId};
 use dovetail_api::{
-    ActivityItem, AgentId, AgentMessage, ConversationEntry, CriterionId, Decision, DecisionAuthor,
-    Effort, EffortChange, EffortId, EntryId, InboxId, InboxItem, NewDecision, NewEffort, NewTask,
-    Task, TaskChange, TaskId, WhereWasI,
+    activity::{ActivityItem, AgentMessage},
+    agent::AgentId,
+    conversation::{ConversationEntry, EntryId},
+    decision::{Decision, DecisionAuthor, NewDecision},
+    effort::{CriterionId, Effort, EffortChange, EffortId, NewEffort, WhereWasI},
+    inbox::{InboxId, InboxItem},
+    task::{NewTask, Task, TaskChange, TaskId},
 };
 use rusqlite::Connection;
 use tokio::sync::oneshot;
@@ -267,7 +271,7 @@ impl Db {
     }
 
     /// Removes a repo from project `id`.
-    pub fn remove_repo(&self, id: String, repo: dovetail_api::RepoId) -> Pending<Project> {
+    pub fn remove_repo(&self, id: String, repo: dovetail_api::project::RepoId) -> Pending<Project> {
         self.run(move |c, _| registry::remove_repo(&c.registry, &id, repo))
     }
 
@@ -288,7 +292,7 @@ impl Db {
     }
 
     /// Home's counts for project `id`, read from its `state.db` without migrating it.
-    pub fn project_counts(&self, path: PathBuf) -> Pending<dovetail_api::ProjectCounts> {
+    pub fn project_counts(&self, path: PathBuf) -> Pending<dovetail_api::project::ProjectCounts> {
         self.run(move |_, _| counts::read(&path))
     }
 
@@ -327,7 +331,7 @@ impl Db {
     /// Records the git common dir of a folder repo that has become a git repo.
     pub fn set_git_dir(
         &self,
-        repo: dovetail_api::RepoId,
+        repo: dovetail_api::project::RepoId,
         git_common_dir: PathBuf,
     ) -> Pending<Project> {
         self.run(move |c, _| registry::set_git_dir(&c.registry, repo, &git_common_dir))
@@ -416,7 +420,7 @@ impl Db {
     }
 
     /// Creates an effort. `new.name` must already be in its stored form
-    /// ([`dovetail_api::effort_name`]); an empty or taken name is refused.
+    /// ([`dovetail_api::effort::effort_name`]); an empty or taken name is refused.
     pub fn create_effort(&self, new: NewEffort) -> Pending<Effort> {
         self.run(move |c, now| efforts::create_effort(c.state()?, new, now))
     }
@@ -967,7 +971,10 @@ mod tests {
 
     #[test]
     fn live_attachments_skip_archived_agents_across_projects() {
-        use dovetail_api::{AgentKind, Attachment, EntryKind, ImageType};
+        use dovetail_api::{
+            agent::AgentKind,
+            conversation::{Attachment, EntryKind, ImageType},
+        };
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
@@ -1026,7 +1033,10 @@ mod tests {
 
     #[test]
     fn agent_messages_and_old_notices_both_load() {
-        use dovetail_api::{AgentKind, EntryKind, agent_message_text};
+        use dovetail_api::{
+            agent::AgentKind,
+            conversation::{EntryKind, agent_message_text},
+        };
 
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
@@ -1200,7 +1210,9 @@ mod tests {
     /// Migration 0017 on a database from empty: Unsorted is there, and a new task lands in it.
     #[test]
     fn a_new_project_starts_with_the_unsorted_effort() {
-        use dovetail_api::{EffortKind, EffortStatus, UNSORTED_EFFORT, UNSORTED_EFFORT_NAME};
+        use dovetail_api::effort::{
+            EffortKind, EffortStatus, UNSORTED_EFFORT, UNSORTED_EFFORT_NAME,
+        };
 
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
@@ -1245,7 +1257,7 @@ mod tests {
             ("b", None)
         );
 
-        agents[0].repo = Some(dovetail_api::RepoId(7));
+        agents[0].repo = Some(dovetail_api::project::RepoId(7));
         db.upsert_agent(agents[0].clone()).wait().unwrap();
         db.enqueue_slice(QueuedSlice {
             id: 0,
@@ -1256,7 +1268,7 @@ mod tests {
             repo: Some("web".into()),
             model_choice: Some(ModelChoice {
                 model: "haiku".into(),
-                effort: Some(dovetail_api::ReasoningEffort::Low),
+                effort: Some(dovetail_api::model::ReasoningEffort::Low),
             }),
         })
         .wait()
@@ -1265,7 +1277,7 @@ mod tests {
         let db = Db::open(&paths, Some("p")).unwrap();
         assert_eq!(
             db.load_agents().wait().unwrap()[0].repo,
-            Some(dovetail_api::RepoId(7))
+            Some(dovetail_api::project::RepoId(7))
         );
         assert_eq!(
             db.load_queue().wait().unwrap()[1].repo.as_deref(),
@@ -1275,7 +1287,7 @@ mod tests {
             db.load_queue().wait().unwrap()[1].model_choice,
             Some(ModelChoice {
                 model: "haiku".into(),
-                effort: Some(dovetail_api::ReasoningEffort::Low)
+                effort: Some(dovetail_api::model::ReasoningEffort::Low)
             })
         );
     }
@@ -1307,7 +1319,7 @@ mod tests {
     /// lines keep no tag, and nothing else about them changes.
     #[test]
     fn efforts_migrate_up_from_version_16_and_existing_tasks_go_to_unsorted() {
-        use dovetail_api::{EntryKind, TaskStatus, UNSORTED_EFFORT};
+        use dovetail_api::{conversation::EntryKind, effort::UNSORTED_EFFORT, task::TaskStatus};
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
@@ -1374,14 +1386,14 @@ mod tests {
     fn new_effort(name: &str) -> NewEffort {
         NewEffort {
             name: name.into(),
-            kind: dovetail_api::EffortKind::Feature,
+            kind: dovetail_api::effort::EffortKind::Feature,
             question_or_goal: String::new(),
         }
     }
 
     #[test]
     fn effort_names_are_unique_and_unsorted_is_fixed() {
-        use dovetail_api::{EffortStatus, UNSORTED_EFFORT};
+        use dovetail_api::effort::{EffortStatus, UNSORTED_EFFORT};
 
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
@@ -1419,7 +1431,7 @@ mod tests {
             Err(DbError::Refused(_))
         ));
         assert!(matches!(
-            db.rename_effort(dovetail_api::EffortId(99), "x".into())
+            db.rename_effort(dovetail_api::effort::EffortId(99), "x".into())
                 .wait(),
             Err(DbError::NotFound(_))
         ));
@@ -1427,7 +1439,7 @@ mod tests {
 
     #[test]
     fn a_criterion_goes_open_claimed_met_and_can_be_sent_back() {
-        use dovetail_api::CriterionState;
+        use dovetail_api::effort::CriterionState;
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
@@ -1492,7 +1504,7 @@ mod tests {
 
     #[test]
     fn a_task_moves_between_efforts_and_serves_only_its_own_efforts_criteria() {
-        use dovetail_api::{EffortStatus, UNSORTED_EFFORT};
+        use dovetail_api::effort::{EffortStatus, UNSORTED_EFFORT};
 
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
@@ -1558,7 +1570,7 @@ mod tests {
 
     #[test]
     fn an_entrys_effort_tag_is_stored_and_read_back() {
-        use dovetail_api::{AgentKind, EntryKind};
+        use dovetail_api::{agent::AgentKind, conversation::EntryKind};
 
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
@@ -1741,7 +1753,7 @@ mod tests {
     /// and a folder project each get one repo named after the project, a research project none.
     #[test]
     fn an_existing_registry_migrates_to_repos() {
-        use dovetail_api::{ProjectKind, RepoId};
+        use dovetail_api::project::{ProjectKind, RepoId};
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());

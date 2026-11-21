@@ -9,10 +9,14 @@ mod support;
 use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use dovetail_api::map::{
-    Connection, Group, Map, MapContent, MapId, MapKind, MapSummary, Node, NodeId, NodeKind,
+use dovetail_api::{Command, Event, ServerMsg};
+use dovetail_api::{
+    conversation::ConversationCommand,
+    map::{
+        Connection, Group, Map, MapCommand, MapContent, MapEvent, MapId, MapKind, MapSummary, Node,
+        NodeId, NodeKind,
+    },
 };
-use dovetail_api::*;
 use dovetail_tui::canvas::kitty::Scene;
 use dovetail_tui::canvas::view::CellPx;
 use dovetail_tui::canvas::{Painted, Picture, Placed, PxRect};
@@ -110,12 +114,12 @@ fn open(cell: Option<CellPx>) -> App {
     app.on_key(enter(), 100);
     assert!(matches!(
         app.take_commands().as_slice(),
-        [Command::LoadMap { .. }]
+        [Command::Map(MapCommand::Load { .. })]
     ));
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::MapLoaded(map()),
+        event: Event::Map(MapEvent::Loaded(map())),
     });
     app
 }
@@ -368,7 +372,8 @@ fn u_sends_the_coordinator_a_redraw_request_after_a_yes() {
     app.on_key(key('u'), 0);
     app.on_key(key('y'), 0);
     let commands = app.take_commands();
-    let [Command::Prompt { text, .. }] = commands.as_slice() else {
+    let [Command::Conversation(ConversationCommand::Prompt { text, .. })] = commands.as_slice()
+    else {
         panic!("one prompt: {commands:?}");
     };
     assert!(

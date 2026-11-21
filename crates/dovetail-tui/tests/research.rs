@@ -2,11 +2,21 @@
 
 mod support;
 
-use dovetail_api::research::{
-    FindingId, FindingSummary, ResearchContent, ResearchDocument, ResearchListing, ResearchSummary,
-    ResearchWhat, RoundSummary, SourceId, SourceKind, SourceSummary,
+use dovetail_api::{
+    Command, Event, ServerMsg,
+    inbox::{InboxId, InboxItem, InboxKind},
+    task::TaskId,
 };
-use dovetail_api::*;
+use dovetail_api::{
+    inbox::InboxCommand,
+    research::{
+        FindingId, FindingSummary, ResearchCommand, ResearchContent, ResearchDocument,
+        ResearchEvent, ResearchListing, ResearchSummary, ResearchWhat, RoundSummary, SourceId,
+        SourceKind, SourceSummary,
+    },
+    task::TaskCommand,
+    terminal::{TerminalCommand, TerminalEvent},
+};
 use dovetail_tui::App;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -114,7 +124,7 @@ fn deliver(app: &mut App, event: Event) {
 fn loaded(app: &mut App, what: ResearchWhat, path: Option<&str>, markdown: &str) {
     deliver(
         app,
-        Event::ResearchLoaded {
+        Event::Research(ResearchEvent::Loaded {
             task: TaskId(1),
             what,
             content: ResearchContent::Document(ResearchDocument {
@@ -122,7 +132,7 @@ fn loaded(app: &mut App, what: ResearchWhat, path: Option<&str>, markdown: &str)
                 markdown: markdown.into(),
                 images: Vec::new(),
             }),
-        },
+        }),
     );
 }
 
@@ -142,18 +152,18 @@ fn detail(report: bool) -> App {
     app.on_key(enter(), 0);
     assert_eq!(
         app.take_commands(),
-        vec![Command::LoadResearch {
+        vec![Command::Research(ResearchCommand::Load {
             task: TaskId(1),
             what: ResearchWhat::Listing,
-        }]
+        })]
     );
     deliver(
         &mut app,
-        Event::ResearchLoaded {
+        Event::Research(ResearchEvent::Loaded {
             task: TaskId(1),
             what: ResearchWhat::Listing,
             content: ResearchContent::Listing(listing()),
-        },
+        }),
     );
     // The rows are known once drawn; the real loop draws after every message.
     render(&mut app, 120, 60);
@@ -166,10 +176,10 @@ fn open_report(app: &mut App) {
     app.on_key(enter(), 2);
     assert_eq!(
         app.take_commands(),
-        vec![Command::LoadResearch {
+        vec![Command::Research(ResearchCommand::Load {
             task: TaskId(1),
             what: ResearchWhat::Report,
-        }]
+        })]
     );
     loaded(
         app,
@@ -226,10 +236,10 @@ fn a_task_with_no_report_says_so_and_enter_has_nothing_to_open_there() {
     app.on_key(enter(), 1);
     assert_eq!(
         app.take_commands(),
-        vec![Command::LoadResearch {
+        vec![Command::Research(ResearchCommand::Load {
             task: TaskId(1),
             what: ResearchWhat::Brief { round: 1 },
-        }]
+        })]
     );
 }
 
@@ -262,10 +272,10 @@ fn every_row_opens_its_document_in_the_reading_view() {
         app.on_key(enter(), 2);
         assert_eq!(
             app.take_commands(),
-            vec![Command::LoadResearch {
+            vec![Command::Research(ResearchCommand::Load {
                 task: TaskId(1),
                 what: what.clone(),
-            }],
+            })],
             "row {n}"
         );
         loaded(
@@ -334,13 +344,19 @@ fn e_hands_the_documents_file_to_the_editor_and_a_listed_source_has_none() {
     app.on_key(key('e'), 3);
     assert_eq!(
         app.take_commands(),
-        vec![Command::OpenEditor {
+        vec![Command::Terminal(TerminalCommand::OpenEditor {
             path: "/data/research/1-pricing/report.md".into()
-        }]
+        })]
     );
-    deliver(&mut app, Event::LendTerminal);
-    assert_eq!(app.take_handoff(), Some(Command::TerminalReleased));
-    deliver(&mut app, Event::TerminalReturned { error: None });
+    deliver(&mut app, Event::Terminal(TerminalEvent::Lend));
+    assert_eq!(
+        app.take_handoff(),
+        Some(Command::Terminal(TerminalCommand::Released))
+    );
+    deliver(
+        &mut app,
+        Event::Terminal(TerminalEvent::Returned { error: None }),
+    );
     // A source that was listed but not cached has no file.
     app.on_key(esc(), 4);
     for _ in 0..7 {
@@ -389,10 +405,10 @@ fn colon_research_lists_the_tasks_that_have_research_and_enter_opens_one() {
     app.on_key(enter(), 100);
     assert_eq!(
         app.take_commands(),
-        vec![Command::LoadResearch {
+        vec![Command::Research(ResearchCommand::Load {
             task: TaskId(1),
             what: ResearchWhat::Listing,
-        }]
+        })]
     );
     assert!(render(&mut app, 120, 40).contains("task · #1"));
 }
@@ -454,10 +470,10 @@ fn colon_round_opens_a_round_with_its_brief() {
     let mut app = app_with(world());
     assert_eq!(
         run(&mut app, "round #3 per seat or flat?"),
-        vec![Command::StartRound {
+        vec![Command::Research(ResearchCommand::StartRound {
             task: TaskId(3),
             brief: "per seat or flat?".into(),
-        }]
+        })]
     );
     assert_eq!(run(&mut app, "round 3"), vec![]);
     assert!(app.note().unwrap_or_default().starts_with("usage: :round"));
@@ -489,7 +505,9 @@ fn colon_round_close_closes_the_open_round() {
     let mut app = app_with(snap);
     assert_eq!(
         run(&mut app, "round close"),
-        vec![Command::CloseRound { task: TaskId(3) }]
+        vec![Command::Research(ResearchCommand::CloseRound {
+            task: TaskId(3)
+        })]
     );
 }
 
@@ -529,10 +547,10 @@ fn tab_and_shift_tab_jump_between_research_rows_and_enter_opens_the_selected_one
     // Report, then round 1's brief.
     assert_eq!(
         app.take_commands(),
-        vec![Command::LoadResearch {
+        vec![Command::Research(ResearchCommand::Load {
             task: TaskId(1),
             what: ResearchWhat::Brief { round: 1 },
-        }]
+        })]
     );
     let mut app = detail(true);
     // Shift-Tab from nothing lands on the last row, the second source.
@@ -540,10 +558,10 @@ fn tab_and_shift_tab_jump_between_research_rows_and_enter_opens_the_selected_one
     app.on_key(enter(), 2);
     assert_eq!(
         app.take_commands(),
-        vec![Command::LoadResearch {
+        vec![Command::Research(ResearchCommand::Load {
             task: TaskId(1),
             what: ResearchWhat::Source(SourceId(2)),
-        }]
+        })]
     );
     // And it wraps round.
     let mut app = detail(true);
@@ -552,10 +570,10 @@ fn tab_and_shift_tab_jump_between_research_rows_and_enter_opens_the_selected_one
     app.on_key(enter(), 3);
     assert_eq!(
         app.take_commands(),
-        vec![Command::LoadResearch {
+        vec![Command::Research(ResearchCommand::Load {
             task: TaskId(1),
             what: ResearchWhat::Report,
-        }]
+        })]
     );
 }
 
@@ -569,13 +587,19 @@ fn e_on_a_selected_research_row_opens_that_file_in_the_editor() {
     app.on_key(key('e'), 2);
     assert_eq!(
         app.take_commands(),
-        vec![Command::OpenEditor {
+        vec![Command::Terminal(TerminalCommand::OpenEditor {
             path: "/data/research/1-pricing/findings/1-seat-plans.md".into()
-        }]
+        })]
     );
-    deliver(&mut app, Event::LendTerminal);
-    assert_eq!(app.take_handoff(), Some(Command::TerminalReleased));
-    deliver(&mut app, Event::TerminalReturned { error: None });
+    deliver(&mut app, Event::Terminal(TerminalEvent::Lend));
+    assert_eq!(
+        app.take_handoff(),
+        Some(Command::Terminal(TerminalCommand::Released))
+    );
+    deliver(
+        &mut app,
+        Event::Terminal(TerminalEvent::Returned { error: None }),
+    );
 }
 
 #[test]
@@ -667,7 +691,7 @@ fn archiving_a_task_with_an_open_round_asks_first() {
     app.on_key(key('y'), 51);
     assert_eq!(
         app.take_commands(),
-        vec![Command::ArchiveTask { id: TaskId(3) }]
+        vec![Command::Task(TaskCommand::Archive { id: TaskId(3) })]
     );
 }
 
@@ -687,17 +711,17 @@ fn colon_round_drop_drops_a_queued_round_and_only_a_queued_one() {
     let mut app = app_with(snap);
     assert_eq!(
         run(&mut app, "round drop 3"),
-        vec![Command::DropRound {
+        vec![Command::Research(ResearchCommand::DropRound {
             task: TaskId(3),
             round: None
-        }]
+        })]
     );
     assert_eq!(
         run(&mut app, "round drop #3 2"),
-        vec![Command::DropRound {
+        vec![Command::Research(ResearchCommand::DropRound {
             task: TaskId(3),
             round: Some(2)
-        }]
+        })]
     );
     assert_eq!(run(&mut app, "round drop 3 7"), vec![]);
     assert!(app.note().unwrap_or_default().contains("no such queued"));
@@ -710,10 +734,10 @@ fn colon_research_kind_sets_the_kind_of_the_selected_task() {
     select(&mut app, "idea: eval key flow");
     assert_eq!(
         run(&mut app, "research kind decision"),
-        vec![Command::SetResearchKind {
+        vec![Command::Research(ResearchCommand::SetKind {
             task: TaskId(3),
             kind: dovetail_api::research::ResearchKind::Decision,
-        }]
+        })]
     );
     assert_eq!(run(&mut app, "research kind soon"), vec![]);
     assert!(
@@ -754,10 +778,10 @@ fn an_unfiled_finding_is_filed_from_the_inbox_through_a_task_picker() {
     assert!(
         matches!(
             commands.as_slice(),
-            [Command::FileUnfiled {
+            [Command::Research(ResearchCommand::FileUnfiled {
                 item: InboxId(40),
                 ..
-            }]
+            })]
         ),
         "{commands:?}"
     );
@@ -775,6 +799,6 @@ fn enter_on_an_unfiled_finding_also_picks_a_task_and_d_drops_it() {
     app.on_key(esc(), 2);
     assert_eq!(
         press(&mut app, "d"),
-        vec![Command::DismissInbox { item: InboxId(40) }]
+        vec![Command::Inbox(InboxCommand::Dismiss { item: InboxId(40) })]
     );
 }

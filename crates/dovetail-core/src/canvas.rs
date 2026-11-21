@@ -6,12 +6,17 @@
 //! every position a new block or card gets; only the user's commands move or delete a card. The
 //! agents' tools add blocks, cards and links.
 
-use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::tools::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards};
 use dovetail_api::{
-    ActivityKind, AgentId, BlockId, Card, CardId, CardKind, CardRef, EffortId, EntryId, Event,
-    Layout, NewCard, Point, RefKind, TaskId, UNSORTED_EFFORT,
+    Event,
+    activity::ActivityKind,
+    agent::AgentId,
+    canvas::{BlockId, Card, CardId, CardKind, CardRef, Layout, NewCard, Point, RefKind},
+    conversation::EntryId,
+    effort::{EffortId, UNSORTED_EFFORT},
+    task::TaskId,
 };
+use dovetail_api::{canvas::CanvasEvent, socket::SocketResponseBody};
 
 use crate::db::{DbError, USER};
 use crate::service::Core;
@@ -26,14 +31,14 @@ impl Core {
         near: Option<Point>,
     ) {
         match self.db.create_block(effort, title, layout, near).await {
-            Ok(block) => self.emit(Event::BlockUpserted(block)),
+            Ok(block) => self.emit(Event::Canvas(CanvasEvent::BlockUpserted(block))),
             Err(e) => self.fail(e),
         }
     }
 
     pub(crate) async fn rename_block(&mut self, id: BlockId, title: String) {
         match self.db.rename_block(id, title).await {
-            Ok(block) => self.emit(Event::BlockUpserted(block)),
+            Ok(block) => self.emit(Event::Canvas(CanvasEvent::BlockUpserted(block))),
             Err(e) => self.fail(e),
         }
     }
@@ -49,9 +54,9 @@ impl Core {
             .db
             .add_card(card, link_from, added_by.to_owned())
             .await?;
-        self.emit(Event::CardUpserted(card.clone()));
+        self.emit(Event::Canvas(CanvasEvent::CardUpserted(card.clone())));
         if let Some(link) = link {
-            self.emit(Event::CardLinked(link));
+            self.emit(Event::Canvas(CanvasEvent::CardLinked(link)));
         }
         Ok(card)
     }
@@ -66,9 +71,9 @@ impl Core {
         match self.db.place_card(id, block).await {
             Ok((card, made)) => {
                 if let Some(block) = made {
-                    self.emit(Event::BlockUpserted(block));
+                    self.emit(Event::Canvas(CanvasEvent::BlockUpserted(block)));
                 }
-                self.emit(Event::CardUpserted(card));
+                self.emit(Event::Canvas(CanvasEvent::CardUpserted(card)));
             }
             Err(e) => self.fail(e),
         }
@@ -76,42 +81,42 @@ impl Core {
 
     pub(crate) async fn see_card(&mut self, id: CardId) {
         match self.db.see_card(id).await {
-            Ok(card) => self.emit(Event::CardUpserted(card)),
+            Ok(card) => self.emit(Event::Canvas(CanvasEvent::CardUpserted(card))),
             Err(e) => self.fail(e),
         }
     }
 
     pub(crate) async fn move_card(&mut self, id: CardId, x: i64, y: i64) {
         match self.db.move_card(id, x, y).await {
-            Ok(card) => self.emit(Event::CardUpserted(card)),
+            Ok(card) => self.emit(Event::Canvas(CanvasEvent::CardUpserted(card))),
             Err(e) => self.fail(e),
         }
     }
 
     pub(crate) async fn delete_card(&mut self, id: CardId, incoming_only: bool) {
         match self.db.delete_card(id, incoming_only).await {
-            Ok(()) => self.emit(Event::CardRemoved(id)),
+            Ok(()) => self.emit(Event::Canvas(CanvasEvent::CardRemoved(id))),
             Err(e) => self.fail(e),
         }
     }
 
     pub(crate) async fn link_cards(&mut self, from: CardId, to: CardId, label: String) {
         match self.db.link_cards(from, to, label).await {
-            Ok(link) => self.emit(Event::CardLinked(link)),
+            Ok(link) => self.emit(Event::Canvas(CanvasEvent::CardLinked(link))),
             Err(e) => self.fail(e),
         }
     }
 
     pub(crate) async fn unlink_cards(&mut self, from: CardId, to: CardId) {
         match self.db.unlink_cards(from, to).await {
-            Ok(()) => self.emit(Event::CardUnlinked { from, to }),
+            Ok(()) => self.emit(Event::Canvas(CanvasEvent::CardUnlinked { from, to })),
             Err(e) => self.fail(e),
         }
     }
 
     pub(crate) async fn load_card(&mut self, id: CardId) {
         match self.db.load_card_body(id).await {
-            Ok(body) => self.emit(Event::CardLoaded { id, body }),
+            Ok(body) => self.emit(Event::Canvas(CanvasEvent::CardLoaded { id, body })),
             Err(e) => self.fail(e),
         }
     }
@@ -156,7 +161,7 @@ impl Core {
             .add_finding_card(finding, task, agent.0.clone())
             .await
         {
-            Ok(card) => self.emit(Event::CardUpserted(card)),
+            Ok(card) => self.emit(Event::Canvas(CanvasEvent::CardUpserted(card))),
             Err(e) => tracing::warn!("making a card for finding {}: {e}", finding.0),
         }
     }
@@ -189,7 +194,7 @@ impl Core {
                      canvas_add_card and `block`: {}.",
                     block.id.0, block.effort.0, block.id.0
                 );
-                self.emit(Event::BlockUpserted(block));
+                self.emit(Event::Canvas(CanvasEvent::BlockUpserted(block)));
                 ok(text)
             }
             Err(e) => error(format!("could not add the block: {e}")),
@@ -269,7 +274,7 @@ impl Core {
         match self.db.link_cards(call.from, call.to, call.label).await {
             Ok(link) => {
                 let text = format!("Linked card {} to card {}.", link.from.0, link.to.0);
-                self.emit(Event::CardLinked(link));
+                self.emit(Event::Canvas(CanvasEvent::CardLinked(link)));
                 ok(text)
             }
             Err(e) => error(format!("could not link the cards: {e}")),

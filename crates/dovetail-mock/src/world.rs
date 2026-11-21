@@ -2,7 +2,26 @@
 
 use std::collections::BTreeMap;
 
-use dovetail_api::*;
+use dovetail_api::{
+    Snapshot,
+    activity::{ActivityItem, ActivityKind, AgentMessage},
+    agent::{
+        Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock, SlashCommand,
+        TodoItem, TodoListId, TodoStatus, WorktreeRef,
+    },
+    conversation::{ConversationEntry, ConversationTail, EntryId, EntryKind},
+    decision::{Alternative, Decision, DecisionAuthor, DecisionId},
+    inbox::{InboxId, InboxItem, InboxKind, RuleSuggestion},
+    mcp::{McpServer, McpStatus, McpTool},
+    model::{ModelOption, ReasoningEffort},
+    project::{ProjectId, ProjectKind, ProjectSummary},
+    research::{Evidence, FindingId, SourceId},
+    status::Totals,
+    tangent::tangent_agent,
+    task::{Bucket, PLevel, Task, TaskId, TaskStatus},
+    usage::{UsageLimits, UsageStatus, UsageWindow},
+    worktree::{Changes, PrLookup, PrState, PullRequest, SyncState, WorktreeInfo, WorktreeSetup},
+};
 use serde_json::json;
 
 pub(crate) const COORDINATOR: &str = "coordinator";
@@ -834,8 +853,8 @@ fn decisions(now_ms: i64) -> Vec<Decision> {
         }],
         supersedes: None,
         evidence: vec![
-            research::Evidence::Finding(research::FindingId(1)),
-            research::Evidence::Source(research::SourceId(2)),
+            Evidence::Finding(FindingId(1)),
+            Evidence::Source(SourceId(2)),
         ],
     };
     vec![first, second, third]

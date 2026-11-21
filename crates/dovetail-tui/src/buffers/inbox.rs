@@ -1,12 +1,16 @@
 //! Needs you: permission requests, questions, finished turns and errors, one line each. Enter
 //! opens an item's full text in the inbox detail.
 
-use dovetail_api::research::ProposalKind;
 use dovetail_api::{
-    AgentId, Command, EntryKind, InboxId, InboxItem, InboxKind, PermissionAnswer,
-    RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, Snapshot,
-    UPGRADE_READY_PERMISSION,
+    Command, Snapshot,
+    agent::AgentId,
+    conversation::EntryKind,
+    inbox::{
+        InboxId, InboxItem, InboxKind, PermissionAnswer, RELEASE_TAKEOVER_PERMISSION,
+        REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, UPGRADE_READY_PERMISSION,
+    },
 };
+use dovetail_api::{inbox::InboxCommand, research::ProposalKind};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Span;
@@ -348,7 +352,9 @@ pub(crate) fn answer_action(action: Action, item: &InboxItem, effects: &mut Vec<
             effects.push(Effect::PickFileTarget(item.id));
         }
         (Action::InboxDeny, InboxKind::UnfiledFinding { .. }) => {
-            effects.push(Effect::Command(Command::DismissInbox { item: item.id }));
+            effects.push(Effect::Command(Command::Inbox(InboxCommand::Dismiss {
+                item: item.id,
+            })));
         }
         // New tangents (ADR 0017): `y` (or Enter) lists them for triage, `d` or `x` puts the
         // item away; they stay in Tangents and `:tangents` lists them any time.
@@ -356,7 +362,9 @@ pub(crate) fn answer_action(action: Action, item: &InboxItem, effects: &mut Vec<
             effects.push(Effect::OpenTangents);
         }
         (Action::InboxDeny | Action::InboxDismiss, InboxKind::NewTangents { .. }) => {
-            effects.push(Effect::Command(Command::DismissInbox { item: item.id }));
+            effects.push(Effect::Command(Command::Inbox(InboxCommand::Dismiss {
+                item: item.id,
+            })));
         }
         (Action::InboxAllow | Action::InboxAllowAlways | Action::InboxDeny, _)
         | (Action::InboxDenyWithReason, _) => {
@@ -377,7 +385,9 @@ pub(crate) fn answer_action(action: Action, item: &InboxItem, effects: &mut Vec<
             "only questions and finished turns take a reply".into(),
         )),
         (Action::InboxDismiss, InboxKind::FinishedTurn { .. } | InboxKind::Error { .. }) => {
-            effects.push(Effect::Command(Command::DismissInbox { item: item.id }));
+            effects.push(Effect::Command(Command::Inbox(InboxCommand::Dismiss {
+                item: item.id,
+            })));
         }
         (Action::InboxDismiss, _) => {
             effects.push(Effect::Note(
@@ -535,5 +545,8 @@ impl Buffer for InboxBuffer {
 }
 
 fn answer(item: InboxId, answer: PermissionAnswer) -> Effect {
-    Effect::Command(Command::AnswerPermission { item, answer })
+    Effect::Command(Command::Inbox(InboxCommand::AnswerPermission {
+        item,
+        answer,
+    }))
 }

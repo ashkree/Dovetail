@@ -14,7 +14,10 @@
 //! to be pasted back and hands it over ([`McpRequest::OAuthCallback`]).
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, McpAction, McpOutcome, McpRequest, McpServer, McpStatus};
+use dovetail_api::{
+    agent::AgentId,
+    mcp::{McpAction, McpOutcome, McpRequest, McpServer, McpStatus},
+};
 use ratatui::style::Color;
 use ratatui::text::{Line, Span};
 
@@ -428,7 +431,7 @@ fn action_key(action: McpAction) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::McpTool;
+    use dovetail_api::mcp::McpTool;
 
     fn server(name: &str, transport: &str, status: McpStatus) -> McpServer {
         McpServer {

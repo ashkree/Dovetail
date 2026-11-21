@@ -4,8 +4,9 @@ use std::collections::BTreeMap;
 
 use dovetail_api::research::{Evidence, FindingId, SourceId};
 use dovetail_api::{
-    Alternative, Bucket, CriterionId, Decision, DecisionAuthor, DecisionId, EffortId, NewDecision,
-    NewTask, PLevel, Task, TaskChange, TaskId, TaskStatus, UNSORTED_EFFORT,
+    decision::{Alternative, Decision, DecisionAuthor, DecisionId, NewDecision},
+    effort::{CriterionId, EffortId, UNSORTED_EFFORT},
+    task::{Bucket, NewTask, PLevel, Task, TaskChange, TaskId, TaskStatus},
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -368,7 +369,7 @@ fn author_from_text(text: String) -> DecisionAuthor {
     if text == "user" {
         DecisionAuthor::User
     } else {
-        DecisionAuthor::Agent(dovetail_api::AgentId(text))
+        DecisionAuthor::Agent(dovetail_api::agent::AgentId(text))
     }
 }
 

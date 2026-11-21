@@ -2,7 +2,14 @@
 
 mod support;
 
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg, Snapshot,
+    agent::{AgentKind, AgentStatus},
+    app::AppEvent,
+    clipboard::{ClipboardEvent, Paste},
+    conversation::{Attachment, ConversationCommand, ImageType},
+    journal::{JournalCommand, JournalEvent, JournalState},
+};
 use support::*;
 
 /// The b.png world with every session idle (so `:q` does not ask about a running turn), and a
@@ -33,11 +40,11 @@ fn journal_event(app: &mut dovetail_tui::App, latest: Option<&str>, closing: boo
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::JournalChanged(JournalState {
+        event: Event::Journal(JournalEvent::Changed(JournalState {
             latest: latest.map(str::to_owned),
             closing,
             fresh: false,
-        }),
+        })),
     });
 }
 
@@ -65,7 +72,10 @@ fn esc_on_close_the_day_is_later() {
 fn y_closes_the_day_and_quits_once_the_journal_is_written() {
     let mut app = app_with(idle_world(Some("2026-10-31")));
     run(&mut app, "q");
-    assert_eq!(press(&mut app, "y"), vec![Command::EndOfDay]);
+    assert_eq!(
+        press(&mut app, "y"),
+        vec![Command::Journal(JournalCommand::EndOfDay)]
+    );
     assert!(!app.should_quit());
     journal_event(&mut app, Some("2026-10-31"), true);
     assert!(!app.should_quit(), "still waiting for the handoff");
@@ -100,11 +110,11 @@ fn while_the_day_closes_quit_asks_only_about_the_running_turn() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::JournalChanged(JournalState {
+        event: Event::Journal(JournalEvent::Changed(JournalState {
             latest: None,
             closing: true,
             fresh: false,
-        }),
+        })),
     });
     run(&mut app, "q");
     let screen = render(&mut app, 120, 30);
@@ -128,7 +138,10 @@ fn n_on_close_the_day_still_asks_about_a_running_turn() {
 #[test]
 fn colon_eod_closes_the_day_without_quitting() {
     let mut app = app_with(idle_world(None));
-    assert_eq!(run(&mut app, "eod"), vec![Command::EndOfDay]);
+    assert_eq!(
+        run(&mut app, "eod"),
+        vec![Command::Journal(JournalCommand::EndOfDay)]
+    );
     journal_event(&mut app, Some("2026-11-01"), false);
     assert!(!app.should_quit());
 }
@@ -155,9 +168,9 @@ fn a_failed_write_keeps_its_reason() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::CommandFailed {
+        event: Event::App(AppEvent::CommandFailed {
             message: "writing journal/2026-11-01.md: disk full".into(),
-        },
+        }),
     });
     journal_event(&mut app, Some("2026-10-31"), false);
     assert!(!app.should_quit());
@@ -170,13 +183,19 @@ fn a_failed_write_keeps_its_reason() {
 #[test]
 fn fresh_asks_the_core_for_a_mid_day_fresh_start() {
     let mut app = app_with(idle_world(None));
-    assert_eq!(run(&mut app, "handoff"), vec![Command::Handoff]);
+    assert_eq!(
+        run(&mut app, "handoff"),
+        vec![Command::Journal(JournalCommand::Handoff)]
+    );
 }
 
 #[test]
 fn fresh_asks_the_core_for_a_new_session_with_no_handoff() {
     let mut app = app_with(idle_world(None));
-    assert_eq!(run(&mut app, "fresh"), vec![Command::FreshSession]);
+    assert_eq!(
+        run(&mut app, "fresh"),
+        vec![Command::Journal(JournalCommand::FreshSession)]
+    );
 }
 
 /// Opens the coordinator's chat bar, types `text` and presses Enter.
@@ -191,9 +210,15 @@ fn chat_line(app: &mut dovetail_tui::App, text: &str) -> Vec<Command> {
 #[test]
 fn slash_handoff_and_slash_fresh_run_the_commands_and_are_never_sent() {
     let mut app = app_with(idle_world(None));
-    assert_eq!(chat_line(&mut app, "/handoff"), vec![Command::Handoff]);
+    assert_eq!(
+        chat_line(&mut app, "/handoff"),
+        vec![Command::Journal(JournalCommand::Handoff)]
+    );
     let mut app = app_with(idle_world(None));
-    assert_eq!(chat_line(&mut app, "/fresh"), vec![Command::FreshSession]);
+    assert_eq!(
+        chat_line(&mut app, "/fresh"),
+        vec![Command::Journal(JournalCommand::FreshSession)]
+    );
 }
 
 #[test]
@@ -238,14 +263,14 @@ fn paste_image(app: &mut dovetail_tui::App, who: &str) {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::ClipboardPasted {
+        event: Event::Clipboard(ClipboardEvent::Pasted {
             agent: agent_id(who),
             paste: Paste::Image(Attachment {
                 path: std::path::PathBuf::from("/data/attachments/1.png"),
                 media_type: ImageType::Png,
                 size: 24,
             }),
-        },
+        }),
     });
 }
 
@@ -273,7 +298,7 @@ fn a_refused_slash_fresh_keeps_its_image_in_the_bar() {
     app.on_key(enter(), 502);
     let sent = app.take_commands();
     assert!(
-        matches!(&sent[..], [Command::Prompt { text, attachments, .. }]
+        matches!(&sent[..], [Command::Conversation(ConversationCommand::Prompt { text, attachments, .. })]
             if text == "look" && attachments.len() == 1),
         "{sent:?}"
     );

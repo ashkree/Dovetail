@@ -10,11 +10,15 @@
 //! checked to exist inside the same request that adds the card. A target that is gone anyway
 //! (a damaged database) makes the card read as "missing"; it never fails a load.
 
-use dovetail_api::geometry::{BLOCK_GAP, CARD_H, CARD_W, COLUMNS, GAP, HEADER, PAD};
+use dovetail_api::canvas::geometry::{BLOCK_GAP, CARD_H, CARD_W, COLUMNS, GAP, HEADER, PAD};
 use dovetail_api::research::FindingId;
 use dovetail_api::{
-    Block, BlockId, Card, CardId, CardKind, CardLink, CardRef, EffortId, Layout, NewCard, Point,
-    RefKind, TaskId, UNSORTED_EFFORT, card_title,
+    canvas::{
+        Block, BlockId, Card, CardId, CardKind, CardLink, CardRef, Layout, NewCard, Point, RefKind,
+        card_title,
+    },
+    effort::{EffortId, UNSORTED_EFFORT},
+    task::TaskId,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
@@ -893,7 +897,7 @@ mod tests {
     use super::*;
     use crate::db::{Db, STATE_MIGRATIONS, migrate};
     use crate::paths::Paths;
-    use dovetail_api::{NewDecision, NewTask};
+    use dovetail_api::{decision::NewDecision, task::NewTask};
 
     fn db() -> (tempfile::TempDir, Db) {
         let dir = tempfile::tempdir().unwrap();
@@ -1061,7 +1065,7 @@ mod tests {
                     alternatives: vec![],
                     supersedes: None,
                 },
-                dovetail_api::DecisionAuthor::User,
+                dovetail_api::decision::DecisionAuthor::User,
             )
             .wait()
             .unwrap();

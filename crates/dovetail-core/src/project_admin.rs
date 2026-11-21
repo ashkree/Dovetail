@@ -1,6 +1,6 @@
 //! Creating and changing projects (ADR 0021): the five project commands, shared by Home and
 //! the core. Each checks its input, then makes one registry request; the caller waits for it
-//! (Home blocks, the core awaits) and sends [`dovetail_api::Event::ProjectUpserted`].
+//! (Home blocks, the core awaits) and sends [`dovetail_api::ProjectEvent::Upserted`].
 //!
 //! Only the core knows what runs, so the checks that need it (a repo with a live slice cannot
 //! be removed) and the reactions (the coordinator restarted with its new repos) live in the
@@ -8,7 +8,10 @@
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::{Command, ProjectId, RepoId};
+use dovetail_api::{
+    Command,
+    project::{ProjectCommand, ProjectId, RepoId},
+};
 
 use crate::config::Config;
 use crate::db::{Db, Pending};
@@ -48,38 +51,42 @@ impl ProjectOp {
     pub(crate) fn matches(command: &Command) -> bool {
         matches!(
             command,
-            Command::CreateProject { .. }
-                | Command::RenameProject { .. }
-                | Command::SetProjectAccount { .. }
-                | Command::AddRepo { .. }
-                | Command::RemoveRepo { .. }
+            Command::Project(ProjectCommand::Create { .. })
+                | Command::Project(ProjectCommand::Rename { .. })
+                | Command::Project(ProjectCommand::SetAccount { .. })
+                | Command::Project(ProjectCommand::AddRepo { .. })
+                | Command::Project(ProjectCommand::RemoveRepo { .. })
         )
     }
 
     /// The project command in `command`; `None` for any other command.
     pub(crate) fn parse(command: Command) -> Option<ProjectOp> {
         Some(match command {
-            Command::CreateProject {
+            Command::Project(ProjectCommand::Create {
                 name,
                 account,
                 repo,
-            } => ProjectOp::Create {
+            }) => ProjectOp::Create {
                 name,
                 account,
                 repo,
             },
-            Command::RenameProject { id, name } => ProjectOp::Rename { id, name },
-            Command::SetProjectAccount { id, account } => ProjectOp::SetAccount { id, account },
-            Command::AddRepo {
+            Command::Project(ProjectCommand::Rename { id, name }) => ProjectOp::Rename { id, name },
+            Command::Project(ProjectCommand::SetAccount { id, account }) => {
+                ProjectOp::SetAccount { id, account }
+            }
+            Command::Project(ProjectCommand::AddRepo {
                 project,
                 path,
                 name,
-            } => ProjectOp::AddRepo {
+            }) => ProjectOp::AddRepo {
                 id: project,
                 path,
                 name,
             },
-            Command::RemoveRepo { project, repo } => ProjectOp::RemoveRepo { id: project, repo },
+            Command::Project(ProjectCommand::RemoveRepo { project, repo }) => {
+                ProjectOp::RemoveRepo { id: project, repo }
+            }
             _ => return None,
         })
     }

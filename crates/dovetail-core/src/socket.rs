@@ -17,7 +17,10 @@ use std::time::Duration;
 
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::{Tool, deprecated_alias, deprecation_note};
-use dovetail_api::{AgentId, NewTask, TaskId};
+use dovetail_api::{
+    agent::AgentId,
+    task::{NewTask, TaskId},
+};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;

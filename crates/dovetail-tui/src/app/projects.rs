@@ -1,7 +1,12 @@
 //! Projects: the project switcher (`<leader>pp`, `:project`), opening another project (B24), and
 //! `:project new <name> --research` (research-only projects, decided 2026-11-11).
 
-use dovetail_api::{AgentStatus, Command, ProjectId, ProjectKind, UNREGISTERED_WARNING};
+use dovetail_api::{
+    Command,
+    agent::AgentStatus,
+    project::{ProjectCommand, ProjectId, ProjectKind},
+    status::UNREGISTERED_WARNING,
+};
 
 use super::overlay::{Overlay, Purpose};
 use super::{App, Confirm, Then};
@@ -69,7 +74,7 @@ impl App {
                 "{why}Open {}? This project's sessions stop and resume when you come back.",
                 project.name
             ),
-            then: Then::Commands(vec![Command::OpenProject { id }]),
+            then: Then::Commands(vec![Command::Project(ProjectCommand::Open { id })]),
             otherwise: None,
         });
     }
@@ -92,7 +97,8 @@ impl App {
         }
         self.note = Some(format!("creating research project {name}"));
         self.new_project = Some(name.clone());
-        self.outbox.push(Command::NewResearchProject { name });
+        self.outbox
+            .push(Command::Project(ProjectCommand::NewResearch { name }));
     }
 
     /// The snapshot that follows `:project new <name> --research` lists the project: asks
@@ -116,9 +122,9 @@ impl App {
         };
         self.confirm = Some(Confirm {
             prompt: format!("Open {name} now?"),
-            then: Then::Commands(vec![Command::OpenProject {
+            then: Then::Commands(vec![Command::Project(ProjectCommand::Open {
                 id: project.id.clone(),
-            }]),
+            })]),
             otherwise: None,
         });
     }

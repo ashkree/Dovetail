@@ -5,9 +5,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dovetail_api::research::{ResearchContent, ResearchSummary, ResearchWhat};
 use dovetail_api::{
-    AgentId, Command, CoreLink, Event, InboxKind, NewTask, ServerMsg, Snapshot, TaskId, apply,
+    Command, CoreLink, Event, ServerMsg, Snapshot,
+    agent::AgentId,
+    apply,
+    inbox::InboxKind,
+    task::{NewTask, TaskId},
+};
+use dovetail_api::{
+    app::{AppCommand, AppEvent},
+    conversation::ConversationCommand,
+    research::{ResearchCommand, ResearchContent, ResearchEvent, ResearchSummary, ResearchWhat},
+    task::TaskCommand,
 };
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
@@ -91,12 +100,14 @@ impl App {
                 Ok(ServerMsg::Snapshot(s)) => self.snap = s,
                 Ok(ServerMsg::Event { seq, event }) => {
                     match &event {
-                        Event::CommandFailed { message } => self.failures.push(message.clone()),
-                        Event::ResearchLoaded {
+                        Event::App(AppEvent::CommandFailed { message }) => {
+                            self.failures.push(message.clone())
+                        }
+                        Event::Research(ResearchEvent::Loaded {
                             task,
                             what,
                             content,
-                        } => self.loaded.push((*task, what.clone(), content.clone())),
+                        }) => self.loaded.push((*task, what.clone(), content.clone())),
                         _ => {}
                     }
                     apply(&mut self.snap, seq, event);
@@ -130,7 +141,7 @@ impl App {
     }
 
     fn quit(mut self) {
-        self.send(Command::Quit { end_sessions: true });
+        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
         let core = self.core.take().expect("core handle");
         assert!(core.wait(Duration::from_secs(10)), "core stopped");
     }
@@ -147,7 +158,7 @@ fn paths(dir: &Path) -> Paths {
 
 /// Creates the task "Example research" and opens round 1 on it.
 fn task_with_round(app: &mut App) -> TaskId {
-    app.send(Command::CreateTask(NewTask {
+    app.send(Command::Task(TaskCommand::Create(NewTask {
         title: "Example research".into(),
         p_level: None,
         bucket: None,
@@ -157,13 +168,13 @@ fn task_with_round(app: &mut App) -> TaskId {
         related: vec![],
         effort: Default::default(),
         criterion: None,
-    }));
+    })));
     app.wait_for("the task", |s| !s.tasks.is_empty());
     let task = app.snap.tasks[0].id;
-    app.send(Command::StartRound {
+    app.send(Command::Research(ResearchCommand::StartRound {
         task,
         brief: "What is the codeword, and the page's title?".into(),
-    });
+    }));
     app.wait_for("the open round", |s| {
         s.research
             .iter()
@@ -173,12 +184,12 @@ fn task_with_round(app: &mut App) -> TaskId {
 }
 
 fn prompt(app: &App, text: &str) {
-    app.send(Command::Prompt {
+    app.send(Command::Conversation(ConversationCommand::Prompt {
         agent: AgentId(COORDINATOR.into()),
         text: text.into(),
         attachments: Vec::new(),
         effort: None,
-    });
+    }));
 }
 
 fn finished_turn(s: &Snapshot) -> bool {
@@ -270,10 +281,10 @@ fn replay_round(name: &str, paths: &Paths, repo: &Path) -> PathBuf {
     assert!(web.contains("Example Domain"), "{web}");
 
     // The listing names the same things, with absolute paths.
-    app.send(Command::LoadResearch {
+    app.send(Command::Research(ResearchCommand::Load {
         task,
         what: ResearchWhat::Listing,
-    });
+    }));
     app.wait_until("the listing", |app| !app.loaded.is_empty());
     let Some((_, ResearchWhat::Listing, ResearchContent::Listing(listing))) = app.loaded.first()
     else {
@@ -287,13 +298,13 @@ fn replay_round(name: &str, paths: &Paths, repo: &Path) -> PathBuf {
     app.wait_for("the finding card", |s| !s.cards.is_empty());
     assert_eq!(app.snap.cards.len(), 1, "{:?}", app.snap.cards);
     let card = &app.snap.cards[0];
-    assert_eq!(card.kind, dovetail_api::CardKind::Finding);
+    assert_eq!(card.kind, dovetail_api::canvas::CardKind::Finding);
     assert_eq!(card.block, None);
-    assert_eq!(card.effort, dovetail_api::UNSORTED_EFFORT);
+    assert_eq!(card.effort, dovetail_api::effort::UNSORTED_EFFORT);
     assert!(!card.missing && !card.title.is_empty(), "{card:?}");
     assert_eq!(
         card.reference.as_ref().map(|r| (r.kind, r.id.as_str())),
-        Some((dovetail_api::RefKind::Finding, "1"))
+        Some((dovetail_api::canvas::RefKind::Finding, "1"))
     );
     assert_eq!(card.text, "");
     let dir = summary.dir.clone();
@@ -463,12 +474,10 @@ fn with_no_round_open_the_coordinators_subagents_are_not_filed_under_any_task() 
     app.wait_for("the finished turn", finished_turn);
     // No task has research; the finding waits, unfiled, in Needs you (follow-ups of 2026-11-11).
     assert!(app.snap.research.is_empty());
-    assert!(
-        app.snap
-            .inbox
-            .iter()
-            .any(|i| matches!(i.kind, dovetail_api::InboxKind::UnfiledFinding { .. }))
-    );
+    assert!(app.snap.inbox.iter().any(|i| matches!(
+        i.kind,
+        dovetail_api::inbox::InboxKind::UnfiledFinding { .. }
+    )));
     assert!(paths.data.join("projects/p/research/unfiled").exists());
     app.quit();
 }

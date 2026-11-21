@@ -4,7 +4,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use dovetail_api::{ActivityKind, AgentId, AgentKind, ProjectSummary, RepoId};
+use dovetail_api::{
+    activity::ActivityKind,
+    agent::{AgentId, AgentKind},
+    project::{ProjectEvent, ProjectSummary, RepoId},
+};
 
 use crate::db::DbError;
 use crate::error::RegisterError;
@@ -16,7 +20,7 @@ use crate::service::{Core, CoreHandler, serve};
 use crate::socket::{self, SocketHandler};
 
 /// The warning shown until the folder is a project.
-pub(crate) use dovetail_api::UNREGISTERED_WARNING;
+pub(crate) use dovetail_api::status::UNREGISTERED_WARNING;
 
 /// The open folder: a registered project, or one that is not a project yet (ADR 0005). It
 /// carries its key, so registering switches everything named after it at once.
@@ -179,7 +183,9 @@ impl Core {
             );
         }
         let summary = self.project_summary(&project).await;
-        self.emit(dovetail_api::Event::ProjectUpserted(summary));
+        self.emit(dovetail_api::Event::Project(ProjectEvent::Upserted(
+            summary,
+        )));
         if is_open {
             self.open_project_changed(project);
         }
@@ -308,7 +314,7 @@ impl Core {
     /// The user picked another project in the switcher (B24): remember it for the binary, tell
     /// the UI, and quit the way `:q` does (sessions end and resume when the project is opened
     /// again).
-    pub(crate) async fn open_other_project(&mut self, id: dovetail_api::ProjectId) {
+    pub(crate) async fn open_other_project(&mut self, id: dovetail_api::project::ProjectId) {
         if self.quitting.is_some() {
             return;
         }
@@ -337,7 +343,7 @@ impl Core {
             None,
             format!("opening project {}", id.0),
         );
-        self.emit(dovetail_api::Event::OpeningProject { id });
+        self.emit(dovetail_api::Event::Project(ProjectEvent::Opening { id }));
         self.begin_quit();
     }
 
@@ -435,7 +441,11 @@ impl Core {
     /// The profile picker after `:project add` chose `profile` (task #31): uncomments it in the
     /// starter recipe just written. Sessions that already run keep their account until they next
     /// start (ADR 0009).
-    pub(crate) fn set_recipe_profile(&mut self, id: dovetail_api::ProjectId, profile: String) {
+    pub(crate) fn set_recipe_profile(
+        &mut self,
+        id: dovetail_api::project::ProjectId,
+        profile: String,
+    ) {
         let Some(project) = self.project.registered().filter(|p| p.id == id.0).cloned() else {
             return self.fail(format!("{} is not the open project", id.0));
         };

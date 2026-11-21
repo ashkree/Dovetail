@@ -15,13 +15,43 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::{
-    ACTIVITY_TAIL, ActivityItem, ActivityKind, Agent, AgentId, AgentKind, AgentMessage,
-    AgentStatus, Attachment, CONVERSATION_TAIL, Command, ConversationEntry, ConversationTail,
-    CoreLink, DecisionAuthor, EntryId, EntryKind, Event, InboxId, InboxItem, MESSAGE_TAIL, NewTask,
-    PROTOCOL_VERSION, PermissionMode, ServerMsg, SessionLock, Snapshot, Task, TaskChange, TaskId,
-    TaskStatus, Totals, UsageLimits, Warning, WarningId,
+    Command, CoreLink, Event, PROTOCOL_VERSION, ServerMsg, Snapshot,
+    activity::{ActivityItem, ActivityKind, AgentMessage},
+    agent::{Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock},
+    conversation::{Attachment, ConversationEntry, ConversationTail, EntryId, EntryKind},
+    decision::DecisionAuthor,
+    inbox::{InboxId, InboxItem},
+    snapshot::{ACTIVITY_TAIL, CONVERSATION_TAIL, MESSAGE_TAIL},
+    status::{Totals, Warning, WarningId},
+    task::{NewTask, Task, TaskChange, TaskId, TaskStatus},
+    usage::UsageLimits,
+};
+use dovetail_api::{
+    activity::ActivityEvent,
+    agent::{AgentCommand, AgentEvent},
+    app::{AppCommand, AppEvent},
+    canvas::CanvasCommand,
+    clipboard::{ClipboardCommand, ClipboardEvent},
+    conversation::{ConversationCommand, ConversationEvent},
+    decision::{DecisionCommand, DecisionEvent},
+    design::DesignCommand,
+    effort::EffortCommand,
+    inbox::InboxCommand,
+    journal::JournalCommand,
+    library::{LibraryCommand, LibraryEvent},
+    map::{MapCommand, MapEvent},
+    mcp::McpCommand,
+    model::ModelCommand,
+    project::{ProjectCommand, ProjectEvent},
+    research::ResearchCommand,
+    socket::SocketResponseBody,
+    status::StatusEvent,
+    tangent::TangentCommand,
+    task::{TaskCommand, TaskEvent},
+    terminal::{TerminalCommand, TerminalEvent},
+    upgrade::UpgradeCommand,
+    worktree::WorktreeCommand,
 };
 use dovetail_driver::{DriverEvent, SessionDriver};
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
@@ -68,7 +98,7 @@ pub struct CoreOptions {
     /// Where Claude Code keeps native to-do lists; `None` for `tasks/` in each session's Claude
     /// home (its profile's folder, ADR 0009). Tests point it at a temp dir.
     pub tasks_dir: Option<PathBuf>,
-    /// The editor command line for [`Command::OpenEditor`]; `None` for `$EDITOR`, else `nvim`.
+    /// The editor command line for [`TerminalCommand::OpenEditor`]; `None` for `$EDITOR`, else `nvim`.
     /// Tests give a fake one.
     pub editor: Option<std::ffi::OsString>,
     /// The `claude` program run for take-over (M14); `None` for `claude` on `PATH`. Tests give
@@ -88,7 +118,7 @@ pub struct CoreOptions {
     pub scopes: Option<crate::memory::Scopes>,
     /// What `:upgrade` needs (ADR 0014); `None` turns it off, as in tests that are not about it.
     pub upgrade: Option<UpgradeOptions>,
-    /// The program [`Command::OpenExternal`] runs with the URL; `None` for `$BROWSER`, else
+    /// The program [`AppCommand::OpenExternal`] runs with the URL; `None` for `$BROWSER`, else
     /// `xdg-open`. Tests give a fake one.
     pub opener: Option<std::ffi::OsString>,
     /// The GitHub CLI asked for a slice branch's pull request; `None` for `gh` on `PATH`. Tests
@@ -158,7 +188,9 @@ pub fn spawn(
                 }
             }
             // The UI dropped its end.
-            let _ = forward.send(Input::Command(Command::Quit { end_sessions: true }));
+            let _ = forward.send(Input::Command(Command::App(AppCommand::Quit {
+                end_sessions: true,
+            })));
         })
         .map_err(CoreError::Thread)?;
 
@@ -284,14 +316,14 @@ pub(crate) enum Input {
     },
     /// A file in a watched native to-do list changed (M11).
     TodosChanged {
-        list: dovetail_api::TodoListId,
+        list: dovetail_api::agent::TodoListId,
     },
     /// A slice worktree's state for the worktree view was gathered.
     WorktreeGathered(crate::worktree_info::Gathered),
     /// A clipboard read for an agent's chat bar finished.
     Pasted {
         agent: AgentId,
-        paste: dovetail_api::Paste,
+        paste: dovetail_api::clipboard::Paste,
     },
     /// Paths for an agent's `@` completion were listed.
     PathsListed {
@@ -394,7 +426,7 @@ pub(crate) struct Core {
     pub(crate) inputs: tokio_mpsc::UnboundedSender<Input>,
     seq: u64,
     ui_alive: bool,
-    /// An editor runs in the UI's terminal ([`Command::OpenEditor`]).
+    /// An editor runs in the UI's terminal ([`TerminalCommand::OpenEditor`]).
     pub(crate) editor_open: bool,
     /// An editor the core accepted and is waiting for the UI to let go of the terminal for.
     pub(crate) editor_pending: Option<PathBuf>,
@@ -445,10 +477,10 @@ pub(crate) struct Core {
     /// The Claude home (profile) this project's sessions run under, or why it cannot be used.
     pub(crate) claude: Result<crate::profile::ClaudeHome, crate::profile::ProfileError>,
     /// The worktree view's data, per slice (M12b, `worktree_info`).
-    pub(crate) worktrees: BTreeMap<AgentId, dovetail_api::WorktreeInfo>,
+    pub(crate) worktrees: BTreeMap<AgentId, dovetail_api::worktree::WorktreeInfo>,
     /// Each session's slash commands and skills, as it last listed them; kept after the process
     /// stops so `/` completion still works for a dormant slice.
-    pub(crate) commands: BTreeMap<AgentId, Vec<dovetail_api::SlashCommand>>,
+    pub(crate) commands: BTreeMap<AgentId, Vec<dovetail_api::agent::SlashCommand>>,
     /// Whether sessions run under capped scopes (M13, `memory`).
     pub(crate) scopes: crate::memory::Scopes,
     /// When running sessions' memory is next read.
@@ -470,11 +502,11 @@ pub(crate) struct Core {
     /// The models sessions last listed (`list_models`), for the selector's effort levels.
     pub(crate) model_catalog: Vec<dovetail_driver::ModelInfo>,
     /// Every effort of the open project with its criteria (`efforts`).
-    pub(crate) efforts: BTreeMap<dovetail_api::EffortId, dovetail_api::Effort>,
+    pub(crate) efforts: BTreeMap<dovetail_api::effort::EffortId, dovetail_api::effort::Effort>,
     /// Each slice's preview process and state (ADR 0026, `preview`).
     pub(crate) previews: crate::preview::Previews,
     /// The effort tag each agent's new entries get: that of the user's last message to it.
-    pub(crate) effort_tags: HashMap<AgentId, dovetail_api::EffortId>,
+    pub(crate) effort_tags: HashMap<AgentId, dovetail_api::effort::EffortId>,
     /// Archived slices and the task each worked on, kept so a pull-request lookup started as
     /// the slice was archived can still move its task (ADR 0024).
     pub(crate) closed_slices: HashMap<AgentId, TaskId>,
@@ -493,7 +525,7 @@ pub(crate) enum EntryTag {
     /// From the agent's current tag, by the entry's kind ([`Core::entry_tag`]).
     ByKind,
     /// This tag, or none: a slice's report carries its task's effort.
-    Effort(Option<dovetail_api::EffortId>),
+    Effort(Option<dovetail_api::effort::EffortId>),
 }
 
 /// The Claude home of a project: its recipe's profile out of `config.toml`; the default home for
@@ -627,7 +659,7 @@ impl Core {
                     text: format!("memory caps off, sessions run uncapped: {reason}"),
                 };
                 self.warnings.push(warning.clone());
-                self.emit(Event::WarningSet(warning));
+                self.emit(Event::Status(StatusEvent::WarningSet(warning)));
             }
         }
         if self.options.check_claude {
@@ -635,7 +667,7 @@ impl Core {
             let found = crate::startup::run_claude_version(&program).await;
             if let Some(warning) = crate::startup::claude_version(found) {
                 self.warnings.push(warning.clone());
-                self.emit(Event::WarningSet(warning));
+                self.emit(Event::Status(StatusEvent::WarningSet(warning)));
             }
         }
         self.reconcile(restored).await;
@@ -685,7 +717,7 @@ impl Core {
             };
             let Some(input) = input else { break };
             match input {
-                Input::Command(Command::Quit { .. }) => self.begin_quit(),
+                Input::Command(Command::App(AppCommand::Quit { .. })) => self.begin_quit(),
                 Input::Command(command) if self.quitting.is_none() => self.command(command).await,
                 Input::Command(_) => {}
                 Input::AddTask { task, reply } => {
@@ -728,16 +760,20 @@ impl Core {
                 Input::TodosChanged { list } => self.mark_todos(list),
                 Input::WorktreeGathered(info) => self.on_worktree_gathered(info).await,
                 Input::Pasted { agent, paste } => {
-                    self.emit(Event::ClipboardPasted { agent, paste });
+                    self.emit(Event::Clipboard(ClipboardEvent::Pasted { agent, paste }));
                 }
                 Input::PathsListed { agent, dir, paths } => {
-                    self.emit(Event::PathsListed { agent, dir, paths });
+                    self.emit(Event::Conversation(ConversationEvent::PathsListed {
+                        agent,
+                        dir,
+                        paths,
+                    }));
                 }
                 Input::CopyFailed(e) => self.fail(e.to_string()),
                 Input::OpenerFailed(message) => self.fail(message),
                 Input::EditorExited(error) => {
                     self.editor_open = false;
-                    self.emit(Event::TerminalReturned { error });
+                    self.emit(Event::Terminal(TerminalEvent::Returned { error }));
                 }
                 Input::OomKills { cgroup, count } => self.on_oom_kills(cgroup, count),
                 Input::CloseDay => self.write_journal().await,
@@ -990,9 +1026,9 @@ impl Core {
     }
 
     pub(crate) fn fail(&mut self, message: impl std::fmt::Display) {
-        self.emit(Event::CommandFailed {
+        self.emit(Event::App(AppEvent::CommandFailed {
             message: message.to_string(),
-        });
+        }));
     }
 
     /// Runs a storage write in the background, logging a failure.
@@ -1013,7 +1049,7 @@ impl Core {
         let totals = totals_of(&snapshot);
         if totals != self.totals {
             self.totals = totals.clone();
-            self.emit(Event::TotalsChanged(totals));
+            self.emit(Event::Status(StatusEvent::TotalsChanged(totals)));
         }
     }
 
@@ -1075,7 +1111,7 @@ impl Core {
         }
         row.agent.memory_mb = mb;
         let agent = row.agent.clone();
-        self.emit(Event::AgentUpserted(agent));
+        self.emit(Event::Agent(AgentEvent::Upserted(agent)));
     }
 
     // --- streaming text ---
@@ -1099,7 +1135,11 @@ impl Core {
     fn flush_deltas(&mut self) {
         self.flush_at = None;
         for ((agent, entry), text) in std::mem::take(&mut self.deltas) {
-            self.send_event(Event::AssistantDelta { agent, entry, text });
+            self.send_event(Event::Conversation(ConversationEvent::AssistantDelta {
+                agent,
+                entry,
+                text,
+            }));
         }
     }
 
@@ -1158,10 +1198,10 @@ impl Core {
                 self.db.upsert_entry(agent.clone(), entry.clone()),
             );
         }
-        self.emit(Event::ConversationAppended {
+        self.emit(Event::Conversation(ConversationEvent::Appended {
             agent: agent.clone(),
             entry,
-        });
+        }));
         id
     }
 
@@ -1182,10 +1222,10 @@ impl Core {
             "a conversation entry",
             self.db.upsert_entry(agent.clone(), entry.clone()),
         );
-        self.emit(Event::ConversationAppended {
+        self.emit(Event::Conversation(ConversationEvent::Appended {
             agent: agent.clone(),
             entry,
-        });
+        }));
     }
 
     pub(crate) fn notice(&mut self, agent: &AgentId, text: impl Into<String>) {
@@ -1208,7 +1248,7 @@ impl Core {
             self.activity.pop_front();
         }
         self.persist("an activity item", self.db.add_activity(item.clone()));
-        self.emit(Event::ActivityAdded(item));
+        self.emit(Event::Activity(ActivityEvent::Added(item)));
     }
 
     pub(crate) fn message(
@@ -1240,7 +1280,7 @@ impl Core {
             self.messages.pop_front();
         }
         self.persist("a message", self.db.add_message(message.clone(), msg_id));
-        self.emit(Event::MessageAdded(message));
+        self.emit(Event::Activity(ActivityEvent::MessageAdded(message)));
     }
 
     // --- agents ---
@@ -1251,7 +1291,7 @@ impl Core {
             return;
         };
         self.persist("an agent", self.db.upsert_agent(row.clone()));
-        self.emit(Event::AgentUpserted(row.agent));
+        self.emit(Event::Agent(AgentEvent::Upserted(row.agent)));
     }
 
     /// Changes an agent and, if anything changed, tells the UI and stores it.
@@ -1374,7 +1414,7 @@ impl Core {
 
     pub(crate) fn emit_tasks(&mut self, tasks: Vec<Task>) {
         for task in tasks {
-            self.emit(Event::TaskUpserted(task));
+            self.emit(Event::Task(TaskEvent::Upserted(task)));
         }
     }
 
@@ -1401,7 +1441,7 @@ impl Core {
     /// Adds the Activity line for a task patch that was applied.
     pub(crate) fn task_activity(&mut self, id: TaskId, changed: &[Task], patch: &[TaskChange]) {
         let title = changed.iter().find(|t| t.id == id).map_or("", |t| &t.title);
-        if let Some(text) = dovetail_api::describe_task_patch(id, title, patch) {
+        if let Some(text) = dovetail_api::task::describe_task_patch(id, title, patch) {
             self.activity(ActivityKind::Task, None, text);
         }
     }
@@ -1410,61 +1450,77 @@ impl Core {
 
     async fn command(&mut self, command: Command) {
         match command {
-            project @ (Command::CreateProject { .. }
-            | Command::RenameProject { .. }
-            | Command::SetProjectAccount { .. }
-            | Command::AddRepo { .. }
-            | Command::RemoveRepo { .. }) => {
+            project @ (Command::Project(ProjectCommand::Create { .. })
+            | Command::Project(ProjectCommand::Rename { .. })
+            | Command::Project(ProjectCommand::SetAccount { .. })
+            | Command::Project(ProjectCommand::AddRepo { .. })
+            | Command::Project(ProjectCommand::RemoveRepo { .. })) => {
                 if let Some(op) = crate::project_admin::ProjectOp::parse(project) {
                     self.project_op(op).await;
                 }
             }
-            Command::Prompt {
+            Command::Conversation(ConversationCommand::Prompt {
                 agent,
                 text,
                 attachments,
                 effort,
-            } => self.prompt(&agent, text, attachments, effort).await,
-            Command::PasteClipboard { agent } => self.paste_clipboard(agent),
-            Command::PasteText { agent, text } => self.paste_text(agent, text),
-            Command::ListPaths { agent, dir } => self.list_paths(agent, dir),
-            Command::CopyToClipboard { text } => self.copy_to_clipboard(text),
-            Command::OpenEditor { path } => self.open_editor(path),
-            Command::TerminalReleased => self.run_editor(),
-            Command::Interrupt { agent } => self.interrupt(&agent),
-            Command::AnswerPermission { item, answer } => {
+            }) => self.prompt(&agent, text, attachments, effort).await,
+            Command::Clipboard(ClipboardCommand::Paste { agent }) => self.paste_clipboard(agent),
+            Command::Clipboard(ClipboardCommand::PasteText { agent, text }) => {
+                self.paste_text(agent, text)
+            }
+            Command::Conversation(ConversationCommand::ListPaths { agent, dir }) => {
+                self.list_paths(agent, dir)
+            }
+            Command::Clipboard(ClipboardCommand::Copy { text }) => self.copy_to_clipboard(text),
+            Command::Terminal(TerminalCommand::OpenEditor { path }) => self.open_editor(path),
+            Command::Terminal(TerminalCommand::Released) => self.run_editor(),
+            Command::Agent(AgentCommand::Interrupt { agent }) => self.interrupt(&agent),
+            Command::Inbox(InboxCommand::AnswerPermission { item, answer }) => {
                 self.answer_permission(item, answer).await
             }
-            Command::AnswerQuestion { item, text } => self.answer_question(item, text).await,
-            Command::DismissInbox { item } => self.dismiss(item).await,
-            Command::Mcp { agent, request } => self.mcp_request(&agent, request),
-            Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
-            Command::SetModel {
+            Command::Inbox(InboxCommand::AnswerQuestion { item, text }) => {
+                self.answer_question(item, text).await
+            }
+            Command::Inbox(InboxCommand::Dismiss { item }) => self.dismiss(item).await,
+            Command::Mcp(McpCommand::Request { agent, request }) => {
+                self.mcp_request(&agent, request)
+            }
+            Command::Agent(AgentCommand::CyclePermissionMode { agent }) => self.cycle_mode(&agent),
+            Command::Model(ModelCommand::Set {
                 agent,
                 model,
                 effort,
-            } => self.switch_model(&agent, model, effort),
-            Command::NewSideChat { question } => self.start_side_chat(question),
-            Command::NewTangent { question } => self.start_tangent(question).await,
-            Command::AttachTangent { tangent, task } => self.attach_tangent(tangent, task).await,
-            Command::FileTangent { tangent, project } => {
+            }) => self.switch_model(&agent, model, effort),
+            Command::Agent(AgentCommand::NewSideChat { question }) => {
+                self.start_side_chat(question)
+            }
+            Command::Tangent(TangentCommand::New { question }) => {
+                self.start_tangent(question).await
+            }
+            Command::Tangent(TangentCommand::Attach { tangent, task }) => {
+                self.attach_tangent(tangent, task).await
+            }
+            Command::Tangent(TangentCommand::File { tangent, project }) => {
                 self.file_tangent(tangent, project).await;
             }
-            Command::StartFromTangent { tangent, project } => {
+            Command::Tangent(TangentCommand::StartFrom { tangent, project }) => {
                 self.start_from_tangent(tangent, project).await;
             }
-            Command::DropTangent { tangent } => self.drop_tangent(tangent).await,
-            Command::LoadTangent { tangent, what } => self.load_tangent(tangent, what).await,
-            Command::EndOfDay => self.end_of_day(),
-            Command::Handoff => self.handoff_start(),
-            Command::FreshSession => self.fresh_session(),
-            Command::Upgrade { local } => self.start_upgrade(local),
-            Command::NewSlice {
+            Command::Tangent(TangentCommand::Drop { tangent }) => self.drop_tangent(tangent).await,
+            Command::Tangent(TangentCommand::Load { tangent, what }) => {
+                self.load_tangent(tangent, what).await
+            }
+            Command::Journal(JournalCommand::EndOfDay) => self.end_of_day(),
+            Command::Journal(JournalCommand::Handoff) => self.handoff_start(),
+            Command::Journal(JournalCommand::FreshSession) => self.fresh_session(),
+            Command::Upgrade(UpgradeCommand::Start { local }) => self.start_upgrade(local),
+            Command::Agent(AgentCommand::NewSlice {
                 task,
                 name,
                 brief,
                 repo,
-            } => {
+            }) => {
                 let request = SliceRequest {
                     task,
                     name,
@@ -1477,75 +1533,103 @@ impl Core {
                     self.fail(message);
                 }
             }
-            Command::CloseSlice { agent } => self.close_slice(&agent, false),
-            Command::RemoveWorktree { agent, confirmed } => {
+            Command::Agent(AgentCommand::CloseSlice { agent }) => self.close_slice(&agent, false),
+            Command::Worktree(WorktreeCommand::Remove { agent, confirmed }) => {
                 self.remove_worktree(&agent, confirmed);
             }
-            Command::CreateTask(new) => {
+            Command::Task(TaskCommand::Create(new)) => {
                 if let Err(e) = self.create_task(new, false).await {
                     self.fail(e.to_string());
                 }
             }
-            Command::UpdateTask { id, patch } => self.user_update_task(id, patch).await,
-            Command::ArchiveTask { id } => {
+            Command::Task(TaskCommand::Update { id, patch }) => {
+                self.user_update_task(id, patch).await
+            }
+            Command::Task(TaskCommand::Archive { id }) => {
                 let slices = self.task_slices(id);
                 self.archive_task(id, &slices).await;
             }
-            Command::ReorderTask { id, delta } => match self.db.reorder_task(id, delta).await {
-                Ok(tasks) => self.emit_tasks(tasks),
-                Err(e) => self.fail(e.to_string()),
-            },
-            Command::CreateBlock {
+            Command::Task(TaskCommand::Reorder { id, delta }) => {
+                match self.db.reorder_task(id, delta).await {
+                    Ok(tasks) => self.emit_tasks(tasks),
+                    Err(e) => self.fail(e.to_string()),
+                }
+            }
+            Command::Canvas(CanvasCommand::CreateBlock {
                 effort,
                 title,
                 layout,
                 near,
-            } => self.create_block(effort, title, layout, near).await,
-            Command::RenameBlock { id, title } => self.rename_block(id, title).await,
-            Command::AddCard { card, link_from } => self.add_card(card, link_from).await,
-            Command::PlaceCard { id, block } => self.place_card(id, block).await,
-            Command::SeeCard { id } => self.see_card(id).await,
-            Command::MoveCard { id, x, y } => self.move_card(id, x, y).await,
-            Command::DeleteCard { id } => self.delete_card(id, false).await,
-            Command::DropIncoming { id } => self.delete_card(id, true).await,
-            Command::LinkCards { from, to, label } => self.link_cards(from, to, label).await,
-            Command::UnlinkCards { from, to } => self.unlink_cards(from, to).await,
-            Command::CardFromReply {
+            }) => self.create_block(effort, title, layout, near).await,
+            Command::Canvas(CanvasCommand::RenameBlock { id, title }) => {
+                self.rename_block(id, title).await
+            }
+            Command::Canvas(CanvasCommand::AddCard { card, link_from }) => {
+                self.add_card(card, link_from).await
+            }
+            Command::Canvas(CanvasCommand::PlaceCard { id, block }) => {
+                self.place_card(id, block).await
+            }
+            Command::Canvas(CanvasCommand::SeeCard { id }) => self.see_card(id).await,
+            Command::Canvas(CanvasCommand::MoveCard { id, x, y }) => self.move_card(id, x, y).await,
+            Command::Canvas(CanvasCommand::DeleteCard { id }) => self.delete_card(id, false).await,
+            Command::Canvas(CanvasCommand::DropIncoming { id }) => self.delete_card(id, true).await,
+            Command::Canvas(CanvasCommand::LinkCards { from, to, label }) => {
+                self.link_cards(from, to, label).await
+            }
+            Command::Canvas(CanvasCommand::UnlinkCards { from, to }) => {
+                self.unlink_cards(from, to).await
+            }
+            Command::Canvas(CanvasCommand::CardFromReply {
                 agent,
                 entry,
                 effort,
-            } => self.card_from_reply(agent, entry, effort).await,
-            Command::LoadCard { id } => self.load_card(id).await,
-            Command::StartPreview { agent } => self.start_preview(agent),
-            Command::RestartPreview { agent } => self.restart_preview(agent),
-            Command::SelectVariant {
+            }) => self.card_from_reply(agent, entry, effort).await,
+            Command::Canvas(CanvasCommand::LoadCard { id }) => self.load_card(id).await,
+            Command::Design(DesignCommand::StartPreview { agent }) => self.start_preview(agent),
+            Command::Design(DesignCommand::RestartPreview { agent }) => self.restart_preview(agent),
+            Command::Design(DesignCommand::SelectVariant {
                 agent,
                 slot,
                 option,
-            } => self.select_variant(agent, slot, option).await,
-            Command::KeepVariants { agent } => self.keep_variants(agent).await,
-            Command::CreateEffort(new) => self.create_effort(new).await,
-            Command::RenameEffort { id, name } => self.rename_effort(id, name).await,
-            Command::UpdateEffort { id, patch } => self.update_effort(id, patch).await,
-            Command::SetWhereWasI { id, where_was_i } => {
+            }) => self.select_variant(agent, slot, option).await,
+            Command::Design(DesignCommand::KeepVariants { agent }) => {
+                self.keep_variants(agent).await
+            }
+            Command::Effort(EffortCommand::Create(new)) => self.create_effort(new).await,
+            Command::Effort(EffortCommand::Rename { id, name }) => {
+                self.rename_effort(id, name).await
+            }
+            Command::Effort(EffortCommand::Update { id, patch }) => {
+                self.update_effort(id, patch).await
+            }
+            Command::Effort(EffortCommand::SetWhereWasI { id, where_was_i }) => {
                 self.set_where_was_i(id, where_was_i).await;
             }
-            Command::AddCriterion { effort, text } => self.add_criterion(effort, text).await,
-            Command::ClaimCriterion { id, evidence } => self.claim_criterion(id, evidence).await,
-            Command::ApproveCriterion { id } => self.approve_criterion(id).await,
-            Command::ReturnCriterion { id, reason } => self.return_criterion(id, reason).await,
-            Command::MoveTask {
+            Command::Effort(EffortCommand::AddCriterion { effort, text }) => {
+                self.add_criterion(effort, text).await
+            }
+            Command::Effort(EffortCommand::ClaimCriterion { id, evidence }) => {
+                self.claim_criterion(id, evidence).await
+            }
+            Command::Effort(EffortCommand::ApproveCriterion { id }) => {
+                self.approve_criterion(id).await
+            }
+            Command::Effort(EffortCommand::ReturnCriterion { id, reason }) => {
+                self.return_criterion(id, reason).await
+            }
+            Command::Task(TaskCommand::Move {
                 id,
                 effort,
                 criterion,
-            } => self.move_task(id, effort, criterion).await,
-            Command::LogDecision(new) => {
+            }) => self.move_task(id, effort, criterion).await,
+            Command::Decision(DecisionCommand::Log(new)) => {
                 match self.db.log_decision(new, DecisionAuthor::User).await {
-                    Ok(decision) => self.emit(Event::DecisionAdded(decision)),
+                    Ok(decision) => self.emit(Event::Decision(DecisionEvent::Added(decision))),
                     Err(e) => self.fail(e.to_string()),
                 }
             }
-            Command::RegisterProject { path } => {
+            Command::Project(ProjectCommand::Register { path }) => {
                 let wanted = path.canonicalize().unwrap_or(path);
                 if !wanted.as_os_str().is_empty()
                     && wanted != self.project.coordinator_folder(&self.paths)
@@ -1554,20 +1638,22 @@ impl Core {
                     return;
                 }
                 match self.register_project().await {
-                    Ok((project, Some(path))) => self.emit(Event::RecipeStarted {
-                        project: dovetail_api::ProjectId(project.id),
-                        name: project.name,
-                        path,
-                        profiles: self.config.profiles.keys().cloned().collect(),
-                    }),
+                    Ok((project, Some(path))) => {
+                        self.emit(Event::Project(ProjectEvent::RecipeStarted {
+                            project: dovetail_api::project::ProjectId(project.id),
+                            name: project.name,
+                            path,
+                            profiles: self.config.profiles.keys().cloned().collect(),
+                        }))
+                    }
                     Ok((_, None)) => {}
                     Err(message) => self.fail(message),
                 }
             }
-            Command::SetRecipeProfile { project, profile } => {
+            Command::Project(ProjectCommand::SetRecipeProfile { project, profile }) => {
                 self.set_recipe_profile(project, profile)
             }
-            Command::LoadConversation { agent, before } => {
+            Command::Conversation(ConversationCommand::Load { agent, before }) => {
                 let before = before.or_else(|| {
                     self.tails
                         .get(&agent)
@@ -1578,46 +1664,64 @@ impl Core {
                     .load_entries(agent.clone(), before, CONVERSATION_TAIL)
                     .await
                 {
-                    Ok((entries, has_more)) => self.emit(Event::ConversationPage {
-                        agent,
-                        entries,
-                        has_more,
+                    Ok((entries, has_more)) => {
+                        self.emit(Event::Conversation(ConversationEvent::Page {
+                            agent,
+                            entries,
+                            has_more,
+                        }))
+                    }
+                    Err(e) => self.fail(e.to_string()),
+                }
+            }
+            Command::Map(MapCommand::Load { id, version }) => {
+                match self.db.load_map(id.clone(), version).await {
+                    Ok(Some(map)) => self.emit(Event::Map(MapEvent::Loaded(map))),
+                    Ok(None) => self.fail(match version {
+                        Some(v) => format!("map {} has no version {v}", id.0),
+                        None => format!("there is no map {}", id.0),
                     }),
                     Err(e) => self.fail(e.to_string()),
                 }
             }
-            Command::LoadMap { id, version } => match self.db.load_map(id.clone(), version).await {
-                Ok(Some(map)) => self.emit(Event::MapLoaded(map)),
-                Ok(None) => self.fail(match version {
-                    Some(v) => format!("map {} has no version {v}", id.0),
-                    None => format!("there is no map {}", id.0),
-                }),
-                Err(e) => self.fail(e.to_string()),
-            },
-            Command::StartRound { task, brief } => self.start_round(task, brief).await,
-            Command::CloseRound { task } => self.close_round(task).await,
-            Command::DropRound { task, round } => self.drop_round(task, round).await,
-            Command::SetResearchKind { task, kind } => self.set_research_kind(task, kind).await,
-            Command::FileUnfiled { item, task } => self.file_unfiled(item, task).await,
-            Command::LoadResearch { task, what } => self.load_research_content(task, what).await,
-            Command::OpenExternal { url } => self.open_external(url),
-            Command::StartAsk { task } => self.start_ask(task).await,
-            Command::ListDocs => self.list_docs(),
-            Command::LoadDoc { path } => self.load_doc(path),
-            Command::BrowseProject { id } => self.browse_project(id).await,
-            Command::LoadBrowsed { project, what } => self.load_browsed(project, what).await,
-            Command::RefreshWorktrees => self.refresh_worktrees(),
-            Command::Resync => self.send_snapshot(false).await,
-            Command::TakeOver { agent } => self.take_over(agent).await,
-            Command::OpenProject { id } => self.open_other_project(id).await,
-            Command::NewResearchProject { name } => self.new_research_project(name).await,
+            Command::Research(ResearchCommand::StartRound { task, brief }) => {
+                self.start_round(task, brief).await
+            }
+            Command::Research(ResearchCommand::CloseRound { task }) => self.close_round(task).await,
+            Command::Research(ResearchCommand::DropRound { task, round }) => {
+                self.drop_round(task, round).await
+            }
+            Command::Research(ResearchCommand::SetKind { task, kind }) => {
+                self.set_research_kind(task, kind).await
+            }
+            Command::Research(ResearchCommand::FileUnfiled { item, task }) => {
+                self.file_unfiled(item, task).await
+            }
+            Command::Research(ResearchCommand::Load { task, what }) => {
+                self.load_research_content(task, what).await
+            }
+            Command::App(AppCommand::OpenExternal { url }) => self.open_external(url),
+            Command::Research(ResearchCommand::StartAsk { task }) => self.start_ask(task).await,
+            Command::Library(LibraryCommand::ListDocs) => self.list_docs(),
+            Command::Library(LibraryCommand::LoadDoc { path }) => self.load_doc(path),
+            Command::Library(LibraryCommand::BrowseProject { id }) => self.browse_project(id).await,
+            Command::Library(LibraryCommand::LoadBrowsed { project, what }) => {
+                self.load_browsed(project, what).await
+            }
+            Command::Worktree(WorktreeCommand::Refresh) => self.refresh_worktrees(),
+            Command::App(AppCommand::Resync) => self.send_snapshot(false).await,
+            Command::Terminal(TerminalCommand::TakeOver { agent }) => self.take_over(agent).await,
+            Command::Project(ProjectCommand::Open { id }) => self.open_other_project(id).await,
+            Command::Project(ProjectCommand::NewResearch { name }) => {
+                self.new_research_project(name).await
+            }
             // Quit is handled by the loop.
-            Command::Quit { .. } => {}
+            Command::App(AppCommand::Quit { .. }) => {}
         }
     }
 
     /// Reads the clipboard on a blocking thread (the tools may take seconds) and answers with
-    /// [`Event::ClipboardPasted`] when done. Images are saved under `attachments/`.
+    /// [`ClipboardEvent::Pasted`] when done. Images are saved under `attachments/`.
     fn paste_clipboard(&mut self, agent: AgentId) {
         let dir = self.paths.attachments();
         let inputs = self.inputs.clone();
@@ -1694,23 +1798,23 @@ impl Core {
         self.project.first_repo_path()
     }
 
-    /// `Command::ListDocs`: small folders, read in place.
+    /// `LibraryCommand::ListDocs`: small folders, read in place.
     fn list_docs(&mut self) {
         let docs = self
             .docs_repo()
             .map(|repo| crate::docs::list(&repo))
             .unwrap_or_default();
-        self.emit(Event::DocsListed { docs });
+        self.emit(Event::Library(LibraryEvent::DocsListed { docs }));
     }
 
-    /// `Command::LoadDoc`.
+    /// `LibraryCommand::LoadDoc`.
     fn load_doc(&mut self, path: PathBuf) {
         let Some(repo) = self.docs_repo() else {
             self.fail("a research project has no repo docs");
             return;
         };
         match crate::docs::load(&repo, &path) {
-            Ok(document) => self.emit(Event::DocLoaded { path, document }),
+            Ok(document) => self.emit(Event::Library(LibraryEvent::DocLoaded { path, document })),
             Err(e) => self.fail(e),
         }
     }
@@ -1725,9 +1829,9 @@ impl Core {
         });
     }
 
-    /// Accepts [`Command::OpenEditor`]: checks the path, then asks the UI to let go of the
-    /// terminal ([`Event::LendTerminal`]). A missing path or a terminal already lent out is
-    /// answered with [`Event::CommandFailed`] and the UI keeps the terminal, so nothing
+    /// Accepts [`TerminalCommand::OpenEditor`]: checks the path, then asks the UI to let go of the
+    /// terminal ([`TerminalEvent::Lend`]). A missing path or a terminal already lent out is
+    /// answered with [`AppEvent::CommandFailed`] and the UI keeps the terminal, so nothing
     /// flickers.
     fn open_editor(&mut self, path: PathBuf) {
         if self.editor_open || self.editor_pending.is_some() || self.takeover.is_some() {
@@ -1741,11 +1845,11 @@ impl Core {
             return;
         }
         self.editor_pending = Some(path);
-        self.emit(Event::LendTerminal);
+        self.emit(Event::Terminal(TerminalEvent::Lend));
     }
 
     /// Runs the accepted editor in the terminal the UI has let go of, and answers
-    /// [`Event::TerminalReturned`] when it exits.
+    /// [`TerminalEvent::Returned`] when it exits.
     fn run_editor(&mut self) {
         let Some(path) = self.editor_pending.take() else {
             return;
@@ -1829,7 +1933,7 @@ fn totals_of(state: &Snapshot) -> Totals {
         needs_you: state
             .inbox
             .iter()
-            .filter(|i| !matches!(i.kind, dovetail_api::InboxKind::FinishedTurn { .. }))
+            .filter(|i| !matches!(i.kind, dovetail_api::inbox::InboxKind::FinishedTurn { .. }))
             .count() as u32,
         cost_usd: (state.agents.iter().map(|a| a.cost_usd).sum::<f64>() * 100.0).round() / 100.0,
     }

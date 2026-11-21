@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use dovetail_api::{
-    AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS, Paste,
+    Command,
+    agent::{AgentId, AgentStatus},
+    clipboard::Paste,
+    conversation::{Attachment, ConversationCommand, EntryId, EntryKind, MAX_ATTACHMENTS},
 };
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
@@ -440,10 +443,12 @@ impl ConversationBuffer {
             && view.loading != Some(oldest)
         {
             view.loading = Some(oldest);
-            effects.push(Effect::Command(Command::LoadConversation {
-                agent,
-                before: Some(oldest),
-            }));
+            effects.push(Effect::Command(Command::Conversation(
+                ConversationCommand::Load {
+                    agent,
+                    before: Some(oldest),
+                },
+            )));
         }
     }
 

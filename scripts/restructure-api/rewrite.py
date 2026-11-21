@@ -53,7 +53,7 @@ def new_path(old_segments):
     if head in ROOT_KEEP:
         return None
     if head in SNAPSHOT_NAMES:
-        return ["snapshot"] + old_segments if False else [head]  # handled by re-export in lib
+        return ["snapshot"] + old_segments
     if head in ("research", "map") and len(old_segments) >= 2:
         if head == "research" and old_segments[1] in LIBRARY_ITEMS:
             return ["library"] + old_segments[1:]
@@ -346,7 +346,7 @@ def process(path):
                     elif t in SUBENUMS:
                         pass
                     elif t in SNAPSHOT_NAMES:
-                        out_leaves.append(([t], None))
+                        out_leaves.append((["snapshot", t], None))
                 continue
             np = new_path(seg)
             out_leaves.append(((np or seg), alias))

@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use dovetail_api::map::{Map, MapContent, MapId, MapKind, MapSummary, NodeId};
-use dovetail_api::{AgentId, TaskId};
+use dovetail_api::{agent::AgentId, task::TaskId};
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 

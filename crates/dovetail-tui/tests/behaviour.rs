@@ -4,7 +4,15 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg, Snapshot,
+    agent::AgentStatus,
+    app::{AppCommand, AppEvent},
+    conversation::ConversationCommand,
+    inbox::{InboxCommand, InboxEvent, InboxId, InboxItem, InboxKind, PermissionAnswer},
+    status::{StatusEvent, Totals},
+    task::{Bucket, NewTask, PLevel, TaskChange, TaskCommand, TaskId, TaskStatus},
+};
 use dovetail_tui::Mode;
 use dovetail_tui::keymap::{SEQUENCE_TIMEOUT_MS, WHICH_KEY_DELAY_MS};
 use dovetail_tui::region::RegionId;
@@ -150,19 +158,19 @@ fn s_cycles_the_status_of_the_task_under_the_cursor() {
     select(&mut app, "idea: eval key flow");
     assert_eq!(
         press(&mut app, "s"),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(3),
             patch: vec![TaskChange::Status(TaskStatus::InProgress)]
-        }]
+        })]
     );
     // On an agent row the keys act on that agent's task.
     select(&mut app, "slice-7");
     assert_eq!(
         press(&mut app, "s"),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(2),
             patch: vec![TaskChange::Status(TaskStatus::Done)]
-        }]
+        })]
     );
 }
 
@@ -172,17 +180,17 @@ fn b_and_p_cycle_bucket_and_p_level() {
     select(&mut app, "idea: eval key flow");
     assert_eq!(
         press(&mut app, "b"),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(3),
             patch: vec![TaskChange::Bucket(Some(Bucket::Later))]
-        }]
+        })]
     );
     assert_eq!(
         press(&mut app, "p"),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(3),
             patch: vec![TaskChange::PLevel(Some(PLevel::P3))]
-        }]
+        })]
     );
 }
 
@@ -193,7 +201,7 @@ fn dd_archives_and_a_single_d_does_not() {
     assert_eq!(press(&mut app, "d"), vec![]);
     assert_eq!(
         press(&mut app, "d"),
-        vec![Command::ArchiveTask { id: TaskId(3) }]
+        vec![Command::Task(TaskCommand::Archive { id: TaskId(3) })]
     );
 }
 
@@ -203,10 +211,10 @@ fn j_and_k_reorder_within_now_only() {
     select(&mut app, "business surface");
     assert_eq!(
         press(&mut app, "J"),
-        vec![Command::ReorderTask {
+        vec![Command::Task(TaskCommand::Reorder {
             id: TaskId(1),
             delta: 1
-        }]
+        })]
     );
     select(&mut app, "idea: eval key flow");
     assert_eq!(press(&mut app, "K"), vec![]);
@@ -232,7 +240,7 @@ fn a_adds_a_task_by_title() {
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::CreateTask(NewTask {
+        vec![Command::Task(TaskCommand::Create(NewTask {
             title: "write the docs".into(),
             p_level: None,
             bucket: None,
@@ -242,7 +250,7 @@ fn a_adds_a_task_by_title() {
             related: vec![],
             effort: Default::default(),
             criterion: None,
-        })]
+        }))]
     );
     assert_eq!(app.mode(), Mode::Normal);
 }
@@ -258,10 +266,10 @@ fn e_edits_the_title_starting_from_the_old_one() {
     app.on_key(enter(), 99);
     assert_eq!(
         app.take_commands(),
-        vec![Command::UpdateTask {
+        vec![Command::Task(TaskCommand::Update {
             id: TaskId(2),
             patch: vec![TaskChange::Title("get_decision 500!".into())]
-        }]
+        })]
     );
 }
 
@@ -278,10 +286,10 @@ fn landing_on_a_coordinator_created_task_marks_it_seen() {
         app.on_key(key('j'), 2);
         commands.extend(app.take_commands());
     }
-    assert!(commands.contains(&Command::UpdateTask {
+    assert!(commands.contains(&Command::Task(TaskCommand::Update {
         id: TaskId(3),
         patch: vec![TaskChange::Seen]
-    }));
+    })));
 }
 
 // --- inbox keys ---
@@ -297,10 +305,10 @@ fn y_allows_the_selected_permission_request() {
     in_inbox(&mut app);
     assert_eq!(
         press(&mut app, "y"),
-        vec![Command::AnswerPermission {
+        vec![Command::Inbox(InboxCommand::AnswerPermission {
             item: InboxId(1),
             answer: PermissionAnswer::Allow
-        }]
+        })]
     );
 }
 
@@ -313,14 +321,14 @@ fn shift_a_allows_always_and_d_denies() {
     assert_eq!(
         app.take_commands(),
         vec![
-            Command::AnswerPermission {
+            Command::Inbox(InboxCommand::AnswerPermission {
                 item: InboxId(1),
                 answer: PermissionAnswer::AllowAlways
-            },
-            Command::AnswerPermission {
+            }),
+            Command::Inbox(InboxCommand::AnswerPermission {
                 item: InboxId(1),
                 answer: PermissionAnswer::Deny { message: None }
-            },
+            }),
         ]
     );
 }
@@ -347,12 +355,12 @@ fn shift_d_opens_a_reason_prompt_that_denies_with_the_text() {
     app.on_key(enter(), 50);
     assert_eq!(
         app.take_commands(),
-        vec![Command::AnswerPermission {
+        vec![Command::Inbox(InboxCommand::AnswerPermission {
             item: InboxId(1),
             answer: PermissionAnswer::Deny {
                 message: Some("not on main".into())
             }
-        }]
+        })]
     );
 }
 
@@ -366,15 +374,15 @@ fn r_replies_to_a_question_and_x_dismisses_a_finished_turn() {
     app.on_key(enter(), 50);
     assert_eq!(
         app.take_commands(),
-        vec![Command::AnswerQuestion {
+        vec![Command::Inbox(InboxCommand::AnswerQuestion {
             item: InboxId(2),
             text: "/api".into()
-        }]
+        })]
     );
     app.on_key(key('j'), 60);
     assert_eq!(
         press(&mut app, "x"),
-        vec![Command::DismissInbox { item: InboxId(3) }]
+        vec![Command::Inbox(InboxCommand::Dismiss { item: InboxId(3) })]
     );
 }
 
@@ -390,13 +398,13 @@ fn r_on_a_finished_turn_sends_the_agent_a_normal_prompt() {
         app.take_commands(),
         // Opening slice-4 to type to it also clears its finished turn (ADR 0001).
         vec![
-            Command::DismissInbox { item: InboxId(3) },
-            Command::Prompt {
+            Command::Inbox(InboxCommand::Dismiss { item: InboxId(3) }),
+            Command::Conversation(ConversationCommand::Prompt {
                 agent: agent_id("slice-4"),
                 text: "go on".into(),
                 attachments: Vec::new(),
                 effort: None,
-            }
+            })
         ]
     );
 }
@@ -418,7 +426,7 @@ fn opening_an_agent_from_the_inbox_clears_its_finished_turn() {
     assert_eq!(app.open_agent(), Some(&agent_id("slice-4")));
     assert_eq!(
         app.take_commands(),
-        vec![Command::DismissInbox { item: InboxId(3) }]
+        vec![Command::Inbox(InboxCommand::Dismiss { item: InboxId(3) })]
     );
 }
 
@@ -450,7 +458,7 @@ fn answering_moves_the_selection_to_the_neighbour() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::InboxResolved { id: InboxId(1) },
+        event: Event::Inbox(InboxEvent::Resolved { id: InboxId(1) }),
     });
     // Selection stays on the same row index: the question now.
     assert_eq!(
@@ -462,10 +470,10 @@ fn answering_moves_the_selection_to_the_neighbour() {
     app.on_key(enter(), 90);
     assert_eq!(
         app.take_commands(),
-        vec![Command::AnswerQuestion {
+        vec![Command::Inbox(InboxCommand::AnswerQuestion {
             item: InboxId(2),
             text: "ok".into()
-        }]
+        })]
     );
 }
 
@@ -477,14 +485,14 @@ fn a_gap_asks_for_one_resync_and_the_snapshot_clears_it() {
     let seq = app.snapshot().seq;
     let skip = |n| ServerMsg::Event {
         seq: seq + n,
-        event: Event::TotalsChanged(Totals::default()),
+        event: Event::Status(StatusEvent::TotalsChanged(Totals::default())),
     };
     app.on_server(skip(5));
     app.on_server(skip(6));
-    assert_eq!(app.take_commands(), vec![Command::Resync]);
+    assert_eq!(app.take_commands(), vec![Command::App(AppCommand::Resync)]);
     app.on_server(ServerMsg::Snapshot(world()));
     app.on_server(skip(5));
-    assert_eq!(app.take_commands(), vec![Command::Resync]);
+    assert_eq!(app.take_commands(), vec![Command::App(AppCommand::Resync)]);
 }
 
 #[test]
@@ -493,9 +501,9 @@ fn a_failed_command_shows_in_the_status_bar() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::CommandFailed {
+        event: Event::App(AppEvent::CommandFailed {
             message: "no agent x".into(),
-        },
+        }),
     });
     assert_eq!(app.note(), Some("no agent x"));
     assert!(render(&mut app, 100, 30).contains("no agent x"));
@@ -538,26 +546,32 @@ fn a_turn_that_finishes_while_its_conversation_has_focus_stays_in_needs_you() {
     };
     event(
         &mut app,
-        Event::InboxUpserted(InboxItem {
+        Event::Inbox(InboxEvent::Upserted(InboxItem {
             id: InboxId(10),
             agent: agent_id("coordinator"),
             at_ms: NOW_MS,
             kind: InboxKind::FinishedTurn {
                 preview: "done".into(),
             },
-        }),
+        })),
     );
-    event(&mut app, Event::TotalsChanged(Totals::default()));
+    event(
+        &mut app,
+        Event::Status(StatusEvent::TotalsChanged(Totals::default())),
+    );
     assert_eq!(app.take_commands(), vec![], "no dismiss while reading");
     assert!(app.snapshot().inbox.iter().any(|i| i.id == InboxId(10)));
 
     // Leaving and coming back opens it: one dismiss, not one per event.
     app.on_key(key('l'), 2);
     app.on_key(key('h'), 3);
-    event(&mut app, Event::TotalsChanged(Totals::default()));
+    event(
+        &mut app,
+        Event::Status(StatusEvent::TotalsChanged(Totals::default())),
+    );
     assert_eq!(
         app.take_commands(),
-        vec![Command::DismissInbox { item: InboxId(10) }]
+        vec![Command::Inbox(InboxCommand::Dismiss { item: InboxId(10) })]
     );
 }
 

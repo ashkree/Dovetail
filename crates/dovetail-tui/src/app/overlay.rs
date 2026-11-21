@@ -4,7 +4,17 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, Command, InboxId, ProjectId, TaskChange, TaskId};
+use dovetail_api::{
+    Command,
+    agent::AgentId,
+    inbox::InboxId,
+    mcp::McpCommand,
+    model::ModelCommand,
+    project::{ProjectCommand, ProjectId},
+    research::ResearchCommand,
+    tangent::TangentCommand,
+    task::{TaskChange, TaskCommand, TaskId},
+};
 
 use super::App;
 use super::ChatSite;
@@ -189,10 +199,10 @@ impl App {
             .iter()
             .find(|a| a.id == session)
             .map_or_else(|| session.0.clone(), |a| a.name.clone());
-        self.outbox.push(Command::Mcp {
+        self.outbox.push(Command::Mcp(McpCommand::Request {
             agent: session.clone(),
-            request: dovetail_api::McpRequest::Status,
-        });
+            request: dovetail_api::mcp::McpRequest::Status,
+        }));
         self.open_overlay(Overlay::Mcp(McpMenu::new(session, name)));
     }
 
@@ -200,8 +210,8 @@ impl App {
     pub(super) fn mcp_reply(
         &mut self,
         agent: &AgentId,
-        request: &dovetail_api::McpRequest,
-        outcome: dovetail_api::McpOutcome,
+        request: &dovetail_api::mcp::McpRequest,
+        outcome: dovetail_api::mcp::McpOutcome,
     ) {
         let Some(Overlay::Mcp(menu)) = &mut self.overlay else {
             return;
@@ -221,10 +231,10 @@ impl App {
                     let Some(Overlay::Mcp(menu)) = &self.overlay else {
                         continue;
                     };
-                    self.outbox.push(Command::Mcp {
+                    self.outbox.push(Command::Mcp(McpCommand::Request {
                         agent: menu.session().clone(),
                         request,
-                    });
+                    }));
                 }
                 Step::Open(url) => self.open_external(url),
                 Step::Close => {
@@ -334,21 +344,30 @@ impl App {
                         }
                         (Purpose::Browse, PickerKey::Project(id)) => self.browse_project(id),
                         (Purpose::FileUnfiled(item), PickerKey::Task(task)) => {
-                            self.outbox.push(Command::FileUnfiled { item, task });
+                            self.outbox
+                                .push(Command::Research(ResearchCommand::FileUnfiled {
+                                    item,
+                                    task,
+                                }));
                             self.note = Some(format!("filing the finding under #{}", task.0));
                         }
                         (Purpose::FileTangent(tangent), PickerKey::Project(project)) => {
                             self.note = Some(format!("filing the tangent into {}", project.0));
-                            self.outbox.push(Command::FileTangent { tangent, project });
+                            self.outbox
+                                .push(Command::Tangent(TangentCommand::File { tangent, project }));
                         }
                         (Purpose::StartTangent(tangent), PickerKey::Project(project)) => {
                             self.note = Some(format!("starting a task in {}", project.0));
                             self.outbox
-                                .push(Command::StartFromTangent { tangent, project });
+                                .push(Command::Tangent(TangentCommand::StartFrom {
+                                    tangent,
+                                    project,
+                                }));
                         }
                         (Purpose::AttachTangent(tangent), PickerKey::Task(task)) => {
                             self.note = Some(format!("attaching the tangent to #{}", task.0));
-                            self.outbox.push(Command::AttachTangent { tangent, task });
+                            self.outbox
+                                .push(Command::Tangent(TangentCommand::Attach { tangent, task }));
                         }
                         (Purpose::Profile { project, path }, PickerKey::Profile(profile)) => {
                             match profile {
@@ -357,8 +376,9 @@ impl App {
                                         "profile {profile} set in {}",
                                         path.display()
                                     ));
-                                    self.outbox
-                                        .push(Command::SetRecipeProfile { project, profile });
+                                    self.outbox.push(Command::Project(
+                                        ProjectCommand::SetRecipeProfile { project, profile },
+                                    ));
                                 }
                                 None => self.note = Some(no_profile_note(&path)),
                             }
@@ -389,11 +409,11 @@ impl App {
                     let level =
                         effort.map_or(String::new(), |e| format!(" at {} effort", e.as_str()));
                     self.note = Some(format!("switching to {model}{level}…"));
-                    self.outbox.push(Command::SetModel {
+                    self.outbox.push(Command::Model(ModelCommand::Set {
                         agent,
                         model,
                         effort,
-                    });
+                    }));
                 }
             },
             Overlay::Capture(mut capture) => match capture.key(event) {
@@ -410,7 +430,7 @@ impl App {
                             if open_detail {
                                 self.open_after_create = Some(task.title.clone());
                             }
-                            self.outbox.push(Command::CreateTask(task));
+                            self.outbox.push(Command::Task(TaskCommand::Create(task)));
                         }
                         None => self.note = Some("a task needs a title".into()),
                     }
@@ -431,10 +451,10 @@ impl App {
         } else {
             TaskChange::Relate(other)
         };
-        self.outbox.push(Command::UpdateTask {
+        self.outbox.push(Command::Task(TaskCommand::Update {
             id: task,
             patch: vec![change],
-        });
+        }));
     }
 
     /// `:project add` wrote a starter recipe (task #31): offer config.toml's profiles, the

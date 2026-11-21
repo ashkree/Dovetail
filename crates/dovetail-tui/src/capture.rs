@@ -3,7 +3,7 @@
 //! title. With no bucket the task lands in Unsorted.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{Bucket, NewTask, PLevel, TaskId};
+use dovetail_api::task::{Bucket, NewTask, PLevel, TaskId};
 
 use crate::input::{InputOutcome, TextInput};
 

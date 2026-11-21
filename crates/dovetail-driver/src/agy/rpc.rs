@@ -2,7 +2,7 @@
 //! request whatever order answers come in.
 
 use crate::event::SwitchId;
-use dovetail_api::ReasoningEffort;
+use dovetail_api::model::ReasoningEffort;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 

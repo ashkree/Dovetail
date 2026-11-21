@@ -4,7 +4,19 @@
 #![allow(dead_code)]
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::*;
+use dovetail_api::{
+    Command, PROTOCOL_VERSION, ServerMsg, Snapshot,
+    activity::{ActivityItem, ActivityKind, AgentMessage},
+    agent::{
+        Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock, SubagentProgress,
+        TodoItem, TodoListId, TodoStatus, WorktreeRef,
+    },
+    conversation::{ConversationEntry, ConversationTail, EntryId, EntryKind},
+    inbox::{InboxId, InboxItem, InboxKind, RuleSuggestion},
+    project::{ProjectId, ProjectSummary},
+    status::Totals,
+    task::{Bucket, PLevel, Task, TaskId, TaskStatus},
+};
 use dovetail_tui::App;
 use jiff::tz::TimeZone;
 use ratatui::Terminal;

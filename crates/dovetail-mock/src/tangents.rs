@@ -9,8 +9,9 @@ use dovetail_api::research::{
     ResearchWhat, SourceId, SourceKind, SourceSummary,
 };
 use dovetail_api::{
-    ProjectId, ProjectKind, ProjectSummary, TANGENTS_PROJECT, TangentSummary, Task, TaskId,
-    TaskStatus, tangent_agent,
+    project::{ProjectId, ProjectKind, ProjectSummary},
+    tangent::{TANGENTS_PROJECT, TangentSummary, tangent_agent},
+    task::{Task, TaskId, TaskStatus},
 };
 
 use crate::world::research_project_dir;

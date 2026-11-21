@@ -8,7 +8,7 @@ use dovetail_api::map::{
     Connection, Flow, FlowStep, Group, Lane, LaneId, Map, MapContent, MapId, MapKind, MapSummary,
     Node, NodeId, NodeKind,
 };
-use dovetail_api::{AgentId, TaskId};
+use dovetail_api::{agent::AgentId, task::TaskId};
 
 use crate::world::{COORDINATOR, agent_id};
 

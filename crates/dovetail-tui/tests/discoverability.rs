@@ -5,7 +5,7 @@ mod support;
 
 use std::time::Duration;
 
-use dovetail_api::Command;
+use dovetail_api::{Command, worktree::WorktreeCommand};
 use dovetail_tui::App;
 use dovetail_tui::event_loop::next_wake;
 use dovetail_tui::help::which_key;
@@ -157,7 +157,7 @@ fn choosing_a_runnable_entry_runs_it() {
     assert!(
         app.take_commands()
             .iter()
-            .any(|c| matches!(c, Command::RefreshWorktrees)),
+            .any(|c| matches!(c, Command::Worktree(WorktreeCommand::Refresh))),
         "the worktree view opened"
     );
 }

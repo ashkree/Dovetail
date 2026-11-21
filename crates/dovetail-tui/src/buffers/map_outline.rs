@@ -11,8 +11,11 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use dovetail_api::map::{Flow, Map, MapContent, MapId, MapKind, Node, NodeId, NodeKind};
 use dovetail_api::{Command, Event};
+use dovetail_api::{
+    app::AppEvent,
+    map::{Flow, Map, MapCommand, MapContent, MapEvent, MapId, MapKind, Node, NodeId, NodeKind},
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
@@ -43,7 +46,7 @@ pub enum Reaction {
 #[derive(Default)]
 pub struct MapOutlineBuffer {
     map: Option<Arc<Map>>,
-    /// A map asked for with [`Command::LoadMap`] that has not arrived.
+    /// A map asked for with [`MapCommand::Load`] that has not arrived.
     loading: Option<MapId>,
     /// The selected node, kept by id so a redrawn version never moves the cursor.
     selected: Option<NodeId>,
@@ -79,7 +82,7 @@ struct Row<'a> {
 }
 
 impl MapOutlineBuffer {
-    /// A map was asked for; the next [`Event::MapLoaded`] for it shows the outline.
+    /// A map was asked for; the next [`MapEvent::Loaded`] for it shows the outline.
     pub fn await_map(&mut self, id: MapId) {
         self.loading = Some(id);
     }
@@ -171,7 +174,7 @@ impl MapOutlineBuffer {
     /// cursor on the same node.
     pub fn on_event(&mut self, event: &Event) -> Option<Reaction> {
         match event {
-            Event::MapLoaded(map) => {
+            Event::Map(MapEvent::Loaded(map)) => {
                 let wanted = self.loading.as_ref() == Some(&map.id);
                 if wanted {
                     self.loading = None;
@@ -181,16 +184,16 @@ impl MapOutlineBuffer {
                 }
                 wanted.then_some(Reaction::Show)
             }
-            Event::MapUpserted(summary) => {
+            Event::Map(MapEvent::Upserted(summary)) => {
                 let open = self.map.as_ref()?;
                 (open.id == summary.id && summary.version > open.version).then(|| {
-                    Reaction::Request(Command::LoadMap {
+                    Reaction::Request(Command::Map(MapCommand::Load {
                         id: summary.id.clone(),
                         version: None,
-                    })
+                    }))
                 })
             }
-            Event::CommandFailed { .. } => {
+            Event::App(AppEvent::CommandFailed { .. }) => {
                 self.loading = None;
                 None
             }

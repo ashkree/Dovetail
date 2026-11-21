@@ -19,8 +19,11 @@
 use std::path::{Path, PathBuf};
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, AgentStatus, Bucket, EntryKind, InboxItem, InboxKind, JournalState,
-    Task, TaskStatus,
+    agent::{Agent, AgentId, AgentKind, AgentStatus},
+    conversation::EntryKind,
+    inbox::{InboxItem, InboxKind},
+    journal::{JournalEvent, JournalState},
+    task::{Bucket, Task, TaskStatus},
 };
 use jiff::civil::Date;
 
@@ -485,7 +488,7 @@ impl Core {
 
     fn emit_journal(&mut self) {
         if let Some(state) = self.journal_state() {
-            self.emit(dovetail_api::Event::JournalChanged(state));
+            self.emit(dovetail_api::Event::Journal(JournalEvent::Changed(state)));
         }
     }
 
@@ -542,7 +545,7 @@ impl Core {
         let date = today();
         let time = jiff::Zoned::now().strftime("%H:%M").to_string();
         self.activity(
-            dovetail_api::ActivityKind::Lifecycle,
+            dovetail_api::activity::ActivityKind::Lifecycle,
             Some(&id),
             format!("fresh coordinator at {time}, no handoff"),
         );
@@ -682,7 +685,7 @@ impl Core {
                         format!("day closed without a handoff ({why}): journal/{date}.md written")
                     }
                 };
-                self.activity(dovetail_api::ActivityKind::Lifecycle, None, note);
+                self.activity(dovetail_api::activity::ActivityKind::Lifecycle, None, note);
                 if let (Some(time), Ok(handoff)) = (fresh, &reply) {
                     let kind = Fresh::MidDay { date, time };
                     let seed = seed_prompt(today(), &kind, handoff.trim(), &open_tasks(&tasks));
@@ -920,7 +923,7 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::{PLevel, TaskId};
+    use dovetail_api::task::{PLevel, TaskId};
 
     fn d(s: &str) -> Date {
         s.parse().unwrap()

@@ -2,15 +2,21 @@
 //!
 //! The core keeps every effort in memory (there are few), loaded at open and replaced whenever
 //! the database returns a changed one. Each handler writes through the DB thread first, then
-//! tells the UI with [`Event::EffortUpserted`], which carries the whole effort.
+//! tells the UI with [`EffortEvent::Upserted`], which carries the whole effort.
 //!
-//! Approving a criterion is reachable only from [`dovetail_api::Command::ApproveCriterion`]:
+//! Approving a criterion is reachable only from [`dovetail_api::EffortCommand::ApproveCriterion`]:
 //! no tool handler calls it, so an agent can claim (`coordination_claim_criterion`) but never
 //! tick. The user may approve a criterion nobody claimed, as a shortcut (decided 2026-11-16).
 
 use dovetail_api::{
-    ActivityKind, AgentId, CriterionId, Effort, EffortChange, EffortId, EntryKind, Event,
-    NewEffort, TaskId, WhereWasI, effort_name,
+    Event,
+    activity::ActivityKind,
+    agent::AgentId,
+    conversation::EntryKind,
+    effort::{
+        CriterionId, Effort, EffortChange, EffortEvent, EffortId, NewEffort, WhereWasI, effort_name,
+    },
+    task::TaskId,
 };
 
 use dovetail_api::socket::SocketResponseBody;
@@ -80,7 +86,7 @@ impl Core {
         match result {
             Ok(effort) => {
                 self.efforts.insert(effort.id, effort.clone());
-                self.emit(Event::EffortUpserted(effort.clone()));
+                self.emit(Event::Effort(EffortEvent::Upserted(effort.clone())));
                 Some(effort)
             }
             Err(e) => {
@@ -155,7 +161,7 @@ impl Core {
         match result {
             Ok(effort) => {
                 self.efforts.insert(effort.id, effort.clone());
-                self.emit(Event::EffortUpserted(effort.clone()));
+                self.emit(Event::Effort(EffortEvent::Upserted(effort.clone())));
                 let who = self
                     .agents
                     .get(agent)
@@ -170,7 +176,7 @@ impl Core {
         }
     }
 
-    /// The user approves a criterion. Called for [`dovetail_api::Command::ApproveCriterion`]
+    /// The user approves a criterion. Called for [`dovetail_api::EffortCommand::ApproveCriterion`]
     /// only.
     pub(crate) async fn approve_criterion(&mut self, id: CriterionId) {
         let result = self.db.step_criterion(id, CriterionStep::Approve).await;

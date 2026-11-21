@@ -1,14 +1,17 @@
 //! The worktree view (`<leader>g`): one row per slice worktree with its branch, sync state,
 //! uncommitted changes, unpushed commits, pull request and setup, and the selected row in full
 //! below. The data is the core's ([`WorktreeInfo`], M12b); opening the view asks for a fresh
-//! look ([`Command::RefreshWorktrees`]) and the title says "refreshing…" until every worktree
+//! look ([`WorktreeCommand::Refresh`]) and the title says "refreshing…" until every worktree
 //! has answered. Anything the core could not tell shows as `—`.
 
 use std::collections::HashSet;
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, Changes, Command, Event, InboxKind, PrLookup, PrState,
-    REMOVE_WORKTREE_PERMISSION, Snapshot, SyncState, WorktreeInfo, WorktreeRef, WorktreeSetup,
+    Command, Event, Snapshot,
+    agent::{Agent, AgentCommand, AgentEvent, AgentId, AgentKind, WorktreeRef},
+    clipboard::ClipboardCommand,
+    inbox::{InboxEvent, InboxKind, REMOVE_WORKTREE_PERMISSION},
+    worktree::{Changes, PrLookup, PrState, SyncState, WorktreeEvent, WorktreeInfo, WorktreeSetup},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -86,15 +89,15 @@ impl WorktreesBuffer {
     /// user's answer to the core's ask-first item.
     pub fn on_event(&mut self, event: &Event) -> Option<String> {
         let (agent, note): (&AgentId, fn(&str) -> String) = match event {
-            Event::WorktreeUpserted(info) => {
+            Event::Worktree(WorktreeEvent::Upserted(info)) => {
                 self.refreshing.remove(&info.agent);
                 return None;
             }
-            Event::AgentRemoved(id) => {
+            Event::Agent(AgentEvent::Removed(id)) => {
                 self.refreshing.remove(id);
                 (id, |name| format!("removed {name}"))
             }
-            Event::InboxUpserted(item)
+            Event::Inbox(InboxEvent::Upserted(item))
                 if matches!(&item.kind, InboxKind::Permission { tool, .. }
                     if tool == REMOVE_WORKTREE_PERMISSION) =>
             {
@@ -258,9 +261,11 @@ impl Buffer for WorktreesBuffer {
                     Action::WorktreeEdit => effects.push(Effect::OpenEditor(path)),
                     Action::WorktreeCopyPath => {
                         // A failure comes back as `CommandFailed`, which replaces the note.
-                        effects.push(Effect::Command(Command::CopyToClipboard {
-                            text: path.display().to_string(),
-                        }));
+                        effects.push(Effect::Command(Command::Clipboard(
+                            ClipboardCommand::Copy {
+                                text: path.display().to_string(),
+                            },
+                        )));
                         effects.push(Effect::Note(format!("copied {}", path.display())));
                     }
                     // The archive path, as `dd` on a slice in the tree: the core removes a
@@ -271,7 +276,9 @@ impl Buffer for WorktreesBuffer {
                         if !self.removing.iter().any(|(id, _)| id == &agent) {
                             self.removing.push((agent.clone(), row.agent.name.clone()));
                         }
-                        effects.push(Effect::Command(Command::CloseSlice { agent }));
+                        effects.push(Effect::Command(Command::Agent(AgentCommand::CloseSlice {
+                            agent,
+                        })));
                     }
                 }
             }

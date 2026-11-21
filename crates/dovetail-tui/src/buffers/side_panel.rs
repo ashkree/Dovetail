@@ -4,7 +4,11 @@
 //! closes the one shown. Tangents (ADR 0017) show here too, labelled `↗ tangent`: `T` asks one,
 //! `a` attaches the one shown to a task of this project. Later, the grilling helper joins them.
 
-use dovetail_api::{Agent, AgentId, AgentKind, Command, Snapshot, tangent_task};
+use dovetail_api::{
+    Command, Snapshot,
+    agent::{Agent, AgentCommand, AgentId, AgentKind},
+    tangent::tangent_task,
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
@@ -170,9 +174,11 @@ impl Buffer for SidePanelBuffer {
             Action::NextSideChat => self.step(cx.snap, 1, effects),
             Action::PrevSideChat => self.step(cx.snap, -1, effects),
             Action::CloseSideChat => match self.agent() {
-                Some(agent) => effects.push(Effect::Command(Command::CloseSlice {
-                    agent: agent.clone(),
-                })),
+                Some(agent) => {
+                    effects.push(Effect::Command(Command::Agent(AgentCommand::CloseSlice {
+                        agent: agent.clone(),
+                    })))
+                }
                 None => effects.push(Effect::Note("no side chat to close".into())),
             },
             Action::AttachTangent => {

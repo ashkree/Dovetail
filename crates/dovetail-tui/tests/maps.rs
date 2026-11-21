@@ -5,8 +5,8 @@
 
 mod support;
 
-use dovetail_api::map::MapId;
-use dovetail_api::*;
+use dovetail_api::map::{MapCommand, MapEvent, MapId};
+use dovetail_api::{Command, Event, ServerMsg};
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;
 use dovetail_tui::region::RegionId;
@@ -80,10 +80,10 @@ fn enter_asks_for_the_map_and_shows_the_outline_when_it_arrives() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        vec![Command::LoadMap {
+        vec![Command::Map(MapCommand::Load {
             id: MapId("permission-round-trip".into()),
             version: None
-        }]
+        })]
     );
     // Still the shelf until the map arrives.
     assert!(render(&mut app, 120, 24).contains("maps · 2"));
@@ -162,12 +162,12 @@ fn a_newer_version_of_the_open_map_is_fetched_and_keeps_the_cursor() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::MapUpserted(summary),
+        event: Event::Map(MapEvent::Upserted(summary)),
     });
     let commands = app.take_commands();
     assert!(matches!(
         commands.as_slice(),
-        [Command::LoadMap { version: None, .. }]
+        [Command::Map(MapCommand::Load { version: None, .. })]
     ));
     // Nothing else changes while the new version is on its way.
     assert_eq!(render(&mut app, 120, 44), before);

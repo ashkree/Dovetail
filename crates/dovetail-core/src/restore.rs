@@ -17,9 +17,14 @@
 //! running at quit reads as cut off next time.
 
 use dovetail_api::{
-    ActivityKind, AgentId, AgentStatus, EntryKind, Event, InboxItem, InboxKind,
-    RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION,
-    UPGRADE_READY_PERMISSION,
+    Event,
+    activity::ActivityKind,
+    agent::{AgentId, AgentStatus},
+    conversation::EntryKind,
+    inbox::{
+        InboxEvent, InboxItem, InboxKind, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
+        START_SLICE_PERMISSION, UPGRADE_READY_PERMISSION,
+    },
 };
 
 use crate::inbox::Waiter;
@@ -549,7 +554,7 @@ impl Core {
 
     /// Puts an item read from storage back in Needs you, as it was.
     fn restore_item(&mut self, item: InboxItem, waiter: Waiter) {
-        self.emit(Event::InboxUpserted(item.clone()));
+        self.emit(Event::Inbox(InboxEvent::Upserted(item.clone())));
         let agent = item.agent.clone();
         self.inbox.insert(item.id, InboxEntry { item, waiter });
         self.refresh_status(&agent);

@@ -1,7 +1,7 @@
 //! Reading mode's Ask (ADR 0018): one read-only session per research task, about the task's
 //! report and the sources it cites, apart from the coordinator so nothing lands in its context.
 //!
-//! [`Command::StartAsk`](dovetail_api::Command::StartAsk) makes the agent (`ask-<task>`,
+//! [`ResearchCommand::StartAsk`](dovetail_api::ResearchCommand::StartAsk) makes the agent (`ask-<task>`,
 //! [`AgentKind::Ask`]) without starting a process. The first question starts the session in the
 //! task's research folder with the side chats' read-only lists and no Dovetail tool suites
 //! (`session::launch`), and carries the report and an index of finding and source ids → files;
@@ -11,7 +11,10 @@
 use std::path::{Path, PathBuf};
 
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, Attachment, EntryKind, PermissionMode, TaskId,
+    activity::ActivityKind,
+    agent::{AgentEvent, AgentId, AgentKind, PermissionMode},
+    conversation::{Attachment, EntryKind},
+    task::TaskId,
 };
 use dovetail_driver::UserInput;
 
@@ -45,13 +48,13 @@ pub(crate) fn ask_id(task: TaskId) -> AgentId {
 }
 
 impl Core {
-    /// `Command::StartAsk`: the task's Ask agent, made if there is none. Its upsert tells the
+    /// `ResearchCommand::StartAsk`: the task's Ask agent, made if there is none. Its upsert tells the
     /// UI it is ready for a question.
     pub(crate) async fn start_ask(&mut self, task: TaskId) {
         let id = ask_id(task);
         if let Some(row) = self.agents.get(&id) {
             let agent = row.agent.clone();
-            self.emit(dovetail_api::Event::AgentUpserted(agent));
+            self.emit(dovetail_api::Event::Agent(AgentEvent::Upserted(agent)));
             return;
         }
         if let Err(e) = self.grounding(task).await {
@@ -116,8 +119,8 @@ impl Core {
             format!("{grounding}\n\n## Question\n\n{text}")
         };
         self.update_agent(id, |row| {
-            if row.agent.status == dovetail_api::AgentStatus::Error {
-                row.agent.status = dovetail_api::AgentStatus::Idle;
+            if row.agent.status == dovetail_api::agent::AgentStatus::Error {
+                row.agent.status = dovetail_api::agent::AgentStatus::Idle;
             }
         });
         self.send_input(

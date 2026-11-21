@@ -16,11 +16,21 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::research::{FindingId, ResearchWhat};
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, EntryKind, Event, InboxKind, NewTask, PermissionMode,
-    ProjectId, TANGENTS_PROJECT, TangentSummary, Task, TaskChange, TaskId, TaskStatus,
-    tangent_agent, tangent_task,
+    Event,
+    activity::ActivityKind,
+    agent::{AgentId, AgentKind, PermissionMode},
+    conversation::EntryKind,
+    inbox::InboxKind,
+    project::ProjectId,
+    tangent::{TANGENTS_PROJECT, TangentSummary, tangent_agent, tangent_task},
+    task::{NewTask, Task, TaskChange, TaskId, TaskStatus},
+};
+use dovetail_api::{
+    inbox::InboxEvent,
+    research::{FindingId, ResearchWhat},
+    tangent::TangentEvent,
+    task::TaskEvent,
 };
 use dovetail_driver::DriverEvent;
 
@@ -277,18 +287,18 @@ impl Core {
         };
         if self.in_tangents() {
             let title = t.title.clone();
-            self.emit(Event::TaskUpserted(t.clone()));
+            self.emit(Event::Task(TaskEvent::Upserted(t.clone())));
             self.emit_research(task, &title).await;
         }
         if t.status == TaskStatus::Archived {
-            self.emit(Event::TangentRemoved(task));
+            self.emit(Event::Tangent(TangentEvent::Removed(task)));
         } else {
             let summary = self.summarise(&db, t).await;
-            self.emit(Event::TangentUpserted(summary));
+            self.emit(Event::Tangent(TangentEvent::Upserted(summary)));
         }
     }
 
-    /// `Command::NewTangent`: saves the question as a task in Tangents' Unsorted list and starts
+    /// `TangentCommand::New`: saves the question as a task in Tangents' Unsorted list and starts
     /// its session in Tangents' folder, read-only like a side chat, with the question as its
     /// first prompt.
     pub(crate) async fn start_tangent(&mut self, question: String) {
@@ -475,7 +485,7 @@ impl Core {
         }
     }
 
-    /// `Command::LoadTangent`.
+    /// `TangentCommand::Load`.
     pub(crate) async fn load_tangent(&mut self, tangent: TaskId, what: ResearchWhat) {
         let db = match self.tangents_db() {
             Ok(db) => db,
@@ -491,11 +501,11 @@ impl Core {
         };
         let dir = self.tangent_dir(tangent, &t.title);
         match crate::research::content_of(&dir, tangent, &t.title, &r, &what) {
-            Ok(content) => self.emit(Event::TangentLoaded {
+            Ok(content) => self.emit(Event::Tangent(TangentEvent::Loaded {
                 tangent,
                 what,
                 content,
-            }),
+            })),
             Err(e) => self.fail(format!("tangent: {e}")),
         }
     }
@@ -523,7 +533,7 @@ impl Core {
         Ok((db, t, r))
     }
 
-    /// `Command::AttachTangent`: the tangent's answers and sources become quick findings of a
+    /// `TangentCommand::Attach`: the tangent's answers and sources become quick findings of a
     /// task of the open project, and the tangent leaves Tangents.
     pub(crate) async fn attach_tangent(&mut self, tangent: TaskId, task: TaskId) {
         if self.project.registered().is_none() {
@@ -610,7 +620,7 @@ impl Core {
             .ok_or_else(|| TangentError::Failed("no task was created".into()))
     }
 
-    /// `Command::FileTangent`: a new task in the project with the tangent's question, notes,
+    /// `TangentCommand::File`: a new task in the project with the tangent's question, notes,
     /// answers and sources; the tangent leaves Tangents.
     pub(crate) async fn file_tangent(&mut self, tangent: TaskId, project: ProjectId) {
         if let Err(e) = self.try_file_tangent(tangent, &project).await {
@@ -676,7 +686,7 @@ impl Core {
         Ok(())
     }
 
-    /// `Command::StartFromTangent`: a new task in the project whose notes link back to the
+    /// `TangentCommand::StartFrom`: a new task in the project whose notes link back to the
     /// tangent; the tangent stays in Tangents, marked done.
     pub(crate) async fn start_from_tangent(&mut self, tangent: TaskId, project: ProjectId) {
         if let Err(e) = self.try_start_from_tangent(tangent, &project).await {
@@ -747,7 +757,7 @@ impl Core {
         Ok(())
     }
 
-    /// `Command::DropTangent`: archived in Tangents, nothing deleted.
+    /// `TangentCommand::Drop`: archived in Tangents, nothing deleted.
     pub(crate) async fn drop_tangent(&mut self, tangent: TaskId) {
         let (db, t, _) = match self.tangent_for_move(tangent, false).await {
             Ok(found) => found,
@@ -835,7 +845,7 @@ impl Core {
         );
     }
 
-    fn new_tangents_item(&self) -> Option<dovetail_api::InboxId> {
+    fn new_tangents_item(&self) -> Option<dovetail_api::inbox::InboxId> {
         self.inbox
             .values()
             .find(|e| matches!(e.item.kind, InboxKind::NewTangents { .. }))
@@ -861,7 +871,7 @@ impl Core {
         entry.item.kind = InboxKind::NewTangents { count };
         let item = entry.item.clone();
         self.persist("an inbox item", self.db.insert_inbox(item.clone()));
-        self.emit(Event::InboxUpserted(item));
+        self.emit(Event::Inbox(InboxEvent::Upserted(item)));
     }
 }
 

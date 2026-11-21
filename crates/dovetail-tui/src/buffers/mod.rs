@@ -22,7 +22,10 @@ mod worktrees;
 
 use dovetail_api::map::MapId;
 use dovetail_api::{
-    AgentId, AgentStatus, Bucket, Command, InboxId, PLevel, Snapshot, TaskId, TaskStatus,
+    Command, Snapshot,
+    agent::{AgentId, AgentStatus},
+    inbox::InboxId,
+    task::{Bucket, PLevel, TaskId, TaskStatus},
 };
 use jiff::tz::TimeZone;
 use ratatui::Frame;
@@ -139,7 +142,7 @@ pub enum Effect {
     /// A one-line note for the status bar.
     Note(String),
     /// Let go of the terminal and have the core open this path in the user's editor
-    /// ([`Command::OpenEditor`]); the terminal comes back on `Event::TerminalReturned`.
+    /// ([`TerminalCommand::OpenEditor`]); the terminal comes back on `TerminalEvent::Returned`.
     OpenEditor(std::path::PathBuf),
     /// Show a document in reading mode's reading column (fetching it from the core first, for
     /// research documents and docs).
@@ -164,7 +167,7 @@ pub enum Effect {
     },
     /// Show a project's library in reading mode, read-only: another project is browsed, the
     /// open one comes back (ADR 0018, decided 2026-11-11 later).
-    BrowseProject(dovetail_api::ProjectId),
+    BrowseProject(dovetail_api::project::ProjectId),
     /// Show the tangents list (ADR 0017).
     OpenTangents,
     /// Read a tangent's latest answer in reading mode.

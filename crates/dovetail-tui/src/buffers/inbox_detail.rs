@@ -2,7 +2,10 @@
 //! permission input in the reading column, with the inbox's answer keys.
 
 use dovetail_api::research::ProposalKind;
-use dovetail_api::{InboxId, InboxItem, InboxKind, START_SLICE_PERMISSION, Snapshot};
+use dovetail_api::{
+    Snapshot,
+    inbox::{InboxId, InboxItem, InboxKind, START_SLICE_PERMISSION},
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};

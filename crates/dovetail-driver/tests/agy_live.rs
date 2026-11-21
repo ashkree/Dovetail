@@ -22,7 +22,7 @@ async fn a_real_agy_session_answers_and_switches_effort() {
     .expect("settings");
     let mut spec = SessionSpec::new("live", &scratch);
     spec.model = Some("gemini-3.8-flash".into());
-    spec.effort = Some(dovetail_api::ReasoningEffort::Low);
+    spec.effort = Some(dovetail_api::model::ReasoningEffort::Low);
     spec.permission_mode = PermissionMode::Manual;
     spec.agy.settings_dir = Some(settings);
 
@@ -58,7 +58,7 @@ async fn a_real_agy_session_answers_and_switches_effort() {
     );
 
     let switch = session
-        .set_model(None, Some(dovetail_api::ReasoningEffort::Medium))
+        .set_model(None, Some(dovetail_api::model::ReasoningEffort::Medium))
         .expect("switch");
     let confirmed = tokio::time::timeout(Duration::from_secs(30), async {
         while let Some(ev) = events.recv().await {
@@ -76,6 +76,9 @@ async fn a_real_agy_session_answers_and_switches_effort() {
     })
     .await
     .expect("the switch is answered");
-    assert_eq!(confirmed, Some(dovetail_api::ReasoningEffort::Medium));
+    assert_eq!(
+        confirmed,
+        Some(dovetail_api::model::ReasoningEffort::Medium)
+    );
     session.shutdown(Duration::from_secs(5));
 }

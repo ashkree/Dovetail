@@ -2,7 +2,7 @@
 //! `--project <id>` names the project, for one that has no folder to run from (a research project).
 
 use anyhow::{Context, Result, bail};
-use dovetail_api::NewTask;
+use dovetail_api::task::NewTask;
 use dovetail_core::db::Db;
 use dovetail_core::paths::Paths;
 use dovetail_core::{projects, socket};

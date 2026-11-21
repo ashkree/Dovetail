@@ -1,7 +1,13 @@
 //! What "this agent" and "this task" mean right now, and the actions that act on them.
 
 use dovetail_api::{
-    AgentId, AgentKind, AgentStatus, Command, InboxId, PermissionMode, SessionLock, TaskId,
+    Command,
+    agent::{AgentCommand, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock},
+    inbox::InboxId,
+    research::ResearchCommand,
+    task::TaskId,
+    terminal::TerminalCommand,
+    upgrade::UpgradeCommand,
 };
 
 use super::{App, ChatSite, Confirm, Then};
@@ -169,10 +175,10 @@ impl App {
     /// Asks the core for a task's findings and sources, if the task has research.
     pub(super) fn request_research_listing(&mut self, task: TaskId) {
         if self.snap.research.iter().any(|r| r.task == task) {
-            self.outbox.push(Command::LoadResearch {
+            self.outbox.push(Command::Research(ResearchCommand::Load {
                 task,
                 what: dovetail_api::research::ResearchWhat::Listing,
-            });
+            }));
         }
     }
 
@@ -222,9 +228,9 @@ impl App {
             }
             Action::NewTangent => self.new_tangent(arg.to_string()),
             Action::Upgrade if arg.is_empty() || arg == "--local" => {
-                self.outbox.push(Command::Upgrade {
+                self.outbox.push(Command::Upgrade(UpgradeCommand::Start {
                     local: arg == "--local",
-                });
+                }));
                 self.note = Some(if arg.is_empty() {
                     "building the upgrade from origin/main; \"Upgrade ready\" appears in Needs you"
                         .into()
@@ -266,11 +272,15 @@ impl App {
                         let prompt = self.interrupt_prompt(&target, &agent);
                         self.confirm = Some(Confirm {
                             prompt,
-                            then: Then::Commands(vec![Command::Interrupt { agent }]),
+                            then: Then::Commands(vec![Command::Agent(AgentCommand::Interrupt {
+                                agent,
+                            })]),
                             otherwise: None,
                         });
                     }
-                    Some((agent, false)) => self.outbox.push(Command::Interrupt { agent }),
+                    Some((agent, false)) => self
+                        .outbox
+                        .push(Command::Agent(AgentCommand::Interrupt { agent })),
                     None => self.note = Some(format!("no agent named {arg}")),
                 }
             }
@@ -292,7 +302,8 @@ impl App {
         let kind = arg.split_whitespace().nth(1).and_then(ResearchKind::parse);
         match (kind, self.focused_task()) {
             (Some(kind), Some(task)) => {
-                self.outbox.push(Command::SetResearchKind { task, kind });
+                self.outbox
+                    .push(Command::Research(ResearchCommand::SetKind { task, kind }));
                 self.note = Some(format!("#{} is research for a {}", task.0, kind.as_str()));
             }
             (None, _) => self.note = Some("usage: :research kind <decision|question>".into()),
@@ -315,8 +326,10 @@ impl App {
                 .and_then(|t| t.trim_start_matches('#').parse::<i64>().ok());
             let round = words.next().map(str::parse::<u32>);
             match (task, round) {
-                (Some(task), None) => self.drop_round(dovetail_api::TaskId(task), None),
-                (Some(task), Some(Ok(n))) => self.drop_round(dovetail_api::TaskId(task), Some(n)),
+                (Some(task), None) => self.drop_round(dovetail_api::task::TaskId(task), None),
+                (Some(task), Some(Ok(n))) => {
+                    self.drop_round(dovetail_api::task::TaskId(task), Some(n))
+                }
                 _ => self.note = Some(USAGE.into()),
             }
             return;
@@ -330,7 +343,8 @@ impl App {
                 .map(|r| r.task);
             match open {
                 Some(task) => {
-                    self.outbox.push(Command::CloseRound { task });
+                    self.outbox
+                        .push(Command::Research(ResearchCommand::CloseRound { task }));
                     self.note = Some(format!("closing the research round on #{}", task.0));
                 }
                 None => self.note = Some("no research round is open".into()),
@@ -343,12 +357,13 @@ impl App {
         let task = task.trim_start_matches('#').parse::<i64>().ok();
         match (task, brief) {
             (Some(task), brief) if !brief.is_empty() => {
-                let task = dovetail_api::TaskId(task);
+                let task = dovetail_api::task::TaskId(task);
                 let busy = self.snap.research.iter().any(|r| r.open_round().is_some());
-                self.outbox.push(Command::StartRound {
-                    task,
-                    brief: brief.to_string(),
-                });
+                self.outbox
+                    .push(Command::Research(ResearchCommand::StartRound {
+                        task,
+                        brief: brief.to_string(),
+                    }));
                 self.note = Some(if busy {
                     format!(
                         "research round on #{} queued behind the open round; it opens when that \
@@ -366,7 +381,7 @@ impl App {
         }
     }
 
-    fn drop_round(&mut self, task: dovetail_api::TaskId, round: Option<u32>) {
+    fn drop_round(&mut self, task: dovetail_api::task::TaskId, round: Option<u32>) {
         let queued = self
             .snap
             .research
@@ -374,7 +389,11 @@ impl App {
             .find(|r| r.task == task)
             .is_some_and(|r| r.queued_rounds().any(|q| round.is_none_or(|n| q.n == n)));
         if queued {
-            self.outbox.push(Command::DropRound { task, round });
+            self.outbox
+                .push(Command::Research(ResearchCommand::DropRound {
+                    task,
+                    round,
+                }));
             self.note = Some(format!("dropping the queued round on #{}", task.0));
         } else {
             self.note = Some(format!("task #{} has no such queued round", task.0));
@@ -397,7 +416,7 @@ impl App {
             .filter(|a| {
                 a.parent.as_ref() == Some(session)
                     && &a.id != sub
-                    && a.status == dovetail_api::AgentStatus::Working
+                    && a.status == dovetail_api::agent::AgentStatus::Working
             })
             .count();
         let rest = match others {
@@ -440,7 +459,9 @@ impl App {
         }
         self.note = Some(note);
         self.outbox
-            .push(Command::CyclePermissionMode { agent: session });
+            .push(Command::Agent(AgentCommand::CyclePermissionMode {
+                agent: session,
+            }));
     }
 
     /// `<leader>st`: lends the terminal to native `claude` on the focused session (a
@@ -463,7 +484,7 @@ impl App {
             self.note = Some(format!("{name} is still setting up"));
             return;
         }
-        let command = Command::TakeOver { agent: session };
+        let command = Command::Terminal(TerminalCommand::TakeOver { agent: session });
         if agent.status == AgentStatus::Working {
             let whose = if redirected {
                 format!("{name} (the session this subagent runs in)")

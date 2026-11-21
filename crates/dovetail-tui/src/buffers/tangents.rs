@@ -4,7 +4,10 @@
 //! task in a project (`s`), attached to a task of this project (`a`) or dropped (`d`).
 
 use dovetail_api::{
-    AgentStatus, Command, Snapshot, TangentSummary, TaskId, TaskStatus, tangent_agent,
+    Command, Snapshot,
+    agent::AgentStatus,
+    tangent::{TangentCommand, TangentSummary, tangent_agent},
+    task::{TaskId, TaskStatus},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -227,7 +230,7 @@ impl Buffer for TangentsBuffer {
                             "Drop the tangent \"{}\"? It is archived in Tangents, not deleted.",
                             t.task.title
                         ),
-                        then: vec![Command::DropTangent { tangent }],
+                        then: vec![Command::Tangent(TangentCommand::Drop { tangent })],
                     },
                 });
             }

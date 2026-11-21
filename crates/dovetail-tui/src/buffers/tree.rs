@@ -4,8 +4,12 @@
 use std::collections::{HashMap, HashSet};
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, AgentStatus, Bucket, Command, PLevel, PermissionMode, SessionLock,
-    Snapshot, Task, TaskChange, TaskId, TaskStatus, TodoStatus,
+    Command, Snapshot,
+    agent::{
+        Agent, AgentCommand, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock,
+        TodoStatus,
+    },
+    task::{Bucket, PLevel, Task, TaskChange, TaskCommand, TaskId, TaskStatus},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -412,10 +416,10 @@ impl TreeBuffer {
                 .iter()
                 .any(|t| t.id == id && t.coordinator_created)
         {
-            effects.push(Effect::Command(Command::UpdateTask {
+            effects.push(Effect::Command(Command::Task(TaskCommand::Update {
                 id,
                 patch: vec![TaskChange::Seen],
-            }));
+            })));
         }
     }
 
@@ -832,7 +836,7 @@ impl Buffer for TreeBuffer {
                 };
                 self.task_action(cx, effects, |t| {
                     if t.bucket == Some(Bucket::Now) {
-                        Effect::Command(Command::ReorderTask { id: t.id, delta })
+                        Effect::Command(Command::Task(TaskCommand::Reorder { id: t.id, delta }))
                     } else {
                         Effect::Note("J and K reorder tasks within Now".into())
                     }
@@ -853,9 +857,13 @@ impl Buffer for TreeBuffer {
                     _ => None,
                 };
                 match slice {
-                    Some(agent) => effects.push(Effect::Command(Command::CloseSlice { agent })),
+                    Some(agent) => {
+                        effects.push(Effect::Command(Command::Agent(AgentCommand::CloseSlice {
+                            agent,
+                        })))
+                    }
                     None => self.task_action(cx, effects, |t| {
-                        let archive = Command::ArchiveTask { id: t.id };
+                        let archive = Command::Task(TaskCommand::Archive { id: t.id });
                         // An open or queued research round is closed or dropped by archiving
                         // (findings are kept): ask first, like unsaved work.
                         match super::blocking_round(cx.snap, t.id) {
@@ -904,15 +912,15 @@ impl Buffer for TreeBuffer {
 }
 
 fn update(id: TaskId, change: TaskChange) -> Effect {
-    Effect::Command(Command::UpdateTask {
+    Effect::Command(Command::Task(TaskCommand::Update {
         id,
         patch: vec![change],
-    })
+    }))
 }
 
 #[cfg(test)]
 mod tests {
-    use dovetail_api::{AgentId, SessionLock, SubagentProgress};
+    use dovetail_api::agent::{AgentId, SessionLock, SubagentProgress};
 
     use super::*;
 
@@ -977,7 +985,7 @@ mod tests {
             status,
             context_pct: Some(41),
             model: Some("claude-sonnet-5-5".into()),
-            effort: Some(dovetail_api::ReasoningEffort::Medium),
+            effort: Some(dovetail_api::model::ReasoningEffort::Medium),
             ..subagent(status, None)
         }
     }

@@ -4,7 +4,13 @@
 
 mod support;
 
-use dovetail_api::*;
+use dovetail_api::{
+    Event, ServerMsg,
+    activity::{ActivityEvent, ActivityItem, ActivityKind},
+    agent::AgentStatus,
+    conversation::{ConversationEvent, EntryId, EntryKind},
+    snapshot::{ACTIVITY_TAIL, CONVERSATION_KEEP},
+};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use support::*;
@@ -59,20 +65,20 @@ fn a_long_streaming_conversation_stays_bounded() {
             id += 1;
             send(
                 &mut app,
-                Event::ConversationAppended {
+                Event::Conversation(ConversationEvent::Appended {
                     agent: coordinator.clone(),
                     entry: entry(id, at, kind, text),
-                },
+                }),
             );
         }
         for _ in 0..DELTAS {
             send(
                 &mut app,
-                Event::AssistantDelta {
+                Event::Conversation(ConversationEvent::AssistantDelta {
                     agent: coordinator.clone(),
                     entry: EntryId(id),
                     text: DELTA.into(),
-                },
+                }),
             );
         }
         // The real loop coalesces streaming to about 30 fps: a few frames per reply.
@@ -81,13 +87,13 @@ fn a_long_streaming_conversation_stays_bounded() {
         }
         send(
             &mut app,
-            Event::ActivityAdded(ActivityItem {
+            Event::Activity(ActivityEvent::Added(ActivityItem {
                 id: turn,
                 at_ms: at,
                 agent: Some(coordinator.clone()),
                 kind: ActivityKind::Lifecycle,
                 text: "turn finished".into(),
-            }),
+            })),
         );
     }
     terminal.draw(|f| app.draw(f)).expect("draw");

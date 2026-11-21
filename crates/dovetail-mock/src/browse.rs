@@ -5,13 +5,17 @@
 
 use std::path::Path;
 
-use dovetail_api::research::{
-    BrowseWhat, BrowsedListing, BrowsedProject, DocEntry, Evidence, FindingId, FindingSummary,
-    ResearchDocument, ResearchListing, ResearchSummary, ResearchWhat, RoundSummary, SourceId,
-    SourceKind, SourceSummary,
+use dovetail_api::{
+    decision::{Decision, DecisionAuthor, DecisionId},
+    project::ProjectSummary,
+    task::{Task, TaskId, TaskStatus},
 };
 use dovetail_api::{
-    Decision, DecisionAuthor, DecisionId, ProjectSummary, Task, TaskId, TaskStatus,
+    library::{BrowseWhat, BrowsedListing, BrowsedProject, DocEntry},
+    research::{
+        Evidence, FindingId, FindingSummary, ResearchDocument, ResearchListing, ResearchSummary,
+        ResearchWhat, RoundSummary, SourceId, SourceKind, SourceSummary,
+    },
 };
 
 use crate::world::agent_id;

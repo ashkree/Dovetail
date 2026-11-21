@@ -18,7 +18,10 @@ use crate::process::{self, Ctl, Log, WriterMsg};
 use crate::{
     ControlAnswer, DriverError, PermissionMode, Session, SessionDriver, SessionSpec, UserInput,
 };
-use dovetail_api::{DriverKind, McpRequest, ReasoningEffort};
+use dovetail_api::{
+    mcp::McpRequest,
+    model::{DriverKind, ReasoningEffort},
+};
 use mcp::McpCalls;
 use reader::Reader;
 use serde_json::{Value, json};

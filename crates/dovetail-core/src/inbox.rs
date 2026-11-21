@@ -6,7 +6,10 @@
 //! another (stream rule 3).
 
 use dovetail_api::{
-    ActivityKind, AgentId, Event, InboxId, InboxItem, InboxKind, PermissionAnswer, RuleSuggestion,
+    Event,
+    activity::ActivityKind,
+    agent::AgentId,
+    inbox::{InboxEvent, InboxId, InboxItem, InboxKind, PermissionAnswer, RuleSuggestion},
 };
 use dovetail_driver::{ControlAnswer, ControlId, PermissionRequest};
 use serde_json::Value;
@@ -50,7 +53,7 @@ pub(crate) enum Waiter {
     /// it, `d` drops it, and the coordinator gets a message either way.
     Proposal,
     /// An unfiled coordinator finding (stored in `state.db` with no task): `y` files it under a
-    /// task the user picks ([`dovetail_api::Command::FileUnfiled`]), `d` deletes it.
+    /// task the user picks ([`dovetail_api::ResearchCommand::FileUnfiled`]), `d` deletes it.
     UnfiledFinding { finding: i64 },
 }
 
@@ -143,7 +146,7 @@ impl Core {
         self.next_inbox += 1;
         let id = item.id;
         self.persist("an inbox item", self.db.insert_inbox(item.clone()));
-        self.emit(Event::InboxUpserted(item.clone()));
+        self.emit(Event::Inbox(InboxEvent::Upserted(item.clone())));
         self.inbox.insert(id, InboxEntry { item, waiter });
         self.refresh_status(agent);
         id
@@ -153,7 +156,7 @@ impl Core {
     pub(crate) fn resolve(&mut self, id: InboxId, answer: Option<String>) -> Option<InboxEntry> {
         let entry = self.inbox.remove(&id)?;
         self.persist("an inbox answer", self.db.resolve_inbox(id, answer));
-        self.emit(Event::InboxResolved { id });
+        self.emit(Event::Inbox(InboxEvent::Resolved { id }));
         self.refresh_status(&entry.item.agent);
         Some(entry)
     }
@@ -175,7 +178,7 @@ impl Core {
         let ask = self
             .agents
             .get(agent)
-            .is_some_and(|r| r.agent.kind == dovetail_api::AgentKind::Ask);
+            .is_some_and(|r| r.agent.kind == dovetail_api::agent::AgentKind::Ask);
         if ask {
             return;
         }
@@ -490,7 +493,7 @@ impl Core {
                 source,
             })?;
         live.turn.input_sent();
-        self.add_entry(agent, dovetail_api::EntryKind::User, shown);
+        self.add_entry(agent, dovetail_api::conversation::EntryKind::User, shown);
         self.refresh_status(agent);
         Ok(())
     }

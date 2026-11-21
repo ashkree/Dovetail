@@ -10,7 +10,7 @@ mod spec;
 
 pub use agy::{AgyDriver, AgyOptions, McpServerSpec};
 pub use claude::{ClaudeDriver, ClaudeOptions, parse, transcript};
-pub use dovetail_api::DriverKind;
+pub use dovetail_api::model::DriverKind;
 pub use event::*;
 pub use fake::{FakeDriver, ReplayOptions, ReplayTiming, Sent};
 pub use spec::{PermissionMode, SessionSpec, SystemdScope};
@@ -72,12 +72,12 @@ pub trait Session: Send {
     fn set_model(
         &self,
         model: Option<&str>,
-        effort: Option<dovetail_api::ReasoningEffort>,
+        effort: Option<dovetail_api::model::ReasoningEffort>,
     ) -> Result<SwitchId, DriverError>;
     /// Send one request of the MCP menu (task #44): the session's servers, or an action on one.
     /// The answer is a [`DriverEvent::McpReply`] carrying the request; a refusal is a
-    /// [`dovetail_api::McpOutcome::Failed`] there, not an error here.
-    fn mcp(&self, request: dovetail_api::McpRequest) -> Result<(), DriverError>;
+    /// [`dovetail_api::mcp::McpOutcome::Failed`] there, not an error here.
+    fn mcp(&self, request: dovetail_api::mcp::McpRequest) -> Result<(), DriverError>;
     /// Answer a pending [`DriverEvent::PermissionRequest`], in any order.
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError>;
     /// Take the event stream. Call once; later calls return an already-closed receiver. The

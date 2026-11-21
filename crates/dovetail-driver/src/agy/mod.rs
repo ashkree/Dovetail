@@ -20,7 +20,10 @@ use crate::{
     ControlAnswer, DriverError, PermissionMode, Session, SessionDriver, SessionSpec, UserInput,
 };
 use conversation::{Conversation, Plan, Step};
-use dovetail_api::{DriverKind, McpOutcome, McpRequest, ReasoningEffort};
+use dovetail_api::{
+    mcp::{McpOutcome, McpRequest},
+    model::{DriverKind, ReasoningEffort},
+};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};

@@ -12,9 +12,17 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use dovetail_api::research::{BrowseWhat, BrowsedDoc};
-use dovetail_api::research::{DocImage, Evidence, ResearchDocument, ResearchWhat};
-use dovetail_api::{DecisionId, Event, ProjectId, TaskId};
+use dovetail_api::{Event, decision::DecisionId, project::ProjectId, task::TaskId};
+use dovetail_api::{
+    app::AppEvent,
+    library::{BrowseWhat, BrowsedDoc, LibraryEvent},
+    research::ResearchEvent,
+    tangent::TangentEvent,
+};
+use dovetail_api::{
+    library::DocImage,
+    research::{Evidence, ResearchDocument, ResearchWhat},
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -59,7 +67,7 @@ pub enum ReadTarget {
     /// A repo doc, relative to `docs/`.
     Doc(PathBuf),
     /// One of the above, of a project browsed with `<leader>fr` rather than the open one
-    /// (ADR 0018, decided 2026-11-11 later): fetched with `Command::LoadBrowsed`, read-only.
+    /// (ADR 0018, decided 2026-11-11 later): fetched with `LibraryCommand::LoadBrowsed`, read-only.
     Elsewhere(ProjectId, Box<ReadTarget>),
 }
 
@@ -207,33 +215,35 @@ impl ReaderBuffer {
     /// Takes in a core answer. Returns whether the awaited document arrived and is now shown.
     pub fn on_event(&mut self, event: &Event) -> bool {
         let (target, document) = match event {
-            Event::ResearchLoaded {
+            Event::Research(ResearchEvent::Loaded {
                 task,
                 what,
                 content: dovetail_api::research::ResearchContent::Document(document),
-            } => (
+            }) => (
                 ReadTarget::Research {
                     task: *task,
                     what: what.clone(),
                 },
                 document,
             ),
-            Event::TangentLoaded {
+            Event::Tangent(TangentEvent::Loaded {
                 tangent,
                 what,
                 content: dovetail_api::research::ResearchContent::Document(document),
-            } => (
+            }) => (
                 ReadTarget::Tangent {
                     task: *tangent,
                     what: what.clone(),
                 },
                 document,
             ),
-            Event::DocLoaded { path, document } => (ReadTarget::Doc(path.clone()), document),
-            Event::BrowsedLoaded {
+            Event::Library(LibraryEvent::DocLoaded { path, document }) => {
+                (ReadTarget::Doc(path.clone()), document)
+            }
+            Event::Library(LibraryEvent::BrowsedLoaded {
                 doc: BrowsedDoc { project, what },
                 document,
-            } => {
+            }) => {
                 let inner = match what {
                     BrowseWhat::Research { task, what } => ReadTarget::Research {
                         task: *task,
@@ -246,7 +256,7 @@ impl ReaderBuffer {
                     document,
                 )
             }
-            Event::CommandFailed { .. } => {
+            Event::App(AppEvent::CommandFailed { .. }) => {
                 self.awaiting = None;
                 return false;
             }

@@ -20,7 +20,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use dovetail_api::{AgentId, AgentKind, Event, TaskId, TodoItem, TodoListId, TodoStatus};
+use dovetail_api::{
+    Event,
+    agent::{AgentEvent, AgentId, AgentKind, TodoItem, TodoListId, TodoStatus},
+    task::TaskId,
+};
 use dovetail_driver::{ContentBlock, DriverEvent};
 use notify::Watcher;
 use serde::Deserialize;
@@ -244,7 +248,7 @@ impl Core {
                 }
             }
             let items = items.clone();
-            self.emit(Event::TodosReplaced { list, items });
+            self.emit(Event::Agent(AgentEvent::TodosReplaced { list, items }));
         }
     }
 
@@ -388,10 +392,10 @@ impl Core {
                 self.todos.lists.insert(list.clone(), items.clone());
             }
             if emit {
-                self.emit(Event::TodosReplaced {
+                self.emit(Event::Agent(AgentEvent::TodosReplaced {
                     list: list.clone(),
                     items,
-                });
+                }));
             }
         }
         !read.unreadable.is_empty()
@@ -444,10 +448,10 @@ impl Core {
                     {
                         found.created_by = Some(call.owner);
                         let items = items.clone();
-                        self.emit(Event::TodosReplaced {
+                        self.emit(Event::Agent(AgentEvent::TodosReplaced {
                             list: list.clone(),
                             items,
-                        });
+                        }));
                     }
                 }
                 self.todos.deleted.remove(&list);
@@ -486,10 +490,10 @@ impl Core {
             self.db.forget_todo_list(list.0.clone()),
         );
         if self.todos.lists.remove(list).is_some() {
-            self.emit(Event::TodosReplaced {
+            self.emit(Event::Agent(AgentEvent::TodosReplaced {
                 list: list.clone(),
                 items: Vec::new(),
-            });
+            }));
         }
     }
 

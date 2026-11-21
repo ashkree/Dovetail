@@ -2,7 +2,23 @@
 
 use std::time::Duration;
 
-use dovetail_api::*;
+use dovetail_api::{
+    ApplyResult, Command, Event, PROTOCOL_VERSION, ServerMsg, Snapshot,
+    agent::{AgentCommand, AgentEvent, AgentId, AgentKind, AgentStatus},
+    app::{AppCommand, AppEvent},
+    apply,
+    conversation::{ConversationCommand, ConversationEvent},
+    decision::{DecisionAuthor, DecisionCommand, NewDecision},
+    inbox::{InboxCommand, InboxEvent, InboxKind, PermissionAnswer},
+    journal::{JournalCommand, JournalState},
+    map::{MapCommand, MapEvent},
+    research::{ResearchCommand, ResearchEvent},
+    snapshot::CONVERSATION_TAIL,
+    status::StatusEvent,
+    task::{Bucket, NewTask, PLevel, TaskChange, TaskCommand, TaskId, TaskStatus},
+    terminal::{TerminalCommand, TerminalEvent},
+    worktree::WorktreeCommand,
+};
 use dovetail_mock::{MockConfig, MockCore, spawn};
 
 fn config(seed: u64) -> MockConfig {
@@ -64,24 +80,24 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
     let task = state.tasks.first().map(|t| t.id);
     match round % 7 {
         0 => state.inbox.first().map(|item| match item.kind {
-            InboxKind::Permission { .. } => Command::AnswerPermission {
+            InboxKind::Permission { .. } => Command::Inbox(InboxCommand::AnswerPermission {
                 item: item.id,
                 answer: PermissionAnswer::Allow,
-            },
-            InboxKind::Question { .. } => Command::AnswerQuestion {
+            }),
+            InboxKind::Question { .. } => Command::Inbox(InboxCommand::AnswerQuestion {
                 item: item.id,
                 text: "amber".into(),
-            },
-            _ => Command::DismissInbox { item: item.id },
+            }),
+            _ => Command::Inbox(InboxCommand::Dismiss { item: item.id }),
         }),
-        1 => Some(Command::Prompt {
+        1 => Some(Command::Conversation(ConversationCommand::Prompt {
             agent: AgentId("coordinator".into()),
             text: "How are the slices doing?".into(),
             attachments: Vec::new(),
             effort: None,
-        }),
-        2 => slice.map(|agent| Command::Interrupt { agent }),
-        3 => Some(Command::CreateTask(NewTask {
+        })),
+        2 => slice.map(|agent| Command::Agent(AgentCommand::Interrupt { agent })),
+        3 => Some(Command::Task(TaskCommand::Create(NewTask {
             title: format!("follow-up {round}"),
             p_level: Some(PLevel::P2),
             bucket: Some(Bucket::Next),
@@ -91,15 +107,15 @@ fn some_command(state: &Snapshot, round: usize) -> Option<Command> {
             related: vec![],
             effort: Default::default(),
             criterion: None,
-        })),
-        4 => task.map(|id| Command::ReorderTask { id, delta: 1 }),
-        5 => slice.map(|agent| Command::CyclePermissionMode { agent }),
-        _ => Some(Command::NewSlice {
+        }))),
+        4 => task.map(|id| Command::Task(TaskCommand::Reorder { id, delta: 1 })),
+        5 => slice.map(|agent| Command::Agent(AgentCommand::CyclePermissionMode { agent })),
+        _ => Some(Command::Agent(AgentCommand::NewSlice {
             repo: None,
             task,
             name: format!("slice-{round}"),
             brief: "Do the thing.".into(),
-        }),
+        })),
     }
 }
 
@@ -162,14 +178,16 @@ fn the_stream_replays_through_apply_with_no_gaps_and_stays_consistent() {
 fn deliver(client: &mut Snapshot, msg: ServerMsg) {
     match msg {
         ServerMsg::Event { seq, event } => {
-            if let Event::AssistantDelta { agent, entry, .. } = &event {
+            if let Event::Conversation(ConversationEvent::AssistantDelta { agent, entry, .. }) =
+                &event
+            {
                 let announced = client
                     .conversations
                     .get(agent)
                     .is_some_and(|tail| tail.entries.iter().any(|e| &e.id == entry));
                 assert!(announced, "delta for an entry the mock never announced");
             }
-            let totals_changed = matches!(event, Event::TotalsChanged(_));
+            let totals_changed = matches!(event, Event::Status(StatusEvent::TotalsChanged(_)));
             assert_eq!(apply(client, seq, event), ApplyResult::Applied);
             // Totals follow the change that caused them, so check them when they arrive.
             if totals_changed {
@@ -192,14 +210,14 @@ fn answering_a_permission_resolves_it_and_frees_the_agent() {
         .find(|i| matches!(i.kind, InboxKind::Permission { .. }))
         .map(|i| (i.id, i.agent.clone()))
         .expect("the starting world has a permission request");
-    core.handle(Command::AnswerPermission {
+    core.handle(Command::Inbox(InboxCommand::AnswerPermission {
         item: item.0,
         answer: PermissionAnswer::Allow,
-    });
+    }));
     let first = core.next_message().expect("runs").msg;
     assert!(matches!(
         first,
-        ServerMsg::Event { event: Event::InboxResolved { id }, .. } if id == item.0
+        ServerMsg::Event { event: Event::Inbox(InboxEvent::Resolved { id }), .. } if id == item.0
     ));
     let agent = core
         .state()
@@ -213,13 +231,13 @@ fn answering_a_permission_resolves_it_and_frees_the_agent() {
 #[test]
 fn opening_an_editor_is_refused_and_the_terminal_stays_with_the_ui() {
     let mut core = MockCore::new(config(1));
-    core.handle(Command::OpenEditor {
+    core.handle(Command::Terminal(TerminalCommand::OpenEditor {
         path: "/tmp/wt".into(),
-    });
+    }));
     assert!(matches!(
         core.next_message().expect("runs").msg,
         ServerMsg::Event {
-            event: Event::CommandFailed { .. },
+            event: Event::App(AppEvent::CommandFailed { .. }),
             ..
         }
     ));
@@ -228,13 +246,13 @@ fn opening_an_editor_is_refused_and_the_terminal_stays_with_the_ui() {
 #[test]
 fn taking_over_hands_the_terminal_straight_back() {
     let mut core = MockCore::new(config(1));
-    core.handle(Command::TakeOver {
+    core.handle(Command::Terminal(TerminalCommand::TakeOver {
         agent: AgentId("coordinator".into()),
-    });
+    }));
     assert!(matches!(
         core.next_message().expect("runs").msg,
         ServerMsg::Event {
-            event: Event::TerminalReturned { error: Some(_) },
+            event: Event::Terminal(TerminalEvent::Returned { error: Some(_) }),
             ..
         }
     ));
@@ -243,13 +261,13 @@ fn taking_over_hands_the_terminal_straight_back() {
 #[test]
 fn a_command_on_a_missing_agent_fails_visibly() {
     let mut core = MockCore::new(config(1));
-    core.handle(Command::Interrupt {
+    core.handle(Command::Agent(AgentCommand::Interrupt {
         agent: AgentId("nobody".into()),
-    });
+    }));
     assert!(matches!(
         core.next_message().expect("runs").msg,
         ServerMsg::Event {
-            event: Event::CommandFailed { .. },
+            event: Event::App(AppEvent::CommandFailed { .. }),
             ..
         }
     ));
@@ -269,9 +287,9 @@ fn spawned_core_opens_with_hello_and_stops_on_quit() {
         .expect("snapshot");
     assert!(matches!(snapshot, ServerMsg::Snapshot(_)));
     link.commands
-        .send(Command::Quit {
+        .send(Command::App(AppCommand::Quit {
             end_sessions: false,
-        })
+        }))
         .expect("core is listening");
     // After quit the thread ends and the channel closes, once anything in flight drains.
     let closed = (0..10_000).any(|_| link.messages.recv_timeout(Duration::from_secs(5)).is_err());
@@ -288,12 +306,12 @@ fn starting_a_slice_on_a_todo_task_marks_it_in_progress() {
         .find(|t| t.status == TaskStatus::Todo)
         .map(|t| t.id)
         .expect("the starting world has a to-do task");
-    core.handle(Command::NewSlice {
+    core.handle(Command::Agent(AgentCommand::NewSlice {
         repo: None,
         task: Some(todo),
         name: "reading-column".into(),
         brief: "Build the reading column.".into(),
-    });
+    }));
     let status = |core: &MockCore| {
         core.state()
             .tasks
@@ -309,16 +327,28 @@ fn starting_a_slice_on_a_todo_task_marks_it_in_progress() {
         .find(|t| t.id == todo)
         .and_then(|t| t.bucket);
     assert_eq!(bucket, Some(Bucket::Now));
-    core.handle(Command::CloseSlice {
+    core.handle(Command::Agent(AgentCommand::CloseSlice {
         agent: AgentId("reading-column".into()),
-    });
+    }));
     assert_eq!(status(&core), Some(TaskStatus::InProgress));
 }
 
-/// The kind of an event as it appears on the wire: the tag of its externally tagged JSON.
+/// The kind of an event as it appears on the wire: `<feature>.<variant>` from its nested
+/// externally tagged JSON (`{"task":{"upserted":...}}` -> `"task.upserted"`, or
+/// `{"journal":"changed"}` -> `"journal.changed"`).
 fn kind_of(event: &Event) -> String {
     match serde_json::to_value(event).expect("serialises") {
-        serde_json::Value::Object(map) => map.keys().next().cloned().unwrap_or_default(),
+        serde_json::Value::Object(map) => {
+            let (feature, inner) = map.into_iter().next().unwrap_or_default();
+            let variant = match inner {
+                serde_json::Value::Object(inner_map) => {
+                    inner_map.keys().next().cloned().unwrap_or_default()
+                }
+                serde_json::Value::String(s) => s,
+                other => panic!("unexpected inner event shape {other}"),
+            };
+            format!("{feature}.{variant}")
+        }
         serde_json::Value::String(s) => s,
         other => panic!("unexpected event shape {other}"),
     }
@@ -328,23 +358,23 @@ fn kind_of(event: &Event) -> String {
 fn every_event_kind_the_mock_can_make_unprompted_shows_up_within_fifteen_virtual_minutes() {
     // M1 retro: two dump bugs (stalled activity, no background subagents) slipped past the
     // consistency tests. A mock that never produces a kind starves the UI of it.
-    // Excluded: kinds only a command can cause (`conversation_page`, `command_failed`) and
-    // `task_removed`, which nothing in v1 produces (tasks are archived, never deleted).
+    // Excluded: kinds only a command can cause (`conversation.page`, `app.command_failed`) and
+    // `task.removed`, which nothing in v1 produces (tasks are archived, never deleted).
     let expected = [
-        "task_upserted",
-        "agent_upserted",
-        "agent_removed",
-        "todos_replaced",
-        "inbox_upserted",
-        "inbox_resolved",
-        "activity_added",
-        "message_added",
-        "conversation_appended",
-        "assistant_delta",
-        "totals_changed",
-        "warning_set",
-        "warning_cleared",
-        "decision_added",
+        "task.upserted",
+        "agent.upserted",
+        "agent.removed",
+        "agent.todos_replaced",
+        "inbox.upserted",
+        "inbox.resolved",
+        "activity.added",
+        "activity.message_added",
+        "conversation.appended",
+        "conversation.assistant_delta",
+        "status.totals_changed",
+        "status.warning_set",
+        "status.warning_cleared",
+        "decision.added",
     ];
     const WITHIN: usize = 800;
     let mut core = MockCore::new(config(1));
@@ -373,12 +403,12 @@ fn background_and_foreground_subagents_and_several_inbox_kinds_appear_in_a_longe
     for _ in 0..1_500 {
         if let ServerMsg::Event { event, .. } = core.next_message().expect("runs").msg {
             match &event {
-                Event::AgentUpserted(a) => match a.kind {
+                Event::Agent(AgentEvent::Upserted(a)) => match a.kind {
                     AgentKind::Subagent { background: true } => background = true,
                     AgentKind::Subagent { background: false } => foreground = true,
                     _ => {}
                 },
-                Event::InboxUpserted(i) => {
+                Event::Inbox(InboxEvent::Upserted(i)) => {
                     kinds.insert(std::mem::discriminant(&i.kind));
                 }
                 _ => {}
@@ -397,10 +427,10 @@ fn background_and_foreground_subagents_and_several_inbox_kinds_appear_in_a_longe
 #[test]
 fn relating_tasks_is_two_way_and_unrelating_undoes_it() {
     let mut core = MockCore::new(config(1));
-    core.handle(Command::UpdateTask {
+    core.handle(Command::Task(TaskCommand::Update {
         id: TaskId(3),
         patch: vec![TaskChange::Relate(TaskId(4))],
-    });
+    }));
     let related = |core: &MockCore, id: i64| {
         core.state()
             .tasks
@@ -411,10 +441,10 @@ fn relating_tasks_is_two_way_and_unrelating_undoes_it() {
     };
     assert!(related(&core, 3).contains(&TaskId(4)));
     assert!(related(&core, 4).contains(&TaskId(3)));
-    core.handle(Command::UpdateTask {
+    core.handle(Command::Task(TaskCommand::Update {
         id: TaskId(4),
         patch: vec![TaskChange::Unrelate(TaskId(3))],
-    });
+    }));
     assert!(!related(&core, 3).contains(&TaskId(4)));
     assert!(!related(&core, 4).contains(&TaskId(3)));
 }
@@ -422,13 +452,13 @@ fn relating_tasks_is_two_way_and_unrelating_undoes_it() {
 #[test]
 fn a_logged_decision_lands_on_its_task_and_a_snapshot_is_trimmed() {
     let mut core = MockCore::new(config(1));
-    core.handle(Command::LogDecision(NewDecision {
+    core.handle(Command::Decision(DecisionCommand::Log(NewDecision {
         task: TaskId(2),
         text: "Use one picker".into(),
         why: None,
         alternatives: vec![],
         supersedes: None,
-    }));
+    })));
     let d = core.state().decisions.last().cloned().expect("a decision");
     assert_eq!((d.task, d.by), (TaskId(2), DecisionAuthor::User));
     let ServerMsg::Snapshot(sent) = core.connect().remove(1) else {
@@ -447,18 +477,18 @@ fn research_loads_the_listing_and_every_document_the_listing_names() {
     let mut core = MockCore::new(config(1));
     let summary = core.state().research.first().cloned().expect("seeded");
     let mut load = |what: ResearchWhat| {
-        core.handle(Command::LoadResearch {
+        core.handle(Command::Research(ResearchCommand::Load {
             task: summary.task,
             what,
-        });
+        }));
         loop {
             match core.pop() {
                 ServerMsg::Event {
-                    event: Event::ResearchLoaded { content, .. },
+                    event: Event::Research(ResearchEvent::Loaded { content, .. }),
                     ..
                 } => return Ok(content),
                 ServerMsg::Event {
-                    event: Event::CommandFailed { message },
+                    event: Event::App(AppEvent::CommandFailed { message }),
                     ..
                 } => return Err(message),
                 _ => {}
@@ -491,7 +521,7 @@ fn research_loads_the_listing_and_every_document_the_listing_names() {
 fn refreshing_worktrees_fills_one_entry_per_slice_worktree() {
     let mut core = MockCore::new(config(1));
     assert!(core.state().worktrees.is_empty());
-    core.handle(Command::RefreshWorktrees);
+    core.handle(Command::Worktree(WorktreeCommand::Refresh));
     let slices = core
         .state()
         .agents
@@ -512,7 +542,7 @@ fn refreshing_worktrees_fills_one_entry_per_slice_worktree() {
 #[test]
 fn eod_closes_the_day_with_the_mock_clocks_date() {
     let mut core = MockCore::new(config(1));
-    core.handle(Command::EndOfDay);
+    core.handle(Command::Journal(JournalCommand::EndOfDay));
     assert_eq!(
         core.state().journal,
         Some(JournalState {
@@ -551,14 +581,14 @@ fn fresh_simulates_a_handoff_and_a_new_coordinator() {
     };
     // Not while a turn runs.
     if status(&core) == Some(AgentStatus::Working) {
-        core.handle(Command::Handoff);
+        core.handle(Command::Journal(JournalCommand::Handoff));
         assert!(core.state().journal.as_ref().is_none_or(|j| !j.closing));
-        core.handle(Command::Interrupt {
+        core.handle(Command::Agent(AgentCommand::Interrupt {
             agent: coordinator.clone(),
-        });
+        }));
     }
     let inbox_before = core.state().inbox.len();
-    core.handle(Command::Handoff);
+    core.handle(Command::Journal(JournalCommand::Handoff));
     let started = |core: &MockCore| {
         core.state().conversations[&coordinator]
             .entries
@@ -662,12 +692,12 @@ fn the_seeded_maps_pass_draw_map_validation_and_load() {
     assert_eq!(kinds, [MapKind::Swimlane, MapKind::Structure]);
     let mut loaded = Vec::new();
     for entry in &shelf {
-        core.handle(Command::LoadMap {
+        core.handle(Command::Map(MapCommand::Load {
             id: entry.id.clone(),
             version: None,
-        });
+        }));
         let ServerMsg::Event {
-            event: Event::MapLoaded(map),
+            event: Event::Map(MapEvent::Loaded(map)),
             ..
         } = core.pop()
         else {
@@ -688,14 +718,14 @@ fn the_seeded_maps_pass_draw_map_validation_and_load() {
     for map in &loaded {
         assert!(check_lane_links(&map.content, &structure_nodes).is_empty());
     }
-    core.handle(Command::LoadMap {
+    core.handle(Command::Map(MapCommand::Load {
         id: MapId("nope".into()),
         version: None,
-    });
+    }));
     assert!(matches!(
         core.pop(),
         ServerMsg::Event {
-            event: Event::CommandFailed { .. },
+            event: Event::App(AppEvent::CommandFailed { .. }),
             ..
         }
     ));
@@ -711,12 +741,12 @@ fn fresh_session_raises_no_item_without_a_handoff() {
         .iter()
         .any(|a| a.id == coordinator && a.status == AgentStatus::Working)
     {
-        core.handle(Command::Interrupt {
+        core.handle(Command::Agent(AgentCommand::Interrupt {
             agent: coordinator.clone(),
-        });
+        }));
     }
     let inbox_before = core.state().inbox.len();
-    core.handle(Command::FreshSession);
+    core.handle(Command::Journal(JournalCommand::FreshSession));
     assert_eq!(core.state().inbox.len(), inbox_before);
     assert!(core.state().journal.as_ref().is_none_or(|j| !j.closing));
 }

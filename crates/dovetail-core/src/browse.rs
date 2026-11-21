@@ -6,10 +6,11 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::research::{
-    BrowseWhat, BrowsedDoc, BrowsedListing, BrowsedProject, ResearchContent, ResearchWhat,
+use dovetail_api::{Event, project::ProjectId};
+use dovetail_api::{
+    library::{BrowseWhat, BrowsedDoc, BrowsedListing, BrowsedProject, LibraryEvent},
+    research::{ResearchContent, ResearchWhat},
 };
-use dovetail_api::{Event, ProjectId};
 
 use crate::projects::Project;
 use crate::research::{LoadError, content_of, files, listing, root_of, summary};
@@ -31,7 +32,7 @@ impl Core {
         }
     }
 
-    /// `Command::BrowseProject`.
+    /// `LibraryCommand::BrowseProject`.
     pub(crate) async fn browse_project(&mut self, id: ProjectId) {
         let Some(project) = self.browsed(&id).await else {
             return;
@@ -67,17 +68,19 @@ impl Core {
         let docs = docs_repo(&project)
             .map(|repo| crate::docs::list(&repo))
             .unwrap_or_default();
-        self.emit(Event::ProjectBrowsed(Box::new(BrowsedProject {
-            project: project.summary(&self.paths),
-            tasks: state.tasks,
-            decisions: state.decisions,
-            research,
-            listings,
-            docs,
-        })));
+        self.emit(Event::Library(LibraryEvent::ProjectBrowsed(Box::new(
+            BrowsedProject {
+                project: project.summary(&self.paths),
+                tasks: state.tasks,
+                decisions: state.decisions,
+                research,
+                listings,
+                docs,
+            },
+        ))));
     }
 
-    /// `Command::LoadBrowsed`.
+    /// `LibraryCommand::LoadBrowsed`.
     pub(crate) async fn load_browsed(&mut self, id: ProjectId, what: BrowseWhat) {
         let Some(project) = self.browsed(&id).await else {
             return;
@@ -99,10 +102,10 @@ impl Core {
                 .map_err(|e| e.to_string()),
         };
         match document {
-            Ok(document) => self.emit(Event::BrowsedLoaded {
+            Ok(document) => self.emit(Event::Library(LibraryEvent::BrowsedLoaded {
                 doc: BrowsedDoc { project: id, what },
                 document,
-            }),
+            })),
             Err(message) => self.fail(message),
         }
     }
@@ -110,7 +113,7 @@ impl Core {
     async fn browsed_research(
         &self,
         project: &Project,
-        task: dovetail_api::TaskId,
+        task: dovetail_api::task::TaskId,
         what: &ResearchWhat,
     ) -> Result<dovetail_api::research::ResearchDocument, LoadError> {
         let path = self.paths.state_db(&project.id);

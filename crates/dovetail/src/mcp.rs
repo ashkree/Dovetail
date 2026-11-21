@@ -63,7 +63,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 use anyhow::Result;
-use dovetail_api::AgentId;
+use dovetail_api::agent::AgentId;
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::{Role, Suite, Tool, ToolSpec, deprecated_alias, env, tools_in};
 use serde_json::{Value, json};

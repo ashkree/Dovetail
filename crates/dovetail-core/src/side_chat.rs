@@ -3,7 +3,11 @@
 //! ([`Core::close_slice`]). They run in `dontAsk` mode with a read-only allow-list
 //! (`session::launch::side_chat_allowed`).
 
-use dovetail_api::{ActivityKind, AgentId, AgentKind, EntryKind, PermissionMode};
+use dovetail_api::{
+    activity::ActivityKind,
+    agent::{AgentId, AgentKind, PermissionMode},
+    conversation::EntryKind,
+};
 
 use crate::db::{AgentRow, now_ms};
 use crate::service::{Core, new_agent};

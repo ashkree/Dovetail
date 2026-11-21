@@ -41,8 +41,8 @@ pub enum SessionError {
         /// The cause.
         source: std::io::Error,
     },
-    /// A saved image is over [`dovetail_api::MAX_ATTACHMENT_BYTES`].
-    #[error("image {} is over {}", .0.display(), dovetail_api::attachment_limit_text())]
+    /// A saved image is over [`dovetail_api::conversation::MAX_ATTACHMENT_BYTES`].
+    #[error("image {} is over {}", .0.display(), dovetail_api::conversation::attachment_limit_text())]
     ImageTooLarge(std::path::PathBuf),
     /// The session is taken over in a native terminal (M14): headless does not start.
     #[error(

@@ -4,7 +4,11 @@
 use std::fmt::Write as _;
 
 use dovetail_api::tools::{BucketFilter, ListTasks};
-use dovetail_api::{Agent, Bucket, Decision, DecisionAuthor, PLevel, Task, TaskId, TaskStatus};
+use dovetail_api::{
+    agent::Agent,
+    decision::{Decision, DecisionAuthor},
+    task::{Bucket, PLevel, Task, TaskId, TaskStatus},
+};
 use serde::Serialize;
 
 /// Longest title `tasks_list` shows before cutting it with `…`.
@@ -205,7 +209,10 @@ pub(crate) fn task_detail(task: &Task, slices: &[&Agent], decisions: &[Decision]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::{AgentId, Alternative, DecisionId};
+    use dovetail_api::{
+        agent::AgentId,
+        decision::{Alternative, DecisionId},
+    };
 
     fn task(id: i64, bucket: Option<Bucket>, p: Option<PLevel>, status: TaskStatus) -> Task {
         Task {

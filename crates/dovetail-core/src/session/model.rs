@@ -9,7 +9,11 @@
 //! switch's answer never confirms another switch. One switch at a time: another is refused until
 //! the first is confirmed or refused.
 
-use dovetail_api::{AgentId, AgentKind, Event, ModelOption, ReasoningEffort};
+use dovetail_api::{
+    Event,
+    agent::{AgentId, AgentKind},
+    model::{ModelEvent, ModelOption, ReasoningEffort},
+};
 use dovetail_driver::{ModelInfo, SwitchId};
 
 use crate::db::{AgentRow, ModelChoice};
@@ -32,7 +36,7 @@ pub(crate) fn is_current(latest: Option<SwitchId>, answer: Option<SwitchId>) -> 
 }
 
 impl Core {
-    /// `Command::SetModel`: switch `id`'s session (a subagent's parent, since subagents share
+    /// `ModelCommand::Set`: switch `id`'s session (a subagent's parent, since subagents share
     /// it) to `model` at `effort`.
     pub(crate) fn switch_model(
         &mut self,
@@ -259,7 +263,7 @@ impl Core {
             return;
         }
         self.model_catalog = models;
-        self.emit(Event::ModelsChanged(self.model_options()));
+        self.emit(Event::Model(ModelEvent::Changed(self.model_options())));
     }
 
     /// The models the selector offers: `config.toml`'s names, with what sessions reported.

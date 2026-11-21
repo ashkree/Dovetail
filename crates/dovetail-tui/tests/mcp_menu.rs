@@ -4,7 +4,12 @@
 
 mod support;
 
-use dovetail_api::{Command, McpRequest};
+use dovetail_api::{
+    Command,
+    app::AppCommand,
+    conversation::ConversationCommand,
+    mcp::{McpCommand, McpRequest},
+};
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::{App, Mode};
 use support::*;
@@ -44,7 +49,7 @@ fn pump(pair: &mut (App, MockCore)) -> Vec<Command> {
 fn mcp_requests(sent: &[Command]) -> Vec<McpRequest> {
     sent.iter()
         .filter_map(|c| match c {
-            Command::Mcp { request, .. } => Some(request.clone()),
+            Command::Mcp(McpCommand::Request { request, .. }) => Some(request.clone()),
             _ => None,
         })
         .collect()
@@ -78,7 +83,11 @@ fn slash_mcp_opens_the_menu_and_asks_for_the_servers() {
     assert!(screen.contains("dovetail"), "{screen}");
     assert!(screen.contains("report_status"), "{screen}");
     // Nothing went to Claude Code as a prompt.
-    assert!(!sent.iter().any(|c| matches!(c, Command::Prompt { .. })));
+    assert!(
+        !sent
+            .iter()
+            .any(|c| matches!(c, Command::Conversation(ConversationCommand::Prompt { .. })))
+    );
 }
 
 #[test]
@@ -160,9 +169,9 @@ fn a_login_opens_the_page_the_session_returned() {
     pair.0.on_key(ctrl('l'), 300);
     let sent = pump(&mut pair);
     assert!(
-        sent.contains(&Command::OpenExternal {
+        sent.contains(&Command::App(AppCommand::OpenExternal {
             url: "https://login.example/start".into()
-        }),
+        })),
         "{sent:?}"
     );
     // claude.ai finishes in the browser: nothing to paste, a refresh follows.
@@ -195,9 +204,9 @@ fn a_pasted_login_address_goes_to_the_session_as_the_callback_request() {
     pair.0.on_key(ctrl('l'), 300);
     let sent = pump(&mut pair);
     assert!(
-        sent.contains(&Command::OpenExternal {
+        sent.contains(&Command::App(AppCommand::OpenExternal {
             url: "https://login.example/start".into()
-        }),
+        })),
         "{sent:?}"
     );
     assert!(render(&mut pair.0, 130, 32).contains("paste the address"));

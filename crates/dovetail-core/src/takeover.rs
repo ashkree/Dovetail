@@ -1,14 +1,14 @@
 //! Take-over (M14, digest §2): `<leader>st` hands a session to native `claude` in the user's
 //! terminal and takes it back.
 //!
-//! **The hand-off.** The UI lets go of the terminal and sends [`Command::TakeOver`]. The core
+//! **The hand-off.** The UI lets go of the terminal and sends [`TerminalCommand::TakeOver`]. The core
 //! stores a [`TakeoverLock`] on the agent (awaited, so it is on disk before anything stops),
 //! stops the headless process, and once it has exited runs `claude --resume <id>` built from
 //! the same [`dovetail_driver::SessionSpec`] as headless: same settings and hooks, MCP config,
 //! role prompt, tools, model, permission mode, profile and recipe environment, in the same
 //! working directory, under the same capped scope unit. When native exits, the lines it added to
 //! the transcript are shown in the conversation under a note, the lock is cleared, the terminal
-//! goes back ([`Event::TerminalReturned`]) and headless resumes from the same session id.
+//! goes back ([`TerminalEvent::Returned`]) and headless resumes from the same session id.
 //! Nothing on this path removes a worktree or archives anything.
 //!
 //! **The lock.** While a session is locked, headless never starts: [`Core::launch`], which
@@ -37,9 +37,9 @@
 //! OOM watcher only follows headless processes, and an automatic restart goes through
 //! [`Core::launch`], so it cannot start headless beside native.
 //!
-//! [`Command::TakeOver`]: dovetail_api::Command::TakeOver
-//! [`Event::TerminalReturned`]: dovetail_api::Event::TerminalReturned
-//! [`RELEASE_TAKEOVER_PERMISSION`]: dovetail_api::RELEASE_TAKEOVER_PERMISSION
+//! [`TerminalCommand::TakeOver`]: dovetail_api::TerminalCommand::TakeOver
+//! [`TerminalEvent::Returned`]: dovetail_api::TerminalEvent::Returned
+//! [`RELEASE_TAKEOVER_PERMISSION`]: dovetail_api::inbox::RELEASE_TAKEOVER_PERMISSION
 
 use std::ffi::OsString;
 use std::io;
@@ -47,7 +47,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use dovetail_api::{
-    AgentId, AgentKind, EntryKind, Event, InboxKind, RELEASE_TAKEOVER_PERMISSION, SessionLock,
+    Event,
+    agent::{AgentEvent, AgentId, AgentKind, SessionLock},
+    conversation::EntryKind,
+    inbox::{InboxKind, RELEASE_TAKEOVER_PERMISSION},
+    terminal::TerminalEvent,
 };
 use dovetail_driver::transcript::{self, NativeEntry};
 use serde::{Deserialize, Serialize};
@@ -390,7 +394,9 @@ impl Core {
     /// starts native once it has exited. Every refusal hands the terminal back at once.
     pub(crate) async fn take_over(&mut self, id: AgentId) {
         if let Some(why) = self.refuse_take_over(&id) {
-            self.emit(Event::TerminalReturned { error: Some(why) });
+            self.emit(Event::Terminal(TerminalEvent::Returned {
+                error: Some(why),
+            }));
             return;
         }
         let live = self.live.contains_key(&id);
@@ -415,20 +421,20 @@ impl Core {
                 row.takeover = None;
                 row.agent.lock = SessionLock::Headless;
             });
-            self.emit(Event::TerminalReturned {
+            self.emit(Event::Terminal(TerminalEvent::Returned {
                 error: Some(format!("could not store the take-over lock: {e}")),
-            });
+            }));
             return;
         }
         // Stored above; the UI only needs to hear of it.
-        self.emit(Event::AgentUpserted(row.agent));
+        self.emit(Event::Agent(AgentEvent::Upserted(row.agent)));
         self.takeover = Some(Active {
             agent: id.clone(),
             phase,
         });
         let name = self.name_of(&id);
         self.activity(
-            dovetail_api::ActivityKind::Lifecycle,
+            dovetail_api::activity::ActivityKind::Lifecycle,
             Some(&id),
             format!("{name} taken over in a native terminal"),
         );
@@ -540,12 +546,12 @@ impl Core {
     /// Native has exited (or never started): give the terminal back, then release the lock,
     /// showing what happened in native, and resume headless.
     pub(crate) fn native_exited(&mut self, id: &AgentId, end: NativeEnd) {
-        self.emit(Event::TerminalReturned {
+        self.emit(Event::Terminal(TerminalEvent::Returned {
             error: end.error.clone(),
-        });
+        }));
         let name = self.name_of(id);
         self.activity(
-            dovetail_api::ActivityKind::Lifecycle,
+            dovetail_api::activity::ActivityKind::Lifecycle,
             Some(id),
             format!("{name} back from the native terminal"),
         );
@@ -746,7 +752,7 @@ impl Core {
 
     /// The working directory of agent `agent`'s session: a slice's worktree (or, without git,
     /// its repo's folder), else the coordinator's folder (ADR 0021).
-    pub(crate) fn session_cwd(&self, agent: &dovetail_api::Agent) -> PathBuf {
+    pub(crate) fn session_cwd(&self, agent: &dovetail_api::agent::Agent) -> PathBuf {
         match (agent.kind, &agent.worktree) {
             (AgentKind::Slice, Some(w)) => w.path.clone(),
             (AgentKind::Slice, None) => self
@@ -761,7 +767,10 @@ impl Core {
     /// The repo agent `id` works in (ADR 0021): a slice's stored repo, or the first when it has
     /// none stored (slices from before the migration); a subagent's parent's; for any other
     /// agent, the first repo. `None` in a project with no repos, or when the repo was removed.
-    pub(crate) fn repo_of(&self, id: &dovetail_api::AgentId) -> Option<crate::projects::Repo> {
+    pub(crate) fn repo_of(
+        &self,
+        id: &dovetail_api::agent::AgentId,
+    ) -> Option<crate::projects::Repo> {
         let row = self.agents.get(id)?;
         match (row.agent.kind, &row.agent.parent) {
             (AgentKind::Subagent { .. }, Some(parent)) if parent != id => self.repo_of(parent),

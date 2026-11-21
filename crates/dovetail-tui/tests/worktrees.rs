@@ -9,7 +9,14 @@
 
 mod support;
 
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg,
+    agent::{AgentCommand, AgentStatus},
+    clipboard::ClipboardCommand,
+    inbox::{InboxCommand, InboxKind, PermissionAnswer, REMOVE_WORKTREE_PERMISSION},
+    terminal::{TerminalCommand, TerminalEvent},
+    worktree::WorktreeCommand,
+};
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;
 use dovetail_tui::app::Signal;
@@ -74,12 +81,18 @@ fn line_with(screen: &str, needle: &str) -> String {
 fn leader_g_opens_the_view_focused_asks_for_a_refresh_and_again_goes_back() {
     let (_core, mut app) = start();
     leader(&mut app, "g");
-    assert_eq!(app.take_commands(), vec![Command::RefreshWorktrees]);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::Worktree(WorktreeCommand::Refresh)]
+    );
     assert_eq!(app.focus(), RegionId::Main);
     assert!(render(&mut app, 160, 40).contains("worktrees · Dovetail · 3"));
     leader(&mut app, "g");
     let back = app.take_commands();
-    assert!(!back.contains(&Command::RefreshWorktrees), "{back:?}");
+    assert!(
+        !back.contains(&Command::Worktree(WorktreeCommand::Refresh)),
+        "{back:?}"
+    );
     assert!(!render(&mut app, 160, 40).contains("worktrees · Dovetail"));
 }
 
@@ -89,7 +102,10 @@ fn the_worktrees_command_opens_it_and_esc_goes_back() {
     app.on_key(key(':'), 0);
     type_keys(&mut app, "worktrees");
     app.on_key(enter(), 50);
-    assert_eq!(app.take_commands(), vec![Command::RefreshWorktrees]);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::Worktree(WorktreeCommand::Refresh)]
+    );
     assert!(render(&mut app, 160, 40).contains("worktrees · Dovetail"));
     app.on_key(esc(), 60);
     assert!(!render(&mut app, 160, 40).contains("worktrees · Dovetail"));
@@ -151,9 +167,9 @@ fn x_on_unsaved_work_asks_first_and_yes_removes_it() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        vec![Command::CloseSlice {
+        vec![Command::Agent(AgentCommand::CloseSlice {
             agent: agent_id("tree-view")
-        }]
+        })]
     );
     assert_eq!(app.note(), None, "nothing is said until the core answers");
     for command in commands {
@@ -182,10 +198,10 @@ fn x_on_unsaved_work_asks_first_and_yes_removes_it() {
             .any(|a| a.id == agent_id("tree-view")),
         "nothing removed before the answer"
     );
-    core.handle(Command::AnswerPermission {
+    core.handle(Command::Inbox(InboxCommand::AnswerPermission {
         item: ask,
         answer: PermissionAnswer::Allow,
-    });
+    }));
     deliver(&mut core, &mut app);
     assert!(
         !app.snapshot()
@@ -200,12 +216,12 @@ fn x_on_unsaved_work_asks_first_and_yes_removes_it() {
 fn x_on_a_clean_pushed_worktree_removes_it_at_once() {
     let (mut core, mut app) = view();
     // A new slice: clean, and nothing to push.
-    core.handle(Command::NewSlice {
+    core.handle(Command::Agent(AgentCommand::NewSlice {
         repo: None,
         task: None,
         name: "fresh".into(),
         brief: "try it".into(),
-    });
+    }));
     for _ in 0..200 {
         let ready = app
             .snapshot()
@@ -246,22 +262,25 @@ fn e_hands_off_the_terminal_and_takes_it_back_on_the_core_answer() {
         .map(|w| w.path.clone())
         .expect("a worktree");
     // The core is asked first; the terminal is not let go of until it says so.
-    assert_eq!(app.take_commands(), vec![Command::OpenEditor { path }]);
+    assert_eq!(
+        app.take_commands(),
+        vec![Command::Terminal(TerminalCommand::OpenEditor { path })]
+    );
     assert!(app.awaiting_lend());
     assert!(!app.has_handoff());
     assert!(!app.terminal_away());
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::LendTerminal,
+        event: Event::Terminal(TerminalEvent::Lend),
     });
     assert!(!app.awaiting_lend());
     let handoff = app.take_handoff().expect("a hand-off");
-    assert_eq!(handoff, Command::TerminalReleased);
+    assert_eq!(handoff, Command::Terminal(TerminalCommand::Released));
     assert!(app.terminal_away());
     assert_eq!(app.take_handoff(), None, "one hand-off per key");
     app.on_server(ServerMsg::Event {
         seq: 2,
-        event: Event::TerminalReturned { error: None },
+        event: Event::Terminal(TerminalEvent::Returned { error: None }),
     });
     assert!(!app.terminal_away());
 
@@ -285,7 +304,7 @@ fn ctrl_c_in_the_editor_is_the_editor_s_but_sigterm_still_quits() {
     app.on_key(key('e'), 10);
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::LendTerminal,
+        event: Event::Terminal(TerminalEvent::Lend),
     });
     app.take_handoff().expect("a hand-off");
     app.on_signal(Signal::Interrupt);
@@ -305,7 +324,9 @@ fn c_copies_the_path() {
     let path = "/home/you/.local/share/dovetail/projects/dovetail/worktrees/picker";
     assert_eq!(
         app.take_commands(),
-        vec![Command::CopyToClipboard { text: path.into() }]
+        vec![Command::Clipboard(ClipboardCommand::Copy {
+            text: path.into()
+        })]
     );
     assert_eq!(app.note(), Some(format!("copied {path}").as_str()));
 }

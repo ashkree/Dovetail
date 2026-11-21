@@ -2,7 +2,7 @@
 //! tree, while the coordinator's conversation stays full height on the left (Layout B,
 //! ADR 0006 and ADR 0008). The inbox stays on top, so what needs you is still in view.
 
-use dovetail_api::AgentId;
+use dovetail_api::agent::AgentId;
 
 use super::{App, ChatSite};
 use crate::buffers::ConversationBuffer;

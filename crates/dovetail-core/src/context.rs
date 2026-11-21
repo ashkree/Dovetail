@@ -7,7 +7,7 @@
 //! model for the app's run so later sessions of that model know it from their first call; before
 //! any result, from [`table_window`]. Subagents run their own context and get no fill.
 
-use dovetail_api::AgentId;
+use dovetail_api::agent::AgentId;
 use dovetail_driver::{TokenUsage, TurnResult};
 
 use crate::service::Core;

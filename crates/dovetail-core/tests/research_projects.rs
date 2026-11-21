@@ -8,11 +8,24 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::{StartSlice, Tool};
 use dovetail_api::{
-    AgentId, Command, CoreLink, Event, NewTask, ProjectId, ProjectKind, ServerMsg, Snapshot,
-    TaskId, apply,
+    Command, CoreLink, Event, ServerMsg, Snapshot,
+    agent::AgentId,
+    apply,
+    project::{ProjectId, ProjectKind},
+    task::{NewTask, TaskId},
+};
+use dovetail_api::{
+    agent::AgentCommand,
+    app::{AppCommand, AppEvent},
+    conversation::{ConversationCommand, ConversationEvent},
+    library::{LibraryCommand, LibraryEvent},
+    project::{ProjectCommand, ProjectEvent},
+    socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody},
+    task::TaskCommand,
+    upgrade::UpgradeCommand,
+    worktree::{WorktreeCommand, WorktreeEvent},
 };
 use dovetail_core::config::Config;
 use dovetail_core::db::Db;
@@ -106,7 +119,7 @@ impl App {
             ServerMsg::Hello { .. } => {}
             ServerMsg::Snapshot(s) => self.snap = s,
             ServerMsg::Event { seq, event } => {
-                if let Event::CommandFailed { message } = &event {
+                if let Event::App(AppEvent::CommandFailed { message }) = &event {
                     self.failures.push(message.clone());
                 }
                 self.events.push(event.clone());
@@ -147,7 +160,7 @@ impl App {
     }
 
     fn quit(mut self) {
-        self.send(Command::Quit { end_sessions: true });
+        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
         let core = self.core.take().expect("core handle");
         assert!(core.wait(Duration::from_secs(10)), "core stopped");
     }
@@ -216,12 +229,12 @@ fn the_coordinator_runs_in_its_home_folder_with_its_role_prompt_and_resumes_afte
         "{:?}",
         app.snap.warnings
     );
-    app.send(Command::Prompt {
+    app.send(Command::Conversation(ConversationCommand::Prompt {
         agent: AgentId(COORDINATOR.into()),
         text: "hello".into(),
         attachments: Vec::new(),
         effort: None,
-    });
+    }));
     app.wait_for("the reply", |s| said(s, COORDINATOR, "alpha"));
     // ADR 0021 point 3: every coordinator runs in its project's `home/`, with no repos to attach.
     let spec = fake.started_specs()[0].clone();
@@ -272,7 +285,7 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
 
     let fake = fixture("plain_turn");
     let mut app = App::start(&fake, &paths, project.clone());
-    app.send(Command::CreateTask(NewTask {
+    app.send(Command::Task(TaskCommand::Create(NewTask {
         title: "Size the market".into(),
         p_level: None,
         bucket: None,
@@ -282,16 +295,16 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
         related: vec![],
         effort: Default::default(),
         criterion: None,
-    }));
+    })));
     app.wait_for("the task", |s| !s.tasks.is_empty());
 
     // `:spawn` from the UI.
-    app.send(Command::NewSlice {
+    app.send(Command::Agent(AgentCommand::NewSlice {
         repo: None,
         task: None,
         name: "later".into(),
         brief: "go".into(),
-    });
+    }));
     app.wait_until("the refusal", |a| !a.failures.is_empty());
     assert!(
         app.failures[0].contains("research project"),
@@ -319,24 +332,27 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
     assert!(!app.snap.agents.iter().any(|a| a.name == "later"));
 
     // No worktree refresh, no `@` listing from git, no `:upgrade`.
-    app.send(Command::RefreshWorktrees);
-    app.send(Command::ListPaths {
+    app.send(Command::Worktree(WorktreeCommand::Refresh));
+    app.send(Command::Conversation(ConversationCommand::ListPaths {
         agent: AgentId(COORDINATOR.into()),
         dir: None,
-    });
+    }));
     app.wait_until("the path listing", |a| {
-        a.events
-            .iter()
-            .any(|e| matches!(e, Event::PathsListed { .. }))
+        a.events.iter().any(|e| {
+            matches!(
+                e,
+                Event::Conversation(ConversationEvent::PathsListed { .. })
+            )
+        })
     });
     let listed = app.events.iter().find_map(|e| match e {
-        Event::PathsListed { paths, .. } => Some(paths.clone()),
+        Event::Conversation(ConversationEvent::PathsListed { paths, .. }) => Some(paths.clone()),
         _ => None,
     });
     if have_git {
         assert_eq!(listed, Some(Vec::new()), "git listed the state folder");
     }
-    app.send(Command::Upgrade { local: false });
+    app.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
     app.wait_until("the upgrade refusal", |a| a.failures.len() >= 2);
     assert!(
         app.failures[1].contains("research project"),
@@ -347,7 +363,7 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
     assert!(
         !app.events
             .iter()
-            .any(|e| matches!(e, Event::WorktreeUpserted(_))),
+            .any(|e| matches!(e, Event::Worktree(WorktreeEvent::Upserted(_)))),
         "a worktree was gathered"
     );
     assert!(app.snap.worktrees.is_empty());
@@ -362,9 +378,9 @@ fn new_research_project_registers_it_and_opening_it_quits_for_the_switch() {
     let fake = fixture("plain_turn");
     let mut app = App::start(&fake, &paths, project);
 
-    app.send(Command::NewResearchProject {
+    app.send(Command::Project(ProjectCommand::NewResearch {
         name: "Pricing study".into(),
-    });
+    }));
     app.wait_for("the new project in the list", |s| {
         s.projects.iter().any(|p| p.name == "Pricing study")
     });
@@ -386,20 +402,20 @@ fn new_research_project_registers_it_and_opening_it_quits_for_the_switch() {
     );
 
     // The same name again is refused.
-    app.send(Command::NewResearchProject {
+    app.send(Command::Project(ProjectCommand::NewResearch {
         name: "Pricing study".into(),
-    });
+    }));
     app.wait_until("the refusal", |a| !a.failures.is_empty());
     assert!(app.failures[0].contains("already"), "{:?}", app.failures);
 
     // Opening it: the core says so and quits, leaving the id for the binary.
-    app.send(Command::OpenProject {
+    app.send(Command::Project(ProjectCommand::Open {
         id: ProjectId("pricing-study".into()),
-    });
+    }));
     app.wait_until("the switch", |a| {
         a.events
             .iter()
-            .any(|e| matches!(e, Event::OpeningProject { .. }))
+            .any(|e| matches!(e, Event::Project(ProjectEvent::Opening { .. })))
     });
     let core = app.core.take().expect("core handle");
     assert_eq!(core.switch_requested().as_deref(), Some("pricing-study"));
@@ -425,7 +441,7 @@ fn a_task_is_captured_into_a_research_project_by_id_without_opening_it() {
     let db = Db::open(&paths, Some(&before.id)).expect("project db");
     let created = db
         .create_task(
-            dovetail_api::NewTask {
+            dovetail_api::task::NewTask {
                 title: "size the market".into(),
                 p_level: None,
                 bucket: None,
@@ -451,7 +467,7 @@ fn a_task_is_captured_into_a_research_project_by_id_without_opening_it() {
 /// written.
 #[test]
 fn another_projects_library_is_loaded_read_only() {
-    use dovetail_api::research::{BrowseWhat, ResearchWhat};
+    use dovetail_api::{library::BrowseWhat, research::ResearchWhat};
     let (dir, run) = dirs();
     let paths = paths(dir.path(), run.path());
     // The browsed project, with a task, a round, a report and a decision, written as its own
@@ -489,14 +505,14 @@ fn another_projects_library_is_loaded_read_only() {
         .wait()
         .expect("report");
         db.log_decision(
-            dovetail_api::NewDecision {
+            dovetail_api::decision::NewDecision {
                 task,
                 text: "Size by teams".into(),
                 why: None,
                 alternatives: Vec::new(),
                 supersedes: None,
             },
-            dovetail_api::DecisionAuthor::User,
+            dovetail_api::decision::DecisionAuthor::User,
         )
         .wait()
         .expect("decision");
@@ -524,21 +540,21 @@ fn another_projects_library_is_loaded_read_only() {
     let fake = fixture("plain_turn");
     let mut app = App::start(&fake, &paths, open);
 
-    app.send(Command::BrowseProject {
+    app.send(Command::Library(LibraryCommand::BrowseProject {
         id: ProjectId("market-sizing".into()),
-    });
+    }));
     app.wait_until("the browsed library", |a| {
         !a.failures.is_empty()
             || a.events
                 .iter()
-                .any(|e| matches!(e, Event::ProjectBrowsed(_)))
+                .any(|e| matches!(e, Event::Library(LibraryEvent::ProjectBrowsed(_))))
     });
     assert!(app.failures.is_empty(), "{:?}", app.failures);
     let library = app
         .events
         .iter()
         .find_map(|e| match e {
-            Event::ProjectBrowsed(b) => Some(b.clone()),
+            Event::Library(LibraryEvent::ProjectBrowsed(b)) => Some(b.clone()),
             _ => None,
         })
         .expect("browsed");
@@ -562,34 +578,36 @@ fn another_projects_library_is_loaded_read_only() {
     assert!(app.snap.decisions.is_empty());
 
     let task = library.tasks[0].id;
-    app.send(Command::LoadBrowsed {
+    app.send(Command::Library(LibraryCommand::LoadBrowsed {
         project: ProjectId("market-sizing".into()),
         what: BrowseWhat::Research {
             task,
             what: ResearchWhat::Report,
         },
-    });
+    }));
     app.wait_until("the browsed report", |a| {
         !a.failures.is_empty()
             || a.events
                 .iter()
-                .any(|e| matches!(e, Event::BrowsedLoaded { .. }))
+                .any(|e| matches!(e, Event::Library(LibraryEvent::BrowsedLoaded { .. })))
     });
     assert!(app.failures.is_empty(), "{:?}", app.failures);
     let report = app
         .events
         .iter()
         .find_map(|e| match e {
-            Event::BrowsedLoaded { document, .. } => Some(document.markdown.clone()),
+            Event::Library(LibraryEvent::BrowsedLoaded { document, .. }) => {
+                Some(document.markdown.clone())
+            }
             _ => None,
         })
         .expect("loaded");
     assert!(report.contains("About 40k teams."), "{report}");
 
     // An unknown project is refused.
-    app.send(Command::BrowseProject {
+    app.send(Command::Library(LibraryCommand::BrowseProject {
         id: ProjectId("nope".into()),
-    });
+    }));
     app.wait_until("the refusal", |a| !a.failures.is_empty());
     assert!(app.failures[0].contains("nope"), "{:?}", app.failures);
 

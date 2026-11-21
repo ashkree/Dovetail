@@ -6,8 +6,13 @@
 //! open it as in the reading column, so the answer's markers resolve to the same findings and
 //! sources.
 
-use dovetail_api::research::Evidence;
-use dovetail_api::{Agent, AgentId, AgentKind, Command, EntryKind, Snapshot, TaskId};
+use dovetail_api::{
+    Command, Snapshot,
+    agent::{Agent, AgentId, AgentKind},
+    conversation::EntryKind,
+    task::TaskId,
+};
+use dovetail_api::{agent::AgentCommand, research::Evidence};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Span;
@@ -172,9 +177,11 @@ impl Buffer for AskBuffer {
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
         match action {
             Action::CloseAsk => match self.agent() {
-                Some(agent) => effects.push(Effect::Command(Command::CloseSlice {
-                    agent: agent.clone(),
-                })),
+                Some(agent) => {
+                    effects.push(Effect::Command(Command::Agent(AgentCommand::CloseSlice {
+                        agent: agent.clone(),
+                    })))
+                }
                 None => effects.push(Effect::Note("no Ask session to close".into())),
             },
             Action::NextCitation => self.select(true, cx.snap, effects),

@@ -4,7 +4,10 @@
 //! usage row changes only when the session confirms it.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, ModelOption, ReasoningEffort, model_option_index};
+use dovetail_api::{
+    agent::AgentId,
+    model::{ModelOption, ReasoningEffort, model_option_index},
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};

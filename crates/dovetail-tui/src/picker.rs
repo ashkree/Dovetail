@@ -3,7 +3,7 @@
 //! are this component with different items.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, InboxId, ProjectId, TaskId};
+use dovetail_api::{agent::AgentId, inbox::InboxId, project::ProjectId, task::TaskId};
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32Str};
 use ratatui::Frame;

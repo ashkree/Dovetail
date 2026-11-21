@@ -6,8 +6,17 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::research::{BrowseWhat, DocImage, ResearchDocument, ResearchWhat};
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg, agent::AgentStatus, project::ProjectId, task::TaskId,
+};
+use dovetail_api::{
+    app::AppCommand,
+    conversation::ConversationCommand,
+    library::{BrowseWhat, DocImage, LibraryCommand, LibraryEvent},
+    project::ProjectCommand,
+    research::{FindingId, ResearchCommand, ResearchDocument, ResearchWhat, SourceId},
+    tangent::TangentCommand,
+};
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;
 use dovetail_tui::canvas::view::CellPx;
@@ -65,12 +74,15 @@ fn reading() -> (MockCore, App) {
     let (mut core, mut app) = start();
     keys(&mut app, " r");
     let commands = app.take_commands();
-    assert!(commands.contains(&Command::ListDocs), "{commands:?}");
     assert!(
-        commands.contains(&Command::LoadResearch {
+        commands.contains(&Command::Library(LibraryCommand::ListDocs)),
+        "{commands:?}"
+    );
+    assert!(
+        commands.contains(&Command::Research(ResearchCommand::Load {
             task: TaskId(3),
             what: ResearchWhat::Listing
-        }),
+        })),
         "{commands:?}"
     );
     for command in commands {
@@ -120,15 +132,15 @@ fn report() -> (MockCore, App) {
     app.on_key(enter(), 0);
     assert_eq!(
         app.take_commands(),
-        [Command::LoadResearch {
+        [Command::Research(ResearchCommand::Load {
             task: TaskId(3),
             what: ResearchWhat::Report
-        }]
+        })]
     );
-    core.handle(Command::LoadResearch {
+    core.handle(Command::Research(ResearchCommand::Load {
         task: TaskId(3),
         what: ResearchWhat::Report,
-    });
+    }));
     deliver(&mut core, &mut app);
     assert_eq!(app.focus(), RegionId::Reader);
     // The column is laid out when drawn, as it is before any key in the real loop.
@@ -210,10 +222,10 @@ fn a_tangent_opens_its_answer_and_its_citations_resolve_against_its_sources() {
     let commands = app.take_commands();
     for tangent in [1, 2] {
         assert!(
-            commands.contains(&Command::LoadTangent {
+            commands.contains(&Command::Tangent(TangentCommand::Load {
                 tangent: TaskId(tangent),
                 what: ResearchWhat::Listing,
-            }),
+            })),
             "{commands:?}"
         );
     }
@@ -226,10 +238,10 @@ fn a_tangent_opens_its_answer_and_its_citations_resolve_against_its_sources() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        vec![Command::LoadTangent {
+        vec![Command::Tangent(TangentCommand::Load {
             tangent: TaskId(1),
-            what: ResearchWhat::Finding(research::FindingId(1)),
-        }]
+            what: ResearchWhat::Finding(FindingId(1)),
+        })]
     );
     for command in commands {
         core.handle(command);
@@ -251,10 +263,10 @@ fn a_tangent_opens_its_answer_and_its_citations_resolve_against_its_sources() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        vec![Command::LoadTangent {
+        vec![Command::Tangent(TangentCommand::Load {
             tangent: TaskId(1),
-            what: ResearchWhat::Source(research::SourceId(1)),
-        }]
+            what: ResearchWhat::Source(SourceId(1)),
+        })]
     );
     for command in commands {
         core.handle(command);
@@ -287,10 +299,10 @@ fn citations_step_with_s_keys_and_gd_opens_the_finding_and_ctrl_o_comes_back() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        [Command::LoadResearch {
+        [Command::Research(ResearchCommand::Load {
             task: TaskId(3),
             what: ResearchWhat::Finding(dovetail_api::research::FindingId(1))
-        }]
+        })]
     );
     for command in commands {
         core.handle(command);
@@ -316,9 +328,9 @@ fn gx_opens_a_web_source_through_the_core_and_explains_the_rest() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        [Command::OpenExternal {
+        [Command::App(AppCommand::OpenExternal {
             url: "https://docs.rs/nucleo".into()
-        }]
+        })]
     );
     assert!(
         app.note()
@@ -355,9 +367,9 @@ fn an_html_source_reads_as_markdown_and_gx_opens_the_real_page() {
     keys(&mut app, "gx");
     assert_eq!(
         app.take_commands(),
-        [Command::OpenExternal {
+        [Command::App(AppCommand::OpenExternal {
             url: "https://docs.rs/nucleo".into()
-        }]
+        })]
     );
 }
 
@@ -365,8 +377,15 @@ fn an_html_source_reads_as_markdown_and_gx_opens_the_real_page() {
 fn ask_answers_with_citations_that_resolve_and_esc_twice_leaves() {
     let (mut core, mut app) = report();
     keys(&mut app, "i");
-    assert_eq!(app.take_commands(), [Command::StartAsk { task: TaskId(3) }]);
-    core.handle(Command::StartAsk { task: TaskId(3) });
+    assert_eq!(
+        app.take_commands(),
+        [Command::Research(ResearchCommand::StartAsk {
+            task: TaskId(3)
+        })]
+    );
+    core.handle(Command::Research(ResearchCommand::StartAsk {
+        task: TaskId(3),
+    }));
     deliver(&mut core, &mut app);
     assert_eq!(app.mode(), Mode::Insert);
     assert_eq!(app.focus(), RegionId::Ask);
@@ -381,19 +400,19 @@ fn ask_answers_with_citations_that_resolve_and_esc_twice_leaves() {
     let ask = agent_id("ask-3");
     assert_eq!(
         app.take_commands(),
-        [Command::Prompt {
+        [Command::Conversation(ConversationCommand::Prompt {
             agent: ask.clone(),
             text: "why nucleo?".into(),
             attachments: vec![],
             effort: None,
-        }]
+        })]
     );
-    core.handle(Command::Prompt {
+    core.handle(Command::Conversation(ConversationCommand::Prompt {
         agent: ask.clone(),
         text: "why nucleo?".into(),
         attachments: vec![],
         effort: None,
-    });
+    }));
     run_until(&mut core, &mut app, "the answer", |app| {
         app.snapshot()
             .agents
@@ -425,10 +444,10 @@ fn ask_answers_with_citations_that_resolve_and_esc_twice_leaves() {
     keys(&mut app, "gd");
     assert_eq!(
         app.take_commands(),
-        [Command::LoadResearch {
+        [Command::Research(ResearchCommand::Load {
             task: TaskId(3),
             what: ResearchWhat::Source(dovetail_api::research::SourceId(1))
-        }]
+        })]
     );
     app.on_key(esc(), 0);
     assert!(!app.reading_mode());
@@ -454,10 +473,10 @@ fn a_decision_reads_with_its_evidence_and_gd_follows_it() {
     keys(&mut app, "]sgd");
     assert_eq!(
         app.take_commands(),
-        [Command::LoadResearch {
+        [Command::Research(ResearchCommand::Load {
             task: TaskId(3),
             what: ResearchWhat::Finding(dovetail_api::research::FindingId(1))
-        }]
+        })]
     );
 }
 
@@ -494,7 +513,7 @@ fn with_kitty_graphics_a_measured_image_is_placed_by_path() {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::DocLoaded {
+        event: Event::Library(LibraryEvent::DocLoaded {
             path,
             document: ResearchDocument {
                 path: None,
@@ -506,7 +525,7 @@ fn with_kitty_graphics_a_measured_image_is_placed_by_path() {
                     height: 200,
                 }],
             },
-        },
+        }),
     });
     let screen = render(&mut app, 220, 50);
     assert!(screen.contains("▣ The three columns"), "{screen}");
@@ -624,9 +643,9 @@ fn leader_fr_browses_another_projects_library_read_only() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        [Command::BrowseProject {
+        [Command::Library(LibraryCommand::BrowseProject {
             id: ProjectId("market-sizing".into())
-        }]
+        })]
     );
     for command in commands {
         core.handle(command);
@@ -659,13 +678,13 @@ fn leader_fr_browses_another_projects_library_read_only() {
     // Its report comes from that project, read-only.
     pick(&mut app, "#3");
     app.on_key(enter(), 0);
-    let load = Command::LoadBrowsed {
+    let load = Command::Library(LibraryCommand::LoadBrowsed {
         project: ProjectId("market-sizing".into()),
         what: BrowseWhat::Research {
             task: TaskId(3),
             what: ResearchWhat::Report,
         },
-    };
+    });
     assert_eq!(app.take_commands(), std::slice::from_ref(&load));
     core.handle(load);
     deliver(&mut core, &mut app);
@@ -689,9 +708,9 @@ fn enter_on_a_project_row_browses_it_instead_of_switching() {
     let commands = app.take_commands();
     assert_eq!(
         commands,
-        [Command::BrowseProject {
+        [Command::Library(LibraryCommand::BrowseProject {
             id: ProjectId("notes-site".into())
-        }]
+        })]
     );
     for command in commands {
         core.handle(command);
@@ -711,10 +730,10 @@ fn enter_on_a_project_row_browses_it_instead_of_switching() {
     app.on_key(enter(), 0);
     assert_eq!(
         app.take_commands(),
-        [Command::LoadBrowsed {
+        [Command::Library(LibraryCommand::LoadBrowsed {
             project: ProjectId("notes-site".into()),
             what: BrowseWhat::Doc("intro.md".into()),
-        }]
+        })]
     );
 
     // Enter on the open project's row comes back; nothing switches projects.
@@ -724,7 +743,7 @@ fn enter_on_a_project_row_browses_it_instead_of_switching() {
     assert!(
         !commands
             .iter()
-            .any(|c| matches!(c, Command::OpenProject { .. })),
+            .any(|c| matches!(c, Command::Project(ProjectCommand::Open { .. }))),
         "{commands:?}"
     );
     assert!(
@@ -747,7 +766,7 @@ fn ask_is_off_while_browsing_and_browsing_is_not_remembered() {
     assert!(
         !app.take_commands()
             .iter()
-            .any(|c| matches!(c, Command::StartAsk { .. })),
+            .any(|c| matches!(c, Command::Research(ResearchCommand::StartAsk { .. }))),
         "no Ask about another project"
     );
     assert_eq!(app.mode(), Mode::Normal);

@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use dovetail_api::{McpOutcome, McpRequest, McpServer, McpStatus, McpTool};
+use dovetail_api::mcp::{McpOutcome, McpRequest, McpServer, McpStatus, McpTool};
 use serde_json::{Value, json};
 
 use crate::event::DriverEvent;

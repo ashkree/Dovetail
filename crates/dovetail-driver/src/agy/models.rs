@@ -7,7 +7,7 @@
 //! that family at that effort; anything else is a family of its own with no effort setting.
 
 use crate::event::ModelInfo;
-use dovetail_api::ReasoningEffort;
+use dovetail_api::model::ReasoningEffort;
 use serde_json::Value;
 
 /// One family: the name the selector passes back, and the agy id for each effort.

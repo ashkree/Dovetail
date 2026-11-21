@@ -8,9 +8,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dovetail_api::{
-    AgentId, AgentKind, Command, ConversationEntry, CoreLink, EntryId, EntryKind, Event, InboxKind,
-    NewTask, ProjectId, ProjectKind, ServerMsg, Snapshot, TANGENTS_PROJECT, TaskId, TaskStatus,
+    Command, CoreLink, Event, ServerMsg, Snapshot,
+    agent::{AgentCommand, AgentId, AgentKind},
+    app::{AppCommand, AppEvent},
     apply,
+    conversation::{ConversationEntry, EntryId, EntryKind},
+    inbox::InboxKind,
+    project::{ProjectId, ProjectKind},
+    tangent::{TANGENTS_PROJECT, TangentCommand},
+    task::{NewTask, TaskCommand, TaskId, TaskStatus},
 };
 use dovetail_core::config::Config;
 use dovetail_core::db::Db;
@@ -100,7 +106,7 @@ impl App {
             ServerMsg::Hello { .. } => {}
             ServerMsg::Snapshot(s) => self.snap = s,
             ServerMsg::Event { seq, event } => {
-                if let Event::CommandFailed { message } = &event {
+                if let Event::App(AppEvent::CommandFailed { message }) = &event {
                     self.failures.push(message.clone());
                 }
                 apply(&mut self.snap, seq, event);
@@ -132,7 +138,7 @@ impl App {
     }
 
     fn quit(mut self) {
-        self.send(Command::Quit { end_sessions: true });
+        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
         let core = self.core.take().expect("core handle");
         assert!(core.wait(Duration::from_secs(10)), "core stopped");
     }
@@ -140,9 +146,9 @@ impl App {
     /// Asks a tangent and waits until its answer and its subagent's finding are filed.
     fn ask(&mut self, question: &str) -> TaskId {
         let before = self.snap.tangents.len();
-        self.send(Command::NewTangent {
+        self.send(Command::Tangent(TangentCommand::New {
             question: question.into(),
-        });
+        }));
         self.wait_for("the tangent's answer and its subagent's finding", |s| {
             s.tangents.len() > before
                 && s.tangents
@@ -320,9 +326,9 @@ fn a_tangent_runs_read_only_in_tangents_and_is_saved_there_with_its_sources() {
     drop((db, own));
 
     // Read-only for real: its mode never cycles.
-    app.send(Command::CyclePermissionMode {
+    app.send(Command::Agent(AgentCommand::CyclePermissionMode {
         agent: agent.clone(),
-    });
+    }));
     app.drain(Duration::from_millis(200));
     assert!(
         app.failures.iter().any(|f| f.contains("read-only")),
@@ -362,7 +368,7 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
     let project = register(&paths, "Market sizing");
     let fake = fixture("research_websearch");
     let mut app = App::start(&fake, &paths, project.clone());
-    app.send(Command::CreateTask(NewTask {
+    app.send(Command::Task(TaskCommand::Create(NewTask {
         title: "Size the market".into(),
         p_level: None,
         bucket: None,
@@ -372,7 +378,7 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
         related: vec![],
         effort: Default::default(),
         criterion: None,
-    }));
+    })));
     app.wait_for("the task", |s| !s.tasks.is_empty());
     let task = app.snap.tasks[0].id;
 
@@ -387,10 +393,10 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
         .as_ref()
         .unwrap()
         .findings;
-    app.send(Command::AttachTangent {
+    app.send(Command::Tangent(TangentCommand::Attach {
         tangent: first,
         task,
-    });
+    }));
     app.wait_for("the findings on the task", |s| {
         s.research
             .iter()
@@ -411,10 +417,10 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
 
     // File into another project: a task there with the question, answers and sources.
     let second = app.ask("And who runs example.org?");
-    app.send(Command::FileTangent {
+    app.send(Command::Tangent(TangentCommand::File {
         tangent: second,
         project: ProjectId(other.id.clone()),
-    });
+    }));
     app.wait_for("the tangent filed", |s| {
         s.tangents.iter().all(|t| t.task.id != second)
     });
@@ -436,10 +442,10 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
 
     // Start a task: a new task here linked to it; the tangent stays, done.
     let third = app.ask("Is example.net reserved too?");
-    app.send(Command::StartFromTangent {
+    app.send(Command::Tangent(TangentCommand::StartFrom {
         tangent: third,
         project: ProjectId(project.id.clone()),
-    });
+    }));
     app.wait_for("the started task", |s| {
         s.tasks.iter().any(|t| {
             t.title == "Is example.net reserved too?"
@@ -454,7 +460,7 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
 
     // Drop: archived in Tangents, nothing deleted.
     let fourth = app.ask("What is RFC 2606?");
-    app.send(Command::DropTangent { tangent: fourth });
+    app.send(Command::Tangent(TangentCommand::Drop { tangent: fourth }));
     app.wait_for("the tangent dropped", |s| {
         s.tangents.iter().all(|t| t.task.id != fourth)
     });
@@ -472,10 +478,10 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
     drop(db);
 
     // Tangents itself is no destination.
-    app.send(Command::FileTangent {
+    app.send(Command::Tangent(TangentCommand::File {
         tangent: third,
         project: ProjectId(TANGENTS_PROJECT.into()),
-    });
+    }));
     app.drain(Duration::from_millis(200));
     assert!(
         app.failures
@@ -521,7 +527,7 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
     for (title, bucket) in [
         ("one", None),
         ("two", None),
-        ("kept", Some(dovetail_api::Bucket::Later)),
+        ("kept", Some(dovetail_api::task::Bucket::Later)),
     ] {
         tangents
             .create_task(
@@ -569,7 +575,7 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
         .unwrap()
         .task
         .id;
-    app.send(Command::DropTangent { tangent: one });
+    app.send(Command::Tangent(TangentCommand::Drop { tangent: one }));
     app.wait_for("the count down", |s| {
         s.inbox
             .iter()
@@ -591,10 +597,10 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
         .collect();
     assert_eq!(items.len(), 1, "{:?}", app.snap.inbox);
     assert_eq!(items[0].kind, InboxKind::NewTangents { count: 1 });
-    app.send(Command::StartFromTangent {
+    app.send(Command::Tangent(TangentCommand::StartFrom {
         tangent: two,
         project: ProjectId(project.id.clone()),
-    });
+    }));
     app.wait_for("the item gone once all are triaged", |s| {
         s.inbox
             .iter()

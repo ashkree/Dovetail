@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use dovetail_api::{MAX_ATTACHMENT_BYTES, Paste};
+use dovetail_api::{clipboard::Paste, conversation::MAX_ATTACHMENT_BYTES};
 
 use crate::clipboard::{self, Clip, ClipError};
 
@@ -52,7 +52,7 @@ fn read_image(path: &Path) -> Result<Clip, ClipError> {
     }
     let bytes = std::fs::read(path).map_err(|e| ClipError::Failed(e.to_string()))?;
     // The extension only filtered; the bytes decide the format (and refuse a mislabelled file).
-    match dovetail_api::ImageType::sniff(&bytes) {
+    match dovetail_api::conversation::ImageType::sniff(&bytes) {
         Some(found) => clipboard::check_image(found, bytes),
         None => Err(ClipError::Unsupported(path.display().to_string())),
     }

@@ -54,7 +54,10 @@ pub fn painter() -> Arc<dyn MapPainter> {
 
 #[cfg(test)]
 mod tests {
-    use dovetail_api::{Command, Event, ServerMsg};
+    use dovetail_api::{
+        Command, Event, ServerMsg,
+        map::{MapCommand, MapEvent},
+    };
     use dovetail_mock::{MockConfig, MockCore};
 
     use super::*;
@@ -65,10 +68,10 @@ mod tests {
         let ids: Vec<_> = core.state().maps.iter().map(|m| m.id.clone()).collect();
         let mut maps = Vec::new();
         for id in ids {
-            core.handle(Command::LoadMap { id, version: None });
+            core.handle(Command::Map(MapCommand::Load { id, version: None }));
             while let Some(scheduled) = core.next_message() {
                 if let ServerMsg::Event {
-                    event: Event::MapLoaded(map),
+                    event: Event::Map(MapEvent::Loaded(map)),
                     ..
                 } = scheduled.msg
                 {

@@ -16,11 +16,15 @@ pub(crate) mod subagent;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use dovetail_api::tools::Role;
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, AgentStatus, Attachment, EntryKind, Event, InboxKind,
-    MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, RunningTool, Warning, WarningId,
+    Event,
+    activity::ActivityKind,
+    agent::{AgentId, AgentKind, AgentStatus, RunningTool},
+    conversation::{Attachment, EntryKind, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS},
+    inbox::InboxKind,
+    status::{Warning, WarningId},
 };
+use dovetail_api::{agent::AgentEvent, mcp::McpEvent, status::StatusEvent, tools::Role};
 use dovetail_driver::{
     ContentBlock, DriverEvent, ExitInfo, ImageInput, InitInfo, PeerMessage, Session, TurnResult,
     UserInput,
@@ -472,7 +476,7 @@ impl Core {
         id: &AgentId,
         text: String,
         attachments: Vec<Attachment>,
-        effort: Option<dovetail_api::EffortId>,
+        effort: Option<dovetail_api::effort::EffortId>,
     ) {
         if self.live.get(id).is_some_and(|l| l.setting_up) {
             self.fail("this slice is still setting up");
@@ -625,9 +629,9 @@ impl Core {
         }
     }
 
-    /// `Command::Mcp`: one request of the MCP menu, sent to `id`'s session (a subagent's parent,
+    /// `McpCommand::Request`: one request of the MCP menu, sent to `id`'s session (a subagent's parent,
     /// since subagents share it). The answer arrives as `DriverEvent::McpReply`.
-    pub(crate) fn mcp_request(&mut self, id: &AgentId, request: dovetail_api::McpRequest) {
+    pub(crate) fn mcp_request(&mut self, id: &AgentId, request: dovetail_api::mcp::McpRequest) {
         let target = match self.agents.get(id) {
             Some(row) => match (&row.agent.kind, &row.agent.parent) {
                 (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
@@ -648,11 +652,11 @@ impl Core {
                 .map(|e| e.to_string()),
         };
         if let Some(why) = refused {
-            self.emit(Event::McpReply {
+            self.emit(Event::Mcp(McpEvent::Reply {
                 agent: target,
                 request,
-                outcome: dovetail_api::McpOutcome::Failed(why),
-            });
+                outcome: dovetail_api::mcp::McpOutcome::Failed(why),
+            }));
         }
     }
 
@@ -715,7 +719,7 @@ impl Core {
             DriverEvent::Commands(list) => {
                 let commands: Vec<_> = list
                     .into_iter()
-                    .map(|c| dovetail_api::SlashCommand {
+                    .map(|c| dovetail_api::agent::SlashCommand {
                         name: c.name,
                         description: c.description,
                         argument_hint: c.argument_hint,
@@ -723,7 +727,10 @@ impl Core {
                     .collect();
                 if self.commands.get(&agent) != Some(&commands) {
                     self.commands.insert(agent.clone(), commands.clone());
-                    self.emit(dovetail_api::Event::CommandsChanged { agent, commands });
+                    self.emit(dovetail_api::Event::Agent(AgentEvent::CommandsChanged {
+                        agent,
+                        commands,
+                    }));
                 }
             }
             DriverEvent::Status {
@@ -795,7 +802,9 @@ impl Core {
                         .get(&from)
                         .is_some_and(|r| matches!(r.agent.kind, AgentKind::Subagent { .. }));
                     let sender = self.bare_name(&peer.name).to_owned();
-                    let text = dovetail_api::agent_message_text(&sender, subagent, &peer.body);
+                    let text = dovetail_api::conversation::agent_message_text(
+                        &sender, subagent, &peer.body,
+                    );
                     self.add_entry(&agent, EntryKind::AgentMessage, text);
                     self.message(from, agent.clone(), peer.body, peer.msg_id);
                 }
@@ -839,11 +848,11 @@ impl Core {
             }
             DriverEvent::Models(models) => self.on_models_listed(models),
             DriverEvent::McpReply { request, outcome } => {
-                self.emit(Event::McpReply {
+                self.emit(Event::Mcp(McpEvent::Reply {
                     agent,
                     request,
                     outcome,
-                });
+                }));
             }
             DriverEvent::RateLimit(info) => self.on_rate_limit(&agent, &info),
             DriverEvent::Exited(info) => self.on_exit(&agent, info),
@@ -890,16 +899,16 @@ impl Core {
                     row.agent.kind,
                     AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent
                 ) {
-                    row.agent.permission_mode = dovetail_api::PermissionMode::Manual;
-                } else if row.agent.permission_mode == dovetail_api::PermissionMode::Auto
-                    && mode != Some(dovetail_api::PermissionMode::Auto)
+                    row.agent.permission_mode = dovetail_api::agent::PermissionMode::Manual;
+                } else if row.agent.permission_mode == dovetail_api::agent::PermissionMode::Auto
+                    && mode != Some(dovetail_api::agent::PermissionMode::Auto)
                 {
                     warn = Some(format!(
                         "{} started in {} mode, not auto: running as manual",
                         row.agent.name,
                         init.permission_mode.as_deref().unwrap_or("an unknown")
                     ));
-                    row.agent.permission_mode = dovetail_api::PermissionMode::Manual;
+                    row.agent.permission_mode = dovetail_api::agent::PermissionMode::Manual;
                 }
             });
             if let Some(text) = warn {
@@ -909,7 +918,9 @@ impl Core {
                 };
                 self.warnings.retain(|w| w.id != warning.id);
                 self.warnings.push(warning.clone());
-                self.emit(dovetail_api::Event::WarningSet(warning));
+                self.emit(dovetail_api::Event::Status(StatusEvent::WarningSet(
+                    warning,
+                )));
             }
             // A slice whose init already runs in its worktree is set up.
             if setting_up {
@@ -932,7 +943,7 @@ impl Core {
         &mut self,
         agent: &AgentId,
         message_id: Option<String>,
-    ) -> dovetail_api::EntryId {
+    ) -> dovetail_api::conversation::EntryId {
         if let Some(s) = self
             .live
             .get(agent)
@@ -1049,7 +1060,7 @@ impl Core {
         }
         row.agent.tool = tool;
         let agent = row.agent.clone();
-        self.emit(Event::AgentUpserted(agent));
+        self.emit(Event::Agent(AgentEvent::Upserted(agent)));
     }
 
     fn on_result(&mut self, agent: &AgentId, result: TurnResult) {

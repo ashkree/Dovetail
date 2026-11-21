@@ -10,7 +10,10 @@ use dovetail_api::research::{
     ResearchDocument, ResearchListing, ResearchSummary, ResearchWhat, SourceKind, ordinal,
     queue_position,
 };
-use dovetail_api::{Snapshot, Task, TaskId};
+use dovetail_api::{
+    Snapshot,
+    task::{Task, TaskId},
+};
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
 

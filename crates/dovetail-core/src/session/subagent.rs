@@ -20,7 +20,11 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::{ActivityKind, Agent, AgentId, AgentKind, AgentStatus, Event, SubagentProgress};
+use dovetail_api::{
+    Event,
+    activity::ActivityKind,
+    agent::{Agent, AgentEvent, AgentId, AgentKind, AgentStatus, SubagentProgress},
+};
 use dovetail_driver::{ContentBlock, DriverEvent, Origin, TaskEvent, TaskPhase, ToolResult};
 use serde_json::Value;
 
@@ -439,7 +443,7 @@ impl Core {
         self.tails.remove(id);
         self.persist("a closed subagent", self.db.close_agent(id.clone()));
         self.reassign_todos_of(id);
-        self.emit(Event::AgentRemoved(id.clone()));
+        self.emit(Event::Agent(AgentEvent::Removed(id.clone())));
     }
 
     /// The parent is gone for good: so are its subagent nodes.

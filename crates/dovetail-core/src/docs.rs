@@ -6,7 +6,10 @@ use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
-use dovetail_api::research::{DocEntry, DocImage, ResearchDocument};
+use dovetail_api::{
+    library::{DocEntry, DocImage},
+    research::ResearchDocument,
+};
 
 /// The repo folder the docs are read from.
 pub(crate) const DOCS_DIR: &str = "docs";

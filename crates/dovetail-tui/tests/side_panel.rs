@@ -4,7 +4,11 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::*;
+use dovetail_api::{
+    Command, Event, ServerMsg, Snapshot,
+    agent::{AgentCommand, AgentEvent, AgentKind, AgentStatus, PermissionMode},
+    conversation::{ConversationCommand, ConversationTail, EntryKind},
+};
 use dovetail_tui::mode::Mode;
 use dovetail_tui::region::RegionId;
 use support::*;
@@ -143,12 +147,12 @@ fn typing_in_the_panel_asks_the_side_chat_and_leaves_the_conversation_alone() {
     app.on_key(enter(), 100);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("side-1"),
             text: "and the fix?".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
     assert_eq!(app.open_agent(), Some(&agent_id("coordinator")));
     assert_eq!(app.focus(), RegionId::SideBottom);
@@ -160,12 +164,12 @@ fn typing_in_the_panel_asks_the_side_chat_and_leaves_the_conversation_alone() {
     app.on_key(enter(), 200);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Prompt {
+        vec![Command::Conversation(ConversationCommand::Prompt {
             agent: agent_id("coordinator"),
             text: "hi".into(),
             attachments: Vec::new(),
             effort: None,
-        }]
+        })]
     );
 }
 
@@ -188,18 +192,18 @@ fn dd_closes_the_side_chat_shown_and_the_panel_moves_on() {
     let mut app = panel_app();
     assert_eq!(
         press(&mut app, "dd"),
-        vec![Command::CloseSlice {
+        vec![Command::Agent(AgentCommand::CloseSlice {
             agent: agent_id("side-1")
-        }]
+        })]
     );
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::AgentRemoved(agent_id("side-1")),
+        event: Event::Agent(AgentEvent::Removed(agent_id("side-1"))),
     });
     assert_eq!(app.panel_agent(), Some(&agent_id("side-2")));
     app.on_server(ServerMsg::Event {
         seq: 2,
-        event: Event::AgentRemoved(agent_id("side-2")),
+        event: Event::Agent(AgentEvent::Removed(agent_id("side-2"))),
     });
     assert_eq!(app.panel_agent(), None);
     assert!(render(&mut app, 120, 34).contains("No side chats or tangents."));
@@ -226,14 +230,14 @@ fn ask_opens_the_new_side_chat_in_the_panel() {
     app.on_key(enter(), 100);
     assert_eq!(
         app.take_commands(),
-        vec![Command::NewSideChat {
+        vec![Command::Agent(AgentCommand::NewSideChat {
             question: "why so slow?".into()
-        }]
+        })]
     );
     let chat = agent("side-1", AgentKind::SideChat, AgentStatus::Working, None);
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::AgentUpserted(chat),
+        event: Event::Agent(AgentEvent::Upserted(chat)),
     });
     assert!(app.side_panel_open());
     assert_eq!(app.panel_agent(), Some(&agent_id("side-1")));

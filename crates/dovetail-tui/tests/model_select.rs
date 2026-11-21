@@ -4,7 +4,9 @@
 mod support;
 
 use dovetail_api::{
-    AgentKind, AgentStatus, Command, Event, ModelOption, ReasoningEffort, ServerMsg, Snapshot,
+    Command, Event, ServerMsg, Snapshot,
+    agent::{AgentEvent, AgentKind, AgentStatus},
+    model::{ModelCommand, ModelOption, ReasoningEffort},
 };
 use dovetail_tui::App;
 use dovetail_tui::action::Action;
@@ -38,7 +40,7 @@ fn world_with_models() -> Snapshot {
     snap
 }
 
-fn coordinator(app: &App) -> dovetail_api::AgentId {
+fn coordinator(app: &App) -> dovetail_api::agent::AgentId {
     app.snapshot()
         .agents
         .iter()
@@ -83,11 +85,11 @@ fn enter_applies_the_pick_to_the_focused_session() {
     app.on_key(enter(), 200);
     assert_eq!(
         app.take_commands(),
-        vec![Command::SetModel {
+        vec![Command::Model(ModelCommand::Set {
             agent: id,
             model: "sonnet".into(),
             effort: Some(ReasoningEffort::Xhigh),
-        }]
+        })]
     );
     assert_eq!(app.mode(), Mode::Normal);
     assert!(!render(&mut app, 120, 40).contains("model · coordinator"));
@@ -123,11 +125,11 @@ fn slash_model_in_the_chat_bar_opens_the_selector_and_is_never_sent() {
     app.on_key(enter(), 600);
     assert_eq!(
         app.take_commands(),
-        vec![Command::SetModel {
+        vec![Command::Model(ModelCommand::Set {
             agent: id,
             model: "haiku".into(),
             effort: Some(ReasoningEffort::High),
-        }]
+        })]
     );
 }
 
@@ -148,7 +150,7 @@ fn the_usage_row_shows_model_and_effort_once_the_core_confirms() {
     agent.status = AgentStatus::Idle;
     app.on_server(ServerMsg::Event {
         seq: app.snapshot().seq + 1,
-        event: Event::AgentUpserted(agent),
+        event: Event::Agent(AgentEvent::Upserted(agent)),
     });
     assert!(render(&mut app, 160, 40).contains("sonnet-5-5 max"));
 }

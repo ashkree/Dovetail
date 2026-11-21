@@ -2,8 +2,11 @@
 //! criterion a task belongs to.
 
 use dovetail_api::{
-    Criterion, CriterionId, CriterionState, Effort, EffortChange, EffortId, EffortStatus,
-    NewEffort, Task, TaskId, UNSORTED_EFFORT, WhereWasI,
+    effort::{
+        Criterion, CriterionId, CriterionState, Effort, EffortChange, EffortId, EffortStatus,
+        NewEffort, UNSORTED_EFFORT, WhereWasI,
+    },
+    task::{Task, TaskId},
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -98,7 +101,7 @@ fn effort_exists(conn: &Connection, id: EffortId) -> Result<bool, DbError> {
 }
 
 /// Refuses a name that is empty or that another effort has. `name` is already in its stored
-/// form (`dovetail_api::effort_name`).
+/// form (`dovetail_api::effort::effort_name`).
 fn check_name(conn: &Connection, name: &str, own: Option<EffortId>) -> Result<(), DbError> {
     if name.is_empty() {
         return Err(DbError::Refused(

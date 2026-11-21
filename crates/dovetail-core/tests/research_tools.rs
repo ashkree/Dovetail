@@ -8,16 +8,28 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dovetail_api::research::{
-    Evidence, FindingId, ProposalKind, ResearchContent, ResearchKind, ResearchWhat, SourceId,
-};
 use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
 use dovetail_api::tools::{
     ArchiveTask, ResearchGet, ResearchPropose, ResearchStartRound, ResearchWriteReport, Tool,
 };
 use dovetail_api::{
-    AgentId, Alternative, Bucket, Command, CoreLink, Event, InboxKind, NewTask, PermissionAnswer,
-    ServerMsg, Snapshot, TaskId, apply,
+    Command, CoreLink, Event, ServerMsg, Snapshot,
+    agent::AgentId,
+    apply,
+    decision::Alternative,
+    inbox::{InboxKind, PermissionAnswer},
+    task::{Bucket, NewTask, TaskId},
+};
+use dovetail_api::{
+    app::{AppCommand, AppEvent},
+    conversation::ConversationCommand,
+    inbox::InboxCommand,
+    library::{LibraryCommand, LibraryEvent},
+    research::{
+        Evidence, FindingId, ProposalKind, ResearchCommand, ResearchContent, ResearchEvent,
+        ResearchKind, ResearchWhat, SourceId,
+    },
+    task::TaskCommand,
 };
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
@@ -98,12 +110,14 @@ impl App {
             ServerMsg::Snapshot(s) => self.snap = s,
             ServerMsg::Event { seq, event } => {
                 match &event {
-                    Event::CommandFailed { message } => self.failures.push(message.clone()),
-                    Event::ResearchLoaded {
+                    Event::App(AppEvent::CommandFailed { message }) => {
+                        self.failures.push(message.clone())
+                    }
+                    Event::Research(ResearchEvent::Loaded {
                         task,
                         what,
                         content,
-                    } => self.loaded.push((*task, what.clone(), content.clone())),
+                    }) => self.loaded.push((*task, what.clone(), content.clone())),
                     _ => {}
                 }
                 apply(&mut self.snap, seq, event);
@@ -201,7 +215,7 @@ impl App {
     }
 
     fn quit(mut self) {
-        self.send(Command::Quit { end_sessions: true });
+        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
         let core = self.core.take().expect("core handle");
         assert!(core.wait(Duration::from_secs(10)), "core stopped");
     }
@@ -218,7 +232,7 @@ fn paths(dir: &Path) -> Paths {
 
 fn new_task(app: &mut App, title: &str) -> TaskId {
     let before = app.snap.tasks.len();
-    app.send(Command::CreateTask(NewTask {
+    app.send(Command::Task(TaskCommand::Create(NewTask {
         title: title.into(),
         p_level: None,
         bucket: None,
@@ -228,7 +242,7 @@ fn new_task(app: &mut App, title: &str) -> TaskId {
         related: vec![],
         effort: Default::default(),
         criterion: None,
-    }));
+    })));
     app.wait_for("the task", |s| s.tasks.len() > before);
     app.snap
         .tasks
@@ -305,21 +319,21 @@ fn researched(dir: &Path) -> Researched {
     let task = new_task(&mut app, "Example research");
     let (text, is_error) = start_round(&app, task, "What is the codeword?");
     assert!(!is_error, "{text}");
-    app.send(Command::Prompt {
+    app.send(Command::Conversation(ConversationCommand::Prompt {
         agent: AgentId(COORDINATOR.into()),
         text: "go".into(),
         attachments: Vec::new(),
         effort: None,
-    });
+    }));
     app.wait_for("the finding", |s| {
         s.research
             .iter()
             .any(|r| r.task == task && r.findings == 1 && r.sources == 2)
     });
-    app.send(Command::LoadResearch {
+    app.send(Command::Research(ResearchCommand::Load {
         task,
         what: ResearchWhat::Listing,
-    });
+    }));
     let deadline = Instant::now() + Duration::from_secs(5);
     while app.loaded.is_empty() {
         assert!(Instant::now() < deadline, "no listing");
@@ -346,7 +360,10 @@ fn answer(app: &mut App, answer: PermissionAnswer) {
         .find(|i| matches!(i.kind, InboxKind::Proposal { .. }))
         .expect("a proposal in Needs you")
         .id;
-    app.send(Command::AnswerPermission { item, answer });
+    app.send(Command::Inbox(InboxCommand::AnswerPermission {
+        item,
+        answer,
+    }));
     app.wait_for("the proposal to leave Needs you", |s| {
         !s.inbox
             .iter()
@@ -505,16 +522,16 @@ fn the_specified_errors_are_returned_and_nothing_is_written() {
     );
 
     // An archived task takes no round.
-    app.send(Command::UpdateTask {
+    app.send(Command::Task(TaskCommand::Update {
         id: task,
-        patch: vec![dovetail_api::TaskChange::Status(
-            dovetail_api::TaskStatus::Archived,
+        patch: vec![dovetail_api::task::TaskChange::Status(
+            dovetail_api::task::TaskStatus::Archived,
         )],
-    });
+    }));
     app.wait_for("the archive", |s| {
         s.tasks
             .iter()
-            .any(|t| t.id == task && t.status == dovetail_api::TaskStatus::Archived)
+            .any(|t| t.id == task && t.status == dovetail_api::task::TaskStatus::Archived)
     });
     let (text, is_error) = start_round(&app, task, "criteria");
     assert!(is_error && text.contains("archived"), "{text}");
@@ -733,7 +750,7 @@ fn a_round_requested_while_one_is_open_is_queued_and_opens_in_request_order() {
     assert!(activity_has(&app, "queued on #") && activity_has(&app, "(2nd in line)"));
 
     // Closing the open round opens the next in request order and tells the coordinator.
-    app.send(Command::CloseRound { task: a });
+    app.send(Command::Research(ResearchCommand::CloseRound { task: a }));
     let note = app.wait_for_note("is now open");
     assert_eq!(
         note,
@@ -751,10 +768,10 @@ fn a_round_requested_while_one_is_open_is_queued_and_opens_in_request_order() {
 
     // A queued round can be dropped: its row and brief.md go, and the line moves up.
     let gamma_brief = brief_file(&app, c, 1);
-    app.send(Command::DropRound {
+    app.send(Command::Research(ResearchCommand::DropRound {
         task: c,
         round: None,
-    });
+    }));
     app.wait_for("gamma's drop", |s| {
         s.research
             .iter()
@@ -763,10 +780,10 @@ fn a_round_requested_while_one_is_open_is_queued_and_opens_in_request_order() {
     });
     assert!(!gamma_brief.exists());
     // An open round cannot be dropped.
-    app.send(Command::DropRound {
+    app.send(Command::Research(ResearchCommand::DropRound {
         task: b,
         round: None,
-    });
+    }));
     app.drain(Duration::from_millis(100));
     assert!(
         app.failures.iter().any(|f| f.contains("no queued round")),
@@ -774,7 +791,7 @@ fn a_round_requested_while_one_is_open_is_queued_and_opens_in_request_order() {
         app.failures
     );
 
-    app.send(Command::CloseRound { task: b });
+    app.send(Command::Research(ResearchCommand::CloseRound { task: b }));
     app.wait_for_note(&format!("Round 2 for #{} is now open", a.0));
     app.wait_for("alpha round 2 to open", |s| {
         s.research.iter().any(|r| {
@@ -826,9 +843,9 @@ fn the_queue_survives_a_restart() {
     // A new request still queues behind both, and closing opens them in order.
     let (text, _) = start_round(&app, a, "alpha again");
     assert_eq!(head(&text)["position"], 4);
-    app.send(Command::CloseRound { task: a });
+    app.send(Command::Research(ResearchCommand::CloseRound { task: a }));
     app.wait_for_note(&format!("Round 1 for #{} is now open", b.0));
-    app.send(Command::CloseRound { task: b });
+    app.send(Command::Research(ResearchCommand::CloseRound { task: b }));
     app.wait_for_note(&format!("Round 1 for #{} is now open", c.0));
     app.quit();
 }
@@ -860,11 +877,11 @@ fn archiving_a_task_closes_its_round_drops_its_queue_and_opens_the_next_one() {
         "{text}"
     );
 
-    app.send(Command::ArchiveTask { id: a });
+    app.send(Command::Task(TaskCommand::Archive { id: a }));
     app.wait_for("alpha to be archived", |s| {
         s.tasks
             .iter()
-            .any(|t| t.id == a && t.status == dovetail_api::TaskStatus::Archived)
+            .any(|t| t.id == a && t.status == dovetail_api::task::TaskStatus::Archived)
     });
     // Beta's round opens in its place; alpha's round 1 is closed, round 2 is gone.
     app.wait_for_note(&format!("Round 1 for #{} is now open", b.0));
@@ -887,12 +904,12 @@ fn archiving_a_task_closes_its_round_drops_its_queue_and_opens_the_next_one() {
 fn unfiled(dir: &Path) -> (App, PathBuf, PathBuf) {
     let (repo, paths) = open_repo(dir);
     let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
-    app.send(Command::Prompt {
+    app.send(Command::Conversation(ConversationCommand::Prompt {
         agent: AgentId(COORDINATOR.into()),
         text: "go".into(),
         attachments: Vec::new(),
         effort: None,
-    });
+    }));
     app.wait_for("an unfiled finding in Needs you", |s| {
         s.inbox
             .iter()
@@ -902,7 +919,7 @@ fn unfiled(dir: &Path) -> (App, PathBuf, PathBuf) {
     (app, root, repo)
 }
 
-fn unfiled_item(app: &App) -> (dovetail_api::InboxId, String, u32) {
+fn unfiled_item(app: &App) -> (dovetail_api::inbox::InboxId, String, u32) {
     app.snap
         .inbox
         .iter()
@@ -971,7 +988,10 @@ fn a_coordinator_finding_with_no_round_is_unfiled_and_filing_moves_it_and_its_fi
     let task = new_task(&mut app, "Pricing research");
 
     // Filing under a task moves the row and its files to the task's research folder.
-    app.send(Command::FileUnfiled { item, task });
+    app.send(Command::Research(ResearchCommand::FileUnfiled {
+        item,
+        task,
+    }));
     app.wait_for("the item to leave Needs you", |s| {
         !s.inbox
             .iter()
@@ -1002,10 +1022,10 @@ fn a_coordinator_finding_with_no_round_is_unfiled_and_filing_moves_it_and_its_fi
     assert_eq!(files_under(&root.join("unfiled")), Vec::<PathBuf>::new());
     assert!(!root.join("unfiled").exists());
     // The finding opens like any other, by the id it has now.
-    app.send(Command::LoadResearch {
+    app.send(Command::Research(ResearchCommand::Load {
         task,
         what: ResearchWhat::Listing,
-    });
+    }));
     let deadline = Instant::now() + Duration::from_secs(5);
     while app.loaded.is_empty() {
         assert!(Instant::now() < deadline, "no listing");
@@ -1035,7 +1055,7 @@ fn dropping_an_unfiled_finding_deletes_it_and_its_files() {
     let (mut app, root, _repo) = unfiled(dir.path());
     let (item, _, _) = unfiled_item(&app);
     assert!(!files_under(&root.join("unfiled")).is_empty());
-    app.send(Command::DismissInbox { item });
+    app.send(Command::Inbox(InboxCommand::Dismiss { item }));
     app.wait_for("the item to leave Needs you", |s| {
         !s.inbox
             .iter()
@@ -1046,7 +1066,10 @@ fn dropping_an_unfiled_finding_deletes_it_and_its_files() {
     assert!(activity_has(&app, "unfiled finding") && activity_has(&app, "dropped"));
     // Filing something already dropped is a visible failure, not a silent no-op.
     let task = new_task(&mut app, "Later");
-    app.send(Command::FileUnfiled { item, task });
+    app.send(Command::Research(ResearchCommand::FileUnfiled {
+        item,
+        task,
+    }));
     app.drain(Duration::from_millis(200));
     assert!(!app.failures.is_empty());
     assert!(app.summary(task).is_none_or(|r| r.findings == 0));
@@ -1077,10 +1100,10 @@ fn the_kind_comes_from_the_round_or_the_user_and_a_decision_is_held_to_its_templ
         "{text}"
     );
     // The user overrides it, and the same report is written.
-    app.send(Command::SetResearchKind {
+    app.send(Command::Research(ResearchCommand::SetKind {
         task,
         kind: ResearchKind::Question,
-    });
+    }));
     app.wait_for("the override", |s| {
         s.research
             .iter()
@@ -1108,7 +1131,7 @@ fn wait_for_failure(app: &mut App, needle: &str) {
 
 #[test]
 fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
-    use dovetail_api::{AgentKind, EntryKind};
+    use dovetail_api::{agent::AgentKind, conversation::EntryKind};
     let dir = tempfile::tempdir().unwrap();
     let Researched {
         mut app,
@@ -1117,7 +1140,7 @@ fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
         sources,
     } = researched(dir.path());
     // No report yet: nothing to ask about.
-    app.send(Command::StartAsk { task });
+    app.send(Command::Research(ResearchCommand::StartAsk { task }));
     wait_for_failure(&mut app, "no report yet");
     app.failures.clear();
     let body = format!(
@@ -1129,7 +1152,7 @@ fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
 
     // `i`: the agent is made, nothing is started yet.
     let starts = app.fake.started_specs().len();
-    app.send(Command::StartAsk { task });
+    app.send(Command::Research(ResearchCommand::StartAsk { task }));
     let ask = AgentId(format!("ask-{}", task.0));
     app.wait_for("the Ask agent", |s| s.agents.iter().any(|a| a.id == ask));
     let agent = app.snap.agents.iter().find(|a| a.id == ask).expect("ask");
@@ -1139,12 +1162,12 @@ fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
 
     // The first question starts it in the research folder, read-only, with no Dovetail suites,
     // and carries the report and the index; the conversation shows only the question.
-    app.send(Command::Prompt {
+    app.send(Command::Conversation(ConversationCommand::Prompt {
         agent: ask.clone(),
         text: "Where does the codeword come from?".into(),
         attachments: Vec::new(),
         effort: None,
-    });
+    }));
     let sent = app.wait_for_note("## The report");
     assert!(sent.contains("MARIGOLD-42"), "{sent}");
     assert!(sent.contains(&format!("- F{finding} `")), "{sent}");
@@ -1231,14 +1254,14 @@ fn open_external_runs_the_opener_on_web_pages_only() {
     .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
-    app.send(Command::OpenExternal {
+    app.send(Command::App(AppCommand::OpenExternal {
         url: "file:///etc/passwd".into(),
-    });
+    }));
     wait_for_failure(&mut app, "only web pages");
     assert!(!opened.exists());
-    app.send(Command::OpenExternal {
+    app.send(Command::App(AppCommand::OpenExternal {
         url: "https://docs.rs/nucleo".into(),
-    });
+    }));
     let deadline = Instant::now() + Duration::from_secs(5);
     while !opened.exists() || read(&opened).is_empty() {
         assert!(Instant::now() < deadline, "the opener did not run");
@@ -1260,13 +1283,13 @@ fn the_repo_docs_are_listed_and_read_and_nothing_outside_them() {
     .unwrap();
     std::fs::write(repo.join("README.md"), "# Not a doc\n").unwrap();
     let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
-    app.send(Command::ListDocs);
-    app.send(Command::LoadDoc {
+    app.send(Command::Library(LibraryCommand::ListDocs));
+    app.send(Command::Library(LibraryCommand::LoadDoc {
         path: "adr/0018-reading.md".into(),
-    });
-    app.send(Command::LoadDoc {
+    }));
+    app.send(Command::Library(LibraryCommand::LoadDoc {
         path: "../README.md".into(),
-    });
+    }));
     let mut docs = None;
     let mut doc = None;
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -1276,8 +1299,10 @@ fn the_repo_docs_are_listed_and_read_and_nothing_outside_them() {
         };
         if let ServerMsg::Event { event, .. } = &message {
             match event {
-                Event::DocsListed { docs: d } => docs = Some(d.clone()),
-                Event::DocLoaded { document, .. } => doc = Some(document.markdown.clone()),
+                Event::Library(LibraryEvent::DocsListed { docs: d }) => docs = Some(d.clone()),
+                Event::Library(LibraryEvent::DocLoaded { document, .. }) => {
+                    doc = Some(document.markdown.clone())
+                }
                 _ => {}
             }
         }

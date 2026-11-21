@@ -10,17 +10,23 @@
 //!
 //! `<leader>fr`, or `Enter` on another project's row, browses that project instead (ADR 0018,
 //! decided 2026-11-11 later): the library re-roots to its research, decisions and docs, loaded
-//! read-only with `Command::BrowseProject` and not kept up to date. Its documents are
+//! read-only with `LibraryCommand::BrowseProject` and not kept up to date. Its documents are
 //! [`ReadTarget::Elsewhere`]. Browsing never opens the project: `<leader>pp` does that.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use dovetail_api::research::{BrowsedProject, ResearchSummary};
-use dovetail_api::research::{
-    DocEntry, FindingId, FindingSummary, ResearchListing, ResearchWhat, SourceId, SourceKind,
+use dovetail_api::{
+    Snapshot,
+    decision::{Decision, DecisionId},
+    project::{ProjectId, ProjectKind},
+    task::{Task, TaskId},
 };
-use dovetail_api::{Decision, DecisionId, ProjectId, ProjectKind, Snapshot, Task, TaskId};
+use dovetail_api::{library::BrowsedProject, research::ResearchSummary};
+use dovetail_api::{
+    library::DocEntry,
+    research::{FindingId, FindingSummary, ResearchListing, ResearchWhat, SourceId, SourceKind},
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -1028,8 +1034,8 @@ pub fn decision_markdown(
         .find(|t| t.id == d.task)
         .map_or_else(String::new, |t| format!(" {}", t.title));
     let by = match &d.by {
-        dovetail_api::DecisionAuthor::User => "you".to_string(),
-        dovetail_api::DecisionAuthor::Agent(a) => a.0.clone(),
+        dovetail_api::decision::DecisionAuthor::User => "you".to_string(),
+        dovetail_api::decision::DecisionAuthor::Agent(a) => a.0.clone(),
     };
     let mut md = format!(
         "# {}\n\nTask #{}{task} · {} · by {by}\n",

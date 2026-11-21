@@ -4,10 +4,13 @@
 
 use std::path::Path;
 
-use dovetail_api::TaskId;
-use dovetail_api::research::{
-    DocEntry, FindingId, FindingSummary, ResearchContent, ResearchDocument, ResearchListing,
-    ResearchSummary, ResearchWhat, RoundSummary, SourceId, SourceKind, SourceSummary,
+use dovetail_api::task::TaskId;
+use dovetail_api::{
+    library::DocEntry,
+    research::{
+        FindingId, FindingSummary, ResearchContent, ResearchDocument, ResearchListing,
+        ResearchSummary, ResearchWhat, RoundSummary, SourceId, SourceKind, SourceSummary,
+    },
 };
 
 use crate::world::agent_id;
@@ -26,7 +29,7 @@ pub(crate) struct Research {
 }
 
 impl Research {
-    /// The answer to a [`dovetail_api::Command::LoadResearch`]; `None` when the mock has no such
+    /// The answer to a [`dovetail_api::research::ResearchCommand::Load`]; `None` when the mock has no such
     /// research.
     pub(crate) fn load(&self, task: TaskId, what: &ResearchWhat) -> Option<ResearchContent> {
         if task != TaskId(TASK) {
@@ -61,7 +64,7 @@ const DOCS: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// The mock's repo docs, as `Command::ListDocs` answers.
+/// The mock's repo docs, as `LibraryCommand::ListDocs` answers.
 pub(crate) fn docs() -> Vec<DocEntry> {
     DOCS.iter()
         .map(|(path, title, _)| DocEntry {
@@ -71,7 +74,7 @@ pub(crate) fn docs() -> Vec<DocEntry> {
         .collect()
 }
 
-/// One of [`docs`], as `Command::LoadDoc` answers.
+/// One of [`docs`], as `LibraryCommand::LoadDoc` answers.
 pub(crate) fn doc(path: &Path) -> Option<ResearchDocument> {
     DOCS.iter()
         .find(|(p, _, _)| Path::new(p) == path)

@@ -3,7 +3,12 @@
 
 mod support;
 
-use dovetail_api::*;
+use dovetail_api::{
+    Event, ServerMsg,
+    agent::{Agent, AgentEvent, AgentKind, AgentStatus, RunningTool},
+    journal::{JournalEvent, JournalState},
+    upgrade::UpgradeEvent,
+};
 use support::*;
 
 /// The b.png world with the coordinator working, its conversation in view. The slices are idle,
@@ -59,14 +64,14 @@ fn a_running_tool_is_named_instead_of_a_word() {
     let mut app = working_app();
     app.on_server(ServerMsg::Event {
         seq: app_seq(&app),
-        event: Event::AgentUpserted({
+        event: Event::Agent(AgentEvent::Upserted({
             let mut a = app_agent(&app, "coordinator");
             a.tool = Some(RunningTool {
                 name: "Read".into(),
                 arg: "/repo/docs/plan.md".into(),
             });
             a
-        }),
+        })),
     });
     app.set_now(NOW_MS + 65_000);
     let screen = draw(&mut app);
@@ -149,7 +154,7 @@ fn animation_stops_when_the_agent_stops_working() {
     done.status = AgentStatus::Idle;
     app.on_server(ServerMsg::Event {
         seq: app_seq(&app),
-        event: Event::AgentUpserted(done),
+        event: Event::Agent(AgentEvent::Upserted(done)),
     });
     // The redraw is what takes the spinner off the screen.
     draw(&mut app);
@@ -177,11 +182,11 @@ fn closing_app(fresh: bool) -> dovetail_tui::App {
     let mut app = idle_app();
     app.on_server(ServerMsg::Event {
         seq: app_seq(&app),
-        event: Event::JournalChanged(JournalState {
+        event: Event::Journal(JournalEvent::Changed(JournalState {
             latest: None,
             closing: true,
             fresh,
-        }),
+        })),
     });
     app
 }
@@ -204,7 +209,7 @@ fn fresh_and_upgrade_say_their_own_words() {
     let mut app = idle_app();
     app.on_server(ServerMsg::Event {
         seq: app_seq(&app),
-        event: Event::UpgradeBuilding(true),
+        event: Event::Upgrade(UpgradeEvent::Building(true)),
     });
     assert!(draw(&mut app).contains("Building the upgrade…"));
 }
@@ -215,11 +220,11 @@ fn when_the_day_is_closed_the_indicator_clears_and_a_notice_shows() {
     draw(&mut app);
     app.on_server(ServerMsg::Event {
         seq: app_seq(&app),
-        event: Event::JournalChanged(JournalState {
+        event: Event::Journal(JournalEvent::Changed(JournalState {
             latest: Some("2026-11-01".into()),
             closing: false,
             fresh: false,
-        }),
+        })),
     });
     let screen = draw(&mut app);
     assert!(!screen.contains("Closing the day…"));

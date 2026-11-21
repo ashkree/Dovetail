@@ -3,13 +3,25 @@
 //!
 //! The app asks the core for what the library lists (`LoadResearch { Listing }` per research
 //! task, `ListDocs`) when reading mode opens, opens documents in the reading column, resolves
-//! `gd`/`gx` against the listings, and starts Ask through `Command::StartAsk`. Opening a web
-//! page is the core's job (`Command::OpenExternal`).
+//! `gd`/`gx` against the listings, and starts Ask through `ResearchCommand::StartAsk`. Opening a web
+//! page is the core's job (`AppCommand::OpenExternal`).
 
-use dovetail_api::research::{
-    BrowseWhat, Evidence, ResearchContent, ResearchDocument, ResearchWhat, SourceKind,
+use dovetail_api::{
+    Command, Event,
+    agent::{AgentId, AgentKind},
+    project::{ProjectId, ProjectKind},
+    task::TaskId,
 };
-use dovetail_api::{AgentId, AgentKind, Command, Event, ProjectId, ProjectKind, TaskId};
+use dovetail_api::{
+    agent::AgentEvent,
+    app::{AppCommand, AppEvent},
+    library::{BrowseWhat, LibraryCommand, LibraryEvent},
+    research::{
+        Evidence, ResearchCommand, ResearchContent, ResearchDocument, ResearchEvent, ResearchWhat,
+        SourceKind,
+    },
+    tangent::{TangentCommand, TangentEvent},
+};
 
 use super::overlay::{Overlay, Purpose};
 use super::{App, ChatSite};
@@ -100,10 +112,10 @@ impl App {
     fn request_library(&mut self) {
         let tasks: Vec<TaskId> = self.snap.research.iter().map(|r| r.task).collect();
         for task in tasks {
-            self.outbox.push(Command::LoadResearch {
+            self.outbox.push(Command::Research(ResearchCommand::Load {
                 task,
                 what: ResearchWhat::Listing,
-            });
+            }));
         }
         let research = self
             .snap
@@ -111,7 +123,7 @@ impl App {
             .as_ref()
             .is_some_and(|p| p.kind == ProjectKind::Research);
         if !research && self.snap.project.is_some() {
-            self.outbox.push(Command::ListDocs);
+            self.outbox.push(Command::Library(LibraryCommand::ListDocs));
         }
         // The Tangents section's answers and sources (ADR 0017).
         let tangents: Vec<TaskId> = self
@@ -122,10 +134,10 @@ impl App {
             .map(|t| t.task.id)
             .collect();
         for tangent in tangents {
-            self.outbox.push(Command::LoadTangent {
+            self.outbox.push(Command::Tangent(TangentCommand::Load {
                 tangent,
                 what: ResearchWhat::Listing,
-            });
+            }));
         }
     }
 
@@ -157,7 +169,8 @@ impl App {
             self.buffers
                 .library
                 .browse(id.clone(), project.name.clone());
-            self.outbox.push(Command::BrowseProject { id });
+            self.outbox
+                .push(Command::Library(LibraryCommand::BrowseProject { id }));
         }
         self.regions.set_focus(RegionId::Library);
     }
@@ -166,7 +179,7 @@ impl App {
     /// Called before the event is applied.
     pub(super) fn reading_event(&mut self, event: &Event) {
         match event {
-            Event::ProjectBrowsed(browsed) => {
+            Event::Library(LibraryEvent::ProjectBrowsed(browsed)) => {
                 self.buffers.library.receive_browsed(browsed);
                 if self
                     .note
@@ -177,21 +190,23 @@ impl App {
                 }
             }
             // A browse that failed goes back to the open project; the failure is shown.
-            Event::CommandFailed { .. } if self.buffers.library.browse_loading() => {
+            Event::App(AppEvent::CommandFailed { .. }) if self.buffers.library.browse_loading() => {
                 let open = self.snap.project.as_ref().map(|p| p.id.clone());
                 self.buffers.library.stop_browsing(open.as_ref());
             }
-            Event::ResearchLoaded {
+            Event::Research(ResearchEvent::Loaded {
                 task,
                 content: ResearchContent::Listing(listing),
                 ..
-            } => self.buffers.library.receive_listing(*task, listing.clone()),
-            Event::DocsListed { docs } => self.buffers.library.receive_docs(docs.clone()),
-            Event::TangentLoaded {
+            }) => self.buffers.library.receive_listing(*task, listing.clone()),
+            Event::Library(LibraryEvent::DocsListed { docs }) => {
+                self.buffers.library.receive_docs(docs.clone())
+            }
+            Event::Tangent(TangentEvent::Loaded {
                 tangent,
                 content: ResearchContent::Listing(listing),
                 ..
-            } => {
+            }) => {
                 self.buffers
                     .library
                     .receive_tangent_listing(*tangent, listing.clone());
@@ -201,17 +216,19 @@ impl App {
                 }
             }
             // A new answer: list it again, so the library and `gd` see it.
-            Event::TangentUpserted(t) if self.reading_mode() && t.research.is_some() => {
-                self.outbox.push(Command::LoadTangent {
+            Event::Tangent(TangentEvent::Upserted(t))
+                if self.reading_mode() && t.research.is_some() =>
+            {
+                self.outbox.push(Command::Tangent(TangentCommand::Load {
                     tangent: t.task.id,
                     what: ResearchWhat::Listing,
-                });
+                }));
             }
-            Event::ResearchUpserted(summary) if self.reading_mode() => {
-                self.outbox.push(Command::LoadResearch {
+            Event::Research(ResearchEvent::Upserted(summary)) if self.reading_mode() => {
+                self.outbox.push(Command::Research(ResearchCommand::Load {
                     task: summary.task,
                     what: ResearchWhat::Listing,
-                });
+                }));
                 // A new report replaces the one being read.
                 let before = self
                     .snap
@@ -252,7 +269,7 @@ impl App {
 
     /// After an event is applied: a new Ask session that was asked for opens its chat bar.
     pub(super) fn reading_settle(&mut self, event: &Event) {
-        if let Event::AgentUpserted(agent) = event
+        if let Event::Agent(AgentEvent::Upserted(agent)) = event
             && agent.kind == AgentKind::Ask
             && agent.task.is_some()
             && self.pending_ask == agent.task
@@ -270,23 +287,25 @@ impl App {
     pub(super) fn read(&mut self, target: ReadTarget, task: Option<TaskId>, title: String) {
         match &target {
             ReadTarget::Research { task: t, what } => {
-                self.outbox.push(Command::LoadResearch {
+                self.outbox.push(Command::Research(ResearchCommand::Load {
                     task: *t,
                     what: what.clone(),
-                });
+                }));
                 self.buffers.reader.await_target(target, task, title);
                 self.note = Some("loading…".into());
             }
             ReadTarget::Tangent { task: t, what } => {
-                self.outbox.push(Command::LoadTangent {
+                self.outbox.push(Command::Tangent(TangentCommand::Load {
                     tangent: *t,
                     what: what.clone(),
-                });
+                }));
                 self.buffers.reader.await_target(target, task, title);
                 self.note = Some("loading…".into());
             }
             ReadTarget::Doc(path) => {
-                self.outbox.push(Command::LoadDoc { path: path.clone() });
+                self.outbox.push(Command::Library(LibraryCommand::LoadDoc {
+                    path: path.clone(),
+                }));
                 self.buffers.reader.await_target(target, task, title);
                 self.note = Some("loading…".into());
             }
@@ -313,10 +332,11 @@ impl App {
                     // Tangents are never browsed: they show whatever the library shows.
                     ReadTarget::Elsewhere(..) | ReadTarget::Tangent { .. } => return,
                 };
-                self.outbox.push(Command::LoadBrowsed {
-                    project: project.clone(),
-                    what,
-                });
+                self.outbox
+                    .push(Command::Library(LibraryCommand::LoadBrowsed {
+                        project: project.clone(),
+                        what,
+                    }));
                 self.buffers.reader.await_target(target, task, title);
                 self.note = Some("loading…".into());
             }
@@ -459,7 +479,8 @@ impl App {
     /// The core opens the page; the TUI never starts a process.
     pub(super) fn open_external(&mut self, url: String) {
         self.note = Some(format!("opening {url} in the browser"));
-        self.outbox.push(Command::OpenExternal { url });
+        self.outbox
+            .push(Command::App(AppCommand::OpenExternal { url }));
     }
 
     /// `i` in the reading column or Ask: type a question about the open report.
@@ -497,7 +518,8 @@ impl App {
             }
             None => {
                 self.pending_ask = Some(task);
-                self.outbox.push(Command::StartAsk { task });
+                self.outbox
+                    .push(Command::Research(ResearchCommand::StartAsk { task }));
                 self.note = Some("starting Ask…".into());
             }
         }

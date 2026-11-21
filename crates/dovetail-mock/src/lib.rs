@@ -19,8 +19,52 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dovetail_api::map::{Map, MapId};
-use dovetail_api::*;
+use dovetail_api::{
+    ApplyResult, Command, CoreLink, Event, PROTOCOL_VERSION, ServerMsg, Snapshot,
+    activity::{ActivityItem, ActivityKind, AgentMessage},
+    agent::{
+        Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SubagentProgress, TodoItem,
+        TodoListId, TodoStatus, WorktreeRef,
+    },
+    apply,
+    clipboard::Paste,
+    conversation::{Attachment, ConversationEntry, EntryId, EntryKind},
+    decision::{Alternative, Decision, DecisionAuthor, DecisionId, NewDecision},
+    inbox::{InboxId, InboxItem, InboxKind, PermissionAnswer, REMOVE_WORKTREE_PERMISSION},
+    journal::JournalState,
+    mcp::{McpOutcome, McpRequest, McpStatus},
+    project::{ProjectId, ProjectKind, ProjectSummary},
+    status::{Warning, WarningId},
+    tangent::{TangentSummary, tangent_agent, tangent_task},
+    task::{Bucket, NewTask, Task, TaskChange, TaskId, TaskStatus},
+    worktree::WorktreeInfo,
+};
+use dovetail_api::{
+    activity::ActivityEvent,
+    agent::{AgentCommand, AgentEvent},
+    app::{AppCommand, AppEvent},
+    canvas::CanvasCommand,
+    clipboard::{ClipboardCommand, ClipboardEvent},
+    conversation::{ConversationCommand, ConversationEvent},
+    decision::{DecisionCommand, DecisionEvent},
+    design::DesignCommand,
+    effort::EffortCommand,
+    inbox::{InboxCommand, InboxEvent},
+    journal::{JournalCommand, JournalEvent},
+    library::{LibraryCommand, LibraryEvent},
+    map::{Map, MapCommand, MapEvent, MapId},
+    mcp::{McpCommand, McpEvent},
+    model::ModelCommand,
+    project::ProjectCommand,
+    research::{ResearchCommand, ResearchEvent},
+    status::StatusEvent,
+    tangent::{TangentCommand, TangentEvent},
+    task::{TaskCommand, TaskEvent},
+    terminal::{TerminalCommand, TerminalEvent},
+    upgrade::{UpgradeCommand, UpgradeEvent},
+    usage::UsageEvent,
+    worktree::{WorktreeCommand, WorktreeEvent},
+};
 use rng::Rng;
 use world::{COORDINATOR, agent_id, round_cents};
 
@@ -78,19 +122,19 @@ pub struct MockCore {
     next_subagent: u64,
     next_task: i64,
     reply_count: u64,
-    /// What [`Command::PasteClipboard`] answers, in turn; see [`MockCore::queue_clipboard`].
+    /// What [`ClipboardCommand::Paste`] answers, in turn; see [`MockCore::queue_clipboard`].
     clipboard: VecDeque<Paste>,
     /// The servers `/mcp` lists, for every session; actions change them ([`world::mcp_servers`]).
-    mcp: Vec<dovetail_api::McpServer>,
+    mcp: Vec<dovetail_api::mcp::McpServer>,
     /// Tokens in each session's context, as the core counts them from the stream (M13c).
     context_tokens: BTreeMap<AgentId, u64>,
-    /// Each seeded map's content, latest version only, for [`Command::LoadMap`].
+    /// Each seeded map's content, latest version only, for [`MapCommand::Load`].
     maps: BTreeMap<MapId, Map>,
-    /// The seeded task's research content, for [`Command::LoadResearch`].
+    /// The seeded task's research content, for [`ResearchCommand::Load`].
     research: research::Research,
-    /// Pages [`Command::OpenExternal`] was asked to open, oldest first; the mock opens nothing.
+    /// Pages [`AppCommand::OpenExternal`] was asked to open, oldest first; the mock opens nothing.
     opened: Vec<String>,
-    /// Tangents' content, for [`Command::LoadTangent`] (ADR 0017).
+    /// Tangents' content, for [`TangentCommand::Load`] (ADR 0017).
     tangents: tangents::Tangents,
     quit: bool,
 }
@@ -146,13 +190,13 @@ impl MockCore {
         &self.state
     }
 
-    /// The pages `gx` asked to open ([`Command::OpenExternal`]), oldest first. The mock opens
+    /// The pages `gx` asked to open ([`AppCommand::OpenExternal`]), oldest first. The mock opens
     /// no browser.
     pub fn opened(&self) -> &[String] {
         &self.opened
     }
 
-    /// Queues what the next [`Command::PasteClipboard`] answers. The mock reads no real
+    /// Queues what the next [`ClipboardCommand::Paste`] answers. The mock reads no real
     /// clipboard: with nothing queued it refuses, as the core does with no clipboard tool.
     pub fn queue_clipboard(&mut self, paste: Paste) {
         self.clipboard.push_back(paste);
@@ -198,12 +242,12 @@ impl MockCore {
         }
     }
 
-    /// Whether a [`Command::Quit`] has been handled.
+    /// Whether a [`AppCommand::Quit`] has been handled.
     pub fn has_quit(&self) -> bool {
         self.quit
     }
 
-    /// The next message and its delay, or `None` after [`Command::Quit`].
+    /// The next message and its delay, or `None` after [`AppCommand::Quit`].
     pub fn next_message(&mut self) -> Option<Scheduled> {
         if self.quit {
             return None;
@@ -253,18 +297,20 @@ impl MockCore {
     pub fn handle(&mut self, command: Command) {
         match command {
             // The mock serves the frozen TUI, which changes projects only by `:project add`.
-            Command::CreateProject { .. }
-            | Command::RenameProject { .. }
-            | Command::SetProjectAccount { .. }
-            | Command::AddRepo { .. }
-            | Command::RemoveRepo { .. } => self.fail("the mock does not change projects".into()),
-            Command::Prompt {
+            Command::Project(ProjectCommand::Create { .. })
+            | Command::Project(ProjectCommand::Rename { .. })
+            | Command::Project(ProjectCommand::SetAccount { .. })
+            | Command::Project(ProjectCommand::AddRepo { .. })
+            | Command::Project(ProjectCommand::RemoveRepo { .. }) => {
+                self.fail("the mock does not change projects".into())
+            }
+            Command::Conversation(ConversationCommand::Prompt {
                 agent,
                 text,
                 attachments,
                 // The mock has no efforts: a tag is dropped.
                 effort: _,
-            } => {
+            }) => {
                 if self.agent(&agent).is_none() {
                     return self.fail(format!("no agent {}", agent.0));
                 }
@@ -285,39 +331,49 @@ impl MockCore {
                 self.update_agent(&agent, |a| a.status = AgentStatus::Working);
                 self.schedule_reply(agent, true);
             }
-            Command::ListPaths { agent, dir } => {
+            Command::Conversation(ConversationCommand::ListPaths { agent, dir }) => {
                 let paths = world::paths(dir.as_deref());
-                self.emit(Event::PathsListed { agent, dir, paths });
+                self.emit(Event::Conversation(ConversationEvent::PathsListed {
+                    agent,
+                    dir,
+                    paths,
+                }));
             }
-            Command::Mcp { agent, request } => {
+            Command::Mcp(McpCommand::Request { agent, request }) => {
                 let outcome = self.mcp_answer(&request);
-                self.emit(Event::McpReply {
+                self.emit(Event::Mcp(McpEvent::Reply {
                     agent,
                     request,
                     outcome,
-                });
+                }));
             }
-            Command::PasteClipboard { agent } => {
+            Command::Clipboard(ClipboardCommand::Paste { agent }) => {
                 let paste = self
                     .clipboard
                     .pop_front()
                     .unwrap_or_else(|| Paste::Refused("the mock core has no clipboard".into()));
-                self.emit(Event::ClipboardPasted { agent, paste });
+                self.emit(Event::Clipboard(ClipboardEvent::Pasted { agent, paste }));
             }
             // The mock reads no files, so a pasted path stays text.
-            Command::PasteText { agent, text } => self.emit(Event::ClipboardPasted {
-                agent,
-                paste: Paste::Text(text),
-            }),
+            Command::Clipboard(ClipboardCommand::PasteText { agent, text }) => {
+                self.emit(Event::Clipboard(ClipboardEvent::Pasted {
+                    agent,
+                    paste: Paste::Text(text),
+                }))
+            }
             // The mock touches nothing outside itself: no clipboard, no editor and no native
             // claude. The answer still comes, so the UI takes its terminal back.
-            Command::CopyToClipboard { .. } => {}
-            Command::OpenEditor { .. } => self.fail("the mock core opens no editor".into()),
-            Command::TerminalReleased => {}
-            Command::TakeOver { .. } => self.emit(Event::TerminalReturned {
-                error: Some("the mock core runs no native claude".into()),
-            }),
-            Command::Interrupt { agent } => {
+            Command::Clipboard(ClipboardCommand::Copy { .. }) => {}
+            Command::Terminal(TerminalCommand::OpenEditor { .. }) => {
+                self.fail("the mock core opens no editor".into())
+            }
+            Command::Terminal(TerminalCommand::Released) => {}
+            Command::Terminal(TerminalCommand::TakeOver { .. }) => {
+                self.emit(Event::Terminal(TerminalEvent::Returned {
+                    error: Some("the mock core runs no native claude".into()),
+                }))
+            }
+            Command::Agent(AgentCommand::Interrupt { agent }) => {
                 if !self.replying.remove(&agent) {
                     return self.fail(format!("{} is not mid-turn", agent.0));
                 }
@@ -325,7 +381,7 @@ impl MockCore {
                 self.append(&agent, EntryKind::Notice, "Interrupted".into());
                 self.settle(&agent);
             }
-            Command::AnswerPermission { item, answer } => {
+            Command::Inbox(InboxCommand::AnswerPermission { item, answer }) => {
                 let Some(found) = self.inbox_item(item) else {
                     return self.fail(format!("no inbox item {}", item.0));
                 };
@@ -367,24 +423,24 @@ impl MockCore {
                     self.append(&found.agent, EntryKind::Notice, text);
                 }
             }
-            Command::AnswerQuestion { item, text } => {
+            Command::Inbox(InboxCommand::AnswerQuestion { item, text }) => {
                 let Some(found) = self.inbox_item(item) else {
                     return self.fail(format!("no inbox item {}", item.0));
                 };
                 self.resolve(item);
                 self.append(&found.agent, EntryKind::User, text);
             }
-            Command::DismissInbox { item } => {
+            Command::Inbox(InboxCommand::Dismiss { item }) => {
                 if self.inbox_item(item).is_none() {
                     return self.fail(format!("no inbox item {}", item.0));
                 }
                 self.resolve(item);
             }
-            Command::SetModel {
+            Command::Model(ModelCommand::Set {
                 agent,
                 model,
                 effort,
-            } => {
+            }) => {
                 // Like the core: a subagent's switch goes to the session it runs in, and an
                 // unknown model is refused with the old one kept.
                 let Some(found) = self.agent(&agent) else {
@@ -407,7 +463,7 @@ impl MockCore {
                     a.effort = effort;
                 });
             }
-            Command::CyclePermissionMode { agent } => {
+            Command::Agent(AgentCommand::CyclePermissionMode { agent }) => {
                 let Some(found) = self.agent(&agent) else {
                     return self.fail(format!("no agent {}", agent.0));
                 };
@@ -426,9 +482,9 @@ impl MockCore {
                     }
                 });
             }
-            Command::NewSlice {
+            Command::Agent(AgentCommand::NewSlice {
                 task, name, brief, ..
-            } => {
+            }) => {
                 if self.agent(&agent_id(&name)).is_some() {
                     return self.fail(format!("a slice named {name} exists"));
                 }
@@ -441,7 +497,7 @@ impl MockCore {
                 slice.task = task;
                 slice.worktree = Some(world::worktree(&name));
                 slice.status_line = "setup: cargo fetch".into();
-                self.emit(Event::AgentUpserted(slice));
+                self.emit(Event::Agent(AgentEvent::Upserted(slice)));
                 // Starting work on a task marks it started and puts it in Now; nothing moves it
                 // back (plan B4, task #7).
                 if let Some(mut started) = task.and_then(|t| self.task(t)) {
@@ -453,7 +509,7 @@ impl MockCore {
                         started.bucket = Some(Bucket::Now);
                     }
                     if started != before {
-                        self.emit(Event::TaskUpserted(started));
+                        self.emit(Event::Task(TaskEvent::Upserted(started)));
                     }
                 }
                 self.append(&agent_id(&name), EntryKind::User, brief);
@@ -461,16 +517,16 @@ impl MockCore {
                 let id = agent_id(&name);
                 self.after(2_500, move |core| core.finish_setup(&id));
             }
-            Command::EndOfDay => {
+            Command::Journal(JournalCommand::EndOfDay) => {
                 if self.state.journal.as_ref().is_some_and(|j| j.closing) {
                     return self.fail("already closing the day".into());
                 }
                 let latest = self.state.journal.as_ref().and_then(|j| j.latest.clone());
-                self.emit(Event::JournalChanged(JournalState {
+                self.emit(Event::Journal(JournalEvent::Changed(JournalState {
                     latest,
                     closing: true,
                     fresh: false,
-                }));
+                })));
                 let coordinator = agent_id(COORDINATOR);
                 self.append(
                     &coordinator,
@@ -485,14 +541,14 @@ impl MockCore {
                             .into(),
                     );
                     let date = world::civil_date(core.state.now_ms);
-                    core.emit(Event::JournalChanged(JournalState {
+                    core.emit(Event::Journal(JournalEvent::Changed(JournalState {
                         latest: Some(date),
                         closing: false,
                         fresh: false,
-                    }));
+                    })));
                 });
             }
-            Command::Handoff => {
+            Command::Journal(JournalCommand::Handoff) => {
                 let coordinator = agent_id(COORDINATOR);
                 if self
                     .agent(&coordinator)
@@ -504,11 +560,11 @@ impl MockCore {
                     return self.fail("already closing the day".into());
                 }
                 let latest = self.state.journal.as_ref().and_then(|j| j.latest.clone());
-                self.emit(Event::JournalChanged(JournalState {
+                self.emit(Event::Journal(JournalEvent::Changed(JournalState {
                     latest,
                     closing: true,
                     fresh: true,
-                }));
+                })));
                 self.append(
                     &coordinator,
                     EntryKind::Notice,
@@ -522,11 +578,11 @@ impl MockCore {
                             .into(),
                     );
                     let date = world::civil_date(core.state.now_ms);
-                    core.emit(Event::JournalChanged(JournalState {
+                    core.emit(Event::Journal(JournalEvent::Changed(JournalState {
                         latest: Some(date.clone()),
                         closing: false,
                         fresh: false,
-                    }));
+                    })));
                     core.append(
                         &coordinator,
                         EntryKind::Notice,
@@ -537,7 +593,7 @@ impl MockCore {
                     core.update_agent(&coordinator, |a| a.context_pct = Some(3));
                 });
             }
-            Command::FreshSession => {
+            Command::Journal(JournalCommand::FreshSession) => {
                 let coordinator = agent_id(COORDINATOR);
                 if self
                     .agent(&coordinator)
@@ -554,19 +610,19 @@ impl MockCore {
                 );
                 self.update_agent(&coordinator, |a| a.context_pct = Some(0));
             }
-            Command::NewSideChat { question } => {
+            Command::Agent(AgentCommand::NewSideChat { question }) => {
                 let n = (1..)
                     .find(|n| self.agent(&agent_id(&format!("side-{n}"))).is_none())
                     .unwrap_or(1);
                 let name = format!("side-{n}");
                 let chat = world::side_chat(&name, AgentStatus::Working, self.state.now_ms);
-                self.emit(Event::AgentUpserted(chat));
+                self.emit(Event::Agent(AgentEvent::Upserted(chat)));
                 let id = agent_id(&name);
                 self.append(&id, EntryKind::User, question);
                 self.refresh_totals();
                 self.schedule_reply(id, true);
             }
-            Command::CloseSlice { agent } => {
+            Command::Agent(AgentCommand::CloseSlice { agent }) => {
                 let Some(found) = self.agent(&agent) else {
                     return self.fail(format!("no agent {}", agent.0));
                 };
@@ -594,7 +650,7 @@ impl MockCore {
                 }
                 self.remove_agent(&agent);
             }
-            Command::CreateTask(new) => {
+            Command::Task(TaskCommand::Create(new)) => {
                 let task = Task {
                     id: TaskId(self.next_task),
                     title: new.title,
@@ -618,23 +674,24 @@ impl MockCore {
                     ActivityKind::Task,
                     format!("task #{} {}: created by you", id.0, task.title),
                 );
-                self.emit(Event::TaskUpserted(task));
+                self.emit(Event::Task(TaskEvent::Upserted(task)));
                 for other in new.related {
                     self.relate(id, other, true);
                 }
             }
-            Command::LogDecision(new) => {
+            Command::Decision(DecisionCommand::Log(new)) => {
                 if self.task(new.task).is_none() {
                     return self.fail(format!("no task {}", new.task.0));
                 }
                 self.log_decision(DecisionAuthor::User, new);
             }
-            Command::UpdateTask { id, patch } => {
+            Command::Task(TaskCommand::Update { id, patch }) => {
                 let Some(mut task) = self.task(id) else {
                     return self.fail(format!("no task {}", id.0));
                 };
                 let mut relations = Vec::new();
-                if let Some(text) = dovetail_api::describe_task_patch(id, &task.title, &patch) {
+                if let Some(text) = dovetail_api::task::describe_task_patch(id, &task.title, &patch)
+                {
                     self.activity(None, ActivityKind::Task, text);
                 }
                 for change in patch {
@@ -658,28 +715,28 @@ impl MockCore {
                         }
                     }
                 }
-                self.emit(Event::TaskUpserted(task));
+                self.emit(Event::Task(TaskEvent::Upserted(task)));
                 for (other, on) in relations {
                     self.relate(id, other, on);
                 }
             }
-            Command::ArchiveTask { id } => {
+            Command::Task(TaskCommand::Archive { id }) => {
                 let Some(mut task) = self.task(id) else {
                     return self.fail(format!("no task {}", id.0));
                 };
                 task.status = TaskStatus::Archived;
-                self.emit(Event::TaskUpserted(task));
+                self.emit(Event::Task(TaskEvent::Upserted(task)));
             }
-            Command::ReorderTask { id, delta } => self.reorder(id, delta),
-            Command::LoadConversation { agent, .. } => {
+            Command::Task(TaskCommand::Reorder { id, delta }) => self.reorder(id, delta),
+            Command::Conversation(ConversationCommand::Load { agent, .. }) => {
                 // The mock keeps no history beyond the tail.
-                self.emit(Event::ConversationPage {
+                self.emit(Event::Conversation(ConversationEvent::Page {
                     agent,
                     entries: vec![],
                     has_more: false,
-                });
+                }));
             }
-            Command::RefreshWorktrees => {
+            Command::Worktree(WorktreeCommand::Refresh) => {
                 let now_ms = self.state.now_ms;
                 let infos: Vec<WorktreeInfo> = self
                     .state
@@ -689,12 +746,12 @@ impl MockCore {
                     .filter_map(|a| Some(world::worktree_info(a, a.worktree.as_ref()?, now_ms)))
                     .collect();
                 for info in infos {
-                    self.emit(Event::WorktreeUpserted(info));
+                    self.emit(Event::Worktree(WorktreeEvent::Upserted(info)));
                 }
             }
-            Command::LoadMap { id, version } => match self.maps.get(&id) {
+            Command::Map(MapCommand::Load { id, version }) => match self.maps.get(&id) {
                 Some(map) if version.is_none_or(|v| v == map.version) => {
-                    self.emit(Event::MapLoaded(map.clone()));
+                    self.emit(Event::Map(MapEvent::Loaded(map.clone())));
                 }
                 Some(map) => self.fail(format!(
                     "the mock keeps only version {} of map {}",
@@ -702,63 +759,67 @@ impl MockCore {
                 )),
                 None => self.fail(format!("there is no map {}", id.0)),
             },
-            Command::Resync => self
+            Command::App(AppCommand::Resync) => self
                 .ready
                 .push_back(ServerMsg::Snapshot(self.state.trimmed())),
-            Command::Quit { .. } => self.quit = true,
-            Command::NewResearchProject { name } => self.new_research_project(name),
-            Command::OpenProject { .. } => {
+            Command::App(AppCommand::Quit { .. }) => self.quit = true,
+            Command::Project(ProjectCommand::NewResearch { name }) => {
+                self.new_research_project(name)
+            }
+            Command::Project(ProjectCommand::Open { .. }) => {
                 self.fail("the mock does not switch projects; the real app restarts on it".into())
             }
             // A pretend build, so the working indicator can be tried: it ends with a failure.
-            Command::Upgrade { .. } => {
-                self.emit(Event::UpgradeBuilding(true));
+            Command::Upgrade(UpgradeCommand::Start { .. }) => {
+                self.emit(Event::Upgrade(UpgradeEvent::Building(true)));
                 self.after(6_000, |core| {
-                    core.emit(Event::UpgradeBuilding(false));
+                    core.emit(Event::Upgrade(UpgradeEvent::Building(false)));
                     core.fail("not available in the mock".into());
                 });
             }
-            Command::RemoveWorktree { .. }
-            | Command::RegisterProject { .. }
-            | Command::SetRecipeProfile { .. }
-            | Command::StartRound { .. }
-            | Command::CloseRound { .. }
-            | Command::DropRound { .. }
-            | Command::SetResearchKind { .. }
-            | Command::CreateBlock { .. }
-            | Command::RenameBlock { .. }
-            | Command::AddCard { .. }
-            | Command::PlaceCard { .. }
-            | Command::SeeCard { .. }
-            | Command::MoveCard { .. }
-            | Command::DeleteCard { .. }
-            | Command::DropIncoming { .. }
-            | Command::LinkCards { .. }
-            | Command::UnlinkCards { .. }
-            | Command::CardFromReply { .. }
-            | Command::LoadCard { .. }
-            | Command::StartPreview { .. }
-            | Command::RestartPreview { .. }
-            | Command::SelectVariant { .. }
-            | Command::KeepVariants { .. }
-            | Command::CreateEffort(_)
-            | Command::RenameEffort { .. }
-            | Command::UpdateEffort { .. }
-            | Command::SetWhereWasI { .. }
-            | Command::AddCriterion { .. }
-            | Command::ClaimCriterion { .. }
-            | Command::ApproveCriterion { .. }
-            | Command::ReturnCriterion { .. }
-            | Command::MoveTask { .. }
-            | Command::FileUnfiled { .. } => self.fail("not available in the mock".into()),
-            Command::OpenExternal { url } => {
+            Command::Worktree(WorktreeCommand::Remove { .. })
+            | Command::Project(ProjectCommand::Register { .. })
+            | Command::Project(ProjectCommand::SetRecipeProfile { .. })
+            | Command::Research(ResearchCommand::StartRound { .. })
+            | Command::Research(ResearchCommand::CloseRound { .. })
+            | Command::Research(ResearchCommand::DropRound { .. })
+            | Command::Research(ResearchCommand::SetKind { .. })
+            | Command::Canvas(CanvasCommand::CreateBlock { .. })
+            | Command::Canvas(CanvasCommand::RenameBlock { .. })
+            | Command::Canvas(CanvasCommand::AddCard { .. })
+            | Command::Canvas(CanvasCommand::PlaceCard { .. })
+            | Command::Canvas(CanvasCommand::SeeCard { .. })
+            | Command::Canvas(CanvasCommand::MoveCard { .. })
+            | Command::Canvas(CanvasCommand::DeleteCard { .. })
+            | Command::Canvas(CanvasCommand::DropIncoming { .. })
+            | Command::Canvas(CanvasCommand::LinkCards { .. })
+            | Command::Canvas(CanvasCommand::UnlinkCards { .. })
+            | Command::Canvas(CanvasCommand::CardFromReply { .. })
+            | Command::Canvas(CanvasCommand::LoadCard { .. })
+            | Command::Design(DesignCommand::StartPreview { .. })
+            | Command::Design(DesignCommand::RestartPreview { .. })
+            | Command::Design(DesignCommand::SelectVariant { .. })
+            | Command::Design(DesignCommand::KeepVariants { .. })
+            | Command::Effort(EffortCommand::Create(_))
+            | Command::Effort(EffortCommand::Rename { .. })
+            | Command::Effort(EffortCommand::Update { .. })
+            | Command::Effort(EffortCommand::SetWhereWasI { .. })
+            | Command::Effort(EffortCommand::AddCriterion { .. })
+            | Command::Effort(EffortCommand::ClaimCriterion { .. })
+            | Command::Effort(EffortCommand::ApproveCriterion { .. })
+            | Command::Effort(EffortCommand::ReturnCriterion { .. })
+            | Command::Task(TaskCommand::Move { .. })
+            | Command::Research(ResearchCommand::FileUnfiled { .. }) => {
+                self.fail("not available in the mock".into())
+            }
+            Command::App(AppCommand::OpenExternal { url }) => {
                 if url.starts_with("http://") || url.starts_with("https://") {
                     self.opened.push(url);
                 } else {
                     self.fail(format!("only web pages open in the browser, not {url}"));
                 }
             }
-            Command::StartAsk { task } => {
+            Command::Research(ResearchCommand::StartAsk { task }) => {
                 let report = dovetail_api::research::ResearchWhat::Report;
                 if self.research.load(task, &report).is_none() {
                     return self.fail(format!(
@@ -771,41 +832,47 @@ impl MockCore {
                     Some(ask) => ask,
                     None => world::ask(&name, task, self.state.now_ms),
                 };
-                self.emit(Event::AgentUpserted(ask));
+                self.emit(Event::Agent(AgentEvent::Upserted(ask)));
             }
-            Command::ListDocs => {
+            Command::Library(LibraryCommand::ListDocs) => {
                 let docs = research::docs();
-                self.emit(Event::DocsListed { docs });
+                self.emit(Event::Library(LibraryEvent::DocsListed { docs }));
             }
-            Command::LoadDoc { path } => match research::doc(&path) {
-                Some(document) => self.emit(Event::DocLoaded { path, document }),
+            Command::Library(LibraryCommand::LoadDoc { path }) => match research::doc(&path) {
+                Some(document) => {
+                    self.emit(Event::Library(LibraryEvent::DocLoaded { path, document }))
+                }
                 None => self.fail(format!(
                     "{} is not one of the project's docs",
                     path.display()
                 )),
             },
-            Command::BrowseProject { id } => {
+            Command::Library(LibraryCommand::BrowseProject { id }) => {
                 let found = self.state.projects.iter().find(|p| p.id == id).cloned();
                 match found.and_then(|p| browse::project(&p, self.state.now_ms)) {
-                    Some(browsed) => self.emit(Event::ProjectBrowsed(Box::new(browsed))),
+                    Some(browsed) => self.emit(Event::Library(LibraryEvent::ProjectBrowsed(
+                        Box::new(browsed),
+                    ))),
                     None => self.fail(format!("the mock has nothing to show for {}", id.0)),
                 }
             }
-            Command::LoadBrowsed { project, what } => match browse::load(&project.0, &what) {
-                Some(document) => self.emit(Event::BrowsedLoaded {
-                    doc: dovetail_api::research::BrowsedDoc { project, what },
-                    document,
-                }),
-                None => self.fail(format!("the mock has no such document: {what:?}")),
-            },
-            Command::NewTangent { question } => self.new_tangent(question),
-            Command::AttachTangent { tangent, task } => {
+            Command::Library(LibraryCommand::LoadBrowsed { project, what }) => {
+                match browse::load(&project.0, &what) {
+                    Some(document) => self.emit(Event::Library(LibraryEvent::BrowsedLoaded {
+                        doc: dovetail_api::library::BrowsedDoc { project, what },
+                        document,
+                    })),
+                    None => self.fail(format!("the mock has no such document: {what:?}")),
+                }
+            }
+            Command::Tangent(TangentCommand::New { question }) => self.new_tangent(question),
+            Command::Tangent(TangentCommand::Attach { tangent, task }) => {
                 let Some(t) = self.task(task) else {
                     return self.fail(format!("there is no task #{}", task.0));
                 };
                 self.leave_tangents(tangent, "attached to", &format!("#{} {}", task.0, t.title));
             }
-            Command::FileTangent { tangent, project } => {
+            Command::Tangent(TangentCommand::File { tangent, project }) => {
                 let Some(found) = self.tangent(tangent) else {
                     return self.fail(format!("there is no tangent #{}", tangent.0));
                 };
@@ -813,7 +880,7 @@ impl MockCore {
                 // nothing.
                 let open = self.state.project.as_ref().map(|p| p.id.clone());
                 if open.as_ref() == Some(&project) {
-                    self.handle(Command::CreateTask(NewTask {
+                    self.handle(Command::Task(TaskCommand::Create(NewTask {
                         title: found.task.title.clone(),
                         p_level: None,
                         bucket: None,
@@ -823,17 +890,17 @@ impl MockCore {
                         related: vec![],
                         effort: Default::default(),
                         criterion: None,
-                    }));
+                    })));
                 }
                 self.leave_tangents(tangent, "filed into", &project.0);
             }
-            Command::StartFromTangent { tangent, project } => {
+            Command::Tangent(TangentCommand::StartFrom { tangent, project }) => {
                 let Some(mut found) = self.tangent(tangent) else {
                     return self.fail(format!("there is no tangent #{}", tangent.0));
                 };
                 let open = self.state.project.as_ref().map(|p| p.id.clone());
                 if open.as_ref() == Some(&project) {
-                    self.handle(Command::CreateTask(NewTask {
+                    self.handle(Command::Task(TaskCommand::Create(NewTask {
                         title: found.task.title.clone(),
                         p_level: None,
                         bucket: None,
@@ -846,7 +913,7 @@ impl MockCore {
                         related: vec![],
                         effort: Default::default(),
                         criterion: None,
-                    }));
+                    })));
                 }
                 found.task.status = TaskStatus::Done;
                 found.task.notes = format!("{}\n\nStarted in {}.", found.task.notes, project.0);
@@ -858,28 +925,32 @@ impl MockCore {
                         found.task.title, project.0
                     ),
                 );
-                self.emit(Event::TangentUpserted(found));
+                self.emit(Event::Tangent(TangentEvent::Upserted(found)));
                 self.refresh_new_tangents();
             }
-            Command::DropTangent { tangent } => {
+            Command::Tangent(TangentCommand::Drop { tangent }) => {
                 self.leave_tangents(tangent, "dropped", "");
             }
-            Command::LoadTangent { tangent, what } => match self.tangents.load(tangent, &what) {
-                Some(content) => self.emit(Event::TangentLoaded {
-                    tangent,
-                    what,
-                    content,
-                }),
-                None => self.fail(format!("the mock has no such tangent content: {what:?}")),
-            },
-            Command::LoadResearch { task, what } => match self.research.load(task, &what) {
-                Some(content) => self.emit(Event::ResearchLoaded {
-                    task,
-                    what,
-                    content,
-                }),
-                None => self.fail(format!("the mock has no such research: {what:?}")),
-            },
+            Command::Tangent(TangentCommand::Load { tangent, what }) => {
+                match self.tangents.load(tangent, &what) {
+                    Some(content) => self.emit(Event::Tangent(TangentEvent::Loaded {
+                        tangent,
+                        what,
+                        content,
+                    })),
+                    None => self.fail(format!("the mock has no such tangent content: {what:?}")),
+                }
+            }
+            Command::Research(ResearchCommand::Load { task, what }) => {
+                match self.research.load(task, &what) {
+                    Some(content) => self.emit(Event::Research(ResearchEvent::Loaded {
+                        task,
+                        what,
+                        content,
+                    })),
+                    None => self.fail(format!("the mock has no such research: {what:?}")),
+                }
+            }
         }
     }
 
@@ -893,7 +964,7 @@ impl MockCore {
     }
 
     fn fail(&mut self, message: String) {
-        self.emit(Event::CommandFailed { message });
+        self.emit(Event::App(AppEvent::CommandFailed { message }));
     }
 
     /// `:project new <name> --research`: lists it in the switcher, as the real core does by
@@ -983,13 +1054,13 @@ impl MockCore {
             effort: Default::default(),
             criterion: None,
         };
-        self.emit(Event::TangentUpserted(TangentSummary {
+        self.emit(Event::Tangent(TangentEvent::Upserted(TangentSummary {
             task,
             research: None,
-        }));
+        })));
         let agent = world::tangent(id, AgentStatus::Working, self.state.now_ms);
         let agent_id = agent.id.clone();
-        self.emit(Event::AgentUpserted(agent));
+        self.emit(Event::Agent(AgentEvent::Upserted(agent)));
         self.append(&agent_id, EntryKind::User, question);
         self.refresh_totals();
         self.schedule_reply(agent_id, true);
@@ -1002,7 +1073,7 @@ impl MockCore {
         };
         let now = self.state.now_ms;
         found.research = Some(self.tangents.answer(tangent, body, now));
-        self.emit(Event::TangentUpserted(found));
+        self.emit(Event::Tangent(TangentEvent::Upserted(found)));
     }
 
     /// The tangent leaves Tangents (attached, filed or dropped): its session closes, and the
@@ -1018,7 +1089,7 @@ impl MockCore {
                 .trim_end()
                 .to_owned(),
         );
-        self.emit(Event::TangentRemoved(tangent));
+        self.emit(Event::Tangent(TangentEvent::Removed(tangent)));
         let agent = tangent_agent(tangent);
         if self.agent(&agent).is_some() {
             self.remove_agent(&agent);
@@ -1042,10 +1113,10 @@ impl MockCore {
             return self.resolve(item.id);
         }
         if item.kind != (InboxKind::NewTangents { count }) {
-            self.emit(Event::InboxUpserted(InboxItem {
+            self.emit(Event::Inbox(InboxEvent::Upserted(InboxItem {
                 kind: InboxKind::NewTangents { count },
                 ..item
-            }));
+            })));
         }
     }
 
@@ -1089,7 +1160,7 @@ impl MockCore {
         attachments: Vec<Attachment>,
     ) {
         let id = self.entry_id();
-        self.emit(Event::ConversationAppended {
+        self.emit(Event::Conversation(ConversationEvent::Appended {
             agent: agent.clone(),
             entry: ConversationEntry {
                 id,
@@ -1099,7 +1170,7 @@ impl MockCore {
                 attachments,
                 effort: None,
             },
-        });
+        }));
     }
 
     fn agent(&self, id: &AgentId) -> Option<Agent> {
@@ -1142,7 +1213,7 @@ impl MockCore {
             change(&mut agent);
             if agent != before {
                 agent.last_activity_ms = self.state.now_ms;
-                self.emit(Event::AgentUpserted(agent));
+                self.emit(Event::Agent(AgentEvent::Upserted(agent)));
             }
         }
     }
@@ -1150,7 +1221,7 @@ impl MockCore {
     fn refresh_totals(&mut self) {
         let totals = world::totals_of(&self.state);
         if totals != self.state.totals {
-            self.emit(Event::TotalsChanged(totals));
+            self.emit(Event::Status(StatusEvent::TotalsChanged(totals)));
         }
     }
 
@@ -1185,7 +1256,7 @@ impl MockCore {
         for (order, mut peer) in peers.into_iter().enumerate() {
             if peer.order != order as i64 {
                 peer.order = order as i64;
-                self.emit(Event::TaskUpserted(peer));
+                self.emit(Event::Task(TaskEvent::Upserted(peer)));
             }
         }
     }
@@ -1245,7 +1316,7 @@ impl MockCore {
             kind,
         };
         self.next_inbox += 1;
-        self.emit(Event::InboxUpserted(item));
+        self.emit(Event::Inbox(InboxEvent::Upserted(item)));
         if self.has_inbox(agent) {
             self.update_agent(agent, |a| a.status = AgentStatus::NeedsYou);
         } else {
@@ -1259,7 +1330,7 @@ impl MockCore {
         let Some(found) = self.inbox_item(item) else {
             return;
         };
-        self.emit(Event::InboxResolved { id: item });
+        self.emit(Event::Inbox(InboxEvent::Resolved { id: item }));
         if !self.has_inbox(&found.agent)
             && self.agent(&found.agent).map(|a| a.status) == Some(AgentStatus::NeedsYou)
         {
@@ -1302,11 +1373,11 @@ impl MockCore {
             .map(|i| i.id)
             .collect();
         for item in items {
-            self.emit(Event::InboxResolved { id: item });
+            self.emit(Event::Inbox(InboxEvent::Resolved { id: item }));
         }
         self.replying.remove(agent);
         self.pending.retain(|p| p.reply_of.as_ref() != Some(agent));
-        self.emit(Event::AgentRemoved(agent.clone()));
+        self.emit(Event::Agent(AgentEvent::Removed(agent.clone())));
         self.refresh_totals();
     }
 
@@ -1336,7 +1407,7 @@ impl MockCore {
             text,
         };
         self.next_activity += 1;
-        self.emit(Event::ActivityAdded(item));
+        self.emit(Event::Activity(ActivityEvent::Added(item)));
     }
 
     // Streamed replies
@@ -1386,7 +1457,7 @@ impl MockCore {
             if let Some(background) = delegate {
                 core.spawn_subagent(&id, background);
             }
-            core.emit(Event::ConversationAppended {
+            core.emit(Event::Conversation(ConversationEvent::Appended {
                 agent: id,
                 entry: ConversationEntry {
                     id: entry,
@@ -1396,7 +1467,7 @@ impl MockCore {
                     attachments: Vec::new(),
                     effort: None,
                 },
-            });
+            }));
         });
 
         let chars: Vec<char> = text.chars().collect();
@@ -1410,11 +1481,11 @@ impl MockCore {
             let delay = self.rng.range(30, 90);
             let id = agent.clone();
             self.reply_step(&agent, delay, move |core| {
-                core.emit(Event::AssistantDelta {
+                core.emit(Event::Conversation(ConversationEvent::AssistantDelta {
                     agent: id,
                     entry,
                     text: chunk,
-                })
+                }))
             });
         }
 
@@ -1466,7 +1537,7 @@ impl MockCore {
             .as_ref()
             .map_or(0.0, |w| w.utilization);
         let usage = world::usage(self.state.now_ms, ((used + 0.01) * 100.0).round() / 100.0);
-        self.emit(Event::UsageChanged(usage));
+        self.emit(Event::Usage(UsageEvent::Changed(usage)));
         // Reading mode's Ask answers in its column: no finished-turn item (ADR 0018).
         if !self.running_background_children(agent)
             && self
@@ -1481,7 +1552,7 @@ impl MockCore {
                 .map(|i| i.id)
                 .collect();
             for item in old {
-                self.emit(Event::InboxResolved { id: item });
+                self.emit(Event::Inbox(InboxEvent::Resolved { id: item }));
             }
             self.raise(agent, InboxKind::FinishedTurn { preview });
         } else {
@@ -1787,13 +1858,15 @@ impl MockCore {
             12 => {
                 let id = WarningId("messaging".into());
                 if self.state.warnings.iter().any(|w| w.id == id) {
-                    self.after(pause * 4, move |core| core.emit(Event::WarningCleared(id)));
+                    self.after(pause * 4, move |core| {
+                        core.emit(Event::Status(StatusEvent::WarningCleared(id)))
+                    });
                 } else {
                     self.after(pause, move |core| {
-                        core.emit(Event::WarningSet(Warning {
+                        core.emit(Event::Status(StatusEvent::WarningSet(Warning {
                             id,
                             text: "DISABLE_TELEMETRY is set: messaging may not work".into(),
-                        }))
+                        })))
                     });
                 }
                 return true;
@@ -1818,7 +1891,7 @@ impl MockCore {
                 } else {
                     continue;
                 }
-                self.emit(Event::TaskUpserted(task));
+                self.emit(Event::Task(TaskEvent::Upserted(task)));
             }
         }
     }
@@ -1833,7 +1906,7 @@ impl MockCore {
                 .unwrap_or(0)
                 + 1,
         );
-        self.emit(Event::DecisionAdded(Decision {
+        self.emit(Event::Decision(DecisionEvent::Added(Decision {
             id,
             task: new.task,
             at_ms: self.state.now_ms,
@@ -1843,7 +1916,7 @@ impl MockCore {
             alternatives: new.alternatives,
             supersedes: new.supersedes,
             evidence: Vec::new(),
-        }));
+        })));
     }
 
     fn file_follow_up(&mut self, title: &str, follow_up_of: Option<TaskId>) {
@@ -1864,7 +1937,7 @@ impl MockCore {
             criterion: None,
         };
         self.next_task += 1;
-        self.emit(Event::TaskUpserted(task));
+        self.emit(Event::Task(TaskEvent::Upserted(task)));
         self.activity(
             Some(agent_id(COORDINATOR)),
             ActivityKind::Lifecycle,
@@ -1894,7 +1967,7 @@ impl MockCore {
             text,
         };
         self.next_message += 1;
-        self.emit(Event::MessageAdded(message));
+        self.emit(Event::Activity(ActivityEvent::MessageAdded(message)));
         self.activity(
             Some(from.clone()),
             ActivityKind::Message,
@@ -1927,7 +2000,7 @@ impl MockCore {
         if let Some(next) = items.iter_mut().find(|t| t.status == TodoStatus::Pending) {
             next.status = TodoStatus::InProgress;
         }
-        self.emit(Event::TodosReplaced { list, items });
+        self.emit(Event::Agent(AgentEvent::TodosReplaced { list, items }));
     }
 
     // Subagents
@@ -1960,7 +2033,7 @@ impl MockCore {
                 ..SubagentProgress::default()
             });
         }
-        self.emit(Event::AgentUpserted(sub));
+        self.emit(Event::Agent(AgentEvent::Upserted(sub)));
         self.prune_finished_subagents(parent);
 
         let sub_id = agent_id(&id);
@@ -2031,7 +2104,7 @@ impl MockCore {
 /// Runs a mock core on its own thread, pacing messages in real time.
 ///
 /// `speed` scales the virtual delays: 1.0 is real time, 2.0 twice as fast. The thread ends on
-/// [`Command::Quit`] or when the UI drops its end of the link.
+/// [`AppCommand::Quit`] or when the UI drops its end of the link.
 pub fn spawn(config: MockConfig, speed: f64) -> CoreLink {
     let (command_tx, command_rx) = mpsc::channel::<Command>();
     let (message_tx, message_rx) = mpsc::channel::<ServerMsg>();

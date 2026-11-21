@@ -14,11 +14,14 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, AgentStatus, Bucket, Event, InboxKind, TaskChange, TaskId,
-    TaskStatus, WorktreeRef,
+    Event,
+    activity::ActivityKind,
+    agent::{AgentId, AgentKind, AgentStatus, WorktreeRef},
+    inbox::InboxKind,
+    task::{Bucket, TaskChange, TaskId, TaskStatus},
 };
+use dovetail_api::{agent::AgentEvent, socket::SocketResponseBody};
 use serde_json::json;
 use tokio::sync::oneshot;
 
@@ -384,8 +387,12 @@ impl Core {
         let brief = live.brief.take();
         self.refresh_status(agent);
         if let Some(brief) = brief
-            && let Err(e) =
-                self.send_text(agent, &brief, dovetail_api::EntryKind::User, brief.clone())
+            && let Err(e) = self.send_text(
+                agent,
+                &brief,
+                dovetail_api::conversation::EntryKind::User,
+                brief.clone(),
+            )
         {
             self.fail(e);
         }
@@ -429,7 +436,7 @@ impl Core {
 
     /// The key a slice's worktree files live under: a worktree made before registration stays
     /// under `new-<pid>`, so read it from the recorded path; else the current key.
-    pub(crate) fn worktree_key(&self, agent: &dovetail_api::Agent) -> String {
+    pub(crate) fn worktree_key(&self, agent: &dovetail_api::agent::Agent) -> String {
         agent
             .worktree
             .as_ref()
@@ -547,7 +554,7 @@ impl Core {
                 self.raise(
                     &agent,
                     InboxKind::Permission {
-                        tool: dovetail_api::REMOVE_WORKTREE_PERMISSION.into(),
+                        tool: dovetail_api::inbox::REMOVE_WORKTREE_PERMISSION.into(),
                         input,
                         reason: Some(
                             "the slice has uncommitted or unpushed work, which removing it \
@@ -741,7 +748,7 @@ impl Core {
         self.remove_attachments_of(agent);
         self.persist("a closed agent", self.db.close_agent(agent.clone()));
         self.commands.remove(agent);
-        self.emit(Event::AgentRemoved(agent.clone()));
+        self.emit(Event::Agent(AgentEvent::Removed(agent.clone())));
         self.activity(
             ActivityKind::Lifecycle,
             None,

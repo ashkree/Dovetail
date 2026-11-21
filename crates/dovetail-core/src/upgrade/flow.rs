@@ -4,14 +4,18 @@
 //! One build at a time; one item at a time. `y` on the item does not resolve it: it starts the
 //! wait for idle, and the item then lists the agents it waits for. When none is left the core
 //! quits the normal way (sessions end and resume as after any restart), tells the UI to quit
-//! ([`Event::UpgradeRestarting`]) and raises the flag the binary reads after the core stopped:
+//! ([`UpgradeEvent::Restarting`]) and raises the flag the binary reads after the core stopped:
 //! swap the staged build in, then `exec` it.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use dovetail_api::{
-    ActivityKind, AgentId, Event, InboxId, InboxKind, PermissionAnswer, UPGRADE_READY_PERMISSION,
+    Event,
+    activity::ActivityKind,
+    agent::AgentId,
+    inbox::{InboxEvent, InboxId, InboxKind, PermissionAnswer, UPGRADE_READY_PERMISSION},
+    upgrade::UpgradeEvent,
 };
 use serde_json::json;
 
@@ -123,7 +127,7 @@ impl Core {
         let staging = Staging::new(&self.paths);
         let cancel = Arc::new(AtomicBool::new(false));
         self.upgrade.building = Some(cancel.clone());
-        self.emit(Event::UpgradeBuilding(true));
+        self.emit(Event::Upgrade(UpgradeEvent::Building(true)));
         let what = if local { "the checkout" } else { "origin/main" };
         self.activity(
             ActivityKind::Lifecycle,
@@ -140,7 +144,7 @@ impl Core {
     /// The build finished: "Upgrade ready", or an Error item with the build's tail.
     pub(crate) fn on_upgrade_built(&mut self, result: Result<Ready, BuildError>) {
         self.upgrade.building = None;
-        self.emit(Event::UpgradeBuilding(false));
+        self.emit(Event::Upgrade(UpgradeEvent::Building(false)));
         if self.quitting.is_some() {
             return;
         }
@@ -290,7 +294,7 @@ impl Core {
                 input["waiting"] = json!(waiting);
                 input["restarting"] = json!(true);
                 let item = entry.item.clone();
-                self.emit(Event::InboxUpserted(item));
+                self.emit(Event::Inbox(InboxEvent::Upserted(item)));
             }
         }
         if waiting.is_empty() {
@@ -302,7 +306,7 @@ impl Core {
                 None,
                 "every agent is idle: restarting into the upgrade".into(),
             );
-            self.emit(Event::UpgradeRestarting);
+            self.emit(Event::Upgrade(UpgradeEvent::Restarting));
             self.begin_quit();
         }
     }

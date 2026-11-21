@@ -13,7 +13,7 @@ use super::rpc::{self, Call, Rpc};
 use super::turn::Turn;
 use crate::event::*;
 use crate::{ControlAnswer, DriverError, PermissionMode, SessionSpec, UserInput};
-use dovetail_api::ReasoningEffort;
+use dovetail_api::model::ReasoningEffort;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 

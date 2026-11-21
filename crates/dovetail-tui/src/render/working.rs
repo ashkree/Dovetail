@@ -1,7 +1,7 @@
 //! The spinner lines: an agent's working line under its conversation, and the status bar's
 //! long-command indicator. Pure functions of the clock and the data, so tests need no timer.
 
-use dovetail_api::{Agent, ConversationEntry};
+use dovetail_api::{agent::Agent, conversation::ConversationEntry};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 

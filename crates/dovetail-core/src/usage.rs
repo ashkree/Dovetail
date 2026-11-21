@@ -8,7 +8,11 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::{AgentId, Event, UsageLimits, UsageStatus, UsageWindow};
+use dovetail_api::{
+    Event,
+    agent::AgentId,
+    usage::{UsageEvent, UsageLimits, UsageStatus, UsageWindow},
+};
 use dovetail_driver::{RateLimitInfo, RateLimitWindow};
 
 use crate::service::Core;
@@ -53,7 +57,7 @@ impl Core {
         }
         self.usage.insert(home.clone(), usage.clone());
         if home == self.current_home_dir() {
-            self.emit(Event::UsageChanged(usage));
+            self.emit(Event::Usage(UsageEvent::Changed(usage)));
         }
     }
 

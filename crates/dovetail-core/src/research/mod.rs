@@ -1,7 +1,7 @@
 //! Research capture (R1, `docs/research.md` §3–§5, ADR 0015): rounds, findings and sources,
 //! taken from the stream with nothing sent to any session.
 //!
-//! A round is opened by the user (`Command::StartRound`; R2 adds the coordinator's
+//! A round is opened by the user (`ResearchCommand::StartRound`; R2 adds the coordinator's
 //! `research_start_round`). While it is open, every subagent the coordinator launches is
 //! watched ([`capture`]) and filed as a finding of the round when it ends, with the sources its
 //! tool calls reached. A research-shaped subagent (`WebFetch`/`WebSearch`) of a session that
@@ -17,10 +17,16 @@ pub(crate) mod report;
 use std::path::PathBuf;
 
 use dovetail_api::research::{
-    FindingSummary, ResearchContent, ResearchDocument, ResearchKind, ResearchListing,
-    ResearchSummary, ResearchWhat, RoundSummary, SourceSummary, ordinal,
+    FindingSummary, ResearchContent, ResearchDocument, ResearchEvent, ResearchKind,
+    ResearchListing, ResearchSummary, ResearchWhat, RoundSummary, SourceSummary, ordinal,
 };
-use dovetail_api::{ActivityKind, AgentId, Event, InboxKind, Task, TaskId};
+use dovetail_api::{
+    Event,
+    activity::ActivityKind,
+    agent::AgentId,
+    inbox::InboxKind,
+    task::{Task, TaskId},
+};
 use dovetail_driver::{ContentBlock, DriverEvent};
 
 use crate::db::research::{FindingRow, RoundRow, SourceRow, SummaryRow, TaskResearch};
@@ -121,12 +127,12 @@ impl Core {
             return;
         };
         match self.db.research_summary(task).await {
-            Ok(row) => self.emit(Event::ResearchUpserted(summary(row, dir))),
+            Ok(row) => self.emit(Event::Research(ResearchEvent::Upserted(summary(row, dir)))),
             Err(e) => tracing::warn!("loading research of task #{}: {e}", task.0),
         }
     }
 
-    /// `Command::StartRound`: the row, `brief.md`, and the round open for the coordinator, or
+    /// `ResearchCommand::StartRound`: the row, `brief.md`, and the round open for the coordinator, or
     /// queued behind the open one.
     pub(crate) async fn start_round(&mut self, task: TaskId, brief: String) {
         if let Err(message) = self.open_round_for(task, brief).await {
@@ -134,7 +140,7 @@ impl Core {
         }
     }
 
-    /// Requests the next round of `task`: the one path under `Command::StartRound`,
+    /// Requests the next round of `task`: the one path under `ResearchCommand::StartRound`,
     /// `research_start_round` and an accepted follow-up round. The round opens at once, or is
     /// queued while another is open (`brief.md` is written either way). Resolves to the round
     /// and, when it is queued, its place in line (the open round is 1st), or what to tell
@@ -185,7 +191,7 @@ impl Core {
         Ok((round, position))
     }
 
-    /// `Command::CloseRound`. Subagents already launched in it are still filed under it.
+    /// `ResearchCommand::CloseRound`. Subagents already launched in it are still filed under it.
     pub(crate) async fn close_round(&mut self, task: TaskId) {
         if let Err(message) = self.close_round_for(task).await {
             self.fail(message);
@@ -254,7 +260,7 @@ impl Core {
         }
     }
 
-    /// `Command::DropRound`: a queued round, its row and its `brief.md`.
+    /// `ResearchCommand::DropRound`: a queued round, its row and its `brief.md`.
     pub(crate) async fn drop_round(&mut self, task: TaskId, n: Option<u32>) {
         let round = match self.db.drop_round(task, n).await {
             Ok(round) => round,
@@ -338,7 +344,7 @@ impl Core {
             .then_some("a queued research round")
     }
 
-    /// `Command::SetResearchKind`.
+    /// `ResearchCommand::SetKind`.
     pub(crate) async fn set_research_kind(&mut self, task: TaskId, kind: ResearchKind) {
         let Some(t) = self.task(task).await else {
             self.fail(format!("there is no task #{}", task.0));
@@ -365,14 +371,14 @@ impl Core {
         self.emit_research(task, &t.title).await;
     }
 
-    /// `Command::LoadResearch`.
+    /// `ResearchCommand::Load`.
     pub(crate) async fn load_research_content(&mut self, task: TaskId, what: ResearchWhat) {
         match self.research_content(task, &what).await {
-            Ok(content) => self.emit(Event::ResearchLoaded {
+            Ok(content) => self.emit(Event::Research(ResearchEvent::Loaded {
                 task,
                 what,
                 content,
-            }),
+            })),
             Err(message) => self.fail(message),
         }
     }
@@ -747,9 +753,9 @@ impl Core {
         }
     }
 
-    /// `Command::FileUnfiled`: the finding becomes a quick finding of `task`, its files move to
+    /// `ResearchCommand::FileUnfiled`: the finding becomes a quick finding of `task`, its files move to
     /// the task's research folder, and the item leaves Needs you.
-    pub(crate) async fn file_unfiled(&mut self, item: dovetail_api::InboxId, task: TaskId) {
+    pub(crate) async fn file_unfiled(&mut self, item: dovetail_api::inbox::InboxId, task: TaskId) {
         let finding = match self.inbox.get(&item).map(|e| &e.waiter) {
             Some(Waiter::UnfiledFinding { finding }) => *finding,
             _ => {

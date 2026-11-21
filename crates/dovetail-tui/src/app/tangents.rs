@@ -1,8 +1,11 @@
 //! Tangents (ADR 0017, amended 2026-11-11): asking one, the tangents list, reading one in
 //! reading mode, and sending one to a task or a project.
 
-use dovetail_api::research::{Evidence, ResearchWhat, SourceKind};
-use dovetail_api::{Command, TaskId};
+use dovetail_api::{Command, task::TaskId};
+use dovetail_api::{
+    research::{Evidence, ResearchWhat, SourceKind},
+    tangent::TangentCommand,
+};
 
 use super::overlay::{Overlay, Purpose};
 use super::{App, Confirm, Then};
@@ -17,7 +20,8 @@ impl App {
     pub(super) fn new_tangent(&mut self, question: String) {
         self.open_side_chat = true;
         self.note = Some("asking a tangent: its answer is kept in Tangents".into());
-        self.outbox.push(Command::NewTangent { question });
+        self.outbox
+            .push(Command::Tangent(TangentCommand::New { question }));
     }
 
     /// `:tangents`, or the "new tangents" item: the list in the main region, focused.
@@ -53,10 +57,10 @@ impl App {
             return;
         }
         self.pending_tangent_read = Some(tangent);
-        self.outbox.push(Command::LoadTangent {
+        self.outbox.push(Command::Tangent(TangentCommand::Load {
             tangent,
             what: ResearchWhat::Listing,
-        });
+        }));
         self.note = Some("loading…".into());
     }
 
@@ -206,10 +210,10 @@ impl App {
                         task.id.0,
                         task.title
                     ),
-                    then: Then::Commands(vec![Command::AttachTangent {
+                    then: Then::Commands(vec![Command::Tangent(TangentCommand::Attach {
                         tangent,
                         task: task.id,
-                    }]),
+                    })]),
                     otherwise: None,
                 });
             }
