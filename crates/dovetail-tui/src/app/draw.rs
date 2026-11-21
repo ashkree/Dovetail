@@ -397,7 +397,6 @@ impl App {
             .flat_map(|w| {
                 usage.iter().map(move |u| {
                     let mut both = w.clone();
-                    both.push(Span::raw(" "));
                     both.extend(u.iter().cloned());
                     both
                 })
