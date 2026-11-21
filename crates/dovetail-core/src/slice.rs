@@ -309,8 +309,6 @@ impl Core {
         };
         live.brief = Some(first_prompt);
         live.setting_up = true;
-        // Checked against what Claude Code reports at start-up (`on_model_settings`).
-        live.launch_choice = request.model_choice;
         let generation = live.generation;
         if git {
             self.watch_setup(id, name, generation);

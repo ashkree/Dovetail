@@ -63,8 +63,8 @@ pub(crate) struct Live {
     pub(crate) setting_up: bool,
     /// The first prompt, held until setup succeeds.
     pub(crate) brief: Option<String>,
-    /// The model and effort a slice was started with, until Claude Code's start-up read
-    /// confirms them or reports what it applied instead (task #42).
+    /// The model and effort the session was launched with (the row's `model_choice`), until
+    /// Claude Code's start-up read confirms them or reports what it applied instead (task #42).
     pub(crate) launch_choice: Option<crate::db::ModelChoice>,
     /// The first `system/init` has arrived.
     pub(crate) inited: bool,
@@ -330,7 +330,8 @@ impl Core {
                 stopping: false,
                 setting_up: false,
                 brief: None,
-                launch_choice: None,
+                // Checked against the start-up read, on every start until it has run once.
+                launch_choice: row.model_choice.clone(),
                 inited: false,
                 sends: HashMap::new(),
                 close_after: None,
@@ -1101,7 +1102,11 @@ impl Core {
                 .last()
                 .cloned()
                 .unwrap_or_else(|| exit_text(&info));
-            self.setup_failed(agent, format!("the session exited during setup: {detail}"));
+            let hint = refused_model_hint(&live);
+            self.setup_failed(
+                agent,
+                format!("the session exited during setup: {detail}{hint}"),
+            );
         } else if let Some(work) = in_flight {
             let restartable = self.quitting.is_none() && live.close_after.is_none();
             self.session_oom(agent, work, restartable);
@@ -1110,6 +1115,12 @@ impl Core {
             if !info.stderr_tail.is_empty() {
                 text.push_str(":\n");
                 text.push_str(&info.stderr_tail.join("\n"));
+            }
+            let hint = refused_model_hint(&live);
+            text.push_str(&hint);
+            if !hint.is_empty() && self.is_slice(agent) {
+                let name = self.agent_name(agent);
+                self.tell_coordinator(format!("slice {name} ended right after it started.{hint}"));
             }
             let item = self.raise(agent, InboxKind::Error { text }, crate::inbox::Waiter::None);
             self.update_agent(agent, |row| row.agent.status = AgentStatus::Error);
@@ -1148,6 +1159,17 @@ impl Core {
         self.takeover_headless_exited(agent);
         self.refresh_status(agent);
     }
+}
+
+/// What to add to an exit report when the session ended before its start-up read: Claude Code
+/// refuses an unknown `--model` and exits, so the requested model is the first suspect.
+fn refused_model_hint(live: &Live) -> String {
+    live.launch_choice.as_ref().map_or_else(String::new, |c| {
+        format!(
+            " It was started on model `{}`: Claude Code may have refused that model.",
+            c.model
+        )
+    })
 }
 
 fn exit_text(info: &ExitInfo) -> String {

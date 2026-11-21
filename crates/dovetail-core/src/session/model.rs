@@ -126,23 +126,28 @@ impl Core {
         names.join(", ")
     }
 
-    /// A slice started with a model and effort: the start-up read says what Claude Code applied.
-    /// A mismatch is told to the coordinator; the agent row keeps the applied values.
+    /// A session launched with a model and effort: the start-up read says what Claude Code
+    /// applied. A mismatch goes in the session's log and, for a slice, to the coordinator.
+    /// Returns what the session actually runs, to keep on its row: a later start compares
+    /// with that, so a mismatch is reported once.
     fn check_launch_choice(
         &mut self,
         agent: &AgentId,
         choice: ModelChoice,
         model: Option<&str>,
         effort: Option<ReasoningEffort>,
-    ) {
+    ) -> ModelChoice {
         let name = self.agent_name(agent);
+        let mut kept = choice.clone();
         let mut problems = Vec::new();
-        // The applied model is the resolved name: compare it only when the catalog can map it.
+        // The applied model is the resolved name (`claude-sonnet-5-5`). Without a model list to
+        // map the alias, the name must at least contain it: a typo like `opuss` does not.
         if let Some(applied) = model
-            && self.model_listed(&choice.model) == Some(true)
             && !self.runs_model_named(applied, &choice.model)
+            && !applied.contains(&choice.model)
         {
             problems.push(format!("model {} (it runs {applied})", choice.model));
+            kept.model = applied.to_owned();
         }
         if let Some(wanted) = choice.effort
             && effort != Some(wanted)
@@ -152,16 +157,25 @@ impl Core {
                 wanted.as_str(),
                 effort.map_or("none", ReasoningEffort::as_str)
             ));
+            kept.effort = effort;
         }
-        if problems.is_empty() {
-            return;
+        if !problems.is_empty() {
+            let text = format!(
+                "{name} did not get what was asked for: {}",
+                problems.join(" and ")
+            );
+            self.notice(agent, text.clone());
+            if self.is_slice(agent) {
+                self.tell_coordinator(format!("slice {text}"));
+            }
         }
-        let text = format!(
-            "slice {name} did not get what you asked for: {}",
-            problems.join(" and ")
-        );
-        self.notice(agent, text.clone());
-        self.tell_coordinator(text);
+        kept
+    }
+
+    pub(crate) fn is_slice(&self, agent: &AgentId) -> bool {
+        self.agents
+            .get(agent)
+            .is_some_and(|r| r.agent.kind == AgentKind::Slice)
     }
 
     /// `get_settings`' answer: the start-up read (`switch` is `None`) or the end of a switch.
@@ -180,11 +194,17 @@ impl Core {
             return;
         }
         let asked = live.switching.take_if(|p| Some(p.id) == switch);
-        let launched = live.launch_choice.take();
+        // Only the start-up read (no switch) answers for the launch flags.
+        let launched = if switch.is_none() {
+            live.launch_choice.take()
+        } else {
+            None
+        };
         self.set_model(agent, model.as_deref());
         self.update_agent(agent, |row| row.agent.effort = effort);
         if let Some(choice) = launched {
-            self.check_launch_choice(agent, choice, model.as_deref(), effort);
+            let kept = self.check_launch_choice(agent, choice, model.as_deref(), effort);
+            self.update_agent(agent, |row| row.model_choice = Some(kept));
         }
         let Some(PendingSwitch { mut choice, .. }) = asked else {
             return;
@@ -264,7 +284,7 @@ impl Core {
         (default.clone(), None)
     }
 
-    fn agent_name(&self, agent: &AgentId) -> String {
+    pub(crate) fn agent_name(&self, agent: &AgentId) -> String {
         self.agents
             .get(agent)
             .map_or_else(|| agent.0.clone(), |r| r.agent.name.clone())

@@ -1217,8 +1217,6 @@ mod tests {
         assert_eq!(created[0].criterion, None);
     }
 
-    /// Migration 0017 on a database as version 16 left it: every task goes to Unsorted, chat
-    /// lines keep no tag, and nothing else about them changes.
     /// ADR 0021: state migration 0019 from version 18. Agents and queued starts are kept; none
     /// has a repo yet (read as the project's first), and a stored one round-trips.
     #[test]
@@ -1282,6 +1280,31 @@ mod tests {
         );
     }
 
+    /// Task #42: state migration 0022 from version 21. A queued start made before it has no
+    /// model choice, and one queued after it keeps its own.
+    #[test]
+    fn queued_starts_migrate_up_from_version_21_with_no_model_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let path = paths.state_db("p");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut old = Connection::open(&path).unwrap();
+        migrate(&mut old, &path, &STATE_MIGRATIONS[..21]).unwrap();
+        old.execute_batch(
+            "INSERT INTO slice_queue (name, brief, created_ms) VALUES ('old', 'go', 1);",
+        )
+        .unwrap();
+        drop(old);
+
+        let db = Db::open(&paths, Some("p")).unwrap();
+        let queue = db.load_queue().wait().unwrap();
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].name, "old");
+        assert_eq!(queue[0].model_choice, None);
+    }
+
+    /// Migration 0017 on a database as version 16 left it: every task goes to Unsorted, chat
+    /// lines keep no tag, and nothing else about them changes.
     #[test]
     fn efforts_migrate_up_from_version_16_and_existing_tasks_go_to_unsorted() {
         use dovetail_api::{EntryKind, TaskStatus, UNSORTED_EFFORT};

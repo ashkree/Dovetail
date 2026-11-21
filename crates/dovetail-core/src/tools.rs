@@ -13,6 +13,9 @@ use serde_json::json;
 use tokio::sync::oneshot;
 
 use crate::db::ModelChoice;
+
+/// The model a coordinator-started slice gets when it names none (task #42).
+const DEFAULT_SLICE_MODEL: &str = "sonnet";
 use crate::error::SliceError;
 use crate::inbox::Waiter;
 use crate::service::Core;
@@ -240,8 +243,12 @@ impl Core {
                     brief: start.brief,
                     by_coordinator: true,
                     repo: start.repo,
-                    model_choice: start.model.map(|model| ModelChoice {
-                        model: model.trim().to_owned(),
+                    // Always explicit: a slice never runs on Claude Code's own default model.
+                    model_choice: Some(ModelChoice {
+                        model: start.model.map_or_else(
+                            || DEFAULT_SLICE_MODEL.to_owned(),
+                            |m| m.trim().to_owned(),
+                        ),
                         effort: start.effort,
                     }),
                 };

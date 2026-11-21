@@ -115,9 +115,9 @@ struct Recorder {
     hold_models: std::sync::atomic::AtomicBool,
     /// Held model switch answers, in the order the switches were asked.
     held: Mutex<Vec<DriverEvent>>,
-    /// Every session reports this effort as applied, with the model it started on, as the
-    /// start-up `get_settings` read does ([`FakeDriver::apply_effort_at_start`]).
-    applied_effort: Mutex<Option<dovetail_api::ReasoningEffort>>,
+    /// Every session reports these settings as applied, as the start-up `get_settings` read
+    /// does ([`FakeDriver::apply_at_start`]).
+    applied: Mutex<Option<(Option<String>, Option<dovetail_api::ReasoningEffort>)>>,
     /// The latest session's event stream, for [`FakeDriver::send_event`].
     latest: Mutex<Option<UnboundedSender<DriverEvent>>>,
 }
@@ -170,11 +170,16 @@ impl FakeDriver {
         })
     }
 
-    /// From now on, every session reports `effort` as applied at start, with the model it was
-    /// started on (Claude Code's start-up `get_settings` read), whatever it was asked for.
-    pub fn apply_effort_at_start(&self, effort: dovetail_api::ReasoningEffort) {
-        if let Ok(mut applied) = self.recorder.applied_effort.lock() {
-            *applied = Some(effort);
+    /// From now on, every session reports `model` and `effort` as applied at start (Claude
+    /// Code's start-up `get_settings` read), whatever it was asked for. `model: None` reports
+    /// the model the session was started on.
+    pub fn apply_at_start(
+        &self,
+        model: Option<&str>,
+        effort: Option<dovetail_api::ReasoningEffort>,
+    ) {
+        if let Ok(mut applied) = self.recorder.applied.lock() {
+            *applied = Some((model.map(str::to_owned), effort));
         }
     }
 
@@ -269,23 +274,40 @@ impl SessionDriver for FakeDriver {
         if let Ok(mut latest) = self.recorder.latest.lock() {
             *latest = Some(tx.clone());
         }
-        let applied = self.recorder.applied_effort.lock().ok().and_then(|e| *e);
-        if let Some(effort) = applied {
+        let applied = self.recorder.applied.lock().ok().and_then(|a| a.clone());
+        if let Some((model, effort)) = applied {
             let _ = tx.send(DriverEvent::ModelSettings {
                 switch: None,
-                model: spec.model.clone(),
-                effort: Some(effort),
+                model: model.or_else(|| spec.model.clone()),
+                effort,
             });
         }
         let shared = Arc::new(Shared::default());
-        handle.spawn(replay(
-            self.lines.clone(),
-            options,
-            spec.cwd.to_string_lossy().into_owned(),
-            tx.clone(),
-            shared.clone(),
-            self.gate.clone(),
-        ));
+        if spec
+            .model
+            .as_deref()
+            .is_some_and(|m| m.starts_with("bogus"))
+        {
+            // Claude Code refuses an unknown `--model` and exits at once.
+            let _ = tx.send(DriverEvent::Exited(ExitInfo {
+                code: Some(1),
+                signal: None,
+                success: false,
+                stderr_tail: vec![format!(
+                    "Error: Model '{}' not found",
+                    spec.model.as_deref().unwrap_or_default()
+                )],
+            }));
+        } else {
+            handle.spawn(replay(
+                self.lines.clone(),
+                options,
+                spec.cwd.to_string_lossy().into_owned(),
+                tx.clone(),
+                shared.clone(),
+                self.gate.clone(),
+            ));
+        }
         Ok(Box::new(FakeSession {
             session_id: spec.session_id,
             events: Some(rx),

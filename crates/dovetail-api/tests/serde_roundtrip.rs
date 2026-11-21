@@ -1340,7 +1340,7 @@ fn review_is_a_status_and_agents_cannot_set_status() {
 }
 
 #[test]
-fn start_slice_takes_an_optional_model_and_effort_and_an_effort_needs_a_model() {
+fn start_slice_takes_an_optional_model_and_an_optional_effort() {
     use dovetail_api::tools::{Role, StartSlice, Tool};
     let base = json!({"task": 3, "name": "x", "brief": "go"});
     // Left out: nothing changes for old callers.
@@ -1367,7 +1367,7 @@ fn start_slice_takes_an_optional_model_and_effort_and_an_effort_needs_a_model() 
         other => panic!("{other:?}"),
     }
     assert_eq!(chosen.validate(Role::Coordinator), Ok(()));
-    // An unknown level is refused when parsed; an effort alone when validated.
+    // An unknown level is refused when parsed; an effort alone is fine (the model defaults).
     let mut bad = base.clone();
     bad["model"] = json!("haiku");
     bad["effort"] = json!("bogus");
@@ -1375,5 +1375,5 @@ fn start_slice_takes_an_optional_model_and_effort_and_an_effort_needs_a_model() 
     let mut alone = base;
     alone["effort"] = json!("low");
     let alone = Tool::parse("project_start_slice", alone).expect("parses");
-    assert!(alone.validate(Role::Coordinator).is_err());
+    assert_eq!(alone.validate(Role::Coordinator), Ok(()));
 }

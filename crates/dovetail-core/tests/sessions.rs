@@ -6784,6 +6784,25 @@ fn wait_specs(fake: &FakeDriver, n: usize) {
     }
 }
 
+/// The spec the session named `p.<name>` was started with, once it has started. The
+/// coordinator is woken by "slice ready" and starts too, so a slice is found by its name.
+fn wait_spec(fake: &FakeDriver, name: &str) -> dovetail_driver::SessionSpec {
+    let want = format!("p.{name}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let found = fake
+            .started_specs()
+            .into_iter()
+            .rev()
+            .find(|s| s.name.as_deref() == Some(want.as_str()));
+        if let Some(spec) = found {
+            return spec;
+        }
+        assert!(Instant::now() < deadline, "{want} never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn call_coordinator(h: &Harness, call: Tool) -> (String, bool) {
     result_text(socket_call(&h.socket(), tool(COORDINATOR, call)))
 }
@@ -6799,22 +6818,29 @@ fn a_slice_starts_on_the_model_and_effort_asked_for_and_defaults_when_left_out()
         start_on("cheap", Some("haiku"), Some(ReasoningEffort::Low)),
     );
     assert!(!is_error && text.starts_with("started"), "{text}");
-    wait_specs(&fake, 1);
-    let spec = &fake.started_specs()[0];
+    let spec = wait_spec(&fake, "cheap");
     assert_eq!(spec.model.as_deref(), Some("haiku"));
     assert_eq!(spec.effort, Some(ReasoningEffort::Low));
 
     let (text, is_error) = call_coordinator(&h, start_on("plain", None, None));
     assert!(!is_error && text.starts_with("started"), "{text}");
-    wait_specs(&fake, 2);
-    let spec = &fake.started_specs()[1];
-    assert_eq!(spec.model, None);
+    // Left out, the model is Sonnet, passed explicitly.
+    let spec = wait_spec(&fake, "plain");
+    assert_eq!(spec.model.as_deref(), Some("sonnet"));
     assert_eq!(spec.effort, None);
+
+    // An effort alone is accepted, on Sonnet.
+    let (text, is_error) =
+        call_coordinator(&h, start_on("hard", None, Some(ReasoningEffort::High)));
+    assert!(!is_error && text.starts_with("started"), "{text}");
+    let spec = wait_spec(&fake, "hard");
+    assert_eq!(spec.model.as_deref(), Some("sonnet"));
+    assert_eq!(spec.effort, Some(ReasoningEffort::High));
     h.quit();
 }
 
 #[test]
-fn an_unknown_model_is_denied_once_models_are_listed_and_an_effort_alone_is_refused() {
+fn an_unknown_model_is_denied_once_models_are_listed() {
     use dovetail_api::ReasoningEffort;
     use dovetail_driver::{DriverEvent, ModelInfo};
     let fake = fixture("plain_turn").with_options(ReplayOptions {
@@ -6845,12 +6871,6 @@ fn an_unknown_model_is_denied_once_models_are_listed_and_an_effort_alone_is_refu
     // A full name Claude Code lists is fine.
     let (text, is_error) = call_coordinator(&h, start_on("full", Some("claude-sonnet-5-5"), None));
     assert!(!is_error && text.starts_with("started"), "{text}");
-    let (text, is_error) =
-        call_coordinator(&h, start_on("alone", None, Some(ReasoningEffort::Low)));
-    assert!(
-        is_error && text.contains("`effort` needs a `model`"),
-        "{text}"
-    );
     h.quit();
 }
 
@@ -6859,7 +6879,7 @@ fn a_queued_slice_keeps_its_model_and_effort_and_a_refused_effort_is_reported() 
     use dovetail_api::ReasoningEffort;
     let fake = fixture("plain_turn");
     // Claude Code ignores the effort asked for and keeps `high`.
-    fake.apply_effort_at_start(ReasoningEffort::High);
+    fake.apply_at_start(None, Some(ReasoningEffort::High));
     let config = Config {
         max_slices: 1,
         ..Config::default()
@@ -6906,8 +6926,97 @@ fn a_queued_slice_keeps_its_model_and_effort_and_a_refused_effort_is_reported() 
             .is_some_and(|t| {
                 t.entries
                     .iter()
-                    .any(|e| e.text.contains("did not get what you asked for"))
+                    .any(|e| e.text.contains("did not get what was asked for"))
             })
     });
+    h.quit();
+}
+
+fn notices_containing(s: &Snapshot, agent: &str, needle: &str) -> usize {
+    s.conversations.get(&AgentId(agent.into())).map_or(0, |t| {
+        t.entries.iter().filter(|e| e.text.contains(needle)).count()
+    })
+}
+
+#[test]
+fn a_typo_accepted_while_models_are_unknown_is_reported_after_the_start_up_read() {
+    use dovetail_api::ReasoningEffort;
+    let fake = fixture("plain_turn");
+    // No model list yet; Claude Code falls back to Sonnet and says so.
+    fake.apply_at_start(Some("claude-sonnet-5-5"), Some(ReasoningEffort::Medium));
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    make_task(&mut h);
+    let (text, is_error) = call_coordinator(&h, start_on("typo", Some("opuss"), None));
+    assert!(!is_error && text.starts_with("started"), "{text}");
+    h.wait_for("the mismatch", |s| {
+        notices_containing(s, "slice-typo", "model opuss (it runs claude-sonnet-5-5)") == 1
+    });
+    // A correct alias is not a mismatch: the applied name contains it.
+    let (text, _) = call_coordinator(&h, start_on("fine", Some("sonnet"), None));
+    assert!(text.starts_with("started"), "{text}");
+    wait_specs(&fake, 2);
+    h.drain(Duration::from_millis(300));
+    assert_eq!(notices_containing(&h.snap, "slice-fine", "did not get"), 0);
+    h.quit();
+}
+
+#[test]
+fn a_model_claude_code_refuses_at_launch_is_named_in_the_failure() {
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    make_task(&mut h);
+    let (text, is_error) = call_coordinator(&h, start_on("refused", Some("bogus-model"), None));
+    assert!(!is_error && text.starts_with("started"), "{text}");
+    h.wait_for("the failure", |s| {
+        s.inbox.iter().any(|i| {
+            matches!(&i.kind, InboxKind::Error { text }
+                if text.contains("`bogus-model`") && text.contains("refused that model"))
+        })
+    });
+    h.quit();
+}
+
+#[test]
+fn a_restart_before_the_start_up_read_still_checks_the_launch_choice_once() {
+    use dovetail_api::ReasoningEffort;
+    let fake = fixture("plain_turn");
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    make_task(&mut h);
+    let (text, _) = call_coordinator(&h, start_on("r", Some("haiku"), Some(ReasoningEffort::Low)));
+    assert!(text.starts_with("started"), "{text}");
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "r"));
+    // Quit before any start-up read arrived (the fake sends none): the row keeps the request.
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    // Next run: the slice resumes, and Claude Code applies `high`. The check runs and says so.
+    let fake = fixture("plain_turn");
+    fake.apply_at_start(None, Some(ReasoningEffort::High));
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.send(Command::Prompt {
+        agent: AgentId("slice-r".into()),
+        text: "again".into(),
+        attachments: Vec::new(),
+        effort: None,
+    });
+    h.wait_for("the mismatch", |s| {
+        notices_containing(s, "slice-r", "effort low (it runs at high)") == 1
+    });
+    let paths = h.paths.clone();
+    let _state = h.quit();
+
+    // Once reported, the row keeps what is applied: the next start passes it and says nothing.
+    let fake = fixture("plain_turn");
+    fake.apply_at_start(None, Some(ReasoningEffort::High));
+    let mut h = Harness::start_on(fake.clone(), paths);
+    h.send(Command::Prompt {
+        agent: AgentId("slice-r".into()),
+        text: "once more".into(),
+        attachments: Vec::new(),
+        effort: None,
+    });
+    assert_eq!(wait_spec(&fake, "r").effort, Some(ReasoningEffort::High));
+    h.drain(Duration::from_millis(300));
+    assert_eq!(notices_containing(&h.snap, "slice-r", "did not get"), 1);
     h.quit();
 }

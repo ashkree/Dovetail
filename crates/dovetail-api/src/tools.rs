@@ -339,8 +339,6 @@ pub enum ToolError {
     DeclareFromNonSlice,
     /// `design_declare_variants` with a list that cannot be used; the text says what is wrong.
     BadVariants(String),
-    /// `project_start_slice` gave an `effort` but no `model`.
-    EffortNeedsModel,
     /// `research_get`'s `what` is none of `report`, `round:N`, `finding:N`, `source:N`.
     BadWhat(String),
 }
@@ -399,9 +397,6 @@ impl std::fmt::Display for ToolError {
                 "`design_declare_variants` is for slices: they declare the variants of the page they build",
             ),
             ToolError::BadVariants(why) => write!(f, "bad variants: {why}"),
-            ToolError::EffortNeedsModel => {
-                f.write_str("`effort` needs a `model` too: name both, like `sonnet` and `medium`")
-            }
             ToolError::BadWhat(text) => write!(
                 f,
                 "`what` must be `report`, `round:N`, `finding:N` or `source:N`, not `{text}`"
@@ -536,10 +531,8 @@ impl Tool {
             Tool::StartSlice(s) => {
                 id("task", s.task)?;
                 text("name", &s.name)?;
-                match (&s.model, s.effort) {
-                    (Some(model), _) => text("model", model)?,
-                    (None, Some(_)) => return Err(ToolError::EffortNeedsModel),
-                    (None, None) => {}
+                if let Some(model) = &s.model {
+                    text("model", model)?;
                 }
                 text("brief", &s.brief)
             }
@@ -832,10 +825,10 @@ pub struct StartSlice {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
     /// The model the session starts on: an alias (`haiku`, `sonnet`, `opus`) or a full model id.
-    /// Left out, the project's default applies.
+    /// Left out, the slice starts on `sonnet`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// The effort it starts at; needs a `model`. Left out, Claude Code's default applies.
+    /// The effort it starts at. Left out, Claude Code's default applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<ReasoningEffort>,
 }

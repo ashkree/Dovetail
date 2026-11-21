@@ -449,8 +449,7 @@ fn tool_defs() -> Vec<ToolDef> {
                 first prompt, so make it complete: goal, scope, files, checks to run. The \
                 slice works in one of the project's repos: name it with `repo` when the \
                 project has several (refused without it); with one it may be left out. Pick the \
-                session's `model` and `effort` for the work; leave both out for the project's \
-                default. An unknown model is `denied`; if the model or effort did not take, \
+                session's `model` (optional, default `sonnet`) and `effort` for the work. An unknown model is `denied`; if the model or effort did not take, \
                 you are told in a message.",
             schema: || {
                 json!({"type": "object", "properties": {
@@ -458,8 +457,8 @@ fn tool_defs() -> Vec<ToolDef> {
                     "name": {"type": "string", "description": "Short slice name, used for the branch and worktree."},
                     "brief": {"type": "string", "description": "The slice's first prompt."},
                     "repo": {"type": "string", "description": "The repo it works in, by name, as Dovetail listed it to you. Required when the project has several repos."},
-                    "model": {"type": "string", "description": "The model the slice runs on: an alias (`haiku`, `sonnet`, `opus`) or a full model id."},
-                    "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"], "description": "The slice's effort level. Needs `model`."}
+                    "model": {"type": "string", "description": "Optional, default sonnet. The model the slice runs on: an alias (`haiku`, `sonnet`, `opus`) or a full model id."},
+                    "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"], "description": "The slice's effort level. Left out, Claude Code's default applies."}
                 }, "required": ["task", "name", "brief"]})
             },
         },
