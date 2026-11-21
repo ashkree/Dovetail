@@ -7,6 +7,7 @@ mod canvas;
 mod clipboard;
 mod common;
 mod conversation;
+mod coverage;
 mod decision;
 mod design;
 mod effort;
@@ -252,12 +253,8 @@ fn old_or_repeated_seq_is_stale_and_changes_nothing() {
     assert_eq!(state, before);
 }
 
-/// Replays each feature's cases through `apply` and checks every event's result: all applied,
-/// except the deliberate gap and repeat in `agents_inbox_and_order`. Each case must also change
-/// the snapshot (and no-op cases must leave everything except `seq` unchanged).
-#[test]
-fn every_case_replays_with_the_expected_results() {
-    let all: Vec<Case> = [
+pub(crate) fn all_cases() -> Vec<Case> {
+    [
         activity::cases(),
         agent::cases(),
         app::cases(),
@@ -285,9 +282,15 @@ fn every_case_replays_with_the_expected_results() {
     ]
     .into_iter()
     .flatten()
-    .collect();
+    .collect()
+}
 
-    for case in all {
+/// Replays each feature's cases through `apply` and checks every event's result: all applied,
+/// except the deliberate gap and repeat in `agents_inbox_and_order`. Each case must also change
+/// the snapshot (and no-op cases must leave everything except `seq` unchanged).
+#[test]
+fn every_case_replays_with_the_expected_results() {
+    for case in all_cases() {
         let mut state = case.snapshot.clone();
         let results: Vec<_> = case
             .events
