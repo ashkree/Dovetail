@@ -188,21 +188,21 @@ pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
     spec.model = launch.model.clone();
     spec.effort = launch.effort;
     spec.permission_mode = launch.mode;
-    spec.settings_path = Some(settings_path);
-    spec.mcp_config_path = Some(mcp_path);
+    spec.claude.settings_path = Some(settings_path);
+    spec.claude.mcp_config_path = Some(mcp_path);
     spec.append_system_prompt_file = role_prompt.exists().then_some(role_prompt);
-    spec.allowed_tools = allowed_tools(&launch.suites);
+    spec.claude.allowed_tools = allowed_tools(&launch.suites);
     // A side chat reads and searches; it never edits, and runs only read-only commands. In
     // `dontAsk` mode anything not allowed here is denied, never asked (decided 2026-11-11).
     if matches!(launch.role, Role::SideChat | Role::Ask) {
         spec.permission_mode = CliMode::DontAsk;
-        spec.allowed_tools.extend(side_chat_allowed());
-        spec.extra_args.extend([
+        spec.claude.allowed_tools.extend(side_chat_allowed());
+        spec.claude.extra_args.extend([
             "--disallowedTools".to_string(),
             side_chat_disallowed().join(","),
         ]);
     }
-    spec.worktree = launch.worktree.clone();
+    spec.claude.worktree = launch.worktree.clone();
     spec.add_dirs = launch.add_dirs.clone();
     spec.env = vec![
         ("CLAUDE_CODE_ENABLE_TODO_TOOLS".into(), "1".into()),

@@ -1171,14 +1171,19 @@ fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
     );
     assert!(
         !spec
+            .claude
             .allowed_tools
             .iter()
             .any(|t| t.starts_with("mcp__dovetail__")),
         "{:?}",
-        spec.allowed_tools
+        spec.claude.allowed_tools
     );
-    assert!(spec.allowed_tools.contains(&"Bash(rg *)".to_string()));
-    let denied = spec.extra_args.join(" ");
+    assert!(
+        spec.claude
+            .allowed_tools
+            .contains(&"Bash(rg *)".to_string())
+    );
+    let denied = spec.claude.extra_args.join(" ");
     assert!(
         denied.contains("--disallowedTools") && denied.contains("Write"),
         "{denied}"

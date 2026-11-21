@@ -285,7 +285,8 @@ fn a_tangent_runs_read_only_in_tangents_and_is_saved_there_with_its_sources() {
     for rule in ["Edit", "Write", "NotebookEdit"] {
         assert!(denied.contains(rule), "{rule} in {denied}");
     }
-    let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
+    let mcp =
+        std::fs::read_to_string(spec.claude.mcp_config_path.as_ref().expect("mcp")).expect("read");
     assert!(mcp.contains(r#""DOVETAIL_SUITES": "core""#), "{mcp}");
 
     // Its rows are in Tangents' own state.db, its files in Tangents' research folder.

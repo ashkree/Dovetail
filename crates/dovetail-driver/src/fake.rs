@@ -17,7 +17,8 @@
 use crate::event::*;
 use crate::parse;
 use crate::{
-    ControlAnswer, DriverError, PermissionMode, Session, SessionDriver, SessionSpec, UserInput,
+    ControlAnswer, DriverError, DriverKind, PermissionMode, Session, SessionDriver, SessionSpec,
+    UserInput,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -136,6 +137,7 @@ pub struct FakeDriver {
     options: ReplayOptions,
     recorder: Arc<Recorder>,
     gate: Arc<Notify>,
+    kind: DriverKind,
 }
 
 impl FakeDriver {
@@ -173,6 +175,7 @@ impl FakeDriver {
             options: ReplayOptions::default(),
             recorder: Arc::default(),
             gate: Arc::default(),
+            kind: DriverKind::Claude,
         })
     }
 
@@ -282,6 +285,10 @@ impl FakeDriver {
 }
 
 impl SessionDriver for FakeDriver {
+    fn kind(&self) -> DriverKind {
+        self.kind
+    }
+
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {
         let handle = tokio::runtime::Handle::try_current().map_err(|_| DriverError::NoRuntime)?;
         let mut options = self.options.clone();

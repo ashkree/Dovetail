@@ -10,6 +10,7 @@
 mod apply;
 mod canvas;
 mod design;
+mod driver;
 mod effort;
 pub mod map;
 mod mcp;
@@ -22,6 +23,7 @@ pub mod tools;
 pub use apply::{ApplyResult, apply};
 pub use canvas::*;
 pub use design::*;
+pub use driver::*;
 pub use effort::*;
 pub use mcp::*;
 pub use model::*;

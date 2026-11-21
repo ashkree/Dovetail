@@ -233,7 +233,7 @@ fn the_coordinator_runs_in_its_home_folder_with_its_role_prompt_and_resumes_afte
         spec.append_system_prompt_file.as_deref(),
         Some(role.as_path())
     );
-    assert!(spec.worktree.is_none());
+    assert!(spec.claude.worktree.is_none());
     app.quit();
 
     // Reopened the way `dovetail --project market-sizing` does it.

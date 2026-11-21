@@ -1,47 +1,14 @@
-//! `SessionDriver`: runs headless Claude Code sessions over the NDJSON stream protocol.
-//!
-//! The driver hides Claude Code entirely behind [`SessionDriver`] and [`Session`]. The core never
-//! sees a process, a pipe or a raw line unless it asks for it: every stdout line becomes a typed
-//! [`DriverEvent`] that still carries (or can carry) its raw JSON.
-//!
-//! # Stream rules (spike S1, `docs/spikes/driver.md`; these are law)
-//!
-//! 1. **Route by `parent_tool_use_id`.** A subagent's events arrive on the parent session's
-//!    stream. Every event that can come from a subagent carries an [`Origin`]; a non-`None`
-//!    `parent_tool_use_id` names the `Task` tool use that spawned it. `agent_id` is set too when
-//!    the CLI provides it (always on subagent permission requests).
-//! 2. **The first `result` is not the end.** A background subagent produces several
-//!    [`DriverEvent::TurnResult`]s per prompt (`result_index` counts them), each after a fresh
-//!    `Init`. A session is done when the process exits ([`DriverEvent::Exited`]) or when no
-//!    background tasks remain ([`DriverEvent::BackgroundTasksChanged`] with an empty list), never
-//!    on a `result` alone.
-//! 3. **Answer permission requests concurrently.** The stdout reader never waits for an answer.
-//!    All [`Session`] methods only enqueue, so a held [`DriverEvent::PermissionRequest`] never
-//!    blocks another request, the stream, or an interrupt. Answers may come in any order.
-//! 4. **Record session ids yourself.** Dovetail picks the id (`--session-id`) and stores it; the
-//!    `Init` event confirms it. Resume with [`SessionSpec::resume`].
-//! 5. **Never crash on the unknown.** Unknown line types, subtypes and fields end up in
-//!    [`DriverEvent::Unknown`] with the raw JSON; non-JSON lines too.
-//!
-//! # Pieces
-//!
-//! - [`SessionDriver`] / [`Session`]: the traits the core depends on.
-//! - [`ClaudeDriver`]: spawns the real `claude` (optionally inside `systemd-run --user --scope`).
-//! - [`FakeDriver`]: replays recorded fixtures through the same parser and records everything
-//!   sent to it.
-//! - [`parse`]: the line-to-event mapping, usable on its own.
+#![doc = include_str!("../ARCHITECTURE.md")]
 
 mod base64;
 mod claude;
 mod event;
 mod fake;
-mod mcp;
-pub mod parse;
+mod process;
 mod spec;
-mod switch;
-pub mod transcript;
 
-pub use claude::ClaudeDriver;
+pub use claude::{ClaudeDriver, ClaudeOptions, parse, transcript};
+pub use dovetail_api::DriverKind;
 pub use event::*;
 pub use fake::{FakeDriver, ReplayOptions, ReplayTiming, Sent};
 pub use spec::{PermissionMode, SessionSpec, SystemdScope};
@@ -75,6 +42,8 @@ pub enum DriverError {
 
 /// Starts sessions. Implemented by [`ClaudeDriver`] and [`FakeDriver`].
 pub trait SessionDriver: Send + Sync + 'static {
+    /// Which CLI this driver runs.
+    fn kind(&self) -> DriverKind;
     /// Start (or, with [`SessionSpec::resume`], resume) a session. Must be called inside a tokio
     /// runtime. Returns once the process is spawned; events arrive on the session's stream.
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError>;

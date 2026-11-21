@@ -1,33 +1,37 @@
-//! `ClaudeDriver`: the real thing. Hand-written NDJSON layer on tokio and serde_json
-//! (spike S1 decision), one supervisor, one reader, one writer and one stderr task per session.
+//! `ClaudeDriver`: Claude Code over its NDJSON stream protocol. Hand-written NDJSON layer on
+//! tokio and serde_json (spike S1 decision): the shared process plumbing ([`crate::process`]) plus
+//! this module's stdout reader, and the Claude Code pieces beside it: [`parse`] (lines to
+//! events), `switch` (the live model switch), `mcp` (the MCP menu), `args` (argv), `usage`
+//! (`get_usage`) and [`transcript`] (the native JSONL transcript after a take-over).
+
+mod args;
+mod mcp;
+pub mod parse;
+mod reader;
+mod switch;
+pub mod transcript;
+
+pub use args::ClaudeOptions;
 
 use crate::event::*;
-use crate::mcp::McpCalls;
-use crate::parse;
-use crate::switch::Switches;
+use crate::process::{self, Ctl, Log, WriterMsg};
 use crate::{
     ControlAnswer, DriverError, PermissionMode, Session, SessionDriver, SessionSpec, UserInput,
 };
-use dovetail_api::{McpRequest, ReasoningEffort};
+use dovetail_api::{DriverKind, McpRequest, ReasoningEffort};
+use mcp::McpCalls;
+use reader::Reader;
 use serde_json::{Value, json};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::ffi::OsString;
-use std::io::Write as _;
-use std::os::unix::process::ExitStatusExt;
-use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use std::time::Duration;
+use switch::Switches;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-const STDERR_TAIL: usize = 20;
 /// How long an MCP menu request may wait for its answer.
 const MCP_TIMEOUT: Duration = Duration::from_secs(30);
-/// How long to wait for the pipes to drain after the process is gone (a background grandchild
-/// can keep stdout open).
-const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Spawns real `claude` processes.
 #[derive(Debug, Clone)]
@@ -64,34 +68,16 @@ impl ClaudeDriver {
 }
 
 impl SessionDriver for ClaudeDriver {
+    fn kind(&self) -> DriverKind {
+        DriverKind::Claude
+    }
+
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {
         let handle = tokio::runtime::Handle::try_current().map_err(|_| DriverError::NoRuntime)?;
         let _guard = handle.enter();
         let (program, args) = self.command_line(&spec);
-        let log = match &spec.log_path {
-            Some(p) => Some(Arc::new(Log::open(p).map_err(DriverError::Log)?)),
-            None => None,
-        };
-        let mut cmd = Command::new(program);
-        cmd.args(args)
-            .current_dir(&spec.cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        for (k, v) in &spec.env {
-            cmd.env(k, v);
-        }
-        let mut child = cmd.spawn().map_err(DriverError::Spawn)?;
-        let pid = child.id();
-        let (Some(stdin), Some(stdout), Some(stderr)) =
-            (child.stdin.take(), child.stdout.take(), child.stderr.take())
-        else {
-            let _ = child.start_kill();
-            return Err(DriverError::Spawn(std::io::Error::other(
-                "child pipes missing",
-            )));
-        };
+        let log = Log::for_spec(&spec)?;
+        let child = process::spawn(program, args, &spec)?;
 
         let (events_tx, events_rx) = unbounded_channel();
         let (writer_tx, writer_rx) = unbounded_channel();
@@ -100,9 +86,9 @@ impl SessionDriver for ClaudeDriver {
         let switches: Arc<Mutex<Switches>> = Arc::default();
         let mcp: Arc<Mutex<McpCalls>> = Arc::default();
 
-        tokio::spawn(write_stdin(stdin, writer_rx, log.clone()));
-        let reader = tokio::spawn(read_stdout(
-            stdout,
+        tokio::spawn(process::write_stdin(child.stdin, writer_rx, log.clone()));
+        let reader = tokio::spawn(reader::read_stdout(
+            child.stdout,
             Reader {
                 events: events_tx.clone(),
                 writer: writer_tx.clone(),
@@ -112,9 +98,9 @@ impl SessionDriver for ClaudeDriver {
                 log: log.clone(),
             },
         ));
-        let stderr_task = tokio::spawn(read_stderr(stderr, log));
-        tokio::spawn(supervise(
-            child,
+        let stderr_task = tokio::spawn(process::read_stderr(child.stderr, log));
+        tokio::spawn(process::supervise(
+            child.child,
             ctl_rx,
             writer_tx.clone(),
             reader,
@@ -126,12 +112,12 @@ impl SessionDriver for ClaudeDriver {
         // `DriverEvent::Commands`. No model call is made for it.
         let _ = writer_tx.send(WriterMsg::Line(json!({
             "type": "control_request",
-            "request_id": crate::parse::INITIALIZE_ID,
+            "request_id": parse::INITIALIZE_ID,
             "request": {"subtype": "initialize"},
         })));
         Ok(Box::new(ClaudeSession {
             session_id: spec.session_id,
-            pid,
+            pid: child.pid,
             writer: writer_tx,
             ctl: ctl_tx,
             events: Some(events_rx),
@@ -143,257 +129,6 @@ impl SessionDriver for ClaudeDriver {
             counter: AtomicU64::new(0),
         }))
     }
-}
-
-/// NDJSON log in the fixture format.
-struct Log {
-    start: Instant,
-    file: Mutex<std::fs::File>,
-}
-
-impl Log {
-    fn open(path: &std::path::Path) -> std::io::Result<Self> {
-        Ok(Self {
-            start: Instant::now(),
-            file: Mutex::new(std::fs::File::create(path)?),
-        })
-    }
-
-    fn write(&self, dir: &str, msg: Value) {
-        let t = u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let line = json!({"t": t, "dir": dir, "msg": msg});
-        if let Ok(mut f) = self.file.lock() {
-            let _ = writeln!(f, "{line}");
-        }
-    }
-}
-
-enum WriterMsg {
-    Line(Value),
-    /// Close stdin so the process exits by itself.
-    Close,
-}
-
-enum Ctl {
-    Shutdown(Duration),
-    Kill,
-}
-
-async fn write_stdin(
-    mut stdin: ChildStdin,
-    mut rx: UnboundedReceiver<WriterMsg>,
-    log: Option<Arc<Log>>,
-) {
-    while let Some(msg) = rx.recv().await {
-        match msg {
-            WriterMsg::Line(v) => {
-                if let Some(l) = &log {
-                    l.write("in", v.clone());
-                }
-                let bytes = format!("{v}\n");
-                if let Err(e) = stdin.write_all(bytes.as_bytes()).await {
-                    tracing::debug!("stdin write failed: {e}");
-                    break;
-                }
-                if let Err(e) = stdin.flush().await {
-                    tracing::debug!("stdin flush failed: {e}");
-                    break;
-                }
-            }
-            WriterMsg::Close => break,
-        }
-    }
-    let _ = stdin.shutdown().await;
-}
-
-/// What the stdout reader shares with the session handle.
-struct Reader {
-    events: UnboundedSender<DriverEvent>,
-    /// For the next request of a model switch, sent when the previous one is answered.
-    writer: UnboundedSender<WriterMsg>,
-    pending: Arc<Mutex<HashMap<String, Value>>>,
-    switches: Arc<Mutex<Switches>>,
-    mcp: Arc<Mutex<McpCalls>>,
-    log: Option<Arc<Log>>,
-}
-
-impl Reader {
-    /// Once `initialize` is answered: read the launch model and effort, for the usage row before
-    /// any switch, and what each model accepts, for the selector (task #39). Neither makes a
-    /// model call.
-    fn after_initialize(&self) {
-        let lines = self
-            .switches
-            .lock()
-            .map(|mut s| s.after_initialize())
-            .unwrap_or_default();
-        for line in lines {
-            let _ = self.writer.send(WriterMsg::Line(line));
-        }
-    }
-
-    /// A switch step's answer becomes the next request or the switch's result; any other event
-    /// passes through.
-    fn route(&self, ev: DriverEvent) -> Option<DriverEvent> {
-        let DriverEvent::ControlResponse {
-            request_id,
-            success,
-            response,
-        } = &ev
-        else {
-            return Some(ev);
-        };
-        let mcp = self
-            .mcp
-            .lock()
-            .ok()
-            .and_then(|mut m| m.answer(request_id, *success, response));
-        if mcp.is_some() {
-            return mcp;
-        }
-        let outcome = self
-            .switches
-            .lock()
-            .ok()
-            .and_then(|mut s| s.answer(request_id, *success, response));
-        let Some(outcome) = outcome else {
-            return Some(ev);
-        };
-        if let Some(line) = outcome.send {
-            let _ = self.writer.send(WriterMsg::Line(line));
-        }
-        outcome.event
-    }
-}
-
-/// Never awaits anything but the next line and an unbounded send, so a held permission request
-/// cannot stall the stream.
-async fn read_stdout(stdout: tokio::process::ChildStdout, reader: Reader) {
-    let Reader {
-        events: ref tx,
-        ref pending,
-        ref log,
-        ..
-    } = reader;
-    let mut lines = BufReader::new(stdout).lines();
-    loop {
-        let line = match lines.next_line().await {
-            Ok(Some(l)) => l,
-            Ok(None) => break,
-            Err(e) => {
-                tracing::warn!("stdout read error: {e}");
-                break;
-            }
-        };
-        if let Some(l) = &log {
-            let msg = serde_json::from_str(&line).unwrap_or_else(|_| json!({"_non_json": line}));
-            l.write("out", msg);
-        }
-        if parse::is_initialize_answer(&line) {
-            reader.after_initialize();
-        }
-        for ev in parse::map_line(&line) {
-            let Some(ev) = reader.route(ev) else {
-                continue;
-            };
-            if let DriverEvent::PermissionRequest(req) = &ev
-                && let Ok(mut map) = pending.lock()
-            {
-                map.insert(req.id.0.clone(), req.input.clone());
-            }
-            if tx.send(ev).is_err() {
-                return; // nobody listens any more
-            }
-        }
-    }
-    // The session is over: whatever the MCP menu still waits for will not be answered.
-    let ended = reader
-        .mcp
-        .lock()
-        .map(|mut m| m.fail_all("the session ended"))
-        .unwrap_or_default();
-    for event in ended {
-        let _ = tx.send(event);
-    }
-}
-
-async fn read_stderr(stderr: tokio::process::ChildStderr, log: Option<Arc<Log>>) -> Vec<String> {
-    let mut tail: VecDeque<String> = VecDeque::new();
-    let mut lines = BufReader::new(stderr).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if let Some(l) = &log {
-            l.write("err", Value::String(line.clone()));
-        }
-        if tail.len() == STDERR_TAIL {
-            tail.pop_front();
-        }
-        tail.push_back(line);
-    }
-    tail.into()
-}
-
-/// Owns the child: waits for it, enforces shutdown deadlines and kills, then reaps and reports.
-async fn supervise(
-    mut child: Child,
-    mut ctl: UnboundedReceiver<Ctl>,
-    writer: UnboundedSender<WriterMsg>,
-    reader: tokio::task::JoinHandle<()>,
-    stderr_task: tokio::task::JoinHandle<Vec<String>>,
-    events: UnboundedSender<DriverEvent>,
-) {
-    let mut deadline: Option<tokio::time::Instant> = None;
-    let mut ctl_open = true;
-    let status = loop {
-        let dl = deadline;
-        tokio::select! {
-            st = child.wait() => break st,
-            msg = ctl.recv(), if ctl_open => match msg {
-                Some(Ctl::Shutdown(grace)) => {
-                    let _ = writer.send(WriterMsg::Close);
-                    deadline = Some(tokio::time::Instant::now() + grace);
-                }
-                Some(Ctl::Kill) | None => {
-                    ctl_open = false;
-                    let _ = child.start_kill();
-                }
-            },
-            _ = tokio::time::sleep_until(dl.unwrap_or_else(tokio::time::Instant::now)), if dl.is_some() => {
-                deadline = None;
-                tracing::warn!("session did not exit within its grace period, killing");
-                let _ = child.start_kill();
-            }
-        }
-    };
-    let _ = writer.send(WriterMsg::Close);
-    let mut reader = reader;
-    if tokio::time::timeout(DRAIN_TIMEOUT, &mut reader)
-        .await
-        .is_err()
-    {
-        reader.abort();
-    }
-    let stderr_tail = match tokio::time::timeout(DRAIN_TIMEOUT, stderr_task).await {
-        Ok(Ok(tail)) => tail,
-        _ => Vec::new(),
-    };
-    let info = match status {
-        Ok(st) => ExitInfo {
-            code: st.code(),
-            signal: st.signal(),
-            success: st.success(),
-            stderr_tail,
-        },
-        Err(e) => {
-            tracing::warn!("waiting for session process failed: {e}");
-            ExitInfo {
-                code: None,
-                signal: None,
-                success: false,
-                stderr_tail,
-            }
-        }
-    };
-    let _ = events.send(DriverEvent::Exited(info));
 }
 
 /// A live `claude` process.
@@ -611,11 +346,11 @@ mod tests {
         let mut spec = SessionSpec::new("s1", "/tmp");
         spec.name = Some("slice-4".into());
         spec.model = Some("opus".into());
-        spec.settings_path = Some("/run/settings.json".into());
-        spec.mcp_config_path = Some("/run/mcp.json".into());
+        spec.claude.settings_path = Some("/run/settings.json".into());
+        spec.claude.mcp_config_path = Some("/run/mcp.json".into());
         spec.append_system_prompt_file = Some("/roles/slice.md".into());
-        spec.allowed_tools = vec!["mcp__dovetail__core_ask_user".into()];
-        spec.worktree = Some("slice-4".into());
+        spec.claude.allowed_tools = vec!["mcp__dovetail__core_ask_user".into()];
+        spec.claude.worktree = Some("slice-4".into());
         spec.permission_mode = PermissionMode::AcceptEdits;
         let native = spec.native_args();
         assert_eq!(

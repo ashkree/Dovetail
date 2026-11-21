@@ -420,7 +420,8 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
             .any(|a| a.contains("strict-mcp-config") || a == "--bare")
     );
     assert!(
-        spec.allowed_tools
+        spec.claude
+            .allowed_tools
             .contains(&"mcp__dovetail__project_start_slice".to_string())
     );
     assert!(
@@ -428,14 +429,15 @@ fn a_plain_turn_streams_into_the_conversation_and_survives_a_restart() {
             .iter()
             .any(|(k, v)| k == "CLAUDE_CODE_TASK_LIST_ID" && v == "dovetail-p-coordinator")
     );
-    let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
+    let mcp =
+        std::fs::read_to_string(spec.claude.mcp_config_path.as_ref().expect("mcp")).expect("read");
     assert!(mcp.contains("DOVETAIL_AGENT_ID") && mcp.contains("\"coordinator\""));
     // No profile in the recipe: the session inherits Dovetail's own Claude home (ADR 0009).
     assert!(!spec.env.iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"));
 
     // The hook and the bridge are pinned to this app's state, whatever a slice's env says.
-    let settings =
-        std::fs::read_to_string(spec.settings_path.as_ref().expect("settings")).expect("read");
+    let settings = std::fs::read_to_string(spec.claude.settings_path.as_ref().expect("settings"))
+        .expect("read");
     let data = h.paths.data.to_string_lossy().into_owned();
     assert!(
         settings.contains(&format!("DOVETAIL_DATA_DIR='{data}'")),
@@ -1364,7 +1366,7 @@ fn an_unregistered_folder_keeps_nothing_until_added() {
         Some("dovetail-work-task-1")
     );
     assert_eq!(env("DOVETAIL_PROJECT").as_deref(), Some("work"));
-    let settings = spec.settings_path.clone().expect("settings");
+    let settings = spec.claude.settings_path.clone().expect("settings");
     assert!(
         settings.starts_with(h.paths.state.join("run").join("work")),
         "{settings:?}"
@@ -1948,7 +1950,10 @@ fn a_resumed_conversation_calling_an_old_tool_name_still_works() {
     assert!(spec.resume);
     for name in ["report_status", "core_report_status"] {
         let tool = format!("mcp__dovetail__{name}");
-        assert!(spec.allowed_tools.contains(&tool), "{tool} not allowed");
+        assert!(
+            spec.claude.allowed_tools.contains(&tool),
+            "{tool} not allowed"
+        );
     }
 
     prompt(&h, "carry on");
@@ -4797,7 +4802,8 @@ fn a_side_chat_gets_only_the_core_suite_whatever_the_config_says() {
         .into_iter()
         .find(|s| s.name.as_deref().is_some_and(|n| n.ends_with(".side-1")))
         .expect("side chat spec");
-    let mcp = std::fs::read_to_string(spec.mcp_config_path.as_ref().expect("mcp")).expect("read");
+    let mcp =
+        std::fs::read_to_string(spec.claude.mcp_config_path.as_ref().expect("mcp")).expect("read");
     assert!(mcp.contains(r#""DOVETAIL_SUITES": "core""#), "{mcp}");
     // The config's list is reported once, as a warning.
     assert!(
@@ -6310,7 +6316,7 @@ fn the_coordinator_attaches_every_repo_and_a_slice_names_its_repo() {
     }
     let spec = fake.started_specs()[1].clone();
     assert_eq!(spec.cwd, repos[1]);
-    assert_eq!(spec.worktree.as_deref(), Some("ui"));
+    assert_eq!(spec.claude.worktree.as_deref(), Some("ui"));
     assert!(spec.add_dirs.is_empty());
     assert!(
         spec.env

@@ -1,6 +1,7 @@
 //! Launch options and argv construction.
 
-use std::path::{Path, PathBuf};
+use crate::claude::ClaudeOptions;
+use std::path::PathBuf;
 
 /// Permission mode of a session. Names follow the CLI; `Manual` is the CLI's `default`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -115,34 +116,20 @@ pub struct SessionSpec {
     pub effort: Option<dovetail_api::ReasoningEffort>,
     /// Starting permission mode.
     pub permission_mode: PermissionMode,
-    /// `--settings` file (hooks live here).
-    pub settings_path: Option<PathBuf>,
-    /// `--mcp-config` file.
-    pub mcp_config_path: Option<PathBuf>,
     /// `--append-system-prompt-file` (role prompt).
     pub append_system_prompt_file: Option<PathBuf>,
-    /// `--allowedTools` entries.
-    pub allowed_tools: Vec<String>,
-    /// `--worktree <name>` (slice sessions; the WorktreeCreate hook creates it).
-    pub worktree: Option<String>,
     /// One `--add-dir <path>` each: folders the session may read and edit besides its cwd (the
     /// coordinator's repos, ADR 0021).
     pub add_dirs: Vec<PathBuf>,
-    /// Pass `--replay-user-messages` (default on).
-    pub replay_user_messages: bool,
     /// Extra environment variables (`CLAUDE_CODE_ENABLE_TODO_TOOLS`, `CLAUDE_CODE_TASK_LIST_ID`, ...).
     pub env: Vec<(String, String)>,
-    /// Extra raw arguments appended last.
-    pub extra_args: Vec<String>,
+    /// What only Claude Code takes.
+    pub claude: ClaudeOptions,
     /// Wrap in `systemd-run --user --scope`.
     pub systemd_scope: Option<SystemdScope>,
     /// If set, every line in both directions is appended here in the fixture format
     /// (`{"t","dir","msg"}`), so a session can be turned into a test fixture.
     pub log_path: Option<PathBuf>,
-}
-
-fn lossy(p: &Path) -> String {
-    p.to_string_lossy().into_owned()
 }
 
 impl SessionSpec {
@@ -156,100 +143,13 @@ impl SessionSpec {
             model: None,
             effort: None,
             permission_mode: PermissionMode::Auto,
-            settings_path: None,
-            mcp_config_path: None,
             append_system_prompt_file: None,
-            allowed_tools: Vec::new(),
-            worktree: None,
             add_dirs: Vec::new(),
-            replay_user_messages: true,
             env: Vec::new(),
-            extra_args: Vec::new(),
+            claude: ClaudeOptions::default(),
             systemd_scope: None,
             log_path: None,
         }
-    }
-
-    /// Arguments for `claude` itself (without the program name or any `systemd-run` prefix).
-    pub fn claude_args(&self) -> Vec<String> {
-        let mut a: Vec<String> = [
-            "-p",
-            "--input-format",
-            "stream-json",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--include-partial-messages",
-            "--permission-prompt-tool",
-            "stdio",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        if self.replay_user_messages {
-            a.push("--replay-user-messages".into());
-        }
-        a.extend(self.session_args());
-        a
-    }
-
-    /// Arguments for native, interactive `claude` on the same session (take-over, M14): the
-    /// same permission mode, settings, MCP config, role prompt, tools, name and model as
-    /// [`SessionSpec::claude_args`], with none of the stream flags. It always resumes, and
-    /// never passes `--worktree`: the session already runs in its worktree.
-    pub fn native_args(&self) -> Vec<String> {
-        let resuming = Self {
-            resume: true,
-            worktree: None,
-            ..self.clone()
-        };
-        resuming.session_args()
-    }
-
-    /// The arguments headless and native runs share.
-    fn session_args(&self) -> Vec<String> {
-        let mut a = vec![
-            "--permission-mode".to_string(),
-            self.permission_mode.as_cli().into(),
-        ];
-        // Guess: a resume names the session with --resume only (the spike resumed this way).
-        a.push(
-            if self.resume {
-                "--resume"
-            } else {
-                "--session-id"
-            }
-            .into(),
-        );
-        a.push(self.session_id.clone());
-        let optional = [
-            ("--name", self.name.clone()),
-            ("--model", self.model.clone()),
-            ("--effort", self.effort.map(|e| e.as_str().to_owned())),
-            ("--settings", self.settings_path.as_deref().map(lossy)),
-            ("--mcp-config", self.mcp_config_path.as_deref().map(lossy)),
-            (
-                "--append-system-prompt-file",
-                self.append_system_prompt_file.as_deref().map(lossy),
-            ),
-            ("--worktree", self.worktree.clone()),
-        ];
-        for (flag, value) in optional {
-            if let Some(v) = value {
-                a.push(flag.into());
-                a.push(v);
-            }
-        }
-        for dir in &self.add_dirs {
-            a.push("--add-dir".into());
-            a.push(lossy(dir));
-        }
-        if !self.allowed_tools.is_empty() {
-            a.push("--allowedTools".into());
-            a.push(self.allowed_tools.join(","));
-        }
-        a.extend(self.extra_args.iter().cloned());
-        a
     }
 
     /// `program` with `claude_args` as one command line: wrapped in `systemd-run` when the spec
