@@ -1,19 +1,11 @@
-//! Shared cases for the two copies of `apply()` (ADR 0023, point 5): this crate's and the page's
-//! `page/src/core/apply.ts`. Each case is a snapshot, numbered events and the snapshot Rust's
-//! `apply` makes of them, written to `tests/fixtures/apply/<name>.json`; kept for the page, whose
-//! tests will replay the same files through its reducer once it is built (nothing runs the
-//! TypeScript side yet).
-//!
-//! This test fails when a file differs from what Rust computes now. After a deliberate change,
-//! rewrite them with `DOVETAIL_BLESS=1 cargo test -p dovetail-api --test apply_cases`, and the
-//! page's tests, once built, say whether its reducer agrees.
-
-use std::path::Path;
+//! Reducer cases for `apply()` beyond `apply.rs`: canvas, design, projects, efforts, maps, research,
+//! tangents and the other singletons. Each case is a snapshot and numbered events; the test replays
+//! them and checks each event's result.
 
 use dovetail_api::map::{MapId, MapKind, MapSummary};
 use dovetail_api::research::ResearchSummary;
 use dovetail_api::*;
-use serde_json::{Value, json};
+use serde_json::json;
 
 fn task(id: i64, title: &str) -> Task {
     Task {
@@ -575,65 +567,6 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-/// Events `apply()` passes through without storing: the UI acts on them as they arrive.
-const PASSED_THROUGH: &[&str] = &[
-    "browsed_loaded",
-    "clipboard_pasted",
-    "command_failed",
-    "doc_loaded",
-    "docs_listed",
-    "lend_terminal",
-    "map_loaded",
-    "mcp_reply",
-    "opening_project",
-    "paths_listed",
-    "project_browsed",
-    "recipe_started",
-    "research_loaded",
-    "tangent_loaded",
-    "terminal_returned",
-    "upgrade_restarting",
-];
-
-/// The serde tag of an event: the string itself, or the one key of its object.
-fn tag(event: &Event) -> String {
-    match serde_json::to_value(event).expect("event json") {
-        Value::String(tag) => tag,
-        Value::Object(map) => map.keys().next().cloned().unwrap_or_default(),
-        other => panic!("unexpected event shape {other}"),
-    }
-}
-
-/// ADR 0023, point 5: a new `Event` needs a new case. The tags come from the generated
-/// TypeScript (`scripts/check.sh` keeps it current), so a variant added in Rust shows up there.
-#[test]
-fn every_stored_event_has_a_shared_case() {
-    let generated =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../page/src/core/generated/Event.ts");
-    let text = std::fs::read_to_string(&generated).expect("generated Event.ts");
-    let mut tags: Vec<String> = text
-        .split('"')
-        .skip(1)
-        .step_by(2)
-        .filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_lowercase() || c == '_'))
-        .map(str::to_owned)
-        .collect();
-    tags.sort();
-    tags.dedup();
-    let covered: Vec<String> = cases()
-        .iter()
-        .flat_map(|c| c.events.iter().map(|(_, e)| tag(e)))
-        .collect();
-    let missing: Vec<&String> = tags
-        .iter()
-        .filter(|t| !covered.contains(t) && !PASSED_THROUGH.contains(&t.as_str()))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "events with no shared apply case: {missing:?}"
-    );
-}
-
 fn result_name(result: ApplyResult) -> &'static str {
     match result {
         ApplyResult::Applied => "applied",
@@ -642,42 +575,25 @@ fn result_name(result: ApplyResult) -> &'static str {
     }
 }
 
+/// Replays each case through `apply` and checks every event's result: all applied, except the
+/// deliberate gap and repeat in `agents_inbox_and_order`. Each case must also change the snapshot.
 #[test]
-fn shared_apply_cases_match_the_files() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/apply");
-    let bless = std::env::var("DOVETAIL_BLESS").is_ok_and(|v| v == "1");
+fn every_case_replays_with_the_expected_results() {
     for case in cases() {
         let mut state = case.snapshot.clone();
-        let mut results = Vec::new();
-        for (seq, event) in &case.events {
-            results.push(result_name(apply(&mut state, *seq, event.clone())));
-        }
-        let computed = json!({
-            "snapshot": case.snapshot,
-            "events": case.events.iter().map(|(seq, event)| json!({"seq": seq, "event": event})).collect::<Vec<_>>(),
-            "results": results,
-            "expected": state,
-        });
-        let path = dir.join(format!("{}.json", case.name));
-        if bless {
-            std::fs::create_dir_all(&dir).expect("fixture dir");
-            let text = serde_json::to_string_pretty(&computed).expect("json") + "\n";
-            std::fs::write(&path, text).expect("write fixture");
-            continue;
-        }
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|_| {
-            panic!(
-                "{} is missing: run DOVETAIL_BLESS=1 cargo test -p dovetail-api --test apply_cases",
-                path.display()
-            )
-        });
-        let stored: Value = serde_json::from_str(&text).expect("fixture json");
-        assert_eq!(
-            stored,
-            computed,
-            "{} differs from what apply() computes now; rewrite it with DOVETAIL_BLESS=1 and check \
-             the page's replay once it exists",
-            path.display()
-        );
+        let results: Vec<_> = case
+            .events
+            .iter()
+            .map(|(seq, event)| result_name(apply(&mut state, *seq, event.clone())))
+            .collect();
+        let expected: Vec<&str> = if case.name == "agents_inbox_and_order" {
+            vec![
+                "applied", "gap", "stale", "applied", "applied", "applied", "applied",
+            ]
+        } else {
+            vec!["applied"; case.events.len()]
+        };
+        assert_eq!(results, expected, "case {}", case.name);
+        assert_ne!(state, case.snapshot, "case {} changed nothing", case.name);
     }
 }

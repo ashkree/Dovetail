@@ -20,7 +20,6 @@ pub const OUTPUT_LINES: usize = 20;
 
 /// Where a slice's preview stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum PreviewState {
     /// Not started: nobody opened the viewer on this slice yet, or it was stopped.
@@ -43,7 +42,6 @@ pub enum PreviewState {
 
 /// One slice's preview.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Preview {
     /// The slice.
     pub agent: AgentId,
@@ -53,7 +51,6 @@ pub struct Preview {
 
 /// How wide a variant reaches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum VariantLevel {
     /// The whole page: a theme, a layout.
@@ -77,7 +74,6 @@ impl VariantLevel {
 
 /// One thing the user can switch, with its options.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct VariantSlot {
     /// The slot's key, unique in its list; the page reads it.
     pub name: String,
@@ -92,7 +88,6 @@ pub struct VariantSlot {
 
 /// The variants one slice declared, and the user's pick in each.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct VariantSet {
     /// The slice.
     pub agent: AgentId,

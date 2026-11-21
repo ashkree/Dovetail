@@ -8,15 +8,6 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 
-# ADR 0030 §4: the page's TypeScript types are generated from dovetail-api and committed. Regenerate
-# them; a Rust change the page has not taken in shows as a difference.
-cargo test -q -p dovetail-api --features ts --test ts_export >/dev/null
-if [[ -n $(git status --porcelain -- page/src/core/generated) ]]; then
-    echo "check.sh: page/src/core/generated is out of date with dovetail-api; commit the regenerated files:" >&2
-    git status --short -- page/src/core/generated >&2
-    exit 1
-fi
-
 # Also enforced by `cargo test` (CODING_STANDARDS.md "Architecture", schema changes go through
 # migrations): migrations are contiguous and listed in order
 # (dovetail-core `db::tests::migrations_are_contiguous_and_listed_in_order`).

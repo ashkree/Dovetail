@@ -13,19 +13,16 @@ use crate::effort::EffortId;
 
 /// Identifies a block. Matches the `blocks.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct BlockId(pub i64);
 
 /// Identifies a card. Matches the `cards.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct CardId(pub i64);
 
 /// How a block lays out its cards and what it is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Layout {
     /// A root question and the questions, findings and ideas under it: a card added under
@@ -39,7 +36,6 @@ pub enum Layout {
 
 /// A block on an effort's canvas: a framed region with a layout, at a position the core chose.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Block {
     /// Block id.
     pub id: BlockId,
@@ -57,7 +53,6 @@ pub struct Block {
 
 /// A point on a canvas, in canvas pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Point {
     /// Rightwards.
     pub x: i64,
@@ -87,7 +82,6 @@ pub mod geometry {
 
 /// What a card is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum CardKind {
     /// A research finding (a reference).
@@ -115,7 +109,6 @@ impl CardKind {
 
 /// What a [`CardRef`] points at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum RefKind {
     /// A row of `findings`.
@@ -145,7 +138,6 @@ impl RefKind {
 
 /// What a card points at: the kind of row and its id, as text because maps have text ids.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CardRef {
     /// Which table.
     pub kind: RefKind,
@@ -155,7 +147,6 @@ pub struct CardRef {
 
 /// One card.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Card {
     /// Card id.
     pub id: CardId,
@@ -198,7 +189,6 @@ fn seen_default() -> bool {
 
 /// A link between two cards of one effort.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CardLink {
     /// The card the link starts at (the question, the parent).
     pub from: CardId,
@@ -211,7 +201,6 @@ pub struct CardLink {
 
 /// Fields for a new card, in [`crate::Command::AddCard`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NewCard {
     /// The effort it belongs to.
     pub effort: EffortId,

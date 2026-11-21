@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 /// Where one server stands, as `mcp_status` reports it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum McpStatus {
     /// Running and answering.
@@ -54,7 +53,6 @@ impl McpStatus {
 
 /// One tool a server offers. Claude Code gives names and two hints, no descriptions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct McpTool {
     /// The tool's name, without the `mcp__server__` prefix.
     pub name: String,
@@ -68,7 +66,6 @@ pub struct McpTool {
 
 /// One server of a session, from `mcp_status`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct McpServer {
     /// Its name in the config (`claude.ai Google Calendar`).
     pub name: String,
@@ -97,7 +94,6 @@ pub struct McpServer {
 
 /// What the menu can do to a server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum McpAction {
     /// Connect again.
@@ -169,7 +165,6 @@ impl McpServer {
 
 /// One control request of the menu, which Claude Code answers with an [`McpOutcome`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum McpRequest {
     /// `mcp_status`: every server with its tools.
@@ -245,7 +240,6 @@ impl McpRequest {
 
 /// What Claude Code answered to an [`McpRequest`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum McpOutcome {
     /// The servers, in answer to [`McpRequest::Status`].

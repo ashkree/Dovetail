@@ -12,25 +12,21 @@ use crate::{AgentId, TaskId};
 
 /// A map's id, stable across versions (decision 23h).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct MapId(pub String);
 
 /// A node's id, unique within its map.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct NodeId(pub String);
 
 /// A lane's id, unique within its map.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct LaneId(pub String);
 
 /// The two map types (decision 23e).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MapKind {
     /// What exists and how it connects: nested groups and labelled connections.
@@ -62,7 +58,6 @@ impl MapKind {
 
 /// The fixed nine node kinds (decision 23d); anything else is a [`NodeKind::Concept`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum NodeKind {
     /// A service, package or module; drills in.
@@ -125,7 +120,6 @@ impl NodeKind {
 
 /// A stored map: one version of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Map {
     /// Stable across versions.
     pub id: MapId,
@@ -137,7 +131,6 @@ pub struct Map {
 
 /// Everything drawn on a map; what a stored version holds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MapContent {
     /// Shown on the shelf and in the header.
     pub title: String,
@@ -157,7 +150,6 @@ pub struct MapContent {
 
 /// A node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Node {
     /// Unique within the map.
     pub id: NodeId,
@@ -175,7 +167,6 @@ pub struct Node {
 
 /// The nodes inside a node. A node sits in at most one group, and groups never form a cycle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Group {
     /// The node you drill into.
     pub parent: NodeId,
@@ -185,7 +176,6 @@ pub struct Group {
 
 /// A labelled arrow between two nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Connection {
     /// Source.
     pub from: NodeId,
@@ -197,7 +187,6 @@ pub struct Connection {
 
 /// A guided flow: an ordered walk through the map (decision 23g).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Flow {
     /// Unique within the map.
     pub name: String,
@@ -207,7 +196,6 @@ pub struct Flow {
 
 /// One step of a flow.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FlowStep {
     /// Where the step is.
     pub node: NodeId,
@@ -226,7 +214,6 @@ pub struct FlowStep {
 
 /// A swimlane participant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Lane {
     /// Unique within the map.
     pub id: LaneId,
@@ -240,7 +227,6 @@ pub struct Lane {
 /// A map as the shelf lists it: its latest version's header, without the content, so the
 /// snapshot stays small. The content comes with `Command::LoadMap`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MapSummary {
     /// Stable across versions.
     pub id: MapId,

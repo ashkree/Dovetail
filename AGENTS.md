@@ -22,7 +22,7 @@ The design phase is finished. **All decisions are locked.** Do not reopen them; 
 Work follows ADR 0030 §7, one step at a time: readability spike and TUI design session → v2 views in the TUI → the page (reader, then canvas) → the daemon (`dovetail serve`). No screen code until the design session is done. Features the design docs park are out of scope unless a plan in `docs/plan/` says otherwise; leave the seams for them.
 
 Known conflicts, already resolved:
-- **Clients:** ADR 0030 supersedes ADR 0020 and ADR 0023 on the client. The TUI hosts the core in-process until the daemon lands. The Tauri GUI is shelved: `gui/` lives on the `gui-shelved` branch; build nothing new in it. `page/` holds the frontend code the page will reuse.
+- **Clients:** ADR 0030 supersedes ADR 0020 and ADR 0023 on the client. The TUI hosts the core in-process until the daemon lands. The Tauri GUI is shelved: `gui/` lives on the `gui-shelved` branch; build nothing new in it. The page and TypeScript generation are shelved the same way: `page/` and the ts-rs types live on `gui-shelved` under `shelved-from-main/2026-11-21/`, and come back with `dovetail serve`.
 - **Layout:** Decision 15 (Layout B) binds the TUI as built; the design session settles the new main layout.
 - **Edition:** the workspace uses edition 2024 (already in `Cargo.toml`).
 
@@ -67,7 +67,7 @@ Which skill when:
 
 - **Core:** Rust stable, `rusqlite` with `bundled` (SQLite, FTS5, WAL) on a dedicated thread, `tokio` for process/IO in the core only.
 - **TUI:** `ratatui` + `crossterm`, `nucleo`, `pulldown-cmark`. It redraws only when state changed. The target terminal is kitty: the text-sizing protocol and kitty graphics (maps) are used there and fall back quietly elsewhere and under tmux; readability never depends on them. No kitty keyboard protocol. Transparent by default; solid backgrounds on content panes are a toggle (ADR 0030 §5).
-- **Page:** one small HTTP server in the core, bound to `127.0.0.1` on a free port, serving a single-page app (React + TypeScript, React Flow for canvases). Its types are generated from `dovetail-api` (ts-rs) and committed. Keyboard-first; the mouse is never the only way.
+- **Page:** one small HTTP server in the core, bound to `127.0.0.1` on a free port, serving a single-page app (React + TypeScript, React Flow for canvases). Its types are not generated yet; ts-rs was shelved (task #52) and the page decides how it gets them. Keyboard-first; the mouse is never the only way.
 - **Low memory:** 16 GB target machine, most of it for Claude Code. Lean dependencies. About 100 MB RSS for the TUI with its core; the browser tab is not budgeted.
 - **Linux** primary. cgroup caps via `systemd-run --user`.
 - **Nothing in user repos.** All state under `~/.local/share/dovetail/`, config under `~/.config/dovetail/`. Hooks, settings, MCP config and role prompts are passed to Claude Code as launch flags. Never use bare mode.

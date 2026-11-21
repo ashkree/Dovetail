@@ -258,7 +258,7 @@ Size: **S** = days, additive. **M** = about a week, touches existing paths. **L*
 | Layer | Today | v2 | Change | Size | Decided in |
 | --- | --- | --- | --- | --- | --- |
 | UI | Terminal UI in the same process | The same TUI, with v2 views and ADR 0030 §5 readability; plus one local page (reader, then canvases) | TUI views after the design session. Page: a small HTTP server in the core on `127.0.0.1`. The Tauri GUI is shelved on `gui-shelved`. | L | ADR 0030 |
-| Core / UI seam | Two Rust channels | Channels for the TUI; the same messages as JSON for the page | Types exported to TypeScript (ts-rs) and `apply` written twice, tested against shared cases. **Built** for the GUI; the page reuses them. | S | ADR 0023, ADR 0030 |
+| Core / UI seam | Two Rust channels | Channels for the TUI; the same messages as JSON for the page | `apply` in `dovetail-api` is the one reducer. TypeScript generation and a second `apply` were shelved to `gui-shelved` (task #52) and return with the page. | S | ADR 0023, ADR 0030 |
 | Process | One process: TUI and core | The same until `dovetail serve`, built last; clients then attach over the project socket | Socket carries commands and an update stream to several clients, a snapshot on attach, a core that outlives its clients | L | ADR 0020, ADR 0030 |
 | Project | A folder; one repo in the `projects` row | A name, 0..n repos, one account | New `repos` table; opening by id, not by folder. **Built.** | M | ADR 0021 |
 | Coordinator | Runs in the repo's main checkout | Runs in its own folder, every repo attached | New working folder means a fresh coordinator session once. **Built.** | M | ADR 0021 |
@@ -314,7 +314,7 @@ Existing tasks land in one effort named `unsorted`. Existing chat lines keep no 
                                             over HTTP on 127.0.0.1)
 ```
 
-Nothing new is invented: `ServerMsg` and `Command` already have JSON forms, and the shelved GUI's TypeScript `CoreLink` ("subscribe", "send") and `apply` carry over to the page. The page follows the TUI's focus. When `dovetail serve` lands, the TUI moves from channels to the project socket.
+Nothing new is invented: `ServerMsg` and `Command` already have JSON forms, and the page will need a `CoreLink` ("subscribe", "send") and its own types and `apply`, which come back from the shelved TypeScript code on `gui-shelved`. The page follows the TUI's focus. When `dovetail serve` lands, the TUI moves from channels to the project socket.
 
 ### Task status
 

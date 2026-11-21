@@ -38,7 +38,6 @@ pub mod env {
 
 /// Which suites a session gets by default, and which role prompt it reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     /// The coordinator: every suite.
@@ -86,7 +85,6 @@ impl Role {
 /// A named group of tools; a role's config lists the suites it gets (ADR 0016). Each tool's
 /// name starts with its suite's [`Suite::as_str`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Suite {
     /// Questions, status and the decision log: every role.
@@ -188,7 +186,6 @@ macro_rules! tools {
         /// One tool call: the tool and its arguments. On the wire,
         /// `{"tool": "<name>", "input": {..}}`; an old name still parses (ADR 0016).
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-        #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
         #[serde(tag = "tool", content = "input")]
         pub enum Tool {
             $( $(#[doc = $doc])* #[serde(rename = $name $(, alias = $old)?)] $variant($input), )*
@@ -591,7 +588,6 @@ impl Tool {
 /// `core_ask_user`: a question for the user's inbox. It never blocks: the call returns at once and the
 /// answer arrives as a user message (ADR 0007). An old caller's `blocking` field is ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct AskUser {
     /// The question, self-contained.
     pub question: String,
@@ -599,7 +595,6 @@ pub struct AskUser {
 
 /// `core_report_status`: the agent's one-line status.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ReportStatus {
     /// One line; the core cuts it at 120 characters.
     pub status: String,
@@ -608,7 +603,6 @@ pub struct ReportStatus {
 /// `coordination_report`: what a slice tells the coordinator about its task (ADR 0022). It
 /// goes through Dovetail, never by session name, so it cannot reach another project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Report {
     /// Where the work stands.
     pub state: ReportState,
@@ -622,7 +616,6 @@ pub struct Report {
 /// `coordination_claim_criterion`: an agent says an acceptance criterion is met and why. The
 /// criterion becomes claimed and waits in the user's inbox; only the user can make it met.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ClaimCriterion {
     /// The criterion's id.
     pub criterion: crate::CriterionId,
@@ -633,7 +626,6 @@ pub struct ClaimCriterion {
 /// `canvas_add_block` (ADR 0027): add a block to an effort's canvas. The core places it in empty
 /// space; nothing already on the canvas moves.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CanvasAddBlock {
     /// The effort; `None` means the one the user last tagged (Unsorted when none).
     #[serde(default)]
@@ -655,7 +647,6 @@ impl CanvasAddBlock {
 /// or into the effort's incoming strip. Nothing already on the canvas moves; there is no tool to
 /// move or delete a card.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CanvasAddCard {
     /// The effort; `None` means the one the user last tagged (Unsorted when none), or the
     /// block's effort when `block` is given.
@@ -683,7 +674,6 @@ pub struct CanvasAddCard {
 /// `canvas_link_cards` (ADR 0025): link two cards of one effort, such as a question to the
 /// finding that answers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CanvasLinkCards {
     /// The card the link starts at.
     pub from: crate::CardId,
@@ -698,7 +688,6 @@ pub struct CanvasLinkCards {
 /// slice's preview. Call it again whenever the list changes, and with `slots: []` when none is
 /// left.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DeclareVariants {
     /// Every slot, in the order the panel shows them.
     pub slots: Vec<crate::VariantSlot>,
@@ -751,7 +740,6 @@ impl DeclareVariants {
 
 /// Where a slice says its work stands, in a [`Report`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ReportState {
     /// Still working; something worth knowing happened.
@@ -775,7 +763,6 @@ impl ReportState {
 
 /// `tasks_create`: a task filed by the coordinator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CreateTask {
     /// Short title, 6 words at most.
     pub title: String,
@@ -795,7 +782,6 @@ pub struct CreateTask {
 
 /// `core_log_decision`: an entry in a task's decision log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LogDecision {
     /// The task; required for the coordinator, a slice's own task by default.
     pub task: Option<TaskId>,
@@ -812,7 +798,6 @@ pub struct LogDecision {
 
 /// `project_start_slice`: start a slice on an existing task (ADR 0004).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StartSlice {
     /// An existing task.
     pub task: TaskId,
@@ -836,13 +821,11 @@ pub struct StartSlice {
 /// `project_add`: register the folder the coordinator runs in as a Dovetail project (ADR 0005).
 /// Takes no arguments.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct AddProject {}
 
 /// `project_archive_slice`: archive a slice by name (task #9). Clean, pushed work goes at once; unsaved
 /// work waits for the user's yes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ArchiveSlice {
     /// The slice's name, as given to `project_start_slice`.
     pub name: String,
@@ -850,7 +833,6 @@ pub struct ArchiveSlice {
 
 /// `tasks_archive`: archive a task, and first its live slices, with `project_archive_slice`'s rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ArchiveTask {
     /// The task.
     pub id: TaskId,
@@ -858,7 +840,6 @@ pub struct ArchiveTask {
 
 /// A bucket as `tasks_list` filters it: the three [`Bucket`]s plus Unsorted (no bucket).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum BucketFilter {
     /// [`Bucket::Now`].
@@ -886,7 +867,6 @@ impl BucketFilter {
 /// `tasks_list`: one line per task, Now, Next, Unsorted, Later (task #20). Every field is
 /// optional.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(default)]
 pub struct ListTasks {
     /// Only tasks in this bucket.
@@ -900,7 +880,6 @@ pub struct ListTasks {
 
 /// `tasks_get`: one task in full, with its agents and decision log (task #20).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct GetTask {
     /// The task.
     pub id: TaskId,
@@ -908,7 +887,6 @@ pub struct GetTask {
 
 /// `tasks_update`: change some fields of a task (task #25). Only the fields given change.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct UpdateTask {
     /// The task.
     pub id: TaskId,
@@ -951,14 +929,12 @@ impl UpdateTask {
 /// their shape is `dovetail_maps::DrawMapInput`, which lives with the validation (decision on
 /// task #34), and the core parses and validates them there so every problem comes back at once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct DrawMap(pub serde_json::Value);
 
 /// `research_start_round`: open the next round of a research task under the user's criteria
 /// (`docs/research.md` §6).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResearchStartRound {
     /// An existing task (the question).
     pub task: TaskId,
@@ -972,7 +948,6 @@ pub struct ResearchStartRound {
 
 /// `research_write_report`: store the report of a task, closing its open round.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResearchWriteReport {
     /// The research task.
     pub task: TaskId,
@@ -982,7 +957,6 @@ pub struct ResearchWriteReport {
 
 /// `research_propose`: an idea or decision for the user to accept from Needs you.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResearchPropose {
     /// The research task.
     pub task: TaskId,
@@ -1016,7 +990,6 @@ impl ResearchPropose {
 
 /// `research_get`: read one stored research document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResearchGet {
     /// The research task.
     pub task: TaskId,

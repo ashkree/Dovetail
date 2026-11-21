@@ -11,56 +11,47 @@ use crate::research::ResearchSummary;
 
 /// Identifies a registered project: the slug of its repo folder, numbered on collision.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct ProjectId(pub String);
 
 /// Identifies one repo of a project: its row id in the registry's `repos` table (ADR 0021). A
 /// slice stores it, so renaming the repo does not orphan the slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct RepoId(pub i64);
 
 /// Identifies one of the user's tasks. Matches the `tasks.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct TaskId(pub i64);
 
 /// Identifies an agent: a coordinator, slice or subagent.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct AgentId(pub String);
 
 /// Identifies an inbox item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct InboxId(pub u64);
 
 /// Identifies a conversation entry. Ids grow with time within one agent's conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct EntryId(pub u64);
 
 /// Identifies one of Claude's native to-do lists (`CLAUDE_CODE_TASK_LIST_ID`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct TodoListId(pub String);
 
 /// Identifies an entry in a task's decision log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct DecisionId(pub u64);
 
 /// Identifies a status-bar warning, so it can be replaced or cleared.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct WarningId(pub String);
 
@@ -75,7 +66,6 @@ pub const TANGENTS_PROJECT: &str = "tangents";
 
 /// The whole client-visible state at one point in the event stream.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Snapshot {
     /// Sequence number of the last event folded into this snapshot.
     pub seq: u64,
@@ -173,7 +163,6 @@ pub struct Snapshot {
 /// A tangent: a question that did not belong to the project it was asked from, saved as a task
 /// in Tangents' Unsorted list with its answers and sources (ADR 0017, amended 2026-11-11).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct TangentSummary {
     /// Its task in Tangents (the id is Tangents' own, not the open project's).
     pub task: Task,
@@ -201,7 +190,6 @@ pub fn tangent_task(agent: &AgentId) -> Option<TaskId> {
 
 /// Where the project's end-of-day journal stands (ADR 0012).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct JournalState {
     /// The date of the newest journal file, `YYYY-MM-DD` (local time); `None` when there is
     /// none yet.
@@ -216,7 +204,6 @@ pub struct JournalState {
 /// A slash command or skill a session offers (`/compact`, `/code-review`), typed as `/name` in
 /// a chat bar and sent to the session as it is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SlashCommand {
     /// Name without the slash.
     pub name: String,
@@ -256,7 +243,6 @@ pub const CONVERSATION_KEEP: usize = 2_000;
 
 /// A registered project (ADR 0021): a name with zero or more repos and one account.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ProjectSummary {
     /// Project id.
     pub id: ProjectId,
@@ -286,7 +272,6 @@ pub struct ProjectSummary {
 
 /// One repo of a project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RepoSummary {
     /// Registry id.
     pub id: RepoId,
@@ -298,7 +283,6 @@ pub struct RepoSummary {
 
 /// A project's counts as Home lists them. All zero when its `state.db` could not be read.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ProjectCounts {
     /// Open efforts, not counting Unsorted.
     pub efforts: u32,
@@ -311,7 +295,6 @@ pub struct ProjectCounts {
 /// What a project is for. A research project has no repo: no worktrees, no slices, no git; its
 /// sessions run in `~/.local/share/dovetail/projects/<id>/`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectKind {
     /// A repo or folder of the user's: the default.
@@ -342,7 +325,6 @@ impl ProjectKind {
 
 /// A piece of the user's own work, with or without agents attached.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Task {
     /// Task id.
     pub id: TaskId,
@@ -380,7 +362,6 @@ pub struct Task {
 /// Where a task stands. Whether it needs you is not a status: it follows from the inbox
 /// items of its agents (plan B4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     /// Not started.
@@ -398,7 +379,6 @@ pub enum TaskStatus {
 
 /// How important a task is, from P0 (most) to P3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum PLevel {
     /// Most important.
     P0,
@@ -412,7 +392,6 @@ pub enum PLevel {
 
 /// When the user will do a task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Bucket {
     /// Doing it now.
@@ -425,7 +404,6 @@ pub enum Bucket {
 
 /// A coordinator, slice or subagent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Agent {
     /// Agent id.
     pub id: AgentId,
@@ -477,7 +455,6 @@ pub struct Agent {
 
 /// A tool call in flight: what the working line says the agent is doing ("Reading plan.md").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunningTool {
     /// Claude Code's tool name (`Read`, `Bash`, `mcp__dovetail__ask_user`).
     pub name: String,
@@ -488,7 +465,6 @@ pub struct RunningTool {
 /// What an agent is. Coordinators and slices are their own Claude Code sessions; subagents
 /// run inside one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentKind {
     /// The session the user works with directly, in the main checkout.
@@ -522,7 +498,6 @@ impl AgentKind {
 
 /// A slice's worktree.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct WorktreeRef {
     /// Worktree directory.
     pub path: PathBuf,
@@ -532,7 +507,6 @@ pub struct WorktreeRef {
 
 /// What an agent is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatus {
     /// Its worktree is being prepared.
@@ -551,7 +525,6 @@ pub enum AgentStatus {
 
 /// A session's permission mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionMode {
     /// The classifier approves ordinary actions (the default).
@@ -564,7 +537,6 @@ pub enum PermissionMode {
 
 /// Progress of a subagent, from `task_*` events.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SubagentProgress {
     /// What the subagent was asked to do.
     pub description: String,
@@ -587,7 +559,6 @@ pub struct SubagentProgress {
 
 /// How hard a session's model thinks: Claude Code's effort levels (`--effort`), lowest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningEffort {
     /// `low`.
@@ -635,7 +606,6 @@ pub const BUILTIN_MODELS: [&str; 4] = ["opus", "sonnet", "haiku", "fable"];
 /// A model the selector offers (task #39): the built-in aliases, then `config.toml`'s
 /// `extra_models`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ModelOption {
     /// The name passed to Claude Code (`opus`, `claude-haiku-4-5-20251001`).
     pub name: String,
@@ -675,7 +645,6 @@ pub fn model_option_index(options: &[ModelOption], running: &str) -> Option<usiz
 
 /// Whether Dovetail or a native terminal drives a session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum SessionLock {
     /// Dovetail drives it headless.
@@ -687,7 +656,6 @@ pub enum SessionLock {
 
 /// An entry on Claude's native to-do list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct TodoItem {
     /// The list it belongs to.
     pub list: TodoListId,
@@ -705,7 +673,6 @@ pub struct TodoItem {
 
 /// Where a to-do item stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum TodoStatus {
     /// Not started.
@@ -718,7 +685,6 @@ pub enum TodoStatus {
 
 /// An entry in Needs you.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InboxItem {
     /// Item id.
     pub id: InboxId,
@@ -732,7 +698,6 @@ pub struct InboxItem {
 
 /// What an inbox item asks for.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum InboxKind {
     /// Allow or deny a tool use.
@@ -820,7 +785,6 @@ pub const UPGRADE_READY_PERMISSION: &str = "Upgrade ready";
 
 /// A permission rule Claude Code offers for "always allow".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RuleSuggestion {
     /// Short human-readable form, such as `Bash(cargo test:*)`.
     pub label: String,
@@ -830,7 +794,6 @@ pub struct RuleSuggestion {
 
 /// An item in the Activity feed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActivityItem {
     /// Item id, increasing.
     pub id: u64,
@@ -846,7 +809,6 @@ pub struct ActivityItem {
 
 /// What kind of thing an activity item reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ActivityKind {
     /// A pull request was opened, pushed or merged.
@@ -865,7 +827,6 @@ pub enum ActivityKind {
 
 /// A message sent between agents with `SendMessage`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct AgentMessage {
     /// Message id, increasing.
     pub id: u64,
@@ -881,7 +842,6 @@ pub struct AgentMessage {
 
 /// The latest part of one agent's conversation.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ConversationTail {
     /// Entries, oldest first.
     pub entries: Vec<ConversationEntry>,
@@ -891,7 +851,6 @@ pub struct ConversationTail {
 
 /// One entry in a conversation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ConversationEntry {
     /// Entry id.
     pub id: EntryId,
@@ -937,7 +896,6 @@ pub fn attachment_limit_text() -> String {
 /// An image attached to a user message. The UI saves the file under Dovetail's data dir and
 /// sends its path; the core reads it when sending, so no raw bytes cross the protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Attachment {
     /// The saved image file.
     pub path: PathBuf,
@@ -949,7 +907,6 @@ pub struct Attachment {
 
 /// An image format Claude accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum ImageType {
     /// `image/png`.
     #[serde(rename = "image/png")]
@@ -1018,7 +975,6 @@ impl ImageType {
 
 /// Who or what a conversation entry is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
     /// The user's message.
@@ -1086,7 +1042,6 @@ impl ConversationEntry {
 
 /// Status-bar totals.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Totals {
     /// Memory across all sessions, in MB.
     pub memory_mb: u32,
@@ -1099,7 +1054,6 @@ pub struct Totals {
 /// How close the account is to its Claude usage limits. Limits are per account, so this is the
 /// latest report from any session. Nothing is known until a session finishes a turn.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct UsageLimits {
     /// The rolling 5-hour window.
     pub five_hour: Option<UsageWindow>,
@@ -1109,7 +1063,6 @@ pub struct UsageLimits {
 
 /// One usage-limit window, from Claude Code's `rate_limit_event`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct UsageWindow {
     /// How much of the window is used, 0–1 (may exceed 1 when over the limit).
     pub utilization: f64,
@@ -1122,7 +1075,6 @@ pub struct UsageWindow {
 
 /// Claude Code's status word for a usage window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum UsageStatus {
     /// `allowed`: under the limit.
@@ -1146,7 +1098,6 @@ impl UsageStatus {
 
 /// One entry in a task's decision log. Entries are never edited: a later one can supersede it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Decision {
     /// Entry id, increasing.
     pub id: DecisionId,
@@ -1171,7 +1122,6 @@ pub struct Decision {
 
 /// An option considered for a decision and not taken.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Alternative {
     /// The option, in one line.
     pub option: String,
@@ -1181,7 +1131,6 @@ pub struct Alternative {
 
 /// Who logged a decision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum DecisionAuthor {
     /// The user, by hand.
@@ -1192,7 +1141,6 @@ pub enum DecisionAuthor {
 
 /// A status-bar warning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Warning {
     /// Warning id.
     pub id: WarningId,
@@ -1207,7 +1155,6 @@ pub struct Warning {
 /// stays as last looked up. Each part is looked up on its own: one that could not be read is `None` (or
 /// [`PrLookup::Unknown`]) and the rest still shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct WorktreeInfo {
     /// The slice that owns the worktree.
     pub agent: AgentId,
@@ -1235,7 +1182,6 @@ pub struct WorktreeInfo {
 
 /// Where a branch stands against its base.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SyncState {
     /// Commits on the branch that the base lacks.
     pub ahead: u32,
@@ -1250,7 +1196,6 @@ pub struct SyncState {
 /// Counts of uncommitted entries in a worktree, as `git status` reports them. An entry both
 /// staged and changed again counts in both.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Changes {
     /// Entries with changes in the index.
     pub staged: u32,
@@ -1271,7 +1216,6 @@ impl Changes {
 
 /// What looking up a branch's pull request found.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum PrLookup {
     /// `gh` is missing, failed or timed out, or has not been asked yet.
@@ -1287,7 +1231,6 @@ pub enum PrLookup {
 
 /// A pull request on GitHub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PullRequest {
     /// PR number.
     pub number: u32,
@@ -1299,7 +1242,6 @@ pub struct PullRequest {
 
 /// State of a pull request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum PrState {
     /// Open (drafts included).
@@ -1312,7 +1254,6 @@ pub enum PrState {
 
 /// The recipe's setup commands in one worktree, as the `WorktreeCreate` hook recorded them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum WorktreeSetup {
     /// Nothing recorded: the recipe has no setup commands.
