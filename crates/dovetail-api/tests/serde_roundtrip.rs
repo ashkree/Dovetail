@@ -233,6 +233,7 @@ fn subagent() -> Agent {
         effort: Some(ReasoningEffort::Xhigh),
         subagent_tokens: 12_345,
         tool: None,
+        driver: DriverKind::Claude,
     }
 }
 
@@ -530,7 +531,9 @@ fn hello_and_a_full_snapshot_roundtrip() {
                 name: "claude-haiku-4-5-20251001".into(),
                 resolved: Some("claude-haiku-4-5-20251001".into()),
                 efforts: Some(vec![]),
+                driver: DriverKind::Claude,
             },
+            ModelOption::named_on(DriverKind::Agy, "gemini-3.8-flash"),
         ],
     };
     roundtrip(&ServerMsg::Hello {
@@ -625,7 +628,28 @@ fn every_event_roundtrips() {
         Event::UsageChanged(UsageLimits::default()),
         Event::WarningSet(warning()),
         Event::WarningCleared(WarningId("mode".into())),
-        Event::ModelsChanged(vec![ModelOption::named("fable")]),
+        Event::ModelsChanged(vec![
+            ModelOption::named("fable"),
+            ModelOption::named_on(DriverKind::Agy, "gemini-3.8-flash"),
+        ]),
+        Event::UsageLoaded(vec![
+            DriverUsage {
+                driver: DriverKind::Claude,
+                plan: Some("max".into()),
+                groups: vec![UsageGroup {
+                    name: "Claude Code".into(),
+                    models: String::new(),
+                    windows: vec![LimitWindow {
+                        name: "5-hour".into(),
+                        used_fraction: 0.34,
+                        resets_at_ms: Some(1_700_008_400_000),
+                    }],
+                }],
+                note: Some("extra usage off".into()),
+                failed: false,
+            },
+            DriverUsage::failed(DriverKind::Agy, "agy binary not found"),
+        ]),
         Event::CommandFailed {
             message: "no such agent".into(),
         },
@@ -839,6 +863,21 @@ fn every_command_roundtrips() {
             model: "sonnet".into(),
             effort: Some(ReasoningEffort::Max),
         },
+        Command::SwitchDriver {
+            agent: id("coordinator"),
+            driver: DriverKind::Agy,
+            model: "claude-opus-5-5".into(),
+            effort: Some(ReasoningEffort::High),
+            handoff: true,
+        },
+        Command::SwitchDriver {
+            agent: id("coordinator"),
+            driver: DriverKind::Claude,
+            model: "opus".into(),
+            effort: None,
+            handoff: false,
+        },
+        Command::LoadUsage,
         Command::CyclePermissionMode {
             agent: id("slice-a"),
         },
@@ -1376,4 +1415,50 @@ fn start_slice_takes_an_optional_model_and_an_optional_effort() {
     alone["effort"] = json!("low");
     let alone = Tool::parse("project_start_slice", alone).expect("parses");
     assert_eq!(alone.validate(Role::Coordinator), Ok(()));
+}
+
+#[test]
+fn driver_fields_roundtrip_and_default_to_claude() {
+    use dovetail_api::tools::{Role, StartSlice, Tool};
+
+    // Missing `driver` on Agent and ModelOption deserializes as Claude.
+    let mut old_agent = serde_json::to_value(subagent()).unwrap();
+    old_agent.as_object_mut().unwrap().remove("driver");
+    let parsed_agent: Agent = serde_json::from_value(old_agent).unwrap();
+    assert_eq!(parsed_agent.driver, DriverKind::Claude);
+
+    let mut agy_agent = subagent();
+    agy_agent.driver = DriverKind::Agy;
+    roundtrip(&agy_agent);
+
+    let mut old_option = serde_json::to_value(ModelOption::named("sonnet")).unwrap();
+    old_option.as_object_mut().unwrap().remove("driver");
+    let parsed_option: ModelOption = serde_json::from_value(old_option).unwrap();
+    assert_eq!(parsed_option.driver, DriverKind::Claude);
+    roundtrip(&ModelOption::named_on(DriverKind::Agy, "gemini-3.8-flash"));
+
+    // StartSlice without and with `driver`.
+    let base = json!({"task": 3, "name": "x", "brief": "go"});
+    let without_driver = Tool::parse("project_start_slice", base.clone()).expect("parses");
+    assert!(matches!(
+        &without_driver,
+        Tool::StartSlice(StartSlice { driver: None, .. })
+    ));
+    let wire_without = serde_json::to_value(&without_driver).unwrap();
+    assert!(wire_without["input"].get("driver").is_none());
+    roundtrip(&without_driver);
+
+    let mut with_agy = base;
+    with_agy["driver"] = json!("agy");
+    with_agy["model"] = json!("gemini-3.8-flash");
+    let with_driver = Tool::parse("project_start_slice", with_agy).expect("parses");
+    assert!(matches!(
+        &with_driver,
+        Tool::StartSlice(StartSlice {
+            driver: Some(DriverKind::Agy),
+            ..
+        })
+    ));
+    assert_eq!(with_driver.validate(Role::Coordinator), Ok(()));
+    roundtrip(&with_driver);
 }

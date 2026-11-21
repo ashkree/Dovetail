@@ -4,7 +4,8 @@
 mod support;
 
 use dovetail_api::{
-    AgentKind, AgentStatus, Command, Event, ModelOption, ReasoningEffort, ServerMsg, Snapshot,
+    AgentKind, AgentStatus, Command, DriverKind, Event, ModelOption, ReasoningEffort, ServerMsg,
+    Snapshot,
 };
 use dovetail_tui::App;
 use dovetail_tui::action::Action;
@@ -18,6 +19,7 @@ fn models() -> Vec<ModelOption> {
         name: name.into(),
         resolved: Some(resolved.into()),
         efforts: Some(efforts.to_vec()),
+        driver: DriverKind::Claude,
     };
     vec![
         listed("opus", "claude-opus-5-5", &ReasoningEffort::ALL),

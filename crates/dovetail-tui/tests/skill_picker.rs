@@ -4,7 +4,7 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{Command, ModelOption, ReasoningEffort, SlashCommand};
+use dovetail_api::{Command, DriverKind, ModelOption, ReasoningEffort, SlashCommand};
 use dovetail_tui::Mode;
 use support::*;
 
@@ -31,6 +31,7 @@ fn app_with_skills() -> dovetail_tui::App {
         name: "haiku".into(),
         resolved: Some("claude-haiku-5-5".into()),
         efforts: Some(ReasoningEffort::ALL.to_vec()),
+        driver: DriverKind::Claude,
     }];
     let mut app = app_with(snap);
     press(&mut app, "i");

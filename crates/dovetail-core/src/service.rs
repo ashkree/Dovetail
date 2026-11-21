@@ -1444,6 +1444,9 @@ impl Core {
                 model,
                 effort,
             } => self.switch_model(&agent, model, effort),
+            Command::SwitchDriver { .. } | Command::LoadUsage => {
+                self.fail("not implemented yet");
+            }
             Command::NewSideChat { question } => self.start_side_chat(question),
             Command::NewTangent { question } => self.start_tangent(question).await,
             Command::AttachTangent { tangent, task } => self.attach_tangent(tangent, task).await,
@@ -1819,6 +1822,7 @@ pub(crate) fn new_agent(id: AgentId, name: String, kind: AgentKind, task: Option
         effort: None,
         subagent_tokens: 0,
         tool: None,
+        driver: dovetail_api::DriverKind::Claude,
     }
 }
 

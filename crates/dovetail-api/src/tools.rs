@@ -7,7 +7,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::research::{Evidence, FindingId, ProposalKind, ResearchWhat, SourceId};
-use crate::{Alternative, Bucket, DecisionId, PLevel, ReasoningEffort, TaskId, TaskStatus};
+use crate::{
+    Alternative, Bucket, DecisionId, DriverKind, PLevel, ReasoningEffort, TaskId, TaskStatus,
+};
 
 /// Names of the environment variables Dovetail passes to the processes it launches.
 pub mod env {
@@ -816,6 +818,10 @@ pub struct StartSlice {
     /// The effort it starts at. Left out, Claude Code's default applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<ReasoningEffort>,
+    /// The driver the slice runs on (`claude` by default). When set to `agy`, `model` names
+    /// an agy family (`claude-opus-5-5`, `gemini-3.8-flash`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver: Option<DriverKind>,
 }
 
 /// `project_add`: register the folder the coordinator runs in as a Dovetail project (ADR 0005).

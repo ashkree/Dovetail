@@ -101,17 +101,17 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
 
 ### C2. Api additions (`crates/dovetail-api`)
 
-- [ ] `Agent.driver: DriverKind` (`#[serde(default)]`, so old data reads as `Claude`) in
+- [x] `Agent.driver: DriverKind` (`#[serde(default)]`, so old data reads as `Claude`) in
   `src/model.rs`.
-- [ ] `ModelOption.driver: DriverKind` (`#[serde(default)]`), so the picker can group.
+- [x] `ModelOption.driver: DriverKind` (`#[serde(default)]`), so the picker can group.
   `ModelOption::named` keeps `Claude`; add `ModelOption::named_on(driver, name)` if needed.
   `model_option_index` must match only options of the session's own driver.
-- [ ] `Command::SwitchDriver { agent: AgentId, driver: DriverKind, model: String, effort:
+- [x] `Command::SwitchDriver { agent: AgentId, driver: DriverKind, model: String, effort:
   Option<ReasoningEffort>, handoff: bool }` in `src/protocol.rs`. Coordinator only; the core
   refuses it for any other agent with `Event::CommandFailed`.
-- [ ] `Command::LoadUsage` and `Event::UsageLoaded(Vec<DriverUsage>)`. `apply()` leaves the
+- [x] `Command::LoadUsage` and `Event::UsageLoaded(Vec<DriverUsage>)`. `apply()` leaves the
   snapshot unchanged for `UsageLoaded` (the menu holds the report, like `McpReply`).
-- [ ] `tools::StartSlice.driver: Option<DriverKind>` (`#[serde(default)]`) so the coordinator can
+- [x] `tools::StartSlice.driver: Option<DriverKind>` (`#[serde(default)]`) so the coordinator can
   start a slice on agy; document that `model` then names an agy family
   (`claude-opus-5-5`, `gemini-3.8-flash`).
 - Tests: serde round trips with and without the new fields; `apply` cases.

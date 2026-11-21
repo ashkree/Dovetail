@@ -39,6 +39,7 @@ pub fn agent(id: &str, kind: AgentKind, status: AgentStatus, task: Option<i64>) 
         effort: None,
         subagent_tokens: 0,
         tool: None,
+        driver: DriverKind::Claude,
     }
 }
 

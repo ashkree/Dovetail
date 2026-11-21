@@ -311,6 +311,7 @@ fn options(names: &[String], catalog: &[ModelInfo]) -> Vec<ModelOption> {
                 name: name.clone(),
                 resolved: info.and_then(|m| m.resolved.clone()),
                 efforts: info.map(|m| m.efforts.clone()),
+                driver: dovetail_api::DriverKind::Claude,
             }
         })
         .collect()

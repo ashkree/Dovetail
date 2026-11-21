@@ -1156,6 +1156,7 @@ fn slices_cannot_call_coordinator_tools_and_bad_names_are_refused() {
             repo: None,
             model: None,
             effort: None,
+            driver: None,
             task: TaskId(1),
             name: name.into(),
             brief: "go".into(),
@@ -1407,6 +1408,7 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
                 repo: None,
                 model: None,
                 effort: None,
+                driver: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -1435,6 +1437,7 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
                 repo: None,
                 model: None,
                 effort: None,
+                driver: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -1747,6 +1750,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             effort: None,
             subagent_tokens: 0,
             tool: None,
+            driver: dovetail_api::DriverKind::Claude,
         };
         agent.status_line.clear();
         db.upsert_agent(dovetail_core::db::AgentRow {
@@ -2057,6 +2061,7 @@ fn pending_start(h: &mut Harness) {
                 repo: None,
                 model: None,
                 effort: None,
+                driver: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -2211,6 +2216,7 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
             effort: None,
             subagent_tokens: 0,
             tool: None,
+            driver: dovetail_api::DriverKind::Claude,
         };
         db.upsert_agent(dovetail_core::db::AgentRow {
             agent,
@@ -3472,6 +3478,7 @@ fn session_row(
             effort: None,
             subagent_tokens: 0,
             tool: None,
+            driver: dovetail_api::DriverKind::Claude,
         },
         session_id: Some(format!("{id}-session")),
         transcript_path: Some(transcript),
@@ -6846,6 +6853,7 @@ fn start_on(
         repo: None,
         model: model.map(str::to_owned),
         effort,
+        driver: None,
         task: TaskId(1),
         name: name.into(),
         brief: "go".into(),

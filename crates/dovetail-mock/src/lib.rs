@@ -750,7 +750,9 @@ impl MockCore {
             | Command::ApproveCriterion { .. }
             | Command::ReturnCriterion { .. }
             | Command::MoveTask { .. }
-            | Command::FileUnfiled { .. } => self.fail("not available in the mock".into()),
+            | Command::FileUnfiled { .. }
+            | Command::SwitchDriver { .. }
+            | Command::LoadUsage => self.fail("not available in the mock".into()),
             Command::OpenExternal { url } => {
                 if url.starts_with("http://") || url.starts_with("https://") {
                     self.opened.push(url);

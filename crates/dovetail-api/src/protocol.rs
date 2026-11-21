@@ -5,6 +5,7 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use serde::{Deserialize, Serialize};
 
+use crate::driver::{DriverKind, DriverUsage};
 use crate::effort::{CriterionId, Effort, EffortChange, EffortId, NewEffort, WhereWasI};
 use crate::map::{Map, MapId, MapSummary};
 use crate::mcp::{McpOutcome, McpRequest};
@@ -204,6 +205,9 @@ pub enum Event {
     /// The models the selector offers changed: config was read, or a session listed what its
     /// models accept.
     ModelsChanged(Vec<ModelOption>),
+    /// Every driver's usage limits, in [`DriverKind::ALL`] order, for the usage menu
+    /// ([`Command::LoadUsage`], task #46). Changes nothing in the snapshot.
+    UsageLoaded(Vec<DriverUsage>),
     /// A session's answer to a [`Command::Mcp`] (task #44). Changes nothing in the snapshot; the
     /// open MCP menu takes it in.
     McpReply {
@@ -404,6 +408,24 @@ pub enum Command {
         /// The effort; `None` leaves it to the model's default (a model with no levels).
         effort: Option<ReasoningEffort>,
     },
+    /// Move the coordinator to another driver (task #46): a new session on `driver`, started on
+    /// `model` at `effort` through the `:handoff` flow (`handoff`) or the `:fresh` one. The old
+    /// conversation is kept, not continued. Refused for any other agent, and while a turn runs.
+    SwitchDriver {
+        /// The session; only the coordinator switches.
+        agent: AgentId,
+        /// The driver to run on.
+        driver: DriverKind,
+        /// The model, as that driver's [`ModelOption::name`].
+        model: String,
+        /// The effort; `None` for the model's default.
+        effort: Option<ReasoningEffort>,
+        /// Seed the new session with a handoff (`:handoff`), else start clean (`:fresh`).
+        handoff: bool,
+    },
+    /// Read every driver's usage limits for the usage menu (task #46). The answer is
+    /// [`Event::UsageLoaded`].
+    LoadUsage,
     /// One request of the MCP menu to a session (task #44): its servers, or an action on one.
     /// The answer is [`Event::McpReply`]; a session that is not running answers
     /// [`Event::CommandFailed`].

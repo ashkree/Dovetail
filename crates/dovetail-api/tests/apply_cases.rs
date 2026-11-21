@@ -47,6 +47,7 @@ fn agent(id: &str) -> Agent {
         effort: None,
         subagent_tokens: 0,
         tool: None,
+        driver: DriverKind::Claude,
     }
 }
 
@@ -197,6 +198,7 @@ fn the_rest() -> Case {
             name: "opus".into(),
             resolved: None,
             efforts: None,
+            driver: DriverKind::Claude,
         }]),
         Event::JournalChanged(JournalState {
             latest: Some("2026-11-16".into()),
@@ -596,4 +598,37 @@ fn every_case_replays_with_the_expected_results() {
         assert_eq!(results, expected, "case {}", case.name);
         assert_ne!(state, case.snapshot, "case {} changed nothing", case.name);
     }
+}
+
+#[test]
+fn usage_loaded_leaves_snapshot_unchanged() {
+    let mut state = Snapshot {
+        seq: 4,
+        agents: vec![agent("coordinator")],
+        ..Snapshot::default()
+    };
+    let expected = Snapshot {
+        seq: 5,
+        ..state.clone()
+    };
+    let report = DriverUsage {
+        driver: DriverKind::Claude,
+        plan: Some("pro".into()),
+        groups: vec![UsageGroup {
+            name: "Claude Code".into(),
+            models: String::new(),
+            windows: vec![LimitWindow {
+                name: "5-hour".into(),
+                used_fraction: 0.42,
+                resets_at_ms: Some(1_700_000_000_000),
+            }],
+        }],
+        note: None,
+        failed: false,
+    };
+    assert_eq!(
+        apply(&mut state, 5, Event::UsageLoaded(vec![report])),
+        ApplyResult::Applied
+    );
+    assert_eq!(state, expected);
 }

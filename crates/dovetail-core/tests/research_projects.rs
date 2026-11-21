@@ -309,6 +309,7 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
                 repo: None,
                 model: None,
                 effort: None,
+                driver: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),

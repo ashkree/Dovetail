@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::driver::DriverKind;
 use crate::effort::{CriterionId, Effort, EffortId};
 use crate::map::MapSummary;
 use crate::research::ResearchSummary;
@@ -451,6 +452,10 @@ pub struct Agent {
     /// the model thinks or writes, and when idle. Not stored: a restart starts without it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<RunningTool>,
+    /// The CLI the session runs on (task #46); fixed for the life of a session. Older data
+    /// reads as Claude Code.
+    #[serde(default)]
+    pub driver: DriverKind,
 }
 
 /// A tool call in flight: what the working line says the agent is doing ("Reading plan.md").
@@ -616,15 +621,25 @@ pub struct ModelOption {
     /// so every level is offered. Empty: the model has no effort setting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub efforts: Option<Vec<ReasoningEffort>>,
+    /// The driver that runs it (task #46): the picker groups by it, and picking another
+    /// driver's model starts a new session.
+    #[serde(default)]
+    pub driver: DriverKind,
 }
 
 impl ModelOption {
-    /// An option nothing is known about yet.
+    /// A Claude Code option nothing is known about yet.
     pub fn named(name: impl Into<String>) -> Self {
+        Self::named_on(DriverKind::Claude, name)
+    }
+
+    /// An option on `driver` nothing else is known about yet.
+    pub fn named_on(driver: DriverKind, name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             resolved: None,
             efforts: None,
+            driver,
         }
     }
 
@@ -634,13 +649,24 @@ impl ModelOption {
     }
 }
 
-/// The index in `options` of the model a session reports running (`claude-opus-5-5`): the
-/// option named so or resolving to it, else the first alias the name contains (`opus`).
-pub fn model_option_index(options: &[ModelOption], running: &str) -> Option<usize> {
+/// The index in `options` of the model a session on `driver` reports running
+/// (`claude-opus-5-5`): that driver's option named so or resolving to it, else the first of its
+/// aliases the name contains (`opus`). Another driver's options never match: agy also runs a
+/// `claude-opus-5-5`.
+pub fn model_option_index(
+    options: &[ModelOption],
+    driver: DriverKind,
+    running: &str,
+) -> Option<usize> {
+    let own = |o: &&ModelOption| o.driver == driver;
     options
         .iter()
-        .position(|o| o.name == running || o.resolved.as_deref() == Some(running))
-        .or_else(|| options.iter().position(|o| running.contains(&o.name)))
+        .position(|o| own(&o) && (o.name == running || o.resolved.as_deref() == Some(running)))
+        .or_else(|| {
+            options
+                .iter()
+                .position(|o| own(&o) && running.contains(&o.name))
+        })
 }
 
 /// Whether Dovetail or a native terminal drives a session.
@@ -1267,4 +1293,40 @@ pub enum WorktreeSetup {
         /// What went wrong, if recorded.
         error: Option<String>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_option_index_isolates_identical_model_names_by_driver() {
+        let options = vec![
+            ModelOption {
+                name: "opus".into(),
+                resolved: Some("claude-opus-5-5".into()),
+                efforts: None,
+                driver: DriverKind::Claude,
+            },
+            ModelOption::named_on(DriverKind::Agy, "claude-opus-5-5"),
+            ModelOption::named_on(DriverKind::Agy, "gemini-3.8-flash"),
+        ];
+
+        assert_eq!(
+            model_option_index(&options, DriverKind::Claude, "claude-opus-5-5"),
+            Some(0)
+        );
+        assert_eq!(
+            model_option_index(&options, DriverKind::Agy, "claude-opus-5-5"),
+            Some(1)
+        );
+        assert_eq!(
+            model_option_index(&options, DriverKind::Agy, "gemini-3.8-flash-high"),
+            Some(2)
+        );
+        assert_eq!(
+            model_option_index(&options, DriverKind::Claude, "gemini-3.8-flash"),
+            None
+        );
+    }
 }

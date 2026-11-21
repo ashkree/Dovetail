@@ -4,7 +4,7 @@
 //! usage row changes only when the session confirms it.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, ModelOption, ReasoningEffort, model_option_index};
+use dovetail_api::{AgentId, DriverKind, ModelOption, ReasoningEffort, model_option_index};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
@@ -61,7 +61,7 @@ impl ModelSelector {
         effort: Option<ReasoningEffort>,
         preselect: Option<&str>,
     ) -> Self {
-        let current = model.and_then(|m| model_option_index(&options, m));
+        let current = model.and_then(|m| model_option_index(&options, DriverKind::Claude, m));
         let row = preselect
             .and_then(|p| options.iter().position(|o| o.name == p))
             .or(current)
@@ -280,6 +280,7 @@ mod tests {
             name: name.into(),
             resolved: Some(resolved.into()),
             efforts: Some(efforts.to_vec()),
+            driver: DriverKind::Claude,
         };
         vec![
             listed("opus", "claude-opus-5-5", &ReasoningEffort::ALL),

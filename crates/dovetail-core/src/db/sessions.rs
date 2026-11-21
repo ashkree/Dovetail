@@ -296,6 +296,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 effort: None,
                 subagent_tokens: u64::try_from(subagent_tokens).unwrap_or(0),
                 tool: None,
+                driver: dovetail_api::DriverKind::Claude,
             },
             session_id,
             transcript_path: transcript.map(PathBuf::from),
