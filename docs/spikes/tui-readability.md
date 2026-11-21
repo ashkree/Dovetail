@@ -16,7 +16,7 @@ spikes/tui-readability/bench.sh              # headless numbers below, out/bench
 spikes/tui-readability/run.sh                # the user's run: from kitty, phases 1 and 2
 ```
 
-`run.sh` runs `--probe`, then variant B's headings (phase 1, `kitty-text-sizing`), then every variant on every fixture in kitty (phase 2). It prints what to look at before each step. Judged in kitty only. **Phase 3 (kitty under tmux) was dropped on 2026-11-21 by the user's decision**: the script no longer has a tmux phase or argument, and the tmux rows below are marked *dropped*. No non-kitty terminal (decision on #36). `--no-osc66` shows the fallback.
+`run.sh` runs `--probe` at startup (no prompt; saved to `out/probe-kitty.txt`, one `Detection OK` or `Detection problem` line). Then Part 1 (scaled headings): variant B's scaled headings, then its fallback with `--no-osc66`. Then Part 2 (compare variants): variant A, B and C on every fixture in kitty. Steps are numbered `Step N of 11` with no letters, so they never clash with variant A/B/C. It prints what to look at before each step. Judged in kitty only. **Phase 3 (kitty under tmux) was dropped on 2026-11-21 by the user's decision**: the script no longer has a tmux phase or argument, and the tmux rows below are marked *dropped*. No non-kitty terminal (decision on #36). `--no-osc66` shows the fallback.
 
 Fixtures (trimmed to text blocks and one line per tool call, so 7.7 MB becomes 222 KB): `v2-rework` (419 lines), `tui-return` (46), `skills-grill` (152). The optional plain-markdown report was not in the tree, so there is no fourth. Nothing from `fixtures/`, `out/` or screenshots is committed.
 
