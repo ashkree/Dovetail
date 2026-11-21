@@ -5,7 +5,7 @@
 //!
 //! A plain `@foo` matches the session's whole tree (files git does not ignore). `@~/`, `@/`,
 //! `@./` and `@../` complete one directory at a time, like a shell. Paths come from the core
-//! ([`ConversationCommand::ListPaths`](dovetail_api::ConversationCommand::ListPaths)); until they arrive the popup says
+//! ([`ConversationCommand::ListPaths`](dovetail_api::conversation::ConversationCommand::ListPaths)); until they arrive the popup says
 //! so.
 
 use std::collections::HashMap;

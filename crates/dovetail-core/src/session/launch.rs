@@ -19,8 +19,8 @@
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::tools::{Role, Suite, env, tools_in};
 use dovetail_driver::{PermissionMode as CliMode, SessionSpec};
+use dovetail_tools::{Role, Suite, env, tools_in};
 use serde_json::json;
 
 use crate::paths::Paths;

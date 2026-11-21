@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::tools::env;
+use dovetail_tools::env;
 
 /// Base directories, resolved once from the environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub struct Paths {
 
 impl Paths {
     /// Resolve from `XDG_*` and `HOME`, with the XDG defaults. Each `DOVETAIL_*_DIR`
-    /// (`dovetail_api::tools::env`) replaces one whole directory, for dev builds in a slice.
+    /// (`dovetail_tools::env`) replaces one whole directory, for dev builds in a slice.
     pub fn from_env() -> Self {
         let mut paths = Self::from_xdg();
         let over = |var: &str, dir: &mut PathBuf| {

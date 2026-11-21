@@ -45,7 +45,6 @@ use dovetail_api::{
     model::ModelCommand,
     project::{ProjectCommand, ProjectEvent},
     research::ResearchCommand,
-    socket::SocketResponseBody,
     status::StatusEvent,
     tangent::TangentCommand,
     task::{TaskCommand, TaskEvent},
@@ -54,6 +53,7 @@ use dovetail_api::{
     worktree::WorktreeCommand,
 };
 use dovetail_driver::{DriverEvent, SessionDriver};
+use dovetail_tools::SocketResponseBody;
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
 
 use crate::config::Config;

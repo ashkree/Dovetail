@@ -41,7 +41,7 @@
 //!
 //! With the server named `dovetail`, Claude Code sees the tools as `mcp__dovetail__<tool>`, each
 //! named `<suite>_<verb>` (`core_ask_user`, `tasks_create`, `maps_draw`; the table is
-//! `dovetail_api::tools::TOOLS`). By default the coordinator gets every suite, slices Core,
+//! `dovetail_tools::TOOLS`). By default the coordinator gets every suite, slices Core,
 //! Coordination and Maps, and side chats Core.
 //!
 //! For one release each renamed tool is also listed under its old name (`ask_user`), with an
@@ -64,8 +64,10 @@ use std::thread;
 
 use anyhow::Result;
 use dovetail_api::agent::AgentId;
-use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
-use dovetail_api::tools::{Role, Suite, Tool, ToolSpec, deprecated_alias, env, tools_in};
+use dovetail_tools::{
+    Role, SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Suite, Tool,
+    ToolSpec, deprecated_alias, env, tools_in,
+};
 use serde_json::{Value, json};
 
 const PROTOCOL_FALLBACK: &str = "2025-06-18";
@@ -754,7 +756,7 @@ fn tool_defs() -> Vec<ToolDef> {
 
 #[cfg(test)]
 mod tests {
-    use dovetail_api::tools::TOOLS;
+    use dovetail_tools::TOOLS;
 
     use super::*;
 
@@ -767,7 +769,7 @@ mod tests {
         shared.sort_unstable();
         assert_eq!(
             names, shared,
-            "tool_defs() must follow dovetail_api::tools::TOOLS"
+            "tool_defs() must follow dovetail_tools::TOOLS"
         );
         for def in defs {
             assert_eq!((def.schema)()["type"], "object", "{}", def.name);

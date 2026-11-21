@@ -1,5 +1,5 @@
 //! The app's unix socket server: serves `dovetail add` and the `dovetail mcp` bridges (see
-//! `dovetail_api::socket`).
+//! `dovetail_tools::socket`).
 //!
 //! Framing is NDJSON. Each request runs on its own task and its response goes out when it is
 //! ready, so a held `core_ask_user` never blocks other requests on the same connection. The core
@@ -15,11 +15,13 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
-use dovetail_api::tools::{Tool, deprecated_alias, deprecation_note};
 use dovetail_api::{
     agent::AgentId,
     task::{NewTask, TaskId},
+};
+use dovetail_tools::{
+    SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool, deprecated_alias,
+    deprecation_note,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::net::{UnixListener, UnixStream};

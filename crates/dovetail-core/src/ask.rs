@@ -1,7 +1,7 @@
 //! Reading mode's Ask (ADR 0018): one read-only session per research task, about the task's
 //! report and the sources it cites, apart from the coordinator so nothing lands in its context.
 //!
-//! [`ResearchCommand::StartAsk`](dovetail_api::ResearchCommand::StartAsk) makes the agent (`ask-<task>`,
+//! [`ResearchCommand::StartAsk`](dovetail_api::research::ResearchCommand::StartAsk) makes the agent (`ask-<task>`,
 //! [`AgentKind::Ask`]) without starting a process. The first question starts the session in the
 //! task's research folder with the side chats' read-only lists and no Dovetail tool suites
 //! (`session::launch`), and carries the report and an index of finding and source ids → files;

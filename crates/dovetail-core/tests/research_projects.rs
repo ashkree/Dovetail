@@ -8,22 +8,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dovetail_api::tools::{StartSlice, Tool};
 use dovetail_api::{
     Command, CoreLink, Event, ServerMsg, Snapshot,
-    agent::AgentId,
-    apply,
-    project::{ProjectId, ProjectKind},
-    task::{NewTask, TaskId},
-};
-use dovetail_api::{
-    agent::AgentCommand,
+    agent::{AgentCommand, AgentId},
     app::{AppCommand, AppEvent},
+    apply,
     conversation::{ConversationCommand, ConversationEvent},
     library::{LibraryCommand, LibraryEvent},
-    project::{ProjectCommand, ProjectEvent},
-    socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody},
-    task::TaskCommand,
+    project::{ProjectCommand, ProjectEvent, ProjectId, ProjectKind},
+    task::{NewTask, TaskCommand, TaskId},
     upgrade::UpgradeCommand,
     worktree::{WorktreeCommand, WorktreeEvent},
 };
@@ -33,6 +26,10 @@ use dovetail_core::paths::Paths;
 use dovetail_core::projects::{self, Project, Resolution};
 use dovetail_core::{CoreHandle, CoreOptions};
 use dovetail_driver::FakeDriver;
+use dovetail_tools::{
+    SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool,
+    project::{ProjectTool, StartSlice},
+};
 use tempfile::TempDir;
 
 const COORDINATOR: &str = "coordinator";
@@ -318,14 +315,14 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
             agent: AgentId(COORDINATOR.into()),
             tool_use_id: None,
             called_as: None,
-            call: Tool::StartSlice(StartSlice {
+            call: Tool::Project(ProjectTool::StartSlice(StartSlice {
                 repo: None,
                 model: None,
                 effort: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
-            }),
+            })),
         },
     );
     assert!(is_error && text.contains("research project"), "{text}");

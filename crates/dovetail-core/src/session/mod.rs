@@ -19,16 +19,17 @@ use std::path::PathBuf;
 use dovetail_api::{
     Event,
     activity::ActivityKind,
-    agent::{AgentId, AgentKind, AgentStatus, RunningTool},
+    agent::{AgentEvent, AgentId, AgentKind, AgentStatus, RunningTool},
     conversation::{Attachment, EntryKind, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS},
     inbox::InboxKind,
-    status::{Warning, WarningId},
+    mcp::McpEvent,
+    status::{StatusEvent, Warning, WarningId},
 };
-use dovetail_api::{agent::AgentEvent, mcp::McpEvent, status::StatusEvent, tools::Role};
 use dovetail_driver::{
     ContentBlock, DriverEvent, ExitInfo, ImageInput, InitInfo, PeerMessage, Session, TurnResult,
     UserInput,
 };
+use dovetail_tools::Role;
 
 use crate::error::SessionError;
 use crate::recipe::Recipe;
@@ -154,7 +155,7 @@ impl Core {
             let mut env: Vec<(String, String)> = recipe.env_for(&place).into_iter().collect();
             // The worktree hook applies the same repo's overrides.
             if let Some(repo) = repo {
-                env.push((dovetail_api::tools::env::REPO.into(), repo.name));
+                env.push((dovetail_tools::env::REPO.into(), repo.name));
             }
             env
         } else {

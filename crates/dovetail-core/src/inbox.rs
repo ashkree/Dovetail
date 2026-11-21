@@ -53,7 +53,7 @@ pub(crate) enum Waiter {
     /// it, `d` drops it, and the coordinator gets a message either way.
     Proposal,
     /// An unfiled coordinator finding (stored in `state.db` with no task): `y` files it under a
-    /// task the user picks ([`dovetail_api::ResearchCommand::FileUnfiled`]), `d` deletes it.
+    /// task the user picks ([`dovetail_api::research::ResearchCommand::FileUnfiled`]), `d` deletes it.
     UnfiledFinding { finding: i64 },
 }
 

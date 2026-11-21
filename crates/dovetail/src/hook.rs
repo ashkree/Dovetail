@@ -45,10 +45,10 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use dovetail_api::tools::env;
 use dovetail_core::paths::Paths;
 use dovetail_core::recipe::Recipe;
 use dovetail_core::worktree::{self, CreateRequest, HookOutcome};
+use dovetail_tools::env;
 use serde::Deserialize;
 
 /// The fields of the hook input that we use.

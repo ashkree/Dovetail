@@ -8,35 +8,23 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
-use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
-use dovetail_api::tools::{
-    ArchiveSlice, ArchiveTask, AskUser, BucketFilter, DrawMap, GetTask, ListTasks, LogDecision,
-    ReportStatus, StartSlice, Tool, UpdateTask,
-};
 use dovetail_api::{
     Command, CoreLink, Event, ServerMsg, Snapshot,
-    agent::{AgentId, AgentKind, AgentStatus, PermissionMode},
-    apply,
-    conversation::{Attachment, EntryKind, ImageType},
-    decision::{Alternative, DecisionId},
-    inbox::{InboxId, InboxKind, PermissionAnswer},
-    task::{Bucket, NewTask, PLevel, TaskId, TaskStatus},
-};
-use dovetail_api::{
-    agent::AgentCommand,
+    agent::{AgentCommand, AgentId, AgentKind, AgentStatus, PermissionMode},
     app::{AppCommand, AppEvent},
+    apply,
     canvas::CanvasCommand,
-    conversation::ConversationCommand,
+    conversation::{Attachment, ConversationCommand, EntryKind, ImageType},
+    decision::{Alternative, DecisionId},
     design::DesignCommand,
     effort::EffortCommand,
-    inbox::InboxCommand,
+    inbox::{InboxCommand, InboxId, InboxKind, PermissionAnswer},
     journal::JournalCommand,
     map::{Map, MapCommand, MapEvent, MapId, MapKind},
     mcp::{McpCommand, McpEvent},
     model::ModelCommand,
     project::ProjectCommand,
-    task::TaskCommand,
+    task::{Bucket, NewTask, PLevel, TaskCommand, TaskId, TaskStatus},
     terminal::{TerminalCommand, TerminalEvent},
     worktree::WorktreeCommand,
 };
@@ -46,6 +34,16 @@ use dovetail_core::paths::Paths;
 use dovetail_core::projects::{Candidate, Project, Resolution};
 use dovetail_core::{CoreHandle, CoreOptions};
 use dovetail_driver::{ControlAnswer, FakeDriver, ReplayOptions, Sent};
+use dovetail_tools::{
+    SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool,
+    core::{AskUser, CoreTool, LogDecision, ReportStatus},
+    map::{DrawMap, MapTool},
+    project::{
+        ArchiveSlice, ProjectTool, StartSlice,
+        archive_result::{ARCHIVED, WAITING_FOR_USER},
+    },
+    task::{ArchiveTask, BucketFilter, GetTask, ListTasks, TaskTool, UpdateTask},
+};
 use tempfile::TempDir;
 
 thread_local! {
@@ -1053,9 +1051,9 @@ fn report_status_sets_the_line_cut_at_120_characters() {
         &socket,
         tool(
             COORDINATOR,
-            Tool::ReportStatus(ReportStatus {
+            Tool::Core(CoreTool::ReportStatus(ReportStatus {
                 status: format!("{}\nsecond line", "x".repeat(200)),
-            }),
+            })),
         ),
     ));
     assert!(!is_error, "{text}");
@@ -1081,9 +1079,9 @@ fn ask(h: &Harness, question: &str) -> (String, bool) {
         &h.socket(),
         tool(
             COORDINATOR,
-            Tool::AskUser(AskUser {
+            Tool::Core(CoreTool::AskUser(AskUser {
                 question: question.into(),
-            }),
+            })),
         ),
     ))
 }
@@ -1180,14 +1178,14 @@ fn slices_cannot_call_coordinator_tools_and_bad_names_are_refused() {
     h.wait_for("the task", |s| !s.tasks.is_empty());
     let socket = h.socket();
     let start = |name: &str| {
-        Tool::StartSlice(StartSlice {
+        Tool::Project(ProjectTool::StartSlice(StartSlice {
             repo: None,
             model: None,
             effort: None,
             task: TaskId(1),
             name: name.into(),
             brief: "go".into(),
-        })
+        }))
     };
     let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, start("agent-x"))));
     assert!(
@@ -1431,14 +1429,14 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
         &socket,
         tool(
             COORDINATOR,
-            Tool::StartSlice(StartSlice {
+            Tool::Project(ProjectTool::StartSlice(StartSlice {
                 repo: None,
                 model: None,
                 effort: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
-            }),
+            })),
         ),
     ));
     // No task #1 yet: refused before anyone is asked.
@@ -1459,14 +1457,14 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
         &socket,
         tool(
             COORDINATOR,
-            Tool::StartSlice(StartSlice {
+            Tool::Project(ProjectTool::StartSlice(StartSlice {
                 repo: None,
                 model: None,
                 effort: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
-            }),
+            })),
         ),
     ));
     assert!(!is_error && text.starts_with("pending"), "{text}");
@@ -1654,9 +1652,9 @@ fn at_restart_permissions_expire_and_questions_stay_answerable() {
         &socket,
         tool(
             COORDINATOR,
-            Tool::AskUser(AskUser {
+            Tool::Core(CoreTool::AskUser(AskUser {
                 question: "Which port?".into(),
-            }),
+            })),
         ),
     ));
     assert!(text.starts_with("Question sent"), "{text}");
@@ -2085,14 +2083,14 @@ fn pending_start(h: &mut Harness) {
         &h.socket(),
         tool(
             COORDINATOR,
-            Tool::StartSlice(StartSlice {
+            Tool::Project(ProjectTool::StartSlice(StartSlice {
                 repo: None,
                 model: None,
                 effort: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
-            }),
+            })),
         ),
     ));
     assert!(text.starts_with("pending"), "{text}");
@@ -2264,7 +2262,9 @@ fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
 }
 
 fn archive_slice(name: &str) -> Tool {
-    Tool::ArchiveSlice(ArchiveSlice { name: name.into() })
+    Tool::Project(ProjectTool::ArchiveSlice(ArchiveSlice {
+        name: name.into(),
+    }))
 }
 
 fn branch_exists(repo: &Path, branch: &str) -> bool {
@@ -2440,7 +2440,7 @@ fn archive_task_archives_the_task_and_its_live_slice() {
     }));
     h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "work"));
     let socket = h.socket();
-    let archive = Tool::ArchiveTask(ArchiveTask { id });
+    let archive = Tool::Task(TaskTool::Archive(ArchiveTask { id }));
 
     let (text, is_error) = result_text(socket_call(&socket, tool("slice-work", archive.clone())));
     assert!(
@@ -2501,7 +2501,7 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
     let call = |agent: &str, t: Tool| result_text(socket_call(&socket, tool(agent, t)));
 
     let decide = |text: &str, supersedes: Option<DecisionId>| {
-        Tool::LogDecision(LogDecision {
+        Tool::Core(CoreTool::LogDecision(LogDecision {
             task: Some(TaskId(3)),
             decision: text.into(),
             why: Some(format!("why {text}")),
@@ -2510,14 +2510,17 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
                 why_not: Some("worse".into()),
             }],
             supersedes,
-        })
+        }))
     };
     let (text, is_error) = call(COORDINATOR, decide("first", None));
     assert!(!is_error, "{text}");
     let (text, is_error) = call(COORDINATOR, decide("second", Some(DecisionId(1))));
     assert!(!is_error, "{text}");
 
-    let (text, is_error) = call(COORDINATOR, Tool::ListTasks(ListTasks::default()));
+    let (text, is_error) = call(
+        COORDINATOR,
+        Tool::Task(TaskTool::List(ListTasks::default())),
+    );
     assert!(!is_error, "{text}");
     let ids: Vec<&str> = text
         .lines()
@@ -2531,15 +2534,18 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
 
     let (text, _) = call(
         COORDINATOR,
-        Tool::ListTasks(ListTasks {
+        Tool::Task(TaskTool::List(ListTasks {
             bucket: Some(BucketFilter::Next),
             ..ListTasks::default()
-        }),
+        })),
     );
     assert_eq!(text.lines().count(), 1, "{text}");
     assert!(text.starts_with("#4 "), "{text}");
 
-    let (text, is_error) = call(COORDINATOR, Tool::GetTask(GetTask { id: TaskId(3) }));
+    let (text, is_error) = call(
+        COORDINATOR,
+        Tool::Task(TaskTool::Get(GetTask { id: TaskId(3) })),
+    );
     assert!(!is_error, "{text}");
     for want in [
         "# #3 next one",
@@ -2554,12 +2560,15 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
         assert!(text.contains(want), "missing {want:?} in:\n{text}");
     }
 
-    let (text, is_error) = call(COORDINATOR, Tool::GetTask(GetTask { id: TaskId(99) }));
+    let (text, is_error) = call(
+        COORDINATOR,
+        Tool::Task(TaskTool::Get(GetTask { id: TaskId(99) })),
+    );
     assert!(is_error && text.contains("no task #99"), "{text}");
 
     for refused in [
-        Tool::ListTasks(ListTasks::default()),
-        Tool::GetTask(GetTask { id: TaskId(3) }),
+        Tool::Task(TaskTool::List(ListTasks::default())),
+        Tool::Task(TaskTool::Get(GetTask { id: TaskId(3) })),
     ] {
         let (text, is_error) = call("slice-work", refused);
         assert!(
@@ -2610,7 +2619,10 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
     h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "work"));
     let socket = h.socket();
     let call = |agent: &str, u: UpdateTask| {
-        result_text(socket_call(&socket, tool(agent, Tool::UpdateTask(u))))
+        result_text(socket_call(
+            &socket,
+            tool(agent, Tool::Task(TaskTool::Update(u))),
+        ))
     };
 
     let (text, is_error) = call(
@@ -3863,9 +3875,9 @@ fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() 
         &h.socket(),
         tool(
             "slice-s4",
-            Tool::AskUser(AskUser {
+            Tool::Core(CoreTool::AskUser(AskUser {
                 question: "Which branch?".into(),
-            }),
+            })),
         ),
     ));
     assert!(!is_error, "{text}");
@@ -3908,7 +3920,7 @@ fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() 
 fn draw(h: &Harness, map: serde_json::Value) -> (String, bool) {
     result_text(socket_call(
         &h.socket(),
-        tool(COORDINATOR, Tool::DrawMap(DrawMap(map))),
+        tool(COORDINATOR, Tool::Map(MapTool::Draw(DrawMap(map)))),
     ))
 }
 
@@ -4824,7 +4836,7 @@ mod upgrade {
 fn a_side_chat_gets_only_the_core_suite_whatever_the_config_says() {
     let fake = fixture("plain_turn");
     let mut config = Config::default();
-    config.suites.side_chat = dovetail_api::tools::Suite::ALL.to_vec();
+    config.suites.side_chat = dovetail_tools::Suite::ALL.to_vec();
     let mut h = Harness::start(fake.clone(), true, config);
     h.send(Command::Agent(AgentCommand::NewSideChat {
         question: "what does the reducer do?".into(),
@@ -5314,7 +5326,7 @@ fn an_effort_is_named_in_kebab_case_and_its_criterion_goes_claimed_then_met() {
 #[test]
 fn an_agent_claims_a_criterion_and_only_the_user_approves_it() {
     use dovetail_api::effort::CriterionState;
-    use dovetail_api::tools::ClaimCriterion;
+    use dovetail_tools::coordination::{ClaimCriterion, CoordinationTool};
 
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     let effort = create_effort(&mut h, "providers", "providers");
@@ -5328,10 +5340,10 @@ fn an_agent_claims_a_criterion_and_only_the_user_approves_it() {
     let criterion = effort_named(&h.snap, "providers").expect("effort").criteria[0].id;
     let state_of = move |s: &Snapshot| effort_named(s, "providers").map(|e| e.criteria[0].state);
     let claim = |evidence: &str| {
-        Tool::ClaimCriterion(ClaimCriterion {
+        Tool::Coordination(CoordinationTool::ClaimCriterion(ClaimCriterion {
             criterion,
             evidence: evidence.into(),
-        })
+        }))
     };
     let socket = h.socket();
 
@@ -5348,10 +5360,10 @@ fn an_agent_claims_a_criterion_and_only_the_user_approves_it() {
     // Empty evidence and an unknown criterion are refused.
     let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, claim("  "))));
     assert!(is_error && text.contains("evidence"), "{text}");
-    let unknown = Tool::ClaimCriterion(ClaimCriterion {
+    let unknown = Tool::Coordination(CoordinationTool::ClaimCriterion(ClaimCriterion {
         criterion: dovetail_api::effort::CriterionId(999),
         evidence: "x".into(),
-    });
+    }));
     let (text, is_error) = result_text(socket_call(&socket, tool(COORDINATOR, unknown)));
     assert!(is_error, "{text}");
 
@@ -5681,7 +5693,10 @@ fn a_reply_becomes_an_idea_and_a_reference_must_exist() {
 fn the_canvas_tools_add_and_link_and_nothing_else() {
     use dovetail_api::canvas::geometry::{CARD_H, GAP};
     use dovetail_api::canvas::{BlockId, CardId, CardKind, Layout};
-    use dovetail_api::tools::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards, Suite, TOOLS};
+    use dovetail_tools::{
+        Suite, TOOLS,
+        canvas::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards, CanvasTool},
+    };
 
     let canvas_tools: Vec<&str> = TOOLS
         .iter()
@@ -5701,14 +5716,14 @@ fn the_canvas_tools_add_and_link_and_nothing_else() {
                   reference: Option<&str>,
                   block: Option<BlockId>,
                   under: Option<CardId>| {
-        Tool::CanvasAddCard(CanvasAddCard {
+        Tool::Canvas(CanvasTool::AddCard(CanvasAddCard {
             effort: Some(effort),
             block,
             under,
             kind,
             text: text.into(),
             reference: reference.map(Into::into),
-        })
+        }))
     };
     let add = |kind: CardKind, text: &str, reference: Option<&str>| {
         add_to(kind, text, reference, None, None)
@@ -5738,11 +5753,11 @@ fn the_canvas_tools_add_and_link_and_nothing_else() {
         &socket,
         tool(
             COORDINATOR,
-            Tool::CanvasLinkCards(CanvasLinkCards {
+            Tool::Canvas(CanvasTool::LinkCards(CanvasLinkCards {
                 from,
                 to,
                 label: "answers".into(),
-            }),
+            })),
         ),
     ));
     assert!(!is_error, "{text}");
@@ -5753,11 +5768,11 @@ fn the_canvas_tools_add_and_link_and_nothing_else() {
         &socket,
         tool(
             COORDINATOR,
-            Tool::CanvasAddBlock(CanvasAddBlock {
+            Tool::Canvas(CanvasTool::AddBlock(CanvasAddBlock {
                 effort: Some(effort),
                 layout: Layout::QuestionTree,
                 title: "Which provider?".into(),
-            }),
+            })),
         ),
     ));
     assert!(!is_error && text.contains("block"), "{text}");
@@ -5941,18 +5956,24 @@ fn task_status(s: &Snapshot, id: i64) -> Option<TaskStatus> {
         .map(|t| t.status)
 }
 
-fn report(state: dovetail_api::tools::ReportState, summary: &str, pr: Option<u32>) -> Tool {
-    Tool::Report(dovetail_api::tools::Report {
-        state,
-        summary: summary.into(),
-        pr,
-    })
+fn report(
+    state: dovetail_tools::coordination::ReportState,
+    summary: &str,
+    pr: Option<u32>,
+) -> Tool {
+    Tool::Coordination(dovetail_tools::coordination::CoordinationTool::Report(
+        dovetail_tools::coordination::Report {
+            state,
+            summary: summary.into(),
+            pr,
+        },
+    ))
 }
 
 #[test]
 fn sessions_are_named_after_the_project_and_a_slice_reports_through_dovetail() {
     use dovetail_api::task::NewTask;
-    use dovetail_api::tools::ReportState;
+    use dovetail_tools::coordination::ReportState;
 
     let fake = fixture("plain_turn");
     let mut h = Harness::start(fake.clone(), true, Config::default());
@@ -6171,7 +6192,7 @@ fn a_task_follows_its_slices_pull_request_to_review_done_and_back() {
 /// something new happens: its pull request changes, or its slice reports again.
 #[test]
 fn a_task_sent_back_from_review_stays_in_progress_until_something_new_happens() {
-    use dovetail_api::tools::ReportState;
+    use dovetail_tools::coordination::ReportState;
     let (dir, repo, paths) = repo_with_task_slices(&["api"], false);
     GH.with(|g| *g.borrow_mut() = Some(fake_gh(dir.path())));
     let mut h = Harness::start_in(fixture("plain_turn"), paths, Some(repo));
@@ -6379,7 +6400,7 @@ fn the_coordinator_attaches_every_repo_and_a_slice_names_its_repo() {
     assert!(
         spec.env
             .iter()
-            .any(|(k, v)| k == dovetail_api::tools::env::REPO && v == "web"),
+            .any(|(k, v)| k == dovetail_tools::env::REPO && v == "web"),
         "{:?}",
         spec.env
     );
@@ -6728,7 +6749,9 @@ fn a_repo_override_replaces_the_projects_preview_line() {
 }
 
 fn declare(slots: Vec<dovetail_api::design::VariantSlot>) -> Tool {
-    Tool::DeclareVariants(dovetail_api::tools::DeclareVariants { slots })
+    Tool::Design(dovetail_tools::design::DesignTool::DeclareVariants(
+        dovetail_tools::design::DeclareVariants { slots },
+    ))
 }
 
 fn slot(
@@ -6906,14 +6929,14 @@ fn start_on(
     model: Option<&str>,
     effort: Option<dovetail_api::model::ReasoningEffort>,
 ) -> Tool {
-    Tool::StartSlice(StartSlice {
+    Tool::Project(ProjectTool::StartSlice(StartSlice {
         repo: None,
         model: model.map(str::to_owned),
         effort,
         task: TaskId(1),
         name: name.into(),
         brief: "go".into(),
-    })
+    }))
 }
 
 fn make_task(h: &mut Harness) {

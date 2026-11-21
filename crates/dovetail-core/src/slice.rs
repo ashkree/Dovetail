@@ -17,11 +17,11 @@ use std::time::Duration;
 use dovetail_api::{
     Event,
     activity::ActivityKind,
-    agent::{AgentId, AgentKind, AgentStatus, WorktreeRef},
+    agent::{AgentEvent, AgentId, AgentKind, AgentStatus, WorktreeRef},
     inbox::InboxKind,
     task::{Bucket, TaskChange, TaskId, TaskStatus},
 };
-use dovetail_api::{agent::AgentEvent, socket::SocketResponseBody};
+use dovetail_tools::SocketResponseBody;
 use serde_json::json;
 use tokio::sync::oneshot;
 

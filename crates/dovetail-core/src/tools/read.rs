@@ -3,12 +3,12 @@
 
 use std::fmt::Write as _;
 
-use dovetail_api::tools::{BucketFilter, ListTasks};
 use dovetail_api::{
     agent::Agent,
     decision::{Decision, DecisionAuthor},
     task::{Bucket, PLevel, Task, TaskId, TaskStatus},
 };
+use dovetail_tools::task::{BucketFilter, ListTasks};
 use serde::Serialize;
 
 /// Longest title `tasks_list` shows before cutting it with `…`.

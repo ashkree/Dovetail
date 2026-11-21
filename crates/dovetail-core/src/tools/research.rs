@@ -6,19 +6,18 @@
 //! (`research::report`) before anything is written. A proposal never writes anything itself: it
 //! raises an inbox item, and `y` does the write.
 
-use dovetail_api::socket::SocketResponseBody;
-use dovetail_api::tools::{ResearchGet, ResearchPropose, ResearchStartRound, ResearchWriteReport};
 use dovetail_api::{
     Event,
     activity::ActivityKind,
     agent::AgentId,
-    decision::{DecisionAuthor, NewDecision},
+    decision::{DecisionAuthor, DecisionEvent, NewDecision},
     inbox::{InboxId, InboxKind, PermissionAnswer},
+    research::{Evidence, ProposalKind, ResearchContent},
     task::{NewTask, TaskId, TaskStatus},
 };
-use dovetail_api::{
-    decision::DecisionEvent,
-    research::{Evidence, ProposalKind, ResearchContent},
+use dovetail_tools::{
+    SocketResponseBody,
+    research::{ResearchGet, ResearchPropose, ResearchStartRound, ResearchWriteReport},
 };
 use serde_json::json;
 

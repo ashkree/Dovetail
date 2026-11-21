@@ -25,7 +25,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use dovetail_api::tools::{Role, Suite};
+use dovetail_tools::{Role, Suite};
 use serde::Deserialize;
 
 use crate::paths::Paths;

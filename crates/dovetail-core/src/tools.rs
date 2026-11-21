@@ -2,17 +2,28 @@
 //! the core checks the role again: a slice must not reach a coordinator tool even through a
 //! hand-written socket client.
 
-use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
-use dovetail_api::tools::{Tool, UpdateTask};
 use dovetail_api::{
     Event,
     agent::{Agent, AgentKind, PermissionMode},
     conversation::EntryKind,
-    decision::{DecisionAuthor, NewDecision},
+    decision::{DecisionAuthor, DecisionEvent, NewDecision},
     inbox::InboxKind,
     task::{NewTask, TaskChange, TaskId, TaskStatus},
 };
-use dovetail_api::{decision::DecisionEvent, socket::SocketResponseBody};
+use dovetail_tools::{
+    SocketResponseBody, Tool,
+    canvas::CanvasTool,
+    coordination::CoordinationTool,
+    core::CoreTool,
+    design::DesignTool,
+    map::MapTool,
+    project::{
+        ProjectTool,
+        archive_result::{ARCHIVED, WAITING_FOR_USER},
+    },
+    research::ResearchTool,
+    task::{TaskTool, UpdateTask},
+};
 use serde_json::json;
 use tokio::sync::oneshot;
 
@@ -147,7 +158,7 @@ impl Core {
             return;
         }
         let answer = match call {
-            Tool::AskUser(ask) => {
+            Tool::Core(CoreTool::AskUser(ask)) => {
                 let kind = InboxKind::Question {
                     text: ask.question.clone(),
                 };
@@ -169,7 +180,7 @@ impl Core {
                     anything that does not depend on it, or end your turn if nothing is left.",
                 )
             }
-            Tool::ReportStatus(report) => {
+            Tool::Core(CoreTool::ReportStatus(report)) => {
                 let line: String = report
                     .status
                     .lines()
@@ -182,13 +193,21 @@ impl Core {
                 self.update_agent(&agent, |row| row.agent.status_line = line);
                 ok("Status set.")
             }
-            Tool::Report(report) => self.slice_report(&agent, report).await,
-            Tool::ClaimCriterion(claim) => self.claim_criterion_tool(&agent, claim).await,
-            Tool::CanvasAddBlock(add) => self.canvas_add_block_tool(&agent, add).await,
-            Tool::CanvasAddCard(add) => self.canvas_add_card_tool(&agent, add).await,
-            Tool::CanvasLinkCards(link) => self.canvas_link_cards_tool(link).await,
-            Tool::DeclareVariants(declared) => self.declare_variants_tool(&agent, declared).await,
-            Tool::CreateTask(task) => {
+            Tool::Coordination(CoordinationTool::Report(report)) => {
+                self.slice_report(&agent, report).await
+            }
+            Tool::Coordination(CoordinationTool::ClaimCriterion(claim)) => {
+                self.claim_criterion_tool(&agent, claim).await
+            }
+            Tool::Canvas(CanvasTool::AddBlock(add)) => {
+                self.canvas_add_block_tool(&agent, add).await
+            }
+            Tool::Canvas(CanvasTool::AddCard(add)) => self.canvas_add_card_tool(&agent, add).await,
+            Tool::Canvas(CanvasTool::LinkCards(link)) => self.canvas_link_cards_tool(link).await,
+            Tool::Design(DesignTool::DeclareVariants(declared)) => {
+                self.declare_variants_tool(&agent, declared).await
+            }
+            Tool::Task(TaskTool::Create(task)) => {
                 let new = NewTask {
                     title: task.title,
                     p_level: task.p_level,
@@ -210,7 +229,7 @@ impl Core {
                     Err(e) => error(format!("could not create the task: {e}")),
                 }
             }
-            Tool::LogDecision(decision) => {
+            Tool::Core(CoreTool::LogDecision(decision)) => {
                 let own_task = self.agents.get(&agent).and_then(|r| r.agent.task);
                 match decision.task.or(own_task) {
                     None => error("you have no task of your own: name the `task`"),
@@ -240,7 +259,7 @@ impl Core {
                     }
                 }
             }
-            Tool::StartSlice(start) => {
+            Tool::Project(ProjectTool::StartSlice(start)) => {
                 let request = SliceRequest {
                     task: Some(start.task),
                     name: start.name.trim().to_owned(),
@@ -297,7 +316,7 @@ impl Core {
                 let result = self.request_slice(request).await;
                 slice_reply(result)
             }
-            Tool::AddProject(_) => {
+            Tool::Project(ProjectTool::AddProject(_)) => {
                 let before = self.project.registered().map(|p| p.id.clone());
                 match self.register_project().await {
                     Ok((project, _)) if before.is_some() => ok(format!(
@@ -332,7 +351,7 @@ impl Core {
                     Err(e) => error(format!("could not add the project: {e}")),
                 }
             }
-            Tool::ArchiveSlice(archive) => {
+            Tool::Project(ProjectTool::ArchiveSlice(archive)) => {
                 let name = archive.name.trim().to_owned();
                 if let Some(at) = self.queue.iter().position(|q| q.name == name) {
                     // Not started yet: dropping the queued start is all there is to archive.
@@ -352,7 +371,7 @@ impl Core {
                     }
                 }
             }
-            Tool::ArchiveTask(archive) => {
+            Tool::Task(TaskTool::Archive(archive)) => {
                 let id = archive.id;
                 let own = self.agents.get(&agent).and_then(|r| r.agent.task);
                 if own == Some(id) {
@@ -385,11 +404,11 @@ impl Core {
                     }
                 }
             }
-            Tool::ListTasks(filter) => match self.db.load_tasks().await {
+            Tool::Task(TaskTool::List(filter)) => match self.db.load_tasks().await {
                 Ok(tasks) => ok(read::task_list(&tasks, &filter, |id| self.live_slices(id))),
                 Err(e) => error(format!("could not read the tasks: {e}")),
             },
-            Tool::GetTask(get) => match self.task(get.id).await {
+            Tool::Task(TaskTool::Get(get)) => match self.task(get.id).await {
                 None => error(format!("there is no task #{}", get.id.0)),
                 Some(task) => match self.db.task_decisions(task.id).await {
                     Ok(decisions) => ok(read::task_detail(
@@ -400,12 +419,16 @@ impl Core {
                     Err(e) => error(format!("could not read the decisions: {e}")),
                 },
             },
-            Tool::UpdateTask(update) => self.update_task_tool(update).await,
-            Tool::DrawMap(draw) => self.draw_map(&agent, draw.0).await,
-            Tool::ResearchStartRound(args) => self.research_start_round(args).await,
-            Tool::ResearchWriteReport(args) => self.research_write_report(args).await,
-            Tool::ResearchPropose(args) => self.research_propose(&agent, args).await,
-            Tool::ResearchGet(args) => self.research_get(args).await,
+            Tool::Task(TaskTool::Update(update)) => self.update_task_tool(update).await,
+            Tool::Map(MapTool::Draw(draw)) => self.draw_map(&agent, draw.0).await,
+            Tool::Research(ResearchTool::StartRound(args)) => self.research_start_round(args).await,
+            Tool::Research(ResearchTool::WriteReport(args)) => {
+                self.research_write_report(args).await
+            }
+            Tool::Research(ResearchTool::Propose(args)) => {
+                self.research_propose(&agent, args).await
+            }
+            Tool::Research(ResearchTool::Get(args)) => self.research_get(args).await,
         };
         let _ = reply.send(answer);
     }
@@ -473,7 +496,7 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::tools::Role;
+    use dovetail_tools::Role;
 
     #[test]
     fn start_slice_answers_lead_with_the_outcome() {

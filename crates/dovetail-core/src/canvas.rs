@@ -6,17 +6,21 @@
 //! every position a new block or card gets; only the user's commands move or delete a card. The
 //! agents' tools add blocks, cards and links.
 
-use dovetail_api::tools::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards};
 use dovetail_api::{
     Event,
     activity::ActivityKind,
     agent::AgentId,
-    canvas::{BlockId, Card, CardId, CardKind, CardRef, Layout, NewCard, Point, RefKind},
+    canvas::{
+        BlockId, CanvasEvent, Card, CardId, CardKind, CardRef, Layout, NewCard, Point, RefKind,
+    },
     conversation::EntryId,
     effort::{EffortId, UNSORTED_EFFORT},
     task::TaskId,
 };
-use dovetail_api::{canvas::CanvasEvent, socket::SocketResponseBody};
+use dovetail_tools::{
+    SocketResponseBody,
+    canvas::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards},
+};
 
 use crate::db::{DbError, USER};
 use crate::service::Core;

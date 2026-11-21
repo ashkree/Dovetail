@@ -5,8 +5,6 @@
 //! the slice's task, and reaches the coordinator's session as a message. A `done` report moves
 //! the task to review (ADR 0024).
 
-use dovetail_api::socket::SocketResponseBody;
-use dovetail_api::tools::{Report, ReportState};
 use dovetail_api::{
     activity::ActivityKind,
     agent::AgentId,
@@ -15,6 +13,10 @@ use dovetail_api::{
     task::{TaskChange, TaskStatus},
 };
 use dovetail_driver::UserInput;
+use dovetail_tools::{
+    SocketResponseBody,
+    coordination::{Report, ReportState},
+};
 
 use crate::service::{COORDINATOR, Core, EntryTag};
 use crate::tools::{error, ok};

@@ -4,9 +4,8 @@
 //! The database is the only copy, as for canvases: every handler writes through the DB thread,
 //! then announces the stored row.
 
-use dovetail_api::tools::DeclareVariants;
-use dovetail_api::{Event, agent::AgentId, design::VariantSet};
-use dovetail_api::{design::DesignEvent, socket::SocketResponseBody};
+use dovetail_api::{Event, agent::AgentId, design::DesignEvent, design::VariantSet};
+use dovetail_tools::{SocketResponseBody, design::DeclareVariants};
 
 use crate::service::Core;
 use crate::tools::{error, ok};

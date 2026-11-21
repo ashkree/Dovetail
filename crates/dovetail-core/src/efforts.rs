@@ -19,8 +19,7 @@ use dovetail_api::{
     task::TaskId,
 };
 
-use dovetail_api::socket::SocketResponseBody;
-use dovetail_api::tools::ClaimCriterion;
+use dovetail_tools::{SocketResponseBody, coordination::ClaimCriterion};
 
 use crate::db::{CriterionStep, DbError};
 use crate::service::Core;

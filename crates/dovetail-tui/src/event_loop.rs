@@ -5,13 +5,13 @@
 //! the timeout of a half-typed key sequence, or a usage-limit reset passing. With nothing
 //! changing it sleeps forever.
 //!
-//! **Lending the terminal** (`e` in the worktree view, [`TerminalCommand::OpenEditor`]; `<leader>st`,
-//! [`TerminalCommand::TakeOver`]). The input thread reads one key, hands it over, and waits for a go
+//! **Lending the terminal** (`e` in the worktree view, [`TerminalCommand::OpenEditor`](dovetail_api::terminal::TerminalCommand::OpenEditor); `<leader>st`,
+//! [`TerminalCommand::TakeOver`](dovetail_api::terminal::TerminalCommand::TakeOver)). The input thread reads one key, hands it over, and waits for a go
 //! before reading the next, so it is never inside a read when a key asks for the terminal. If
 //! the key leaves a hand-off in the app ([`App::take_handoff`]), the loop sends the commands
 //! already queued, leaves the alternate screen and raw mode ([`Lend::release`]), sends the
 //! hand-off command, and holds the go back: the editor or native `claude` the core starts gets
-//! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::TerminalEvent::Returned`] the loop takes the
+//! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::terminal::TerminalEvent::Returned`] the loop takes the
 //! terminal back ([`Lend::reclaim`]), redraws it in full and lets the input thread read again.
 //!
 //! **The map canvas** (M15 f). Mouse capture is switched on only while the app is in MAP mode

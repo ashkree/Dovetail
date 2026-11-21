@@ -8,34 +8,33 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
-use dovetail_api::tools::{
-    ArchiveTask, ResearchGet, ResearchPropose, ResearchStartRound, ResearchWriteReport, Tool,
-};
 use dovetail_api::{
     Command, CoreLink, Event, ServerMsg, Snapshot,
     agent::AgentId,
-    apply,
-    decision::Alternative,
-    inbox::{InboxKind, PermissionAnswer},
-    task::{Bucket, NewTask, TaskId},
-};
-use dovetail_api::{
     app::{AppCommand, AppEvent},
+    apply,
     conversation::ConversationCommand,
-    inbox::InboxCommand,
+    decision::Alternative,
+    inbox::{InboxCommand, InboxKind, PermissionAnswer},
     library::{LibraryCommand, LibraryEvent},
     research::{
         Evidence, FindingId, ProposalKind, ResearchCommand, ResearchContent, ResearchEvent,
         ResearchKind, ResearchWhat, SourceId,
     },
-    task::TaskCommand,
+    task::{Bucket, NewTask, TaskCommand, TaskId},
 };
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
 use dovetail_core::projects::{Project, Resolution};
 use dovetail_core::{CoreHandle, CoreOptions};
 use dovetail_driver::{FakeDriver, Sent};
+use dovetail_tools::{
+    SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool,
+    research::{
+        ResearchGet, ResearchPropose, ResearchStartRound, ResearchTool, ResearchWriteReport,
+    },
+    task::{ArchiveTask, GetTask, TaskTool},
+};
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -253,18 +252,22 @@ fn new_task(app: &mut App, title: &str) -> TaskId {
 }
 
 fn start_round(app: &App, task: TaskId, brief: &str) -> (String, bool) {
-    app.call(Tool::ResearchStartRound(ResearchStartRound {
-        task,
-        brief: brief.into(),
-        kind: None,
-    }))
+    app.call(Tool::Research(ResearchTool::StartRound(
+        ResearchStartRound {
+            task,
+            brief: brief.into(),
+            kind: None,
+        },
+    )))
 }
 
 fn write_report(app: &App, task: TaskId, body: &str) -> (String, bool) {
-    app.call(Tool::ResearchWriteReport(ResearchWriteReport {
-        task,
-        body: body.into(),
-    }))
+    app.call(Tool::Research(ResearchTool::WriteReport(
+        ResearchWriteReport {
+            task,
+            body: body.into(),
+        },
+    )))
 }
 
 fn propose(
@@ -274,7 +277,7 @@ fn propose(
     text: &str,
     evidence: &[&str],
 ) -> (String, bool) {
-    app.call(Tool::ResearchPropose(ResearchPropose {
+    app.call(Tool::Research(ResearchTool::Propose(ResearchPropose {
         task,
         kind,
         text: text.into(),
@@ -284,7 +287,7 @@ fn propose(
             option: "the other way".into(),
             why_not: Some("slower".into()),
         }],
-    }))
+    })))
 }
 
 fn read(path: &Path) -> String {
@@ -411,26 +414,26 @@ fn a_round_by_tool_and_a_report_write_brief_and_report_and_every_citation_resolv
     });
 
     // research_get reads it back, and a finding and a source by the ids the report cites.
-    let (got, is_error) = app.call(Tool::ResearchGet(ResearchGet {
+    let (got, is_error) = app.call(Tool::Research(ResearchTool::Get(ResearchGet {
         task,
         what: "report".into(),
-    }));
+    })));
     assert!(!is_error, "{got}");
     assert_eq!(got, report);
-    let (got, is_error) = app.call(Tool::ResearchGet(ResearchGet {
+    let (got, is_error) = app.call(Tool::Research(ResearchTool::Get(ResearchGet {
         task,
         what: format!("finding:{finding}"),
-    }));
+    })));
     assert!(!is_error && got.contains("MARIGOLD-42"), "{got}");
-    let (got, is_error) = app.call(Tool::ResearchGet(ResearchGet {
+    let (got, is_error) = app.call(Tool::Research(ResearchTool::Get(ResearchGet {
         task,
         what: format!("source:{}", sources[0]),
-    }));
+    })));
     assert!(!is_error && got.contains("MARIGOLD-42"), "{got}");
-    let (got, _) = app.call(Tool::ResearchGet(ResearchGet {
+    let (got, _) = app.call(Tool::Research(ResearchTool::Get(ResearchGet {
         task,
         what: "round:1".into(),
-    }));
+    })));
     assert!(got.contains("What is the codeword?"), "{got}");
 
     // A second report rewrites the first; the earlier round is enough to allow it.
@@ -491,10 +494,10 @@ fn the_specified_errors_are_returned_and_nothing_is_written() {
     assert!(!dir_of_task.join("report.md").exists());
     assert!(app.summary(task).unwrap().open_round().is_some());
     assert!(app.summary(task).unwrap().report_ms.is_none());
-    let (text, is_error) = app.call(Tool::ResearchGet(ResearchGet {
+    let (text, is_error) = app.call(Tool::Research(ResearchTool::Get(ResearchGet {
         task,
         what: "report".into(),
-    }));
+    })));
     assert!(is_error && text.contains("has no report yet"), "{text}");
 
     // A decision without evidence, with a bad id, and with an id of no finding.
@@ -580,7 +583,7 @@ fn an_accepted_decision_is_logged_with_its_evidence_and_never_before() {
     assert!(note.contains("decision D1"), "{note}");
 
     // tasks_get shows the links to the coordinator too.
-    let (text, _) = app.call(Tool::GetTask(dovetail_api::tools::GetTask { id: task }));
+    let (text, _) = app.call(Tool::Task(TaskTool::Get(GetTask { id: task })));
     assert!(text.contains(&format!("Evidence: {f}, {s}")), "{text}");
 
     // The evidence survives a restart.
@@ -871,7 +874,7 @@ fn archiving_a_task_closes_its_round_drops_its_queue_and_opens_the_next_one() {
     assert!(alpha_second.exists());
 
     // The coordinator may not do it on the user's behalf.
-    let (text, is_error) = app.call(Tool::ArchiveTask(ArchiveTask { id: a }));
+    let (text, is_error) = app.call(Tool::Task(TaskTool::Archive(ArchiveTask { id: a })));
     assert!(
         is_error && text.contains("an open research round"),
         "{text}"
@@ -1082,11 +1085,13 @@ fn the_kind_comes_from_the_round_or_the_user_and_a_decision_is_held_to_its_templ
     let (repo, paths) = open_repo(dir.path());
     let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
     let task = new_task(&mut app, "Should we?");
-    let (text, is_error) = app.call(Tool::ResearchStartRound(ResearchStartRound {
-        task,
-        brief: "criteria".into(),
-        kind: Some(ResearchKind::Decision),
-    }));
+    let (text, is_error) = app.call(Tool::Research(ResearchTool::StartRound(
+        ResearchStartRound {
+            task,
+            brief: "criteria".into(),
+            kind: Some(ResearchKind::Decision),
+        },
+    )));
     assert!(!is_error, "{text}");
     app.wait_for("the kind", |s| {
         s.research
