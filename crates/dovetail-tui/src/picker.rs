@@ -27,6 +27,8 @@ pub enum PickerKey {
     Inbox(InboxId),
     /// A slash command or skill, by name.
     Command(String),
+    /// An MCP server of the session, by name (task #44).
+    McpServer(String),
     /// A registered project (the project switcher).
     Project(ProjectId),
     /// A Claude profile from config.toml, or `None` for the default (after `:project add`).
@@ -81,6 +83,8 @@ pub struct Picker {
     shown: Vec<Shown>,
     selected: usize,
     matcher: Matcher,
+    /// The preview shows from its first line, not its last.
+    preview_from_top: bool,
 }
 
 impl Picker {
@@ -98,9 +102,32 @@ impl Picker {
             shown: Vec::new(),
             selected: 0,
             matcher: Matcher::new(Config::DEFAULT),
+            preview_from_top: false,
         };
         picker.refilter();
         picker
+    }
+
+    /// Shows a long preview from its first line (the MCP menu's details), not from its end.
+    pub fn preview_from_top(mut self) -> Self {
+        self.preview_from_top = true;
+        self
+    }
+
+    /// Replaces the rows, keeping the query and the highlighted row (by key) when it is still
+    /// there.
+    pub fn set_items(&mut self, items: Vec<PickerItem>) {
+        let keep = self.selected().map(|i| i.key.clone());
+        self.items = items;
+        self.refilter();
+        if let Some(key) = keep
+            && let Some(at) = self
+                .shown
+                .iter()
+                .position(|s| self.items[s.item].key == key)
+        {
+            self.selected = at;
+        }
     }
 
     /// The text typed so far.
@@ -300,7 +327,11 @@ impl Picker {
         let pinner = right.inner(halves[1]);
         frame.render_widget(right, halves[1]);
         let pheight = usize::from(pinner.height);
-        let skip = preview.len().saturating_sub(pheight);
+        let skip = if self.preview_from_top {
+            0
+        } else {
+            preview.len().saturating_sub(pheight)
+        };
         for (n, line) in preview.iter().skip(skip).take(pheight).enumerate() {
             let rect = Rect {
                 x: pinner.x + 1,

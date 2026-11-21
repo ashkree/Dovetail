@@ -17,6 +17,7 @@ pub mod fmt;
 pub mod help;
 pub mod input;
 pub mod keymap;
+pub mod mcp_menu;
 pub mod mode;
 pub mod model_select;
 pub mod picker;

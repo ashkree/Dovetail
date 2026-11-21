@@ -35,6 +35,7 @@ mod base64;
 mod claude;
 mod event;
 mod fake;
+mod mcp;
 pub mod parse;
 mod spec;
 mod switch;
@@ -102,6 +103,10 @@ pub trait Session: Send {
         model: Option<&str>,
         effort: Option<dovetail_api::ReasoningEffort>,
     ) -> Result<SwitchId, DriverError>;
+    /// Send one request of the MCP menu (task #44): the session's servers, or an action on one.
+    /// The answer is a [`DriverEvent::McpReply`] carrying the request; a refusal is a
+    /// [`dovetail_api::McpOutcome::Failed`] there, not an error here.
+    fn mcp(&self, request: dovetail_api::McpRequest) -> Result<(), DriverError>;
     /// Answer a pending [`DriverEvent::PermissionRequest`], in any order.
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError>;
     /// Take the event stream. Call once; later calls return an already-closed receiver. The

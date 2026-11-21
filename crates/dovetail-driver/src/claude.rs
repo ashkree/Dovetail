@@ -2,12 +2,13 @@
 //! (spike S1 decision), one supervisor, one reader, one writer and one stderr task per session.
 
 use crate::event::*;
+use crate::mcp::McpCalls;
 use crate::parse;
 use crate::switch::Switches;
 use crate::{
     ControlAnswer, DriverError, PermissionMode, Session, SessionDriver, SessionSpec, UserInput,
 };
-use dovetail_api::ReasoningEffort;
+use dovetail_api::{McpRequest, ReasoningEffort};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
@@ -95,6 +96,7 @@ impl SessionDriver for ClaudeDriver {
         let (ctl_tx, ctl_rx) = unbounded_channel();
         let pending: Arc<Mutex<HashMap<String, Value>>> = Arc::default();
         let switches: Arc<Mutex<Switches>> = Arc::default();
+        let mcp: Arc<Mutex<McpCalls>> = Arc::default();
 
         tokio::spawn(write_stdin(stdin, writer_rx, log.clone()));
         let reader = tokio::spawn(read_stdout(
@@ -104,6 +106,7 @@ impl SessionDriver for ClaudeDriver {
                 writer: writer_tx.clone(),
                 pending: pending.clone(),
                 switches: switches.clone(),
+                mcp: mcp.clone(),
                 log: log.clone(),
             },
         ));
@@ -132,6 +135,7 @@ impl SessionDriver for ClaudeDriver {
             events: Some(events_rx),
             pending,
             switches,
+            mcp,
             counter: AtomicU64::new(0),
         }))
     }
@@ -205,6 +209,7 @@ struct Reader {
     writer: UnboundedSender<WriterMsg>,
     pending: Arc<Mutex<HashMap<String, Value>>>,
     switches: Arc<Mutex<Switches>>,
+    mcp: Arc<Mutex<McpCalls>>,
     log: Option<Arc<Log>>,
 }
 
@@ -234,6 +239,14 @@ impl Reader {
         else {
             return Some(ev);
         };
+        let mcp = self
+            .mcp
+            .lock()
+            .ok()
+            .and_then(|mut m| m.answer(request_id, *success, response));
+        if mcp.is_some() {
+            return mcp;
+        }
         let outcome = self
             .switches
             .lock()
@@ -381,6 +394,8 @@ struct ClaudeSession {
     pending: Arc<Mutex<HashMap<String, Value>>>,
     /// Model switches in flight; the stdout reader finishes them.
     switches: Arc<Mutex<Switches>>,
+    /// MCP menu requests in flight.
+    mcp: Arc<Mutex<McpCalls>>,
     counter: AtomicU64,
 }
 
@@ -437,6 +452,15 @@ impl Session for ClaudeSession {
             .begin(model, effort);
         self.write(line)?;
         Ok(switch)
+    }
+
+    fn mcp(&self, request: McpRequest) -> Result<(), DriverError> {
+        let line = self
+            .mcp
+            .lock()
+            .map_err(|_| DriverError::SessionClosed)?
+            .begin(request);
+        self.write(line)
     }
 
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError> {

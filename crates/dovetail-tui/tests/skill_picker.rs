@@ -121,12 +121,12 @@ fn backspacing_to_a_lone_slash_does_not_open_the_picker() {
 }
 
 #[test]
-fn skills_without_session_commands_lists_dovetails_three() {
+fn skills_without_session_commands_lists_dovetails_own() {
     let mut app = app_with(world());
     type_keys(&mut app, ":skills");
     app.on_key(enter(), 1);
     let screen = render(&mut app, 120, 30);
-    for name in ["/model", "/handoff", "/fresh"] {
+    for name in ["/model", "/mcp", "/handoff", "/fresh"] {
         assert!(screen.contains(&format!("◆ {name}")), "{name}: {screen}");
     }
 }

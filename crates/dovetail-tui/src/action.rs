@@ -182,6 +182,9 @@ pub enum Action {
     Interrupt,
     /// Cycle the focused session's permission mode: auto, acceptEdits, manual.
     CyclePermissionMode,
+    /// Open the focused session's MCP server menu (task #44): `:mcp`, and `/mcp` in the chat
+    /// bar. No key.
+    ShowMcp,
     /// Pick the focused session's model and effort (task #39): `:model`, and `/model` in the
     /// chat bar. No key, by the user's choice.
     PickModel,
@@ -460,6 +463,7 @@ registry! {
     Interrupt: Agents, "interrupt the agent's turn";
     CyclePermissionMode: Agents, "cycle permission mode: auto, acceptEdits, manual";
     PickModel: Agents, "pick the session's model and effort";
+    ShowMcp: Agents, "MCP servers of the session: status, tools, reconnect, log in";
     TakeOver: Agents, "take the session over in this terminal";
     SwitchProject: Projects, "switch project";
     RegisterProject: Projects, "register this folder as a project";

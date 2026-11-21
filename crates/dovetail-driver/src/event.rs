@@ -500,6 +500,13 @@ pub enum DriverEvent {
         /// Claude Code's reason.
         error: String,
     },
+    /// The answer to a [`crate::Session::mcp`] request (task #44).
+    McpReply {
+        /// What was asked.
+        request: dovetail_api::McpRequest,
+        /// What Claude Code answered.
+        outcome: dovetail_api::McpOutcome,
+    },
     /// The models the session can switch to (`list_models`, asked at start).
     Models(Vec<ModelInfo>),
     /// `system/permission_denied`: a request was auto-denied (no prompt tool, or classifier).

@@ -900,3 +900,66 @@ pub(crate) fn civil_date(ms: i64) -> String {
     let year = yoe + era * 400 + i64::from(month <= 2);
     format!("{year:04}-{month:02}-{day:02}")
 }
+
+/// The servers the mock's `/mcp` menu lists: one of each status and transport that matters.
+pub(crate) fn mcp_servers() -> Vec<McpServer> {
+    let tool = |name: &str, read_only, destructive| McpTool {
+        name: name.into(),
+        read_only,
+        destructive,
+    };
+    let server = |name: &str, status, transport: &str, target: &str| McpServer {
+        name: name.into(),
+        status,
+        error: None,
+        server_info: None,
+        transport: transport.into(),
+        target: target.into(),
+        scope: "dynamic".into(),
+        tools: Vec::new(),
+    };
+    vec![
+        McpServer {
+            server_info: Some("dovetail 0.1".into()),
+            tools: vec![
+                tool("report_status", false, false),
+                tool("log_decision", false, false),
+            ],
+            ..server("dovetail", McpStatus::Connected, "stdio", "dovetail mcp")
+        },
+        McpServer {
+            error: Some("ENOENT: no such file or directory, posix_spawn '/nonexistent'".into()),
+            ..server("broken", McpStatus::Failed, "stdio", "/nonexistent --serve")
+        },
+        McpServer {
+            scope: "claudeai".into(),
+            ..server(
+                "claude.ai Google Calendar",
+                McpStatus::NeedsAuth,
+                "claudeai-proxy",
+                "https://mcp.example/calendar",
+            )
+        },
+        McpServer {
+            server_info: Some("docs 2.1".into()),
+            scope: "claudeai".into(),
+            tools: vec![
+                tool("read", true, false),
+                tool("update", false, false),
+                tool("delete", false, true),
+            ],
+            ..server(
+                "claude.ai Docs",
+                McpStatus::Connected,
+                "claudeai-proxy",
+                "https://mcp.example/docs",
+            )
+        },
+        server(
+            "scratch",
+            McpStatus::Disabled,
+            "stdio",
+            "python3 scratch.py",
+        ),
+    ]
+}

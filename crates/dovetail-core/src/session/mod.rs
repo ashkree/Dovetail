@@ -625,6 +625,31 @@ impl Core {
         }
     }
 
+    /// `Command::Mcp`: one request of the MCP menu, sent to `id`'s session (a subagent's parent,
+    /// since subagents share it). The answer arrives as `DriverEvent::McpReply`.
+    pub(crate) fn mcp_request(&mut self, id: &AgentId, request: dovetail_api::McpRequest) {
+        let target = match self.agents.get(id) {
+            Some(row) => match (&row.agent.kind, &row.agent.parent) {
+                (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
+                _ => id.clone(),
+            },
+            None => {
+                self.fail(format!("no agent {}", id.0));
+                return;
+            }
+        };
+        let Some(live) = self.live.get(&target) else {
+            self.fail(format!(
+                "{} is not running: no MCP servers to show",
+                target.0
+            ));
+            return;
+        };
+        if let Err(e) = live.session.mcp(request) {
+            self.fail(format!("Could not ask {} about MCP: {e}", target.0));
+        }
+    }
+
     /// `<leader>sm`: the next mode, switched on the live process with no restart. A session not
     /// running starts in it next time.
     pub(crate) fn cycle_mode(&mut self, id: &AgentId) {
@@ -807,6 +832,13 @@ impl Core {
                 self.on_model_switch_failed(&agent, switch, &error);
             }
             DriverEvent::Models(models) => self.on_models_listed(models),
+            DriverEvent::McpReply { request, outcome } => {
+                self.emit(Event::McpReply {
+                    agent,
+                    request,
+                    outcome,
+                });
+            }
             DriverEvent::RateLimit(info) => self.on_rate_limit(&agent, &info),
             DriverEvent::Exited(info) => self.on_exit(&agent, info),
             _ => {}

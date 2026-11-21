@@ -80,6 +80,8 @@ pub struct MockCore {
     reply_count: u64,
     /// What [`Command::PasteClipboard`] answers, in turn; see [`MockCore::queue_clipboard`].
     clipboard: VecDeque<Paste>,
+    /// The servers `/mcp` lists, for every session; actions change them ([`world::mcp_servers`]).
+    mcp: Vec<dovetail_api::McpServer>,
     /// Tokens in each session's context, as the core counts them from the stream (M13c).
     context_tokens: BTreeMap<AgentId, u64>,
     /// Each seeded map's content, latest version only, for [`Command::LoadMap`].
@@ -114,6 +116,7 @@ impl MockCore {
             next_subagent: 1,
             reply_count: 0,
             clipboard: VecDeque::new(),
+            mcp: world::mcp_servers(),
             context_tokens: BTreeMap::new(),
             maps: maps::seeded(config.start_ms)
                 .into_iter()
@@ -153,6 +156,46 @@ impl MockCore {
     /// clipboard: with nothing queued it refuses, as the core does with no clipboard tool.
     pub fn queue_clipboard(&mut self, paste: Paste) {
         self.clipboard.push_back(paste);
+    }
+
+    /// The answer to a menu request, changing the sample servers as Claude Code would.
+    fn mcp_answer(&mut self, request: &McpRequest) -> McpOutcome {
+        let Some(name) = request.server() else {
+            return McpOutcome::Status(self.mcp.clone());
+        };
+        let Some(server) = self.mcp.iter_mut().find(|s| s.name == name) else {
+            return McpOutcome::Failed(format!("Server not found: {name}"));
+        };
+        match request {
+            McpRequest::Toggle { enabled, .. } => {
+                server.status = if *enabled {
+                    McpStatus::Connected
+                } else {
+                    McpStatus::Disabled
+                };
+                McpOutcome::Done
+            }
+            McpRequest::Reconnect { .. } => match &server.error {
+                Some(error) => McpOutcome::Failed(error.clone()),
+                None => McpOutcome::Done,
+            },
+            McpRequest::Authenticate { .. } if !server.has_auth() => McpOutcome::Failed(
+                "Server type \"stdio\" does not support OAuth authentication".into(),
+            ),
+            McpRequest::Authenticate { .. } => McpOutcome::AuthUrl {
+                url: "https://login.example/start".into(),
+                callback_expected: false,
+            },
+            McpRequest::OAuthCallback { .. } => {
+                server.status = McpStatus::Connected;
+                McpOutcome::Done
+            }
+            McpRequest::ClearAuth { .. } => {
+                server.status = McpStatus::NeedsAuth;
+                McpOutcome::Done
+            }
+            McpRequest::Status => unreachable!("a status request names no server"),
+        }
     }
 
     /// Whether a [`Command::Quit`] has been handled.
@@ -245,6 +288,14 @@ impl MockCore {
             Command::ListPaths { agent, dir } => {
                 let paths = world::paths(dir.as_deref());
                 self.emit(Event::PathsListed { agent, dir, paths });
+            }
+            Command::Mcp { agent, request } => {
+                let outcome = self.mcp_answer(&request);
+                self.emit(Event::McpReply {
+                    agent,
+                    request,
+                    outcome,
+                });
             }
             Command::PasteClipboard { agent } => {
                 let paste = self

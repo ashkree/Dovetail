@@ -8,6 +8,7 @@ use crate::action::Action;
 /// none). The picker marks these rows as Dovetail's.
 pub const DOVETAIL_SLASH: &[(&str, &str, &str)] = &[
     ("model", "Pick model and effort", "[name]"),
+    ("mcp", "MCP servers: status, tools, reconnect, log in", ""),
     ("handoff", "Fresh coordinator seeded with a handoff", ""),
     ("fresh", "Fresh coordinator, no handoff", ""),
 ];
@@ -22,6 +23,8 @@ pub fn is_dovetail(name: &str) -> bool {
 pub enum Intercept<'a> {
     /// `/model [arg]`: open the selector; `arg` is empty for none.
     Model(&'a str),
+    /// An exact `/mcp`: open the MCP server menu.
+    Mcp,
     /// An exact `/handoff` or `/fresh`: run the action.
     Run(Action),
     /// `/handoff …` or `/fresh …`: refused, the text stays in the bar. Holds the command name.
@@ -37,6 +40,8 @@ pub fn intercept(text: &str) -> Option<Intercept<'_>> {
     };
     match word {
         "/model" => Some(Intercept::Model(rest)),
+        "/mcp" if rest.is_empty() => Some(Intercept::Mcp),
+        "/mcp" => Some(Intercept::Refused("/mcp")),
         "/handoff" if rest.is_empty() => Some(Intercept::Run(Action::Handoff)),
         "/fresh" if rest.is_empty() => Some(Intercept::Run(Action::FreshSession)),
         "/handoff" => Some(Intercept::Refused("/handoff")),

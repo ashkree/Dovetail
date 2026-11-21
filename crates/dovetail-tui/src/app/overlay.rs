@@ -11,6 +11,7 @@ use super::ChatSite;
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
 use crate::help;
 use crate::keymap::Scope;
+use crate::mcp_menu::{McpMenu, Step};
 use crate::mode::Mode;
 use crate::model_select::{ModelSelector, SelectorOutcome};
 use crate::picker::{Picker, PickerKey, PickerOutcome};
@@ -65,6 +66,8 @@ pub(super) enum Overlay {
     Picker(Picker, Purpose),
     /// Quick capture.
     Capture(Capture),
+    /// The MCP server menu of a session (task #44).
+    Mcp(McpMenu),
     /// The model selector, and the mode to go back to (Insert when opened from the chat bar).
     Model(ModelSelector, Mode),
 }
@@ -167,6 +170,69 @@ impl App {
         self.open_overlay(Overlay::Model(selector, back));
         // It takes keys, not text: the status bar keeps the mode it came from.
         self.mode = back;
+    }
+
+    /// `:mcp`, `/mcp`: the MCP servers of `agent`'s session (`None`: the focused one), asked for
+    /// at once.
+    pub(super) fn open_mcp_menu(&mut self, agent: Option<AgentId>) {
+        let Some(agent) = agent.or_else(|| self.focused_agent()) else {
+            self.note = Some("no session to show MCP servers for".into());
+            return;
+        };
+        let Some((session, _)) = self.session_of(&agent) else {
+            self.note = Some("no session to show MCP servers for".into());
+            return;
+        };
+        let name = self
+            .snap
+            .agents
+            .iter()
+            .find(|a| a.id == session)
+            .map_or_else(|| session.0.clone(), |a| a.name.clone());
+        self.outbox.push(Command::Mcp {
+            agent: session.clone(),
+            request: dovetail_api::McpRequest::Status,
+        });
+        self.open_overlay(Overlay::Mcp(McpMenu::new(session, name)));
+    }
+
+    /// The session's answer to a menu request: into the open menu, if it is that session's.
+    pub(super) fn mcp_reply(
+        &mut self,
+        agent: &AgentId,
+        request: &dovetail_api::McpRequest,
+        outcome: dovetail_api::McpOutcome,
+    ) {
+        let Some(Overlay::Mcp(menu)) = &mut self.overlay else {
+            return;
+        };
+        if menu.session() != agent {
+            return;
+        }
+        let steps = menu.reply(request, outcome, &self.theme);
+        self.mcp_steps(steps);
+    }
+
+    /// What the menu asked for: the session, the browser, or to close.
+    fn mcp_steps(&mut self, steps: Vec<Step>) {
+        for step in steps {
+            match step {
+                Step::Ask(request) => {
+                    let Some(Overlay::Mcp(menu)) = &self.overlay else {
+                        continue;
+                    };
+                    self.outbox.push(Command::Mcp {
+                        agent: menu.session().clone(),
+                        request,
+                    });
+                }
+                Step::Open(url) => self.open_external(url),
+                Step::Close => {
+                    let from = self.close_overlay();
+                    self.restore_chat(from);
+                }
+            }
+        }
     }
 
     /// `<leader><leader>`: tasks, agents and inbox items.
@@ -302,6 +368,11 @@ impl App {
                     self.restore_chat(from);
                 }
             },
+            Overlay::Mcp(mut menu) => {
+                let steps = menu.key(event);
+                self.overlay = Some(Overlay::Mcp(menu));
+                self.mcp_steps(steps);
+            }
             Overlay::Model(mut selector, back) => match selector.key(event) {
                 SelectorOutcome::Pending => self.overlay = Some(Overlay::Model(selector, back)),
                 SelectorOutcome::Cancel => {
@@ -390,7 +461,7 @@ impl App {
     fn choose(&mut self, key: PickerKey) {
         match key {
             // Only the profile picker has these rows, and it is handled above.
-            PickerKey::Profile(_) => {}
+            PickerKey::Profile(_) | PickerKey::McpServer(_) => {}
             // `:keys`: run what can run from here, otherwise the picker just closed.
             PickerKey::Action(action) => {
                 if help::runnable(&self.keymap, &self.scopes(), action) {

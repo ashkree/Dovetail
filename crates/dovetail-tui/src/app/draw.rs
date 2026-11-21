@@ -156,6 +156,13 @@ impl App {
                 picker.render(frame, screen, &self.theme, title, &lines);
             }
             Some(Overlay::Capture(capture)) => self.draw_capture(frame, screen, capture),
+            Some(Overlay::Mcp(menu)) => {
+                let width = (usize::from(screen.width.saturating_sub(4).min(130)) * 55 / 100)
+                    .saturating_sub(4);
+                let lines = menu.preview(width, &self.theme);
+                menu.picker()
+                    .render(frame, screen, &self.theme, "Server", &lines);
+            }
             // Above the status bar, at the bottom left: where the chat bar is.
             Some(Overlay::Model(selector, _)) => {
                 let above = Rect {

@@ -151,6 +151,7 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         }
         // Nothing to store: the UI shows the message as the event passes through.
         Event::CommandFailed { .. }
+        | Event::McpReply { .. }
         | Event::MapLoaded(_)
         | Event::CardLoaded { .. }
         | Event::ResearchLoaded { .. }

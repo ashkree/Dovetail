@@ -93,6 +93,8 @@ pub enum Sent {
         /// The effort asked for.
         effort: Option<dovetail_api::ReasoningEffort>,
     },
+    /// An MCP menu request.
+    Mcp(dovetail_api::McpRequest),
     /// `shutdown(grace)`.
     Shutdown(Duration),
     /// `kill()`.
@@ -118,6 +120,8 @@ struct Recorder {
     /// Every session reports these settings as applied, as the start-up `get_settings` read
     /// does ([`FakeDriver::apply_at_start`]).
     applied: Mutex<Option<(Option<String>, Option<dovetail_api::ReasoningEffort>)>>,
+    /// What the fake's `mcp_status` lists ([`FakeDriver::set_mcp_servers`]).
+    mcp_servers: Mutex<Vec<dovetail_api::McpServer>>,
     /// The latest session's event stream, for [`FakeDriver::send_event`].
     latest: Mutex<Option<UnboundedSender<DriverEvent>>>,
 }
@@ -215,6 +219,14 @@ impl FakeDriver {
             .lock()
             .map(|s| s.clone())
             .unwrap_or_default()
+    }
+
+    /// What every session's `mcp_status` lists from now on. Actions on a server not in the list
+    /// are refused, as Claude Code refuses an unknown server.
+    pub fn set_mcp_servers(&self, servers: Vec<dovetail_api::McpServer>) {
+        if let Ok(mut list) = self.recorder.mcp_servers.lock() {
+            *list = servers;
+        }
     }
 
     /// From now on, model switch answers are held until [`FakeDriver::release_model_answers`],
@@ -525,6 +537,35 @@ impl Session for FakeSession {
             let _ = self.events_tx.send(event);
         }
         Ok(switch)
+    }
+
+    /// Records the request and answers it at once from [`FakeDriver::set_mcp_servers`]: a list
+    /// for a status request, `Done` for an action on a listed server (an `AuthUrl` for a
+    /// log-in), `Failed` for an unknown one.
+    fn mcp(&self, request: dovetail_api::McpRequest) -> Result<(), DriverError> {
+        use dovetail_api::{McpOutcome, McpRequest};
+        self.record(Sent::Mcp(request.clone()));
+        let servers = self
+            .recorder
+            .mcp_servers
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default();
+        let outcome = match (&request, request.server()) {
+            (McpRequest::Status, _) => McpOutcome::Status(servers),
+            (_, Some(name)) if !servers.iter().any(|s| s.name == name) => {
+                McpOutcome::Failed(format!("Server not found: {name}"))
+            }
+            (McpRequest::Authenticate { .. }, _) => McpOutcome::AuthUrl {
+                url: "https://login.example/start".into(),
+                callback_expected: false,
+            },
+            _ => McpOutcome::Done,
+        };
+        let _ = self
+            .events_tx
+            .send(DriverEvent::McpReply { request, outcome });
+        Ok(())
     }
 
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError> {

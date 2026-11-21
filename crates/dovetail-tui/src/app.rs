@@ -487,6 +487,14 @@ impl App {
                         self.outbox.push(Command::ListPaths { agent, dir });
                     }
                 }
+                if let Event::McpReply {
+                    agent,
+                    request,
+                    outcome,
+                } = &event
+                {
+                    self.mcp_reply(agent, request, outcome.clone());
+                }
                 if let Event::ClipboardPasted { agent, paste } = &event
                     && let Some(notice) = self.chat_view_mut().receive_paste(agent, paste.clone())
                 {
@@ -919,6 +927,10 @@ impl App {
                         self.open_model_selector_for(agent, (!arg.is_empty()).then_some(&arg));
                         "/model opens the model selector"
                     }
+                    slash::Intercept::Mcp => {
+                        self.open_mcp_menu(Some(agent));
+                        "/mcp opens the MCP menu"
+                    }
                     slash::Intercept::Run(action) => {
                         if !self.run_on_coordinator(Some(&agent), action) {
                             // Refused: its note says so, and the command did not run.
@@ -1314,6 +1326,7 @@ impl App {
             Action::Interrupt => self.run_with_arg(Action::Interrupt, ""),
             Action::CyclePermissionMode => self.cycle_permission_mode(),
             Action::PickModel => self.open_model_selector(None),
+            Action::ShowMcp => self.open_mcp_menu(None),
             Action::TakeOver => self.take_over(),
             Action::RegisterProject => {
                 // The open folder (ADR 0005); the core refuses any other.

@@ -1437,6 +1437,7 @@ impl Core {
             }
             Command::AnswerQuestion { item, text } => self.answer_question(item, text).await,
             Command::DismissInbox { item } => self.dismiss(item).await,
+            Command::Mcp { agent, request } => self.mcp_request(&agent, request),
             Command::CyclePermissionMode { agent } => self.cycle_mode(&agent),
             Command::SetModel {
                 agent,

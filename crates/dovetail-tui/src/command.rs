@@ -72,6 +72,7 @@ pub const COMMANDS: &[(&str, Action)] = &[
     ("mode", Action::CyclePermissionMode),
     ("perm", Action::CyclePermissionMode),
     ("model", Action::PickModel),
+    ("mcp", Action::ShowMcp),
     ("takeover", Action::TakeOver),
     ("keys", Action::ShowKeys),
     ("project", Action::SwitchProject),

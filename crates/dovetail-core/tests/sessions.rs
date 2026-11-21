@@ -66,6 +66,8 @@ struct Harness {
     lent: usize,
     /// `CommandFailed` messages, in order.
     failures: Vec<String>,
+    /// `McpReply` events, in order: what was asked and the answer.
+    mcp: Vec<(dovetail_api::McpRequest, dovetail_api::McpOutcome)>,
     _dir: TempDir,
     _run: TempDir,
 }
@@ -137,6 +139,7 @@ impl Harness {
             returned: Vec::new(),
             lent: 0,
             failures: Vec::new(),
+            mcp: Vec::new(),
             _dir: dir,
             _run: run,
         };
@@ -170,6 +173,9 @@ impl Harness {
             dovetail_api::Event::TerminalReturned { error } => self.returned.push(error.clone()),
             dovetail_api::Event::CommandFailed { message } => self.failures.push(message.clone()),
             dovetail_api::Event::LendTerminal => self.lent += 1,
+            dovetail_api::Event::McpReply {
+                request, outcome, ..
+            } => self.mcp.push((request.clone(), outcome.clone())),
             _ => {}
         }
         apply(&mut self.snap, seq, event);
@@ -607,6 +613,7 @@ impl Harness {
             returned: Vec::new(),
             lent: 0,
             failures: Vec::new(),
+            mcp: Vec::new(),
             _dir: dir,
             _run: run,
         };
@@ -4867,6 +4874,56 @@ fn a_side_chat_runs_read_only_in_dont_ask_mode_and_keeps_it() {
         .find(|a| a.name == "side-1")
         .expect("side-1");
     assert_eq!(side.permission_mode, PermissionMode::Manual);
+    h.quit();
+}
+
+/// The MCP menu (task #44): a request goes to the live session through the driver and its
+/// answer comes back as one `McpReply` carrying the request; a session that is not running
+/// refuses.
+#[test]
+fn an_mcp_request_reaches_the_session_and_its_answer_comes_back() {
+    use dovetail_api::{McpOutcome, McpRequest, McpServer, McpStatus};
+    let fake = fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![0],
+        ..ReplayOptions::default()
+    });
+    fake.set_mcp_servers(vec![McpServer {
+        name: "good".into(),
+        status: McpStatus::Connected,
+        error: None,
+        server_info: None,
+        transport: "stdio".into(),
+        target: String::new(),
+        scope: String::new(),
+        tools: Vec::new(),
+    }]);
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    let coordinator = AgentId(COORDINATOR.into());
+    prompt(&h, "hi");
+    h.wait_for("the models", |s| !s.models.is_empty());
+    let ask = |request| Command::Mcp {
+        agent: AgentId(COORDINATOR.into()),
+        request,
+    };
+    h.send(ask(McpRequest::Status));
+    h.send(ask(McpRequest::Reconnect {
+        server: "nope".into(),
+    }));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.mcp.len() < 2 {
+        assert!(Instant::now() < deadline, "no answers: {:?}", h.mcp);
+        h.drain(Duration::from_millis(20));
+    }
+    assert!(matches!(
+        &h.mcp[0],
+        (McpRequest::Status, McpOutcome::Status(servers)) if servers.len() == 1
+    ));
+    assert_eq!(
+        h.mcp[1].1,
+        McpOutcome::Failed("Server not found: nope".into())
+    );
+    assert!(fake.sent().contains(&Sent::Mcp(McpRequest::Status)));
+    let _ = coordinator;
     h.quit();
 }
 

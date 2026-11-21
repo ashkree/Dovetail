@@ -100,3 +100,15 @@ None are documented in the stream protocol notes. They are the control requests 
 - Whole OAuth round trip against a real OAuth MCP server (code returned via `mcp_oauth_callback_url` and via the local callback).
 - Whether a server that is `failed` because it needs auth ever shows `needs-auth` for non-claude.ai HTTP servers (the 401-only test server showed `failed`).
 - Poll interval for `mcp_status` while the menu is open (suggest on open, after each action, and every few seconds).
+
+## Build check: reconnect and toggle on a claude.ai connector (task #44, 2026-11-21)
+
+`spikes/mcp-headless/probe3.py` on `claude.ai Claude Docs` (a connected `claudeai-proxy` connector; no model call). Same behaviour as the local test servers:
+
+| Request | Answer / result |
+| --- | --- |
+| `mcp_reconnect` | `success`, no payload; still `connected`, 8 tools |
+| `mcp_toggle` `enabled:false` | `success`; `mcp_status` shows `disabled`, no `serverInfo`, no tools |
+| `mcp_toggle` `enabled:true` | `success`; `connected` again with 8 tools |
+
+The connector was re-enabled in a `finally` block and `mcp_status` confirmed `connected` at the end. Nothing was logged out or changed persistently. The toggle is per session: it is not written to claude.ai. `mcp_authenticate` / `mcp_clear_auth` on a connector were not tried (D28: the round trip is done with the user).

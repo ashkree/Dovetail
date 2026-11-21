@@ -349,6 +349,8 @@ pub fn preview(
                 .map(|t| task_detail::lines(snap, t, width, theme, tz))
                 .unwrap_or_default(),
         ),
+        // Previewed by the MCP menu, which holds the servers.
+        PickerKey::McpServer(_) => ("Server", Vec::new()),
         PickerKey::Command(name) => (
             "Command",
             command_preview(snap, name, width, theme).unwrap_or_default(),
@@ -846,13 +848,14 @@ mod tests {
             labels,
             vec![
                 ("/model", "◆"),
+                ("/mcp", "◆"),
                 ("/handoff", "◆"),
                 ("/fresh", "◆"),
                 ("/compact", "/")
             ]
         );
         assert!(items[0].detail.starts_with("Dovetail"));
-        assert_eq!(items[3].detail, "");
+        assert_eq!(items[4].detail, "");
     }
 
     #[test]

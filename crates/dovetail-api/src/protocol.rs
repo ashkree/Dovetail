@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::effort::{CriterionId, Effort, EffortChange, EffortId, NewEffort, WhereWasI};
 use crate::map::{Map, MapId, MapSummary};
+use crate::mcp::{McpOutcome, McpRequest};
 use crate::model::{
     ActivityItem, Agent, AgentId, AgentMessage, Alternative, Attachment, Bucket, ConversationEntry,
     Decision, DecisionId, EntryId, InboxId, InboxItem, JournalState, ModelOption, PLevel,
@@ -205,6 +206,16 @@ pub enum Event {
     /// The models the selector offers changed: config was read, or a session listed what its
     /// models accept.
     ModelsChanged(Vec<ModelOption>),
+    /// A session's answer to a [`Command::Mcp`] (task #44). Changes nothing in the snapshot; the
+    /// open MCP menu takes it in.
+    McpReply {
+        /// The session asked.
+        agent: AgentId,
+        /// What was asked, so the menu knows which action this finishes.
+        request: McpRequest,
+        /// The answer.
+        outcome: McpOutcome,
+    },
     /// A command could not be carried out; the UI shows the message.
     CommandFailed {
         /// What went wrong.
@@ -396,6 +407,15 @@ pub enum Command {
         model: String,
         /// The effort; `None` leaves it to the model's default (a model with no levels).
         effort: Option<ReasoningEffort>,
+    },
+    /// One request of the MCP menu to a session (task #44): its servers, or an action on one.
+    /// The answer is [`Event::McpReply`]; a session that is not running answers
+    /// [`Event::CommandFailed`].
+    Mcp {
+        /// The session; a subagent's is its parent's.
+        agent: AgentId,
+        /// What to ask.
+        request: McpRequest,
     },
     /// Move a session to its next permission mode.
     CyclePermissionMode {
