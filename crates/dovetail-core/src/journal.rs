@@ -12,9 +12,14 @@
 //!   as a "Handoff (fresh start HH:MM)" block, then a new coordinator session seeded as the
 //!   morning one is. The previous transcript stays on disk; no item is raised.
 //! - **A new day.** On open, when the newest journal file is from an earlier day and the
-//!   coordinator was last used before today, the coordinator gets a new Claude Code session
-//!   seeded with that file's handoff and the open tasks. Yesterday's transcript stays on disk;
-//!   no item is raised.
+//!   coordinator was last used before today, the coordinator gets a new session on its current
+//!   driver seeded with that file's handoff and the open tasks. Yesterday's transcript stays on
+//!   disk; no item is raised.
+//! - **Driver switch (`SwitchDriver`).** Moves the coordinator between drivers (`ClaudeDriver`
+//!   and `AgyDriver`) through the same `:fresh` exit-and-relaunch flow, keeping the old driver on
+//!   the row until the outgoing session exits. With `handoff: true`, if the outgoing session
+//!   cannot answer (for example, Claude Code at its usage limit), it falls back to a facts-only
+//!   seed naming the old transcript path so the new session can read it.
 
 use std::path::{Path, PathBuf};
 

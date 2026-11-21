@@ -1,13 +1,13 @@
-//! The model selector's core side (task #39, `docs/spikes/live-model-effort.md`): switching a
-//! session's model and effort live, storing the choice for its next start, and the list of
-//! models the selector offers.
+//! The model selector's core side (task #39, `docs/spikes/live-model-effort.md`, task #46):
+//! switching a session's model and effort live, storing the choice for its next start, and the
+//! per-driver list of models the selector offers.
 //!
-//! A running session switches through the driver and the agent changes only when Claude Code
+//! A running session switches through its driver and the agent changes only when the driver
 //! confirms (`DriverEvent::ModelSettings`), never optimistically. A refused switch keeps the old
 //! model and is reported; nothing restarts. Every answer names its switch, and only the answer
 //! to the session's latest request counts ([`is_current`]): a late start-up read or an earlier
 //! switch's answer never confirms another switch. One switch at a time: another is refused until
-//! the first is confirmed or refused.
+//! the first is confirmed or refused. Each driver keeps its own entry in `model_catalog`.
 
 use dovetail_api::{AgentId, AgentKind, DriverKind, Event, ModelOption, ReasoningEffort};
 use dovetail_driver::{ModelInfo, SwitchId};

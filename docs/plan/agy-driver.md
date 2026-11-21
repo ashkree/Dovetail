@@ -225,15 +225,16 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
 
 ### C6. Docs and close
 
-- [ ] `crates/dovetail-driver/ARCHITECTURE.md` (already current through C1), the core's module
+- [x] `crates/dovetail-driver/ARCHITECTURE.md` (already current through C1), the core's module
   docs, `docs/architecture.md` if it names a single driver, `GLOSSARY.md` (driver, driver
   switch, quota group), and `config/roles/coordinator.md` if the coordinator needs to know it
   can start slices on agy (keep it under ~20 lines).
 - [ ] Manual check with `scripts/dev.sh` in a scratch project: `:usage` lists Claude Code and
   agy groups with percentages and reset times; `/model` shows both groups; picking an agy model
   on the coordinator asks, and Enter starts a new coordinator on agy seeded with the handoff;
-  it answers a message and can call `core_report_status`; `:usage` still works.
-- [ ] Report `done` to the coordinator with the commits, what was reused, and the gaps.
+  it answers a message and can call `core_report_status`; `:usage` still works. (Left for
+  manual user verification.)
+- [x] Report `done` to the coordinator with the commits, what was reused, and the gaps.
 
 ## Risks and open points
 

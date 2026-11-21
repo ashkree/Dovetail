@@ -1,12 +1,16 @@
 //! Sessions: launching and resuming them, sending to them, and turning their stream into the
-//! API's events (plan §4's table). The stream rules of digest §3 are law here:
+//! API's events (plan §4's table). Each session runs through its [`DriverKind`] entry in
+//! [`crate::Drivers`] (`ClaudeDriver` or `AgyDriver`), while the stream rules of digest §3
+//! remain law here:
 //!
 //! - a subagent's events carry `parent_tool_use_id` and are routed by it to its tree node
 //!   ([`subagent`]), never into the parent's conversation;
 //! - a `result` ends a turn, not the session: a finished-turn item is raised only when no
 //!   background tasks remain;
 //! - permission requests become inbox items at once and are answered in any order;
-//! - session ids and transcript paths are recorded by Dovetail itself.
+//! - session ids and transcript paths are recorded by Dovetail itself (Claude Code confirms the
+//!   id Dovetail picked on each per-turn `Init`; `agy` picks its own conversation id on its single
+//!   open-time `Init`, which `on_init` stores without marking a turn running).
 
 pub mod launch;
 pub(crate) mod model;

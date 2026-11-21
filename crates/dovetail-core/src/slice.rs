@@ -1,11 +1,13 @@
 //! Slices (M8, ADR 0004, ADR 0005): starting them in hook-created worktrees, the ready or
 //! setup-failed signal, the `max_slices` queue, and archiving with cleanup.
 //!
-//! **Start.** A slice in a git project launches in the main checkout with `--worktree <name>`;
-//! the `WorktreeCreate` hook creates the worktree and runs the recipe's setup, then records its
-//! outcome (`worktree::HookOutcome`). The core holds the brief until that outcome says the
-//! worktree is ready, so a failed setup never gets a first prompt. In a folder without git the
-//! slice runs in the shared folder, and its first prompt says so.
+//! **Start.** A Claude Code slice in a git project launches in the repo checkout with
+//! `--worktree <name>`; the `WorktreeCreate` hook creates the worktree and runs the recipe's
+//! setup, then records its outcome (`worktree::HookOutcome`). The core holds the brief until that
+//! outcome says the worktree is ready, so a failed setup never gets a first prompt. An `agy`
+//! slice has no `--worktree` flag, so the core runs `worktree::create` on a blocking task first
+//! and launches `agy` directly in the created worktree. In a folder without git the slice runs
+//! in the shared folder, and its first prompt says so.
 //!
 //! **Archive.** The session is stopped first. Then the worktree is inspected: clean and pushed
 //! work is removed at once (our symlinks, `git worktree remove`, the `dovetail/*` branch);

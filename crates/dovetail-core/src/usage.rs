@@ -1,10 +1,14 @@
-//! Usage limits and the model in use (task #16).
+//! Usage limits and the model in use (task #16, task #46).
 //!
-//! Every turn's `rate_limit_event` carries a 5-hour and a weekly window, parsed by the driver.
-//! Limits are per account, so the core keeps the latest per Claude home (profile, ADR 0009) and
-//! shows the project's. Here the driver's
-//! windows become the API's: reset times in milliseconds, the status word as [`UsageStatus`].
-//! The model comes from `system/init` and main-thread assistant messages.
+//! Every Claude turn's `rate_limit_event` carries a 5-hour and a weekly window, parsed by the
+//! driver. Limits are per account, so the core keeps the latest per Claude home (profile,
+//! ADR 0009) and shows the project's. Here the driver's windows become the API's: reset times in
+//! milliseconds, the status word as [`UsageStatus`]. The model comes from `system/init` and
+//! main-thread assistant messages.
+//!
+//! For the `:usage` menu, [`Core::load_usage`] (`Command::LoadUsage`) probes every registered
+//! driver in [`crate::Drivers`] concurrently via `SessionDriver::usage` and emits
+//! [`Event::UsageLoaded`] in [`DriverKind::ALL`] order.
 
 use std::path::PathBuf;
 

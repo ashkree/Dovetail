@@ -1,6 +1,7 @@
 //! Dovetail's core: sessions, storage, worktrees and the MCP tool handlers.
 //!
-//! The core hands the UI the same [`dovetail_api::CoreLink`] that `MockCore` does.
+//! The core hands the UI the same [`dovetail_api::CoreLink`] that `MockCore` does, and launches
+//! sessions through the registered [`Drivers`] (`ClaudeDriver`, `AgyDriver`, or fakes in tests).
 
 mod ask;
 mod attachments;

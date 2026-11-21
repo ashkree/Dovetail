@@ -1,4 +1,5 @@
-//! The set of [`SessionDriver`] implementations available to the core, keyed by [`DriverKind`].
+//! The set of [`SessionDriver`] implementations available to the core (`ClaudeDriver`,
+//! `AgyDriver`, or fakes in tests), keyed by [`DriverKind`].
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
