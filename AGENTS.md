@@ -75,7 +75,7 @@ Which skill when:
 
 ## Architecture rules (non-negotiable)
 
-- Crates: plain-data API (snapshot, events, commands, `apply()`), core, mock core, driver, maps, TUI, and the `dovetail` binary; the page's frontend joins them when it is built. Core and clients talk only by message-passing: `Snapshot` then deltas out, `Command`s in.
+- Crates: plain-data API (`dovetail-api`: snapshot, events, commands, `apply()`), tools (`dovetail-tools`: MCP tool catalogue and unix-socket RPC between agents and core), core, mock core, driver, maps, TUI, and the `dovetail` binary; the page's frontend joins them when it is built. `dovetail-tui` must not depend on `dovetail-tools`. Core and clients talk only by message-passing: `Snapshot` then deltas out, `Command`s in.
 - Claude Code sits behind the `SessionDriver` trait; protocol JSON is parsed in `dovetail-driver`. The stream rules (digest §3–§6) are law.
 - Keys and `:` commands resolve to one `Action` enum through one keymap table. Storage goes through one DB thread. MCP tool handlers live in the core.
 

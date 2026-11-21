@@ -1,6 +1,6 @@
 `dovetail-api`: the plain-data protocol between the Dovetail core and its clients.
 
-Everything that crosses between the core and a client — the [`Snapshot`], [`Command`]s, [`Event`]s, and the [`apply`] reducer that folds events into a snapshot — lives here as plain Rust data. The crate has no I/O, no threads, and no async runtime (only `serde`, `serde_json`, and `std::sync::mpsc` in [`CoreLink`]).
+Everything that crosses between the core and a client — the [`Snapshot`], [`Command`]s, [`Event`]s, and the [`apply`] reducer that folds events into a snapshot — lives here as plain Rust data. The crate has no I/O, no threads, and no async runtime (only `serde`, `serde_json`, and `std::sync::mpsc` in [`CoreLink`]). Agent-to-core MCP tools and unix-socket RPC messages live separately in `dovetail-tools`.
 
 # The two directions
 
@@ -27,14 +27,9 @@ src/
     command.rs    <Feature>Command and command-only payload types
     event.rs      <Feature>Event and event-only payload types
     apply.rs      pub(crate) fn apply(state: &mut Snapshot, event: <Feature>Event)
-  tools.rs        MCP tool catalogue and input validation (temporary: moves to
-                  dovetail-tools in task #55)
-  socket.rs       agent-to-core unix-socket messages (temporary: moves to
-                  dovetail-tools in task #55)
 tests/
   features/       one integration test binary: main.rs, common.rs, coverage.rs, and
                   one <feature>.rs per feature
-  tools.rs        MCP tool tests (moves with tools.rs in task #55)
 ```
 
 Not every feature folder needs all four files:

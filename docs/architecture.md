@@ -43,7 +43,7 @@ Every claim links to the file that proves it. Read the keywords first; the rest 
 ```
  ┌──────────────────────────── one process: `dovetail` ────────────────────────────┐
  │                                                                                 │
- │   dovetail-tui  (terminal UI)                                                   │
+ │   dovetail-tui  (terminal UI; api only, never dovetail-tools)                   │
  │        │  ▲                                                                     │
  │ Command│  │ Snapshot, then Event(seq)          = CoreLink (two channels)        │
  │        ▼  │                                                                     │
@@ -52,7 +52,7 @@ Every claim links to the file that proves it. Read the keywords first; the rest 
  │        │ requests  │ start / send     │ git, gh,           │ tool calls,        │
  │        ▼           ▼                  ▼ worktrees          │ `dovetail add`     │
  │   DB thread    dovetail-driver    blocking tasks        unix socket             │
- │   (SQLite)         │                                       ▲                    │
+ │   (SQLite)         │                                       ▲ (dovetail-tools)   │
  └────────────────────┼───────────────────────────────────────┼────────────────────┘
                       │ stdin / stdout, one JSON per line     │
                       ▼                                       │
@@ -62,18 +62,20 @@ Every claim links to the file that proves it. Read the keywords first; the rest 
 
 | Crate | Job | Knows about |
 | --- | --- | --- |
-| [`dovetail-api`](../crates/dovetail-api/src/lib.rs) | The vocabulary: `Snapshot`, `Event`, `Command`, `apply()`, the tool list, the socket messages. Data only, no behaviour beyond `apply`. | nothing else |
+| [`dovetail-api`](../crates/dovetail-api/src/lib.rs) | The vocabulary between core and UI: `Snapshot`, `Event`, `Command`, `apply()`. Data only, no behaviour beyond `apply`. | nothing else |
+| [`dovetail-tools`](../crates/dovetail-tools/src/lib.rs) | The agent-to-core vocabulary: the MCP tool catalogue, role/suite gating, input validation, and unix-socket messages. Data and validation only. | api |
 | [`dovetail-driver`](../crates/dovetail-driver/src/lib.rs) | Starts `claude`, turns each printed line into a typed `DriverEvent`, writes lines back. A fake driver replays recorded streams for tests. | api |
-| [`dovetail-core`](../crates/dovetail-core/src/lib.rs) | The loop, the database, sessions, inbox, slices, worktrees, tool handlers. | api, driver |
+| [`dovetail-core`](../crates/dovetail-core/src/lib.rs) | The loop, the database, sessions, inbox, slices, worktrees, tool handlers. | api, tools, driver, maps |
 | [`dovetail-mock`](../crates/dovetail-mock/src/lib.rs) | A pretend core with scripted data. Hands out the same `CoreLink`, so the UI cannot tell. | api |
-| [`dovetail-tui`](../crates/dovetail-tui/src/lib.rs) | The terminal UI. Keeps its own snapshot, draws it, sends commands. | api only |
+| [`dovetail-tui`](../crates/dovetail-tui/src/lib.rs) | The terminal UI. Keeps its own snapshot, draws it, sends commands. Must not depend on `dovetail-tools`. | api only |
 | [`dovetail-maps`](../crates/dovetail-maps/src/lib.rs) | Checks and draws structure maps. | api |
 | [`dovetail`](../crates/dovetail/src/main.rs) | The binary. With no subcommand it wires core and TUI together. Subcommands: `mcp` (bridge), `hook` (worktree), `add`, `login`, `upgrade`. | all |
 
-Two rules hold the design together:
+Three rules hold the design together:
 
 1. **The UI and the core never share memory.** They exchange plain values over `CoreLink`. That is why a mock core, and later the page, can stand in without the other side changing.
-2. **One loop changes state.** Slow work (git, the clipboard, a build) runs elsewhere and comes back to the loop as an `Input`. So two things never change the same state at once, and there are no locks to get wrong.
+2. **The UI never depends on `dovetail-tools`.** `dovetail-tui` (and `dovetail-mock`) depend only on `dovetail-api`, keeping agent tool schemas and unix-socket RPC out of client code.
+3. **One loop changes state.** Slow work (git, the clipboard, a build) runs elsewhere and comes back to the loop as an `Input`. So two things never change the same state at once, and there are no locks to get wrong.
 
 **Example.** The TUI never reads `state.db`. To show tasks it reads `snapshot.tasks`; to add one it sends `Command::CreateTask`; the new task arrives as `Event::TaskUpserted`. `scripts/check.sh` fails the build if the TUI writes a file or starts a process.
 
@@ -126,7 +128,7 @@ These look alike to the user but take different roads.
 ```
 
 1. At launch the core writes an `mcp.json` for the session that names `dovetail mcp` and passes it the agent's id and the socket path ([`session/launch.rs`](../crates/dovetail-core/src/session/launch.rs)). Nothing is written into your repo.
-2. When Claude calls `mcp__dovetail__core_report_status`, the bridge checks the arguments and sends `SocketRequestBody::ToolCall { agent, call }` over the socket ([`mcp.rs`](../crates/dovetail/src/mcp.rs), [`socket.rs`](../crates/dovetail-api/src/socket.rs)).
+2. When Claude calls `mcp__dovetail__core_report_status`, the bridge checks the arguments and sends `SocketRequestBody::ToolCall { agent, call, .. }` over the socket ([`mcp.rs`](../crates/dovetail/src/mcp.rs), [`socket.rs`](../crates/dovetail-tools/src/socket.rs)).
 3. The socket server turns it into `Input::Tool`; the loop calls `Core::tool` ([`tools.rs`](../crates/dovetail-core/src/tools.rs)), which checks the agent's role and tool suites, does the work, and replies.
 
 **Example.** A slice calls `core_report_status("writing tests")`. `Core::tool` sets `agent.status_line`, emits `Event::AgentUpserted`, and answers "Status set." The tree shows the new line.
