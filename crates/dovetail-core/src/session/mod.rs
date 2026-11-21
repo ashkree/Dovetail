@@ -18,8 +18,8 @@ use std::path::PathBuf;
 
 use dovetail_api::tools::Role;
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, AgentStatus, Attachment, EntryKind, Event, InboxKind,
-    MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, RunningTool, Warning, WarningId,
+    ActivityKind, AgentId, AgentKind, AgentStatus, Attachment, DriverKind, EntryKind, Event,
+    InboxKind, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, RunningTool, Warning, WarningId,
 };
 use dovetail_driver::{
     ContentBlock, DriverEvent, ExitInfo, ImageInput, InitInfo, PeerMessage, Session, TurnResult,
@@ -134,11 +134,17 @@ impl Core {
         let role = self
             .role_of(id)
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
-        let home = self.claude.clone()?;
         let row = self
             .agents
             .get(id)
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
+        let driver = row.agent.driver;
+        let claude_config_dir = if driver == DriverKind::Claude {
+            let home = self.claude.clone()?;
+            home.explicit.then_some(home.dir)
+        } else {
+            None
+        };
         let env = if row.agent.kind == AgentKind::Slice {
             let place = self.session_cwd(&row.agent);
             let repo = self.repo_of(id);
@@ -185,9 +191,10 @@ impl Core {
             model,
             effort,
             env,
-            claude_config_dir: home.explicit.then(|| home.dir.clone()),
+            claude_config_dir,
         };
-        let mut spec = launch::spec(&self.paths, &launch).map_err(SessionError::LaunchFiles)?;
+        let mut spec =
+            launch::spec(&self.paths, &launch, driver).map_err(SessionError::LaunchFiles)?;
         let unit = crate::memory::unit_name(self.project.key(), &id.0);
         spec.systemd_scope = self
             .scopes
@@ -202,6 +209,9 @@ impl Core {
         let Some(row) = self.agents.get(id) else {
             return false;
         };
+        if row.agent.driver != DriverKind::Claude {
+            return false;
+        }
         let (Some(recorded), Some(session)) = (&row.transcript_path, &row.session_id) else {
             return false;
         };
@@ -228,63 +238,88 @@ impl Core {
         worktree: Option<String>,
     ) -> Result<(), SessionError> {
         self.check_lock(id)?;
-        let home = self.claude.clone()?;
+        let driver = self
+            .agents
+            .get(id)
+            .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?
+            .agent
+            .driver;
+        let driver_impl = self
+            .options
+            .drivers
+            .get(driver)
+            .cloned()
+            .ok_or(SessionError::NoDriver(driver))?;
         // The coordinator's own folder exists before its first start (ADR 0021 point 3).
         if cwd == self.project.coordinator_folder(&self.paths)
             && let Err(e) = std::fs::create_dir_all(&cwd)
         {
             tracing::warn!("creating {}: {e}", cwd.display());
         }
-        // Only sessions in the coordinator's folder moved (ADR 0021); a slice's never does, and
-        // is never started fresh on a guess about its path.
-        let elsewhere =
-            cwd == self.project.coordinator_folder(&self.paths) && self.filed_elsewhere(id, &cwd);
-        let Some(row) = self.agents.get_mut(id) else {
-            return Err(SessionError::NoAgent(id.0.clone()));
+        let (row, session_id, resume) = if driver == DriverKind::Claude {
+            let home = self.claude.clone()?;
+            // Only sessions in the coordinator's folder moved (ADR 0021); a slice's never does,
+            // and is never started fresh on a guess about its path.
+            let elsewhere = cwd == self.project.coordinator_folder(&self.paths)
+                && self.filed_elsewhere(id, &cwd);
+            let Some(row) = self.agents.get_mut(id) else {
+                return Err(SessionError::NoAgent(id.0.clone()));
+            };
+            // A session is resumed only under the Claude home it was recorded with: its transcript
+            // lives there, and another account must not take it over (ADR 0009). Recorded under
+            // another profile, it starts fresh.
+            let recorded = row
+                .claude_home
+                .clone()
+                .unwrap_or_else(crate::profile::default_dir);
+            let moved =
+                row.transcript_path.is_some() && !crate::profile::same_dir(&recorded, &home.dir);
+            // Claude Code files a transcript by working folder and resumes it only from there: a
+            // session recorded in another folder (a coordinator from before ADR 0021) starts fresh.
+            let elsewhere = elsewhere && !moved;
+            if moved || elsewhere {
+                row.session_id = Some(uuid::Uuid::new_v4().to_string());
+                row.transcript_path = None;
+            }
+            row.claude_home = Some(home.dir.clone());
+            let session_id = row
+                .session_id
+                .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
+                .clone();
+            let resume = row.transcript_path.is_some();
+            let row = row.clone();
+            if elsewhere {
+                self.notice(
+                    id,
+                    format!(
+                        "Started a fresh session in {}: the last one ran in another folder, and \
+                         Claude Code resumes a session only from its own folder",
+                        cwd.display()
+                    ),
+                );
+            }
+            if moved {
+                self.notice(
+                    id,
+                    format!(
+                        "Started a fresh session under Claude profile {}: the last one was \
+                         recorded under another profile and is not resumed",
+                        home.label()
+                    ),
+                );
+            }
+            (row, session_id, resume)
+        } else {
+            let Some(row) = self.agents.get_mut(id) else {
+                return Err(SessionError::NoAgent(id.0.clone()));
+            };
+            let session_id = row
+                .session_id
+                .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
+                .clone();
+            let resume = row.transcript_path.is_some();
+            (row.clone(), session_id, resume)
         };
-        // A session is resumed only under the Claude home it was recorded with: its transcript
-        // lives there, and another account must not take it over (ADR 0009). Recorded under
-        // another profile, it starts fresh.
-        let recorded = row
-            .claude_home
-            .clone()
-            .unwrap_or_else(crate::profile::default_dir);
-        let moved =
-            row.transcript_path.is_some() && !crate::profile::same_dir(&recorded, &home.dir);
-        // Claude Code files a transcript by working folder and resumes it only from there: a
-        // session recorded in another folder (a coordinator from before ADR 0021) starts fresh.
-        let elsewhere = elsewhere && !moved;
-        if moved || elsewhere {
-            row.session_id = Some(uuid::Uuid::new_v4().to_string());
-            row.transcript_path = None;
-        }
-        row.claude_home = Some(home.dir.clone());
-        let session_id = row
-            .session_id
-            .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
-            .clone();
-        let resume = row.transcript_path.is_some();
-        let row = row.clone();
-        if elsewhere {
-            self.notice(
-                id,
-                format!(
-                    "Started a fresh session in {}: the last one ran in another folder, and \
-                     Claude Code resumes a session only from its own folder",
-                    cwd.display()
-                ),
-            );
-        }
-        if moved {
-            self.notice(
-                id,
-                format!(
-                    "Started a fresh session under Claude profile {}: the last one was recorded \
-                     under another profile and is not resumed",
-                    home.label()
-                ),
-            );
-        }
         let spec = self.session_spec(id, cwd, worktree, session_id, resume)?;
         let unit = crate::memory::unit_name(self.project.key(), &id.0);
         let cgroup = self.scopes.cgroup(&unit);
@@ -293,15 +328,13 @@ impl Core {
         {
             crate::memory::clear_stale_scope(cgroup, &unit);
         }
-        tracing::info!(agent = %id.0, resume, capped = cgroup.is_some(), "starting session");
-        let mut session =
-            self.options
-                .driver
-                .start(spec)
-                .map_err(|source| SessionError::Driver {
-                    name: row.agent.name.clone(),
-                    source,
-                })?;
+        tracing::info!(agent = %id.0, driver = driver.as_str(), resume, capped = cgroup.is_some(), "starting session");
+        let mut session = driver_impl
+            .start(spec)
+            .map_err(|source| SessionError::Driver {
+                name: row.agent.name.clone(),
+                source,
+            })?;
         let mut events = session.take_events();
         let pid = session.pid();
         self.generation += 1;
@@ -852,11 +885,18 @@ impl Core {
     }
 
     fn on_init(&mut self, agent: &AgentId, init: InitInfo) {
+        let driver = self
+            .agents
+            .get(agent)
+            .map_or(DriverKind::Claude, |r| r.agent.driver);
         let Some(live) = self.live.get_mut(agent) else {
             return;
         };
         // Claude Code sends an init at the start of every turn, including one it starts itself.
-        live.turn.running = true;
+        // agy sends Init once when the session opens, before any prompt.
+        if driver == DriverKind::Claude {
+            live.turn.running = true;
+        }
         let first = !live.inited;
         live.inited = true;
         let setting_up = live.setting_up;
@@ -870,28 +910,51 @@ impl Core {
                     |r| self.session_cwd(&r.agent),
                 )
             });
-            let session_id = self
-                .agents
-                .get(agent)
-                .and_then(|r| r.session_id.clone())
-                .unwrap_or_else(|| init.session_id.clone());
-            if session_id != init.session_id {
-                tracing::warn!(agent = %agent.0, ours = %session_id, theirs = %init.session_id, "session id differs");
-            }
-            let transcript = launch::transcript_path(&self.home_of(agent), &cwd, &session_id);
+            let (new_session_id, transcript) = match driver {
+                DriverKind::Claude => {
+                    let session_id = self
+                        .agents
+                        .get(agent)
+                        .and_then(|r| r.session_id.clone())
+                        .unwrap_or_else(|| init.session_id.clone());
+                    if session_id != init.session_id {
+                        tracing::warn!(
+                            agent = %agent.0,
+                            ours = %session_id,
+                            theirs = %init.session_id,
+                            "session id differs"
+                        );
+                    }
+                    let transcript =
+                        launch::transcript_path(&self.home_of(agent), &cwd, &session_id);
+                    (None, transcript)
+                }
+                DriverKind::Agy => {
+                    // Stream rule 4: agy picks its own conversation id; store it from Init.
+                    let id = (!init.session_id.is_empty()).then(|| init.session_id.clone());
+                    let transcript = launch::agy_transcript_path(&init.session_id);
+                    (id, transcript)
+                }
+            };
             let mode = init.permission_mode.as_deref().and_then(state::from_cli);
             let mut warn = None;
             self.update_agent(agent, |row| {
+                if let Some(id) = new_session_id {
+                    row.session_id = Some(id);
+                }
                 row.transcript_path = Some(transcript);
                 // Decision 15: if init reports anything but auto when auto was asked, run as
                 // manual and say so.
                 // A side chat runs in `dontAsk` on purpose (launch): manual, with no warning.
+                // agy opens in `default` before `session/set_mode` switches it to `auto`, so skip
+                // the downgrade check for agy.
                 if matches!(
                     row.agent.kind,
                     AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent
                 ) {
                     row.agent.permission_mode = dovetail_api::PermissionMode::Manual;
-                } else if row.agent.permission_mode == dovetail_api::PermissionMode::Auto
+                } else if driver == DriverKind::Claude
+                    && row.agent.permission_mode == dovetail_api::PermissionMode::Auto
                     && mode != Some(dovetail_api::PermissionMode::Auto)
                 {
                     warn = Some(format!(

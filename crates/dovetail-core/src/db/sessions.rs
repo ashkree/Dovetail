@@ -4,9 +4,9 @@
 use std::path::PathBuf;
 
 use dovetail_api::{
-    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry, EntryId,
-    InboxId, InboxItem, InboxKind, ReasoningEffort, SessionLock, SubagentProgress, TaskId,
-    WorktreeRef,
+    ActivityItem, Agent, AgentId, AgentKind, AgentMessage, Attachment, ConversationEntry,
+    DriverKind, EntryId, InboxId, InboxItem, InboxKind, ReasoningEffort, SessionLock,
+    SubagentProgress, TaskId, WorktreeRef,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -131,15 +131,15 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
         "INSERT INTO agents (id, kind, name, parent_id, task_id, session_id, transcript_path, \
          task_list_id, worktree_path, branch, status, status_line, permission_mode, cost_usd, \
          created_ms, last_activity_ms, tool_use_id, output_file, progress, subagent_tokens, \
-         claude_home, takeover, chosen_model, chosen_effort, repo_id) \
+         claude_home, takeover, chosen_model, chosen_effort, repo_id, driver) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25) \
+         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26) \
          ON CONFLICT(id) DO UPDATE SET kind = ?2, name = ?3, parent_id = ?4, task_id = ?5, \
          session_id = ?6, transcript_path = ?7, task_list_id = ?8, worktree_path = ?9, \
          branch = ?10, status = ?11, status_line = ?12, permission_mode = ?13, cost_usd = ?14, \
          last_activity_ms = ?16, tool_use_id = ?17, output_file = ?18, progress = ?19, \
          subagent_tokens = ?20, claude_home = ?21, takeover = ?22, chosen_model = ?23, \
-         chosen_effort = ?24, repo_id = ?25, closed_ms = NULL",
+         chosen_effort = ?24, repo_id = ?25, driver = ?26, closed_ms = NULL",
         params![
             a.id.0,
             kind_to_text(a.kind),
@@ -174,6 +174,7 @@ pub(super) fn upsert_agent(conn: &mut Connection, row: &AgentRow) -> Result<(), 
                 .and_then(|c| c.effort)
                 .map(ReasoningEffort::as_str),
             row.repo.map(|r| r.0),
+            a.driver.as_str(),
         ],
     )?;
     Ok(())
@@ -184,7 +185,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
         "SELECT id, kind, name, parent_id, task_id, session_id, transcript_path, task_list_id, \
          worktree_path, branch, status, status_line, permission_mode, cost_usd, created_ms, \
          last_activity_ms, tool_use_id, progress, subagent_tokens, claude_home, takeover, \
-         chosen_model, chosen_effort, repo_id FROM agents \
+         chosen_model, chosen_effort, repo_id, driver FROM agents \
          WHERE closed_ms IS NULL \
          ORDER BY created_ms, id",
     )?;
@@ -219,6 +220,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 r.get::<_, Option<String>>(21)?,
                 r.get::<_, Option<String>>(22)?,
                 r.get::<_, Option<i64>>(23)?,
+                r.get::<_, String>(24)?,
             ),
         ))
     })?;
@@ -241,8 +243,10 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             created,
             last,
             (tool_use_id, progress, subagent_tokens, claude_home, takeover),
-            (chosen_model, chosen_effort, repo),
+            (chosen_model, chosen_effort, repo, driver),
         ) = row?;
+        let driver = DriverKind::parse(&driver)
+            .ok_or_else(|| DbError::Corrupt(format!("driver {driver:?}")))?;
         let chosen_effort = chosen_effort
             .map(|e| {
                 ReasoningEffort::parse(&e).ok_or_else(|| DbError::Corrupt(format!("effort {e:?}")))
@@ -296,7 +300,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
                 effort: None,
                 subagent_tokens: u64::try_from(subagent_tokens).unwrap_or(0),
                 tool: None,
-                driver: dovetail_api::DriverKind::Claude,
+                driver,
             },
             session_id,
             transcript_path: transcript.map(PathBuf::from),
@@ -547,6 +551,8 @@ pub struct QueuedSlice {
     pub repo: Option<String>,
     /// The model and effort the coordinator asked for (task #42); `None` for the default.
     pub model_choice: Option<ModelChoice>,
+    /// The CLI driver the slice runs on (task #46).
+    pub driver: DriverKind,
 }
 
 pub(super) fn enqueue_slice(
@@ -556,8 +562,8 @@ pub(super) fn enqueue_slice(
 ) -> Result<i64, DbError> {
     let model_choice = slice.model_choice.as_ref();
     conn.execute(
-        "INSERT INTO slice_queue (task_id, name, brief, by_coordinator, created_ms, repo, model, effort) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO slice_queue (task_id, name, brief, by_coordinator, created_ms, repo, model, effort, driver) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             slice.task.map(|t| t.0),
             slice.name,
@@ -567,6 +573,7 @@ pub(super) fn enqueue_slice(
             slice.repo,
             model_choice.map(|c| c.model.as_str()),
             model_choice.and_then(|c| c.effort).map(ReasoningEffort::as_str),
+            slice.driver.as_str(),
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -579,7 +586,7 @@ pub(super) fn dequeue_slice(conn: &mut Connection, id: i64) -> Result<(), DbErro
 
 pub(super) fn load_queue(conn: &mut Connection) -> Result<Vec<QueuedSlice>, DbError> {
     let mut stmt = conn.prepare(
-        "SELECT id, task_id, name, brief, by_coordinator, repo, model, effort \
+        "SELECT id, task_id, name, brief, by_coordinator, repo, model, effort, driver \
          FROM slice_queue ORDER BY id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -592,19 +599,23 @@ pub(super) fn load_queue(conn: &mut Connection) -> Result<Vec<QueuedSlice>, DbEr
                 by_coordinator: r.get(4)?,
                 repo: r.get(5)?,
                 model_choice: None,
+                driver: DriverKind::Claude,
             },
             r.get::<_, Option<String>>(6)?,
             r.get::<_, Option<String>>(7)?,
+            r.get::<_, String>(8)?,
         ))
     })?;
     rows.map(|row| {
-        let (mut slice, model, effort) = row?;
+        let (mut slice, model, effort, driver) = row?;
         let effort = effort
             .map(|e| {
                 ReasoningEffort::parse(&e).ok_or_else(|| DbError::Corrupt(format!("effort {e:?}")))
             })
             .transpose()?;
         slice.model_choice = model.map(|model| ModelChoice { model, effort });
+        slice.driver = DriverKind::parse(&driver)
+            .ok_or_else(|| DbError::Corrupt(format!("driver {driver:?}")))?;
         Ok(slice)
     })
     .collect()

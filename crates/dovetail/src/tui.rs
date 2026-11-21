@@ -9,8 +9,8 @@ use dovetail_core::db::Db;
 use dovetail_core::paths::Paths;
 use dovetail_core::service::UpgradeOptions;
 use dovetail_core::upgrade;
-use dovetail_core::{CoreOptions, projects};
-use dovetail_driver::ClaudeDriver;
+use dovetail_core::{CoreOptions, Drivers, projects};
+use dovetail_driver::{AgyDriver, ClaudeDriver};
 use dovetail_mock::{MockConfig, spawn};
 use dovetail_tui::{App, Clock};
 use jiff::tz::TimeZone;
@@ -58,8 +58,11 @@ pub fn run_real(project: Option<&str>) -> Result<()> {
         .claude
         .clone()
         .map_or_else(|| "claude".into(), |p| p.into_os_string());
+    let mut drivers = Drivers::new();
+    drivers.insert(Arc::new(ClaudeDriver::with_program(program.clone())));
+    drivers.insert(Arc::new(AgyDriver::new()));
     let options = CoreOptions {
-        driver: Arc::new(ClaudeDriver::with_program(program.clone())),
+        drivers,
         exe: std::env::current_exe().context("finding the dovetail binary")?,
         tasks_dir: None,
         editor: None,

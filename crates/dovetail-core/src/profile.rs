@@ -80,9 +80,7 @@ pub fn default_dir() -> PathBuf {
 }
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default()
+    crate::paths::home_dir()
 }
 
 /// Expands a leading `~/` (or a lone `~`) to `$HOME`.

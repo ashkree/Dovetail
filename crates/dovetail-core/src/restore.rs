@@ -297,8 +297,15 @@ impl Core {
             .agents
             .get(&coordinator)
             .is_some_and(|r| r.transcript_path.is_some());
+        let coord_driver = self
+            .agents
+            .get(&coordinator)
+            .map_or(dovetail_api::DriverKind::Claude, |r| r.agent.driver);
         // One still taken over waits: Needs you says why.
-        if has_run && self.claude.is_ok() && !self.locked(&coordinator) {
+        if has_run
+            && (coord_driver == dovetail_api::DriverKind::Agy || self.claude.is_ok())
+            && !self.locked(&coordinator)
+        {
             self.start_coordinator(last_used).await;
         }
     }
@@ -316,7 +323,8 @@ impl Core {
             }
         };
         let moved = |r: &crate::db::AgentRow| {
-            r.agent.kind.is_session()
+            r.agent.driver == dovetail_api::DriverKind::Claude
+                && r.agent.kind.is_session()
                 && r.transcript_path.is_some()
                 && !crate::profile::same_dir(
                     &r.claude_home

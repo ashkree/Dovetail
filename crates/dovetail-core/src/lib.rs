@@ -13,6 +13,7 @@ mod context;
 pub mod db;
 mod design;
 mod docs;
+pub mod drivers;
 pub mod editor;
 mod efforts;
 pub mod error;
@@ -49,5 +50,6 @@ mod usage;
 pub mod worktree;
 mod worktree_info;
 
+pub use drivers::Drivers;
 pub use service::{COORDINATOR, CoreError, CoreOptions, spawn};
 pub use shutdown::CoreHandle;

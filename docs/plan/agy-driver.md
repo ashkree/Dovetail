@@ -118,17 +118,17 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
 
 ### C3. Core: a driver per session (`crates/dovetail-core`)
 
-- [ ] **Drivers set.** Replace `CoreOptions.driver: Arc<dyn SessionDriver>`
+- [x] **Drivers set.** Replace `CoreOptions.driver: Arc<dyn SessionDriver>`
   (`src/service.rs`) with `drivers: Drivers`, a small type in a new `src/drivers.rs`: a
   `BTreeMap<DriverKind, Arc<dyn SessionDriver>>` with `get(kind) -> Option<&Arc<..>>` and
   `Drivers::single(driver)` for tests. The binary (`crates/dovetail/src/tui.rs`) registers
   `ClaudeDriver::with_program(..)` and `AgyDriver::new()`. Update every test that builds
   `CoreOptions` (grep `driver: Arc::new(`).
-- [ ] **Store the driver.** Migration `0023_agent_driver.sql`:
+- [x] **Store the driver.** Migration `0023_agent_driver.sql`:
   `ALTER TABLE agents ADD COLUMN driver TEXT NOT NULL DEFAULT 'claude';` plus `AgentRow.driver`
   read and written in `src/db/sessions.rs` (use `DriverKind::as_str`/`parse`). Also add it to
   the slice queue if a queued slice can be on agy (`0022_slice_queue_model.sql` shows the shape).
-- [ ] **Launch split.** Move `src/session/launch.rs` to `src/session/launch/mod.rs` (the shared
+- [x] **Launch split.** Move `src/session/launch.rs` to `src/session/launch/mod.rs` (the shared
   `Launch`, the bridge env, `allowed_tools`) with `launch/claude.rs` (today's `spec()` body:
   `settings.json`, `mcp.json`, `ClaudeOptions`) and `launch/agy.rs`:
   - the per-session settings folder `paths.run_dir(project, agent).join("agy")` holding
@@ -141,7 +141,7 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
   - side chats: `PermissionMode::DontAsk` (the agy driver then denies anything not allowed);
   - no `CLAUDE_CONFIG_DIR`, no worktree flag.
   `launch::spec(paths, launch, driver)` picks the module.
-- [ ] **Starting.** In `Core::launch` (`src/session/mod.rs`, the `self.options.driver.start(spec)`
+- [x] **Starting.** In `Core::launch` (`src/session/mod.rs`, the `self.options.driver.start(spec)`
   call) start on `self.options.drivers.get(row.driver)`. For agy:
   - the Claude-home checks (`claude_home`, the "moved" profile check) do not apply;
   - resume: Claude resumes when `transcript_path` is set. agy has no transcript file Dovetail

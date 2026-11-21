@@ -175,6 +175,7 @@ impl Core {
                 by_coordinator: request.by_coordinator,
                 repo: request.repo,
                 model_choice: request.model_choice,
+                driver: dovetail_api::DriverKind::Claude,
             };
             queued.id = self.db.enqueue_slice(queued.clone()).await?;
             self.queue.push_back(queued);

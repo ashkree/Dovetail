@@ -23,7 +23,7 @@ use dovetail_api::{
     PROTOCOL_VERSION, PermissionMode, ServerMsg, SessionLock, Snapshot, Task, TaskChange, TaskId,
     TaskStatus, Totals, UsageLimits, Warning, WarningId,
 };
-use dovetail_driver::{DriverEvent, SessionDriver};
+use dovetail_driver::DriverEvent;
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
 
 use crate::config::Config;
@@ -61,8 +61,8 @@ const MAX_SEEN_MESSAGES: usize = 4096;
 /// What the core needs from the binary.
 #[derive(Clone)]
 pub struct CoreOptions {
-    /// Starts sessions: `ClaudeDriver` in the app, `FakeDriver` in tests.
-    pub driver: Arc<dyn SessionDriver>,
+    /// Available session drivers (`ClaudeDriver` and `AgyDriver` in the app, fakes in tests).
+    pub drivers: crate::Drivers,
     /// The `dovetail` binary, for the worktree hook and the MCP bridge in launch settings.
     pub exe: PathBuf,
     /// Where Claude Code keeps native to-do lists; `None` for `tasks/` in each session's Claude

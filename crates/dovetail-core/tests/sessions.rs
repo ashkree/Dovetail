@@ -24,7 +24,7 @@ use dovetail_core::config::Config;
 use dovetail_core::memory::Scopes;
 use dovetail_core::paths::Paths;
 use dovetail_core::projects::{Candidate, Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions};
+use dovetail_core::{CoreHandle, CoreOptions, Drivers};
 use dovetail_driver::{ControlAnswer, FakeDriver, ReplayOptions, Sent};
 use tempfile::TempDir;
 
@@ -51,6 +51,20 @@ fn fixture(name: &str) -> FakeDriver {
         .join("../dovetail-driver/tests/fixtures")
         .join(format!("{name}.ndjson"));
     FakeDriver::from_file(path).expect("fixture")
+}
+
+fn agy_fixture(name: &str) -> FakeDriver {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../dovetail-driver/tests/fixtures/agy")
+        .join(format!("{name}.ndjson"));
+    FakeDriver::from_file(path).expect("fixture").for_agy()
+}
+
+fn both_drivers(claude: &FakeDriver, agy: &FakeDriver) -> Drivers {
+    let mut drivers = Drivers::new();
+    drivers.insert(Arc::new(claude.clone()));
+    drivers.insert(Arc::new(agy.clone()));
+    drivers
 }
 
 struct Harness {
@@ -112,7 +126,7 @@ impl Harness {
         // `:upgrade` tests give the installed binary, which the app must be running.
         let upgrade = UPGRADE.with(|u| u.borrow_mut().take());
         let options = CoreOptions {
-            driver: Arc::new(driver.clone()),
+            drivers: Drivers::single(Arc::new(driver.clone())),
             exe: upgrade
                 .as_ref()
                 .map_or_else(|| PathBuf::from("/usr/bin/dovetail"), |u| u.install.clone()),
@@ -565,6 +579,38 @@ impl Harness {
         claude: Option<std::ffi::OsString>,
         processes: Option<Arc<dyn dovetail_core::takeover::Processes + Send + Sync>>,
     ) -> Harness {
+        Self::start_drivers(
+            Drivers::single(Arc::new(driver.clone())),
+            driver,
+            paths,
+            repo,
+            config,
+            claude,
+            processes,
+        )
+    }
+
+    /// Registers both Claude and agy `FakeDriver`s on the core (`h.fake` holds `claude_driver`).
+    fn start_both(
+        claude_driver: FakeDriver,
+        agy_driver: FakeDriver,
+        paths: Paths,
+        repo: Option<PathBuf>,
+        config: Config,
+    ) -> Harness {
+        let drivers = both_drivers(&claude_driver, &agy_driver);
+        Self::start_drivers(drivers, claude_driver, paths, repo, config, None, None)
+    }
+
+    fn start_drivers(
+        drivers: Drivers,
+        driver: FakeDriver,
+        paths: Paths,
+        repo: Option<PathBuf>,
+        config: Config,
+        claude: Option<std::ffi::OsString>,
+        processes: Option<Arc<dyn dovetail_core::takeover::Processes + Send + Sync>>,
+    ) -> Harness {
         let dir = tempfile::tempdir().expect("tempdir");
         let run = tempfile::Builder::new()
             .prefix("dvt.")
@@ -590,7 +636,7 @@ impl Harness {
             .unwrap_or_else(|| Project::with_repo("p", "work", repo.clone(), git_common_dir));
         let resolution = Resolution::Registered(project);
         let options = CoreOptions {
-            driver: Arc::new(driver.clone()),
+            drivers,
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
@@ -7117,5 +7163,225 @@ fn a_restart_before_the_start_up_read_still_checks_the_launch_choice_once() {
     assert_eq!(wait_spec(&fake, "r").effort, Some(ReasoningEffort::High));
     h.drain(Duration::from_millis(300));
     assert_eq!(notices_containing(&h.snap, "slice-r", "did not get"), 1);
+    h.quit();
+}
+
+#[test]
+fn agy_coordinator_launches_with_settings_mcp_and_broken_claude_profile() {
+    use dovetail_api::DriverKind;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    // A missing Claude profile makes `self.claude` an Err: agy must still launch.
+    std::fs::create_dir_all(paths.recipe("p").parent().unwrap()).unwrap();
+    std::fs::write(paths.recipe("p"), "profile = \"missing\"\n").unwrap();
+
+    let mut row = session_row(
+        COORDINATOR,
+        AgentKind::Coordinator,
+        None,
+        dir.path(),
+        PathBuf::new(),
+        None,
+    );
+    row.agent.driver = DriverKind::Agy;
+    row.session_id = None;
+    row.transcript_path = None;
+    seed(&paths, row);
+
+    let claude_fake = fixture("plain_turn");
+    let agy_fake = agy_fixture("plain_turn");
+    let mut h = Harness::start_both(
+        claude_fake.clone(),
+        agy_fake.clone(),
+        paths.clone(),
+        None,
+        Config::default(),
+    );
+    prompt(&h, "Reply with the single word: pong");
+    h.wait_for("agy reply", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| t.entries.iter().any(|e| e.text == "pong"))
+    });
+
+    assert!(claude_fake.started_specs().is_empty());
+    let specs = agy_fake.started_specs();
+    assert_eq!(specs.len(), 1);
+    let spec = &specs[0];
+    assert!(!spec.resume);
+    let settings_dir = spec.agy.settings_dir.as_ref().expect("agy settings_dir");
+    assert_eq!(settings_dir, &paths.run_dir("p", COORDINATOR).join("agy"));
+    let settings: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(settings_dir.join("settings.json")).expect("settings.json"),
+    )
+    .expect("json");
+    assert_eq!(
+        settings,
+        serde_json::json!({ "toolPermission": "request-review" })
+    );
+    assert_eq!(spec.agy.mcp_servers.len(), 1);
+    assert_eq!(spec.agy.mcp_servers[0].name, "dovetail");
+    assert_eq!(spec.agy.mcp_servers[0].args, vec!["mcp"]);
+    assert!(spec.agy.mcp_servers[0].env.contains(&(
+        dovetail_api::tools::env::AGENT_ID.into(),
+        COORDINATOR.into()
+    )));
+    assert!(
+        spec.agy
+            .allowed_tools
+            .contains(&"mcp_dovetail_core_report_status".into())
+    );
+    assert!(!spec.env.iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"));
+    h.quit();
+}
+
+#[test]
+fn agy_init_records_id_and_transcript_keeps_idle_and_auto_and_resumes() {
+    use dovetail_api::DriverKind;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    // Broken Claude profile verifies `restore.rs` still starts an `agy` coordinator.
+    std::fs::create_dir_all(paths.recipe("p").parent().unwrap()).unwrap();
+    std::fs::write(paths.recipe("p"), "profile = \"missing\"\n").unwrap();
+
+    let mut row = session_row(
+        COORDINATOR,
+        AgentKind::Coordinator,
+        None,
+        dir.path(),
+        dovetail_core::session::launch::agy_transcript_path("old-agy-id"),
+        None,
+    );
+    row.agent.driver = DriverKind::Agy;
+    row.session_id = Some("old-agy-id".into());
+    seed(&paths, row);
+
+    // Pause right after the `session/new` response (`Init`), before any prompt or `config_option_update`.
+    let agy_fake = agy_fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![2],
+        ..Default::default()
+    });
+    let mut h = Harness::start_both(
+        fixture("plain_turn"),
+        agy_fake.clone(),
+        paths.clone(),
+        None,
+        Config::default(),
+    );
+    h.wait_for("agy init", |s| {
+        s.agents
+            .iter()
+            .any(|a| a.id.0 == COORDINATOR && a.model.as_deref() == Some("gemini-4-neon-high"))
+    });
+
+    let coord = h
+        .snap
+        .agents
+        .iter()
+        .find(|a| a.id.0 == COORDINATOR)
+        .expect("coordinator");
+    assert_eq!(coord.status, AgentStatus::Idle);
+    assert_eq!(coord.permission_mode, PermissionMode::Auto);
+    assert!(
+        !h.snap
+            .warnings
+            .iter()
+            .any(|w| w.id.0 == format!("mode-{COORDINATOR}")),
+        "unexpected downgrade warning: {:?}",
+        h.snap.warnings
+    );
+    assert_eq!(agy_fake.started_specs()[0].session_id, "old-agy-id");
+    assert!(agy_fake.started_specs()[0].resume);
+
+    agy_fake.resume();
+    let _state = h.quit();
+
+    let agy_id = "bfbc337e-0bc1-4d82-b5e8-1db97b63f1ed";
+    let expected_transcript = dovetail_core::session::launch::agy_transcript_path(agy_id);
+    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+    let loaded = db.load_agents().wait().expect("agents");
+    let coord_row = loaded
+        .iter()
+        .find(|r| r.agent.id.0 == COORDINATOR)
+        .expect("coord row");
+    assert_eq!(coord_row.session_id.as_deref(), Some(agy_id));
+    assert_eq!(
+        coord_row.transcript_path.as_ref(),
+        Some(&expected_transcript)
+    );
+    drop(db);
+
+    // Next open resumes using the agy conversation id recorded from `Init`.
+    let agy_fake_2 = agy_fixture("plain_turn");
+    let mut h = Harness::start_both(
+        fixture("plain_turn"),
+        agy_fake_2.clone(),
+        paths,
+        None,
+        Config::default(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while agy_fake_2.started_specs().is_empty() {
+        assert!(Instant::now() < deadline, "agy coordinator never resumed");
+        h.drain(Duration::from_millis(20));
+    }
+    let resumed = &agy_fake_2.started_specs()[0];
+    assert!(resumed.resume);
+    assert_eq!(resumed.session_id, agy_id);
+    h.quit();
+}
+
+#[test]
+fn native_take_over_is_refused_for_agy_agent() {
+    use dovetail_api::DriverKind;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    let mut row = session_row(
+        COORDINATOR,
+        AgentKind::Coordinator,
+        None,
+        dir.path(),
+        dovetail_core::session::launch::agy_transcript_path("agy-1"),
+        None,
+    );
+    row.agent.driver = DriverKind::Agy;
+    row.session_id = Some("agy-1".into());
+    seed(&paths, row);
+
+    let mut h = Harness::start_both(
+        fixture("plain_turn"),
+        agy_fixture("plain_turn"),
+        paths,
+        None,
+        Config::default(),
+    );
+    h.send(Command::TakeOver {
+        agent: AgentId(COORDINATOR.into()),
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.returned.is_empty() {
+        assert!(Instant::now() < deadline, "no TerminalReturned");
+        h.drain(Duration::from_millis(20));
+    }
+    let err = h.returned[0].as_deref().expect("expected refusal");
+    assert!(err.contains("agy") && err.contains("Claude Code"), "{err}");
     h.quit();
 }

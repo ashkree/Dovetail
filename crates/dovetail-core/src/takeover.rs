@@ -351,6 +351,12 @@ impl Core {
         if row.agent.kind == AgentKind::Ask {
             return Some(format!("{name} is reading mode's Ask: it stays headless"));
         }
+        if row.agent.driver != dovetail_api::DriverKind::Claude {
+            return Some(format!(
+                "{name} runs on {}: native take-over is only for Claude Code",
+                row.agent.driver.label()
+            ));
+        }
         if self.takeover.is_some() || self.editor_open || self.editor_pending.is_some() {
             return Some("the terminal is already lent out".into());
         }

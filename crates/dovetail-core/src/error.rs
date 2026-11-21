@@ -58,6 +58,9 @@ pub enum SessionError {
         /// The cause.
         source: DriverError,
     },
+    /// No driver for this session's CLI was registered.
+    #[error("no session driver for {}", .0.label())]
+    NoDriver(dovetail_api::DriverKind),
 }
 
 /// Why a slice could not start (`project_start_slice` answers `denied: <this>`).

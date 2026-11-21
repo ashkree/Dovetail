@@ -22,7 +22,7 @@ use dovetail_api::{
 use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
 use dovetail_core::projects::{Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions};
+use dovetail_core::{CoreHandle, CoreOptions, Drivers};
 use dovetail_driver::{FakeDriver, Sent};
 use serde_json::Value;
 use tempfile::TempDir;
@@ -59,7 +59,7 @@ impl App {
         let resolution =
             Resolution::Registered(Project::with_repo("p", "work", repo.to_path_buf(), None));
         let options = CoreOptions {
-            driver: Arc::new(fake.clone()),
+            drivers: Drivers::single(Arc::new(fake.clone())),
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
