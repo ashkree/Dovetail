@@ -9,7 +9,7 @@
 //! - session ids and transcript paths are recorded by Dovetail itself.
 
 pub mod launch;
-mod model;
+pub(crate) mod model;
 pub mod state;
 pub(crate) mod subagent;
 
@@ -870,7 +870,7 @@ impl Core {
             DriverEvent::ModelSwitchFailed { switch, error } => {
                 self.on_model_switch_failed(&agent, switch, &error);
             }
-            DriverEvent::Models(models) => self.on_models_listed(models),
+            DriverEvent::Models(models) => self.on_models_listed(&agent, models),
             DriverEvent::McpReply { request, outcome } => {
                 self.emit(Event::McpReply {
                     agent,
@@ -1121,6 +1121,7 @@ impl Core {
             return;
         };
         let interrupted = live.turn.interrupting || result.subtype == "error_during_execution";
+        let errored = result.is_error;
         let reply = result.result.clone();
         let base = live.base_cost;
         let preview: String = live.turn.last_text.chars().take(200).collect();
@@ -1143,7 +1144,7 @@ impl Core {
         }
         if interrupted {
             self.notice(agent, "Interrupted");
-        } else if result.is_error {
+        } else if errored {
             let detail = result.result.unwrap_or(result.subtype);
             self.notice(agent, format!("The turn ended with an error: {detail}"));
         }
@@ -1151,7 +1152,7 @@ impl Core {
         // no item yet).
         let last = background == 0 && !more_queued;
         if agent.0 == COORDINATOR {
-            self.closing_result(reply, interrupted, last);
+            self.closing_result(reply, interrupted, errored, last);
             if last {
                 self.reattach_after_turn();
             }
@@ -1169,6 +1170,10 @@ impl Core {
         let Some(live) = self.live.remove(agent) else {
             return;
         };
+        let driver = self
+            .agents
+            .get(agent)
+            .map_or(DriverKind::Claude, |r| r.agent.driver);
         // Before the subagents are marked stopped: an OOM kill lists the ones in flight.
         let oom = self.oom_at_exit(agent, &live, info.signal);
         let in_flight = if oom == Some(crate::memory::OomKill::Session) {
@@ -1203,7 +1208,7 @@ impl Core {
                 .last()
                 .cloned()
                 .unwrap_or_else(|| exit_text(&info));
-            let hint = refused_model_hint(&live);
+            let hint = refused_model_hint(&live, driver);
             self.setup_failed(
                 agent,
                 format!("the session exited during setup: {detail}{hint}"),
@@ -1217,7 +1222,7 @@ impl Core {
                 text.push_str(":\n");
                 text.push_str(&info.stderr_tail.join("\n"));
             }
-            let hint = refused_model_hint(&live);
+            let hint = refused_model_hint(&live, driver);
             text.push_str(&hint);
             if !hint.is_empty() && self.is_slice(agent) {
                 let name = self.agent_name(agent);
@@ -1262,13 +1267,14 @@ impl Core {
     }
 }
 
-/// What to add to an exit report when the session ended before its start-up read: Claude Code
-/// refuses an unknown `--model` and exits, so the requested model is the first suspect.
-fn refused_model_hint(live: &Live) -> String {
+/// What to add to an exit report when the session ended before its start-up read: the CLI
+/// refuses an unknown model and exits, so the requested model is the first suspect.
+fn refused_model_hint(live: &Live, driver: DriverKind) -> String {
     live.launch_choice.as_ref().map_or_else(String::new, |c| {
         format!(
-            " It was started on model `{}`: Claude Code may have refused that model.",
-            c.model
+            " It was started on model `{}`: {} may have refused that model.",
+            c.model,
+            driver.label()
         )
     })
 }

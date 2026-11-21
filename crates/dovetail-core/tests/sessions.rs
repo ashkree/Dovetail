@@ -82,6 +82,8 @@ struct Harness {
     failures: Vec<String>,
     /// `McpReply` events, in order: what was asked and the answer.
     mcp: Vec<(dovetail_api::McpRequest, dovetail_api::McpOutcome)>,
+    /// `UsageLoaded` events, in order.
+    usage_loaded: Vec<Vec<dovetail_api::DriverUsage>>,
     _dir: TempDir,
     _run: TempDir,
 }
@@ -154,6 +156,7 @@ impl Harness {
             lent: 0,
             failures: Vec::new(),
             mcp: Vec::new(),
+            usage_loaded: Vec::new(),
             _dir: dir,
             _run: run,
         };
@@ -190,6 +193,7 @@ impl Harness {
             dovetail_api::Event::McpReply {
                 request, outcome, ..
             } => self.mcp.push((request.clone(), outcome.clone())),
+            dovetail_api::Event::UsageLoaded(reports) => self.usage_loaded.push(reports.clone()),
             _ => {}
         }
         apply(&mut self.snap, seq, event);
@@ -662,6 +666,7 @@ impl Harness {
             lent: 0,
             failures: Vec::new(),
             mcp: Vec::new(),
+            usage_loaded: Vec::new(),
             _dir: dir,
             _run: run,
         };
@@ -7383,5 +7388,583 @@ fn native_take_over_is_refused_for_agy_agent() {
     }
     let err = h.returned[0].as_deref().expect("expected refusal");
     assert!(err.contains("agy") && err.contains("Claude Code"), "{err}");
+    h.quit();
+}
+
+#[test]
+fn switch_driver_to_agy_with_handoff_seeds_new_agy_coordinator() {
+    use dovetail_api::{DriverKind, ReasoningEffort};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    let claude_fake = fresh_fixture(4);
+    let agy_fake = agy_fixture("plain_turn");
+    let mut h = Harness::start_both(
+        claude_fake.clone(),
+        agy_fake.clone(),
+        paths,
+        None,
+        Config::default(),
+    );
+    prompt(&h, "first");
+    h.wait_for("first reply", |s| finished_turns(s) == 1);
+
+    h.send(Command::SwitchDriver {
+        agent: AgentId(COORDINATOR.into()),
+        driver: DriverKind::Agy,
+        model: "gemini-3.8-flash".into(),
+        effort: Some(ReasoningEffort::Low),
+        handoff: true,
+    });
+    h.wait_for("closing handoff", |s| journal(s).closing);
+    // Coordinator must still be Claude until the old session exits.
+    assert_eq!(coordinator_of(&h.snap).driver, DriverKind::Claude);
+
+    claude_fake.resume();
+    wait_specs(&agy_fake, 1);
+    h.wait_for("agy coordinator ready", |s| {
+        let c = coordinator_of(s);
+        c.driver == DriverKind::Agy && c.status != AgentStatus::SettingUp
+    });
+
+    let spec = &agy_fake.started_specs()[0];
+    assert!(!spec.resume);
+    assert_eq!(spec.model.as_deref(), Some("gemini-3.8-flash"));
+    assert_eq!(spec.effort, Some(ReasoningEffort::Low));
+    let seed = agy_fake
+        .sent()
+        .into_iter()
+        .find_map(|s| match s {
+            Sent::User(text) => Some(text),
+            _ => None,
+        })
+        .expect("seed prompt sent to agy");
+    assert!(seed.contains("Open: PR 20 waits on review."), "{seed}");
+    assert!(seed.contains("Its transcript is at "), "{seed}");
+    assert!(seed.contains(".jsonl."), "{seed}");
+    h.quit();
+}
+
+#[test]
+fn switch_driver_with_handoff_falls_back_to_facts_when_old_session_errors() {
+    use dovetail_api::DriverKind;
+
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"first"},"parent_tool_use_id":null,"isReplay":true}"#,
+        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"one"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"one","total_cost_usd":0.01}"#,
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"user","message":{"role":"user","content":"fresh"},"parent_tool_use_id":null,"isReplay":true}"#,
+        r#"{"type":"result","subtype":"success","is_error":true,"result":"You've hit your limit","total_cost_usd":0.0}"#,
+    ];
+    let claude_fake = FakeDriver::from_ndjson(&lines.join("\n"))
+        .expect("fixture")
+        .with_options(ReplayOptions {
+            pause_before: vec![4],
+            ..ReplayOptions::default()
+        });
+    let agy_fake = agy_fixture("plain_turn");
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    let mut h = Harness::start_both(
+        claude_fake.clone(),
+        agy_fake.clone(),
+        paths,
+        None,
+        Config::default(),
+    );
+    prompt(&h, "first");
+    h.wait_for("first reply", |s| finished_turns(s) == 1);
+
+    h.send(Command::SwitchDriver {
+        agent: AgentId(COORDINATOR.into()),
+        driver: DriverKind::Agy,
+        model: "claude-opus-5-5".into(),
+        effort: None,
+        handoff: true,
+    });
+    h.wait_for("closing handoff", |s| journal(s).closing);
+    claude_fake.resume();
+
+    wait_specs(&agy_fake, 1);
+    h.wait_for("switched to agy despite error", |s| {
+        coordinator_of(s).driver == DriverKind::Agy && !journal(s).closing
+    });
+    assert!(
+        !h.failures.iter().any(|f| f.contains("cancelled")),
+        "switch must not cancel on NoHandoff: {:?}",
+        h.failures
+    );
+
+    let today = local_date(0);
+    let journal_text = std::fs::read_to_string(
+        h.paths
+            .data
+            .join("projects/p/journal")
+            .join(format!("{today}.md")),
+    )
+    .expect("journal written");
+    assert!(
+        journal_text.contains("_No handoff from the coordinator: its turn ended with an error: You've hit your limit._"),
+        "{journal_text}"
+    );
+    assert!(journal_text.contains("## Facts"), "{journal_text}");
+
+    let seed = agy_fake
+        .sent()
+        .into_iter()
+        .find_map(|s| match s {
+            Sent::User(text) => Some(text),
+            _ => None,
+        })
+        .expect("fallback seed sent to agy");
+    assert!(seed.contains("You've hit your limit"), "{seed}");
+    assert!(seed.contains("# Facts"), "{seed}");
+    assert!(seed.contains("Its transcript is at "), "{seed}");
+    assert!(seed.contains(".jsonl."), "{seed}");
+    h.quit();
+}
+
+#[test]
+fn switch_driver_clean_start_and_refusal_for_slice() {
+    use dovetail_api::DriverKind;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    let claude_fake = fixture("plain_turn");
+    let agy_fake = agy_fixture("plain_turn");
+    let mut h = Harness::start_both(
+        claude_fake.clone(),
+        agy_fake.clone(),
+        paths,
+        None,
+        Config::default(),
+    );
+    prompt(&h, "first");
+    h.wait_for("first reply", |s| finished_turns(s) == 1);
+
+    // Refused for a non-coordinator agent.
+    h.send(Command::NewSlice {
+        task: None,
+        name: "work".into(),
+        brief: "go".into(),
+        repo: None,
+    });
+    h.wait_for("slice created", |s| {
+        s.agents.iter().any(|a| a.name == "work")
+    });
+    h.send(Command::SwitchDriver {
+        agent: AgentId("slice-work".into()),
+        driver: DriverKind::Agy,
+        model: "gemini-3.8-flash".into(),
+        effort: None,
+        handoff: false,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !h
+        .failures
+        .iter()
+        .any(|f| f.contains("only the coordinator can switch driver"))
+    {
+        assert!(Instant::now() < deadline, "no refusal: {:?}", h.failures);
+        h.drain(Duration::from_millis(20));
+    }
+
+    // Clean start on coordinator: no journal, no seed, starts on agy.
+    h.send(Command::SwitchDriver {
+        agent: AgentId(COORDINATOR.into()),
+        driver: DriverKind::Agy,
+        model: "gemini-3.8-flash".into(),
+        effort: None,
+        handoff: false,
+    });
+    wait_specs(&agy_fake, 1);
+    h.wait_for("coordinator on agy", |s| {
+        coordinator_of(s).driver == DriverKind::Agy
+    });
+    h.wait_for("kept transcript notice", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| {
+                t.entries
+                    .iter()
+                    .any(|e| e.text.contains("transcript is kept at ") && e.text.contains(".jsonl"))
+            })
+    });
+    let spec = &agy_fake.started_specs()[0];
+    assert!(!spec.resume);
+    assert_eq!(spec.model.as_deref(), Some("gemini-3.8-flash"));
+    assert!(
+        !agy_fake.sent().iter().any(|s| matches!(s, Sent::User(_))),
+        "clean start sends no seed: {:?}",
+        agy_fake.sent()
+    );
+    let journal_file = h
+        .paths
+        .data
+        .join("projects/p/journal")
+        .join(format!("{}.md", local_date(0)));
+    assert!(!journal_file.exists(), "clean start writes no journal");
+    h.quit();
+}
+
+#[test]
+fn load_usage_emits_both_reports_in_driver_order_with_claude_config_dir() {
+    use dovetail_api::{DriverKind, DriverUsage, LimitWindow, UsageGroup};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    let custom_home = dir.path().join("custom-claude");
+    std::fs::create_dir_all(paths.recipe("p").parent().unwrap()).unwrap();
+    std::fs::write(paths.recipe("p"), "profile = \"custom\"\n").unwrap();
+    let mut config = Config::default();
+    config
+        .profiles
+        .insert("custom".into(), custom_home.to_string_lossy().into_owned());
+
+    let claude_fake = fixture("plain_turn");
+    let agy_fake = agy_fixture("plain_turn");
+    let claude_report = DriverUsage {
+        driver: DriverKind::Claude,
+        plan: Some("max".into()),
+        groups: vec![UsageGroup {
+            name: "Claude".into(),
+            models: String::new(),
+            windows: vec![LimitWindow {
+                name: "5-hour".into(),
+                used_fraction: 0.25,
+                resets_at_ms: Some(1_000),
+            }],
+        }],
+        note: None,
+        failed: false,
+    };
+    let agy_report = DriverUsage {
+        driver: DriverKind::Agy,
+        plan: Some("Google AI Pro".into()),
+        groups: vec![UsageGroup {
+            name: "Gemini".into(),
+            models: "Gemini 3.8".into(),
+            windows: vec![LimitWindow {
+                name: "5-hour".into(),
+                used_fraction: 0.1,
+                resets_at_ms: Some(2_000),
+            }],
+        }],
+        note: None,
+        failed: false,
+    };
+    claude_fake.set_usage(claude_report.clone());
+    agy_fake.set_usage(agy_report.clone());
+
+    let mut h = Harness::start_both(claude_fake.clone(), agy_fake.clone(), paths, None, config);
+    h.send(Command::LoadUsage);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.usage_loaded.is_empty() {
+        assert!(Instant::now() < deadline, "UsageLoaded never arrived");
+        h.drain(Duration::from_millis(20));
+    }
+    assert_eq!(h.usage_loaded[0], vec![claude_report, agy_report]);
+
+    let claude_queries = claude_fake.usage_queries();
+    let agy_queries = agy_fake.usage_queries();
+    assert_eq!(claude_queries.len(), 1);
+    assert_eq!(agy_queries.len(), 1);
+    assert_eq!(
+        claude_queries[0].env,
+        vec![(
+            "CLAUDE_CONFIG_DIR".into(),
+            custom_home.to_string_lossy().into_owned()
+        )]
+    );
+    assert!(agy_queries[0].env.is_empty());
+    h.quit();
+}
+
+#[test]
+fn agy_models_event_leaves_claude_options_untouched_and_adds_agy_options() {
+    use dovetail_api::{DriverKind, ReasoningEffort};
+    use dovetail_driver::{DriverEvent, ModelInfo};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    let claude_fake = fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![0],
+        ..ReplayOptions::default()
+    });
+    let agy_fake = agy_fixture("plain_turn");
+    let mut h = Harness::start_both(
+        claude_fake.clone(),
+        agy_fake.clone(),
+        paths,
+        None,
+        Config::default(),
+    );
+    prompt(&h, "hi");
+    wait_specs(&claude_fake, 1);
+    claude_fake.send_event(DriverEvent::Models(vec![ModelInfo {
+        value: "sonnet".into(),
+        resolved: Some("claude-sonnet-5-5".into()),
+        display_name: None,
+        efforts: ReasoningEffort::ALL.to_vec(),
+    }]));
+    h.wait_for("claude models listed", |s| {
+        s.models
+            .iter()
+            .any(|m| m.driver == DriverKind::Claude && m.name == "sonnet" && m.efforts.is_some())
+    });
+
+    // Start an agy slice so agy emits its own DriverEvent::Models.
+    h.send(Command::CreateTask(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+        effort: Default::default(),
+        criterion: None,
+    }));
+    h.wait_for("task", |s| !s.tasks.is_empty());
+    let (text, is_error) = call_coordinator(
+        &h,
+        Tool::StartSlice(StartSlice {
+            task: TaskId(1),
+            name: "agy-slice".into(),
+            brief: "go".into(),
+            repo: None,
+            model: None,
+            effort: None,
+            driver: Some(DriverKind::Agy),
+        }),
+    );
+    assert!(!is_error && text.starts_with("started"), "{text}");
+    h.wait_for("agy models added", |s| {
+        s.models.iter().any(|m| m.driver == DriverKind::Agy)
+    });
+
+    let claude_opts: Vec<_> = h
+        .snap
+        .models
+        .iter()
+        .filter(|m| m.driver == DriverKind::Claude)
+        .collect();
+    assert_eq!(claude_opts.len(), dovetail_api::BUILTIN_MODELS.len());
+    assert!(
+        claude_opts
+            .iter()
+            .any(|m| m.name == "sonnet" && m.efforts == Some(ReasoningEffort::ALL.to_vec())),
+        "Claude options must stay intact: {claude_opts:?}"
+    );
+    let agy_opts: Vec<_> = h
+        .snap
+        .models
+        .iter()
+        .filter(|m| m.driver == DriverKind::Agy)
+        .collect();
+    assert!(
+        agy_opts
+            .iter()
+            .any(|m| m.name == "gemini-3.8-flash" && m.efforts.is_some()),
+        "{agy_opts:?}"
+    );
+    h.quit();
+}
+
+#[test]
+fn project_start_slice_on_agy_creates_worktree_and_starts_agy_without_sonnet_default() {
+    use dovetail_api::DriverKind;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), "hi").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    let claude_fake = fixture("plain_turn");
+    let agy_fake = agy_fixture("plain_turn");
+    let config = Config {
+        default_model: Some("opus".into()),
+        ..Config::default()
+    };
+    let mut h = Harness::start_both(
+        claude_fake.clone(),
+        agy_fake.clone(),
+        paths.clone(),
+        Some(repo),
+        config,
+    );
+    make_task(&mut h);
+
+    // Effort without model on agy is denied.
+    let (err_text, is_error) = call_coordinator(
+        &h,
+        Tool::StartSlice(StartSlice {
+            task: TaskId(1),
+            name: "bad".into(),
+            brief: "go".into(),
+            repo: None,
+            model: None,
+            effort: Some(dovetail_api::ReasoningEffort::High),
+            driver: Some(DriverKind::Agy),
+        }),
+    );
+    assert!(is_error && err_text.starts_with("denied"), "{err_text}");
+
+    let (text, is_error) = call_coordinator(
+        &h,
+        Tool::StartSlice(StartSlice {
+            task: TaskId(1),
+            name: "agy-wt".into(),
+            brief: "work in worktree".into(),
+            repo: None,
+            model: None,
+            effort: None,
+            driver: Some(DriverKind::Agy),
+        }),
+    );
+    assert!(!is_error && text.starts_with("started"), "{text}");
+
+    wait_specs(&agy_fake, 1);
+    h.wait_for("agy slice ready and answered", |s| {
+        s.agents.iter().any(|a| {
+            a.name == "agy-wt" && a.driver == DriverKind::Agy && a.status != AgentStatus::SettingUp
+        })
+    });
+
+    assert!(
+        !claude_fake
+            .started_specs()
+            .iter()
+            .any(|s| s.name.as_deref() == Some("p.agy-wt")),
+        "agy slice must not launch on claude"
+    );
+    let expected_wt = paths.worktrees("p").join("agy-wt");
+    assert!(expected_wt.join(".git").exists(), "worktree was created");
+    assert_eq!(agy_fake.started_specs().len(), 1);
+    let spec = &agy_fake.started_specs()[0];
+    assert_eq!(spec.name.as_deref(), Some("p.agy-wt"));
+    assert_eq!(spec.cwd, expected_wt);
+    assert_eq!(spec.model, None, "must not default agy slice to sonnet");
+    assert_eq!(spec.claude.worktree, None);
+    assert!(spec.agy.settings_dir.is_some());
+    assert!(
+        agy_fake
+            .sent()
+            .iter()
+            .any(|s| matches!(s, Sent::User(text) if text.contains("work in worktree"))),
+        "brief sent to agy slice: {:?}",
+        agy_fake.sent()
+    );
+    h.wait_for("coordinator notified of agy slice", |s| {
+        s.conversations
+            .get(&AgentId(COORDINATOR.into()))
+            .is_some_and(|t| {
+                t.entries.iter().any(|e| {
+                    e.text
+                        .contains("slice agy-wt ready (runs on agy; cannot receive SendMessage)")
+                })
+            })
+    });
+    h.quit();
+}
+
+#[test]
+fn queued_agy_slice_preserves_driver_across_queue() {
+    use dovetail_api::DriverKind;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    let claude_fake = fixture("plain_turn");
+    let agy_fake = agy_fixture("plain_turn");
+    let config = Config {
+        max_slices: 1,
+        ..Config::default()
+    };
+    let mut h = Harness::start_both(claude_fake.clone(), agy_fake.clone(), paths, None, config);
+    make_task(&mut h);
+
+    let (text, is_error) = call_coordinator(
+        &h,
+        Tool::StartSlice(StartSlice {
+            task: TaskId(1),
+            name: "first".into(),
+            brief: "go".into(),
+            repo: None,
+            model: None,
+            effort: None,
+            driver: None,
+        }),
+    );
+    assert!(!is_error && text.starts_with("started"), "{text}");
+
+    let (text, is_error) = call_coordinator(
+        &h,
+        Tool::StartSlice(StartSlice {
+            task: TaskId(1),
+            name: "second-agy".into(),
+            brief: "go agy".into(),
+            repo: None,
+            model: Some("gemini-3.8-flash".into()),
+            effort: None,
+            driver: Some(DriverKind::Agy),
+        }),
+    );
+    assert!(!is_error && text.starts_with("queued"), "{text}");
+    assert!(agy_fake.started_specs().is_empty());
+
+    h.send(Command::CloseSlice {
+        agent: AgentId("slice-first".into()),
+    });
+    wait_specs(&agy_fake, 1);
+    h.wait_for("queued agy slice started", |s| {
+        s.agents
+            .iter()
+            .any(|a| a.name == "second-agy" && a.driver == DriverKind::Agy)
+    });
+    let spec = &agy_fake.started_specs()[0];
+    assert_eq!(spec.name.as_deref(), Some("p.second-agy"));
+    assert_eq!(spec.model.as_deref(), Some("gemini-3.8-flash"));
     h.quit();
 }

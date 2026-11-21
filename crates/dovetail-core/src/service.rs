@@ -261,6 +261,14 @@ pub(crate) enum Input {
         generation: u64,
         outcome: Result<PathBuf, crate::error::SetupFailure>,
     },
+    /// An `agy` slice's blocking `worktree::create` finished.
+    AgyWorktreeCreated {
+        agent: AgentId,
+        brief: String,
+        result: Result<crate::worktree::Created, WorktreeError>,
+    },
+    /// Driver usage limits loaded concurrently on the runtime (`Command::LoadUsage`).
+    UsageLoaded(Vec<dovetail_api::DriverUsage>),
     /// A slice's worktree removal finished.
     WorktreeRemoved {
         agent: AgentId,
@@ -467,8 +475,8 @@ pub(crate) struct Core {
     pub(crate) research: crate::research::Research,
     /// Tangents' database (ADR 0017, `tangents`), or why tangents are off.
     pub(crate) tangents: Result<Db, crate::tangents::TangentError>,
-    /// The models sessions last listed (`list_models`), for the selector's effort levels.
-    pub(crate) model_catalog: Vec<dovetail_driver::ModelInfo>,
+    /// The models sessions last listed (`list_models` / ACP config options), per driver.
+    pub(crate) model_catalog: BTreeMap<dovetail_api::DriverKind, Vec<dovetail_driver::ModelInfo>>,
     /// Every effort of the open project with its criteria (`efforts`).
     pub(crate) efforts: BTreeMap<dovetail_api::EffortId, dovetail_api::Effort>,
     /// Each slice's preview process and state (ADR 0026, `preview`).
@@ -590,7 +598,7 @@ impl Core {
             switch_to: Default::default(),
             research: Default::default(),
             tangents: Err(crate::tangents::TangentError::Off("not opened".into())),
-            model_catalog: Vec::new(),
+            model_catalog: BTreeMap::new(),
             efforts: BTreeMap::new(),
             previews: Default::default(),
             effort_tags: HashMap::new(),
@@ -709,12 +717,19 @@ impl Core {
                     event,
                 } => self.on_driver(agent, generation, event).await,
                 // During quit nothing new starts, and no signal wakes the coordinator.
-                Input::SetupFinished { .. } if self.quitting.is_some() => {}
+                Input::SetupFinished { .. } | Input::AgyWorktreeCreated { .. }
+                    if self.quitting.is_some() => {}
                 Input::SetupFinished {
                     agent,
                     generation,
                     outcome,
                 } => self.on_setup(agent, generation, outcome).await,
+                Input::AgyWorktreeCreated {
+                    agent,
+                    brief,
+                    result,
+                } => self.on_agy_worktree_created(agent, brief, result),
+                Input::UsageLoaded(reports) => self.emit(Event::UsageLoaded(reports)),
                 Input::WorktreeRemoved { agent, result } => {
                     self.on_worktree_removed(agent, result).await;
                 }
@@ -1444,9 +1459,14 @@ impl Core {
                 model,
                 effort,
             } => self.switch_model(&agent, model, effort),
-            Command::SwitchDriver { .. } | Command::LoadUsage => {
-                self.fail("not implemented yet");
-            }
+            Command::SwitchDriver {
+                agent,
+                driver,
+                model,
+                effort,
+                handoff,
+            } => self.switch_driver(&agent, driver, model, effort, handoff),
+            Command::LoadUsage => self.load_usage(),
             Command::NewSideChat { question } => self.start_side_chat(question),
             Command::NewTangent { question } => self.start_tangent(question).await,
             Command::AttachTangent { tangent, task } => self.attach_tangent(tangent, task).await,
@@ -1475,6 +1495,7 @@ impl Core {
                     by_coordinator: false,
                     repo,
                     model_choice: None,
+                    driver: dovetail_api::DriverKind::Claude,
                 };
                 if let Err(message) = self.request_slice(request).await {
                     self.fail(message);

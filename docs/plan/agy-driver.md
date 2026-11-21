@@ -153,19 +153,19 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
     row's `session_id` instead of warning "session id differs";
   - `on_init` sets `turn.running = true` because Claude Code sends `Init` per turn. agy sends
     it once, at open, before any prompt: for agy do not mark a turn running there.
-- [ ] **Slices on agy.** `SliceRequest` (`src/slice.rs`) gains `driver`. Claude Code creates a
+- [x] **Slices on agy.** `SliceRequest` (`src/slice.rs`) gains `driver`. Claude Code creates a
   slice's worktree through `--worktree` and the `WorktreeCreate` hook; agy has no such flag, so
   for agy call `worktree::create(&paths, &CreateRequest{..})` (`src/worktree.rs`, the function
   the hook calls) on a blocking task first, then launch agy with the worktree as cwd. The
   `project_start_slice` handler passes `StartSlice.driver`.
-- [ ] **Models per driver.** `on_models_listed` (`src/session/model.rs`) replaces one
+- [x] **Models per driver.** `on_models_listed` (`src/session/model.rs`) replaces one
   `model_catalog`; an agy session's `DriverEvent::Models` would overwrite Claude's. Keep
   `model_catalog: BTreeMap<DriverKind, Vec<ModelInfo>>`, filled from the session's driver.
   `model_options()` returns Claude's options (from `config.toml` names, as today) followed by
   agy's families with `driver: Agy`. Before any agy session has run, agy's list is empty:
   optionally fill it at start from `agy models` (check its output format first; skip if it
   needs a model call).
-- [ ] **SwitchDriver.** A handler that checks the agent is the coordinator and no turn runs, sets
+- [x] **SwitchDriver.** A handler that checks the agent is the coordinator and no turn runs, sets
   the coordinator row's `driver` and `model_choice` to the new driver and model, then runs the
   existing flow: `handoff: true` → `handoff_start()`, `false` → `fresh_session()`
   (`src/journal.rs`). The new session starts on the new driver because launch reads the row.
@@ -173,7 +173,7 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
   block already falls back to the facts and says why (`NoHandoff`); make sure the seed then
   names the old transcript's path (`fresh_notice` does for the notice) so the agy session can
   read it. `SetModel` for a model of the session's own driver is unchanged.
-- [ ] **LoadUsage.** For each driver in the set, spawn `driver.usage(UsageQuery { cwd: project
+- [x] **LoadUsage.** For each driver in the set, spawn `driver.usage(UsageQuery { cwd: project
   root, env: [CLAUDE_CONFIG_DIR of the project's profile] for Claude, [] for agy })` on the
   runtime; when all are back, send an `Input` to the core loop, which emits
   `Event::UsageLoaded(reports)` in `DriverKind::ALL` order. Put it in `src/usage.rs` beside

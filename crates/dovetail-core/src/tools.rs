@@ -6,8 +6,8 @@ use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
 use dovetail_api::tools::{Tool, UpdateTask};
 use dovetail_api::{
-    Agent, AgentKind, DecisionAuthor, EntryKind, Event, InboxKind, NewDecision, NewTask,
-    PermissionMode, TaskChange, TaskId, TaskStatus,
+    Agent, AgentKind, DecisionAuthor, DriverKind, EntryKind, Event, InboxKind, NewDecision,
+    NewTask, PermissionMode, TaskChange, TaskId, TaskStatus,
 };
 use serde_json::json;
 use tokio::sync::oneshot;
@@ -237,20 +237,33 @@ impl Core {
                 }
             }
             Tool::StartSlice(start) => {
-                let request = SliceRequest {
-                    task: Some(start.task),
-                    name: start.name.trim().to_owned(),
-                    brief: start.brief,
-                    by_coordinator: true,
-                    repo: start.repo,
-                    // Always explicit: a slice never runs on Claude Code's own default model.
-                    model_choice: Some(ModelChoice {
+                let driver = start.driver.unwrap_or(DriverKind::Claude);
+                if driver == DriverKind::Agy && start.model.is_none() && start.effort.is_some() {
+                    let _ = reply.send(error("denied: `effort` on an agy slice requires `model`"));
+                    return;
+                }
+                let model_choice = match driver {
+                    // Always explicit for Claude: a slice never runs on Claude Code's own default.
+                    DriverKind::Claude => Some(ModelChoice {
                         model: start.model.map_or_else(
                             || DEFAULT_SLICE_MODEL.to_owned(),
                             |m| m.trim().to_owned(),
                         ),
                         effort: start.effort,
                     }),
+                    DriverKind::Agy => start.model.map(|m| ModelChoice {
+                        model: m.trim().to_owned(),
+                        effort: start.effort,
+                    }),
+                };
+                let request = SliceRequest {
+                    task: Some(start.task),
+                    name: start.name.trim().to_owned(),
+                    brief: start.brief,
+                    by_coordinator: true,
+                    repo: start.repo,
+                    model_choice,
+                    driver,
                 };
                 if let Err(reason) = self.check_slice(&request).await {
                     let _ = reply.send(error(format!("denied: {reason}")));
@@ -268,6 +281,7 @@ impl Core {
                         "name": request.name,
                         "brief": request.brief,
                         "repo": request.repo,
+                        "driver": request.driver,
                         "model": request.model_choice.as_ref().map(|c| &c.model),
                         "effort": request.model_choice.as_ref().and_then(|c| c.effort),
                     });

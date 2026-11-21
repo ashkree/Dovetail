@@ -19,13 +19,16 @@
 use std::path::{Path, PathBuf};
 
 use dovetail_api::{
-    Agent, AgentId, AgentKind, AgentStatus, Bucket, EntryKind, InboxItem, InboxKind, JournalState,
-    Task, TaskStatus,
+    Agent, AgentId, AgentKind, AgentStatus, Bucket, DriverKind, EntryKind, InboxItem, InboxKind,
+    JournalState, ReasoningEffort, Task, TaskStatus,
 };
 use jiff::civil::Date;
 
+use crate::db::ModelChoice;
+use crate::error::SessionError;
 use crate::inbox::Waiter;
 use crate::service::{COORDINATOR, Core, Input};
+use crate::session::model::describe;
 
 /// The first line of every block Dovetail writes into a journal file. A file without it was
 /// written by hand, and all of it is the handoff.
@@ -183,6 +186,8 @@ pub(crate) enum NoHandoff {
     NotSent(String),
     #[error("its turn was interrupted")]
     Interrupted,
+    #[error("its turn ended with an error: {0}")]
+    Errored(String),
     #[error("its turn ended with no reply")]
     NoReply,
     #[error("its session ended before it answered")]
@@ -421,6 +426,14 @@ fn fresh_notice(kind: &Fresh, old_transcript: Option<&Path>) -> String {
     }
 }
 
+/// Where [`Command::SwitchDriver`](dovetail_api::Command::SwitchDriver) moves the coordinator
+/// once its old session stops.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SwitchTarget {
+    pub(crate) driver: DriverKind,
+    pub(crate) model_choice: ModelChoice,
+}
+
 /// A `:fresh` whose handoff is written: the coordinator's old session is stopping, and the new
 /// one starts when it has exited ([`Core::coordinator_exited`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -428,26 +441,63 @@ pub(crate) struct PendingFresh {
     kind: Fresh,
     /// `None` for a clean start: the new session gets no first message.
     seed: Option<String>,
+    /// Set by `Command::SwitchDriver`: applied once the old session has exited.
+    switch: Option<SwitchTarget>,
 }
 
 /// The first prompt of a fresh coordinator: a new day's, or a mid-day `:fresh`'s. Both hold the
 /// handoff and the open tasks.
-fn seed_prompt(today: Date, kind: &Fresh, handoff: &str, tasks: &str) -> String {
+fn seed_prompt(
+    today: Date,
+    kind: &Fresh,
+    handoff: &str,
+    tasks: &str,
+    old_transcript: Option<&Path>,
+    journaled: bool,
+) -> String {
     let date = kind.date();
+    let transcript = old_transcript
+        .map(|p| format!(" Its transcript is at {}.", p.display()))
+        .unwrap_or_default();
     let intro = match kind {
         Fresh::NewDay { .. } => format!(
             "This is a fresh coordinator session for {today}. Yesterday's coordinator left the \
-             handoff below in journal/{date}.md; its conversation is kept but not continued."
+             handoff below in journal/{date}.md; its conversation is kept but not continued.{transcript}"
         ),
         Fresh::Clean { .. } => unreachable!("a clean start has no seed"),
-        Fresh::MidDay { time, .. } => format!(
+        Fresh::MidDay { time, .. } if journaled => format!(
             "This is a fresh coordinator session, started at {time} on {today}. The previous \
              coordinator left the handoff below in journal/{date}.md; its conversation is kept \
-             but not continued."
+             but not continued.{transcript}"
+        ),
+        Fresh::MidDay { time, .. } => format!(
+            "This is a fresh coordinator session, started at {time} on {today}. The previous \
+             coordinator left the handoff below; its conversation is kept but not continued.{transcript}"
         ),
     };
     format!(
         "{intro}\n\n# Handoff from {date}\n\n{handoff}\n\n# Open tasks\n\n{tasks}\n\n\
+         Read this, check anything you need to, then tell the user in a few lines what you \
+         would pick up first. Start no work until they answer."
+    )
+}
+
+/// The first prompt of a driver-switched coordinator when the old session could not write a
+/// handoff: names why (`NoHandoff`), Dovetail's facts, and the old transcript path.
+fn fallback_seed_prompt(
+    today: Date,
+    time: &str,
+    why: &NoHandoff,
+    facts: &str,
+    old_transcript: Option<&Path>,
+) -> String {
+    let transcript = old_transcript
+        .map(|p| format!(" Its transcript is at {}.", p.display()))
+        .unwrap_or_default();
+    format!(
+        "This is a fresh coordinator session, started at {time} on {today}. The previous \
+         coordinator could not write a handoff ({why}); its conversation is kept but not \
+         continued.{transcript}\n\n# Facts\n\n{facts}\n\n\
          Read this, check anything you need to, then tell the user in a few lines what you \
          would pick up first. Start no work until they answer."
     )
@@ -464,6 +514,8 @@ pub(crate) struct Closing {
     pub(crate) done: Option<Result<String, NoHandoff>>,
     /// `Some("HH:MM")` for a `:fresh`: the handoff also starts a new coordinator session.
     pub(crate) fresh: Option<String>,
+    /// Set by `Command::SwitchDriver` (`handoff: true`).
+    pub(crate) switch: Option<SwitchTarget>,
 }
 
 impl Core {
@@ -492,7 +544,7 @@ impl Core {
     /// `:eod`: asks the coordinator for its handoff. The file is written once its turn ends
     /// ([`Core::closing_turn_ended`]), or at once with the facts alone if it cannot answer.
     pub(crate) fn end_of_day(&mut self) {
-        self.ask_for_handoff(None);
+        self.ask_for_handoff(None, None);
     }
 
     /// `:handoff`: the same request, and a new coordinator once the handoff is written. Refused
@@ -512,7 +564,7 @@ impl Core {
             return;
         }
         let time = jiff::Zoned::now().strftime("%H:%M").to_string();
-        self.ask_for_handoff(Some(time));
+        self.ask_for_handoff(Some(time), None);
     }
 
     /// `:fresh`: a new coordinator session with no handoff. The same refusals as `:handoff`;
@@ -549,11 +601,128 @@ impl Core {
         self.begin_fresh(PendingFresh {
             kind: Fresh::Clean { date, time },
             seed: None,
+            switch: None,
         });
     }
 
-    fn ask_for_handoff(&mut self, fresh: Option<String>) {
-        if self.journal_dir().is_none() {
+    /// `Command::SwitchDriver`: move the coordinator to `driver` on `model` / `effort`.
+    /// When the coordinator has never started, updates the row directly; otherwise keeps the
+    /// old driver on the row until the old session finishes its handoff (or clean stop) and
+    /// exits.
+    pub(crate) fn switch_driver(
+        &mut self,
+        id: &AgentId,
+        driver: DriverKind,
+        model: String,
+        effort: Option<ReasoningEffort>,
+        handoff: bool,
+    ) {
+        let Some(row) = self.agents.get(id) else {
+            self.fail(format!("no agent {}", id.0));
+            return;
+        };
+        if id.0 != COORDINATOR || row.agent.kind != AgentKind::Coordinator {
+            self.fail("only the coordinator can switch driver");
+            return;
+        }
+        if self.live.get(id).is_some_and(|l| l.turn.running) {
+            self.fail("turn running; try again when it finishes");
+            return;
+        }
+        if self.closing.is_some() {
+            self.fail("already closing the day: waiting for the coordinator's handoff");
+            return;
+        }
+        if self.pending_fresh.is_some() {
+            self.fail("a fresh coordinator is starting");
+            return;
+        }
+        if self.locked(id) {
+            self.fail(SessionError::TakenOver(row.agent.name.clone()));
+            return;
+        }
+        if self.options.drivers.get(driver).is_none() {
+            self.fail(SessionError::NoDriver(driver));
+            return;
+        }
+        let model = model.trim().to_owned();
+        if model.is_empty() {
+            self.fail("No model given");
+            return;
+        }
+        if self.model_listed(driver, &model) == Some(false) {
+            self.fail(format!(
+                "there is no model `{model}` for {}; the models are: {}",
+                driver.label(),
+                self.model_catalog_names(driver)
+            ));
+            return;
+        }
+        if let Some(wanted) = effort
+            && let Some(catalog) = self.model_catalog.get(&driver)
+            && let Some(info) = catalog
+                .iter()
+                .find(|m| m.value == model || m.resolved.as_deref() == Some(model.as_str()))
+            && !info.efforts.contains(&wanted)
+        {
+            self.fail(format!(
+                "model `{model}` on {} does not support effort {}",
+                driver.label(),
+                wanted.as_str()
+            ));
+            return;
+        }
+
+        let target = SwitchTarget {
+            driver,
+            model_choice: ModelChoice { model, effort },
+        };
+        let has_run = row.transcript_path.is_some();
+        let is_live = self.live.contains_key(id);
+        if !has_run && !is_live {
+            self.update_agent(id, |row| {
+                row.agent.driver = target.driver;
+                row.model_choice = Some(target.model_choice.clone());
+                row.agent.model = None;
+                row.agent.effort = None;
+                if target.driver != DriverKind::Claude {
+                    row.claude_home = None;
+                }
+            });
+            self.notice(
+                id,
+                format!(
+                    "Coordinator will start on {} ({})",
+                    target.driver.label(),
+                    describe(&target.model_choice.model, target.model_choice.effort)
+                ),
+            );
+            return;
+        }
+
+        let time = jiff::Zoned::now().strftime("%H:%M").to_string();
+        if handoff {
+            self.ask_for_handoff(Some(time), Some(target));
+        } else {
+            let date = today();
+            self.activity(
+                dovetail_api::ActivityKind::Lifecycle,
+                Some(id),
+                format!(
+                    "switching coordinator to {} at {time}, no handoff",
+                    target.driver.label()
+                ),
+            );
+            self.begin_fresh(PendingFresh {
+                kind: Fresh::Clean { date, time },
+                seed: None,
+                switch: Some(target),
+            });
+        }
+    }
+
+    fn ask_for_handoff(&mut self, fresh: Option<String>, switch: Option<SwitchTarget>) {
+        if switch.is_none() && self.journal_dir().is_none() {
             self.fail("not a Dovetail project yet, so it has no journal: :project add keeps it");
             return;
         }
@@ -571,6 +740,7 @@ impl Core {
             reply: None,
             done: None,
             fresh,
+            switch,
         });
         self.emit_journal();
         let id = AgentId(COORDINATOR.into());
@@ -597,20 +767,34 @@ impl Core {
 
     /// A `result` from the coordinator while the day closes: its text is the handoff so far.
     /// `last` is true when the session has nothing left to do, so the reply is final.
-    pub(crate) fn closing_result(&mut self, text: Option<String>, interrupted: bool, last: bool) {
+    pub(crate) fn closing_result(
+        &mut self,
+        text: Option<String>,
+        interrupted: bool,
+        errored: bool,
+        last: bool,
+    ) {
         let Some(closing) = &mut self.closing else {
             return;
         };
-        if let Some(text) = text.filter(|t| !t.trim().is_empty()) {
-            closing.reply = Some(text);
+        if !errored && let Some(text) = text.as_deref().filter(|t| !t.trim().is_empty()) {
+            closing.reply = Some(text.to_owned());
         }
         if !last {
             return;
         }
-        let reply = match closing.reply.take() {
-            Some(text) if !interrupted => Ok(text),
-            _ if interrupted => Err(NoHandoff::Interrupted),
-            _ => Err(NoHandoff::NoReply),
+        let reply = if interrupted {
+            Err(NoHandoff::Interrupted)
+        } else if errored {
+            let detail = text
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| "unknown error".into());
+            Err(NoHandoff::Errored(detail))
+        } else {
+            match closing.reply.take() {
+                Some(text) => Ok(text),
+                None => Err(NoHandoff::NoReply),
+            }
         };
         self.closing_done(reply);
     }
@@ -637,14 +821,16 @@ impl Core {
             date,
             done: Some(reply),
             fresh,
+            switch,
             ..
         }) = self.closing.take()
         else {
             return;
         };
-        let Some(dir) = self.journal_dir() else {
+        let dir = self.journal_dir();
+        if dir.is_none() && switch.is_none() {
             return;
-        };
+        }
         let tasks = match self.db.load_tasks().await {
             Ok(tasks) => tasks,
             Err(e) => {
@@ -655,44 +841,90 @@ impl Core {
         let agents: Vec<&Agent> = self.agents.values().map(|r| &r.agent).collect();
         let inbox: Vec<&InboxItem> = self.inbox.values().map(|e| &e.item).collect();
         let facts = facts(&tasks, &agents, &inbox);
-        // A fresh start without a handoff would lose the context it exists to carry over: the
-        // old session stays, and nothing is written.
-        if let (Some(_), Err(why)) = (&fresh, &reply) {
+        // A same-driver `:handoff` without a handoff would lose the context it exists to carry
+        // over: the old session stays, and nothing is written. A driver switch proceeds on facts
+        // alone so a session at its limit cannot trap the user.
+        if switch.is_none()
+            && let (Some(_), Err(why)) = (&fresh, &reply)
+        {
             self.fail(format!("fresh start cancelled, no handoff: {why}"));
             self.emit_journal();
             return;
         }
-        let text = match &fresh {
-            Some(time) => block_titled(
-                &format!("{HANDOFF_HEADING} (fresh start {time})"),
-                reply.as_deref(),
-                &facts,
-            ),
-            None => block(reply.as_deref(), &facts),
-        };
-        match write(&dir, date, &text) {
-            Ok(path) => {
-                tracing::info!(path = %path.display(), "journal written");
-                let note = match (&reply, &fresh) {
-                    (Ok(_), Some(time)) => {
-                        format!("fresh start at {time}: handoff added to journal/{date}.md")
+        let mut journaled = false;
+        if let Some(dir) = dir {
+            let text = match &fresh {
+                Some(time) => block_titled(
+                    &format!("{HANDOFF_HEADING} (fresh start {time})"),
+                    reply.as_deref(),
+                    &facts,
+                ),
+                None => block(reply.as_deref(), &facts),
+            };
+            match write(&dir, date, &text) {
+                Ok(path) => {
+                    journaled = true;
+                    tracing::info!(path = %path.display(), "journal written");
+                    let note = match (&reply, &fresh, &switch) {
+                        (Ok(_), Some(time), _) => {
+                            format!("fresh start at {time}: handoff added to journal/{date}.md")
+                        }
+                        (Ok(_), None, _) => format!("day closed: journal/{date}.md written"),
+                        (Err(why), _, Some(target)) => format!(
+                            "switch to {} without a handoff ({why}): journal/{date}.md written",
+                            target.driver.label()
+                        ),
+                        (Err(why), _, None) => {
+                            format!(
+                                "day closed without a handoff ({why}): journal/{date}.md written"
+                            )
+                        }
+                    };
+                    self.activity(dovetail_api::ActivityKind::Lifecycle, None, note);
+                }
+                Err(e) => {
+                    self.fail(format!("writing journal/{date}.md: {e}"));
+                    if switch.is_none() {
+                        self.emit_journal();
+                        return;
                     }
-                    (Ok(_), None) => format!("day closed: journal/{date}.md written"),
-                    (Err(why), _) => {
-                        format!("day closed without a handoff ({why}): journal/{date}.md written")
-                    }
-                };
-                self.activity(dovetail_api::ActivityKind::Lifecycle, None, note);
-                if let (Some(time), Ok(handoff)) = (fresh, &reply) {
-                    let kind = Fresh::MidDay { date, time };
-                    let seed = seed_prompt(today(), &kind, handoff.trim(), &open_tasks(&tasks));
-                    self.begin_fresh(PendingFresh {
-                        kind,
-                        seed: Some(seed),
-                    });
                 }
             }
-            Err(e) => self.fail(format!("writing journal/{date}.md: {e}")),
+        }
+        if let Some(time) = fresh {
+            let old_transcript = self
+                .agents
+                .get(&AgentId(COORDINATOR.into()))
+                .and_then(|r| r.transcript_path.clone());
+            let kind = Fresh::MidDay {
+                date,
+                time: time.clone(),
+            };
+            let seed = match &reply {
+                Ok(handoff) => Some(seed_prompt(
+                    today(),
+                    &kind,
+                    handoff.trim(),
+                    &open_tasks(&tasks),
+                    old_transcript.as_deref(),
+                    journaled,
+                )),
+                Err(why) if switch.is_some() => Some(fallback_seed_prompt(
+                    today(),
+                    &time,
+                    why,
+                    &facts,
+                    old_transcript.as_deref(),
+                )),
+                Err(_) => None,
+            };
+            if let Some(seed) = seed {
+                self.begin_fresh(PendingFresh {
+                    kind,
+                    seed: Some(seed),
+                    switch,
+                });
+            }
         }
         self.emit_journal();
     }
@@ -783,8 +1015,15 @@ impl Core {
         };
         let tasks = self.db.load_tasks().await.unwrap_or_default();
         let kind = Fresh::NewDay { date };
-        let seed = seed_prompt(today, &kind, handoff(&text), &open_tasks(&tasks));
-        self.fresh_coordinator(&kind, Some(&seed));
+        let seed = seed_prompt(
+            today,
+            &kind,
+            handoff(&text),
+            &open_tasks(&tasks),
+            None,
+            true,
+        );
+        self.fresh_coordinator(&kind, Some(&seed), None);
     }
 
     /// The coordinator moved to its own folder (ADR 0021 point 8): a new session there, seeded
@@ -873,18 +1112,40 @@ impl Core {
 
     /// Gives the coordinator a new session and sends it `seed`. The old session id and
     /// transcript stay on disk; the notice names the transcript when it is known.
-    fn fresh_coordinator(&mut self, kind: &Fresh, seed: Option<&str>) {
+    fn fresh_coordinator(
+        &mut self,
+        kind: &Fresh,
+        seed: Option<&str>,
+        switch: Option<SwitchTarget>,
+    ) {
         let date = kind.date();
         let id = AgentId(COORDINATOR.into());
         let Some(row) = self.agents.get(&id) else {
             return;
         };
         let old_transcript = row.transcript_path.clone();
+        let switched = switch.is_some();
         self.update_agent(&id, |row| {
             row.session_id = Some(uuid::Uuid::new_v4().to_string());
             row.transcript_path = None;
+            if let Some(target) = &switch {
+                row.agent.driver = target.driver;
+                row.model_choice = Some(target.model_choice.clone());
+                row.agent.model = None;
+                row.agent.effort = None;
+                if target.driver != DriverKind::Claude {
+                    row.claude_home = None;
+                }
+            }
         });
-        tracing::info!(journal = %date, ?kind, "fresh coordinator");
+        if switched {
+            self.commands.remove(&id);
+            self.emit(dovetail_api::Event::CommandsChanged {
+                agent: id.clone(),
+                commands: Vec::new(),
+            });
+        }
+        tracing::info!(journal = %date, ?kind, switched, "fresh coordinator");
         self.notice(&id, fresh_notice(kind, old_transcript.as_deref()));
         let started = match seed {
             Some(seed) => self.send_text(&id, seed, EntryKind::Notice, format!("Dovetail: {seed}")),
@@ -909,10 +1170,10 @@ impl Core {
                 return;
             }
         }
-        if let Some(PendingFresh { kind, seed }) = self.pending_fresh.take()
+        if let Some(PendingFresh { kind, seed, switch }) = self.pending_fresh.take()
             && self.quitting.is_none()
         {
-            self.fresh_coordinator(&kind, seed.as_deref());
+            self.fresh_coordinator(&kind, seed.as_deref(), switch);
         }
     }
 }

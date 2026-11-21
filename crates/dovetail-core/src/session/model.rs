@@ -9,7 +9,7 @@
 //! switch's answer never confirms another switch. One switch at a time: another is refused until
 //! the first is confirmed or refused.
 
-use dovetail_api::{AgentId, AgentKind, Event, ModelOption, ReasoningEffort};
+use dovetail_api::{AgentId, AgentKind, DriverKind, Event, ModelOption, ReasoningEffort};
 use dovetail_driver::{ModelInfo, SwitchId};
 
 use crate::db::{AgentRow, ModelChoice};
@@ -94,39 +94,46 @@ impl Core {
         row.agent
             .model
             .as_deref()
-            .is_some_and(|running| self.runs_model_named(running, model))
+            .is_some_and(|running| self.runs_model_named(row.agent.driver, running, model))
     }
 
-    /// Whether `running` (a resolved name) is `model` (an alias or a full name).
-    fn runs_model_named(&self, running: &str, model: &str) -> bool {
+    /// Whether `running` (a resolved name) on `driver` is `model` (an alias or a full name).
+    fn runs_model_named(&self, driver: DriverKind, running: &str, model: &str) -> bool {
         running == model
             || self
                 .model_catalog
-                .iter()
+                .get(&driver)
+                .into_iter()
+                .flatten()
                 .any(|m| m.value == model && m.resolved.as_deref() == Some(running))
     }
 
-    /// Whether Claude Code lists `model` (by alias or full name): `None` while no session has
-    /// listed its models, when it cannot be told.
-    pub(crate) fn model_listed(&self, model: &str) -> Option<bool> {
-        (!self.model_catalog.is_empty()).then(|| {
-            self.model_catalog
-                .iter()
-                .any(|m| m.value == model || m.resolved.as_deref() == Some(model))
-        })
+    /// Whether `driver` lists `model` (by alias or full name): `None` while no session of that
+    /// driver has listed its models, when it cannot be told.
+    pub(crate) fn model_listed(&self, driver: DriverKind, model: &str) -> Option<bool> {
+        self.model_catalog
+            .get(&driver)
+            .filter(|c| !c.is_empty())
+            .map(|catalog| {
+                catalog
+                    .iter()
+                    .any(|m| m.value == model || m.resolved.as_deref() == Some(model))
+            })
     }
 
-    /// The listed models' names, comma-separated, for an error.
-    pub(crate) fn model_catalog_names(&self) -> String {
+    /// The listed models' names for `driver`, comma-separated, for an error.
+    pub(crate) fn model_catalog_names(&self, driver: DriverKind) -> String {
         let names: Vec<&str> = self
             .model_catalog
-            .iter()
+            .get(&driver)
+            .into_iter()
+            .flatten()
             .map(|m| m.value.as_str())
             .collect();
         names.join(", ")
     }
 
-    /// A session launched with a model and effort: the start-up read says what Claude Code
+    /// A session launched with a model and effort: the start-up read says what the driver
     /// applied. A mismatch goes in the session's log and, for a slice, to the coordinator.
     /// Returns what the session actually runs, to keep on its row: a later start compares
     /// with that, so a mismatch is reported once.
@@ -138,12 +145,16 @@ impl Core {
         effort: Option<ReasoningEffort>,
     ) -> ModelChoice {
         let name = self.agent_name(agent);
+        let driver = self
+            .agents
+            .get(agent)
+            .map_or(DriverKind::Claude, |r| r.agent.driver);
         let mut kept = choice.clone();
         let mut problems = Vec::new();
         // The applied model is the resolved name (`claude-sonnet-5-5`). Without a model list to
         // map the alias, the name must at least contain it: a typo like `opuss` does not.
         if let Some(applied) = model
-            && !self.runs_model_named(applied, &choice.model)
+            && !self.runs_model_named(driver, applied, &choice.model)
             && !applied.contains(&choice.model)
         {
             problems.push(format!("model {} (it runs {applied})", choice.model));
@@ -253,25 +264,48 @@ impl Core {
         ));
     }
 
-    /// A session listed its models; the selector learns which effort levels each accepts.
-    pub(crate) fn on_models_listed(&mut self, models: Vec<ModelInfo>) {
-        if models.is_empty() || models == self.model_catalog {
+    /// A session listed its models; the selector learns which models and effort levels each
+    /// driver accepts.
+    pub(crate) fn on_models_listed(&mut self, agent: &AgentId, models: Vec<ModelInfo>) {
+        let Some(driver) = self.agents.get(agent).map(|r| r.agent.driver) else {
+            return;
+        };
+        if models.is_empty() || self.model_catalog.get(&driver) == Some(&models) {
             return;
         }
-        self.model_catalog = models;
+        self.model_catalog.insert(driver, models);
         self.emit(Event::ModelsChanged(self.model_options()));
     }
 
-    /// The models the selector offers: `config.toml`'s names, with what sessions reported.
+    /// The models the selector offers: `config.toml`'s Claude names matched against Claude's
+    /// catalog, followed by agy's reported families.
     pub(crate) fn model_options(&self) -> Vec<ModelOption> {
-        options(&self.config.model_names(), &self.model_catalog)
+        let mut out = options(
+            &self.config.model_names(),
+            self.model_catalog
+                .get(&DriverKind::Claude)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+        );
+        if let Some(agy) = self.model_catalog.get(&DriverKind::Agy) {
+            out.extend(agy.iter().map(|m| ModelOption {
+                name: m.value.clone(),
+                resolved: m.resolved.clone(),
+                efforts: Some(m.efforts.clone()),
+                driver: DriverKind::Agy,
+            }));
+        }
+        out
     }
 
     /// `--model` and `--effort` for `row`'s next start: the user's choice, else the default
-    /// of its kind.
+    /// of its kind (Claude Code only; agy uses its own default when no choice is stored).
     pub(crate) fn launch_model(&self, row: &AgentRow) -> (Option<String>, Option<ReasoningEffort>) {
         if let Some(choice) = &row.model_choice {
             return (Some(choice.model.clone()), choice.effort);
+        }
+        if row.agent.driver != DriverKind::Claude {
+            return (None, None);
         }
         let default = if matches!(
             row.agent.kind,
@@ -292,7 +326,7 @@ impl Core {
 }
 
 /// "sonnet at high effort", or just the model.
-fn describe(model: &str, effort: Option<ReasoningEffort>) -> String {
+pub(crate) fn describe(model: &str, effort: Option<ReasoningEffort>) -> String {
     match effort {
         Some(e) => format!("{model} at {} effort", e.as_str()),
         None => model.to_owned(),

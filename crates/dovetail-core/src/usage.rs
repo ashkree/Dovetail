@@ -8,10 +8,12 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::{AgentId, Event, UsageLimits, UsageStatus, UsageWindow};
-use dovetail_driver::{RateLimitInfo, RateLimitWindow};
+use dovetail_api::{
+    AgentId, DriverKind, DriverUsage, Event, UsageLimits, UsageStatus, UsageWindow,
+};
+use dovetail_driver::{RateLimitInfo, RateLimitWindow, UsageQuery};
 
-use crate::service::Core;
+use crate::service::{Core, Input};
 
 /// The API's view of a `rate_limit_event`. `None` when it carries neither window.
 pub(crate) fn from_rate_limit(info: &RateLimitInfo) -> Option<UsageLimits> {
@@ -85,6 +87,59 @@ impl Core {
             .get(id)
             .and_then(|r| r.claude_home.clone())
             .unwrap_or_else(crate::profile::default_dir)
+    }
+
+    /// Reads each registered driver's usage limits concurrently on the runtime and sends the
+    /// reports back in [`DriverKind::ALL`] order (task #46).
+    pub(crate) fn load_usage(&self) {
+        let cwd = self
+            .project
+            .first_repo_path()
+            .unwrap_or_else(|| self.project.coordinator_folder(&self.paths));
+        let claude_env = match &self.claude {
+            Ok(home) if home.explicit => vec![(
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                home.dir.to_string_lossy().into_owned(),
+            )],
+            _ => Vec::new(),
+        };
+        let queries: Vec<_> = DriverKind::ALL
+            .into_iter()
+            .filter_map(|kind| {
+                let driver = self.options.drivers.get(kind)?.clone();
+                let env = if kind == DriverKind::Claude {
+                    claude_env.clone()
+                } else {
+                    Vec::new()
+                };
+                Some((
+                    kind,
+                    driver,
+                    UsageQuery {
+                        cwd: cwd.clone(),
+                        env,
+                    },
+                ))
+            })
+            .collect();
+        let inputs = self.inputs.clone();
+        tokio::spawn(async move {
+            let handles: Vec<_> = queries
+                .into_iter()
+                .map(|(kind, driver, query)| {
+                    (kind, tokio::spawn(async move { driver.usage(query).await }))
+                })
+                .collect();
+            let mut reports = Vec::with_capacity(handles.len());
+            for (kind, handle) in handles {
+                let report = match handle.await {
+                    Ok(report) => report,
+                    Err(e) => DriverUsage::failed(kind, e.to_string()),
+                };
+                reports.push(report);
+            }
+            let _ = inputs.send(Input::UsageLoaded(reports));
+        });
     }
 
     /// The session reported its model. Claude Code's own placeholder messages (`<synthetic>`)

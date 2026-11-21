@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use dovetail_api::socket::SocketResponseBody;
 use dovetail_api::{
-    ActivityKind, AgentId, AgentKind, AgentStatus, Bucket, Event, InboxKind, TaskChange, TaskId,
-    TaskStatus, WorktreeRef,
+    ActivityKind, AgentId, AgentKind, AgentStatus, Bucket, DriverKind, Event, InboxKind,
+    TaskChange, TaskId, TaskStatus, WorktreeRef,
 };
 use serde_json::json;
 use tokio::sync::oneshot;
@@ -27,6 +27,7 @@ use crate::error::{SessionError, SetupFailure, SliceError};
 use crate::inbox::Waiter;
 use crate::projects;
 use crate::projects::Repo;
+use crate::recipe::Recipe;
 use crate::service::{COORDINATOR, Core, Input, new_agent};
 use crate::worktree::{self, SUBAGENT_PREFIX, WorktreeError};
 
@@ -45,6 +46,8 @@ pub(crate) struct SliceRequest {
     pub(crate) repo: Option<String>,
     /// The model and effort the coordinator picked (task #42); `None`: the default.
     pub(crate) model_choice: Option<ModelChoice>,
+    /// The CLI driver the slice runs on (task #46).
+    pub(crate) driver: DriverKind,
 }
 
 /// What became of a request.
@@ -140,12 +143,15 @@ impl Core {
         {
             return Err(SliceError::NoTask(task.0));
         }
+        if self.options.drivers.get(request.driver).is_none() {
+            return Err(SessionError::NoDriver(request.driver).into());
+        }
         if let Some(choice) = &request.model_choice
-            && self.model_listed(&choice.model) == Some(false)
+            && self.model_listed(request.driver, &choice.model) == Some(false)
         {
             return Err(SliceError::UnknownModel {
                 model: choice.model.clone(),
-                known: self.model_catalog_names(),
+                known: self.model_catalog_names(request.driver),
             });
         }
         Ok(())
@@ -175,7 +181,7 @@ impl Core {
                 by_coordinator: request.by_coordinator,
                 repo: request.repo,
                 model_choice: request.model_choice,
-                driver: dovetail_api::DriverKind::Claude,
+                driver: request.driver,
             };
             queued.id = self.db.enqueue_slice(queued.clone()).await?;
             self.queue.push_back(queued);
@@ -199,6 +205,7 @@ impl Core {
                 by_coordinator: queued.by_coordinator,
                 repo: queued.repo,
                 model_choice: queued.model_choice,
+                driver: queued.driver,
             };
             let name = request.name.clone();
             let by_coordinator = request.by_coordinator;
@@ -254,6 +261,7 @@ impl Core {
         first_prompt.push_str(request.brief.trim());
 
         let mut agent = new_agent(id.clone(), name.clone(), AgentKind::Slice, request.task);
+        agent.driver = request.driver;
         agent.status = AgentStatus::SettingUp;
         if git {
             agent.worktree = Some(WorktreeRef {
@@ -292,31 +300,115 @@ impl Core {
             }
         }
 
-        let cwd = repo_path.clone();
-        if git {
-            worktree::clear_hook_outcome(&self.paths, self.project.key(), &name);
+        match request.driver {
+            DriverKind::Claude => {
+                let cwd = repo_path;
+                if git {
+                    worktree::clear_hook_outcome(&self.paths, self.project.key(), &name);
+                }
+                if let Err(e) = self.launch(&id, cwd, git.then(|| name.clone())) {
+                    self.closed(&id);
+                    return Err(e.into());
+                }
+                self.activity(
+                    ActivityKind::Lifecycle,
+                    Some(&id),
+                    format!("slice {name} started"),
+                );
+                let Some(live) = self.live.get_mut(&id) else {
+                    return Err(SessionError::NotRunning(id.0.clone()).into());
+                };
+                live.brief = Some(first_prompt);
+                live.setting_up = true;
+                let generation = live.generation;
+                if git {
+                    self.watch_setup(id, name, generation);
+                } else {
+                    self.slice_ready(&id);
+                }
+            }
+            DriverKind::Agy => {
+                if git {
+                    let recipe = Recipe::load(&self.paths.recipe(self.project.key()))
+                        .unwrap_or_default()
+                        .for_repo(&repo.name);
+                    let paths = self.paths.clone();
+                    let project = self.project.key().to_owned();
+                    let inputs = self.inputs.clone();
+                    let agent = id;
+                    tokio::task::spawn_blocking(move || {
+                        let result = worktree::create(
+                            &paths,
+                            &worktree::CreateRequest {
+                                project,
+                                name,
+                                cwd: repo_path,
+                                recipe,
+                            },
+                        );
+                        let _ = inputs.send(Input::AgyWorktreeCreated {
+                            agent,
+                            brief: first_prompt,
+                            result,
+                        });
+                    });
+                } else {
+                    if let Err(e) = self.launch(&id, repo_path, None) {
+                        self.closed(&id);
+                        return Err(e.into());
+                    }
+                    self.activity(
+                        ActivityKind::Lifecycle,
+                        Some(&id),
+                        format!("slice {name} started"),
+                    );
+                    let Some(live) = self.live.get_mut(&id) else {
+                        return Err(SessionError::NotRunning(id.0.clone()).into());
+                    };
+                    live.brief = Some(first_prompt);
+                    live.setting_up = true;
+                    self.slice_ready(&id);
+                }
+            }
         }
-        if let Err(e) = self.launch(&id, cwd, git.then(|| name.clone())) {
-            self.closed(&id);
-            return Err(e.into());
+        Ok(())
+    }
+
+    /// Finishes starting an `agy` slice once its blocking `worktree::create` completes.
+    pub(crate) fn on_agy_worktree_created(
+        &mut self,
+        agent: AgentId,
+        brief: String,
+        result: Result<worktree::Created, WorktreeError>,
+    ) {
+        let Some(row) = self.agents.get(&agent) else {
+            return;
+        };
+        if row.agent.status != AgentStatus::SettingUp || self.live.contains_key(&agent) {
+            return;
+        }
+        let name = row.agent.name.clone();
+        let created = match result {
+            Ok(created) => created,
+            Err(e) => {
+                self.setup_failed(&agent, e.to_string());
+                return;
+            }
+        };
+        if let Err(e) = self.launch(&agent, created.path, None) {
+            self.setup_failed(&agent, e.to_string());
+            return;
         }
         self.activity(
             ActivityKind::Lifecycle,
-            Some(&id),
+            Some(&agent),
             format!("slice {name} started"),
         );
-        let Some(live) = self.live.get_mut(&id) else {
-            return Err(SessionError::NotRunning(id.0.clone()).into());
-        };
-        live.brief = Some(first_prompt);
-        live.setting_up = true;
-        let generation = live.generation;
-        if git {
-            self.watch_setup(id, name, generation);
-        } else {
-            self.slice_ready(&id);
+        if let Some(live) = self.live.get_mut(&agent) {
+            live.brief = Some(brief);
+            live.setting_up = true;
         }
-        Ok(())
+        self.slice_ready(&agent);
     }
 
     /// Waits for the worktree hook's outcome off the loop, then reports it as an [`Input`].
@@ -397,9 +489,16 @@ impl Core {
             format!("slice {name} ready"),
         );
         let session = self.session_name(&name);
-        self.tell_coordinator(format!(
-            "slice {name} ready; its session is named `{session}` for SendMessage"
-        ));
+        let msg = if self
+            .agents
+            .get(agent)
+            .is_some_and(|r| r.agent.driver == DriverKind::Agy)
+        {
+            format!("slice {name} ready (runs on agy; cannot receive SendMessage)")
+        } else {
+            format!("slice {name} ready; its session is named `{session}` for SendMessage")
+        };
+        self.tell_coordinator(msg);
     }
 
     /// Setup failed: no first prompt, an inbox error, and the coordinator is told.
