@@ -7,12 +7,14 @@ use crossterm::event::KeyEvent;
 use dovetail_api::{AgentId, Command, InboxId, ProjectId, TaskChange, TaskId};
 
 use super::App;
+use super::ChatSite;
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
 use crate::help;
 use crate::keymap::Scope;
 use crate::mode::Mode;
 use crate::model_select::{ModelSelector, SelectorOutcome};
 use crate::picker::{Picker, PickerKey, PickerOutcome};
+use crate::region::RegionId;
 use crate::switcher;
 
 /// What choosing a picker row does.
@@ -45,6 +47,15 @@ fn no_profile_note(path: &std::path::Path) -> String {
     format!("default profile kept; starter recipe at {}", path.display())
 }
 
+/// The chat bar an overlay was opened from while typing in it: where focus was, which chat view
+/// and which agent. Closing the overlay hands typing back only if all three still hold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ChatMark {
+    focus: RegionId,
+    site: ChatSite,
+    agent: Option<AgentId>,
+}
+
 /// What floats over the layout.
 pub(super) enum Overlay {
     /// The agent switcher, the everything picker or the relate picker.
@@ -58,19 +69,46 @@ pub(super) enum Overlay {
 impl App {
     pub(super) fn open_overlay(&mut self, overlay: Overlay) {
         self.resolver.reset();
+        self.overlay_chat = self.chat_mark();
         self.overlay = Some(overlay);
         // Typing goes to the overlay, so the status bar reads INSERT.
         self.mode = Mode::Insert;
     }
 
-    fn close_overlay(&mut self) {
+    /// The chat bar being typed in right now, if any.
+    fn chat_mark(&self) -> Option<ChatMark> {
+        let chat = self.chat_view();
+        (self.mode == Mode::Insert && chat.is_chatting()).then(|| ChatMark {
+            focus: self.regions.focus(),
+            site: self.chat_site,
+            agent: chat.agent().cloned(),
+        })
+    }
+
+    /// Closes the overlay, back in Normal mode. Returns the chat bar it was opened from; give it
+    /// to [`restore_chat`](Self::restore_chat) once what the overlay did is applied.
+    fn close_overlay(&mut self) -> Option<ChatMark> {
         self.overlay = None;
-        // A picker opened from the chat bar hands typing back to it.
-        self.mode = if self.chat_view().is_chatting() {
-            Mode::Insert
-        } else {
-            Mode::Normal
-        };
+        self.mode = Mode::Normal;
+        self.overlay_chat.take()
+    }
+
+    /// Hands typing back to the chat bar an overlay was opened from, if it is still the one
+    /// focused and open (choosing an agent or task may have moved focus elsewhere).
+    fn restore_chat(&mut self, from: Option<ChatMark>) {
+        if from.is_some() && from == self.chat_mark_ignoring_mode() {
+            self.mode = Mode::Insert;
+        }
+    }
+
+    /// [`chat_mark`](Self::chat_mark) without the mode test, for after a choice.
+    fn chat_mark_ignoring_mode(&self) -> Option<ChatMark> {
+        let chat = self.chat_view();
+        chat.is_chatting().then(|| ChatMark {
+            focus: self.regions.focus(),
+            site: self.chat_site,
+            agent: chat.agent().cloned(),
+        })
     }
 
     /// `<leader>ss`: Dovetail's agents only.
@@ -195,13 +233,14 @@ impl App {
             Overlay::Picker(mut picker, purpose) => match picker.key(event) {
                 PickerOutcome::Pending => self.overlay = Some(Overlay::Picker(picker, purpose)),
                 PickerOutcome::Closed => {
-                    self.close_overlay();
+                    let from = self.close_overlay();
+                    self.restore_chat(from);
                     if let Purpose::Profile { path, .. } = purpose {
                         self.note = Some(no_profile_note(&path));
                     }
                 }
                 PickerOutcome::Chosen(key) => {
-                    self.close_overlay();
+                    let from = self.close_overlay();
                     match (purpose, key) {
                         (Purpose::Relate(task), PickerKey::Task(other)) => {
                             self.toggle_related(task, other)
@@ -239,12 +278,13 @@ impl App {
                         }
                         (_, key) => self.choose(key),
                     }
+                    self.restore_chat(from);
                 }
             },
             Overlay::Model(mut selector, back) => match selector.key(event) {
                 SelectorOutcome::Pending => self.overlay = Some(Overlay::Model(selector, back)),
                 SelectorOutcome::Cancel => {
-                    self.close_overlay();
+                    let _ = self.close_overlay();
                     self.mode = back;
                 }
                 SelectorOutcome::Apply {
@@ -252,7 +292,7 @@ impl App {
                     model,
                     effort,
                 } => {
-                    self.close_overlay();
+                    let _ = self.close_overlay();
                     self.mode = back;
                     let level =
                         effort.map_or(String::new(), |e| format!(" at {} effort", e.as_str()));
@@ -266,9 +306,13 @@ impl App {
             },
             Overlay::Capture(mut capture) => match capture.key(event) {
                 CaptureOutcome::Pending => self.overlay = Some(Overlay::Capture(capture)),
-                CaptureOutcome::Cancel => self.close_overlay(),
+                CaptureOutcome::Cancel => {
+                    let from = self.close_overlay();
+                    self.restore_chat(from);
+                }
                 CaptureOutcome::Save { open_detail } => {
-                    self.close_overlay();
+                    let from = self.close_overlay();
+                    self.restore_chat(from);
                     match capture.build() {
                         Some(task) => {
                             if open_detail {

@@ -3,6 +3,7 @@
 
 mod support;
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{Command, SlashCommand};
 use dovetail_tui::Mode;
 use support::*;
@@ -100,4 +101,47 @@ fn skills_command_opens_the_same_picker() {
     type_keys(&mut app, ":skills");
     app.on_key(enter(), 2);
     assert!(render(&mut app, 120, 30).contains("◆ /handoff"));
+}
+
+#[test]
+fn backspacing_to_a_lone_slash_does_not_open_the_picker() {
+    let mut app = app_with_skills();
+    type_keys(&mut app, "/a");
+    app.on_key(esc(), 1);
+    // Esc closed the picker; backspace back to a lone `/`.
+    app.on_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE), 2);
+    let screen = render(&mut app, 120, 30);
+    assert!(!screen.contains("Skills"), "{screen}");
+    assert_eq!(app.mode(), Mode::Insert);
+}
+
+#[test]
+fn skills_without_session_commands_lists_dovetails_three() {
+    let mut app = app_with(world());
+    type_keys(&mut app, ":skills");
+    app.on_key(enter(), 1);
+    let screen = render(&mut app, 120, 30);
+    for name in ["/model", "/handoff", "/fresh"] {
+        assert!(screen.contains(&format!("◆ {name}")), "{name}: {screen}");
+    }
+}
+
+#[test]
+fn a_picker_opened_from_normal_closes_to_normal_even_with_a_chat_bar_open() {
+    let mut app = app_with_skills();
+    type_keys(&mut app, "hi");
+    app.on_key(esc(), 1);
+    assert_eq!(app.mode(), Mode::Normal);
+    type_keys(&mut app, " ss");
+    assert!(render(&mut app, 120, 30).contains("Switch"));
+    app.on_key(esc(), 2);
+    assert_eq!(app.mode(), Mode::Normal);
+}
+
+#[test]
+fn choosing_a_command_from_the_slash_picker_leaves_typing_in_the_bar() {
+    let mut app = app_with_skills();
+    type_keys(&mut app, "/");
+    app.on_key(enter(), 1);
+    assert_eq!(app.mode(), Mode::Insert);
 }

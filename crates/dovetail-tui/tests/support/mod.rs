@@ -345,8 +345,10 @@ pub fn type_keys(app: &mut App, keys: &str) {
     }
 }
 
-/// Types a whole `/command line` into the chat bar. A leading `/` opens the skill picker, so
-/// Esc closes it (leaving the `/`) before the rest is typed.
+/// Types a whole `/command line` into the chat bar. A leading `/` opens the skill picker, which
+/// would take the rest of the line as its filter, so Esc closes it first (leaving the `/` in the
+/// bar) and the rest is typed into the bar. Use it for tests of what a typed command does; test
+/// the picker itself by typing `/` alone.
 pub fn type_command(app: &mut App, line: &str) {
     let rest = line.strip_prefix('/').expect("a slash command");
     type_keys(app, "/");

@@ -5,15 +5,11 @@
 use crate::action::Action;
 
 /// A slash command Dovetail answers itself: name, description and argument hint (empty for
-/// none). The description starts "Dovetail: " so the popup shows who answers.
+/// none). The picker marks these rows as Dovetail's.
 pub const DOVETAIL_SLASH: &[(&str, &str, &str)] = &[
-    ("model", "Dovetail: pick model and effort", "[name]"),
-    (
-        "handoff",
-        "Dovetail: fresh coordinator seeded with a handoff",
-        "",
-    ),
-    ("fresh", "Dovetail: fresh coordinator, no handoff", ""),
+    ("model", "Pick model and effort", "[name]"),
+    ("handoff", "Fresh coordinator seeded with a handoff", ""),
+    ("fresh", "Fresh coordinator, no handoff", ""),
 ];
 
 /// Whether Dovetail answers `/name` itself.

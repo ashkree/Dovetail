@@ -607,7 +607,10 @@ fn slash_picks_a_command_and_at_asks_the_core_for_paths() {
     press(&mut app, "i");
     type_keys(&mut app, "/gr");
     let screen = render(&mut app, 100, 30);
-    assert!(screen.contains("/grilling"), "{screen}");
+    assert!(
+        screen.contains("/grilling") && screen.contains("grilling things"),
+        "{screen}"
+    );
     app.on_key(enter(), 100);
     type_keys(&mut app, "the plan @READ");
     assert_eq!(

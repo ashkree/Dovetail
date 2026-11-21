@@ -116,6 +116,8 @@ pub struct App {
     confirm: Option<Confirm>,
     /// A picker or the quick-capture box floating over the layout.
     overlay: Option<Overlay>,
+    /// The chat bar the overlay was opened from (typing in it), to hand typing back to on close.
+    overlay_chat: Option<overlay::ChatMark>,
     /// The last in-buffer search term, for `n` and `N`.
     search: Option<String>,
     /// The task detail was opened from the board, so `Esc` goes back to the board.
@@ -182,6 +184,7 @@ impl App {
             input: None,
             confirm: None,
             overlay: None,
+            overlay_chat: None,
             search: None,
             detail_from_board: false,
             open_after_create: None,
@@ -897,7 +900,7 @@ impl App {
                 }
                 _ => {}
             }
-            // Fields borrowed apart, so the session's commands need no copy per key.
+            // Fields borrowed apart from `self`, so the chat view can be used mutably.
             let view = chat_view_of(&mut self.buffers, self.chat_site);
             let sent = view.chat_key(event);
             let paths = view.take_path_request();

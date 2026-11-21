@@ -97,7 +97,7 @@ pub struct ConversationBuffer {
     chat: Option<TextInput>,
     /// Images attached to the message being typed; their markers are in the input's text.
     images: Vec<Attachment>,
-    /// The `/` and `@` popup over the chat input.
+    /// The `@` path popup over the chat input.
     completion: Completion,
     /// A `/` was just typed as the first character.
     wants_commands: bool,
@@ -323,7 +323,7 @@ impl ConversationBuffer {
     }
 
     /// Applies a key to the chat input. `Enter` returns the prompt and its images to send;
-    /// `Esc` keeps both as the agent's draft. While the `/` or `@` popup is open it takes its
+    /// `Esc` keeps both as the agent's draft. While the `@` popup is open it takes its
     /// keys first. A `/` typed as the first character asks for the command picker
     /// ([`take_command_request`](Self::take_command_request)).
     pub fn chat_key(&mut self, key: KeyEvent) -> Option<(AgentId, String, Vec<Attachment>)> {

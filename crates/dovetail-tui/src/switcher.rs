@@ -107,40 +107,66 @@ pub fn agent_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerIte
 /// The glyph that marks a command Dovetail answers itself; Claude Code's rows show `/`.
 const DOVETAIL_GLYPH: &str = "◆";
 
-/// Slash command and skill rows: Dovetail's own first, marked, then the session's, minus any
-/// Dovetail answers itself (so the user's `handoff` skill and Claude Code's `/model` are hidden).
-pub fn command_items(commands: &[SlashCommand], theme: &Theme) -> Vec<PickerItem> {
+/// One slash command or skill as the picker shows it.
+struct CommandEntry {
+    name: String,
+    description: String,
+    /// Argument hint, empty for none.
+    hint: String,
+    /// Dovetail answers it itself.
+    dovetail: bool,
+}
+
+/// Dovetail's own commands first, then the session's, minus any Dovetail answers itself (so the
+/// user's `handoff` skill and Claude Code's `/model` are hidden). The one merge the picker's
+/// rows and preview both read.
+fn merged_commands<'a>(commands: impl IntoIterator<Item = &'a SlashCommand>) -> Vec<CommandEntry> {
     let own = slash::DOVETAIL_SLASH
         .iter()
-        .map(|(name, description, hint)| {
-            let detail = if hint.is_empty() {
-                "Dovetail".to_owned()
-            } else {
-                format!("Dovetail {hint}")
-            };
-            (name.to_string(), description.to_string(), detail, true)
+        .map(|(name, description, hint)| CommandEntry {
+            name: name.to_string(),
+            description: description.to_string(),
+            hint: hint.to_string(),
+            dovetail: true,
         });
     let theirs = commands
-        .iter()
+        .into_iter()
         .filter(|c| !slash::is_dovetail(&c.name))
-        .map(|c| {
-            (
-                c.name.clone(),
-                c.description.clone(),
-                c.argument_hint.clone(),
-                false,
-            )
+        .map(|c| CommandEntry {
+            name: c.name.clone(),
+            description: c.description.clone(),
+            hint: c.argument_hint.clone(),
+            dovetail: false,
         });
-    own.chain(theirs)
-        .map(|(name, description, detail, dovetail)| PickerItem {
-            haystack: format!("{name} {description}"),
-            label: format!("/{name}"),
-            key: PickerKey::Command(name),
-            detail,
-            glyph: if dovetail { DOVETAIL_GLYPH } else { "/" },
-            color: if dovetail { theme.focus } else { theme.dim },
+    own.chain(theirs).collect()
+}
+
+/// `text`, then the argument `hint` after it when there is one.
+fn with_hint(text: &str, hint: &str) -> String {
+    if hint.is_empty() {
+        text.to_owned()
+    } else {
+        format!("{text} {hint}")
+    }
+}
+
+/// Slash command and skill rows (see [`merged_commands`]); Dovetail's are marked.
+pub fn command_items(commands: &[SlashCommand], theme: &Theme) -> Vec<PickerItem> {
+    merged_commands(commands)
+        .into_iter()
+        .map(|c| PickerItem {
+            haystack: format!("{} {}", c.name, c.description),
+            label: format!("/{}", c.name),
+            detail: if c.dovetail {
+                with_hint("Dovetail", &c.hint)
+            } else {
+                c.hint
+            },
+            key: PickerKey::Command(c.name),
+            glyph: if c.dovetail { DOVETAIL_GLYPH } else { "/" },
+            color: if c.dovetail { theme.focus } else { theme.dim },
             depth: 0,
-            section: if dovetail {
+            section: if c.dovetail {
                 "Dovetail"
             } else {
                 "Commands and skills"
@@ -439,35 +465,28 @@ fn agent_preview(
     out
 }
 
-/// A command's name, arguments and description; Dovetail's own say so. Dovetail's table wins over
-/// a session's command of the same name, as in [`command_items`].
+/// A command's name, arguments and description; Dovetail's own say so.
 fn command_preview(
     snap: &Snapshot,
     name: &str,
     width: usize,
     theme: &Theme,
 ) -> Option<Vec<Line<'static>>> {
-    let own = slash::DOVETAIL_SLASH.iter().find(|(n, ..)| *n == name);
-    let (description, hint) = match own {
-        Some((_, description, hint)) => (description.to_string(), hint.to_string()),
-        None => {
-            let c = snap.commands.values().flatten().find(|c| c.name == name)?;
-            (c.description.clone(), c.argument_hint.clone())
-        }
-    };
-    let mut head = format!("/{name}");
-    if !hint.is_empty() {
-        head = format!("{head} {hint}");
-    }
-    let mut out = vec![Line::from(Span::styled(head, theme.accent()))];
-    if own.is_some() {
+    let entry = merged_commands(snap.commands.values().flatten())
+        .into_iter()
+        .find(|c| c.name == name)?;
+    let mut out = vec![Line::from(Span::styled(
+        with_hint(&format!("/{name}"), &entry.hint),
+        theme.accent(),
+    ))];
+    if entry.dovetail {
         out.push(Line::from(Span::styled(
             format!("{DOVETAIL_GLYPH} Dovetail command: answered here, never sent to Claude Code"),
             theme.fg(theme.focus),
         )));
     }
     out.push(Line::default());
-    for line in fmt::wrap(&description, width) {
+    for line in fmt::wrap(&entry.description, width) {
         out.push(Line::from(Span::styled(line, theme.body())));
     }
     Some(out)
