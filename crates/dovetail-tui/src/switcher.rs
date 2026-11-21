@@ -367,6 +367,8 @@ pub fn preview(
         PickerKey::Profile(_) => ("Profile", Vec::new()),
         // Previewed by `help::keys_preview`, which knows the keymap.
         PickerKey::Action(_) => ("Keys", Vec::new()),
+        // Previewed by `ModelPicker`, which knows the agent and models.
+        PickerKey::Model { .. } => ("Model", Vec::new()),
         PickerKey::Inbox(id) => (
             "Inbox item",
             snap.inbox

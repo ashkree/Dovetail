@@ -255,6 +255,7 @@ fn keys_elsewhere(map: &Keymap, scopes: &[Scope], action: Action) -> Vec<String>
             (Mode::Map, _) => format!("MAP: {keys}"),
             (Mode::Insert, _) => format!("typing: {keys}"),
             (_, Scope::Buffer(kind)) => format!("{kind:?}: {keys}"),
+            (_, Scope::Confirm) => format!("Confirm: {keys}"),
             (_, Scope::Global) => keys,
         })
         .collect()

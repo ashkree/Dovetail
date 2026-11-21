@@ -1,395 +1,424 @@
-//! The model selector (task #39): a small box listing the models the core offers, with the
-//! effort levels of the highlighted one. `j`/`k` pick the model, `h`/`l` the effort, Enter
-//! applies and Esc cancels. It applies to one session; the core does the switch and the
-//! usage row changes only when the session confirms it.
+//! The model picker (tasks #39, #46): `:model [name]` and `/model [name]`. It wraps the one
+//! [`Picker`], grouping rows by driver (`Claude Code`, then `agy`) with one row per `(model,
+//! effort)` pair. Picking an own-driver row applies [`dovetail_api::Command::SetModel`]; picking
+//! another driver's row on the coordinator opens the switch confirm modal. Non-coordinator
+//! sessions hide the other driver's rows.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, DriverKind, ModelOption, ReasoningEffort, model_option_index};
-use ratatui::Frame;
-use ratatui::layout::Rect;
+use crossterm::event::KeyEvent;
+use dovetail_api::{
+    Agent, AgentId, AgentKind, DriverKind, ModelOption, ReasoningEffort, model_option_index,
+};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
 
+use crate::fmt;
+use crate::picker::{Picker, PickerItem, PickerKey, PickerOutcome};
 use crate::theme::Theme;
 
-/// The effort a move starts from when the session has not reported one.
-const START_EFFORT: ReasoningEffort = ReasoningEffort::High;
-
-/// What a key did to the selector.
+/// What a key did to the model picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SelectorOutcome {
+pub enum ModelOutcome {
     /// Still open.
     Pending,
     /// Closed without a change.
     Cancel,
-    /// Switch `agent` to `model` at `effort`.
-    Apply {
+    /// Switch `agent` to `model` at `effort` on its current driver.
+    SetModel {
         /// The session.
         agent: AgentId,
         /// The model, as [`ModelOption::name`].
         model: String,
-        /// The effort; `None` when the model has no levels, or none was picked and none is
-        /// known.
+        /// The effort; `None` when the model has no levels.
+        effort: Option<ReasoningEffort>,
+    },
+    /// Start a new coordinator session on `driver` with `model` at `effort`.
+    SwitchDriver {
+        /// The coordinator.
+        agent: AgentId,
+        /// The driver to switch to.
+        driver: DriverKind,
+        /// The model, as that driver's [`ModelOption::name`].
+        model: String,
+        /// The effort; `None` when the model has no levels.
         effort: Option<ReasoningEffort>,
     },
 }
 
-/// The selector's state.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ModelSelector {
+/// The open model picker.
+pub struct ModelPicker {
     agent: AgentId,
-    name: String,
+    agent_kind: AgentKind,
+    agent_driver: DriverKind,
     options: Vec<ModelOption>,
-    /// The highlighted model.
-    row: usize,
-    /// The model the session runs now, if it is one of the options.
-    current: Option<usize>,
-    /// The session's effort now.
-    current_effort: Option<ReasoningEffort>,
-    /// The effort picked so far; carried from model to model, clamped to what each accepts.
-    effort: Option<ReasoningEffort>,
+    picker: Picker,
 }
 
-impl ModelSelector {
-    /// A selector for session `agent` (shown as `name`) running `model` at `effort`, over
-    /// `options`. It opens on the current model, or on `preselect` when that names an option.
+impl ModelPicker {
+    /// A picker for `agent` over `options`, pre-filtered by `preselect` when non-empty.
     pub fn new(
-        agent: AgentId,
-        name: impl Into<String>,
+        agent: &Agent,
         options: Vec<ModelOption>,
-        model: Option<&str>,
-        effort: Option<ReasoningEffort>,
         preselect: Option<&str>,
+        theme: &Theme,
     ) -> Self {
-        let current = model.and_then(|m| model_option_index(&options, DriverKind::Claude, m));
-        let row = preselect
-            .and_then(|p| options.iter().position(|o| o.name == p))
-            .or(current)
-            .unwrap_or(0);
+        let items = model_items(agent, &options, theme);
+        let mut picker = Picker::new(format!("model · {}", agent.name), items).preview_from_top();
+        if let Some(query) = preselect.map(str::trim).filter(|q| !q.is_empty()) {
+            picker = picker.with_query(query);
+        }
         Self {
-            agent,
-            name: name.into(),
+            agent: agent.id.clone(),
+            agent_kind: agent.kind,
+            agent_driver: agent.driver,
             options,
-            row,
-            current,
-            current_effort: effort,
-            effort,
+            picker,
         }
     }
 
-    /// The highlighted model.
-    pub fn selected(&self) -> Option<&ModelOption> {
-        self.options.get(self.row)
-    }
-
-    /// The effort Enter would apply with the highlighted model: the one picked, or the nearest
-    /// level below it that the model accepts (else the lowest it accepts); `None` when the model
-    /// has no levels.
-    pub fn effort(&self) -> Option<ReasoningEffort> {
-        let option = self.selected()?;
-        let wanted = self.effort?;
-        if option.supports(wanted) {
-            return Some(wanted);
-        }
-        let levels = levels(option);
-        levels
-            .iter()
-            .rev()
-            .find(|e| **e <= wanted)
-            .or_else(|| levels.first())
-            .copied()
+    /// The underlying picker, for rendering.
+    pub fn picker(&self) -> &Picker {
+        &self.picker
     }
 
     /// Handles one key.
-    pub fn key(&mut self, event: KeyEvent) -> SelectorOutcome {
-        if event.modifiers.contains(KeyModifiers::CONTROL) {
-            return SelectorOutcome::Pending;
-        }
-        match event.code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.row = (self.row + 1).min(self.options.len().saturating_sub(1));
+    pub fn key(&mut self, event: KeyEvent) -> ModelOutcome {
+        match self.picker.key(event) {
+            PickerOutcome::Pending => ModelOutcome::Pending,
+            PickerOutcome::Closed => ModelOutcome::Cancel,
+            PickerOutcome::Chosen(PickerKey::Model {
+                driver,
+                model,
+                effort,
+            }) => {
+                if driver == self.agent_driver {
+                    ModelOutcome::SetModel {
+                        agent: self.agent.clone(),
+                        model,
+                        effort,
+                    }
+                } else if self.agent_kind == AgentKind::Coordinator {
+                    ModelOutcome::SwitchDriver {
+                        agent: self.agent.clone(),
+                        driver,
+                        model,
+                        effort,
+                    }
+                } else {
+                    ModelOutcome::Cancel
+                }
             }
-            KeyCode::Char('k') | KeyCode::Up => self.row = self.row.saturating_sub(1),
-            KeyCode::Char('l') | KeyCode::Right => self.step_effort(true),
-            KeyCode::Char('h') | KeyCode::Left => self.step_effort(false),
-            KeyCode::Enter => {
-                let Some(option) = self.selected() else {
-                    return SelectorOutcome::Cancel;
-                };
-                return SelectorOutcome::Apply {
-                    agent: self.agent.clone(),
-                    model: option.name.clone(),
-                    effort: self.effort(),
-                };
-            }
-            KeyCode::Esc | KeyCode::Char('q') => return SelectorOutcome::Cancel,
-            _ => {}
-        }
-        SelectorOutcome::Pending
-    }
-
-    /// One level up or down among those the highlighted model accepts.
-    fn step_effort(&mut self, up: bool) {
-        let Some(option) = self.selected() else {
-            return;
-        };
-        let levels = levels(option);
-        if levels.is_empty() {
-            return;
-        }
-        let now = self.effort().unwrap_or(START_EFFORT);
-        let at = levels.iter().position(|e| *e == now);
-        let next = match (at, up) {
-            (Some(i), true) => levels.get(i + 1).or(levels.get(i)).copied(),
-            (Some(i), false) => levels.get(i.saturating_sub(1)).copied(),
-            // Not a level of this model (no effort known yet): start from the nearest.
-            (None, true) => levels.iter().copied().find(|e| *e >= now),
-            (None, false) => levels.iter().rev().copied().find(|e| *e <= now),
-        }
-        .or(levels.first().copied());
-        if next.is_some() {
-            self.effort = next;
+            PickerOutcome::Chosen(_) => ModelOutcome::Pending,
         }
     }
 
-    /// Draws the box at the bottom left of `area` (the conversation), above its chat bar.
-    pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
-        let name_width = self
-            .options
+    /// The preview pane's lines for the highlighted model and effort.
+    pub fn preview(&self, width: usize, theme: &Theme) -> Vec<Line<'static>> {
+        let mut out = Vec::new();
+        match self.picker.selected().map(|item| &item.key) {
+            Some(PickerKey::Model {
+                driver,
+                model,
+                effort,
+            }) => {
+                let option = self
+                    .options
+                    .iter()
+                    .find(|o| o.driver == *driver && o.name == *model);
+                let full_name = option
+                    .and_then(|o| o.resolved.as_deref())
+                    .unwrap_or(model.as_str());
+                let mut head = vec![Span::styled(full_name.to_owned(), theme.accent())];
+                if full_name != model {
+                    head.push(Span::styled(format!("  ({model})"), theme.dim()));
+                }
+                out.push(Line::from(head));
+                out.push(Line::from(Span::styled(driver.label(), theme.dim())));
+                if let Some(effort) = effort {
+                    out.push(Line::from(vec![
+                        Span::styled("effort: ", theme.dim()),
+                        Span::styled(effort.as_str(), theme.body()),
+                    ]));
+                }
+                out.push(Line::default());
+                let efforts_text = match option.and_then(|o| o.efforts.as_ref()) {
+                    Some(v) if v.is_empty() => "supported efforts: none".to_owned(),
+                    Some(v) => format!(
+                        "supported efforts: {}",
+                        v.iter().map(|e| e.as_str()).collect::<Vec<_>>().join(", ")
+                    ),
+                    None => format!(
+                        "supported efforts: {}",
+                        ReasoningEffort::ALL
+                            .into_iter()
+                            .map(ReasoningEffort::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                };
+                for line in fmt::wrap(&efforts_text, width) {
+                    out.push(Line::from(Span::styled(line, theme.body())));
+                }
+                if *driver != self.agent_driver {
+                    out.push(Line::default());
+                    let switch_note =
+                        format!("Starts a new coordinator session on {}.", driver.label());
+                    for line in fmt::wrap(&switch_note, width) {
+                        out.push(Line::from(Span::styled(line, theme.fg(theme.needs_you))));
+                    }
+                }
+            }
+            _ => {
+                out.push(Line::from(Span::styled("no matching models", theme.dim())));
+            }
+        }
+        if self.agent_kind != AgentKind::Coordinator {
+            out.push(Line::default());
+            for line in fmt::wrap("Only the coordinator switches driver.", width) {
+                out.push(Line::from(Span::styled(line, theme.dim())));
+            }
+        } else if !self.options.iter().any(|o| o.driver == DriverKind::Agy) {
+            out.push(Line::default());
+            for line in fmt::wrap("agy models appear once an agy session has run.", width) {
+                out.push(Line::from(Span::styled(line, theme.dim())));
+            }
+        }
+        out
+    }
+}
+
+/// Picker rows grouped by [`DriverKind::ALL`], one row per `(model, effort)`.
+pub fn model_items(agent: &Agent, options: &[ModelOption], theme: &Theme) -> Vec<PickerItem> {
+    let current_idx = agent
+        .model
+        .as_deref()
+        .and_then(|m| model_option_index(options, agent.driver, m));
+    let mut items = Vec::new();
+    for driver in DriverKind::ALL {
+        if agent.kind != AgentKind::Coordinator && driver != agent.driver {
+            continue;
+        }
+        for (idx, opt) in options
             .iter()
-            .map(|o| o.name.chars().count())
-            .max()
-            .unwrap_or(0);
-        let rows = self.options.len() as u16;
-        let width = area.width.saturating_sub(2).min(64);
-        // The models, a blank, the effort line, a blank, the key hint, and the border.
-        let height = (rows + 6).min(area.height);
-        if width < 20 || height < 6 {
-            return;
-        }
-        let place = Rect {
-            x: area.x + 1,
-            y: area.y + area.height.saturating_sub(height + 1),
-            width,
-            height,
-        };
-        frame.render_widget(Clear, place);
-        let block = Block::bordered()
-            .border_style(theme.fg(theme.focus))
-            .title(Line::from(Span::styled(
-                format!(" model · {} ", self.name),
-                theme.fg(theme.focus),
-            )));
-        let inner = block.inner(place);
-        frame.render_widget(block, place);
-        let mut lines: Vec<Line> = Vec::new();
-        for (i, option) in self.options.iter().enumerate() {
-            let current = Some(i) == self.current;
-            let marker = if current { "● " } else { "  " };
-            let name = format!("{:<name_width$}", option.name);
-            let style = if i == self.row {
-                theme.selected()
-            } else if current {
-                theme.accent()
-            } else {
-                theme.body()
-            };
-            let mut spans = vec![
-                Span::styled(marker, theme.accent()),
-                Span::styled(name, style),
-            ];
-            if let Some(resolved) = option.resolved.as_ref().filter(|r| **r != option.name) {
-                spans.push(Span::styled(format!("  {resolved}"), theme.dim()));
+            .enumerate()
+            .filter(|(_, o)| o.driver == driver)
+        {
+            for effort in option_efforts(opt) {
+                let is_current = current_idx == Some(idx) && effort == agent.effort;
+                let label = match effort {
+                    Some(e) => format!("{} · {}", opt.name, e.as_str()),
+                    None => opt.name.clone(),
+                };
+                let haystack = format!(
+                    "{} {} {} {}",
+                    driver.label(),
+                    opt.name,
+                    opt.resolved.as_deref().unwrap_or(""),
+                    effort.map_or("", ReasoningEffort::as_str),
+                );
+                let resolved_diff = opt.resolved.as_deref().filter(|r| *r != opt.name);
+                let detail = match (is_current, resolved_diff) {
+                    (true, Some(r)) => format!("{r}  now"),
+                    (true, None) => "now".into(),
+                    (false, Some(r)) => r.to_owned(),
+                    (false, None) => String::new(),
+                };
+                let (glyph, color) = if is_current {
+                    ("●", theme.ok)
+                } else {
+                    (" ", theme.dim)
+                };
+                items.push(PickerItem {
+                    key: PickerKey::Model {
+                        driver,
+                        model: opt.name.clone(),
+                        effort,
+                    },
+                    label,
+                    haystack,
+                    detail,
+                    glyph,
+                    color,
+                    depth: 0,
+                    section: driver.label(),
+                });
             }
-            if current {
-                spans.push(Span::styled("  now", theme.dim()));
-            }
-            lines.push(Line::from(spans));
         }
-        lines.push(Line::default());
-        lines.push(self.effort_line(theme));
-        lines.push(Line::default());
-        lines.push(Line::from(Span::styled(
-            "j/k model · h/l effort · ⏎ apply · esc cancel",
-            theme.dim(),
-        )));
-        frame.render_widget(Paragraph::new(lines), theme_pad(inner));
     }
-
-    /// `effort  low  medium [high]  xhigh  max`: the pick in the selection style, the current
-    /// level marked, levels the model does not accept grayed.
-    fn effort_line(&self, theme: &Theme) -> Line<'static> {
-        let mut spans = vec![Span::styled("effort ", theme.body())];
-        let Some(option) = self.selected() else {
-            return Line::from(spans);
-        };
-        if levels(option).is_empty() {
-            spans.push(Span::styled(
-                " this model has no effort levels",
-                theme.dim(),
-            ));
-            return Line::from(spans);
-        }
-        let picked = self.effort();
-        for level in ReasoningEffort::ALL {
-            let mut text = level.as_str().to_owned();
-            if Some(level) == self.current_effort && Some(self.row) == self.current {
-                text.push('●');
-            }
-            let style = if Some(level) == picked {
-                theme.selected()
-            } else if !option.supports(level) {
-                theme.fg(theme.line)
-            } else {
-                theme.body()
-            };
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(format!(" {text} "), style));
-        }
-        Line::from(spans)
-    }
+    items
 }
 
-/// The levels `option` accepts, lowest first.
-fn levels(option: &ModelOption) -> Vec<ReasoningEffort> {
-    ReasoningEffort::ALL
-        .into_iter()
-        .filter(|e| option.supports(*e))
-        .collect()
-}
-
-/// One column of padding either side of the box's text.
-fn theme_pad(inner: Rect) -> Rect {
-    Rect {
-        x: inner.x + 1,
-        width: inner.width.saturating_sub(2),
-        ..inner
+fn option_efforts(option: &ModelOption) -> Vec<Option<ReasoningEffort>> {
+    match &option.efforts {
+        Some(v) if v.is_empty() => vec![None],
+        Some(v) => v.iter().copied().map(Some).collect(),
+        None => ReasoningEffort::ALL.into_iter().map(Some).collect(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use dovetail_api::{AgentStatus, PermissionMode, SessionLock};
 
-    fn key(c: char) -> KeyEvent {
-        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    fn agent_fixture(kind: AgentKind, driver: DriverKind) -> Agent {
+        Agent {
+            id: AgentId(if kind == AgentKind::Coordinator {
+                "coordinator".into()
+            } else {
+                "slice-1".into()
+            }),
+            name: if kind == AgentKind::Coordinator {
+                "coordinator".into()
+            } else {
+                "slice-1".into()
+            },
+            kind,
+            parent: None,
+            task: None,
+            worktree: None,
+            status: AgentStatus::Idle,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: None,
+            last_activity_ms: 0,
+            lock: SessionLock::Headless,
+            model: Some("claude-opus-5-5".into()),
+            effort: Some(ReasoningEffort::High),
+            subagent_tokens: 0,
+            tool: None,
+            driver,
+        }
     }
 
     fn options() -> Vec<ModelOption> {
-        let listed = |name: &str, resolved: &str, efforts: &[ReasoningEffort]| ModelOption {
-            name: name.into(),
-            resolved: Some(resolved.into()),
-            efforts: Some(efforts.to_vec()),
-            driver: DriverKind::Claude,
-        };
         vec![
-            listed("opus", "claude-opus-5-5", &ReasoningEffort::ALL),
-            listed("sonnet", "claude-sonnet-5-5", &ReasoningEffort::ALL),
-            listed("old", "claude-old", &[]),
-            listed(
-                "mid",
-                "claude-mid",
-                &[ReasoningEffort::Low, ReasoningEffort::Medium],
-            ),
+            ModelOption {
+                name: "opus".into(),
+                resolved: Some("claude-opus-5-5".into()),
+                efforts: Some(vec![ReasoningEffort::Medium, ReasoningEffort::High]),
+                driver: DriverKind::Claude,
+            },
+            ModelOption {
+                name: "old".into(),
+                resolved: None,
+                efforts: Some(Vec::new()),
+                driver: DriverKind::Claude,
+            },
+            ModelOption {
+                name: "unknown-efforts".into(),
+                resolved: None,
+                efforts: None,
+                driver: DriverKind::Claude,
+            },
+            ModelOption {
+                name: "gemini-3.8-flash".into(),
+                resolved: Some("Gemini 3.8 Flash".into()),
+                efforts: Some(vec![ReasoningEffort::Low, ReasoningEffort::High]),
+                driver: DriverKind::Agy,
+            },
         ]
     }
 
-    fn selector(model: &str, effort: Option<ReasoningEffort>) -> ModelSelector {
-        ModelSelector::new(
-            AgentId("coordinator".into()),
-            "coordinator",
-            options(),
-            Some(model),
-            effort,
-            None,
-        )
+    #[test]
+    fn rows_expand_efforts_per_spec_and_mark_current_session_row() {
+        let agent = agent_fixture(AgentKind::Coordinator, DriverKind::Claude);
+        let items = model_items(&agent, &options(), &Theme::default());
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            vec![
+                "opus · medium",
+                "opus · high",
+                "old",
+                "unknown-efforts · low",
+                "unknown-efforts · medium",
+                "unknown-efforts · high",
+                "unknown-efforts · xhigh",
+                "unknown-efforts · max",
+                "gemini-3.8-flash · low",
+                "gemini-3.8-flash · high",
+            ]
+        );
+        let sections: Vec<&str> = items.iter().map(|i| i.section).collect();
+        assert!(sections[..8].iter().all(|s| *s == "Claude Code"));
+        assert!(sections[8..].iter().all(|s| *s == "agy"));
+        assert_eq!(items[1].glyph, "●");
+        assert!(items[1].detail.contains("now"));
+        assert_eq!(items[0].glyph, " ");
     }
 
     #[test]
-    fn it_opens_on_the_running_model_and_applies_it_unchanged() {
-        let mut s = selector("claude-sonnet-5-5", Some(ReasoningEffort::Medium));
-        assert_eq!(s.selected().map(|o| o.name.as_str()), Some("sonnet"));
+    fn slices_hide_other_driver_rows_and_note_coordinator_only_in_preview() {
+        let slice = agent_fixture(AgentKind::Slice, DriverKind::Claude);
+        let picker = ModelPicker::new(&slice, options(), None, &Theme::default());
+        assert!(picker.picker().shown().iter().all(|i| matches!(
+            i.key,
+            PickerKey::Model {
+                driver: DriverKind::Claude,
+                ..
+            }
+        )));
+        let preview: Vec<String> = picker
+            .preview(60, &Theme::default())
+            .into_iter()
+            .map(|l| l.to_string())
+            .collect();
+        assert!(
+            preview
+                .iter()
+                .any(|l| l.contains("Only the coordinator switches driver."))
+        );
+    }
+
+    #[test]
+    fn coordinator_preview_notes_empty_agy_catalog_and_driver_switch_warning() {
+        let coord = agent_fixture(AgentKind::Coordinator, DriverKind::Claude);
+        let claude_only: Vec<ModelOption> = options()
+            .into_iter()
+            .filter(|o| o.driver == DriverKind::Claude)
+            .collect();
+        let no_agy = ModelPicker::new(&coord, claude_only, None, &Theme::default());
+        let preview: Vec<String> = no_agy
+            .preview(60, &Theme::default())
+            .into_iter()
+            .map(|l| l.to_string())
+            .collect();
+        assert!(
+            preview
+                .iter()
+                .any(|l| l.contains("agy models appear once an agy session has run")),
+            "{preview:?}"
+        );
+
+        let mut with_agy = ModelPicker::new(&coord, options(), Some("gemini"), &Theme::default());
+        let preview_agy: Vec<String> = with_agy
+            .preview(60, &Theme::default())
+            .into_iter()
+            .map(|l| l.to_string())
+            .collect();
+        assert!(
+            preview_agy
+                .iter()
+                .any(|l| l.contains("Starts a new coordinator session on agy.")),
+            "{preview_agy:?}"
+        );
+        assert!(
+            !preview_agy
+                .iter()
+                .any(|l| l.contains("agy models appear once")),
+            "{preview_agy:?}"
+        );
         assert_eq!(
-            s.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            SelectorOutcome::Apply {
+            with_agy.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            ModelOutcome::SwitchDriver {
                 agent: AgentId("coordinator".into()),
-                model: "sonnet".into(),
-                effort: Some(ReasoningEffort::Medium),
+                driver: DriverKind::Agy,
+                model: "gemini-3.8-flash".into(),
+                effort: Some(ReasoningEffort::Low),
             }
         );
-    }
-
-    #[test]
-    fn j_k_move_between_models_and_stop_at_the_ends() {
-        let mut s = selector("claude-opus-5-5", Some(ReasoningEffort::High));
-        s.key(key('k'));
-        assert_eq!(s.selected().map(|o| o.name.as_str()), Some("opus"));
-        for _ in 0..10 {
-            s.key(key('j'));
-        }
-        assert_eq!(s.selected().map(|o| o.name.as_str()), Some("mid"));
-    }
-
-    #[test]
-    fn h_l_step_through_the_levels_and_stop_at_the_ends() {
-        let mut s = selector("claude-opus-5-5", Some(ReasoningEffort::High));
-        s.key(key('l'));
-        assert_eq!(s.effort(), Some(ReasoningEffort::Xhigh));
-        s.key(key('l'));
-        s.key(key('l'));
-        assert_eq!(s.effort(), Some(ReasoningEffort::Max));
-        for _ in 0..6 {
-            s.key(key('h'));
-        }
-        assert_eq!(s.effort(), Some(ReasoningEffort::Low));
-    }
-
-    #[test]
-    fn a_model_without_levels_applies_no_effort_and_one_with_fewer_clamps_it() {
-        let mut s = selector("claude-opus-5-5", Some(ReasoningEffort::Max));
-        s.key(key('j'));
-        s.key(key('j'));
-        assert_eq!(s.selected().map(|o| o.name.as_str()), Some("old"));
-        assert_eq!(s.effort(), None);
-        s.key(key('l'));
-        assert_eq!(s.effort(), None, "nothing to step through");
-        s.key(key('j'));
-        // `mid` lacks max: the nearest level below it.
-        assert_eq!(s.effort(), Some(ReasoningEffort::Medium));
-        // Back on a model with every level, the pick is still max.
-        s.key(key('k'));
-        s.key(key('k'));
-        assert_eq!(s.effort(), Some(ReasoningEffort::Max));
-    }
-
-    #[test]
-    fn with_no_effort_known_enter_keeps_it_and_a_step_starts_from_high() {
-        let mut s = selector("claude-opus-5-5", None);
-        assert_eq!(s.effort(), None);
-        s.key(key('l'));
-        assert_eq!(s.effort(), Some(ReasoningEffort::Xhigh));
-    }
-
-    #[test]
-    fn esc_and_q_cancel() {
-        let mut s = selector("claude-opus-5-5", None);
-        assert_eq!(
-            s.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
-            SelectorOutcome::Cancel
-        );
-        assert_eq!(s.key(key('q')), SelectorOutcome::Cancel);
-    }
-
-    #[test]
-    fn a_preselected_name_wins_over_the_running_model() {
-        let s = ModelSelector::new(
-            AgentId("c".into()),
-            "c",
-            options(),
-            Some("claude-opus-5-5"),
-            None,
-            Some("sonnet"),
-        );
-        assert_eq!(s.selected().map(|o| o.name.as_str()), Some("sonnet"));
     }
 }

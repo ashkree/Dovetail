@@ -16,6 +16,7 @@ macro_rules! cx {
     };
 }
 
+mod confirm;
 mod draw;
 mod focus;
 mod overlay;
@@ -724,6 +725,7 @@ impl App {
     /// and MAP mode it is ignored, as the keys it would have been are not commands.
     pub fn on_paste(&mut self, text: &str, mono_ms: u64) {
         if self.confirm.is_some()
+            || matches!(self.overlay, Some(Overlay::Confirm(_)))
             || matches!(self.mode, Mode::Normal | Mode::Map) && self.overlay.is_none()
         {
             return;

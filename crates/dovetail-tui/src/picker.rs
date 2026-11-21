@@ -3,7 +3,7 @@
 //! are this component with different items.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, InboxId, ProjectId, TaskId};
+use dovetail_api::{AgentId, DriverKind, InboxId, ProjectId, ReasoningEffort, TaskId};
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32Str};
 use ratatui::Frame;
@@ -35,6 +35,15 @@ pub enum PickerKey {
     Profile(Option<String>),
     /// An action in the `:keys` list.
     Action(crate::action::Action),
+    /// A model and effort level on a driver (task #46).
+    Model {
+        /// The driver offering this model.
+        driver: DriverKind,
+        /// The model, as [`dovetail_api::ModelOption::name`].
+        model: String,
+        /// The effort level, or `None` when the model has no effort levels.
+        effort: Option<ReasoningEffort>,
+    },
 }
 
 /// One row.
@@ -111,6 +120,13 @@ impl Picker {
     /// Shows a long preview from its first line (the MCP menu's details), not from its end.
     pub fn preview_from_top(mut self) -> Self {
         self.preview_from_top = true;
+        self
+    }
+
+    /// Sets the initial filter query (e.g. `/model <name>`).
+    pub fn with_query(mut self, query: &str) -> Self {
+        self.query = TextInput::line(query);
+        self.refilter();
         self
     }
 
@@ -509,5 +525,13 @@ mod tests {
             p.key(key(c));
         }
         assert_eq!(names(&p), vec!["Business home"]);
+    }
+
+    #[test]
+    fn with_query_prefills_and_filters() {
+        let p = picker().with_query("eval");
+        assert_eq!(p.query(), "eval");
+        assert_eq!(names(&p).first().map(String::as_str), Some("eval run"));
+        assert!(names(&p).len() < 4);
     }
 }

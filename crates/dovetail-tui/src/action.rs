@@ -318,6 +318,17 @@ pub enum Action {
     InboxDismiss,
     /// Open the item in full (a finished turn: its agent); from the item, open its agent.
     InboxOpen,
+    // --- confirm modal ---
+    /// Confirm the selected choice in a modal dialog.
+    ConfirmAccept,
+    /// Select the next choice in a modal dialog.
+    ConfirmNext,
+    /// Select the previous choice in a modal dialog.
+    ConfirmPrev,
+    /// Toggle between choices in a modal dialog.
+    ConfirmToggle,
+    /// Cancel a modal dialog.
+    ConfirmCancel,
 }
 
 /// What an action is for: the which-key popup and `:keys` group by it, in this order.
@@ -525,6 +536,11 @@ registry! {
     InboxReply: Inbox, "reply";
     InboxDismiss: Inbox, "dismiss";
     InboxOpen: Inbox, "open the item in full";
+    ConfirmAccept: App, "confirm the selected choice";
+    ConfirmNext: App, "select the next choice";
+    ConfirmPrev: App, "select the previous choice";
+    ConfirmToggle: App, "toggle the selected choice";
+    ConfirmCancel: App, "cancel the confirm dialog";
 }
 
 impl Action {

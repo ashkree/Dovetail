@@ -187,20 +187,20 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
 
 ### C4. TUI: model picker grouped by driver, with the switch confirm
 
-- [ ] Replace `crates/dovetail-tui/src/model_select.rs`'s box with the one `Picker`
+- [x] Replace `crates/dovetail-tui/src/model_select.rs`'s box with the one `Picker`
   (`src/picker.rs`), as `src/mcp_menu.rs` and the slash-command picker in `src/switcher.rs`
   do. Rows: one per model and effort level, `PickerKey::Model { driver, model, effort }`
   (new variant), `section` = `DriverKind::label()` ("Claude Code", "agy") so the groups show as
   headings while the query is empty. Glyph marks the session's current model and effort. The
   preview shows the model's full name, its efforts, and for the other driver's rows the line
   "Starts a new coordinator session on <driver>".
-- [ ] Choosing a row of the session's own driver sends `Command::SetModel` as today.
+- [x] Choosing a row of the session's own driver sends `Command::SetModel` as today.
   Choosing another driver's row (coordinator only; for slices those rows are hidden or shown
   dimmed with "only the coordinator switches driver") opens a confirm: "This starts a new
   session on agy." with **Handoff** (default, Enter) and **Clean start**, Esc cancels. It sends
   `Command::SwitchDriver { handoff }`. Reuse an existing confirm overlay if there is one (grep
   `Overlay::` in `src/app/overlay.rs`); else a small `src/app/confirm.rs`.
-- [ ] Keep `/model [name]` (`src/slash.rs`, `Intercept::Model`) and `:model` opening it, with
+- [x] Keep `/model [name]` (`src/slash.rs`, `Intercept::Model`) and `:model` opening it, with
   the argument typed into the picker's query.
 - Tests: rows group by driver in `DriverKind::ALL` order; Enter on an own-driver row gives
   `SetModel`; on the other driver's row gives the confirm, and its keys give
