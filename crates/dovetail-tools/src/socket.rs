@@ -5,11 +5,11 @@
 //! `id`. Responses may arrive out of order, since a slow tool call must not
 //! stop other requests on the same connection.
 
+use dovetail_api::agent::AgentId;
+use dovetail_api::task::{NewTask, TaskId};
 use serde::{Deserialize, Serialize};
 
-use crate::agent::AgentId;
-use crate::task::{NewTask, TaskId};
-use crate::tools::Tool;
+use crate::Tool;
 
 /// One request from a socket client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

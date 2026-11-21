@@ -1,14 +1,15 @@
-//! Tool and socket wire tests (temporary here until #55 moves tools into `dovetail-tools`).
+//! Tool and socket wire tests.
 
 use dovetail_api::effort::CriterionId;
 use dovetail_api::inbox::InboxKind;
 use dovetail_api::model::ReasoningEffort;
-use dovetail_api::socket::{SocketRequest, SocketRequestBody};
 use dovetail_api::task::{PLevel, TaskStatus};
-use dovetail_api::tools::{
-    AskUser, BucketFilter, ClaimCriterion, Report, ReportState, Role, StartSlice, TOOLS, Tool,
-    ToolError, deprecated_alias, deprecation_note, tool_spec,
-};
+use dovetail_tools::coordination::{ClaimCriterion, CoordinationTool, Report, ReportState};
+use dovetail_tools::core::{AskUser, CoreTool};
+use dovetail_tools::project::{ProjectTool, StartSlice};
+use dovetail_tools::socket::{SocketRequest, SocketRequestBody};
+use dovetail_tools::task::{BucketFilter, TaskTool};
+use dovetail_tools::{Role, TOOLS, Tool, ToolError, deprecated_alias, deprecation_note, tool_spec};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
 
@@ -18,8 +19,8 @@ fn roundtrip<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(valu
     assert_eq!(&back, value, "changed in transit: {text}");
 }
 
-/// ADR 0016: each renamed tool still parses by its old name, as the new tool, both from the
-/// bridge (`Tool::parse`) and on the socket (an old bridge sends the old name).
+/// ADR 0016: each renamed tool still parses by its old name, as the new tool, and `SocketRequest`
+/// deserializes the nested `Tool` shape.
 #[test]
 fn old_tool_names_parse_as_the_new_tools() {
     let renamed: Vec<_> = TOOLS.iter().filter(|t| t.old_name.is_some()).collect();
@@ -38,10 +39,10 @@ fn old_tool_names_parse_as_the_new_tools() {
     }
     let new = Tool::parse("tasks_list", json!({})).expect("new name");
     assert_eq!(Tool::parse("list_tasks", json!({})), Ok(new.clone()));
-    // An old bridge's request: `"tool": "list_tasks"`, no `called_as`.
+    // Nested `Tool` on the socket wire (`{"task": {"list": {}}}`), no `called_as`.
     let line = json!({"id": 1, "body": {"kind": "tool_call", "agent": "a", "tool_use_id": null,
-        "call": {"tool": "list_tasks", "input": {}}}});
-    let request: SocketRequest = serde_json::from_value(line).expect("old wire name parses");
+        "call": {"task": {"list": {}}}}});
+    let request: SocketRequest = serde_json::from_value(line).expect("nested wire call parses");
     assert!(matches!(
         request.body,
         SocketRequestBody::ToolCall { call, called_as: None, .. } if call == new
@@ -57,9 +58,9 @@ fn an_old_blocking_ask_user_and_inbox_payload_still_parse() {
     );
     assert_eq!(
         tool,
-        Ok(Tool::AskUser(AskUser {
+        Ok(Tool::Core(CoreTool::AskUser(AskUser {
             question: "Which port?".into()
-        }))
+        })))
     );
     // Inbox rows stored before the change carry the field too.
     let kind: InboxKind =
@@ -76,7 +77,7 @@ fn an_old_blocking_ask_user_and_inbox_payload_still_parse() {
 #[test]
 fn update_task_tells_an_absent_priority_from_a_null_one_and_survives_the_socket() {
     let parse = |args| match Tool::parse("tasks_update", args) {
-        Ok(Tool::UpdateTask(u)) => u,
+        Ok(Tool::Task(TaskTool::Update(u))) => u,
         other => panic!("{other:?}"),
     };
     let absent = parse(json!({"id": 1, "status": "done"}));
@@ -88,7 +89,7 @@ fn update_task_tells_an_absent_priority_from_a_null_one_and_survives_the_socket(
     assert_eq!(set.bucket, Some(BucketFilter::Unsorted));
     assert_eq!(set.new_bucket(), Some(None));
     for u in [absent, cleared, set] {
-        roundtrip(&Tool::UpdateTask(u));
+        roundtrip(&Tool::Task(TaskTool::Update(u)));
     }
 
     let refused = |args| {
@@ -117,11 +118,11 @@ fn a_report_parses_roundtrips_and_is_for_slices_only() {
         json!({"state": "done", "summary": "PR open, tests pass", "pr": 41}),
     )
     .unwrap();
-    let report = Tool::Report(Report {
+    let report = Tool::Coordination(CoordinationTool::Report(Report {
         state: ReportState::Done,
         summary: "PR open, tests pass".into(),
         pr: Some(41),
-    });
+    }));
     assert_eq!(parsed, report);
     roundtrip(&report);
     assert_eq!(report.validate(Role::Slice), Ok(()));
@@ -155,10 +156,10 @@ fn a_criterion_claim_is_for_slices_and_the_coordinator_with_evidence() {
         json!({"criterion": 3, "evidence": "PR #41, test guest_pays"}),
     )
     .unwrap();
-    let claim = Tool::ClaimCriterion(ClaimCriterion {
+    let claim = Tool::Coordination(CoordinationTool::ClaimCriterion(ClaimCriterion {
         criterion: CriterionId(3),
         evidence: "PR #41, test guest_pays".into(),
-    });
+    }));
     assert_eq!(parsed, claim);
     roundtrip(&claim);
     assert_eq!(claim.validate(Role::Slice), Ok(()));
@@ -211,11 +212,11 @@ fn start_slice_takes_an_optional_model_and_an_optional_effort() {
     let plain = Tool::parse("project_start_slice", base.clone()).expect("parses");
     assert!(matches!(
         &plain,
-        Tool::StartSlice(StartSlice {
+        Tool::Project(ProjectTool::StartSlice(StartSlice {
             model: None,
             effort: None,
             ..
-        })
+        }))
     ));
     assert_eq!(plain.validate(Role::Coordinator), Ok(()));
     // Given: an alias and a level.
@@ -224,7 +225,7 @@ fn start_slice_takes_an_optional_model_and_an_optional_effort() {
     args["effort"] = json!("low");
     let chosen = Tool::parse("project_start_slice", args).expect("parses");
     match &chosen {
-        Tool::StartSlice(s) => {
+        Tool::Project(ProjectTool::StartSlice(s)) => {
             assert_eq!(s.model.as_deref(), Some("haiku"));
             assert_eq!(s.effort, Some(ReasoningEffort::Low));
         }

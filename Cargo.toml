@@ -17,6 +17,7 @@ dovetail-driver = { path = "crates/dovetail-driver" }
 # Structure map to Mermaid/PNG/node positions (map canvas); shared by core, mock and binary.
 dovetail-maps = { path = "crates/dovetail-maps" }
 dovetail-mock = { path = "crates/dovetail-mock" }
+dovetail-tools = { path = "crates/dovetail-tools" }
 dovetail-tui = { path = "crates/dovetail-tui" }
 anyhow = "1"
 crossterm = "0.29"

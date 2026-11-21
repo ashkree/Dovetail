@@ -577,6 +577,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dovetail-tools"
+version = "0.0.0"
+dependencies = [
+ "dovetail-api",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dovetail-tui"
 version = "0.0.0"
 dependencies = [

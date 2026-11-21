@@ -1,0 +1,15 @@
+[package]
+name = "dovetail-tools"
+description = "MCP tool catalogue, input validation, and agent-to-core unix-socket messages for Dovetail"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+dovetail-api.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
