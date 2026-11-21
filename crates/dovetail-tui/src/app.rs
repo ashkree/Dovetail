@@ -496,6 +496,9 @@ impl App {
                 {
                     self.mcp_reply(agent, request, outcome.clone());
                 }
+                if let Event::UsageLoaded(reports) = &event {
+                    self.usage_loaded(reports.clone());
+                }
                 if let Event::ClipboardPasted { agent, paste } = &event
                     && let Some(notice) = self.chat_view_mut().receive_paste(agent, paste.clone())
                 {
@@ -933,6 +936,10 @@ impl App {
                         self.open_mcp_menu(Some(agent));
                         "/mcp opens the MCP menu"
                     }
+                    slash::Intercept::Usage => {
+                        self.open_usage_menu();
+                        "/usage opens the usage menu"
+                    }
                     slash::Intercept::Run(action) => {
                         if !self.run_on_coordinator(Some(&agent), action) {
                             // Refused: its note says so, and the command did not run.
@@ -1329,6 +1336,7 @@ impl App {
             Action::CyclePermissionMode => self.cycle_permission_mode(),
             Action::PickModel => self.open_model_selector(None),
             Action::ShowMcp => self.open_mcp_menu(None),
+            Action::ShowUsage => self.open_usage_menu(),
             Action::TakeOver => self.take_over(),
             Action::RegisterProject => {
                 // The open folder (ADR 0005); the core refuses any other.

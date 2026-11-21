@@ -160,6 +160,12 @@ impl App {
                 menu.picker()
                     .render(frame, screen, &self.theme, "Server", &lines);
             }
+            Some(Overlay::Usage(menu)) => {
+                let width = picker_preview_width(screen);
+                let lines = menu.preview(width, self.now_ms, &self.tz, &self.theme);
+                menu.picker()
+                    .render(frame, screen, &self.theme, "Limits", &lines);
+            }
             Some(Overlay::Model(menu)) => {
                 let width = picker_preview_width(screen);
                 let lines = menu.preview(width, &self.theme);

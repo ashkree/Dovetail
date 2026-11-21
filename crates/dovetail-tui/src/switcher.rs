@@ -369,6 +369,8 @@ pub fn preview(
         PickerKey::Action(_) => ("Keys", Vec::new()),
         // Previewed by `ModelPicker`, which knows the agent and models.
         PickerKey::Model { .. } => ("Model", Vec::new()),
+        // Previewed by `UsageMenu`, which holds the reports.
+        PickerKey::UsageGroup(_) => ("Usage", Vec::new()),
         PickerKey::Inbox(id) => (
             "Inbox item",
             snap.inbox
@@ -852,13 +854,14 @@ mod tests {
             vec![
                 ("/model", "◆"),
                 ("/mcp", "◆"),
+                ("/usage", "◆"),
                 ("/handoff", "◆"),
                 ("/fresh", "◆"),
                 ("/compact", "/")
             ]
         );
         assert!(items[0].detail.starts_with("Dovetail"));
-        assert_eq!(items[4].detail, "");
+        assert_eq!(items[5].detail, "");
     }
 
     #[test]

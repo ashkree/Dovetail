@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{AgentId, Command, InboxId, ProjectId, TaskChange, TaskId};
+use dovetail_api::{AgentId, Command, DriverUsage, InboxId, ProjectId, TaskChange, TaskId};
 
 use super::App;
 use super::ChatSite;
@@ -18,6 +18,7 @@ use crate::model_select::{ModelOutcome, ModelPicker};
 use crate::picker::{Picker, PickerKey, PickerOutcome};
 use crate::region::RegionId;
 use crate::switcher;
+use crate::usage_menu::{UsageMenu, UsageStep};
 
 /// What choosing a picker row does.
 pub(super) enum Purpose {
@@ -69,6 +70,8 @@ pub(super) enum Overlay {
     Capture(Capture),
     /// The MCP server menu of a session (task #44).
     Mcp(McpMenu),
+    /// Account usage limits of Claude Code and agy (task #46).
+    Usage(UsageMenu),
     /// The model picker (tasks #39, #46).
     Model(ModelPicker),
     /// Confirm modal before switching the coordinator's driver (task #46).
@@ -228,6 +231,19 @@ impl App {
         }
     }
 
+    /// `:usage`, `/usage`: account usage limits of Claude Code and agy (task #46).
+    pub(super) fn open_usage_menu(&mut self) {
+        self.outbox.push(Command::LoadUsage);
+        self.open_overlay(Overlay::Usage(UsageMenu::new()));
+    }
+
+    /// Fills the open usage menu with the core's reports.
+    pub(super) fn usage_loaded(&mut self, reports: Vec<DriverUsage>) {
+        if let Some(Overlay::Usage(menu)) = &mut self.overlay {
+            menu.set_reports(reports, &self.theme);
+        }
+    }
+
     /// `<leader><leader>`: tasks, agents and inbox items.
     pub(super) fn open_finder(&mut self) {
         let items = switcher::all_items(&self.snap, self.now_ms, &self.theme);
@@ -366,6 +382,17 @@ impl App {
                 self.overlay = Some(Overlay::Mcp(menu));
                 self.mcp_steps(steps);
             }
+            Overlay::Usage(mut menu) => match menu.key(event) {
+                UsageStep::Pending => self.overlay = Some(Overlay::Usage(menu)),
+                UsageStep::Refresh => {
+                    self.outbox.push(Command::LoadUsage);
+                    self.overlay = Some(Overlay::Usage(menu));
+                }
+                UsageStep::Close => {
+                    let from = self.close_overlay();
+                    self.restore_chat(from);
+                }
+            },
             Overlay::Model(mut picker) => match picker.key(event) {
                 ModelOutcome::Pending => self.overlay = Some(Overlay::Model(picker)),
                 ModelOutcome::Cancel => {
@@ -486,7 +513,10 @@ impl App {
     fn choose(&mut self, key: PickerKey) {
         match key {
             // Handled directly by the picker's own overlay.
-            PickerKey::Profile(_) | PickerKey::McpServer(_) | PickerKey::Model { .. } => {}
+            PickerKey::Profile(_)
+            | PickerKey::McpServer(_)
+            | PickerKey::Model { .. }
+            | PickerKey::UsageGroup(_) => {}
             // `:keys`: run what can run from here, otherwise the picker just closed.
             PickerKey::Action(action) => {
                 if help::runnable(&self.keymap, &self.scopes(), action) {

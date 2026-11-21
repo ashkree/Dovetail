@@ -208,13 +208,13 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
 
 ### C5. TUI: the usage menu
 
-- [ ] `DOVETAIL_SLASH` (`src/slash.rs`): add `("usage", "Usage limits of Claude Code and agy",
+- [x] `DOVETAIL_SLASH` (`src/slash.rs`): add `("usage", "Usage limits of Claude Code and agy",
   "")`; `intercept`: `"/usage" if rest.is_empty() => Intercept::Usage`, with trailing text
   `Refused("/usage")`. Handle the arm in `src/app.rs` next to `Intercept::Mcp`. Note that
   Claude Code has its own `/usage`; Dovetail's replaces it in the chat bar, as `/model` does.
-- [ ] `:usage` in `src/command.rs` → a new `Action::ShowUsage` (one entry in the keymap table and
+- [x] `:usage` in `src/command.rs` → a new `Action::ShowUsage` (one entry in the keymap table and
   `:keys`).
-- [ ] `src/usage_menu.rs`: the one `Picker` with `preview_from_top()`. It sends
+- [x] `src/usage_menu.rs`: the one `Picker` with `preview_from_top()`. It sends
   `Command::LoadUsage` on open and shows "loading" until `Event::UsageLoaded`. Rows: one per
   group, `section` = the driver's label, `detail` = the highest `used_fraction` as a percent.
   Preview: each window's name, a bar or percent, and its reset time (reuse the formatting in

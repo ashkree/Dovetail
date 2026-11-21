@@ -185,6 +185,9 @@ pub enum Action {
     /// Open the focused session's MCP server menu (task #44): `:mcp`, and `/mcp` in the chat
     /// bar. No key.
     ShowMcp,
+    /// Open the usage limits menu of Claude Code and agy (task #46): `:usage`, and `/usage` in
+    /// the chat bar. No key.
+    ShowUsage,
     /// Pick the focused session's model and effort (task #39): `:model`, and `/model` in the
     /// chat bar. No key, by the user's choice.
     PickModel,
@@ -475,6 +478,7 @@ registry! {
     CyclePermissionMode: Agents, "cycle permission mode: auto, acceptEdits, manual";
     PickModel: Agents, "pick the session's model and effort";
     ShowMcp: Agents, "MCP servers of the session (⏎ first action · ^r reconnect · ^t disable/enable · ^l log in · ^o log out · ⇥ refresh)";
+    ShowUsage: Agents, "usage limits of Claude Code and agy (⇥ refresh)";
     TakeOver: Agents, "take the session over in this terminal";
     SwitchProject: Projects, "switch project";
     RegisterProject: Projects, "register this folder as a project";

@@ -44,6 +44,8 @@ pub enum PickerKey {
         /// The effort level, or `None` when the model has no effort levels.
         effort: Option<ReasoningEffort>,
     },
+    /// A row in the usage limits menu, by index into the menu's row list (task #46).
+    UsageGroup(usize),
 }
 
 /// One row.
