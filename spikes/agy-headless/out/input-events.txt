@@ -1,0 +1,13 @@
+== control_request
+error: stream input message event "control_request" is not supported yet
+{"event":"result","result":{"conversation_id":"de0aad69-1c1e-41d9-a17c-b088f30927d9","status":"ERROR","response":"","error":"stream input message event \"control_request\" is not supported yet","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"finished_reason":"error"}}
+== interrupt
+warning: ignoring unsupported stream input message event "interrupt"
+== cancel
+warning: ignoring unsupported stream input message event "cancel"
+== control
+warning: ignoring unsupported stream input message event "control"
+== set_model
+warning: ignoring unsupported stream input message event "set_model"
+== user_message
+warning: ignoring unsupported stream input message event "user_message"

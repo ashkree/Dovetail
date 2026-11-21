@@ -1,0 +1,12 @@
+<< resp 1 {"protocolVersion": 1, "agentCapabilities": {"loadSession": true, "load_session": true, "promptCapabilities": {"image": true, "audio": false, "embeddedContext": true}, "sessionCapabilities": {"resume": {}, "close": {}, "load": {}, "list": {}, "additionalDirectories": {}}, "session_capabilities": {"resume": {}, "close": {}, "load": {}, "list": {}, "additionalDirectories": {}}, "auth": {"logout": {}}, "_meta": {"antigravity": {"tier": true, "systemPrompt": {"append": true}}}}, "agentInfo": {"name": "Antigravity ACP Server", "version": "1.5.14"}, "authMethods": [{"id": "oauth-personal", "name": "…
+>> load bfbc337e-0bc1-4d82-b5e8-1db97b63f1ed
+<< note user_message_chunk {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": "Reply with the single word: pong"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "pong"}}
+<< note usage_update {"sessionUpdate": "usage_update", "used": 8527, "size": 1048576}
+<< resp 2 {"sessionId": "bfbc337e-0bc1-4d82-b5e8-1db97b63f1ed", "models": {"availableModels": [{"modelId": "gemini-4-neon-high", "name": "Gemini 4 Neon (High)"}, {"modelId": "gemini-4-neon-xhigh", "name": "Gemini 4 Neon (XHigh)"}, {"modelId": "gemini-4-neon-medium", "name": "Gemini 4 Neon (Medium)"}, {"modelId": "gemini-4-neon-low", "name": "Gemini 4 Neon (Low)"}, {"modelId": "gemini-4-argon-medium", "name": "Gemini 4 Argon (Medium)"}, {"modelId": "gemini-4-argon-high", "name": "Gemini 4 Argon (High)"}, {"modelId": "gemini-4-argon-low", "name": "Gemini 4 Argon (Low)"}, {"modelId": "gemini-4-hydrogen-hig…
+<< note available_commands_update {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "goal", "description": "Run until the specified goal is completely finished."}, {"name": "compact", "description": "Compact the conversation now (summarize histor…
+<< note session_info_update {"sessionUpdate": "session_info_update", "title": "Single Word Pong Request"}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "pong"}}
+<< note usage_update {"sessionUpdate": "usage_update", "used": 8880, "size": 1048576}
+<< resp 3 {"stopReason": "end_turn", "usage": {"inputTokens": 8840, "outputTokens": 40, "cachedReadTokens": 0, "cachedWriteTokens": 0, "thoughtTokens": 38, "totalTokens": 8880}}
+exit 0

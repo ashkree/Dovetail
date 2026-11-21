@@ -1,0 +1,6 @@
+<< resp 1 {"protocolVersion": 1, "agentCapabilities": {"loadSession": true, "load_session": true, "promptCapabilities": {"image": true, "audio": false, "embeddedContext": true}, "sessionCapabilities": {"resume": {}, "close": {}, "load": {}, "list": {}, "additionalDirectories": {}}, "session_capabilities": {"resume": {}, "close": {}, "load": {}, "list": {}, "additionalDirectories": {}}, "auth": {"logout": {}}, "_meta": {"antigravity": {"tier": true, "systemPrompt": {"append": true}}}}, "agentInfo": {"name": "Antigravity ACP Server", "version": "1.5.14"}, "authMethods": [{"id": "oauth-personal", "name": "…
+<< resp 2 {"code": -32603, "message": "Failed to start Antigravity: language server failed to start: must not be absolute: /tmp/agy-spike/appdata"}
+>> session None
+<< resp 3 {"code": -32603, "message": "Failed to start Antigravity: language server failed to start: must not be absolute: /tmp/agy-spike/appdata"}
+<< resp 4 {"code": -32603, "message": "Failed to start Antigravity: language server failed to start: must not be absolute: /tmp/agy-spike/appdata"}
+exit 0

@@ -1,0 +1,27 @@
+<< resp 1 {"protocolVersion": 1, "agentCapabilities": {"loadSession": true, "load_session": true, "promptCapabilities": {"image": true, "audio": false, "embeddedContext": true}, "sessionCapabilities": {"resume": {}, "close": {}, "load": {}, "list": {}, "additionalDirectories": {}}, "session_capabilities": {"resume": {}, "close": {}, "load": {}, "list": {}, "additionalDirectories": {}}, "auth": {"logout": {}}, "_meta": {"antigravity": {"tier": true, "systemPrompt": {"append": true}}}}, "agentInfo": {"name": "Antigravity ACP Server", "version": "1.5.14"}, "authMethods": [{"id": "oauth-personal", "name": "…
+<< resp 2 {"sessionId": "c923973d-9426-41b5-ba55-1848cff93e2a", "models": {"availableModels": [{"modelId": "gemini-4-neon-high", "name": "Gemini 4 Neon (High)"}, {"modelId": "gemini-4-neon-xhigh", "name": "Gemini 4 Neon (XHigh)"}, {"modelId": "gemini-4-neon-medium", "name": "Gemini 4 Neon (Medium)"}, {"modelId": "gemini-4-neon-low", "name": "Gemini 4 Neon (Low)"}, {"modelId": "gemini-4-argon-medium", "name": "Gemini 4 Argon (Medium)"}, {"modelId": "gemini-4-argon-high", "name": "Gemini 4 Argon (High)"}, {"modelId": "gemini-4-argon-low", "name": "Gemini 4 Argon (Low)"}, {"modelId": "gemini-4-hydrogen-hig…
+>> session c923973d-9426-41b5-ba55-1848cff93e2a
+<< resp 3 {}
+<< note config_option_update {"sessionUpdate": "config_option_update", "configOptions": [{"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": "gemini-3.8-flash", "options": [{"value": "gemini-4-neon", "name": "Gemini 4 Neon"}, {"value…
+<< note available_commands_update {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "goal", "description": "Run until the specified goal is completely finished."}, {"name": "compact", "description": "Compact the conversation now (summarize histor…
+<< note usage_update {"sessionUpdate": "usage_update", "used": 0, "size": 1048576}
+<< note available_commands_update {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "goal", "description": "Run until the specified goal is completely finished."}, {"name": "compact", "description": "Compact the conversation now (summarize histor…
+<< note session_info_update {"sessionUpdate": "session_info_update", "title": "Counting From 1 To 400"}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "1\n"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "2\n3\n4\n5\n6\n7\n8\n9\n10\n11"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\n12\n13\n14\n15\n16\n17\n18\n19"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\n20\n21\n22\n23\n24\n25\n26\n27"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\n28\n29\n30\n31\n32\n33\n34\n35"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\n36\n37\n38\n39\n40\n41\n42\n43"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\n44\n45\n46\n47\n48\n49\n50\n51"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\n52\n53\n54\n55\n56\n57\n58\n59"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\n60\n61\n62\n63\n64\n65\n66\n67"}}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\n68\n69\n70\n71\n72\n73\n74\n75"}}
+>> cancel
+<< note usage_update {"sessionUpdate": "usage_update", "used": 8756, "size": 1048576}
+<< resp 4 {"stopReason": "cancelled", "usage": {"inputTokens": 8541, "outputTokens": 215, "cachedReadTokens": 0, "cachedWriteTokens": 0, "thoughtTokens": 0, "totalTokens": 8756}}
+>> prompt done {"jsonrpc": "2.0", "result": {"stopReason": "cancelled", "usage": {"inputTokens": 8541, "outputTokens": 215, "cachedReadTokens": 0, "cachedWriteTokens": 0, "thoughtTokens": 0, "totalTokens": 8756}}, "id": 4}
+<< note agent_message_chunk {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "after"}}
+<< note usage_update {"sessionUpdate": "usage_update", "used": 9626, "size": 1048576}
+<< resp 5 {"stopReason": "end_turn", "usage": {"inputTokens": 9625, "outputTokens": 1, "cachedReadTokens": 0, "cachedWriteTokens": 0, "thoughtTokens": 0, "totalTokens": 9626}}
+exit 0
