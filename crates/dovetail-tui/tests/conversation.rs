@@ -591,7 +591,7 @@ fn i_from_the_tree_moves_focus_to_the_pane_that_holds_the_input() {
 }
 
 #[test]
-fn slash_completes_a_command_and_at_asks_the_core_for_paths() {
+fn slash_picks_a_command_and_at_asks_the_core_for_paths() {
     let mut snap = world();
     snap.commands.insert(
         agent_id("coordinator"),
@@ -607,8 +607,8 @@ fn slash_completes_a_command_and_at_asks_the_core_for_paths() {
     press(&mut app, "i");
     type_keys(&mut app, "/gr");
     let screen = render(&mut app, 100, 30);
-    assert!(screen.contains("/grilling  grilling things"), "{screen}");
-    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), 100);
+    assert!(screen.contains("/grilling"), "{screen}");
+    app.on_key(enter(), 100);
     type_keys(&mut app, "the plan @READ");
     assert_eq!(
         app.take_commands(),

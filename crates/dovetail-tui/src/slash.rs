@@ -1,5 +1,5 @@
 //! Dovetail's own slash commands in the chat bar. They are answered here and never reach Claude
-//! Code (task #34; `/model` is task #39). One table feeds both the `/` completion and
+//! Code (task #34; `/model` is task #39). One table feeds both the command picker and
 //! [`intercept`].
 
 use crate::action::Action;
@@ -15,6 +15,11 @@ pub const DOVETAIL_SLASH: &[(&str, &str, &str)] = &[
     ),
     ("fresh", "Dovetail: fresh coordinator, no handoff", ""),
 ];
+
+/// Whether Dovetail answers `/name` itself.
+pub fn is_dovetail(name: &str) -> bool {
+    DOVETAIL_SLASH.iter().any(|(n, ..)| *n == name)
+}
 
 /// What the chat bar does with a line instead of sending it.
 #[derive(Debug, Clone, PartialEq, Eq)]

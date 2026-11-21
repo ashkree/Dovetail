@@ -112,7 +112,7 @@ fn slash_model_in_the_chat_bar_opens_the_selector_and_is_never_sent() {
     type_keys(&mut app, " c");
     press(&mut app, "i");
     assert_eq!(app.mode(), Mode::Insert);
-    type_keys(&mut app, "/model haiku");
+    type_command(&mut app, "/model haiku");
     app.on_key(enter(), 500);
     assert!(
         app.take_commands().is_empty(),

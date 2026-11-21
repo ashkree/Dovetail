@@ -1,6 +1,7 @@
-//! Completion in the chat bar: `/` at the start lists the session's slash commands and skills,
-//! `@` lists paths. The popup ranks with `nucleo` like the picker; the text is sent as typed and
-//! Claude Code reads `/name` and `@path` itself (docs/spikes/slash-and-at.md).
+//! Completion in the chat bar: `@` lists paths in an inline popup. (`/` at the start opens the
+//! picker instead; see `App::open_command_picker`.) The popup ranks with `nucleo` like the
+//! picker; the text is sent as typed and Claude Code reads `@path` itself
+//! (docs/spikes/slash-and-at.md).
 //!
 //! A plain `@foo` matches the session's whole tree (files git does not ignore). `@~/`, `@/`,
 //! `@./` and `@../` complete one directory at a time, like a shell. Paths come from the core
@@ -11,11 +12,8 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::SlashCommand;
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32Str};
-
-use crate::slash::DOVETAIL_SLASH;
 
 /// Most rows the popup shows.
 pub const MAX_ROWS: usize = 8;
@@ -23,8 +21,6 @@ pub const MAX_ROWS: usize = 8;
 /// What a token completes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Kind {
-    /// `/name`.
-    Command,
     /// `@path` against the session's tree (`dir: None`) or one directory.
     Path { dir: Option<String> },
 }
@@ -39,19 +35,9 @@ struct Token {
     query: String,
 }
 
-/// Finds the token at `cursor`: `/…` when it is all the text before the cursor, or `@…` starting
-/// the word under the cursor.
+/// Finds the `@…` token starting the word under `cursor`.
 fn token(text: &str, cursor: usize) -> Option<Token> {
     let before = text.get(..cursor)?;
-    if let Some(query) = before.strip_prefix('/')
-        && !query.contains(char::is_whitespace)
-    {
-        return Some(Token {
-            range: 0..cursor,
-            kind: Kind::Command,
-            query: query.to_string(),
-        });
-    }
     let at = before.rfind('@')?;
     let word = &before[at + 1..];
     let starts_word = before[..at]
@@ -78,8 +64,6 @@ fn token(text: &str, cursor: usize) -> Option<Token> {
 pub struct Row {
     /// What is shown: `/name` or the path.
     pub label: String,
-    /// Dim text after it: a command's argument hint and description.
-    pub detail: String,
     /// What replaces the token on accepting it.
     insert: String,
     /// A directory: accepting it keeps completing inside it.
@@ -166,12 +150,7 @@ impl Completion {
 
     /// Recomputes the popup for `text` with the cursor at `cursor`. Returns a directory listing
     /// to ask the core for, if the token needs one not asked for yet.
-    pub fn update(
-        &mut self,
-        text: &str,
-        cursor: usize,
-        commands: &[SlashCommand],
-    ) -> Option<Option<String>> {
+    pub fn update(&mut self, text: &str, cursor: usize) -> Option<Option<String>> {
         let token = token(text, cursor);
         let moved =
             token.as_ref().map(|t| t.range.start) != self.token.as_ref().map(|t| t.range.start);
@@ -186,7 +165,6 @@ impl Completion {
         };
         let mut ask = None;
         self.rows = match &token.kind {
-            Kind::Command => command_rows(commands),
             Kind::Path { dir } => match self.paths.get(dir) {
                 Some(paths) => path_rows(dir.as_deref(), paths, &token.query),
                 None => {
@@ -255,7 +233,6 @@ impl Completion {
             return KeyResult::Pass;
         };
         let typed = match &token.kind {
-            Kind::Command => format!("/{}", token.query),
             Kind::Path { dir } => format!("@{}{}", dir.as_deref().unwrap_or(""), token.query),
         };
         // Enter on a row that is already typed in full sends the message.
@@ -301,34 +278,9 @@ impl Completion {
 fn empty_row() -> Row {
     Row {
         label: String::new(),
-        detail: String::new(),
         insert: String::new(),
         is_dir: false,
     }
-}
-
-/// Dovetail's own slash commands first, then Claude Code's, minus any Dovetail answers itself
-/// (so the user's `handoff` skill and Claude Code's `/model` are hidden).
-fn command_rows(commands: &[SlashCommand]) -> Vec<Row> {
-    let row = |name: &str, description: &str, hint: &str| {
-        let detail = if hint.is_empty() {
-            description.to_owned()
-        } else {
-            format!("{hint} · {description}")
-        };
-        Row {
-            label: format!("/{name}"),
-            detail,
-            insert: format!("/{name}"),
-            is_dir: false,
-        }
-    };
-    let own = DOVETAIL_SLASH.iter().map(|(n, d, h)| row(n, d, h));
-    let theirs = commands
-        .iter()
-        .filter(|c| !DOVETAIL_SLASH.iter().any(|(n, ..)| *n == c.name))
-        .map(|c| row(&c.name, &c.description, &c.argument_hint));
-    own.chain(theirs).collect()
 }
 
 /// Rows for a listing. In a directory, entries starting with a dot show only once a dot is
@@ -346,7 +298,6 @@ fn path_rows(dir: Option<&str>, paths: &[String], query: &str) -> Vec<Row> {
                 } else {
                     full.clone()
                 },
-                detail: String::new(),
                 insert: format!("@{full}"),
                 is_dir: p.ends_with('/'),
             }
@@ -358,14 +309,6 @@ fn path_rows(dir: Option<&str>, paths: &[String], query: &str) -> Vec<Row> {
 mod tests {
     use super::*;
 
-    fn cmd(name: &str) -> SlashCommand {
-        SlashCommand {
-            name: name.into(),
-            description: format!("{name} things"),
-            argument_hint: String::new(),
-        }
-    }
-
     fn labels(c: &Completion) -> Vec<String> {
         c.rows().0.iter().map(|r| r.label.clone()).collect()
     }
@@ -376,7 +319,7 @@ mod tests {
 
     #[test]
     fn finds_the_token_under_the_cursor() {
-        assert_eq!(token("/comp", 5).map(|t| t.query), Some("comp".into()));
+        assert_eq!(token("/comp", 5), None);
         assert_eq!(token("/compact now", 12), None);
         assert_eq!(token("see a/b", 7), None);
         let t = token("look at @crates/tu", 18).unwrap();
@@ -396,70 +339,31 @@ mod tests {
     }
 
     #[test]
-    fn slash_ranks_commands_and_tab_accepts_with_a_space() {
+    fn slash_opens_no_inline_popup() {
         let mut c = Completion::default();
-        let commands = [cmd("compact"), cmd("context"), cmd("grilling")];
-        assert_eq!(c.update("/", 1, &commands), None);
-        assert_eq!(
-            labels(&c),
-            vec![
-                "/model",
-                "/handoff",
-                "/fresh",
-                "/compact",
-                "/context",
-                "/grilling"
-            ]
-        );
-        c.update("/gril", 5, &commands);
-        assert_eq!(labels(&c), vec!["/grilling"]);
-        assert_eq!(
-            c.key(key(KeyCode::Tab)),
-            KeyResult::Accept(Accept {
-                range: 0..5,
-                text: "/grilling ".into()
-            })
-        );
-    }
-
-    #[test]
-    fn dovetail_commands_come_first_and_hide_claude_codes_namesakes() {
-        let mut c = Completion::default();
-        let commands = [cmd("compact"), cmd("handoff"), cmd("model")];
-        c.update("/", 1, &commands);
-        assert_eq!(labels(&c), vec!["/model", "/handoff", "/fresh", "/compact"]);
-        assert!(
-            c.rows
-                .iter()
-                .take(3)
-                .all(|r| r.detail.contains("Dovetail: "))
-        );
-    }
-
-    #[test]
-    fn enter_on_a_command_typed_in_full_sends() {
-        let mut c = Completion::default();
-        c.update("/compact", 8, &[cmd("compact")]);
-        assert_eq!(c.key(key(KeyCode::Enter)), KeyResult::Pass);
+        assert_eq!(c.update("/", 1), None);
+        assert!(!c.is_open());
+        c.update("/comp", 5);
+        assert!(!c.is_open());
     }
 
     #[test]
     fn at_asks_once_for_the_tree_then_shows_it() {
         let mut c = Completion::default();
-        assert_eq!(c.update("@", 1, &[]), Some(None));
-        assert_eq!(c.update("@a", 2, &[]), None);
+        assert_eq!(c.update("@", 1), Some(None));
+        assert_eq!(c.update("@a", 2), None);
         assert!(c.waiting());
         c.receive(None, vec!["src/app.rs".into(), "README.md".into()]);
-        c.update("@app", 4, &[]);
+        c.update("@app", 4);
         assert_eq!(labels(&c), vec!["src/app.rs"]);
     }
 
     #[test]
     fn a_directory_hides_dotfiles_until_a_dot_is_typed_and_keeps_completing() {
         let mut c = Completion::default();
-        assert_eq!(c.update("@~/", 3, &[]), Some(Some("~/".into())));
+        assert_eq!(c.update("@~/", 3), Some(Some("~/".into())));
         c.receive(Some("~/".into()), vec![".config/".into(), "notes/".into()]);
-        c.update("@~/", 3, &[]);
+        c.update("@~/", 3);
         assert_eq!(labels(&c), vec!["notes/"]);
         assert_eq!(
             c.key(key(KeyCode::Tab)),
@@ -468,20 +372,19 @@ mod tests {
                 text: "@~/notes/".into()
             })
         );
-        c.update("@~/.c", 5, &[]);
+        c.update("@~/.c", 5);
         assert_eq!(labels(&c), vec![".config/"]);
     }
 
     #[test]
     fn esc_closes_the_popup_until_a_new_token() {
         let mut c = Completion::default();
-        let commands = [cmd("compact")];
-        c.update("/c", 2, &commands);
+        c.update("@a", 2);
         assert_eq!(c.key(key(KeyCode::Esc)), KeyResult::Handled);
-        c.update("/co", 3, &commands);
+        c.update("@ab", 3);
         assert!(!c.is_open());
-        c.update("", 0, &commands);
-        c.update("/", 1, &commands);
+        c.update("", 0);
+        c.update("@", 1);
         assert!(c.is_open());
     }
 }

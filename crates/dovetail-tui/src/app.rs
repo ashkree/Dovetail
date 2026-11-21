@@ -478,9 +478,8 @@ impl App {
                 }
                 self.reading_event(&event);
                 if let Event::PathsListed { agent, dir, paths } = &event {
-                    let commands = commands_for(&self.snap, agent);
                     let view = chat_view_of(&mut self.buffers, self.chat_site);
-                    view.receive_paths(agent, dir.clone(), paths.clone(), commands);
+                    view.receive_paths(agent, dir.clone(), paths.clone());
                     if let Some((agent, dir)) = view.take_path_request() {
                         self.outbox.push(Command::ListPaths { agent, dir });
                     }
@@ -900,11 +899,9 @@ impl App {
             }
             // Fields borrowed apart, so the session's commands need no copy per key.
             let view = chat_view_of(&mut self.buffers, self.chat_site);
-            let commands = view
-                .agent()
-                .map_or(&[][..], |a| commands_for(&self.snap, a));
-            let sent = view.chat_key(event, commands);
+            let sent = view.chat_key(event);
             let paths = view.take_path_request();
+            let wants_commands = view.take_command_request();
             let chatting = view.is_chatting();
             // `/model`, `/handoff` and `/fresh` are Dovetail's, never prompts for Claude Code
             // (tasks #39, #34).
@@ -954,6 +951,10 @@ impl App {
             }
             if let Some((agent, dir)) = paths {
                 self.outbox.push(Command::ListPaths { agent, dir });
+            }
+            if wants_commands {
+                self.open_command_picker();
+                return;
             }
             if !chatting {
                 self.mode = Mode::Normal;

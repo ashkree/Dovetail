@@ -16,6 +16,7 @@ use crate::buffers::{bucket_label, status_glyph, status_word};
 use crate::fmt;
 use crate::picker::{PickerItem, PickerKey};
 use crate::render::transcript::{self, Cache};
+use crate::slash;
 use crate::theme::Theme;
 
 /// Agents in switcher order: those that need you first, then the most recently active, each
@@ -103,19 +104,47 @@ pub fn agent_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerIte
         .collect()
 }
 
-/// Slash command and skill rows, in the session's order.
+/// The glyph that marks a command Dovetail answers itself; Claude Code's rows show `/`.
+const DOVETAIL_GLYPH: &str = "◆";
+
+/// Slash command and skill rows: Dovetail's own first, marked, then the session's, minus any
+/// Dovetail answers itself (so the user's `handoff` skill and Claude Code's `/model` are hidden).
 pub fn command_items(commands: &[SlashCommand], theme: &Theme) -> Vec<PickerItem> {
-    commands
+    let own = slash::DOVETAIL_SLASH
         .iter()
-        .map(|c| PickerItem {
-            key: PickerKey::Command(c.name.clone()),
-            label: format!("/{}", c.name),
-            haystack: format!("{} {}", c.name, c.description),
-            detail: c.argument_hint.clone(),
-            glyph: "/",
-            color: theme.dim,
+        .map(|(name, description, hint)| {
+            let detail = if hint.is_empty() {
+                "Dovetail".to_owned()
+            } else {
+                format!("Dovetail {hint}")
+            };
+            (name.to_string(), description.to_string(), detail, true)
+        });
+    let theirs = commands
+        .iter()
+        .filter(|c| !slash::is_dovetail(&c.name))
+        .map(|c| {
+            (
+                c.name.clone(),
+                c.description.clone(),
+                c.argument_hint.clone(),
+                false,
+            )
+        });
+    own.chain(theirs)
+        .map(|(name, description, detail, dovetail)| PickerItem {
+            haystack: format!("{name} {description}"),
+            label: format!("/{name}"),
+            key: PickerKey::Command(name),
+            detail,
+            glyph: if dovetail { DOVETAIL_GLYPH } else { "/" },
+            color: if dovetail { theme.focus } else { theme.dim },
             depth: 0,
-            section: "Commands and skills",
+            section: if dovetail {
+                "Dovetail"
+            } else {
+                "Commands and skills"
+            },
         })
         .collect()
 }
@@ -296,12 +325,7 @@ pub fn preview(
         ),
         PickerKey::Command(name) => (
             "Command",
-            snap.commands
-                .values()
-                .flatten()
-                .find(|c| &c.name == name)
-                .map(|c| command_preview(c, width, theme))
-                .unwrap_or_default(),
+            command_preview(snap, name, width, theme).unwrap_or_default(),
         ),
         PickerKey::Project(id) => (
             "Project",
@@ -415,19 +439,38 @@ fn agent_preview(
     out
 }
 
-fn command_preview(command: &SlashCommand, width: usize, theme: &Theme) -> Vec<Line<'static>> {
-    let mut head = format!("/{}", command.name);
-    if !command.argument_hint.is_empty() {
-        head = format!("{head} {}", command.argument_hint);
+/// A command's name, arguments and description; Dovetail's own say so. Dovetail's table wins over
+/// a session's command of the same name, as in [`command_items`].
+fn command_preview(
+    snap: &Snapshot,
+    name: &str,
+    width: usize,
+    theme: &Theme,
+) -> Option<Vec<Line<'static>>> {
+    let own = slash::DOVETAIL_SLASH.iter().find(|(n, ..)| *n == name);
+    let (description, hint) = match own {
+        Some((_, description, hint)) => (description.to_string(), hint.to_string()),
+        None => {
+            let c = snap.commands.values().flatten().find(|c| c.name == name)?;
+            (c.description.clone(), c.argument_hint.clone())
+        }
+    };
+    let mut head = format!("/{name}");
+    if !hint.is_empty() {
+        head = format!("{head} {hint}");
     }
-    let mut out = vec![
-        Line::from(Span::styled(head, theme.accent())),
-        Line::default(),
-    ];
-    for line in fmt::wrap(&command.description, width) {
+    let mut out = vec![Line::from(Span::styled(head, theme.accent()))];
+    if own.is_some() {
+        out.push(Line::from(Span::styled(
+            format!("{DOVETAIL_GLYPH} Dovetail command: answered here, never sent to Claude Code"),
+            theme.fg(theme.focus),
+        )));
+    }
+    out.push(Line::default());
+    for line in fmt::wrap(&description, width) {
         out.push(Line::from(Span::styled(line, theme.body())));
     }
-    out
+    Some(out)
 }
 
 /// The marker a research project carries in the project switcher.
@@ -758,5 +801,67 @@ mod tests {
             ..Snapshot::default()
         };
         assert_eq!(names(&snap), vec![("orphan".into(), 0)]);
+    }
+
+    fn skill(name: &str, hint: &str) -> SlashCommand {
+        SlashCommand {
+            name: name.into(),
+            description: format!("{name} things"),
+            argument_hint: hint.into(),
+        }
+    }
+
+    #[test]
+    fn dovetail_commands_come_first_marked_and_hide_claude_codes_namesakes() {
+        let theme = Theme::default();
+        let items = command_items(
+            &[
+                skill("compact", ""),
+                skill("handoff", ""),
+                skill("model", ""),
+            ],
+            &theme,
+        );
+        let labels: Vec<_> = items.iter().map(|i| (i.label.as_str(), i.glyph)).collect();
+        assert_eq!(
+            labels,
+            vec![
+                ("/model", "◆"),
+                ("/handoff", "◆"),
+                ("/fresh", "◆"),
+                ("/compact", "/")
+            ]
+        );
+        assert!(items[0].detail.starts_with("Dovetail"));
+        assert_eq!(items[3].detail, "");
+    }
+
+    #[test]
+    fn every_dovetail_command_is_marked() {
+        let items = command_items(&[], &Theme::default());
+        assert_eq!(items.len(), slash::DOVETAIL_SLASH.len());
+        assert!(items.iter().all(|i| i.glyph == DOVETAIL_GLYPH));
+    }
+
+    #[test]
+    fn the_preview_gives_arguments_and_says_who_answers() {
+        let theme = Theme::default();
+        let mut snap = Snapshot::default();
+        snap.commands
+            .insert(AgentId("c".into()), vec![skill("compact", "[focus]")]);
+        let text = |name: &str| -> String {
+            command_preview(&snap, name, 60, &theme)
+                .unwrap()
+                .iter()
+                .map(|l| l.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let theirs = text("compact");
+        assert!(theirs.contains("/compact [focus]") && theirs.contains("compact things"));
+        assert!(!theirs.contains("Dovetail command"));
+        let own = text("model");
+        assert!(own.contains("/model [name]") && own.contains("Dovetail command"));
+        assert!(command_preview(&snap, "nope", 60, &theme).is_none());
     }
 }

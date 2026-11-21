@@ -65,7 +65,12 @@ impl App {
 
     fn close_overlay(&mut self) {
         self.overlay = None;
-        self.mode = Mode::Normal;
+        // A picker opened from the chat bar hands typing back to it.
+        self.mode = if self.chat_view().is_chatting() {
+            Mode::Insert
+        } else {
+            Mode::Normal
+        };
     }
 
     /// `<leader>ss`: Dovetail's agents only.
@@ -74,16 +79,13 @@ impl App {
         self.open_overlay(Overlay::Picker(Picker::new("Switch", items), Purpose::Open));
     }
 
-    /// `:skills`: the slash commands and skills of the agent `i` would talk to.
+    /// `/` at the start of the chat bar, `:skills`: the slash commands and skills of the agent
+    /// the chat bar talks to, Dovetail's own marked.
     pub(super) fn open_command_picker(&mut self) {
         let Some(agent) = self.chat_target() else {
             return;
         };
         let commands = super::commands_for(&self.snap, &agent);
-        if commands.is_empty() {
-            self.note = Some("no commands yet: they arrive when a session starts".into());
-            return;
-        }
         let items = switcher::command_items(commands, &self.theme);
         self.open_overlay(Overlay::Picker(Picker::new("Skills", items), Purpose::Open));
     }
@@ -342,7 +344,7 @@ impl App {
             PickerKey::Command(name) => {
                 if let Some(agent) = self.chat_target() {
                     self.start_chat(agent);
-                    self.chat_view_mut().insert_text(&format!("/{name} "));
+                    self.chat_view_mut().insert_command(&name);
                 }
             }
         }

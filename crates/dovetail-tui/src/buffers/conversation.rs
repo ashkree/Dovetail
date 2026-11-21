@@ -3,10 +3,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use dovetail_api::{
     AgentId, AgentStatus, Attachment, Command, EntryId, EntryKind, MAX_ATTACHMENTS, Paste,
-    SlashCommand,
 };
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
@@ -100,6 +99,8 @@ pub struct ConversationBuffer {
     images: Vec<Attachment>,
     /// The `/` and `@` popup over the chat input.
     completion: Completion,
+    /// A `/` was just typed as the first character.
+    wants_commands: bool,
     /// A path listing the popup needs, for the app to ask the core for.
     wants_paths: Option<Option<String>>,
     reading_width: u16,
@@ -122,6 +123,7 @@ impl Default for ConversationBuffer {
             chat: None,
             images: Vec::new(),
             completion: Completion::default(),
+            wants_commands: false,
             wants_paths: None,
             reading_width: DEFAULT_WIDTH,
             layout: Layout::default(),
@@ -322,12 +324,9 @@ impl ConversationBuffer {
 
     /// Applies a key to the chat input. `Enter` returns the prompt and its images to send;
     /// `Esc` keeps both as the agent's draft. While the `/` or `@` popup is open it takes its
-    /// keys first; `commands` are the session's, for `/`.
-    pub fn chat_key(
-        &mut self,
-        key: KeyEvent,
-        commands: &[SlashCommand],
-    ) -> Option<(AgentId, String, Vec<Attachment>)> {
+    /// keys first. A `/` typed as the first character asks for the command picker
+    /// ([`take_command_request`](Self::take_command_request)).
+    pub fn chat_key(&mut self, key: KeyEvent) -> Option<(AgentId, String, Vec<Attachment>)> {
         let chat = self.chat.as_mut()?;
         let agent = self.agent.clone()?;
         let outcome = match self.completion.key(key) {
@@ -340,9 +339,11 @@ impl ConversationBuffer {
         };
         if outcome == InputOutcome::Edited {
             let (text, cursor) = (chat.text().to_string(), chat.cursor());
-            if let Some(dir) = self.completion.update(&text, cursor, commands) {
+            if let Some(dir) = self.completion.update(&text, cursor) {
                 self.wants_paths = Some(dir);
             }
+            // Only a `/` just typed opens the picker: backspacing to one does not.
+            self.wants_commands = text == "/" && cursor == 1 && key.code == KeyCode::Char('/');
         }
         let chat = self.chat.as_mut()?;
         match outcome {
@@ -366,10 +367,22 @@ impl ConversationBuffer {
         }
     }
 
-    /// Types `text` at the chat input's cursor (a command picked with `:skills`).
-    pub fn insert_text(&mut self, text: &str) {
-        if let Some(chat) = self.chat.as_mut() {
-            chat.insert_str(text);
+    /// Whether the last key typed a `/` into an empty chat bar: the app opens the command picker.
+    pub fn take_command_request(&mut self) -> bool {
+        std::mem::take(&mut self.wants_commands)
+    }
+
+    /// Puts a picked command into the chat bar as `/name `. A lone `/` (what opened the picker)
+    /// becomes the command; otherwise it goes in at the cursor.
+    pub fn insert_command(&mut self, name: &str) {
+        let Some(chat) = self.chat.as_mut() else {
+            return;
+        };
+        let text = format!("/{name} ");
+        if chat.text() == "/" {
+            chat.replace(0..1, &text);
+        } else {
+            chat.insert_str(&text);
         }
     }
 
@@ -380,20 +393,14 @@ impl ConversationBuffer {
     }
 
     /// Takes a path listing from the core, if it is for the chat bar now open.
-    pub fn receive_paths(
-        &mut self,
-        agent: &AgentId,
-        dir: Option<String>,
-        paths: Vec<String>,
-        commands: &[SlashCommand],
-    ) {
+    pub fn receive_paths(&mut self, agent: &AgentId, dir: Option<String>, paths: Vec<String>) {
         if self.agent.as_ref() != Some(agent) {
             return;
         }
         let Some(chat) = &self.chat else { return };
         let (text, cursor) = (chat.text().to_string(), chat.cursor());
         self.completion.receive(dir, paths);
-        if let Some(dir) = self.completion.update(&text, cursor, commands) {
+        if let Some(dir) = self.completion.update(&text, cursor) {
             self.wants_paths = Some(dir);
         }
     }
@@ -447,7 +454,7 @@ impl ConversationBuffer {
             .find(|t| t.entries.contains(&entry))
     }
 
-    /// The `/` or `@` popup, along the bottom of `body`, just over the chat bar's rule.
+    /// The `@` popup, along the bottom of `body`, just over the chat bar's rule.
     fn render_popup(&self, frame: &mut Frame, body: Rect, cx: &ViewCx) {
         if !self.completion.is_open() {
             return;
@@ -470,17 +477,10 @@ impl ConversationBuffer {
                 .skip(first)
                 .take(complete::MAX_ROWS)
                 .map(|(i, row)| {
-                    let label = format!("  {}", row.label);
-                    let room = width.saturating_sub(label.chars().count() + 2);
-                    let detail = if row.detail.is_empty() || room < 8 {
-                        String::new()
-                    } else {
-                        format!("  {}", fmt::truncate(&row.detail, room))
-                    };
-                    let line = Line::from(vec![
-                        Span::styled(label, theme.accent()),
-                        Span::styled(detail, theme.dim()),
-                    ]);
+                    let line = Line::from(Span::styled(
+                        format!("  {}", fmt::truncate(&row.label, width.saturating_sub(2))),
+                        theme.accent(),
+                    ));
                     if i == selected {
                         line.style(theme.selected())
                     } else {
