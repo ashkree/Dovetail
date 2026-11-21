@@ -6,8 +6,13 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::research::{Evidence, FindingId, ProposalKind, ResearchWhat, SourceId};
-use crate::{Alternative, Bucket, DecisionId, PLevel, ReasoningEffort, TaskId, TaskStatus};
+use crate::canvas::{BlockId, CardId, CardKind, Layout};
+use crate::decision::{Alternative, DecisionId};
+use crate::design::{MAX_OPTIONS, MAX_SLOTS, VariantSlot};
+use crate::effort::{CriterionId, EffortId};
+use crate::model::ReasoningEffort;
+use crate::research::{Evidence, FindingId, ProposalKind, ResearchKind, ResearchWhat, SourceId};
+use crate::task::{Bucket, PLevel, TaskId, TaskStatus};
 
 /// Names of the environment variables Dovetail passes to the processes it launches.
 pub mod env {
@@ -618,7 +623,7 @@ pub struct Report {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClaimCriterion {
     /// The criterion's id.
-    pub criterion: crate::CriterionId,
+    pub criterion: CriterionId,
     /// What shows it is met: a pull request, a test, a finding.
     pub evidence: String,
 }
@@ -629,9 +634,9 @@ pub struct ClaimCriterion {
 pub struct CanvasAddBlock {
     /// The effort; `None` means the one the user last tagged (Unsorted when none).
     #[serde(default)]
-    pub effort: Option<crate::EffortId>,
+    pub effort: Option<EffortId>,
     /// `question_tree`, `options_compare` or `free_area`.
-    pub layout: crate::Layout,
+    pub layout: Layout,
     /// What the block is about: the root question, the choice being compared.
     pub title: String,
 }
@@ -651,17 +656,17 @@ pub struct CanvasAddCard {
     /// The effort; `None` means the one the user last tagged (Unsorted when none), or the
     /// block's effort when `block` is given.
     #[serde(default)]
-    pub effort: Option<crate::EffortId>,
+    pub effort: Option<EffortId>,
     /// The block to put it in; `None` puts it in the incoming strip.
     #[serde(default)]
-    pub block: Option<crate::BlockId>,
+    pub block: Option<BlockId>,
     /// A card in that block to put it under and link it from: in a question tree the question
     /// it answers, in an options compare the option it is evidence for.
     #[serde(default)]
-    pub under: Option<crate::CardId>,
+    pub under: Option<CardId>,
     /// What the card is: `idea` or `question` with `text`, or `finding`, `source`, `decision`,
     /// `map` or `task` with `reference`.
-    pub kind: crate::CardKind,
+    pub kind: CardKind,
     /// The words of an idea or a question.
     #[serde(default)]
     pub text: String,
@@ -676,9 +681,9 @@ pub struct CanvasAddCard {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CanvasLinkCards {
     /// The card the link starts at.
-    pub from: crate::CardId,
+    pub from: CardId,
     /// The card it leads to.
-    pub to: crate::CardId,
+    pub to: CardId,
     /// What the link says, if anything.
     #[serde(default)]
     pub label: String,
@@ -690,17 +695,17 @@ pub struct CanvasLinkCards {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeclareVariants {
     /// Every slot, in the order the panel shows them.
-    pub slots: Vec<crate::VariantSlot>,
+    pub slots: Vec<VariantSlot>,
 }
 
 impl DeclareVariants {
     /// Checks the whole list, so every problem comes back at once: at most
-    /// [`crate::MAX_SLOTS`] slots with unique non-empty names, each with 1 to
-    /// [`crate::MAX_OPTIONS`] unique non-empty options, and a `kept` that is one of them.
+    /// [`MAX_SLOTS`] slots with unique non-empty names, each with 1 to
+    /// [`MAX_OPTIONS`] unique non-empty options, and a `kept` that is one of them.
     pub fn check(&self) -> Result<(), Vec<String>> {
         let mut problems = Vec::new();
-        if self.slots.len() > crate::MAX_SLOTS {
-            problems.push(format!("at most {} slots", crate::MAX_SLOTS));
+        if self.slots.len() > MAX_SLOTS {
+            problems.push(format!("at most {} slots", MAX_SLOTS));
         }
         let mut seen = std::collections::BTreeSet::new();
         for slot in &self.slots {
@@ -710,11 +715,8 @@ impl DeclareVariants {
             } else if !seen.insert(name) {
                 problems.push(format!("slot `{name}` appears twice"));
             }
-            if slot.options.is_empty() || slot.options.len() > crate::MAX_OPTIONS {
-                problems.push(format!(
-                    "slot `{name}` needs 1 to {} options",
-                    crate::MAX_OPTIONS
-                ));
+            if slot.options.is_empty() || slot.options.len() > MAX_OPTIONS {
+                problems.push(format!("slot `{name}` needs 1 to {} options", MAX_OPTIONS));
             }
             let mut options = std::collections::BTreeSet::new();
             for o in &slot.options {
@@ -943,7 +945,7 @@ pub struct ResearchStartRound {
     /// Whether the task asks a `question` or makes a `decision`; sets the task's research kind
     /// (a decision is held to the decision template). Omit to leave it as it is.
     #[serde(default)]
-    pub kind: Option<crate::research::ResearchKind>,
+    pub kind: Option<ResearchKind>,
 }
 
 /// `research_write_report`: store the report of a task, closing its open round.

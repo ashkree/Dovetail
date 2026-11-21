@@ -7,9 +7,9 @@ pub(crate) use apply::apply;
 pub use command::WorktreeCommand;
 pub use event::WorktreeEvent;
 
+use crate::agent::AgentId;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::agent::AgentId;
 
 /// Git and pull-request state of one slice's worktree, for the worktree view (`<leader>g`).
 ///

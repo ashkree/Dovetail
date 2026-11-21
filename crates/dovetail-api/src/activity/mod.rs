@@ -5,9 +5,8 @@ mod event;
 pub(crate) use apply::apply;
 pub use event::ActivityEvent;
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
-use crate::task::Task;
+use serde::{Deserialize, Serialize};
 
 /// An item in the Activity feed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

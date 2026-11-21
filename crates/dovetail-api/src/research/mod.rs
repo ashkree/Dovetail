@@ -1,4 +1,4 @@
-//! The `research` feature: research: rounds, findings, sources and reports of a task.
+//! The `research` feature: rounds, findings, sources and reports of a task.
 
 mod apply;
 mod command;
@@ -7,12 +7,11 @@ pub(crate) use apply::apply;
 pub use command::ResearchCommand;
 pub use event::ResearchEvent;
 
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use crate::agent::AgentId;
-use crate::decision::Decision;
 use crate::library::DocImage;
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Identifies a finding: the `findings.id` row id. Shown to agents as `F<id>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

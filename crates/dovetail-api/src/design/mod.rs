@@ -7,9 +7,9 @@ pub(crate) use apply::apply;
 pub use command::DesignCommand;
 pub use event::DesignEvent;
 
+use crate::agent::AgentId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use crate::agent::AgentId;
 
 /// Most slots a slice may declare in one call.
 pub const MAX_SLOTS: usize = 12;

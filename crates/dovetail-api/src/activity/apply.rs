@@ -2,8 +2,8 @@
 
 use super::ActivityEvent;
 use crate::apply::push_bounded;
-use crate::snapshot::{ACTIVITY_TAIL, MESSAGE_TAIL};
 use crate::snapshot::Snapshot;
+use crate::snapshot::{ACTIVITY_TAIL, MESSAGE_TAIL};
 
 pub(crate) fn apply(state: &mut Snapshot, event: ActivityEvent) {
     match event {

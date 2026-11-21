@@ -1,4 +1,4 @@
-//! The `agent` feature: agents: coordinators, slices, side chats and subagents, and their native to-do lists.
+//! The `agent` feature: coordinators, slices, side chats and subagents, and their native to-do lists.
 
 mod apply;
 mod command;
@@ -7,10 +7,10 @@ pub(crate) use apply::apply;
 pub use command::AgentCommand;
 pub use event::AgentEvent;
 
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use crate::model::ReasoningEffort;
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Identifies an agent: a coordinator, slice or subagent.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -112,7 +112,7 @@ pub enum AgentKind {
     Ask,
     /// A tangent (ADR 0017): a read-only session like a side chat, run in Tangents' folder
     /// whatever project is open, whose answers and sources are saved in Tangents. Its tangent is
-    /// the Tangents task its id names ([`tangent_task`]); [`Agent::task`] stays `None`, since
+    /// the Tangents task its id names ([`crate::tangent::tangent_task`]); [`Agent::task`] stays `None`, since
     /// that task is not the open project's. Shown in the side panel, not in the tree.
     Tangent,
     /// Spawned by a session for self-contained work.

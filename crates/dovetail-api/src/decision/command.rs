@@ -1,8 +1,8 @@
 //! The `decision` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::decision::{Alternative, DecisionId};
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
 
 /// Decision logs: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

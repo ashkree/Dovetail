@@ -1,8 +1,8 @@
 //! The `conversation` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
 use crate::conversation::{ConversationEntry, EntryId};
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `conversation`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,7 +24,7 @@ pub enum ConversationEvent {
         /// Text to append.
         text: String,
     },
-    /// Older entries, in answer to [`ConversationCommand::Load`].
+    /// Older entries, in answer to [`super::ConversationCommand::Load`].
     Page {
         /// Whose conversation.
         agent: AgentId,
@@ -33,7 +33,7 @@ pub enum ConversationEvent {
         /// Still older entries exist.
         has_more: bool,
     },
-    /// Paths for `@` completion in a chat bar, in answer to [`ConversationCommand::ListPaths`]. Changes
+    /// Paths for `@` completion in a chat bar, in answer to [`super::ConversationCommand::ListPaths`]. Changes
     /// nothing in the snapshot.
     PathsListed {
         /// The agent whose chat bar asked.

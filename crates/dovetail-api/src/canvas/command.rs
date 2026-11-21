@@ -1,10 +1,10 @@
 //! The `canvas` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
 use crate::canvas::{BlockId, CardId, Layout, NewCard, Point};
 use crate::conversation::EntryId;
 use crate::effort::EffortId;
+use serde::{Deserialize, Serialize};
 
 /// Canvases: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -12,7 +12,7 @@ use crate::effort::EffortId;
 pub enum CanvasCommand {
     /// Add a block to an effort's canvas (ADR 0027). The core places it in the empty space
     /// nearest `near` (the centre of the user's view), or right of everything without it.
-    /// Answers with [`CanvasEvent::BlockUpserted`].
+    /// Answers with [`super::CanvasEvent::BlockUpserted`].
     CreateBlock {
         /// The effort.
         effort: EffortId,
@@ -34,7 +34,7 @@ pub enum CanvasCommand {
     /// Add a card: into `card.block` where the core finds room (under `link_from` when that card
     /// is in the same block), else into the effort's incoming strip. With `link_from`, the new
     /// card is also linked from that card. The core checks that a reference's target exists and
-    /// answers with [`CanvasEvent::CardUpserted`].
+    /// answers with [`super::CanvasEvent::CardUpserted`].
     AddCard {
         /// The card.
         card: NewCard,
@@ -103,7 +103,7 @@ pub enum CanvasCommand {
         /// The effort the card goes to.
         effort: EffortId,
     },
-    /// Fetch a card's body. The core answers with [`CanvasEvent::CardLoaded`].
+    /// Fetch a card's body. The core answers with [`super::CanvasEvent::CardLoaded`].
     LoadCard {
         /// The card.
         id: CardId,

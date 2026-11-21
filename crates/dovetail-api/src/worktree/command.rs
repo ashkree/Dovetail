@@ -1,7 +1,7 @@
 //! The `worktree` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
+use serde::{Deserialize, Serialize};
 
 /// Worktrees: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -16,6 +16,6 @@ pub enum WorktreeCommand {
     },
     /// Gather every slice worktree's git and PR state again (sent when the worktree view
     /// opens): `git fetch origin <base>` first, then local git and `gh pr list`. The core
-    /// answers with one [`WorktreeEvent::Upserted`] per worktree.
+    /// answers with one [`super::WorktreeEvent::Upserted`] per worktree.
     Refresh,
 }

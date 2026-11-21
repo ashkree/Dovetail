@@ -1,4 +1,4 @@
-//! The `tangent` feature: tangents: questions that do not belong to the open project.
+//! The `tangent` feature: questions that do not belong to the open project.
 
 mod apply;
 mod command;
@@ -7,10 +7,10 @@ pub(crate) use apply::apply;
 pub use command::TangentCommand;
 pub use event::TangentEvent;
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
 use crate::research::ResearchSummary;
 use crate::task::{Task, TaskId, TaskStatus};
+use serde::{Deserialize, Serialize};
 
 /// The id of Tangents, the built-in research project every tangent is saved in (ADR 0017,
 /// amended 2026-11-11). It is reserved: no other project can take it, it is always registered

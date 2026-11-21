@@ -95,6 +95,10 @@ pub fn model_option_index(options: &[ModelOption], running: &str) -> Option<usiz
         .or_else(|| options.iter().position(|o| running.contains(&o.name)))
 }
 
+/// The CLI a session runs on. Fixed for the life of a session: switching means a new session.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum DriverKind {
     /// Claude Code (`claude`), over its stream-json protocol.

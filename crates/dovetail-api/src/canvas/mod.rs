@@ -1,4 +1,4 @@
-//! The `canvas` feature: canvases: an effort's blocks and cards.
+//! The `canvas` feature: an effort's blocks and cards.
 
 mod apply;
 mod command;
@@ -7,12 +7,8 @@ pub(crate) use apply::apply;
 pub use command::CanvasCommand;
 pub use event::CanvasEvent;
 
-use serde::{Deserialize, Serialize};
-use crate::canvas::geometry;
-use crate::decision::Decision;
 use crate::effort::EffortId;
-use crate::map::Map;
-use crate::task::Task;
+use serde::{Deserialize, Serialize};
 
 /// Identifies a block. Matches the `blocks.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

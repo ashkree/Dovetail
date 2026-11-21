@@ -1,9 +1,9 @@
 //! The `conversation` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
 use crate::conversation::{Attachment, EntryId};
 use crate::effort::EffortId;
+use serde::{Deserialize, Serialize};
 
 /// Conversations: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -15,7 +15,7 @@ pub enum ConversationCommand {
         agent: AgentId,
         /// Prompt text; may be empty when images are attached.
         text: String,
-        /// Images to send with it, saved by the core on [`Paste`]; the core
+        /// Images to send with it, saved by the core on [`crate::clipboard::Paste`]; the core
         /// reads the files.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         attachments: Vec<Attachment>,
@@ -27,7 +27,7 @@ pub enum ConversationCommand {
     /// List paths for `@` completion in an agent's chat bar. `dir: None` lists the files of the
     /// agent's folder (the main checkout or its worktree) that git does not ignore; `Some` lists
     /// one directory, `~/`, absolute, or relative to that folder. The core answers with
-    /// [`ConversationEvent::PathsListed`].
+    /// [`super::ConversationEvent::PathsListed`].
     ListPaths {
         /// The agent whose chat bar is completing.
         agent: AgentId,

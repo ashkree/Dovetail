@@ -1,8 +1,8 @@
 //! The `agent` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
 
 /// Agents: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

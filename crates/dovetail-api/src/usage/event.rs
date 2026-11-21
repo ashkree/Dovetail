@@ -1,7 +1,7 @@
 //! The `usage` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::usage::UsageLimits;
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `usage`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

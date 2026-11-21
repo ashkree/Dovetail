@@ -1,7 +1,7 @@
 //! The `worktree` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::worktree::WorktreeInfo;
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `worktree`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

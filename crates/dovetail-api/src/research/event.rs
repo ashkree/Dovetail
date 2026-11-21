@@ -1,8 +1,8 @@
 //! The `research` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::research::{ResearchContent, ResearchSummary, ResearchWhat};
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `research`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -10,7 +10,7 @@ use crate::task::TaskId;
 pub enum ResearchEvent {
     /// A task's research changed: a round opened or closed, a finding was filed.
     Upserted(ResearchSummary),
-    /// Research content, in answer to [`ResearchCommand::Load`]. Changes nothing in the
+    /// Research content, in answer to [`super::ResearchCommand::Load`]. Changes nothing in the
     /// snapshot.
     Loaded {
         /// The task.

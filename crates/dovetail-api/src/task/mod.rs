@@ -1,14 +1,14 @@
-//! The `task` feature: tasks: the user's own work items, their status, order and links.
+//! The `task` feature: the user's own work items, their status, order and links.
 
 mod apply;
 mod command;
 mod event;
 pub(crate) use apply::apply;
-pub use command::{TaskCommand, NewTask, TaskChange, describe_task_patch};
+pub use command::{NewTask, TaskChange, TaskCommand, describe_task_patch};
 pub use event::TaskEvent;
 
-use serde::{Deserialize, Serialize};
 use crate::effort::{CriterionId, EffortId};
+use serde::{Deserialize, Serialize};
 
 /// Identifies one of the user's tasks. Matches the `tasks.id` row id in `state.db`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

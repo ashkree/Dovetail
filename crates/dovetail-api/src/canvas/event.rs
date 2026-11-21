@@ -1,7 +1,7 @@
 //! The `canvas` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::canvas::{Block, Card, CardId, CardLink};
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `canvas`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ pub enum CanvasEvent {
         /// The card it led to.
         to: CardId,
     },
-    /// A card's body, in answer to [`CanvasCommand::LoadCard`]: the target's text for a reference. Changes
+    /// A card's body, in answer to [`super::CanvasCommand::LoadCard`]: the target's text for a reference. Changes
     /// nothing in the snapshot.
     CardLoaded {
         /// The card.

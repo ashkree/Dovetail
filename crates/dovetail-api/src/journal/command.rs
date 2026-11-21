@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum JournalCommand {
     /// Close the day (`:eod`, ADR 0012): ask the coordinator for its handoff, then write today's
     /// journal file with it and Dovetail's facts. The core answers with
-    /// [`JournalEvent::Changed`]: `closing` while it waits, then the new `latest`.
+    /// [`super::JournalEvent::Changed`]: `closing` while it waits, then the new `latest`.
     EndOfDay,
     /// A mid-day handoff (`:handoff`, ADR 0012 amendment): ask the coordinator for the same
     /// handoff as [`JournalCommand::EndOfDay`], append it to today's journal file as a "Handoff (fresh

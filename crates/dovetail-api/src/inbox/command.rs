@@ -1,7 +1,7 @@
 //! The `inbox` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::inbox::InboxId;
+use serde::{Deserialize, Serialize};
 
 /// Needs you: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

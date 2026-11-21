@@ -1,8 +1,8 @@
 //! The `task` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::effort::{CriterionId, EffortId};
 use crate::task::{Bucket, PLevel, TaskId, TaskStatus};
+use serde::{Deserialize, Serialize};
 
 /// Tasks: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,7 +19,7 @@ pub enum TaskCommand {
     },
     /// Put a task in an effort and say which of its criteria the task serves. Moving to another
     /// effort with `criterion: None` clears the criterion. Refused for a closed effort, or a
-    /// criterion of another effort. The core answers with [`TaskEvent::Upserted`].
+    /// criterion of another effort. The core answers with [`super::TaskEvent::Upserted`].
     Move {
         /// The task.
         id: TaskId,

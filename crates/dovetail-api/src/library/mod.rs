@@ -5,12 +5,12 @@ mod event;
 pub use command::LibraryCommand;
 pub use event::LibraryEvent;
 
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use crate::decision::Decision;
 use crate::project::{ProjectId, ProjectSummary};
 use crate::research::{ResearchListing, ResearchSummary, ResearchWhat};
 use crate::task::{Task, TaskId};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// An image a document shows, found by the core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

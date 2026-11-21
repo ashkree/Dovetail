@@ -1,7 +1,7 @@
 //! The `decision` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::decision::Decision;
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `decision`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

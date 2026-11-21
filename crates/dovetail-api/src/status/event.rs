@@ -1,7 +1,7 @@
 //! The `status` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::status::{Totals, Warning, WarningId};
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `status`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

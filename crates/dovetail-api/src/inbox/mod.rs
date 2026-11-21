@@ -7,11 +7,11 @@ pub(crate) use apply::apply;
 pub use command::{InboxCommand, PermissionAnswer};
 pub use event::InboxEvent;
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
 use crate::decision::Alternative;
 use crate::research::{Evidence, ProposalKind};
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
 
 /// Identifies an inbox item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

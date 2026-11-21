@@ -1,4 +1,4 @@
-//! The `upgrade` feature: `:upgrade`: building and swapping in the next binary.
+//! The `upgrade` feature: building and swapping in the next binary.
 
 mod apply;
 mod command;

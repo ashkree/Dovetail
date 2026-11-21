@@ -1,7 +1,7 @@
 //! The `design` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::design::{Preview, VariantSet};
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `design`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

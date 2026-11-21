@@ -1,18 +1,18 @@
-//! The `conversation` feature: conversations: each agent's entries, the chat bar's prompts and `@` completion.
+//! The `conversation` feature: each agent's entries, the chat bar's prompts and `@` completion.
 
 mod apply;
 mod attachment;
 mod command;
 mod event;
 pub(crate) use apply::apply;
-pub use attachment::{MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, size_text, attachment_limit_text, Attachment, ImageType};
+pub use attachment::{
+    Attachment, ImageType, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, attachment_limit_text, size_text,
+};
 pub use command::ConversationCommand;
 pub use event::ConversationEvent;
 
-use serde::{Deserialize, Serialize};
-use crate::activity::AgentMessage;
-use crate::conversation::Attachment;
 use crate::effort::EffortId;
+use serde::{Deserialize, Serialize};
 
 /// Identifies a conversation entry. Ids grow with time within one agent's conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -24,7 +24,7 @@ pub struct EntryId(pub u64);
 pub struct ConversationTail {
     /// Entries, oldest first.
     pub entries: Vec<ConversationEntry>,
-    /// Older entries exist and can be fetched with `LoadConversation`.
+    /// Older entries exist and can be fetched with [`ConversationCommand::Load`].
     pub has_more: bool,
 }
 
@@ -37,7 +37,7 @@ pub struct ConversationEntry {
     pub at_ms: i64,
     /// Who or what it is.
     pub kind: EntryKind,
-    /// Markdown text; assistant entries grow through `AssistantDelta`.
+    /// Markdown text; assistant entries grow through [`ConversationEvent::AssistantDelta`].
     pub text: String,
     /// Images sent with a user message, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

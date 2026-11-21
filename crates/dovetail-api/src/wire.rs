@@ -4,7 +4,6 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use serde::{Deserialize, Serialize};
 
-use crate::snapshot::Snapshot;
 use crate::activity::ActivityEvent;
 use crate::agent::{AgentCommand, AgentEvent};
 use crate::app::{AppCommand, AppEvent};
@@ -22,6 +21,7 @@ use crate::mcp::{McpCommand, McpEvent};
 use crate::model::{ModelCommand, ModelEvent};
 use crate::project::{ProjectCommand, ProjectEvent};
 use crate::research::{ResearchCommand, ResearchEvent};
+use crate::snapshot::Snapshot;
 use crate::status::StatusEvent;
 use crate::tangent::{TangentCommand, TangentEvent};
 use crate::task::{TaskCommand, TaskEvent};

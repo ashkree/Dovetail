@@ -1,9 +1,9 @@
 //! The `research` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::inbox::InboxId;
 use crate::research::{ResearchKind, ResearchWhat};
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
 
 /// Research: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ pub enum ResearchCommand {
         /// The task to file it under.
         task: TaskId,
     },
-    /// Fetch research content. The core answers with [`ResearchEvent::Loaded`], or
+    /// Fetch research content. The core answers with [`super::ResearchEvent::Loaded`], or
     /// [`crate::app::AppEvent::CommandFailed`] when there is no such thing.
     Load {
         /// The task.
@@ -61,7 +61,7 @@ pub enum ResearchCommand {
     /// Make the Ask session of a research task ready (`i` in reading mode, ADR 0018): a
     /// read-only session grounded in the task's report and the sources it cites, apart from
     /// the coordinator. The core answers with [`crate::agent::AgentEvent::Upserted`] for an
-    /// [`crate::AgentKind::Ask`] agent of the task (the one there is, or a new one); questions
+    /// [`crate::agent::AgentKind::Ask`] agent of the task (the one there is, or a new one); questions
     /// then go to it as [`crate::conversation::ConversationCommand::Prompt`]s. Refused for a task with no report.
     StartAsk {
         /// The research task.

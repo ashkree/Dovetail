@@ -1,15 +1,15 @@
 //! The `project` feature's commands.
 
+use crate::project::{ProjectId, RepoId};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::project::{ProjectId, RepoId};
 
 /// Projects: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectCommand {
     /// Switch to another registered project (B24): the core answers with
-    /// [`ProjectEvent::Opening`] and quits, ending this project's sessions, and the binary starts
+    /// [`super::ProjectEvent::Opening`] and quits, ending this project's sessions, and the binary starts
     /// again on the other one.
     Open {
         /// The project.
@@ -23,7 +23,7 @@ pub enum ProjectCommand {
         name: String,
     },
     /// Create a project (ADR 0021): a name, an optional account and an optional first repo.
-    /// Answered with [`ProjectEvent::Upserted`]. Home and the core both take it.
+    /// Answered with [`super::ProjectEvent::Upserted`]. Home and the core both take it.
     Create {
         /// Display name; the id is its slug, numbered when taken.
         name: String,
@@ -72,7 +72,7 @@ pub enum ProjectCommand {
         /// Path inside the repo.
         path: PathBuf,
     },
-    /// Uncomment `profile = "<profile>"` in the starter recipe [`ProjectEvent::RecipeStarted`] named
+    /// Uncomment `profile = "<profile>"` in the starter recipe [`super::ProjectEvent::RecipeStarted`] named
     /// (task #31). Fails when the line is gone (the file was edited) or config.toml lacks it.
     SetRecipeProfile {
         /// The open project.

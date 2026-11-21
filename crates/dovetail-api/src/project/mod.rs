@@ -1,4 +1,4 @@
-//! The `project` feature: projects: registered projects, their repos and account.
+//! The `project` feature: registered projects, their repos and account.
 
 mod apply;
 mod command;

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+//! The full client-visible snapshot and its tail caps.
+
 use crate::activity::{ActivityItem, AgentMessage};
 use crate::agent::{Agent, AgentId, SlashCommand, TodoItem};
 use crate::canvas::{Block, Card, CardLink};
@@ -18,6 +18,8 @@ use crate::tangent::TangentSummary;
 use crate::task::Task;
 use crate::usage::UsageLimits;
 use crate::worktree::WorktreeInfo;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// The whole client-visible state at one point in the event stream.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -117,7 +119,7 @@ pub struct Snapshot {
 
 impl Snapshot {
     /// The snapshot as a core sends it: each conversation cut to its newest
-    /// [`CONVERSATION_TAIL`] entries, older ones left for `LoadConversation`. A client keeps
+    /// [`CONVERSATION_TAIL`] entries, older ones left for [`crate::conversation::ConversationCommand::Load`]. A client keeps
     /// what it pages in beyond that, up to [`CONVERSATION_KEEP`].
     pub fn trimmed(&self) -> Snapshot {
         let mut out = self.clone();

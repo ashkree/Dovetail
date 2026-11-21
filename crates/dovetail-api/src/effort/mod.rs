@@ -1,4 +1,4 @@
-//! The `effort` feature: efforts: goals with acceptance criteria.
+//! The `effort` feature: goals with acceptance criteria.
 
 mod apply;
 mod command;

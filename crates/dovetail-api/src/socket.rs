@@ -7,8 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent::AgentId;
+use crate::task::{NewTask, TaskId};
 use crate::tools::Tool;
-use crate::{AgentId, NewTask, TaskId};
 
 /// One request from a socket client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

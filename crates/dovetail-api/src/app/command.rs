@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum AppCommand {
     /// Open a web page in the user's browser (`gx` in reading mode, ADR 0018): `$BROWSER` if
     /// set, else `xdg-open`. Only `http` and `https` URLs; anything else, or a launch that fails,
-    /// comes back as [`AppEvent::CommandFailed`]. Success sends nothing.
+    /// comes back as [`super::AppEvent::CommandFailed`]. Success sends nothing.
     OpenExternal {
         /// The page.
         url: String,

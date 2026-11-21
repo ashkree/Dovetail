@@ -19,7 +19,7 @@ pub mod mcp;
 pub mod model;
 pub mod project;
 pub mod research;
-mod snapshot;
+pub mod snapshot;
 pub mod socket;
 pub mod status;
 pub mod tangent;

@@ -1,9 +1,9 @@
 //! The `tangent` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::project::ProjectId;
 use crate::research::ResearchWhat;
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
 
 /// Tangents: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -14,7 +14,7 @@ pub enum TangentCommand {
     /// list and starts a read-only session for it in Tangents' folder (side chats' launch lists,
     /// Core suite only), shown in the side panel. Its answers and the sources it and its
     /// subagents reached are filed on that task as findings. The core answers with
-    /// [`TangentEvent::Upserted`] and [`crate::agent::AgentEvent::Upserted`].
+    /// [`super::TangentEvent::Upserted`] and [`crate::agent::AgentEvent::Upserted`].
     New {
         /// The question, also its first prompt.
         question: String,
@@ -52,7 +52,7 @@ pub enum TangentCommand {
         tangent: TaskId,
     },
     /// Fetch a tangent's content, as [`crate::research::ResearchCommand::Load`] does for the open project's
-    /// tasks. The core answers with [`TangentEvent::Loaded`].
+    /// tasks. The core answers with [`super::TangentEvent::Loaded`].
     Load {
         /// The tangent's task in Tangents.
         tangent: TaskId,

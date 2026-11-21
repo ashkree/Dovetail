@@ -1,14 +1,14 @@
 //! The `design` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
+use serde::{Deserialize, Serialize};
 
 /// Design previews and variants: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DesignCommand {
     /// Start a slice's preview (ADR 0026) unless it already starts or runs. The viewer sends it
-    /// when it opens on the slice. Answered with [`DesignEvent::PreviewChanged`].
+    /// when it opens on the slice. Answered with [`super::DesignEvent::PreviewChanged`].
     StartPreview {
         /// The slice.
         agent: AgentId,

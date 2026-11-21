@@ -7,10 +7,10 @@ pub(crate) use apply::apply;
 pub use command::{DecisionCommand, NewDecision};
 pub use event::DecisionEvent;
 
-use serde::{Deserialize, Serialize};
-use crate::agent::{Agent, AgentId};
+use crate::agent::AgentId;
 use crate::research::Evidence;
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
 
 /// Identifies an entry in a task's decision log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

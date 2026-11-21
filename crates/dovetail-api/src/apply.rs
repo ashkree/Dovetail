@@ -6,7 +6,8 @@
 use crate::snapshot::Snapshot;
 use crate::wire::Event;
 use crate::{
-    activity, agent, canvas, conversation, decision, design, effort, inbox, journal, map, model, project, research, status, tangent, task, upgrade, usage, worktree,
+    activity, agent, canvas, conversation, decision, design, effort, inbox, journal, map, model,
+    project, research, status, tangent, task, upgrade, usage, worktree,
 };
 
 /// What [`apply`] did with an event.
@@ -60,7 +61,11 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::Upgrade(event) => upgrade::apply(state, event),
         Event::Project(event) => project::apply(state, event),
         // Nothing to store: the UI shows these as they pass through.
-        Event::Library(_) | Event::Mcp(_) | Event::App(_) | Event::Clipboard(_) | Event::Terminal(_) => {}
+        Event::Library(_)
+        | Event::Mcp(_)
+        | Event::App(_)
+        | Event::Clipboard(_)
+        | Event::Terminal(_) => {}
     }
     ApplyResult::Applied
 }

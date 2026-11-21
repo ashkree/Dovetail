@@ -1,7 +1,7 @@
 //! The `journal` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::journal::JournalState;
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `journal`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

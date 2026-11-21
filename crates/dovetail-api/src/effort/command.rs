@@ -1,15 +1,15 @@
 //! The `effort` feature's commands.
 
-use serde::{Deserialize, Serialize};
 use crate::effort::{CriterionId, EffortChange, EffortId, NewEffort, WhereWasI};
+use serde::{Deserialize, Serialize};
 
 /// Efforts: what the UI asks the core to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffortCommand {
     /// Create an effort. The core converts the name to lower kebab case
-    /// ([`effort_name`]) and refuses an empty one or one already taken. It answers with
-    /// [`EffortEvent::Upserted`].
+    /// ([`super::effort_name`]) and refuses an empty one or one already taken. It answers with
+    /// [`super::EffortEvent::Upserted`].
     Create(NewEffort),
     /// Rename an effort; the name is converted as for [`EffortCommand::Create`]. Refused for
     /// Unsorted.

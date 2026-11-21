@@ -1,10 +1,13 @@
 //! The `agent` feature's events.
 
-use serde::{Deserialize, Serialize};
 use crate::agent::{Agent, AgentId, SlashCommand, TodoItem, TodoListId};
+use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `agent`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+// `Upserted(Agent)` carries the full `Agent` snapshot entry; boxing it would add an allocation
+// and change the enum variant signature for callers.
+#[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentEvent {
     /// An agent was created or changed.

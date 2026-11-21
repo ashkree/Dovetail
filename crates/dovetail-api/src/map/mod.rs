@@ -1,4 +1,4 @@
-//! The `map` feature: maps: drawn diagrams and their versions.
+//! The `map` feature: drawn diagrams and their versions.
 
 mod apply;
 mod command;
@@ -7,9 +7,9 @@ pub(crate) use apply::apply;
 pub use command::MapCommand;
 pub use event::MapEvent;
 
-use serde::{Deserialize, Serialize};
 use crate::agent::AgentId;
 use crate::task::TaskId;
+use serde::{Deserialize, Serialize};
 
 /// A map's id, stable across versions (decision 23h).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
