@@ -183,7 +183,7 @@ fn fresh_asks_the_core_for_a_new_session_with_no_handoff() {
 fn chat_line(app: &mut dovetail_tui::App, text: &str) -> Vec<Command> {
     type_keys(app, " c");
     press(app, "i");
-    type_command(app, text);
+    type_keys(app, &format!("{text} "));
     app.on_key(enter(), 500);
     app.take_commands()
 }
@@ -222,7 +222,7 @@ fn with_a_slice_focused_both_commands_send_nothing_and_say_why() {
     let mut app = app_with(idle_world(None));
     select(&mut app, "slice-4");
     press(&mut app, "i");
-    type_command(&mut app, "/fresh");
+    type_keys(&mut app, "/fresh ");
     app.on_key(enter(), 500);
     assert_eq!(app.take_commands(), vec![]);
     assert_eq!(
@@ -254,7 +254,7 @@ fn a_refused_slash_fresh_keeps_its_image_in_the_bar() {
     let mut app = app_with(idle_world(None));
     type_keys(&mut app, " c");
     press(&mut app, "i");
-    type_command(&mut app, "/fresh now");
+    type_keys(&mut app, "/fresh now");
     paste_image(&mut app, "coordinator");
     app.on_key(enter(), 500);
     assert_eq!(app.take_commands(), vec![]);
@@ -284,7 +284,7 @@ fn a_refused_slash_fresh_with_an_image_in_a_slice_does_not_claim_it_ran() {
     let mut app = app_with(idle_world(None));
     select(&mut app, "slice-4");
     press(&mut app, "i");
-    type_command(&mut app, "/fresh");
+    type_keys(&mut app, "/fresh ");
     paste_image(&mut app, "slice-4");
     app.on_key(enter(), 500);
     assert_eq!(app.take_commands(), vec![]);

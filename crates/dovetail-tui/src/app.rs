@@ -956,7 +956,7 @@ impl App {
                 self.outbox.push(Command::ListPaths { agent, dir });
             }
             if wants_commands {
-                self.open_command_picker();
+                self.open_command_picker(true);
                 return;
             }
             if !chatting {
@@ -1259,7 +1259,7 @@ impl App {
             Action::PasteClipboard => self.paste_clipboard(),
             Action::QuickCapture => self.open_capture(),
             Action::PickAgent => self.open_switcher(),
-            Action::PickCommand => self.open_command_picker(),
+            Action::PickCommand => self.open_command_picker(false),
             Action::PickAny => self.open_finder(),
             Action::Search => self.start_input(InputTarget::Search, ""),
             Action::SearchNext => self.search_jump(true),

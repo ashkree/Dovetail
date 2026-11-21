@@ -372,6 +372,15 @@ impl ConversationBuffer {
         std::mem::take(&mut self.wants_commands)
     }
 
+    /// The `/` picker handed over on a space: the bar becomes `/` plus what was typed in the
+    /// picker plus the space, cursor at the end, as if it had been typed in the bar.
+    pub fn continue_slash(&mut self, typed: &str) {
+        if let Some(chat) = self.chat.as_mut() {
+            let end = chat.text().len();
+            chat.replace(0..end, &format!("/{typed} "));
+        }
+    }
+
     /// Puts a picked command into the chat bar as `/name `. A lone `/` (what opened the picker)
     /// becomes the command; otherwise it goes in at the cursor.
     pub fn insert_command(&mut self, name: &str) {

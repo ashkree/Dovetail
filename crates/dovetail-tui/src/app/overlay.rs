@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{AgentId, Command, InboxId, ProjectId, TaskChange, TaskId};
 
 use super::App;
@@ -21,6 +21,9 @@ use crate::switcher;
 pub(super) enum Purpose {
     /// Open what the row stands for.
     Open,
+    /// The command picker `/` opened over the chat bar: a space hands the typing back to the bar,
+    /// a choice puts the command in it.
+    SlashBar,
     /// Relate this task to the chosen one, or unrelate them.
     Relate(TaskId),
     /// File this unfiled finding (an inbox item) under the chosen task.
@@ -119,13 +122,18 @@ impl App {
 
     /// `/` at the start of the chat bar, `:skills`: the slash commands and skills of the agent
     /// the chat bar talks to, Dovetail's own marked.
-    pub(super) fn open_command_picker(&mut self) {
+    pub(super) fn open_command_picker(&mut self, from_slash: bool) {
         let Some(agent) = self.chat_target() else {
             return;
         };
         let commands = super::commands_for(&self.snap, &agent);
         let items = switcher::command_items(commands, &self.theme);
-        self.open_overlay(Overlay::Picker(Picker::new("Skills", items), Purpose::Open));
+        let purpose = if from_slash {
+            Purpose::SlashBar
+        } else {
+            Purpose::Open
+        };
+        self.open_overlay(Overlay::Picker(Picker::new("Skills", items), purpose));
     }
 
     /// `:model [name]`, `/model [name]`: the focused session's model and effort
@@ -230,6 +238,19 @@ impl App {
             return;
         };
         match overlay {
+            // A space in the `/` picker ends the filter: what was typed goes on in the bar.
+            Overlay::Picker(picker, Purpose::SlashBar)
+                if event.code == KeyCode::Char(' ')
+                    && !event
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                let from = self.close_overlay();
+                if from.is_some() && from == self.chat_mark_ignoring_mode() {
+                    self.chat_view_mut().continue_slash(picker.query());
+                }
+                self.restore_chat(from);
+            }
             Overlay::Picker(mut picker, purpose) => match picker.key(event) {
                 PickerOutcome::Pending => self.overlay = Some(Overlay::Picker(picker, purpose)),
                 PickerOutcome::Closed => {

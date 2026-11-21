@@ -4,7 +4,7 @@
 mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{Command, SlashCommand};
+use dovetail_api::{Command, ModelOption, ReasoningEffort, SlashCommand};
 use dovetail_tui::Mode;
 use support::*;
 
@@ -27,6 +27,11 @@ fn app_with_skills() -> dovetail_tui::App {
             skill("model", "Claude Code's model command", ""),
         ],
     );
+    snap.models = vec![ModelOption {
+        name: "haiku".into(),
+        resolved: Some("claude-haiku-5-5".into()),
+        efforts: Some(ReasoningEffort::ALL.to_vec()),
+    }];
     let mut app = app_with(snap);
     press(&mut app, "i");
     app
@@ -144,4 +149,41 @@ fn choosing_a_command_from_the_slash_picker_leaves_typing_in_the_bar() {
     type_keys(&mut app, "/");
     app.on_key(enter(), 1);
     assert_eq!(app.mode(), Mode::Insert);
+}
+
+#[test]
+fn a_space_hands_the_typing_to_the_bar_so_a_whole_command_can_be_typed_fast() {
+    let mut app = app_with_skills();
+    type_keys(&mut app, "/gril ");
+    assert_eq!(app.mode(), Mode::Insert);
+    let screen = render(&mut app, 120, 30);
+    assert!(!screen.contains("Skills"), "{screen}");
+    assert!(screen.contains("/gril "), "{screen}");
+    // The text continues in the bar as typed, with no command picked.
+    type_keys(&mut app, "x");
+    app.on_key(enter(), 1);
+    assert_eq!(app.take_commands(), prompt("/gril x"));
+}
+
+#[test]
+fn slash_model_haiku_typed_at_full_speed_goes_through_the_model_intercept() {
+    let mut app = app_with_skills();
+    type_keys(&mut app, "/model haiku");
+    app.on_key(enter(), 1);
+    assert!(app.take_commands().is_empty(), "/model is never sent");
+    assert!(render(&mut app, 120, 30).contains("model · coordinator"));
+}
+
+#[test]
+fn a_space_in_the_skills_picker_stays_in_its_filter() {
+    let mut app = app_with_skills();
+    app.on_key(esc(), 1);
+    type_keys(&mut app, ":skills");
+    app.on_key(enter(), 2);
+    type_keys(&mut app, "comp ");
+    let screen = render(&mut app, 120, 30);
+    assert!(
+        screen.contains("Skills") && screen.contains("/compact"),
+        "{screen}"
+    );
 }
