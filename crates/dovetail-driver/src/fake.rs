@@ -122,6 +122,8 @@ struct Recorder {
     applied: Mutex<Option<(Option<String>, Option<dovetail_api::ReasoningEffort>)>>,
     /// What the fake's `mcp_status` lists ([`FakeDriver::set_mcp_servers`]).
     mcp_servers: Mutex<Vec<dovetail_api::McpServer>>,
+    /// Sessions refuse MCP requests, as a closed one does ([`FakeDriver::close_mcp`]).
+    mcp_closed: std::sync::atomic::AtomicBool,
     /// The latest session's event stream, for [`FakeDriver::send_event`].
     latest: Mutex<Option<UnboundedSender<DriverEvent>>>,
 }
@@ -227,6 +229,13 @@ impl FakeDriver {
         if let Ok(mut list) = self.recorder.mcp_servers.lock() {
             *list = servers;
         }
+    }
+
+    /// From now on `mcp` fails with `SessionClosed`, as when the process is gone.
+    pub fn close_mcp(&self) {
+        self.recorder
+            .mcp_closed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// From now on, model switch answers are held until [`FakeDriver::release_model_answers`],
@@ -544,6 +553,13 @@ impl Session for FakeSession {
     /// log-in), `Failed` for an unknown one.
     fn mcp(&self, request: dovetail_api::McpRequest) -> Result<(), DriverError> {
         use dovetail_api::{McpOutcome, McpRequest};
+        if self
+            .recorder
+            .mcp_closed
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(DriverError::SessionClosed);
+        }
         self.record(Sent::Mcp(request.clone()));
         let servers = self
             .recorder

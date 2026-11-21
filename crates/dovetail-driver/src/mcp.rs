@@ -21,8 +21,8 @@ pub(crate) struct McpCalls {
 }
 
 impl McpCalls {
-    /// The line to write for `request`.
-    pub(crate) fn begin(&mut self, request: McpRequest) -> Value {
+    /// The request id and the line to write for `request`.
+    pub(crate) fn begin(&mut self, request: McpRequest) -> (String, Value) {
         let id = format!("dt_mcp_{}", self.next);
         self.next += 1;
         let line = json!({
@@ -30,8 +30,23 @@ impl McpCalls {
             "request_id": id,
             "request": request_body(&request),
         });
-        self.pending.insert(id, request);
-        line
+        self.pending.insert(id.clone(), request);
+        (id, line)
+    }
+
+    /// Ends request `id` with a failure (its write failed, it timed out); `None` when it was
+    /// already answered.
+    pub(crate) fn fail(&mut self, id: &str, why: &str) -> Option<DriverEvent> {
+        let request = self.pending.remove(id)?;
+        Some(failed(request, why))
+    }
+
+    /// Ends every request in flight with a failure: the session is gone.
+    pub(crate) fn fail_all(&mut self, why: &str) -> Vec<DriverEvent> {
+        self.pending
+            .drain()
+            .map(|(_, request)| failed(request, why))
+            .collect()
     }
 
     /// The event for the answer to request `id`; `None` when it is not an MCP request.
@@ -43,6 +58,13 @@ impl McpCalls {
             McpOutcome::Failed(error_text(body))
         };
         Some(DriverEvent::McpReply { request, outcome })
+    }
+}
+
+fn failed(request: McpRequest, why: &str) -> DriverEvent {
+    DriverEvent::McpReply {
+        request,
+        outcome: McpOutcome::Failed(why.to_owned()),
     }
 }
 
@@ -216,10 +238,40 @@ mod tests {
         ];
         let mut calls = McpCalls::default();
         for (request, body) in cases {
-            let line = calls.begin(request);
+            let (_, line) = calls.begin(request);
             assert_eq!(line["type"], "control_request");
             assert_eq!(line["request"], body);
         }
+    }
+
+    #[test]
+    fn a_failed_write_a_timeout_and_a_session_exit_each_clear_the_entry_with_a_failure() {
+        let mut calls = McpCalls::default();
+        let (a, _) = calls.begin(McpRequest::Status);
+        let reconnect = McpRequest::Reconnect { server: "x".into() };
+        let (b, _) = calls.begin(reconnect.clone());
+        let (c, _) = calls.begin(McpRequest::ClearAuth { server: "y".into() });
+        // A write that failed, or a timeout: the one request fails, once.
+        assert_eq!(
+            calls.fail(&a, "could not write"),
+            Some(DriverEvent::McpReply {
+                request: McpRequest::Status,
+                outcome: McpOutcome::Failed("could not write".into()),
+            })
+        );
+        assert_eq!(calls.fail(&a, "timed out"), None, "already cleared");
+        // The late answer of a timed-out request is not ours any more.
+        assert_eq!(calls.answer(&a, true, &Value::Null), None);
+        // The session ends: everything still in flight fails.
+        let events = calls.fail_all("the session ended");
+        assert_eq!(events.len(), 2);
+        assert!(events.contains(&DriverEvent::McpReply {
+            request: reconnect,
+            outcome: McpOutcome::Failed("the session ended".into()),
+        }));
+        assert_eq!(calls.fail(&b, "x"), None);
+        assert_eq!(calls.fail(&c, "x"), None);
+        assert!(calls.fail_all("again").is_empty());
     }
 
     #[test]
@@ -260,12 +312,12 @@ mod tests {
     #[test]
     fn an_answer_carries_its_request_and_the_right_outcome() {
         let mut calls = McpCalls::default();
-        let status = calls.begin(McpRequest::Status);
-        let auth = calls.begin(McpRequest::Authenticate {
+        let (_, status) = calls.begin(McpRequest::Status);
+        let (_, auth) = calls.begin(McpRequest::Authenticate {
             server: "a".into(),
             redirect_uri: "u".into(),
         });
-        let toggle = calls.begin(McpRequest::Toggle {
+        let (_, toggle) = calls.begin(McpRequest::Toggle {
             server: "a".into(),
             enabled: true,
         });

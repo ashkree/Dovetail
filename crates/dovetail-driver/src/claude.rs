@@ -23,6 +23,8 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 const STDERR_TAIL: usize = 20;
+/// How long an MCP menu request may wait for its answer.
+const MCP_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long to wait for the pipes to drain after the process is gone (a background grandchild
 /// can keep stdout open).
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -117,7 +119,7 @@ impl SessionDriver for ClaudeDriver {
             writer_tx.clone(),
             reader,
             stderr_task,
-            events_tx,
+            events_tx.clone(),
         ));
 
         // Asks for the slash command list before any prompt; the answer comes back as
@@ -136,6 +138,8 @@ impl SessionDriver for ClaudeDriver {
             pending,
             switches,
             mcp,
+            events_tx,
+            runtime: handle,
             counter: AtomicU64::new(0),
         }))
     }
@@ -302,6 +306,15 @@ async fn read_stdout(stdout: tokio::process::ChildStdout, reader: Reader) {
             }
         }
     }
+    // The session is over: whatever the MCP menu still waits for will not be answered.
+    let ended = reader
+        .mcp
+        .lock()
+        .map(|mut m| m.fail_all("the session ended"))
+        .unwrap_or_default();
+    for event in ended {
+        let _ = tx.send(event);
+    }
 }
 
 async fn read_stderr(stderr: tokio::process::ChildStderr, log: Option<Arc<Log>>) -> Vec<String> {
@@ -396,6 +409,10 @@ struct ClaudeSession {
     switches: Arc<Mutex<Switches>>,
     /// MCP menu requests in flight.
     mcp: Arc<Mutex<McpCalls>>,
+    /// For failing an MCP request that timed out.
+    events_tx: UnboundedSender<DriverEvent>,
+    /// The runtime the timeouts run on.
+    runtime: tokio::runtime::Handle,
     counter: AtomicU64,
 }
 
@@ -455,12 +472,31 @@ impl Session for ClaudeSession {
     }
 
     fn mcp(&self, request: McpRequest) -> Result<(), DriverError> {
-        let line = self
+        let (id, line) = self
             .mcp
             .lock()
             .map_err(|_| DriverError::SessionClosed)?
             .begin(request);
-        self.write(line)
+        if let Err(e) = self.write(line) {
+            // Nothing will answer: forget it, and tell the caller through the error.
+            if let Ok(mut calls) = self.mcp.lock() {
+                let _ = calls.fail(&id, "the session is closed");
+            }
+            return Err(e);
+        }
+        // Reconnecting and logging in can be slow, but not forever.
+        let (calls, events) = (self.mcp.clone(), self.events_tx.clone());
+        self.runtime.spawn(async move {
+            tokio::time::sleep(MCP_TIMEOUT).await;
+            let event = calls
+                .lock()
+                .ok()
+                .and_then(|mut c| c.fail(&id, "no answer from Claude Code in 30 s"));
+            if let Some(event) = event {
+                let _ = events.send(event);
+            }
+        });
+        Ok(())
     }
 
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError> {

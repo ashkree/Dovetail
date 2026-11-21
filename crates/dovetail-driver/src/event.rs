@@ -23,15 +23,6 @@ impl Origin {
     }
 }
 
-/// One MCP server as listed in `system/init`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct McpServerInfo {
-    /// Server name.
-    pub name: String,
-    /// Status string, e.g. `connected`.
-    pub status: String,
-}
-
 /// A slash command or skill the session offers, from the `initialize` answer or
 /// `system/commands_changed`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,8 +48,6 @@ pub struct InitInfo {
     pub cwd: Option<String>,
     /// Tool names.
     pub tools: Vec<String>,
-    /// MCP servers and their status.
-    pub mcp_servers: Vec<McpServerInfo>,
     /// `claude_code_version`.
     pub version: Option<String>,
     /// The whole line.

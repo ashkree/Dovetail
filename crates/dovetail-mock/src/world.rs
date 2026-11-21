@@ -956,6 +956,12 @@ pub(crate) fn mcp_servers() -> Vec<McpServer> {
             )
         },
         server(
+            "wiki",
+            McpStatus::NeedsAuth,
+            "http",
+            "https://wiki.example/mcp",
+        ),
+        server(
             "scratch",
             McpStatus::Disabled,
             "stdio",

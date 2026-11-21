@@ -168,3 +168,54 @@ fn a_login_opens_the_page_the_session_returned() {
     // claude.ai finishes in the browser: nothing to paste, a refresh follows.
     assert!(!render(&mut pair.0, 130, 32).contains("paste the address"));
 }
+
+#[test]
+fn slash_mcp_with_text_after_it_is_refused_and_nothing_is_sent() {
+    let mut pair = connected();
+    press(&mut pair.0, "i");
+    type_keys(&mut pair.0, "/");
+    pair.0.on_key(esc(), 0);
+    type_keys(&mut pair.0, "mcp now");
+    pair.0.on_key(enter(), 100);
+    let sent = pump(&mut pair);
+    assert!(sent.is_empty(), "{sent:?}");
+    assert!(!render(&mut pair.0, 130, 32).contains("MCP servers"));
+    assert_eq!(
+        pair.0.note(),
+        Some("/mcp takes nothing after it; nothing was sent")
+    );
+}
+
+#[test]
+fn a_pasted_login_address_goes_to_the_session_as_the_callback_request() {
+    let mut pair = connected();
+    colon(&mut pair.0, ":mcp");
+    pump(&mut pair);
+    type_keys(&mut pair.0, "wiki");
+    pair.0.on_key(ctrl('l'), 300);
+    let sent = pump(&mut pair);
+    assert!(
+        sent.contains(&Command::OpenExternal {
+            url: "https://login.example/start".into()
+        }),
+        "{sent:?}"
+    );
+    assert!(render(&mut pair.0, 130, 32).contains("paste the address"));
+    // A paste arrives as typed characters.
+    pair.0
+        .on_paste("http://localhost:19284/callback?code=abc", 400);
+    pair.0.on_key(enter(), 500);
+    let sent = pump(&mut pair);
+    assert_eq!(
+        mcp_requests(&sent),
+        vec![
+            McpRequest::OAuthCallback {
+                server: "wiki".into(),
+                url: "http://localhost:19284/callback?code=abc".into()
+            },
+            McpRequest::Status
+        ]
+    );
+    let screen = render(&mut pair.0, 130, 32);
+    assert!(screen.contains("log in wiki: done"), "{screen}");
+}

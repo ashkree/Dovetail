@@ -638,15 +638,21 @@ impl Core {
                 return;
             }
         };
-        let Some(live) = self.live.get(&target) else {
-            self.fail(format!(
-                "{} is not running: no MCP servers to show",
-                target.0
-            ));
-            return;
+        // The menu waits for an answer, so a request that cannot go gets a failure reply too.
+        let refused = match self.live.get(&target) {
+            None => Some(format!("{} is not running", target.0)),
+            Some(live) => live
+                .session
+                .mcp(request.clone())
+                .err()
+                .map(|e| e.to_string()),
         };
-        if let Err(e) = live.session.mcp(request) {
-            self.fail(format!("Could not ask {} about MCP: {e}", target.0));
+        if let Some(why) = refused {
+            self.emit(Event::McpReply {
+                agent: target,
+                request,
+                outcome: dovetail_api::McpOutcome::Failed(why),
+            });
         }
     }
 

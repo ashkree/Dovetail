@@ -3,7 +3,8 @@
 //! server's details and tools as the preview. Claude Code gives no change event, so the menu
 //! asks for the servers when it opens and again after every action (and on `Tab`).
 //!
-//! Keys, besides the picker's own: `Enter` runs the server's first action, `Ctrl-r` reconnects,
+//! Keys, besides the picker's own (also named in `:keys` and in the menu's own hint
+//! line): `Enter` runs the server's first action, `Ctrl-r` reconnects,
 //! `Ctrl-t` disables or enables, `Ctrl-l` logs in, `Ctrl-o` logs out, `Tab` refreshes. Only the
 //! actions that apply to the selected server run ([`McpServer::actions`]).
 //!
@@ -183,14 +184,22 @@ impl McpMenu {
                 self.say(format!("could not list the servers: {why}"), true);
                 Vec::new()
             }
-            (McpRequest::Authenticate { server, .. }, McpOutcome::AuthUrl { url, .. }) => {
+            (
+                McpRequest::Authenticate { server, .. },
+                McpOutcome::AuthUrl {
+                    url,
+                    callback_expected,
+                },
+            ) => {
                 let claude_ai = self
                     .servers
                     .iter()
                     .flatten()
                     .find(|s| &s.name == server)
                     .is_some_and(McpServer::is_claude_ai);
-                if claude_ai {
+                // Claude Code listens for the end of the login itself, or claude.ai finishes it:
+                // nothing to paste back.
+                if claude_ai || callback_expected {
                     self.say(
                         format!("log in to {server} in the browser, then Tab to refresh"),
                         false,
@@ -371,13 +380,19 @@ fn server_lines(server: &McpServer, width: usize, theme: &Theme) -> Vec<Line<'st
         }
     }
     out.push(Line::default());
-    let keys = server
-        .actions()
+    let actions = server.actions();
+    let mut keys: Vec<String> = actions
+        .first()
+        .map(|a| format!("⏎ {}", a.label()))
         .into_iter()
-        .map(|a| format!("{} {}", action_key(a), a.label()))
-        .collect::<Vec<_>>()
-        .join(" · ");
-    for line in fmt::wrap(&format!("{keys} · tab refresh"), width) {
+        .collect();
+    keys.extend(
+        actions
+            .into_iter()
+            .map(|a| format!("{} {}", action_key(a), a.label())),
+    );
+    keys.push("tab refresh".into());
+    for line in fmt::wrap(&keys.join(" · "), width) {
         out.push(Line::from(Span::styled(line, theme.dim())));
     }
     if !server.tools.is_empty() {
@@ -525,6 +540,43 @@ mod tests {
             .map(|l| l.to_string())
             .collect();
         assert!(text.iter().any(|l| l.contains("reconnect broken: ENOENT")));
+    }
+
+    #[test]
+    fn a_login_claude_code_listens_for_asks_for_no_paste() {
+        let mut m = menu(vec![server("api", "http", McpStatus::NeedsAuth)]);
+        let steps = m.reply(
+            &McpRequest::Authenticate {
+                server: "api".into(),
+                redirect_uri: REDIRECT_URI.into(),
+            },
+            McpOutcome::AuthUrl {
+                url: "https://auth.example/x".into(),
+                callback_expected: true,
+            },
+            &Theme::default(),
+        );
+        assert_eq!(steps[0], Step::Open("https://auth.example/x".into()));
+        assert!(m.pasting.is_none());
+        assert!(
+            m.preview(80, &Theme::default())
+                .iter()
+                .any(|l| l.to_string().contains("then Tab to refresh"))
+        );
+    }
+
+    #[test]
+    fn the_hint_line_names_what_enter_runs() {
+        let m = menu(vec![server("api", "http", McpStatus::NeedsAuth)]);
+        let text: Vec<String> = m
+            .preview(80, &Theme::default())
+            .iter()
+            .map(|l| l.to_string())
+            .collect();
+        assert!(
+            text.iter().any(|l| l.starts_with("⏎ log in · ^l log in")),
+            "{text:?}"
+        );
     }
 
     #[test]

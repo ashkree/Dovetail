@@ -142,18 +142,6 @@ fn map_system(v: Value) -> Vec<DriverEvent> {
                         .collect()
                 })
                 .unwrap_or_default(),
-            mcp_servers: v
-                .get("mcp_servers")
-                .and_then(Value::as_array)
-                .map(|a| {
-                    a.iter()
-                        .map(|s| McpServerInfo {
-                            name: str_of(s, "name").unwrap_or_default(),
-                            status: str_of(s, "status").unwrap_or_default(),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
             version: str_of(&v, "claude_code_version"),
             raw: v,
         }),

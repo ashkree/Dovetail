@@ -137,6 +137,19 @@ impl McpServer {
         self.transport == "claudeai-proxy"
     }
 
+    /// Whether it failed for want of a login: a failure whose text speaks of authorisation (the
+    /// spike's `Dynamic Client Registration rejected (HTTP 401)`). Only a server that can have a
+    /// login counts; a stdio server's `401` is something else.
+    pub fn failed_for_auth(&self) -> bool {
+        if self.status != McpStatus::Failed || !self.has_auth() {
+            return false;
+        }
+        let error = self.error.as_deref().unwrap_or("").to_ascii_lowercase();
+        ["401", "unauthorized", "oauth", "auth"]
+            .iter()
+            .any(|word| error.contains(word))
+    }
+
     /// The actions that apply to it now, the one `Enter` runs first.
     pub fn actions(&self) -> Vec<McpAction> {
         use McpAction::*;
@@ -144,6 +157,7 @@ impl McpServer {
         match self.status {
             McpStatus::Disabled => vec![Enable],
             McpStatus::NeedsAuth => vec![LogIn, Reconnect, Disable],
+            McpStatus::Failed if self.failed_for_auth() => vec![LogIn, Reconnect, Disable],
             McpStatus::Failed if auth => vec![Reconnect, LogIn, Disable],
             McpStatus::Failed => vec![Reconnect, Disable],
             McpStatus::Connected if auth => vec![Reconnect, Disable, LogOut],
@@ -301,6 +315,13 @@ mod tests {
             [LogIn, Reconnect, Disable]
         );
         assert_eq!(acts("http", McpStatus::Failed), [Reconnect, LogIn, Disable]);
+        let mut auth_failed = server("http", McpStatus::Failed);
+        auth_failed.error = Some("Dynamic Client Registration rejected (HTTP 401): ".into());
+        assert_eq!(auth_failed.actions(), [LogIn, Reconnect, Disable]);
+        // The same words from a stdio server are not a login to start.
+        let mut stdio = server("stdio", McpStatus::Failed);
+        stdio.error = Some("auth helper not found".into());
+        assert_eq!(stdio.actions(), [Reconnect, Disable]);
         assert_eq!(
             acts("http", McpStatus::Connected),
             [Reconnect, Disable, LogOut]

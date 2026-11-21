@@ -4927,6 +4927,34 @@ fn an_mcp_request_reaches_the_session_and_its_answer_comes_back() {
     h.quit();
 }
 
+/// A request the session cannot take (its process is gone) still reaches the open menu, as a
+/// failure reply, so its note does not wait for ever (task #44).
+#[test]
+fn an_mcp_request_that_cannot_be_sent_fails_in_the_menu() {
+    use dovetail_api::{McpOutcome, McpRequest};
+    let fake = fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![0],
+        ..ReplayOptions::default()
+    });
+    let mut h = Harness::start(fake.clone(), true, Config::default());
+    prompt(&h, "hi");
+    h.wait_for("the models", |s| !s.models.is_empty());
+    fake.close_mcp();
+    h.send(Command::Mcp {
+        agent: AgentId(COORDINATOR.into()),
+        request: McpRequest::Status,
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.mcp.is_empty() {
+        assert!(Instant::now() < deadline, "no reply");
+        h.drain(Duration::from_millis(20));
+    }
+    assert!(
+        matches!(&h.mcp[0], (McpRequest::Status, McpOutcome::Failed(why)) if why.contains("closed"))
+    );
+    h.quit();
+}
+
 /// The model selector (task #39): a live switch changes the agent only once the session
 /// confirms it, a refused one keeps the old model and says why, and the choice is what the
 /// next start passes as `--model`/`--effort`.

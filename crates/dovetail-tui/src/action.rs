@@ -463,7 +463,7 @@ registry! {
     Interrupt: Agents, "interrupt the agent's turn";
     CyclePermissionMode: Agents, "cycle permission mode: auto, acceptEdits, manual";
     PickModel: Agents, "pick the session's model and effort";
-    ShowMcp: Agents, "MCP servers of the session: status, tools, reconnect, log in";
+    ShowMcp: Agents, "MCP servers of the session (⏎ first action · ^r reconnect · ^t disable/enable · ^l log in · ^o log out · ⇥ refresh)";
     TakeOver: Agents, "take the session over in this terminal";
     SwitchProject: Projects, "switch project";
     RegisterProject: Projects, "register this folder as a project";
