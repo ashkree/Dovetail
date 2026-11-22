@@ -233,39 +233,22 @@ impl Core {
         here != folder(cwd) && canonical.as_deref().is_none_or(|c| here != folder(c))
     }
 
-    /// Starts (or resumes, if it has run before) the session of agent `id` in `cwd`. Every
-    /// headless start comes through here, so a session taken over (M14) never starts.
-    pub(crate) fn launch(
+    /// What to start for `id` on `driver`: its row, the session id, and whether the session
+    /// resumes. Claude Code sessions start fresh when their transcript is filed elsewhere or
+    /// recorded under another profile; other drivers keep their id and resume when a transcript
+    /// exists.
+    fn resume_plan(
         &mut self,
+        driver: DriverKind,
         id: &AgentId,
-        cwd: PathBuf,
-        worktree: Option<String>,
-    ) -> Result<(), SessionError> {
-        self.check_lock(id)?;
-        let driver = self
-            .agents
-            .get(id)
-            .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?
-            .agent
-            .driver;
-        let driver_impl = self
-            .options
-            .drivers
-            .get(driver)
-            .cloned()
-            .ok_or(SessionError::NoDriver(driver))?;
-        // The coordinator's own folder exists before its first start (ADR 0021 point 3).
-        if cwd == self.project.coordinator_folder(&self.paths)
-            && let Err(e) = std::fs::create_dir_all(&cwd)
-        {
-            tracing::warn!("creating {}: {e}", cwd.display());
-        }
-        let (row, session_id, resume) = if driver == DriverKind::Claude {
+        cwd: &std::path::Path,
+    ) -> Result<(crate::db::AgentRow, String, bool), SessionError> {
+        if driver == DriverKind::Claude {
             let home = self.claude.clone()?;
             // Only sessions in the coordinator's folder moved (ADR 0021); a slice's never does,
             // and is never started fresh on a guess about its path.
             let elsewhere = cwd == self.project.coordinator_folder(&self.paths)
-                && self.filed_elsewhere(id, &cwd);
+                && self.filed_elsewhere(id, cwd);
             let Some(row) = self.agents.get_mut(id) else {
                 return Err(SessionError::NoAgent(id.0.clone()));
             };
@@ -312,7 +295,7 @@ impl Core {
                     ),
                 );
             }
-            (row, session_id, resume)
+            Ok((row, session_id, resume))
         } else {
             let Some(row) = self.agents.get_mut(id) else {
                 return Err(SessionError::NoAgent(id.0.clone()));
@@ -322,8 +305,38 @@ impl Core {
                 .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
                 .clone();
             let resume = row.transcript_path.is_some();
-            (row.clone(), session_id, resume)
-        };
+            Ok((row.clone(), session_id, resume))
+        }
+    }
+
+    /// Starts (or resumes, if it has run before) the session of agent `id` in `cwd`. Every
+    /// headless start comes through here, so a session taken over (M14) never starts.
+    pub(crate) fn launch(
+        &mut self,
+        id: &AgentId,
+        cwd: PathBuf,
+        worktree: Option<String>,
+    ) -> Result<(), SessionError> {
+        self.check_lock(id)?;
+        let driver = self
+            .agents
+            .get(id)
+            .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?
+            .agent
+            .driver;
+        let driver_impl = self
+            .options
+            .drivers
+            .get(driver)
+            .cloned()
+            .ok_or(SessionError::NoDriver(driver))?;
+        // The coordinator's own folder exists before its first start (ADR 0021 point 3).
+        if cwd == self.project.coordinator_folder(&self.paths)
+            && let Err(e) = std::fs::create_dir_all(&cwd)
+        {
+            tracing::warn!("creating {}: {e}", cwd.display());
+        }
+        let (row, session_id, resume) = self.resume_plan(driver, id, &cwd)?;
         let spec = self.session_spec(id, cwd, worktree, session_id, resume)?;
         let unit = crate::memory::unit_name(self.project.key(), &id.0);
         let cgroup = self.scopes.cgroup(&unit);
@@ -888,6 +901,42 @@ impl Core {
         }
     }
 
+    /// The session id to store (agy picks its own, stream rule 4) and the transcript path for
+    /// an agent's first `Init`.
+    fn init_ids(
+        &self,
+        agent: &AgentId,
+        driver: DriverKind,
+        init: &InitInfo,
+        cwd: &std::path::Path,
+    ) -> (Option<String>, PathBuf) {
+        match driver {
+            DriverKind::Claude => {
+                let session_id = self
+                    .agents
+                    .get(agent)
+                    .and_then(|r| r.session_id.clone())
+                    .unwrap_or_else(|| init.session_id.clone());
+                if session_id != init.session_id {
+                    tracing::warn!(
+                        agent = %agent.0,
+                        ours = %session_id,
+                        theirs = %init.session_id,
+                        "session id differs"
+                    );
+                }
+                let transcript = launch::transcript_path(&self.home_of(agent), &cwd, &session_id);
+                (None, transcript)
+            }
+            DriverKind::Agy => {
+                // Stream rule 4: agy picks its own conversation id; store it from Init.
+                let id = (!init.session_id.is_empty()).then(|| init.session_id.clone());
+                let transcript = launch::agy_transcript_path(&init.session_id);
+                (id, transcript)
+            }
+        }
+    }
+
     fn on_init(&mut self, agent: &AgentId, init: InitInfo) {
         let driver = self
             .agents
@@ -914,32 +963,7 @@ impl Core {
                     |r| self.session_cwd(&r.agent),
                 )
             });
-            let (new_session_id, transcript) = match driver {
-                DriverKind::Claude => {
-                    let session_id = self
-                        .agents
-                        .get(agent)
-                        .and_then(|r| r.session_id.clone())
-                        .unwrap_or_else(|| init.session_id.clone());
-                    if session_id != init.session_id {
-                        tracing::warn!(
-                            agent = %agent.0,
-                            ours = %session_id,
-                            theirs = %init.session_id,
-                            "session id differs"
-                        );
-                    }
-                    let transcript =
-                        launch::transcript_path(&self.home_of(agent), &cwd, &session_id);
-                    (None, transcript)
-                }
-                DriverKind::Agy => {
-                    // Stream rule 4: agy picks its own conversation id; store it from Init.
-                    let id = (!init.session_id.is_empty()).then(|| init.session_id.clone());
-                    let transcript = launch::agy_transcript_path(&init.session_id);
-                    (id, transcript)
-                }
-            };
+            let (new_session_id, transcript) = self.init_ids(agent, driver, &init, &cwd);
             let mode = init.permission_mode.as_deref().and_then(state::from_cli);
             let mut warn = None;
             self.update_agent(agent, |row| {

@@ -12,7 +12,6 @@ pub(crate) struct SwitchTarget {
     pub(crate) model_choice: ModelChoice,
 }
 
-
 /// Points the coordinator row at the switch target. Shared by the never-started case and the
 /// relaunch after a handoff ([`Core::fresh_coordinator`]).
 pub(super) fn apply_switch(row: &mut AgentRow, target: &SwitchTarget) {
@@ -45,7 +44,6 @@ pub(super) fn fallback_seed_prompt(
          would pick up first. Start no work until they answer."
     )
 }
-
 
 impl Core {
     /// `Command::SwitchDriver`: move the coordinator to `driver` on `model` / `effort`.
@@ -155,5 +153,4 @@ impl Core {
             });
         }
     }
-
 }
