@@ -141,7 +141,7 @@ struct Recorder {
     /// The queries `usage` was asked.
     usage_queries: Mutex<Vec<crate::UsageQuery>>,
     /// What `models` answers ([`FakeDriver::set_models`]); `None`: an error.
-    models: Mutex<Option<Result<Vec<crate::ModelInfo>, String>>>,
+    models: Mutex<Option<Result<Vec<crate::ModelInfo>, crate::ModelsError>>>,
     /// How many times `models` was asked.
     models_asked: std::sync::atomic::AtomicUsize,
 }
@@ -269,7 +269,7 @@ impl FakeDriver {
     }
 
     /// What `models` answers from now on.
-    pub fn set_models(&self, models: Result<Vec<crate::ModelInfo>, String>) {
+    pub fn set_models(&self, models: Result<Vec<crate::ModelInfo>, crate::ModelsError>) {
         if let Ok(mut m) = self.recorder.models.lock() {
             *m = Some(models);
         }
@@ -376,7 +376,7 @@ impl SessionDriver for FakeDriver {
             .lock()
             .ok()
             .and_then(|m| m.clone())
-            .unwrap_or_else(|| Err("no models set".to_owned()));
+            .unwrap_or_else(|| Err(crate::ModelsError("no models set".to_owned())));
         Box::pin(async move { answer })
     }
 

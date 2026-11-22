@@ -1821,7 +1821,8 @@ mod tests {
         let path = paths.registry_db();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut old = Connection::open(&path).unwrap();
-        let before = REGISTRY_MIGRATIONS.len() - 1;
+        // Everything before 0004_repos.sql.
+        let before = 3;
         migrate(&mut old, &path, &REGISTRY_MIGRATIONS[..before]).unwrap();
         old.execute_batch(
             "INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \

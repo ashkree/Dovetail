@@ -925,7 +925,7 @@ impl Core {
                         "session id differs"
                     );
                 }
-                let transcript = launch::transcript_path(&self.home_of(agent), &cwd, &session_id);
+                let transcript = launch::transcript_path(&self.home_of(agent), cwd, &session_id);
                 (None, transcript)
             }
             DriverKind::Agy => {

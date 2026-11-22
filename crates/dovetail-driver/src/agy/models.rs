@@ -14,13 +14,13 @@ use serde_json::Value;
 pub(crate) async fn list(
     program: std::ffi::OsString,
     query: crate::UsageQuery,
-) -> Result<Vec<ModelInfo>, String> {
+) -> Result<Vec<ModelInfo>, crate::ModelsError> {
     let text = crate::query::run_text(program, vec!["models".into()], &query)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::ModelsError(e.to_string()))?;
     let infos = ModelTable::from_listing(&text).infos();
     if infos.is_empty() {
-        return Err("agy models listed no models".into());
+        return Err(crate::ModelsError("agy models listed no models".into()));
     }
     Ok(infos)
 }

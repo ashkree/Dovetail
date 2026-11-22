@@ -60,14 +60,23 @@ pub trait SessionDriver: Send + Sync + 'static {
     /// reason it could not be read. The default is "not supported": Claude Code lists its
     /// models inside a session.
     fn models(&self, _query: UsageQuery) -> ModelsFuture {
-        Box::pin(async { Err("this driver cannot list its models without a session".to_owned()) })
+        Box::pin(async {
+            Err(ModelsError(
+                "this driver cannot list its models without a session".to_owned(),
+            ))
+        })
     }
 }
 
 /// What [`SessionDriver::models`] returns: run it on the tokio runtime.
 pub type ModelsFuture = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<Vec<ModelInfo>, String>> + Send + 'static>,
+    Box<dyn std::future::Future<Output = Result<Vec<ModelInfo>, ModelsError>> + Send + 'static>,
 >;
+
+/// Why a driver could not list its models.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct ModelsError(pub String);
 
 /// What [`SessionDriver::usage`] returns: run it on the tokio runtime.
 pub type UsageFuture =

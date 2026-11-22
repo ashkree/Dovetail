@@ -117,7 +117,10 @@ impl Core {
 
     /// `agy models` answered (or did not): a good answer replaces the catalog and is saved;
     /// a failed one leaves the catalog as it is.
-    pub(crate) fn on_agy_models_refreshed(&mut self, result: Result<Vec<ModelInfo>, String>) {
+    pub(crate) fn on_agy_models_refreshed(
+        &mut self,
+        result: Result<Vec<ModelInfo>, dovetail_driver::ModelsError>,
+    ) {
         match result {
             Ok(models) if !models.is_empty() => {
                 if self.model_catalog.get(&DriverKind::Agy) == Some(&models) {

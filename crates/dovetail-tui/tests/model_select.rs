@@ -124,10 +124,7 @@ fn empty_agy_catalog_notes_in_coordinator_preview() {
     type_keys(&mut app, ":model");
     app.on_key(enter(), 100);
     let screen = render(&mut app, 120, 40);
-    assert!(
-        screen.contains("agy models appear once an agy session has run"),
-        "{screen}"
-    );
+    assert!(screen.contains("agy is not available here"), "{screen}");
 }
 
 #[test]

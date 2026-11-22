@@ -270,7 +270,7 @@ pub(crate) enum Input {
     /// Driver usage limits loaded concurrently on the runtime (`Command::LoadUsage`).
     UsageLoaded(Vec<dovetail_api::DriverUsage>),
     /// agy's model list, read in the background at start (`agy_models`).
-    AgyModelsRefreshed(Result<Vec<dovetail_driver::ModelInfo>, String>),
+    AgyModelsRefreshed(Result<Vec<dovetail_driver::ModelInfo>, dovetail_driver::ModelsError>),
     /// A slice's worktree removal finished.
     WorktreeRemoved {
         agent: AgentId,

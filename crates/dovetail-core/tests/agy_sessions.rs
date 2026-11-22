@@ -860,7 +860,9 @@ fn test_paths(dir: &tempfile::TempDir) -> Paths {
 fn a_first_run_with_no_saved_list_and_a_failed_read_offers_the_built_in_agy_models() {
     let dir = tempfile::tempdir().expect("tempdir");
     let agy_fake = agy_fixture("plain_turn");
-    agy_fake.set_models(Err("agy is not logged in".into()));
+    agy_fake.set_models(Err(dovetail_driver::ModelsError(
+        "agy is not logged in".into(),
+    )));
     let mut h = Harness::start_both(
         fixture("plain_turn"),
         agy_fake.clone(),
@@ -896,7 +898,7 @@ fn the_background_read_replaces_agy_models_and_saves_them_and_a_later_failure_ke
 
     // The next start: agy cannot list its models, yet the saved list is there at once.
     let second = agy_fixture("plain_turn");
-    second.set_models(Err("timed out".into()));
+    second.set_models(Err(dovetail_driver::ModelsError("timed out".into())));
     let mut h = Harness::start_both(
         fixture("plain_turn"),
         second.clone(),
