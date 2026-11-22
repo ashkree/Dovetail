@@ -42,7 +42,7 @@ pub struct Config {
     pub default_model: Option<String>,
     /// Model passed to side chats, faster than the coordinator's (ADR 0011).
     pub side_chat_model: Option<String>,
-    /// Models the model selector offers after [`dovetail_api::model::BUILTIN_MODELS`] (task #39):
+    /// Models the model selector offers after [`dovetail_api::agents::model::BUILTIN_MODELS`] (task #39):
     /// Claude Code aliases or full model names.
     pub extra_models: Vec<String>,
     /// Most slice sessions running at once.
@@ -132,7 +132,7 @@ impl Config {
     /// The models the selector offers, in order: the built-in aliases, then `extra_models`
     /// without repeats.
     pub fn model_names(&self) -> Vec<String> {
-        let mut names: Vec<String> = dovetail_api::model::BUILTIN_MODELS
+        let mut names: Vec<String> = dovetail_api::agents::model::BUILTIN_MODELS
             .iter()
             .map(|m| (*m).to_owned())
             .collect();

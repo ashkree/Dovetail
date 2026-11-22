@@ -58,11 +58,11 @@ Each step lands as one or more clean commits on `restructure` with `CARGO_BUILD_
 - [x] Migrate `tests/research.rs`, `tests/research_projects.rs`, `tests/research_tools.rs`, and `tests/tangents.rs` off their local `App` / `fixture()` / `socket_call()` duplicates onto `mod common;`.
 
 ### Step 2 — Move leaf domains (`settings/`, `app/`, `code/`)
-- [ ] `settings/`: move `config.rs`, `recipe.rs`, `profile.rs`, `paths.rs` into `src/settings/` with `src/settings/mod.rs`.
-- [ ] `app/`: move `clipboard.rs`, `editor.rs`, `external.rs`, `upgrade/` (`mod.rs`, `flow.rs`, `tests.rs`) into `src/app/` with `src/app/mod.rs`. Tidy `clipboard.rs`'s manual `From<RunError> for ClipError` if `thiserror` `#[from]` makes it cleaner.
-- [ ] `code/`: move `worktree.rs`, `worktree_info.rs` into `src/code/` with `src/code/mod.rs`.
-- [ ] Keep temporary `pub use` re-exports in `src/lib.rs` (`config`, `paths`, `profile`, `recipe`, `editor`, `external`, `upgrade`, `worktree`) so `crates/dovetail` and `tests/` do not churn until Step 7.
-- [ ] Switch `dovetail_api` imports inside all moved files to full domain paths (`dovetail_api::app::...`, `dovetail_api::code::worktree::...`, `dovetail_api::agents::conversation::...`, etc.).
+- [x] `settings/`: move `config.rs`, `recipe.rs`, `profile.rs`, `paths.rs` into `src/settings/` with `src/settings/mod.rs`.
+- [x] `app/`: move `clipboard.rs`, `editor.rs`, `external.rs`, `upgrade/` (`mod.rs`, `flow.rs`, `tests.rs`) into `src/app/` with `src/app/mod.rs`. Tidy `clipboard.rs`'s manual `From<RunError> for ClipError` if `thiserror` `#[from]` makes it cleaner (kept as-is: `RunError` maps 3 private variants onto 3 distinct public `ClipError` variants without an extra wrapper).
+- [x] `code/`: move `worktree.rs`, `worktree_info.rs` into `src/code/` with `src/code/mod.rs`.
+- [x] Keep temporary `pub use` re-exports in `src/lib.rs` (`config`, `paths`, `profile`, `recipe`, `editor`, `external`, `upgrade`, `worktree`) so `crates/dovetail` and `tests/` do not churn until Step 7.
+- [x] Switch `dovetail_api` imports inside all moved files to full domain paths (`dovetail_api::app::...`, `dovetail_api::code::worktree::...`, `dovetail_api::agents::conversation::...`, etc.).
 
 ### Step 3 — Move `storage/` (+ atomic migration path update)
 - [ ] Move `src/db.rs` and `src/db/` into `src/storage/` (`src/storage/mod.rs`, `src/storage/migrations/`, `src/storage/counts.rs`, `src/storage/registry.rs`, plus the domain SQL files temporarily under `src/storage/` until their owning domains move in Steps 4–6).

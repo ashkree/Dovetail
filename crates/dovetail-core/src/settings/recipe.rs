@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn the_repos_own_recipe_parses() {
-        let text = include_str!("../../../config/projects/dovetail.toml");
+        let text = include_str!("../../../../config/projects/dovetail.toml");
         let recipe = Recipe::parse(text).unwrap();
         assert_eq!(recipe.research_dir, Some(PathBuf::from("docs/research")));
     }

@@ -12,10 +12,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use dovetail_api::{
     Event,
-    activity::ActivityKind,
-    agent::AgentId,
+    activity::{
+        feed::ActivityKind,
+        inbox::{InboxEvent, InboxId, InboxKind, PermissionAnswer, UPGRADE_READY_PERMISSION},
+    },
+    agents::agent::AgentId,
     app::AppEvent,
-    inbox::{InboxEvent, InboxId, InboxKind, PermissionAnswer, UPGRADE_READY_PERMISSION},
 };
 use serde_json::json;
 

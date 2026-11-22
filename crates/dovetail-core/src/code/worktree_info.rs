@@ -12,13 +12,13 @@ use std::time::Duration;
 
 use dovetail_api::{
     Event,
-    activity::ActivityKind,
-    agent::{AgentId, AgentKind},
-    task::{TaskChange, TaskId, TaskStatus},
-    worktree::{
+    activity::feed::ActivityKind,
+    agents::agent::{AgentId, AgentKind},
+    code::worktree::{
         Changes, PrLookup, PrState, PullRequest, SyncState, WorktreeEvent, WorktreeInfo,
         WorktreeSetup,
     },
+    tracking::task::{TaskChange, TaskId, TaskStatus},
 };
 use serde::Deserialize;
 
@@ -493,7 +493,7 @@ impl Core {
     /// Gathers every slice worktree's state afresh, with a fetch and PR lookups
     /// ([`WorktreeCommand::Refresh`]).
     ///
-    /// [`WorktreeCommand::Refresh`]: dovetail_api::worktree::WorktreeCommand::Refresh
+    /// [`WorktreeCommand::Refresh`]: dovetail_api::code::worktree::WorktreeCommand::Refresh
     pub(crate) fn refresh_worktrees(&mut self) {
         let slices: Vec<AgentId> = self
             .agents

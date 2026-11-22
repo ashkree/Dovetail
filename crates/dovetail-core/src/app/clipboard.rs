@@ -16,8 +16,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use dovetail_api::{
+    agents::conversation::{
+        Attachment, ImageType, MAX_ATTACHMENT_BYTES, attachment_limit_text, size_text,
+    },
     app::Paste,
-    conversation::{Attachment, ImageType, MAX_ATTACHMENT_BYTES, attachment_limit_text, size_text},
 };
 
 /// How long one clipboard tool may take before it is killed.
