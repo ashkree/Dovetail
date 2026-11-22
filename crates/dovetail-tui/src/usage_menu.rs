@@ -194,11 +194,7 @@ impl Default for UsageMenu {
     }
 }
 
-/// Picker rows and row index table built together from `reports`.
-pub fn usage_items(reports: &[DriverUsage], theme: &Theme) -> Vec<PickerItem> {
-    build_rows(reports, theme).0
-}
-
+/// Picker rows and the row index table, built together from `reports`.
 fn build_rows(reports: &[DriverUsage], theme: &Theme) -> (Vec<PickerItem>, Vec<UsageRow>) {
     let mut items = Vec::new();
     let mut rows = Vec::new();
@@ -384,7 +380,7 @@ mod tests {
     #[test]
     fn rows_group_by_driver_and_show_max_percentage_and_colours() {
         let theme = Theme::default();
-        let items = usage_items(&[claude_report(), agy_report()], &theme);
+        let items = build_rows(&[claude_report(), agy_report()], &theme).0;
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].section, "Claude Code");
         assert_eq!(items[0].label, "Claude Code");
