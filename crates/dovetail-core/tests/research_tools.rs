@@ -2,234 +2,57 @@
 //! socket and `FakeDriver`: a round opened by tool, a report with citations that must resolve,
 //! the specified errors, and the accept and drop flows of `research_propose`.
 
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
+mod common;
+
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use common::{COORDINATOR, Harness, OPENER, fixture, test_paths};
 use dovetail_api::{
-    Command, CoreLink, Event, ServerMsg, Snapshot,
+    Command, Event, ServerMsg,
     agent::AgentId,
-    app::{AppCommand, AppEvent},
-    apply,
+    app::AppCommand,
     conversation::ConversationCommand,
     decision::Alternative,
     inbox::{InboxCommand, InboxKind, PermissionAnswer},
     library::{LibraryCommand, LibraryEvent},
     research::{
-        Evidence, FindingId, ProposalKind, ResearchCommand, ResearchContent, ResearchEvent,
-        ResearchKind, ResearchWhat, SourceId,
+        Evidence, FindingId, ProposalKind, ResearchCommand, ResearchContent, ResearchKind,
+        ResearchWhat, SourceId,
     },
     task::{Bucket, NewTask, TaskCommand, TaskId},
 };
-use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
-use dovetail_core::projects::{Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions, Drivers};
+use dovetail_core::projects::Project;
 use dovetail_driver::{FakeDriver, Sent};
 use dovetail_tools::{
-    SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool,
+    Tool,
     research::{
         ResearchGet, ResearchPropose, ResearchStartRound, ResearchTool, ResearchWriteReport,
     },
     task::{ArchiveTask, GetTask, TaskTool},
 };
 use serde_json::Value;
-use tempfile::TempDir;
 
-const COORDINATOR: &str = "coordinator";
-
-fn fixture(name: &str) -> FakeDriver {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../dovetail-driver/tests/fixtures")
-        .join(format!("{name}.ndjson"));
-    FakeDriver::from_file(path).expect("fixture")
+fn start(fake: &FakeDriver, paths: &Paths, repo: &Path) -> Harness {
+    // `gx` (ADR 0018): a script the reading-mode test writes, next to the data folder.
+    OPENER.with(|o| *o.borrow_mut() = Some(paths.data.with_file_name("opener.sh").into()));
+    Harness::start_project(
+        fake.clone(),
+        paths.clone(),
+        Project::with_repo("p", "work", repo.to_path_buf(), None),
+    )
 }
 
-struct App {
-    link: CoreLink,
-    core: Option<CoreHandle>,
-    snap: Snapshot,
-    failures: Vec<String>,
-    loaded: Vec<(TaskId, ResearchWhat, ResearchContent)>,
-    fake: FakeDriver,
-    runtime: TempDir,
+fn wait_for_proposal(app: &mut Harness) {
+    app.wait_for("a proposal in Needs you", |s| {
+        s.inbox
+            .iter()
+            .any(|i| matches!(i.kind, InboxKind::Proposal { .. }))
+    });
 }
 
-impl App {
-    fn start(fake: &FakeDriver, paths: &Paths, repo: &Path) -> App {
-        let run = tempfile::Builder::new()
-            .prefix("dvt.")
-            .tempdir_in("/tmp")
-            .expect("short tempdir");
-        let paths = Paths {
-            runtime: run.path().to_path_buf(),
-            ..paths.clone()
-        };
-        let resolution =
-            Resolution::Registered(Project::with_repo("p", "work", repo.to_path_buf(), None));
-        let options = CoreOptions {
-            drivers: Drivers::single(Arc::new(fake.clone())),
-            exe: PathBuf::from("/usr/bin/dovetail"),
-            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
-            editor: None,
-            claude: None,
-            processes: None,
-            memory_caps: false,
-            check_claude: false,
-            scopes: None,
-            upgrade: None,
-            // `gx` (ADR 0018): a script the reading-mode test writes, next to the data folder.
-            opener: Some(paths.data.with_file_name("opener.sh").into()),
-            gh: None,
-        };
-        let (link, core) =
-            dovetail_core::spawn(resolution, paths, Config::default(), options).expect("core");
-        let mut app = App {
-            link,
-            core: Some(core),
-            snap: Snapshot::default(),
-            failures: Vec::new(),
-            loaded: Vec::new(),
-            fake: fake.clone(),
-            runtime: run,
-        };
-        app.wait_for("the snapshot", |s| !s.agents.is_empty());
-        app
-    }
-
-    fn send(&self, command: Command) {
-        self.link.commands.send(command).expect("core is running");
-    }
-
-    fn fold(&mut self, message: ServerMsg) {
-        match message {
-            ServerMsg::Hello { .. } => {}
-            ServerMsg::Snapshot(s) => self.snap = s,
-            ServerMsg::Event { seq, event } => {
-                match &event {
-                    Event::App(AppEvent::CommandFailed { message }) => {
-                        self.failures.push(message.clone())
-                    }
-                    Event::Research(ResearchEvent::Loaded {
-                        task,
-                        what,
-                        content,
-                    }) => self.loaded.push((*task, what.clone(), content.clone())),
-                    _ => {}
-                }
-                apply(&mut self.snap, seq, event);
-            }
-        }
-    }
-
-    fn wait_for(&mut self, what: &str, done: impl Fn(&Snapshot) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while !done(&self.snap) {
-            let left = deadline
-                .checked_duration_since(Instant::now())
-                .unwrap_or_else(|| panic!("timed out waiting for {what}: {:#?}", self.failures));
-            match self.link.messages.recv_timeout(left) {
-                Ok(m) => self.fold(m),
-                Err(_) => panic!("timed out waiting for {what}: {:#?}", self.failures),
-            }
-        }
-    }
-
-    /// Folds in what arrives for `window`.
-    fn drain(&mut self, window: Duration) {
-        let until = Instant::now() + window;
-        while let Some(left) = until.checked_duration_since(Instant::now()) {
-            match self.link.messages.recv_timeout(left) {
-                Ok(m) => self.fold(m),
-                Err(_) => return,
-            }
-        }
-    }
-
-    /// Waits until the coordinator was sent a user message containing `needle`.
-    fn wait_for_note(&mut self, needle: &str) -> String {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            let found = self.fake.sent().into_iter().find_map(|s| match s {
-                Sent::User(text) if text.contains(needle) => Some(text),
-                _ => None,
-            });
-            if let Some(text) = found {
-                return text;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "no message with {needle:?}: {:#?}",
-                self.fake.sent()
-            );
-            self.drain(Duration::from_millis(50));
-        }
-    }
-
-    fn wait_for_proposal(&mut self) {
-        self.wait_for("a proposal in Needs you", |s| {
-            s.inbox
-                .iter()
-                .any(|i| matches!(i.kind, InboxKind::Proposal { .. }))
-        });
-    }
-
-    fn socket(&self) -> PathBuf {
-        let mut found: Vec<PathBuf> = std::fs::read_dir(self.runtime.path())
-            .expect("runtime dir")
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .collect();
-        found.sort();
-        found.pop().expect("a socket")
-    }
-
-    /// One tool call from the coordinator, as the bridge makes it.
-    fn call(&self, tool: Tool) -> (String, bool) {
-        let stream = UnixStream::connect(self.socket()).expect("connect");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .expect("timeout");
-        let body = SocketRequestBody::ToolCall {
-            agent: AgentId(COORDINATOR.into()),
-            tool_use_id: None,
-            called_as: None,
-            call: tool,
-        };
-        let mut line = serde_json::to_string(&SocketRequest { id: 7, body }).expect("encode");
-        line.push('\n');
-        (&stream).write_all(line.as_bytes()).expect("write");
-        let mut reply = String::new();
-        BufReader::new(&stream).read_line(&mut reply).expect("read");
-        let response: SocketResponse = serde_json::from_str(&reply).expect("decode");
-        match response.body {
-            SocketResponseBody::ToolResult { text, is_error } => (text, is_error),
-            other => panic!("not a tool result: {other:?}"),
-        }
-    }
-
-    fn summary(&self, task: TaskId) -> Option<&dovetail_api::research::ResearchSummary> {
-        self.snap.research.iter().find(|r| r.task == task)
-    }
-
-    fn quit(mut self) {
-        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
-        let core = self.core.take().expect("core handle");
-        assert!(core.wait(Duration::from_secs(10)), "core stopped");
-    }
-}
-
-fn paths(dir: &Path) -> Paths {
-    Paths {
-        data: dir.join("data"),
-        config: dir.join("config"),
-        state: dir.join("state"),
-        runtime: dir.join("run"),
-    }
-}
-
-fn new_task(app: &mut App, title: &str) -> TaskId {
+fn new_task(app: &mut Harness, title: &str) -> TaskId {
     let before = app.snap.tasks.len();
     app.send(Command::Task(TaskCommand::Create(NewTask {
         title: title.into(),
@@ -251,7 +74,7 @@ fn new_task(app: &mut App, title: &str) -> TaskId {
         .id
 }
 
-fn start_round(app: &App, task: TaskId, brief: &str) -> (String, bool) {
+fn start_round(app: &Harness, task: TaskId, brief: &str) -> (String, bool) {
     app.call(Tool::Research(ResearchTool::StartRound(
         ResearchStartRound {
             task,
@@ -261,7 +84,7 @@ fn start_round(app: &App, task: TaskId, brief: &str) -> (String, bool) {
     )))
 }
 
-fn write_report(app: &App, task: TaskId, body: &str) -> (String, bool) {
+fn write_report(app: &Harness, task: TaskId, body: &str) -> (String, bool) {
     app.call(Tool::Research(ResearchTool::WriteReport(
         ResearchWriteReport {
             task,
@@ -271,7 +94,7 @@ fn write_report(app: &App, task: TaskId, body: &str) -> (String, bool) {
 }
 
 fn propose(
-    app: &App,
+    app: &Harness,
     task: TaskId,
     kind: ProposalKind,
     text: &str,
@@ -304,13 +127,13 @@ fn head(text: &str) -> Value {
 fn open_repo(dir: &Path) -> (PathBuf, Paths) {
     let repo = dir.join("work");
     std::fs::create_dir_all(&repo).unwrap();
-    (repo, paths(dir))
+    (repo, test_paths(dir))
 }
 
 /// A task with one round run through the S7 recording: one finding (F-id, first listed) that
 /// reached two sources. The round is still open.
 struct Researched {
-    app: App,
+    app: Harness,
     task: TaskId,
     finding: i64,
     sources: Vec<i64>,
@@ -318,7 +141,7 @@ struct Researched {
 
 fn researched(dir: &Path) -> Researched {
     let (repo, paths) = open_repo(dir);
-    let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
+    let mut app = start(&fixture("research_round_foreground"), &paths, &repo);
     let task = new_task(&mut app, "Example research");
     let (text, is_error) = start_round(&app, task, "What is the codeword?");
     assert!(!is_error, "{text}");
@@ -355,7 +178,7 @@ fn researched(dir: &Path) -> Researched {
     }
 }
 
-fn answer(app: &mut App, answer: PermissionAnswer) {
+fn answer(app: &mut Harness, answer: PermissionAnswer) {
     let item = app
         .snap
         .inbox
@@ -383,7 +206,7 @@ fn a_round_by_tool_and_a_report_write_brief_and_report_and_every_citation_resolv
         finding,
         sources,
     } = researched(dir.path());
-    let summary = app.summary(task).expect("summary").clone();
+    let summary = app.research(task).expect("summary").clone();
     let round = &summary.rounds[0];
     assert!(round.closed_ms.is_none());
     assert!(read(&summary.dir.join(&round.dir).join("brief.md")).contains("What is the codeword?"));
@@ -451,7 +274,7 @@ fn a_round_by_tool_and_a_report_write_brief_and_report_and_every_citation_resolv
 fn the_specified_errors_are_returned_and_nothing_is_written() {
     let dir = tempfile::tempdir().unwrap();
     let (repo, paths) = open_repo(dir.path());
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     let task = new_task(&mut app, "Question");
 
     // No open round and no earlier round: nothing to report on.
@@ -490,10 +313,10 @@ fn the_specified_errors_are_returned_and_nothing_is_written() {
             .iter()
             .any(|r| r.task == task && r.open_round().is_some())
     });
-    let dir_of_task = app.summary(task).expect("summary").dir.clone();
+    let dir_of_task = app.research(task).expect("summary").dir.clone();
     assert!(!dir_of_task.join("report.md").exists());
-    assert!(app.summary(task).unwrap().open_round().is_some());
-    assert!(app.summary(task).unwrap().report_ms.is_none());
+    assert!(app.research(task).unwrap().open_round().is_some());
+    assert!(app.research(task).unwrap().report_ms.is_none());
     let (text, is_error) = app.call(Tool::Research(ResearchTool::Get(ResearchGet {
         task,
         what: "report".into(),
@@ -560,7 +383,7 @@ fn an_accepted_decision_is_logged_with_its_evidence_and_never_before() {
         &[&f, &s],
     );
     assert!(!is_error && text.starts_with("pending"), "{text}");
-    app.wait_for_proposal();
+    wait_for_proposal(&mut app);
     // Nothing is written until `y`.
     app.drain(Duration::from_millis(200));
     assert!(app.snap.decisions.is_empty());
@@ -587,10 +410,10 @@ fn an_accepted_decision_is_logged_with_its_evidence_and_never_before() {
     assert!(text.contains(&format!("Evidence: {f}, {s}")), "{text}");
 
     // The evidence survives a restart.
-    let paths = paths(dir.path());
+    let paths = test_paths(dir.path());
     app.quit();
     let repo = dir.path().join("work");
-    let app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let app = start(&fixture("plain_turn"), &paths, &repo);
     assert_eq!(app.snap.decisions.len(), 1);
     assert_eq!(app.snap.decisions[0].evidence.len(), 2);
     app.quit();
@@ -611,7 +434,7 @@ fn a_dropped_proposal_writes_nothing_and_an_accepted_idea_files_a_follow_up() {
     // Dropped: no decision, no task, and the coordinator hears so.
     let (text, _) = propose(&app, task, ProposalKind::Decision, "Use X", &[&f]);
     assert!(text.starts_with("pending"), "{text}");
-    app.wait_for_proposal();
+    wait_for_proposal(&mut app);
     answer(&mut app, PermissionAnswer::Deny { message: None });
     let note = app.wait_for_note("research_propose dropped");
     assert!(note.contains("Use X"), "{note}");
@@ -628,7 +451,7 @@ fn a_dropped_proposal_writes_nothing_and_an_accepted_idea_files_a_follow_up() {
         &[],
     );
     assert!(text.starts_with("pending"), "{text}");
-    app.wait_for_proposal();
+    wait_for_proposal(&mut app);
     assert_eq!(app.snap.tasks.len(), tasks_before, "not before y");
     answer(&mut app, PermissionAnswer::Allow);
     app.wait_for("the follow-up", |s| s.tasks.len() == tasks_before + 1);
@@ -655,14 +478,14 @@ fn a_dropped_proposal_writes_nothing_and_an_accepted_idea_files_a_follow_up() {
         &[],
     );
     assert!(text.starts_with("pending"), "{text}");
-    app.wait_for_proposal();
+    wait_for_proposal(&mut app);
     answer(&mut app, PermissionAnswer::AllowAlways);
     app.wait_for("round 2", |s| {
         s.research
             .iter()
             .any(|r| r.task == task && r.rounds.len() == 2 && r.open_round().is_some())
     });
-    let summary = app.summary(task).unwrap();
+    let summary = app.research(task).unwrap();
     assert_eq!(summary.rounds[1].brief, "Check the enterprise tier");
     assert!(app.failures.is_empty(), "{:?}", app.failures);
     app.quit();
@@ -672,7 +495,7 @@ fn a_dropped_proposal_writes_nothing_and_an_accepted_idea_files_a_follow_up() {
 fn a_pending_proposal_expires_at_restart_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (repo, paths) = open_repo(dir.path());
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     let task = new_task(&mut app, "Question");
     let (text, _) = propose(
         &app,
@@ -682,11 +505,11 @@ fn a_pending_proposal_expires_at_restart_and_writes_nothing() {
         &[],
     );
     assert!(text.starts_with("pending"), "{text}");
-    app.wait_for_proposal();
+    wait_for_proposal(&mut app);
     app.quit();
 
     let fake = fixture("plain_turn");
-    let mut app = App::start(&fake, &paths, &repo);
+    let mut app = start(&fake, &paths, &repo);
     assert!(
         !app.snap
             .inbox
@@ -705,13 +528,13 @@ fn a_pending_proposal_expires_at_restart_and_writes_nothing() {
 
 // --- follow-ups of 2026-11-11: the queue, archiving, unfiled findings, kind ----------------
 
-fn brief_file(app: &App, task: TaskId, n: u32) -> PathBuf {
-    let summary = app.summary(task).expect("summary");
+fn brief_file(app: &Harness, task: TaskId, n: u32) -> PathBuf {
+    let summary = app.research(task).expect("summary");
     let round = summary.rounds.iter().find(|r| r.n == n).expect("round");
     summary.dir.join(&round.dir).join("brief.md")
 }
 
-fn activity_has(app: &App, needle: &str) -> bool {
+fn activity_has(app: &Harness, needle: &str) -> bool {
     app.snap.activity.iter().any(|a| a.text.contains(needle))
 }
 
@@ -719,7 +542,7 @@ fn activity_has(app: &App, needle: &str) -> bool {
 fn a_round_requested_while_one_is_open_is_queued_and_opens_in_request_order() {
     let dir = tempfile::tempdir().unwrap();
     let (repo, paths) = open_repo(dir.path());
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     let a = new_task(&mut app, "Alpha");
     let b = new_task(&mut app, "Beta");
     let c = new_task(&mut app, "Gamma");
@@ -745,7 +568,7 @@ fn a_round_requested_while_one_is_open_is_queued_and_opens_in_request_order() {
     });
     assert!(read(&brief_file(&app, b, 1)).contains("beta criteria"));
     assert!(read(&brief_file(&app, a, 2)).contains("alpha again"));
-    assert!(app.summary(b).unwrap().open_round().is_none());
+    assert!(app.research(b).unwrap().open_round().is_none());
     assert_eq!(
         dovetail_api::research::queue_position(&app.snap.research, c, 1),
         Some(3)
@@ -810,7 +633,7 @@ fn a_round_requested_while_one_is_open_is_queued_and_opens_in_request_order() {
 fn the_queue_survives_a_restart() {
     let dir = tempfile::tempdir().unwrap();
     let (repo, paths) = open_repo(dir.path());
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     let a = new_task(&mut app, "Alpha");
     let b = new_task(&mut app, "Beta");
     let c = new_task(&mut app, "Gamma");
@@ -826,7 +649,7 @@ fn the_queue_survives_a_restart() {
     });
     app.quit();
 
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     app.wait_for("the queue after the restart", |s| {
         s.research
             .iter()
@@ -834,7 +657,7 @@ fn the_queue_survives_a_restart() {
             .sum::<usize>()
             == 2
     });
-    assert!(app.summary(a).unwrap().open_round().is_some());
+    assert!(app.research(a).unwrap().open_round().is_some());
     assert_eq!(
         dovetail_api::research::queue_position(&app.snap.research, b, 1),
         Some(2)
@@ -857,7 +680,7 @@ fn the_queue_survives_a_restart() {
 fn archiving_a_task_closes_its_round_drops_its_queue_and_opens_the_next_one() {
     let dir = tempfile::tempdir().unwrap();
     let (repo, paths) = open_repo(dir.path());
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     let a = new_task(&mut app, "Alpha");
     let b = new_task(&mut app, "Beta");
     start_round(&app, a, "alpha criteria");
@@ -904,9 +727,9 @@ fn archiving_a_task_closes_its_round_drops_its_queue_and_opens_the_next_one() {
 }
 
 /// The coordinator researches with no round open: the S7 recording's subagent fetches and reads.
-fn unfiled(dir: &Path) -> (App, PathBuf, PathBuf) {
+fn unfiled(dir: &Path) -> (Harness, PathBuf, PathBuf) {
     let (repo, paths) = open_repo(dir);
-    let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
+    let mut app = start(&fixture("research_round_foreground"), &paths, &repo);
     app.send(Command::Conversation(ConversationCommand::Prompt {
         agent: AgentId(COORDINATOR.into()),
         text: "go".into(),
@@ -922,7 +745,7 @@ fn unfiled(dir: &Path) -> (App, PathBuf, PathBuf) {
     (app, root, repo)
 }
 
-fn unfiled_item(app: &App) -> (dovetail_api::inbox::InboxId, String, u32) {
+fn unfiled_item(app: &Harness) -> (dovetail_api::inbox::InboxId, String, u32) {
     app.snap
         .inbox
         .iter()
@@ -981,7 +804,7 @@ fn a_coordinator_finding_with_no_round_is_unfiled_and_filing_moves_it_and_its_fi
     // It survives a restart, still waiting in Needs you.
     app.quit();
     let (_, paths) = open_repo(dir.path());
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     app.wait_for("the item after the restart", |s| {
         s.inbox
             .iter()
@@ -1005,7 +828,7 @@ fn a_coordinator_finding_with_no_round_is_unfiled_and_filing_moves_it_and_its_fi
             .iter()
             .any(|r| r.task == task && r.findings == 1 && r.quick_findings == 1 && r.sources == 2)
     });
-    let task_dir = app.summary(task).unwrap().dir.clone();
+    let task_dir = app.research(task).unwrap().dir.clone();
     let filed = files_under(&task_dir);
     assert!(
         filed
@@ -1075,7 +898,7 @@ fn dropping_an_unfiled_finding_deletes_it_and_its_files() {
     }));
     app.drain(Duration::from_millis(200));
     assert!(!app.failures.is_empty());
-    assert!(app.summary(task).is_none_or(|r| r.findings == 0));
+    assert!(app.research(task).is_none_or(|r| r.findings == 0));
     app.quit();
 }
 
@@ -1083,7 +906,7 @@ fn dropping_an_unfiled_finding_deletes_it_and_its_files() {
 fn the_kind_comes_from_the_round_or_the_user_and_a_decision_is_held_to_its_template() {
     let dir = tempfile::tempdir().unwrap();
     let (repo, paths) = open_repo(dir.path());
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     let task = new_task(&mut app, "Should we?");
     let (text, is_error) = app.call(Tool::Research(ResearchTool::StartRound(
         ResearchStartRound {
@@ -1122,7 +945,7 @@ fn the_kind_comes_from_the_round_or_the_user_and_a_decision_is_held_to_its_templ
 // --- Reading mode (M21, ADR 0018) ---
 
 /// Waits for the next `CommandFailed` containing `needle`.
-fn wait_for_failure(app: &mut App, needle: &str) {
+fn wait_for_failure(app: &mut Harness, needle: &str) {
     let deadline = Instant::now() + Duration::from_secs(5);
     while !app.failures.iter().any(|f| f.contains(needle)) {
         assert!(
@@ -1191,7 +1014,7 @@ fn ask_is_a_read_only_session_in_the_research_folder_grounded_in_the_report() {
                 .is_some_and(|n| n.ends_with(&format!(".{}", ask.0)))
         })
         .expect("the Ask session started");
-    let research_dir = app.summary(task).expect("summary").dir.clone();
+    let research_dir = app.research(task).expect("summary").dir.clone();
     assert_eq!(spec.cwd, research_dir);
     assert_eq!(
         spec.permission_mode,
@@ -1258,7 +1081,7 @@ fn open_external_runs_the_opener_on_web_pages_only() {
     )
     .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
+    let mut app = start(&fixture("research_round_foreground"), &paths, &repo);
     app.send(Command::App(AppCommand::OpenExternal {
         url: "file:///etc/passwd".into(),
     }));
@@ -1287,7 +1110,7 @@ fn the_repo_docs_are_listed_and_read_and_nothing_outside_them() {
     )
     .unwrap();
     std::fs::write(repo.join("README.md"), "# Not a doc\n").unwrap();
-    let mut app = App::start(&fixture("research_round_foreground"), &paths, &repo);
+    let mut app = start(&fixture("research_round_foreground"), &paths, &repo);
     app.send(Command::Library(LibraryCommand::ListDocs));
     app.send(Command::Library(LibraryCommand::LoadDoc {
         path: "adr/0018-reading.md".into(),
@@ -1311,7 +1134,7 @@ fn the_repo_docs_are_listed_and_read_and_nothing_outside_them() {
                 _ => {}
             }
         }
-        app.fold(message);
+        app.fold_msg(message);
     }
     wait_for_failure(&mut app, "is not one of the project's docs");
     let docs = docs.expect("docs listed");

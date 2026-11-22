@@ -1,5 +1,7 @@
 //! The harness shared by the session tests: a core on a fake driver and its helpers.
 
+#![allow(dead_code)]
+
 use std::io::{BufRead, BufReader, Write};
 
 use std::os::unix::net::UnixStream;
@@ -11,9 +13,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dovetail_api::{
+    Event,
     app::{AppCommand, AppEvent},
     conversation::ConversationCommand,
     mcp::McpEvent,
+    research::{ResearchContent, ResearchEvent, ResearchSummary, ResearchWhat},
     status::StatusEvent,
     task::TaskCommand,
 };
@@ -42,7 +46,7 @@ use dovetail_core::projects::{Candidate, Project, Resolution};
 
 use dovetail_core::{CoreHandle, CoreOptions, Drivers};
 
-use dovetail_driver::{FakeDriver, ReplayOptions};
+use dovetail_driver::{FakeDriver, ReplayOptions, Sent};
 
 use tempfile::TempDir;
 
@@ -62,6 +66,24 @@ thread_local! {
     /// Taken by the next `Harness::start` on this test's thread: the fake `gh` it looks pull
     /// requests up with.
     pub static GH: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+thread_local! {
+    /// Taken by the next `Harness::start*` on this test's thread: the fake browser opener for
+    /// `AppCommand::OpenExternal`.
+    pub static OPENER: std::cell::RefCell<Option<std::ffi::OsString>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Standard test paths under a temporary directory (`runtime` is replaced per run by `Harness`).
+#[allow(dead_code)]
+pub fn test_paths(dir: &Path) -> Paths {
+    Paths {
+        data: dir.join("data"),
+        config: dir.join("config"),
+        state: dir.join("state"),
+        runtime: dir.join("run"),
+    }
 }
 
 pub fn fixture(name: &str) -> FakeDriver {
@@ -104,6 +126,10 @@ pub struct Harness {
     pub mcp: Vec<(dovetail_api::mcp::McpRequest, dovetail_api::mcp::McpOutcome)>,
     /// `UsageLoaded` events, in order.
     pub usage_loaded: Vec<Vec<dovetail_api::status::DriverUsage>>,
+    /// `ResearchEvent::Loaded` events, in order.
+    pub loaded: Vec<(TaskId, ResearchWhat, ResearchContent)>,
+    /// Every event received, in order.
+    pub events: Vec<Event>,
     pub _dir: TempDir,
     pub _run: TempDir,
 }
@@ -161,7 +187,7 @@ impl Harness {
             check_claude: false,
             scopes,
             upgrade,
-            opener: None,
+            opener: OPENER.with(|o| o.borrow_mut().take()),
             gh: GH.with(|g| g.borrow_mut().take()),
         };
         let (link, core) =
@@ -178,6 +204,67 @@ impl Harness {
             failures: Vec::new(),
             mcp: Vec::new(),
             usage_loaded: Vec::new(),
+            loaded: Vec::new(),
+            events: Vec::new(),
+            _dir: dir,
+            _run: run,
+        };
+        h.wait_for("the snapshot", |s| !s.agents.is_empty());
+        h
+    }
+
+    /// Starts a core on an explicit registered `project` with caller-managed `paths`. A fresh
+    /// short runtime directory under `/tmp` is created for the unix socket.
+    pub fn start_project(driver: FakeDriver, paths: Paths, project: Project) -> Harness {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let run = tempfile::Builder::new()
+            .prefix("dvt.")
+            .tempdir_in("/tmp")
+            .expect("short tempdir");
+        let paths = Paths {
+            runtime: run.path().to_path_buf(),
+            ..paths
+        };
+        let repo = project
+            .repos
+            .first()
+            .map(|r| r.path.clone())
+            .unwrap_or_else(|| paths.project_dir(&project.id));
+        let options = CoreOptions {
+            drivers: Drivers::single(Arc::new(driver.clone())),
+            exe: PathBuf::from("/usr/bin/dovetail"),
+            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
+            editor: None,
+            claude: None,
+            processes: None,
+            memory_caps: false,
+            check_claude: false,
+            scopes: None,
+            upgrade: None,
+            opener: OPENER.with(|o| o.borrow_mut().take()),
+            gh: GH.with(|g| g.borrow_mut().take()),
+        };
+        let (link, core) = dovetail_core::spawn(
+            Resolution::Registered(project),
+            paths.clone(),
+            Config::default(),
+            options,
+        )
+        .expect("core");
+        let mut h = Harness {
+            link,
+            core: Some(core),
+            fake: driver,
+            snap: Snapshot::default(),
+            paths,
+            repo,
+            returned: Vec::new(),
+            lent: 0,
+            failures: Vec::new(),
+            mcp: Vec::new(),
+            usage_loaded: Vec::new(),
+            loaded: Vec::new(),
+            events: Vec::new(),
             _dir: dir,
             _run: run,
         };
@@ -189,10 +276,10 @@ impl Harness {
         self.link.commands.send(command).expect("core is running");
     }
 
-    /// Applies messages until `done` holds.
-    pub fn wait_for(&mut self, what: &str, done: impl Fn(&Snapshot) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !done(&self.snap) {
+    /// Applies messages until `done` holds on the harness.
+    pub fn wait_until(&mut self, what: &str, done: impl Fn(&Harness) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !done(self) {
             let left = deadline
                 .checked_duration_since(Instant::now())
                 .unwrap_or_else(|| panic!("timed out waiting for {what}: {:#?}", self.snap));
@@ -202,6 +289,20 @@ impl Harness {
                 Ok(ServerMsg::Event { seq, event }) => self.fold(seq, event),
                 Err(_) => panic!("timed out waiting for {what}: {:#?}", self.snap),
             }
+        }
+    }
+
+    /// Applies messages until `done` holds on the snapshot.
+    pub fn wait_for(&mut self, what: &str, done: impl Fn(&Snapshot) -> bool) {
+        self.wait_until(what, |h| done(&h.snap));
+    }
+
+    /// Applies a server message from the core link.
+    pub fn fold_msg(&mut self, msg: ServerMsg) {
+        match msg {
+            ServerMsg::Hello { .. } => {}
+            ServerMsg::Snapshot(s) => self.snap = s,
+            ServerMsg::Event { seq, event } => self.fold(seq, event),
         }
     }
 
@@ -221,9 +322,45 @@ impl Harness {
             dovetail_api::Event::Status(StatusEvent::UsageLoaded(reports)) => {
                 self.usage_loaded.push(reports.clone())
             }
+            dovetail_api::Event::Research(ResearchEvent::Loaded {
+                task,
+                what,
+                content,
+            }) => self.loaded.push((*task, what.clone(), content.clone())),
             _ => {}
         }
+        self.events.push(event.clone());
         apply(&mut self.snap, seq, event);
+    }
+
+    /// One tool call from the coordinator, as the bridge makes it.
+    pub fn call(&self, call: Tool) -> (String, bool) {
+        call_coordinator(self, call)
+    }
+
+    /// The snapshot's research summary for `task`, if any.
+    pub fn research(&self, task: TaskId) -> Option<&ResearchSummary> {
+        self.snap.research.iter().find(|r| r.task == task)
+    }
+
+    /// Waits until the driver received a user message containing `needle`.
+    pub fn wait_for_note(&mut self, needle: &str) -> String {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let found = self.fake.sent().into_iter().find_map(|s| match s {
+                Sent::User(text) if text.contains(needle) => Some(text),
+                _ => None,
+            });
+            if let Some(text) = found {
+                return text;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "no message with {needle:?}: {:#?}",
+                self.fake.sent()
+            );
+            self.drain(Duration::from_millis(50));
+        }
     }
 
     /// Applies whatever arrives within `window`, for checking that something did not happen.
@@ -421,7 +558,7 @@ impl Harness {
             check_claude: false,
             scopes: None,
             upgrade: None,
-            opener: None,
+            opener: OPENER.with(|o| o.borrow_mut().take()),
             gh: GH.with(|g| g.borrow_mut().take()),
         };
         let (link, core) =
@@ -438,6 +575,8 @@ impl Harness {
             failures: Vec::new(),
             mcp: Vec::new(),
             usage_loaded: Vec::new(),
+            loaded: Vec::new(),
+            events: Vec::new(),
             _dir: dir,
             _run: run,
         };

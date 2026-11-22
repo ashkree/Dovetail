@@ -2,52 +2,28 @@
 //! the project's state folder, a restart restoring it, and the kind checks (no slices, no
 //! worktrees, no git), through the real core and `FakeDriver`.
 
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+mod common;
+
 use std::time::{Duration, Instant};
 
+use common::{COORDINATOR, Harness, fixture, test_paths};
 use dovetail_api::{
-    Command, CoreLink, Event, ServerMsg, Snapshot,
+    Command, Event, Snapshot,
     agent::{AgentCommand, AgentId},
-    app::{AppCommand, AppEvent},
-    apply,
+    app::AppCommand,
     conversation::{ConversationCommand, ConversationEvent},
     library::{LibraryCommand, LibraryEvent},
     project::{ProjectCommand, ProjectEvent, ProjectId, ProjectKind},
     task::{NewTask, TaskCommand, TaskId},
     worktree::{WorktreeCommand, WorktreeEvent},
 };
-use dovetail_core::config::Config;
 use dovetail_core::db::Db;
 use dovetail_core::paths::Paths;
-use dovetail_core::projects::{self, Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions, Drivers};
-use dovetail_driver::FakeDriver;
+use dovetail_core::projects::{self, Project};
 use dovetail_tools::{
-    SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool,
+    Tool,
     project::{ProjectTool, StartSlice},
 };
-use tempfile::TempDir;
-
-const COORDINATOR: &str = "coordinator";
-
-fn fixture(name: &str) -> FakeDriver {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../dovetail-driver/tests/fixtures")
-        .join(format!("{name}.ndjson"));
-    FakeDriver::from_file(path).expect("fixture")
-}
-
-fn paths(dir: &Path, run: &Path) -> Paths {
-    Paths {
-        data: dir.join("data"),
-        config: dir.join("config"),
-        state: dir.join("state"),
-        runtime: run.to_path_buf(),
-    }
-}
 
 /// Registers the research project "Market sizing" and returns it as `dovetail --project` opens
 /// it.
@@ -63,143 +39,16 @@ fn register(paths: &Paths) -> Project {
     projects::open(&db, &made.id).expect("open by id")
 }
 
-/// One app on a research project.
-struct App {
-    link: CoreLink,
-    core: Option<CoreHandle>,
-    snap: Snapshot,
-    failures: Vec<String>,
-    events: Vec<Event>,
-}
-
-impl App {
-    fn start(driver: &FakeDriver, paths: &Paths, project: Project) -> App {
-        let options = CoreOptions {
-            drivers: Drivers::single(Arc::new(driver.clone())),
-            exe: PathBuf::from("/usr/bin/dovetail"),
-            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
-            editor: None,
-            claude: None,
-            processes: None,
-            memory_caps: false,
-            check_claude: false,
-            scopes: None,
-            upgrade: None,
-            opener: None,
-            gh: None,
-        };
-        let (link, core) = dovetail_core::spawn(
-            Resolution::Registered(project),
-            paths.clone(),
-            Config::default(),
-            options,
-        )
-        .expect("core");
-        let mut app = App {
-            link,
-            core: Some(core),
-            snap: Snapshot::default(),
-            failures: Vec::new(),
-            events: Vec::new(),
-        };
-        app.wait_for("the snapshot", |s| !s.agents.is_empty());
-        app
-    }
-
-    fn send(&self, command: Command) {
-        self.link.commands.send(command).expect("core is running");
-    }
-
-    fn fold(&mut self, msg: ServerMsg) {
-        match msg {
-            ServerMsg::Hello { .. } => {}
-            ServerMsg::Snapshot(s) => self.snap = s,
-            ServerMsg::Event { seq, event } => {
-                if let Event::App(AppEvent::CommandFailed { message }) = &event {
-                    self.failures.push(message.clone());
-                }
-                self.events.push(event.clone());
-                apply(&mut self.snap, seq, event);
-            }
-        }
-    }
-
-    fn wait_until(&mut self, what: &str, done: impl Fn(&App) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while !done(self) {
-            let left = deadline
-                .checked_duration_since(Instant::now())
-                .unwrap_or_else(|| panic!("timed out waiting for {what}: {:#?}", self.failures));
-            match self.link.messages.recv_timeout(left) {
-                Ok(msg) => self.fold(msg),
-                Err(_) => panic!("timed out waiting for {what}: {:#?}", self.failures),
-            }
-        }
-    }
-
-    fn wait_for(&mut self, what: &str, done: impl Fn(&Snapshot) -> bool) {
-        self.wait_until(what, |app| done(&app.snap));
-    }
-
-    fn drain(&mut self, window: Duration) {
-        let until = Instant::now() + window;
-        while let Some(left) = until.checked_duration_since(Instant::now()) {
-            match self.link.messages.recv_timeout(left) {
-                Ok(msg) => self.fold(msg),
-                Err(_) => return,
-            }
-        }
-    }
-
-    fn socket(&self, paths: &Paths, id: &str) -> PathBuf {
-        paths.socket(id)
-    }
-
-    fn quit(mut self) {
-        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
-        let core = self.core.take().expect("core handle");
-        assert!(core.wait(Duration::from_secs(10)), "core stopped");
-    }
-}
-
 fn said(snap: &Snapshot, agent: &str, text: &str) -> bool {
     snap.conversations
         .get(&AgentId(agent.into()))
         .is_some_and(|t| t.entries.iter().any(|e| e.text == text))
 }
 
-/// One NDJSON round trip on the app socket, as the bridge does it.
-fn socket_call(path: &Path, body: SocketRequestBody) -> (String, bool) {
-    let stream = UnixStream::connect(path).expect("connect");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .expect("timeout");
-    let mut line = serde_json::to_string(&SocketRequest { id: 7, body }).expect("encode");
-    line.push('\n');
-    (&stream).write_all(line.as_bytes()).expect("write");
-    let mut reply = String::new();
-    BufReader::new(&stream).read_line(&mut reply).expect("read");
-    let response: SocketResponse = serde_json::from_str(&reply).expect("decode");
-    match response.body {
-        SocketResponseBody::ToolResult { text, is_error } => (text, is_error),
-        other => panic!("not a tool result: {other:?}"),
-    }
-}
-
-/// Short runtime dirs: unix socket paths are limited to about 108 bytes.
-fn dirs() -> (TempDir, TempDir) {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let run = tempfile::Builder::new()
-        .prefix("dvt.")
-        .tempdir_in("/tmp")
-        .expect("short tempdir");
-    (dir, run)
-}
-
 #[test]
 fn the_coordinator_runs_in_its_home_folder_with_its_role_prompt_and_resumes_after_a_restart() {
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     let role = paths.role_prompt("coordinator");
     std::fs::create_dir_all(role.parent().unwrap()).unwrap();
     std::fs::write(&role, "You are the coordinator.\n").unwrap();
@@ -207,7 +56,7 @@ fn the_coordinator_runs_in_its_home_folder_with_its_role_prompt_and_resumes_afte
     let folder = paths.project_dir(&project.id);
 
     let fake = fixture("plain_turn");
-    let mut app = App::start(&fake, &paths, project.clone());
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), project.clone());
     let open = app.snap.project.clone().expect("the open project");
     assert_eq!(open.kind, ProjectKind::Research);
     assert_eq!(open.repo_path, folder);
@@ -251,7 +100,7 @@ fn the_coordinator_runs_in_its_home_folder_with_its_role_prompt_and_resumes_afte
     drop(db);
     assert_eq!(again.kind(), ProjectKind::Research);
     let fake = fixture("plain_turn");
-    let mut app = App::start(&fake, &paths, again);
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), again);
     assert!(said(&app.snap, COORDINATOR, "alpha"), "the chat is kept");
     let deadline = Instant::now() + Duration::from_secs(5);
     while fake.started_specs().is_empty() {
@@ -266,8 +115,8 @@ fn the_coordinator_runs_in_its_home_folder_with_its_role_prompt_and_resumes_afte
 
 #[test]
 fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     let project = register(&paths);
     let folder = paths.project_dir(&project.id);
     // Were git ever asked, it would list this file: the state folder is a repo here on purpose.
@@ -280,7 +129,7 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
     std::fs::write(folder.join("notes.md"), "x\n").unwrap();
 
     let fake = fixture("plain_turn");
-    let mut app = App::start(&fake, &paths, project.clone());
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), project.clone());
     app.send(Command::Task(TaskCommand::Create(NewTask {
         title: "Size the market".into(),
         p_level: None,
@@ -308,23 +157,15 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
         app.failures
     );
     // `project_start_slice` from the coordinator.
-    let (text, is_error) = socket_call(
-        &app.socket(&paths, &project.id),
-        SocketRequestBody::ToolCall {
-            agent: AgentId(COORDINATOR.into()),
-            tool_use_id: None,
-            called_as: None,
-            call: Tool::Project(ProjectTool::StartSlice(StartSlice {
-                repo: None,
-                model: None,
-                effort: None,
-                driver: None,
-                task: TaskId(1),
-                name: "later".into(),
-                brief: "go".into(),
-            })),
-        },
-    );
+    let (text, is_error) = app.call(Tool::Project(ProjectTool::StartSlice(StartSlice {
+        repo: None,
+        model: None,
+        effort: None,
+        driver: None,
+        task: TaskId(1),
+        name: "later".into(),
+        brief: "go".into(),
+    })));
     assert!(is_error && text.contains("research project"), "{text}");
     assert!(!app.snap.agents.iter().any(|a| a.name == "later"));
 
@@ -369,11 +210,11 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
 
 #[test]
 fn new_research_project_registers_it_and_opening_it_quits_for_the_switch() {
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     let project = register(&paths);
     let fake = fixture("plain_turn");
-    let mut app = App::start(&fake, &paths, project);
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), project);
 
     app.send(Command::Project(ProjectCommand::NewResearch {
         name: "Pricing study".into(),
@@ -424,8 +265,8 @@ fn new_research_project_registers_it_and_opening_it_quits_for_the_switch() {
 
 #[test]
 fn a_task_is_captured_into_a_research_project_by_id_without_opening_it() {
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     register(&paths);
     let registry = Db::open(&paths, None).expect("registry");
     let before = projects::find(&registry, "market-sizing").expect("registered");
@@ -465,8 +306,8 @@ fn a_task_is_captured_into_a_research_project_by_id_without_opening_it() {
 #[test]
 fn another_projects_library_is_loaded_read_only() {
     use dovetail_api::{library::BrowseWhat, research::ResearchWhat};
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     // The browsed project, with a task, a round, a report and a decision, written as its own
     // Dovetail would.
     let browsed = register(&paths);
@@ -535,7 +376,7 @@ fn another_projects_library_is_loaded_read_only() {
     let open = projects::open(&registry, &made.id).expect("open");
     drop(registry);
     let fake = fixture("plain_turn");
-    let mut app = App::start(&fake, &paths, open);
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), open);
 
     app.send(Command::Library(LibraryCommand::BrowseProject {
         id: ProjectId("market-sizing".into()),

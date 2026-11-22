@@ -3,47 +3,25 @@
 //! subagent's sources captured into Tangents, the destinations (attach, file, start, drop), the
 //! morning's "new tangents" item, and a restart.
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+mod common;
 
+use std::time::Duration;
+
+use common::{COORDINATOR, Harness, fixture, test_paths};
 use dovetail_api::{
-    Command, CoreLink, Event, ServerMsg, Snapshot,
+    Command,
     agent::{AgentCommand, AgentId, AgentKind},
-    app::{AppCommand, AppEvent},
-    apply,
     conversation::{ConversationEntry, EntryId, EntryKind},
     inbox::InboxKind,
     project::{ProjectId, ProjectKind},
     tangent::{TANGENTS_PROJECT, TangentCommand},
     task::{NewTask, TaskCommand, TaskId, TaskStatus},
 };
-use dovetail_core::config::Config;
 use dovetail_core::db::Db;
 use dovetail_core::paths::Paths;
-use dovetail_core::projects::{self, Candidate, Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions, Drivers};
-use dovetail_driver::FakeDriver;
-use tempfile::TempDir;
+use dovetail_core::projects::{self, Candidate, Project};
 
-const COORDINATOR: &str = "coordinator";
 const QUESTION: &str = "What does IANA say about example.com?";
-
-fn fixture(name: &str) -> FakeDriver {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../dovetail-driver/tests/fixtures")
-        .join(format!("{name}.ndjson"));
-    FakeDriver::from_file(path).expect("fixture")
-}
-
-fn paths(dir: &Path, run: &Path) -> Paths {
-    Paths {
-        data: dir.join("data"),
-        config: dir.join("config"),
-        state: dir.join("state"),
-        runtime: run.to_path_buf(),
-    }
-}
 
 /// Registers a research project and returns it as `dovetail --project` opens it.
 fn register(paths: &Paths, name: &str) -> Project {
@@ -56,124 +34,26 @@ fn register(paths: &Paths, name: &str) -> Project {
     projects::open(&db, &made.id).expect("open by id")
 }
 
-/// One app on a project.
-struct App {
-    link: CoreLink,
-    core: Option<CoreHandle>,
-    snap: Snapshot,
-    failures: Vec<String>,
-}
-
-impl App {
-    fn start(driver: &FakeDriver, paths: &Paths, project: Project) -> App {
-        let options = CoreOptions {
-            drivers: Drivers::single(Arc::new(driver.clone())),
-            exe: PathBuf::from("/usr/bin/dovetail"),
-            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
-            editor: None,
-            claude: None,
-            processes: None,
-            memory_caps: false,
-            check_claude: false,
-            scopes: None,
-            upgrade: None,
-            opener: None,
-            gh: None,
-        };
-        let (link, core) = dovetail_core::spawn(
-            Resolution::Registered(project),
-            paths.clone(),
-            Config::default(),
-            options,
-        )
-        .expect("core");
-        let mut app = App {
-            link,
-            core: Some(core),
-            snap: Snapshot::default(),
-            failures: Vec::new(),
-        };
-        app.wait_for("the snapshot", |s| !s.agents.is_empty());
-        app
-    }
-
-    fn send(&self, command: Command) {
-        self.link.commands.send(command).expect("core is running");
-    }
-
-    fn fold(&mut self, msg: ServerMsg) {
-        match msg {
-            ServerMsg::Hello { .. } => {}
-            ServerMsg::Snapshot(s) => self.snap = s,
-            ServerMsg::Event { seq, event } => {
-                if let Event::App(AppEvent::CommandFailed { message }) = &event {
-                    self.failures.push(message.clone());
-                }
-                apply(&mut self.snap, seq, event);
-            }
-        }
-    }
-
-    fn wait_for(&mut self, what: &str, done: impl Fn(&Snapshot) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while !done(&self.snap) {
-            let left = deadline
-                .checked_duration_since(Instant::now())
-                .unwrap_or_else(|| panic!("timed out waiting for {what}: {:#?}", self.failures));
-            match self.link.messages.recv_timeout(left) {
-                Ok(msg) => self.fold(msg),
-                Err(_) => panic!("timed out waiting for {what}: {:#?}", self.failures),
-            }
-        }
-    }
-
-    fn drain(&mut self, window: Duration) {
-        let until = Instant::now() + window;
-        while let Some(left) = until.checked_duration_since(Instant::now()) {
-            match self.link.messages.recv_timeout(left) {
-                Ok(msg) => self.fold(msg),
-                Err(_) => return,
-            }
-        }
-    }
-
-    fn quit(mut self) {
-        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
-        let core = self.core.take().expect("core handle");
-        assert!(core.wait(Duration::from_secs(10)), "core stopped");
-    }
-
-    /// Asks a tangent and waits until its answer and its subagent's finding are filed.
-    fn ask(&mut self, question: &str) -> TaskId {
-        let before = self.snap.tangents.len();
-        self.send(Command::Tangent(TangentCommand::New {
-            question: question.into(),
-        }));
-        self.wait_for("the tangent's answer and its subagent's finding", |s| {
-            s.tangents.len() > before
-                && s.tangents
-                    .last()
-                    .and_then(|t| t.research.as_ref())
-                    .is_some_and(|r| r.findings >= 2)
-        });
-        self.snap.tangents.last().expect("the tangent").task.id
-    }
-}
-
-/// Short runtime dirs: unix socket paths are limited to about 108 bytes.
-fn dirs() -> (TempDir, TempDir) {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let run = tempfile::Builder::new()
-        .prefix("dvt.")
-        .tempdir_in("/tmp")
-        .expect("short tempdir");
-    (dir, run)
+/// Asks a tangent and waits until its answer and its subagent's finding are filed.
+fn ask(app: &mut Harness, question: &str) -> TaskId {
+    let before = app.snap.tangents.len();
+    app.send(Command::Tangent(TangentCommand::New {
+        question: question.into(),
+    }));
+    app.wait_for("the tangent's answer and its subagent's finding", |s| {
+        s.tangents.len() > before
+            && s.tangents
+                .last()
+                .and_then(|t| t.research.as_ref())
+                .is_some_and(|r| r.findings >= 2)
+    });
+    app.snap.tangents.last().expect("the tangent").task.id
 }
 
 #[test]
 fn tangents_is_a_built_in_research_project_whose_id_nobody_else_gets() {
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     let db = Db::open(&paths, None).expect("registry");
     let tangents = db.ensure_tangents().wait().expect("created");
     assert_eq!(tangents.id, TANGENTS_PROJECT);
@@ -214,7 +94,7 @@ fn tangents_is_a_built_in_research_project_whose_id_nobody_else_gets() {
     // Any app registers it at start, and lists it.
     let other = register(&paths, "Market sizing");
     let fake = fixture("plain_turn");
-    let mut app = App::start(&fake, &paths, other);
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), other);
     assert!(
         app.snap
             .projects
@@ -229,16 +109,16 @@ fn tangents_is_a_built_in_research_project_whose_id_nobody_else_gets() {
 
 #[test]
 fn a_tangent_runs_read_only_in_tangents_and_is_saved_there_with_its_sources() {
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     let role = paths.role_prompt("tangent");
     std::fs::create_dir_all(role.parent().unwrap()).unwrap();
     std::fs::write(&role, "You are a tangent.\n").unwrap();
     let project = register(&paths, "Market sizing");
     let fake = fixture("research_websearch");
-    let mut app = App::start(&fake, &paths, project.clone());
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), project.clone());
 
-    let tangent = app.ask(QUESTION);
+    let tangent = ask(&mut app, QUESTION);
     let saved = app.snap.tangents.last().expect("saved").clone();
     assert_eq!(saved.task.title, QUESTION);
     assert!(saved.is_new(), "{saved:?}");
@@ -342,7 +222,7 @@ fn a_tangent_runs_read_only_in_tangents_and_is_saved_there_with_its_sources() {
     let db = Db::open(&paths, None).expect("registry");
     let again = projects::open(&db, &project.id).expect("open");
     drop(db);
-    let mut app = App::start(&fake, &paths, again);
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), again);
     let back = app
         .snap
         .tangents
@@ -362,12 +242,12 @@ fn a_tangent_runs_read_only_in_tangents_and_is_saved_there_with_its_sources() {
 
 #[test]
 fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     let other = register(&paths, "Pricing");
     let project = register(&paths, "Market sizing");
     let fake = fixture("research_websearch");
-    let mut app = App::start(&fake, &paths, project.clone());
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), project.clone());
     app.send(Command::Task(TaskCommand::Create(NewTask {
         title: "Size the market".into(),
         p_level: None,
@@ -383,7 +263,7 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
     let task = app.snap.tasks[0].id;
 
     // Attach: its answers and sources become quick findings of the task; it leaves Tangents.
-    let first = app.ask(QUESTION);
+    let first = ask(&mut app, QUESTION);
     let findings = app
         .snap
         .tangents
@@ -416,7 +296,7 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
     drop(own);
 
     // File into another project: a task there with the question, answers and sources.
-    let second = app.ask("And who runs example.org?");
+    let second = ask(&mut app, "And who runs example.org?");
     app.send(Command::Tangent(TangentCommand::File {
         tangent: second,
         project: ProjectId(other.id.clone()),
@@ -441,7 +321,7 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
     drop(theirs);
 
     // Start a task: a new task here linked to it; the tangent stays, done.
-    let third = app.ask("Is example.net reserved too?");
+    let third = ask(&mut app, "Is example.net reserved too?");
     app.send(Command::Tangent(TangentCommand::StartFrom {
         tangent: third,
         project: ProjectId(project.id.clone()),
@@ -459,7 +339,7 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
     });
 
     // Drop: archived in Tangents, nothing deleted.
-    let fourth = app.ask("What is RFC 2606?");
+    let fourth = ask(&mut app, "What is RFC 2606?");
     app.send(Command::Tangent(TangentCommand::Drop { tangent: fourth }));
     app.wait_for("the tangent dropped", |s| {
         s.tangents.iter().all(|t| t.task.id != fourth)
@@ -495,12 +375,12 @@ fn a_tangent_attaches_to_a_task_files_into_a_project_starts_a_task_or_drops() {
 
 #[test]
 fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
-    let (dir, run) = dirs();
-    let paths = paths(dir.path(), run.path());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = test_paths(dir.path());
     let project = register(&paths, "Market sizing");
     // Yesterday's coordinator: one message two days back.
     let fake = fixture("plain_turn");
-    let app = App::start(&fake, &paths, project.clone());
+    let app = Harness::start_project(fake.clone(), paths.clone(), project.clone());
     app.quit();
     let own = Db::open(&paths, Some(&project.id)).expect("own db");
     let two_days_ago = std::time::SystemTime::now()
@@ -552,7 +432,7 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
     let db = Db::open(&paths, None).expect("registry");
     let again = projects::open(&db, &project.id).expect("open");
     drop(db);
-    let mut app = App::start(&fake, &paths, again);
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), again);
     app.wait_for("the morning item", |s| {
         s.inbox
             .iter()
@@ -587,7 +467,7 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
     let db = Db::open(&paths, None).expect("registry");
     let again = projects::open(&db, &project.id).expect("open");
     drop(db);
-    let mut app = App::start(&fake, &paths, again);
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), again);
     app.drain(Duration::from_millis(100));
     let items: Vec<_> = app
         .snap
@@ -630,7 +510,7 @@ fn the_first_open_of_a_day_lists_new_tangents_in_needs_you_until_triaged() {
     let db = Db::open(&paths, None).expect("registry");
     let again = projects::open(&db, &project.id).expect("open");
     drop(db);
-    let mut app = App::start(&fake, &paths, again);
+    let mut app = Harness::start_project(fake.clone(), paths.clone(), again);
     app.drain(Duration::from_millis(200));
     assert!(
         app.snap

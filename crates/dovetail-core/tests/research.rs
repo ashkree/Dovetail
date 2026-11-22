@@ -1,163 +1,32 @@
 //! Research capture (R1, `docs/research.md` §5) through the real core and `FakeDriver`: the two
 //! spike S7 recordings, a source fetched twice, a restart, and the opt-in research folder.
 
+mod common;
+
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use common::{Harness, fixture, prompt, read, test_paths};
 use dovetail_api::{
-    Command, CoreLink, Event, ServerMsg, Snapshot,
-    agent::AgentId,
-    apply,
+    Command, Snapshot,
     inbox::InboxKind,
-    task::{NewTask, TaskId},
+    research::{ResearchCommand, ResearchContent, ResearchWhat},
+    task::{NewTask, TaskCommand, TaskId},
 };
-use dovetail_api::{
-    app::{AppCommand, AppEvent},
-    conversation::ConversationCommand,
-    research::{ResearchCommand, ResearchContent, ResearchEvent, ResearchSummary, ResearchWhat},
-    task::TaskCommand,
-};
-use dovetail_core::config::Config;
 use dovetail_core::paths::Paths;
-use dovetail_core::projects::{Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions, Drivers};
+use dovetail_core::projects::Project;
 use dovetail_driver::{FakeDriver, Sent};
-use tempfile::TempDir;
 
-const COORDINATOR: &str = "coordinator";
-
-fn fixture(name: &str) -> FakeDriver {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../dovetail-driver/tests/fixtures")
-        .join(format!("{name}.ndjson"));
-    FakeDriver::from_file(path).expect("fixture")
-}
-
-/// One app on project `p` in `repo`, with state under `paths`.
-struct App {
-    link: CoreLink,
-    core: Option<CoreHandle>,
-    snap: Snapshot,
-    failures: Vec<String>,
-    loaded: Vec<(TaskId, ResearchWhat, ResearchContent)>,
-    _run: TempDir,
-}
-
-impl App {
-    fn start(driver: &FakeDriver, paths: &Paths, repo: &Path) -> App {
-        let run = tempfile::Builder::new()
-            .prefix("dvt.")
-            .tempdir_in("/tmp")
-            .expect("short tempdir");
-        let paths = Paths {
-            runtime: run.path().to_path_buf(),
-            ..paths.clone()
-        };
-        let resolution =
-            Resolution::Registered(Project::with_repo("p", "work", repo.to_path_buf(), None));
-        let options = CoreOptions {
-            drivers: Drivers::single(Arc::new(driver.clone())),
-            exe: PathBuf::from("/usr/bin/dovetail"),
-            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
-            editor: None,
-            claude: None,
-            processes: None,
-            memory_caps: false,
-            check_claude: false,
-            scopes: None,
-            upgrade: None,
-            opener: None,
-            gh: None,
-        };
-        let (link, core) =
-            dovetail_core::spawn(resolution, paths, Config::default(), options).expect("core");
-        let mut app = App {
-            link,
-            core: Some(core),
-            snap: Snapshot::default(),
-            failures: Vec::new(),
-            loaded: Vec::new(),
-            _run: run,
-        };
-        app.wait_for("the snapshot", |s| !s.agents.is_empty());
-        app
-    }
-
-    fn send(&self, command: Command) {
-        self.link.commands.send(command).expect("core is running");
-    }
-
-    /// Folds in what arrives until `done` holds.
-    fn wait_until(&mut self, what: &str, done: impl Fn(&App) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while !done(self) {
-            let left = deadline
-                .checked_duration_since(Instant::now())
-                .unwrap_or_else(|| panic!("timed out waiting for {what}: {:#?}", self.failures));
-            match self.link.messages.recv_timeout(left) {
-                Ok(ServerMsg::Hello { .. }) => {}
-                Ok(ServerMsg::Snapshot(s)) => self.snap = s,
-                Ok(ServerMsg::Event { seq, event }) => {
-                    match &event {
-                        Event::App(AppEvent::CommandFailed { message }) => {
-                            self.failures.push(message.clone())
-                        }
-                        Event::Research(ResearchEvent::Loaded {
-                            task,
-                            what,
-                            content,
-                        }) => self.loaded.push((*task, what.clone(), content.clone())),
-                        _ => {}
-                    }
-                    apply(&mut self.snap, seq, event);
-                }
-                Err(_) => panic!("timed out waiting for {what}: {:#?}", self.failures),
-            }
-        }
-    }
-
-    fn wait_for(&mut self, what: &str, done: impl Fn(&Snapshot) -> bool) {
-        self.wait_until(what, |app| done(&app.snap));
-    }
-
-    /// Folds in whatever arrives within `window`.
-    fn drain(&mut self, window: Duration) {
-        let until = Instant::now() + window;
-        while let Some(left) = until.checked_duration_since(Instant::now()) {
-            match self.link.messages.recv_timeout(left) {
-                Ok(ServerMsg::Snapshot(s)) => self.snap = s,
-                Ok(ServerMsg::Event { seq, event }) => {
-                    apply(&mut self.snap, seq, event);
-                }
-                Ok(ServerMsg::Hello { .. }) => {}
-                Err(_) => return,
-            }
-        }
-    }
-
-    fn research(&self, task: TaskId) -> Option<&ResearchSummary> {
-        self.snap.research.iter().find(|r| r.task == task)
-    }
-
-    fn quit(mut self) {
-        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
-        let core = self.core.take().expect("core handle");
-        assert!(core.wait(Duration::from_secs(10)), "core stopped");
-    }
-}
-
-fn paths(dir: &Path) -> Paths {
-    Paths {
-        data: dir.join("data"),
-        config: dir.join("config"),
-        state: dir.join("state"),
-        runtime: dir.join("run"),
-    }
+fn start(driver: &FakeDriver, paths: &Paths, repo: &Path) -> Harness {
+    Harness::start_project(
+        driver.clone(),
+        paths.clone(),
+        Project::with_repo("p", "work", repo.to_path_buf(), None),
+    )
 }
 
 /// Creates the task "Example research" and opens round 1 on it.
-fn task_with_round(app: &mut App) -> TaskId {
+fn task_with_round(app: &mut Harness) -> TaskId {
     app.send(Command::Task(TaskCommand::Create(NewTask {
         title: "Example research".into(),
         p_level: None,
@@ -181,15 +50,6 @@ fn task_with_round(app: &mut App) -> TaskId {
             .any(|r| r.task == task && r.open_round().is_some())
     });
     task
-}
-
-fn prompt(app: &App, text: &str) {
-    app.send(Command::Conversation(ConversationCommand::Prompt {
-        agent: AgentId(COORDINATOR.into()),
-        text: text.into(),
-        attachments: Vec::new(),
-        effort: None,
-    }));
 }
 
 fn finished_turn(s: &Snapshot) -> bool {
@@ -216,15 +76,11 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-}
-
 /// Replays a S7 recording in a round and checks the filed finding, its sources and that only
 /// the user's prompt reached the session. Resolves to the task's research folder.
 fn replay_round(name: &str, paths: &Paths, repo: &Path) -> PathBuf {
     let fake = fixture(name);
-    let mut app = App::start(&fake, paths, repo);
+    let mut app = start(&fake, paths, repo);
     let task = task_with_round(&mut app);
     prompt(&app, "go");
     app.wait_for("the finding", |s| {
@@ -317,7 +173,7 @@ fn a_foreground_subagent_in_a_round_is_filed_with_its_sources() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("work");
     std::fs::create_dir_all(&repo).unwrap();
-    let paths = paths(dir.path());
+    let paths = test_paths(dir.path());
     let research = replay_round("research_round_foreground", &paths, &repo);
     assert!(research.starts_with(paths.data.join("projects/p/research")));
     assert!(research.ends_with("1-example-research"));
@@ -329,7 +185,7 @@ fn a_background_subagent_is_filed_on_its_notification_not_the_turn_result() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("work");
     std::fs::create_dir_all(&repo).unwrap();
-    replay_round("research_round_background", &paths(dir.path()), &repo);
+    replay_round("research_round_background", &test_paths(dir.path()), &repo);
 }
 
 #[test]
@@ -338,7 +194,7 @@ fn an_opt_in_research_dir_writes_only_under_that_folder_of_the_repo() {
     let repo = dir.path().join("work");
     std::fs::create_dir_all(repo.join("src")).unwrap();
     std::fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
-    let paths = paths(dir.path());
+    let paths = test_paths(dir.path());
     std::fs::create_dir_all(paths.config.join("projects")).unwrap();
     std::fs::write(
         paths.recipe("p"),
@@ -364,7 +220,7 @@ fn a_restart_keeps_rounds_findings_and_sources_and_rebuilds_missing_files() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("work");
     std::fs::create_dir_all(&repo).unwrap();
-    let paths = paths(dir.path());
+    let paths = test_paths(dir.path());
     let research = replay_round("research_round_foreground", &paths, &repo);
     let before: Vec<(PathBuf, String)> = files_under(&research)
         .into_iter()
@@ -376,7 +232,7 @@ fn a_restart_keeps_rounds_findings_and_sources_and_rebuilds_missing_files() {
     assert_eq!(before.len(), 4, "brief, finding, two sources: {before:?}");
     std::fs::remove_dir_all(&research).unwrap();
 
-    let mut app = App::start(&fixture("plain_turn"), &paths, &repo);
+    let mut app = start(&fixture("plain_turn"), &paths, &repo);
     let summary = app
         .snap
         .research
@@ -431,9 +287,9 @@ fn the_same_page_fetched_twice_is_one_source_row_linked_by_each_fetch() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("work");
     std::fs::create_dir_all(&repo).unwrap();
-    let paths = paths(dir.path());
+    let paths = test_paths(dir.path());
     let fake = FakeDriver::from_ndjson(&FETCHED_TWICE.join("\n")).expect("fixture");
-    let mut app = App::start(&fake, &paths, &repo);
+    let mut app = start(&fake, &paths, &repo);
     let task = task_with_round(&mut app);
     prompt(&app, "go");
     app.wait_for("two findings", |s| {
@@ -467,9 +323,9 @@ fn with_no_round_open_the_coordinators_subagents_are_not_filed_under_any_task() 
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("work");
     std::fs::create_dir_all(&repo).unwrap();
-    let paths = paths(dir.path());
+    let paths = test_paths(dir.path());
     let fake = fixture("research_round_foreground");
-    let mut app = App::start(&fake, &paths, &repo);
+    let mut app = start(&fake, &paths, &repo);
     prompt(&app, "go");
     app.wait_for("the finished turn", finished_turn);
     // No task has research; the finding waits, unfiled, in Needs you (follow-ups of 2026-11-11).
