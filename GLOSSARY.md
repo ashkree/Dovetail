@@ -34,6 +34,10 @@ _Avoid_: requirement, goal (the effort's defining aim), definition of done
 An effort's summary of what it is, what was last done, what waits on the user and the next step, shown first when the user returns to the effort.
 _Avoid_: status, summary, handoff (which is the whole set of cards a fresh coordinator gets)
 
+**Effort proposal** (v2):
+A card the coordinator posts in the chat, in a fixed template, suggesting a new effort or new criteria for one. The user answers in the chat with yes, no or edits; edits produce a revised proposal, and only a yes creates anything.
+_Avoid_: draft effort, effort request
+
 **Running effort** (v2):
 An effort that counts against the machine's soft limit on parallel lines of work; the count shows and never blocks.
 _Avoid_: active effort, open effort
@@ -130,10 +134,6 @@ _Avoid_: task, task update
 How important a task is, from P0 to P3.
 _Avoid_: priority, severity
 
-**Bucket** (v1 TUI):
-When the user will do a task: Now, Next or Later. A task with no bucket sits in the Unsorted list, which is not the Unsorted effort. Whether buckets stay in v2 is open; v2's **Unsorted** is an effort holding migrated tasks.
-_Avoid_: priority, status, column
-
 **Journal**:
 The project's end-of-day record, one markdown file per closed day: the coordinator's handoff and Dovetail's facts (ADR 0012).
 _Avoid_: log, diary, daily notes
@@ -171,8 +171,12 @@ An inbox item asking the user to allow or deny a tool use.
 _Avoid_: approval (the answer, not the request), prompt
 
 **Question**:
-An inbox item from an agent's `core_ask_user` call. It never blocks the agent: `core_ask_user` returns at once, and the answer arrives later as a message (ADR 0007).
+An inbox item from an agent's `inbox_ask` call. It never blocks the agent: `inbox_ask` returns at once, and the answer arrives later as a message (ADR 0007). The asking agent may withdraw it, and the coordinator may dismiss it with a reason (ADR 0029).
 _Avoid_: blocker, prompt
+
+**Proposal**:
+An inbox item where the coordinator suggests a research idea or decision for the user to accept or decline. Nothing is written until the user accepts it.
+_Avoid_: approval (the user's answer), suggestion, request
 
 **Finished turn**:
 An inbox item showing a preview of the last message from an agent whose turn ended. An agent has at most one, and the newest replaces the last. It does not mean the agent or its task is done.
@@ -204,9 +208,9 @@ _Avoid_: summary, write-up
 A question that does not belong to the current project, answered in Tangents, a built-in research-only project that is always there, with sources, and kept there until the user attaches it to a task, or triages it (the morning's "new tangents" item, or `:tangents`): files it into a project, starts a task from it or drops it (ADR 0017).
 _Avoid_: side chat (which is project-scoped), aside
 
-**Suite**:
-A named group of MCP tools; a role's config lists the suites it gets, and each tool name carries its suite as a prefix (ADR 0016). The suites are Core, Tasks, Project, Coordination (`coordination_report`, ADR 0022; `coordination_claim_criterion`), Research, Maps, Canvas (`canvas_add_block`, `canvas_add_card`, `canvas_link_cards`; coordinator only, ADR 0025, ADR 0027) and Design (`design_declare_variants`; slices, ADR 0026); by default the coordinator gets all of them, a slice Core, Coordination and Maps, a side chat Core. Tool names read `<suite>_<verb>`: `core_ask_user`, `tasks_create`, `project_start_slice`, `maps_draw`.
-_Avoid_: toolset, plugin, namespace
+**Tool group**:
+The workspace object a Dovetail MCP tool acts on, written as the start of its name: `inbox_ask`, `efforts_get`, `slices_start`. A group only names; each tool is granted to roles one by one (ADR 0029).
+_Avoid_: suite (ADR 0016's grant unit, retired), toolset, namespace
 
 **Altitude**:
 Whether research is macro (business, economics, direction) or micro (implementation). It decides where the research lives; size decides how it runs.
@@ -228,11 +232,11 @@ _Avoid_: tree (the task tree), shelf (the map shelf)
 In v2, a project with no repos; whether the separate project kind stays is open. In v1, a project of the research kind: it exists for macro research and has no repo, no worktrees and no slices; its sessions run in Dovetail's own folder for it (ADR 0015).
 _Avoid_: notes project, non-code project
 
-**Companion** (replaced in v2):
-A GUI window the user could open beside the terminal UI, which never held the only way to do something (ADR 0019). v2 replaces it with the GUI itself.
+**Companion** (superseded):
+A GUI window the user could open beside the terminal UI, which never held the only way to do something (ADR 0019). Superseded by ADR 0030: the TUI is the main client, and long reading and canvases go to a page the core serves.
 _Avoid_: GUI, viewer, canvas window, desktop app
 
-### Canvas and viewer
+### Canvas
 
 **Canvas** (v2):
 An effort's board: one per effort, from the start, holding its blocks and their cards (ADR 0027).
@@ -249,14 +253,6 @@ _Avoid_: node (a map's item), note, sticky
 **Incoming strip** (v2):
 The edge of a canvas where cards an agent put in no block wait until the user places them.
 _Avoid_: inbox (the attention list), queue
-
-**Viewer** (v2):
-The main-view display of a running web preview, started from the project's preview command per slice; it shows the slice opened from the tree, else the focused effort's.
-_Avoid_: preview pane, browser, Companion
-
-**Variant** (v2):
-One alternative the agent writes into a slice's code and declares in a list, at one of three levels: global, component or content. Variants mix and match; keeping a combination makes it permanent and deletes the rest.
-_Avoid_: option (an options-compare column), version, theme
 
 ### Maps
 
