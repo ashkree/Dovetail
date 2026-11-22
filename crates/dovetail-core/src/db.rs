@@ -1822,7 +1822,10 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut old = Connection::open(&path).unwrap();
         // Everything before 0004_repos.sql.
-        let before = 3;
+        let before = REGISTRY_MIGRATIONS
+            .iter()
+            .position(|m| m.0.ends_with("0004_repos.sql"))
+            .expect("the repos migration");
         migrate(&mut old, &path, &REGISTRY_MIGRATIONS[..before]).unwrap();
         old.execute_batch(
             "INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \

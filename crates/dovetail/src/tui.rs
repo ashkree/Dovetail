@@ -60,7 +60,10 @@ pub fn run_real(project: Option<&str>) -> Result<()> {
         .map_or_else(|| "claude".into(), |p| p.into_os_string());
     let mut drivers = Drivers::new();
     drivers.insert(Arc::new(ClaudeDriver::with_program(program.clone())));
-    drivers.insert(Arc::new(AgyDriver::new()));
+    // No agy binary: no agy driver, so no agy rows, usage group or model refresh.
+    if let Some(agy) = AgyDriver::if_installed() {
+        drivers.insert(Arc::new(agy));
+    }
     let options = CoreOptions {
         drivers,
         exe: std::env::current_exe().context("finding the dovetail binary")?,

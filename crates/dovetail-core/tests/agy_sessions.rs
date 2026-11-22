@@ -1,36 +1,19 @@
 //! Session tests for the agy driver, driver switching and usage reports.
 
-#![allow(unused_imports)]
-
 mod common;
 
 use common::*;
 
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use dovetail_api::map::{Map, MapId, MapKind};
-use dovetail_api::socket::{SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody};
-use dovetail_api::tools::archive_result::{ARCHIVED, WAITING_FOR_USER};
-use dovetail_api::tools::{
-    ArchiveSlice, ArchiveTask, AskUser, BucketFilter, DrawMap, GetTask, ListTasks, LogDecision,
-    ReportStatus, StartSlice, Tool, UpdateTask,
-};
+use dovetail_api::tools::{StartSlice, Tool};
 use dovetail_api::{
-    AgentId, AgentKind, AgentStatus, Alternative, Attachment, Bucket, Command, CoreLink,
-    DecisionId, EntryKind, Event, ImageType, InboxId, InboxKind, NewTask, PLevel, PermissionAnswer,
-    PermissionMode, ServerMsg, Snapshot, TaskId, TaskStatus, apply,
+    AgentId, AgentKind, AgentStatus, Command, NewTask, PermissionMode, Snapshot, TaskId,
 };
 use dovetail_core::config::Config;
-use dovetail_core::memory::Scopes;
 use dovetail_core::paths::Paths;
-use dovetail_core::projects::{Candidate, Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions, Drivers};
-use dovetail_driver::{ControlAnswer, FakeDriver, ReplayOptions, Sent};
-use tempfile::TempDir;
+use dovetail_driver::{FakeDriver, ReplayOptions, Sent};
 
 #[test]
 fn agy_coordinator_launches_with_settings_mcp_and_broken_claude_profile() {
@@ -912,5 +895,29 @@ fn the_background_read_replaces_agy_models_and_saves_them_and_a_later_failure_ke
     h.wait_for("the refresh was tried", |_| second.models_asked() == 1);
     h.drain(Duration::from_millis(200));
     assert_eq!(agy_model_names(&h.snap), vec!["gemini-9".to_string()]);
+    h.quit();
+}
+
+#[test]
+fn without_agy_there_are_no_agy_models_usage_group_or_refresh() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Only Claude Code is registered, as on a machine with no `agy` binary.
+    let mut h = Harness::start_on(fixture("plain_turn"), test_paths(&dir));
+    h.drain(Duration::from_millis(300));
+    assert!(agy_model_names(&h.snap).is_empty(), "{:?}", h.snap.models);
+
+    h.send(Command::LoadUsage);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.usage_loaded.is_empty() {
+        assert!(Instant::now() < deadline, "UsageLoaded never arrived");
+        h.drain(Duration::from_millis(20));
+    }
+    assert!(
+        h.usage_loaded[0]
+            .iter()
+            .all(|r| r.driver == dovetail_api::DriverKind::Claude),
+        "{:?}",
+        h.usage_loaded[0]
+    );
     h.quit();
 }

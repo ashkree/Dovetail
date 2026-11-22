@@ -93,8 +93,6 @@ impl Core {
             .unwrap_or_else(crate::profile::default_dir)
     }
 
-    /// Reads each registered driver's usage limits concurrently on the runtime and sends the
-    /// reports back in [`DriverKind::ALL`] order (task #46).
     /// The folder a short-lived driver query (usage, model list) runs in.
     pub(crate) fn query_cwd(&self) -> std::path::PathBuf {
         self.project
@@ -102,6 +100,8 @@ impl Core {
             .unwrap_or_else(|| self.project.coordinator_folder(&self.paths))
     }
 
+    /// Reads each registered driver's usage limits concurrently on the runtime and sends the
+    /// reports back in [`DriverKind::ALL`] order (task #46).
     pub(crate) fn load_usage(&self) {
         let cwd = self.query_cwd();
         let claude_env = match &self.claude {

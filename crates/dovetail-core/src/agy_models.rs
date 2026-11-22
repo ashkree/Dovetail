@@ -124,9 +124,6 @@ impl Core {
         match result {
             Ok(models) if !models.is_empty() => {
                 if self.model_catalog.get(&DriverKind::Agy) == Some(&models) {
-                    // Same as the saved or session list; it may still be the built-in list's
-                    // replacement, so keep it saved.
-                    self.save_models(DriverKind::Agy, &models);
                     return;
                 }
                 self.model_catalog.insert(DriverKind::Agy, models.clone());
@@ -142,7 +139,12 @@ impl Core {
     /// kept).
     pub(crate) fn save_models(&self, driver: DriverKind, models: &[ModelInfo]) {
         if driver == DriverKind::Agy {
-            drop(self.db.save_driver_models(driver.as_str(), to_json(models)));
+            let saving = self.db.save_driver_models(driver.as_str(), to_json(models));
+            tokio::spawn(async move {
+                if let Err(e) = saving.await {
+                    tracing::warn!("saving the agy models: {e}");
+                }
+            });
         }
     }
 }
