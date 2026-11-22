@@ -1,6 +1,6 @@
 //! The model picker (tasks #39, #46): `:model [name]` and `/model [name]`. It wraps the one
 //! [`Picker`], grouping rows by driver (`Claude Code`, then `agy`) with one row per `(model,
-//! effort)` pair. Picking an own-driver row applies [`dovetail_api::Command::SetModel`]; picking
+//! effort)` pair. Picking an own-driver row applies [`dovetail_api::model::ModelCommand::Set`]; picking
 //! another driver's row on the coordinator opens the switch confirm modal. Non-coordinator
 //! sessions hide the other driver's rows.
 

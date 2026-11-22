@@ -1,5 +1,7 @@
 //! The `app` feature's events.
 
+#[allow(unused_imports)]
+use super::AppCommand;
 use super::Paste;
 use crate::agents::agent::AgentId;
 use serde::{Deserialize, Serialize};

@@ -493,7 +493,7 @@ impl Core {
     /// Gathers every slice worktree's state afresh, with a fetch and PR lookups
     /// ([`WorktreeCommand::Refresh`]).
     ///
-    /// [`WorktreeCommand::Refresh`]: dovetail_api::WorktreeCommand::Refresh
+    /// [`WorktreeCommand::Refresh`]: dovetail_api::worktree::WorktreeCommand::Refresh
     pub(crate) fn refresh_worktrees(&mut self) {
         let slices: Vec<AgentId> = self
             .agents

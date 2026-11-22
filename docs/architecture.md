@@ -11,14 +11,14 @@ Every claim links to the file that proves it. Read the keywords first; the rest 
 | **Core** | The one part that knows and changes everything: sessions, tasks, inbox, database. It runs on its own thread. | [`service.rs`](../crates/dovetail-core/src/service.rs) |
 | **Core loop** | One `loop` inside the core. Everything that changes state passes through it, one item at a time. | `Core::run` in [`service.rs`](../crates/dovetail-core/src/service.rs) |
 | **Input** | One item the loop handles: a command from the UI, an event from a session, a tool call, a finished background job. | `enum Input` in [`service.rs`](../crates/dovetail-core/src/service.rs) |
-| **Snapshot** | The whole state the UI may see, as one plain value: tasks, agents, inbox, chat tails. | `struct Snapshot` in [`model.rs`](../crates/dovetail-api/src/model.rs) |
-| **Event** | One change to the snapshot, sent by the core, with a number (`seq`). | `enum Event` in [`protocol.rs`](../crates/dovetail-api/src/protocol.rs) |
+| **Snapshot** | The whole state the UI may see, as one plain value: tasks, agents, inbox, chat tails. | `struct Snapshot` in [`snapshot.rs`](../crates/dovetail-api/src/snapshot.rs) |
+| **Event** | One change to the snapshot, sent by the core, with a number (`seq`). | `enum Event` in [`wire.rs`](../crates/dovetail-api/src/wire.rs) |
 | **`seq`** | The event's number. Each is one more than the last, so the UI can tell when it missed one. | [`apply.rs`](../crates/dovetail-api/src/apply.rs) |
-| **Command** | One request from the UI to the core ("send this prompt", "allow this"). | `enum Command` in [`protocol.rs`](../crates/dovetail-api/src/protocol.rs) |
+| **Command** | One request from the UI to the core ("send this prompt", "allow this"). | `enum Command` in [`wire.rs`](../crates/dovetail-api/src/wire.rs) |
 | **`apply()`** | The one function that folds an event into a snapshot. The UI's copy changes no other way. | [`apply.rs`](../crates/dovetail-api/src/apply.rs) |
-| **CoreLink** | The UI's end of the wire: a channel to send commands, a channel to receive the snapshot and events. | `struct CoreLink` in [`protocol.rs`](../crates/dovetail-api/src/protocol.rs) |
+| **CoreLink** | The UI's end of the wire: a channel to send commands, a channel to receive the snapshot and events. | `struct CoreLink` in [`wire.rs`](../crates/dovetail-api/src/wire.rs) |
 | **Session** | One running agent CLI process (`claude` or `agy`) that Dovetail drives without a terminal. Coordinator and slices are sessions. | [`session/mod.rs`](../crates/dovetail-core/src/session/mod.rs) |
-| **Agent** | A row in the tree: a session, or a subagent running inside one. | `struct Agent` in [`model.rs`](../crates/dovetail-api/src/model.rs) |
+| **Agent** | A row in the tree: a session, or a subagent running inside one. | `struct Agent` in [`agents/agent/mod.rs`](../crates/dovetail-api/src/agents/agent/mod.rs) |
 | **Driver** | The `SessionDriver` trait and its implementations (`ClaudeDriver` for Claude Code, `AgyDriver` for agy) held in the core's `Drivers` map. The core sees typed events, never JSON. | [`dovetail-driver`](../crates/dovetail-driver/src/lib.rs), [`drivers.rs`](../crates/dovetail-core/src/drivers.rs) |
 | **Stream** | What a session prints: one JSON object per line (Claude Code `stream-json` NDJSON, or `agy` ACP JSON-RPC 2.0). | [`claude/parse.rs`](../crates/dovetail-driver/src/claude/parse.rs), [`agy/conversation.rs`](../crates/dovetail-driver/src/agy/conversation.rs) |
 | **Control request** | A request where a session asks permission (Claude `control_request` or ACP `session/request_permission`) and waits for an answer. | `PermissionRequest` in [`event.rs`](../crates/dovetail-driver/src/event.rs) |
@@ -77,7 +77,7 @@ Three rules hold the design together:
 2. **The UI never depends on `dovetail-tools`.** `dovetail-tui` (and `dovetail-mock`) depend only on `dovetail-api`, keeping agent tool schemas and unix-socket RPC out of client code.
 3. **One loop changes state.** Slow work (git, the clipboard, a build) runs elsewhere and comes back to the loop as an `Input`. So two things never change the same state at once, and there are no locks to get wrong.
 
-**Example.** The TUI never reads `state.db`. To show tasks it reads `snapshot.tasks`; to add one it sends `Command::CreateTask`; the new task arrives as `Event::TaskUpserted`. `scripts/check.sh` fails the build if the TUI writes a file or starts a process.
+**Example.** The TUI never reads `state.db`. To show tasks it reads `snapshot.tasks`; to add one it sends `TaskCommand::Create`; the new task arrives as `TaskEvent::Upserted`. `scripts/check.sh` fails the build if the TUI writes a file or starts a process.
 
 ## 2. One chat message, end to end
 
@@ -85,36 +85,36 @@ You type "Start the web form" to the coordinator and press Enter.
 
 ```
  TUI                         core loop                      driver          claude / agy
-  │ Command::Prompt ─────────►│                               │                 │
+  │ ConversationCommand::Prompt ─►│                           │                 │
   │                           │ prompt()                      │                 │
   │                           │  ensure_live()  (start or resume if not running)│
   │                           │  session.send(text) ─────────►│ write a line ──►│
   │                           │  add_entry_with(User)         │                 │
   │                           │   ├─► DB thread: upsert_entry │                 │
-  │◄─ Event(41) ConversationAppended                          │                 │
-  │◄─ Event(42) AgentUpserted (status: working)               │                 │
+  │◄─ Event(41) Conversation(Appended)                        │                 │
+  │◄─ Event(42) Agent(Upserted) (status: working)             │                 │
   │                           │                               │◄── text chunks ─│
   │                           │◄── Input::Driver(TextDelta) ──│                 │
   │                           │ queue_delta()  (held ≤ 33 ms) │                 │
-  │◄─ Event(43) AssistantDelta "Will do. "                    │                 │
-  │◄─ Event(44) AssistantDelta "The API slice…"               │                 │
+  │◄─ Event(43) Conversation(AssistantDelta "Will do. ")      │                 │
+  │◄─ Event(44) Conversation(AssistantDelta "The API slice…") │                 │
   │                           │◄── Input::Driver(TurnResult) ─│◄── result ──────│
   │                           │ on_result()                   │                 │
-  │◄─ Event(45) InboxUpserted (finished turn)                 │                 │
-  │◄─ Event(46) AgentUpserted (status: idle)                  │                 │
+  │◄─ Event(45) Inbox(Upserted) (finished turn)               │                 │
+  │◄─ Event(46) Agent(Upserted) (status: idle)                │                 │
 ```
 
 Step by step, with the real names:
 
-1. **TUI.** The chat bar pushes `Command::Prompt { agent, text, attachments }` ([`app.rs`](../crates/dovetail-tui/src/app.rs)); the event loop sends it on `CoreLink.commands` ([`event_loop.rs`](../crates/dovetail-tui/src/event_loop.rs)).
+1. **TUI.** The chat bar pushes `ConversationCommand::Prompt { agent, text, attachments, effort }` ([`app.rs`](../crates/dovetail-tui/src/app.rs)); the event loop sends it on `CoreLink.commands` ([`event_loop.rs`](../crates/dovetail-tui/src/event_loop.rs)).
 2. **Into the loop.** A small thread forwards it as `Input::Command` (`spawn` in [`service.rs`](../crates/dovetail-core/src/service.rs)). `Core::run` picks it up and calls `Core::command`, which calls `Core::prompt` ([`session/mod.rs`](../crates/dovetail-core/src/session/mod.rs)).
 3. **To the session.** `prompt` calls `send_input`, which calls `ensure_live` (looks up the agent's `DriverKind` in `Drivers`, then starts or resumes the `claude` or `agy` process if none runs), then `session.send(...)`. The driver writes a JSON line to the process's stdin ([`claude/mod.rs`](../crates/dovetail-driver/src/claude/mod.rs), [`agy/mod.rs`](../crates/dovetail-driver/src/agy/mod.rs)).
-4. **Recorded and shown.** `add_entry_with` gives the message an id, stores it through the DB thread (`Db::upsert_entry`), and emits `Event::ConversationAppended`. `emit` adds one to `seq` and sends it.
-5. **Reply streams back.** The CLI prints JSON lines. The driver's reader parses each ([`claude/parse.rs`](../crates/dovetail-driver/src/claude/parse.rs) or [`agy/conversation.rs`](../crates/dovetail-driver/src/agy/conversation.rs)) into `DriverEvent`s; a task forwards each as `Input::Driver`. `Core::on_driver` handles it. Text chunks go to `queue_delta`, which holds them up to 33 ms so the UI gets at most about 30 updates a second, then sends `Event::AssistantDelta`.
+4. **Recorded and shown.** `add_entry_with` gives the message an id, stores it through the DB thread (`Db::upsert_entry`), and emits `ConversationEvent::Appended`. `emit` adds one to `seq` and sends it.
+5. **Reply streams back.** The CLI prints JSON lines. The driver's reader parses each ([`claude/parse.rs`](../crates/dovetail-driver/src/claude/parse.rs) or [`agy/conversation.rs`](../crates/dovetail-driver/src/agy/conversation.rs)) into `DriverEvent`s; a task forwards each as `Input::Driver`. `Core::on_driver` handles it. Text chunks go to `queue_delta`, which holds them up to 33 ms so the UI gets at most about 30 updates a second, then sends `ConversationEvent::AssistantDelta`.
 6. **Turn ends.** `on_result` raises a "finished turn" inbox item and sets the agent idle. The finished reply is stored once, complete.
 7. **TUI.** For each message, `apply(&mut snapshot, seq, event)` ([`apply.rs`](../crates/dovetail-api/src/apply.rs)) folds it in, and the screen is redrawn only because something changed.
 
-**What `seq` is for.** Events 41, 42, 43 arrive. If 44 is lost and 45 arrives, `apply` returns `Gap` and changes nothing; the UI sends `Command::Resync` and gets a fresh snapshot. The UI can never drift silently.
+**What `seq` is for.** Events 41, 42, 43 arrive. If 44 is lost and 45 arrives, `apply` returns `Gap` and changes nothing; the UI sends `AppCommand::Resync` and gets a fresh snapshot. The UI can never drift silently.
 
 ## 3. A tool call and a permission request
 
@@ -131,7 +131,7 @@ These look alike to the user but take different roads.
 2. When an agent calls `mcp__dovetail__core_report_status` (`mcp_dovetail_core_report_status` on `agy`), the bridge checks the arguments and sends `SocketRequestBody::ToolCall { agent, call, .. }` over the socket ([`mcp.rs`](../crates/dovetail/src/mcp.rs), [`socket.rs`](../crates/dovetail-tools/src/socket.rs)).
 3. The socket server turns it into `Input::Tool`; the loop calls `Core::tool` ([`tools.rs`](../crates/dovetail-core/src/tools.rs)), which checks the agent's role and tool suites, does the work, and replies.
 
-**Example.** A slice calls `core_report_status("writing tests")`. `Core::tool` sets `agent.status_line`, emits `Event::AgentUpserted`, and answers "Status set." The tree shows the new line.
+**Example.** A slice calls `core_report_status("writing tests")`. `Core::tool` sets `agent.status_line`, emits `AgentEvent::Upserted`, and answers "Status set." The tree shows the new line.
 
 Tool calls never wait for you. `core_ask_user` puts a question in the inbox and returns at once; your answer arrives later as a normal message (ADR 0007).
 
@@ -142,12 +142,12 @@ Tool calls never wait for you. `core_ask_user` puts a question in the inbox and 
    (waits)                                                            raise() → inbox item + Waiter::Control
                                                                              │
                                               you press y                    ▼
- session ◄── permission answer ─── driver ◄── answer_control() ◄── Command::AnswerPermission
+ session ◄── permission answer ─── driver ◄── answer_control() ◄── InboxCommand::AnswerPermission
 ```
 
 1. The CLI asks permission and waits (a `control_request` from `claude`, or an ACP `session/request_permission` from `agy`). The driver emits `DriverEvent::PermissionRequest`; it never waits itself, so the stream keeps flowing and other requests can arrive meanwhile (stream rule 3).
-2. `Core::permission_request` ([`inbox.rs`](../crates/dovetail-core/src/inbox.rs)) calls `raise`, which stores an `inbox_items` row, emits `Event::InboxUpserted`, and keeps a `Waiter::Control` in memory holding the request's id.
-3. You answer. The UI sends `Command::AnswerPermission { item, answer }`. `Core::answer_permission` resolves the item (`Event::InboxResolved`) and calls `session.answer_control(...)`; the driver writes the answer and the session carries on.
+2. `Core::permission_request` ([`inbox.rs`](../crates/dovetail-core/src/inbox.rs)) calls `raise`, which stores an `inbox_items` row, emits `InboxEvent::Upserted`, and keeps a `Waiter::Control` in memory holding the request's id.
+3. You answer. The UI sends `InboxCommand::AnswerPermission { item, answer }`. `Core::answer_permission` resolves the item (`InboxEvent::Resolved`) and calls `session.answer_control(...)`; the driver writes the answer and the session carries on.
 
 **Example.** The coordinator runs `gh pr merge 42`. The launch settings force that command to ask, so an item "Bash: gh pr merge 42" appears in Needs you. `y` lets the merge run; `d` denies it and the session is told why.
 
@@ -239,7 +239,7 @@ Quitting stops every session; Dovetail waits up to 10 s for them to exit ([`shut
 | A worktree no agent owns | One inbox item: `y` removes it, `d` keeps it for good. Nothing is deleted without `y`. |
 | Notes for a coordinator that was not running | Delivered when it next starts. |
 
-Sessions resume with their driver's own resume: Claude Code uses the session id Dovetail chose at first start, while `agy` picks its conversation id on its first `Init` and resumes by that id via `session/resume`. Switching the coordinator between drivers (`Command::SwitchDriver`, confirmed in the grouped `/model` picker) runs through `:fresh` (`journal.rs`), seeding the new session with the handoff (or Dovetail's facts and the old transcript path when the outgoing session cannot answer) or starting clean. agy's model list is saved in `registry.db` and refreshed in the background by `agy models` (`agy_models.rs`), so the picker has agy rows at start. Usage limits for both drivers are probed on demand via `Command::LoadUsage` (`:usage` / `/usage`), which runs `SessionDriver::usage` concurrently and returns `Event::UsageLoaded` ([`usage.rs`](../crates/dovetail-core/src/usage.rs)).
+Sessions resume with their driver's own resume: Claude Code uses the session id Dovetail chose at first start, while `agy` picks its conversation id on its first `Init` and resumes by that id via `session/resume`. Switching the coordinator between drivers (`ModelCommand::SwitchDriver`, confirmed in the grouped `/model` picker) runs through `:fresh` (`journal.rs`), seeding the new session with the handoff (or Dovetail's facts and the old transcript path when the outgoing session cannot answer) or starting clean. agy's model list is saved in `registry.db` and refreshed in the background by `agy models` (`agy_models.rs`), so the picker has agy rows at start. Usage limits for both drivers are probed on demand via `StatusCommand::LoadUsage` (`:usage` / `/usage`), which runs `SessionDriver::usage` concurrently and returns `StatusEvent::UsageLoaded` ([`usage.rs`](../crates/dovetail-core/src/usage.rs)).
 
 **Example.** You quit while slice `web-form` is mid-turn and a `git push` approval is waiting. Next open: "web-form's turn was cut off by a restart — Last prompt: …" in Needs you, and "web-form: Bash git push: request expired at restart" in Activity. You send web-form a message; `ensure_live` resumes its session and it carries on.
 

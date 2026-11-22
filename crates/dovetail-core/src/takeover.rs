@@ -37,8 +37,8 @@
 //! OOM watcher only follows headless processes, and an automatic restart goes through
 //! [`Core::launch`], so it cannot start headless beside native.
 //!
-//! [`AppCommand::TakeOver`]: dovetail_api::terminal::AppCommand::TakeOver
-//! [`AppEvent::TerminalReturned`]: dovetail_api::terminal::AppEvent::TerminalReturned
+//! [`AppCommand::TakeOver`]: dovetail_api::app::AppCommand::TakeOver
+//! [`AppEvent::TerminalReturned`]: dovetail_api::app::AppEvent::TerminalReturned
 //! [`RELEASE_TAKEOVER_PERMISSION`]: dovetail_api::inbox::RELEASE_TAKEOVER_PERMISSION
 
 use std::ffi::OsString;

@@ -97,7 +97,7 @@ impl std::fmt::Display for ToolError {
             ),
             ToolError::BadEvidence(text) => write!(
                 f,
-                "evidence `{text}` is not a finding or source id: write F<id> or S<id>, like                  F3 or S12"
+                "evidence `{text}` is not a finding or source id: write F<id> or S<id>, like F3 or S12"
             ),
             ToolError::NotACardId(field) => {
                 write!(f, "`{field}` must be a card id (a positive integer)")

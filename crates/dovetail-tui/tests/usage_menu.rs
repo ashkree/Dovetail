@@ -1,5 +1,5 @@
 //! Task #46 (C5): the usage limits menu. `/usage` in the chat bar and `:usage` open it, send
-//! `UsageCommand::LoadUsage`, show loading until `UsageEvent::Loaded` arrives, render Claude Code and
+//! `StatusCommand::LoadUsage`, show loading until `StatusEvent::UsageLoaded` arrives, render Claude Code and
 //! agy groups with bars, percentages, reset times, models, plan and note, show failed reports'
 //! reasons, refresh on `Tab`, and close on `Esc`.
 

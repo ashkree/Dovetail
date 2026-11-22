@@ -15,7 +15,7 @@ pub enum ConversationCommand {
         agent: AgentId,
         /// Prompt text; may be empty when images are attached.
         text: String,
-        /// Images to send with it, saved by the core on [`crate::clipboard::Paste`]; the core
+        /// Images to send with it, saved by the core on [`crate::app::AppCommand::Paste`]; the core
         /// reads the files.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         attachments: Vec<Attachment>,

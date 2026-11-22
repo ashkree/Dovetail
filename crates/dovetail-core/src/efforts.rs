@@ -4,7 +4,7 @@
 //! the database returns a changed one. Each handler writes through the DB thread first, then
 //! tells the UI with [`EffortEvent::Upserted`], which carries the whole effort.
 //!
-//! Approving a criterion is reachable only from [`dovetail_api::EffortCommand::ApproveCriterion`]:
+//! Approving a criterion is reachable only from [`dovetail_api::effort::EffortCommand::ApproveCriterion`]:
 //! no tool handler calls it, so an agent can claim (`coordination_claim_criterion`) but never
 //! tick. The user may approve a criterion nobody claimed, as a shortcut (decided 2026-11-16).
 
@@ -175,7 +175,7 @@ impl Core {
         }
     }
 
-    /// The user approves a criterion. Called for [`dovetail_api::EffortCommand::ApproveCriterion`]
+    /// The user approves a criterion. Called for [`dovetail_api::effort::EffortCommand::ApproveCriterion`]
     /// only.
     pub(crate) async fn approve_criterion(&mut self, id: CriterionId) {
         let result = self.db.step_criterion(id, CriterionStep::Approve).await;

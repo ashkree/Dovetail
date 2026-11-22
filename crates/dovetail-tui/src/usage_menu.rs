@@ -42,14 +42,14 @@ struct UsageRow {
 
 /// The open usage limits menu.
 pub struct UsageMenu {
-    /// `None` until the first [`dovetail_api::UsageEvent::Loaded`] arrives.
+    /// `None` until the first [`dovetail_api::status::StatusEvent::UsageLoaded`] arrives.
     reports: Option<Vec<DriverUsage>>,
     rows: Vec<UsageRow>,
     picker: Picker,
 }
 
 impl UsageMenu {
-    /// A menu in the loading state; the caller sends [`dovetail_api::UsageCommand::LoadUsage`].
+    /// A menu in the loading state; the caller sends [`dovetail_api::status::StatusCommand::LoadUsage`].
     pub fn new() -> Self {
         Self {
             reports: None,

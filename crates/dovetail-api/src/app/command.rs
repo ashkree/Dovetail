@@ -1,5 +1,7 @@
 //! The `app` feature's commands.
 
+#[allow(unused_imports)]
+use super::AppEvent;
 use crate::agents::agent::AgentId;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

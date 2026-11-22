@@ -60,6 +60,14 @@ if [[ -n $hits ]]; then
     exit 1
 fi
 
+# AGENTS.md "Architecture rules": dovetail-tui and dovetail-mock must not depend on dovetail-tools.
+for manifest in crates/dovetail-tui/Cargo.toml crates/dovetail-mock/Cargo.toml; do
+    if grep -q 'dovetail-tools' "$manifest"; then
+        echo "check.sh: $manifest references dovetail-tools; UI clients must depend only on dovetail-api:" >&2
+        exit 1
+    fi
+done
+
 # AGENTS.md "How to work" 6: never add a dependency without stating why. Every external crate in
 # [workspace.dependencies], and every direct non-workspace dependency of a member (dev and build
 # included), needs a row in the dependency table of docs/implementation-plan.md.

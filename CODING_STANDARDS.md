@@ -4,7 +4,7 @@ The rules a review checks code against. The hard constraints in `AGENTS.md` appl
 
 ## Architecture
 
-- **Crates mirror the architecture.** A plain-data **API/protocol** crate (snapshot, events, commands, `apply()` reducer); the **core** (sessions, storage, worktrees, server side of the MCP bridge); a **mock core** implementing the same API; the **TUI**; the `dovetail` binary (subcommands: TUI default, `mcp`, `add`). The exact split is in `docs/implementation-plan.md` §1.
+- **Crates mirror the architecture.** A plain-data **API/protocol** crate (`dovetail-api`: snapshot, events, commands, `apply()` reducer); the **tools** crate (`dovetail-tools`: MCP tool catalogue and unix-socket RPC between agents and core); the **core** (sessions, storage, worktrees, server side of the MCP bridge); a **mock core** implementing the same API; the **TUI**; the `dovetail` binary (subcommands: TUI default, `mcp`, `add`). The exact split is in `docs/implementation-plan.md` §1.
 - **Core / UI boundary is message-passing.** The core sends one `Snapshot`, then deltas; the UI owns its copy and applies them with the shared reducer; the UI sends `Command`s. Types are plain data with `serde` derives, so the core can later become a daemon over a unix socket without changing the TUI. The UI reaches the core only through this boundary.
 - **`SessionDriver` trait** hides the Claude Code crate entirely: start/resume, send, interrupt, set permission mode, answer control (permission) requests, event stream. A **fake driver** replays recorded NDJSON fixtures for tests.
 - **Protocol JSON is parsed in `dovetail-driver`.** The core receives typed driver events and never parses stream or control JSON itself.
