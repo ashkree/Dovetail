@@ -312,17 +312,7 @@ impl Core {
                     self.closed(&id);
                     return Err(e.into());
                 }
-                self.activity(
-                    ActivityKind::Lifecycle,
-                    Some(&id),
-                    format!("slice {name} started"),
-                );
-                let Some(live) = self.live.get_mut(&id) else {
-                    return Err(SessionError::NotRunning(id.0.clone()).into());
-                };
-                live.brief = Some(first_prompt);
-                live.setting_up = true;
-                let generation = live.generation;
+                let generation = self.finish_launch(&id, &name, first_prompt)?;
                 if git {
                     self.watch_setup(id, name, generation);
                 } else {
@@ -359,21 +349,33 @@ impl Core {
                         self.closed(&id);
                         return Err(e.into());
                     }
-                    self.activity(
-                        ActivityKind::Lifecycle,
-                        Some(&id),
-                        format!("slice {name} started"),
-                    );
-                    let Some(live) = self.live.get_mut(&id) else {
-                        return Err(SessionError::NotRunning(id.0.clone()).into());
-                    };
-                    live.brief = Some(first_prompt);
-                    live.setting_up = true;
+                    self.finish_launch(&id, &name, first_prompt)?;
                     self.slice_ready(&id);
                 }
             }
         }
         Ok(())
+    }
+
+    /// The steps after a slice's session launched: the activity line, the brief it gets once set
+    /// up, and the setting-up flag. Returns the session's generation.
+    fn finish_launch(
+        &mut self,
+        id: &AgentId,
+        name: &str,
+        brief: String,
+    ) -> Result<u64, SliceError> {
+        self.activity(
+            ActivityKind::Lifecycle,
+            Some(id),
+            format!("slice {name} started"),
+        );
+        let Some(live) = self.live.get_mut(id) else {
+            return Err(SessionError::NotRunning(id.0.clone()).into());
+        };
+        live.brief = Some(brief);
+        live.setting_up = true;
+        Ok(live.generation)
     }
 
     /// Finishes starting an `agy` slice once its blocking `worktree::create` completes.
@@ -401,15 +403,9 @@ impl Core {
             self.setup_failed(&agent, e.to_string());
             return;
         }
-        self.activity(
-            ActivityKind::Lifecycle,
-            Some(&agent),
-            format!("slice {name} started"),
-        );
-        if let Some(live) = self.live.get_mut(&agent) {
-            live.brief = Some(brief);
-            live.setting_up = true;
-        }
+        // The launch just succeeded, so the session is live; if it died already, `slice_ready`
+        // and the exit handling deal with it.
+        let _ = self.finish_launch(&agent, &name, brief);
         self.slice_ready(&agent);
     }
 
