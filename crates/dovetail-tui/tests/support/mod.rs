@@ -13,6 +13,7 @@ use dovetail_api::{
     },
     conversation::{ConversationEntry, ConversationTail, EntryId, EntryKind},
     inbox::{InboxId, InboxItem, InboxKind, RuleSuggestion},
+    model::DriverKind,
     project::{ProjectId, ProjectSummary},
     status::Totals,
     task::{Bucket, PLevel, Task, TaskId, TaskStatus},
@@ -51,6 +52,7 @@ pub fn agent(id: &str, kind: AgentKind, status: AgentStatus, task: Option<i64>) 
         effort: None,
         subagent_tokens: 0,
         tool: None,
+        driver: DriverKind::Claude,
     }
 }
 

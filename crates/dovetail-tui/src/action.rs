@@ -185,6 +185,9 @@ pub enum Action {
     /// Open the focused session's MCP server menu (task #44): `:mcp`, and `/mcp` in the chat
     /// bar. No key.
     ShowMcp,
+    /// Open the usage limits menu of Claude Code and agy (task #46): `:usage`, and `/usage` in
+    /// the chat bar. No key.
+    ShowUsage,
     /// Pick the focused session's model and effort (task #39): `:model`, and `/model` in the
     /// chat bar. No key, by the user's choice.
     PickModel,
@@ -318,6 +321,17 @@ pub enum Action {
     InboxDismiss,
     /// Open the item in full (a finished turn: its agent); from the item, open its agent.
     InboxOpen,
+    // --- confirm modal ---
+    /// Confirm the selected choice in a modal dialog.
+    ConfirmAccept,
+    /// Select the next choice in a modal dialog.
+    ConfirmNext,
+    /// Select the previous choice in a modal dialog.
+    ConfirmPrev,
+    /// Toggle between choices in a modal dialog.
+    ConfirmToggle,
+    /// Cancel a modal dialog.
+    ConfirmCancel,
 }
 
 /// What an action is for: the which-key popup and `:keys` group by it, in this order.
@@ -464,6 +478,7 @@ registry! {
     CyclePermissionMode: Agents, "cycle permission mode: auto, acceptEdits, manual";
     PickModel: Agents, "pick the session's model and effort";
     ShowMcp: Agents, "MCP servers of the session (⏎ first action · ^r reconnect · ^t disable/enable · ^l log in · ^o log out · ⇥ refresh)";
+    ShowUsage: Agents, "usage limits of Claude Code and agy (⇥ refresh)";
     TakeOver: Agents, "take the session over in this terminal";
     SwitchProject: Projects, "switch project";
     RegisterProject: Projects, "register this folder as a project";
@@ -525,6 +540,11 @@ registry! {
     InboxReply: Inbox, "reply";
     InboxDismiss: Inbox, "dismiss";
     InboxOpen: Inbox, "open the item in full";
+    ConfirmAccept: App, "confirm the selected choice";
+    ConfirmNext: App, "select the next choice";
+    ConfirmPrev: App, "select the previous choice";
+    ConfirmToggle: App, "toggle the selected choice";
+    ConfirmCancel: App, "cancel the confirm dialog";
 }
 
 impl Action {

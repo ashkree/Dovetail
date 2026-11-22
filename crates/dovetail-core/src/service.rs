@@ -44,12 +44,12 @@ use dovetail_api::{
     model::ModelCommand,
     project::{ProjectCommand, ProjectEvent},
     research::ResearchCommand,
-    status::StatusEvent,
+    status::{StatusCommand, StatusEvent},
     tangent::TangentCommand,
     task::{TaskCommand, TaskEvent},
     worktree::WorktreeCommand,
 };
-use dovetail_driver::{DriverEvent, SessionDriver};
+use dovetail_driver::DriverEvent;
 use dovetail_tools::SocketResponseBody;
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
 
@@ -88,8 +88,8 @@ const MAX_SEEN_MESSAGES: usize = 4096;
 /// What the core needs from the binary.
 #[derive(Clone)]
 pub struct CoreOptions {
-    /// Starts sessions: `ClaudeDriver` in the app, `FakeDriver` in tests.
-    pub driver: Arc<dyn SessionDriver>,
+    /// Available session drivers (`ClaudeDriver` and `AgyDriver` in the app, fakes in tests).
+    pub drivers: crate::Drivers,
     /// The `dovetail` binary, for the worktree hook and the MCP bridge in launch settings.
     pub exe: PathBuf,
     /// Where Claude Code keeps native to-do lists; `None` for `tasks/` in each session's Claude
@@ -290,6 +290,16 @@ pub(crate) enum Input {
         generation: u64,
         outcome: Result<PathBuf, crate::error::SetupFailure>,
     },
+    /// An `agy` slice's blocking `worktree::create` finished.
+    AgyWorktreeCreated {
+        agent: AgentId,
+        brief: String,
+        result: Result<crate::worktree::Created, WorktreeError>,
+    },
+    /// Driver usage limits loaded concurrently on the runtime (`Command::LoadUsage`).
+    UsageLoaded(Vec<dovetail_api::status::DriverUsage>),
+    /// agy's model list, read in the background at start (`agy_models`).
+    AgyModelsRefreshed(Result<Vec<dovetail_driver::ModelInfo>, dovetail_driver::ModelsError>),
     /// A slice's worktree removal finished.
     WorktreeRemoved {
         agent: AgentId,
@@ -496,8 +506,9 @@ pub(crate) struct Core {
     pub(crate) research: crate::research::Research,
     /// Tangents' database (ADR 0017, `tangents`), or why tangents are off.
     pub(crate) tangents: Result<Db, crate::tangents::TangentError>,
-    /// The models sessions last listed (`list_models`), for the selector's effort levels.
-    pub(crate) model_catalog: Vec<dovetail_driver::ModelInfo>,
+    /// The models sessions last listed (`list_models` / ACP config options), per driver.
+    pub(crate) model_catalog:
+        BTreeMap<dovetail_api::model::DriverKind, Vec<dovetail_driver::ModelInfo>>,
     /// Every effort of the open project with its criteria (`efforts`).
     pub(crate) efforts: BTreeMap<dovetail_api::effort::EffortId, dovetail_api::effort::Effort>,
     /// Each slice's preview process and state (ADR 0026, `preview`).
@@ -619,7 +630,7 @@ impl Core {
             switch_to: Default::default(),
             research: Default::default(),
             tangents: Err(crate::tangents::TangentError::Off("not opened".into())),
-            model_catalog: Vec::new(),
+            model_catalog: BTreeMap::new(),
             efforts: BTreeMap::new(),
             previews: Default::default(),
             effort_tags: HashMap::new(),
@@ -640,7 +651,9 @@ impl Core {
             }
         };
         self.startup_warnings();
+        self.load_agy_models().await;
         self.send_snapshot(true).await;
+        self.refresh_agy_models();
         self.sweep_attachments();
         self.rebuild_research_files().await;
         // After the first snapshot, so a slow user systemd never holds up the UI; before
@@ -738,12 +751,22 @@ impl Core {
                     event,
                 } => self.on_driver(agent, generation, event).await,
                 // During quit nothing new starts, and no signal wakes the coordinator.
-                Input::SetupFinished { .. } if self.quitting.is_some() => {}
+                Input::SetupFinished { .. } | Input::AgyWorktreeCreated { .. }
+                    if self.quitting.is_some() => {}
                 Input::SetupFinished {
                     agent,
                     generation,
                     outcome,
                 } => self.on_setup(agent, generation, outcome).await,
+                Input::AgyWorktreeCreated {
+                    agent,
+                    brief,
+                    result,
+                } => self.on_agy_worktree_created(agent, brief, result),
+                Input::UsageLoaded(reports) => {
+                    self.emit(Event::Status(StatusEvent::UsageLoaded(reports)))
+                }
+                Input::AgyModelsRefreshed(result) => self.on_agy_models_refreshed(result),
                 Input::WorktreeRemoved { agent, result } => {
                     self.on_worktree_removed(agent, result).await;
                 }
@@ -1487,6 +1510,14 @@ impl Core {
                 model,
                 effort,
             }) => self.switch_model(&agent, model, effort),
+            Command::Model(ModelCommand::SwitchDriver {
+                agent,
+                driver,
+                model,
+                effort,
+                handoff,
+            }) => self.switch_driver(&agent, driver, model, effort, handoff),
+            Command::Status(StatusCommand::LoadUsage) => self.load_usage(),
             Command::Agent(AgentCommand::NewSideChat { question }) => {
                 self.start_side_chat(question)
             }
@@ -1523,6 +1554,7 @@ impl Core {
                     by_coordinator: false,
                     repo,
                     model_choice: None,
+                    driver: dovetail_api::model::DriverKind::Claude,
                 };
                 if let Err(message) = self.request_slice(request).await {
                     self.fail(message);
@@ -1918,6 +1950,7 @@ pub(crate) fn new_agent(id: AgentId, name: String, kind: AgentKind, task: Option
         effort: None,
         subagent_tokens: 0,
         tool: None,
+        driver: dovetail_api::model::DriverKind::Claude,
     }
 }
 

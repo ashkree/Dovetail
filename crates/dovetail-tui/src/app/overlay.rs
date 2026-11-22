@@ -12,21 +12,24 @@ use dovetail_api::{
     model::ModelCommand,
     project::{ProjectCommand, ProjectId},
     research::ResearchCommand,
+    status::{DriverUsage, StatusCommand},
     tangent::TangentCommand,
     task::{TaskChange, TaskCommand, TaskId},
 };
 
 use super::App;
 use super::ChatSite;
+use super::confirm::{ConfirmOutcome, SwitchConfirm};
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
 use crate::help;
-use crate::keymap::Scope;
+use crate::keymap::{Key, Scope};
 use crate::mcp_menu::{McpMenu, Step};
 use crate::mode::Mode;
-use crate::model_select::{ModelSelector, SelectorOutcome};
+use crate::model_select::{ModelOutcome, ModelPicker};
 use crate::picker::{Picker, PickerKey, PickerOutcome};
 use crate::region::RegionId;
 use crate::switcher;
+use crate::usage_menu::{UsageMenu, UsageStep};
 
 /// What choosing a picker row does.
 pub(super) enum Purpose {
@@ -78,8 +81,12 @@ pub(super) enum Overlay {
     Capture(Capture),
     /// The MCP server menu of a session (task #44).
     Mcp(McpMenu),
-    /// The model selector, and the mode to go back to (Insert when opened from the chat bar).
-    Model(ModelSelector, Mode),
+    /// Account usage limits of Claude Code and agy (task #46).
+    Usage(UsageMenu),
+    /// The model picker (tasks #39, #46).
+    Model(ModelPicker),
+    /// Confirm modal before switching the coordinator's driver (task #46).
+    Confirm(SwitchConfirm),
 }
 
 impl App {
@@ -168,18 +175,8 @@ impl App {
             self.note = Some("no models to offer yet".into());
             return;
         }
-        let selector = ModelSelector::new(
-            session.clone(),
-            agent.name.clone(),
-            self.snap.models.clone(),
-            agent.model.as_deref(),
-            agent.effort,
-            preselect,
-        );
-        let back = self.mode;
-        self.open_overlay(Overlay::Model(selector, back));
-        // It takes keys, not text: the status bar keeps the mode it came from.
-        self.mode = back;
+        let picker = ModelPicker::new(agent, self.snap.models.clone(), preselect, &self.theme);
+        self.open_overlay(Overlay::Model(picker));
     }
 
     /// `:mcp`, `/mcp`: the MCP servers of `agent`'s session (`None`: the focused one), asked for
@@ -242,6 +239,19 @@ impl App {
                     self.restore_chat(from);
                 }
             }
+        }
+    }
+
+    /// `:usage`, `/usage`: account usage limits of Claude Code and agy (task #46).
+    pub(super) fn open_usage_menu(&mut self) {
+        self.outbox.push(Command::Status(StatusCommand::LoadUsage));
+        self.open_overlay(Overlay::Usage(UsageMenu::new()));
+    }
+
+    /// Fills the open usage menu with the core's reports.
+    pub(super) fn usage_loaded(&mut self, reports: Vec<DriverUsage>) {
+        if let Some(Overlay::Usage(menu)) = &mut self.overlay {
+            menu.set_reports(reports, &self.theme);
         }
     }
 
@@ -393,19 +403,30 @@ impl App {
                 self.overlay = Some(Overlay::Mcp(menu));
                 self.mcp_steps(steps);
             }
-            Overlay::Model(mut selector, back) => match selector.key(event) {
-                SelectorOutcome::Pending => self.overlay = Some(Overlay::Model(selector, back)),
-                SelectorOutcome::Cancel => {
-                    let _ = self.close_overlay();
-                    self.mode = back;
+            Overlay::Usage(mut menu) => match menu.key(event) {
+                UsageStep::Pending => self.overlay = Some(Overlay::Usage(menu)),
+                UsageStep::Refresh => {
+                    self.outbox.push(Command::Status(StatusCommand::LoadUsage));
+                    self.overlay = Some(Overlay::Usage(menu));
                 }
-                SelectorOutcome::Apply {
+                UsageStep::Close => {
+                    let from = self.close_overlay();
+                    self.restore_chat(from);
+                }
+            },
+            Overlay::Model(mut picker) => match picker.key(event) {
+                ModelOutcome::Pending => self.overlay = Some(Overlay::Model(picker)),
+                ModelOutcome::Cancel => {
+                    let from = self.close_overlay();
+                    self.restore_chat(from);
+                }
+                ModelOutcome::SetModel {
                     agent,
                     model,
                     effort,
                 } => {
-                    let _ = self.close_overlay();
-                    self.mode = back;
+                    let from = self.close_overlay();
+                    self.restore_chat(from);
                     let level =
                         effort.map_or(String::new(), |e| format!(" at {} effort", e.as_str()));
                     self.note = Some(format!("switching to {model}{level}…"));
@@ -415,7 +436,39 @@ impl App {
                         effort,
                     }));
                 }
+                ModelOutcome::SwitchDriver {
+                    agent,
+                    driver,
+                    model,
+                    effort,
+                } => {
+                    self.mode = Mode::Normal;
+                    self.overlay = Some(Overlay::Confirm(SwitchConfirm::new(
+                        agent, driver, model, effort,
+                    )));
+                }
             },
+            Overlay::Confirm(mut confirm) => {
+                let action =
+                    self.keymap
+                        .chord(Mode::Normal, Scope::Confirm, Key::from_event(event));
+                match action.map_or(ConfirmOutcome::Pending, |a| confirm.on_action(a)) {
+                    ConfirmOutcome::Pending => self.overlay = Some(Overlay::Confirm(confirm)),
+                    ConfirmOutcome::Cancel => {
+                        let from = self.close_overlay();
+                        self.restore_chat(from);
+                    }
+                    ConfirmOutcome::Confirmed(cmd) => {
+                        let from = self.close_overlay();
+                        self.restore_chat(from);
+                        self.note = Some(format!(
+                            "switching coordinator to {}…",
+                            confirm.driver().label()
+                        ));
+                        self.outbox.push(cmd);
+                    }
+                }
+            }
             Overlay::Capture(mut capture) => match capture.key(event) {
                 CaptureOutcome::Pending => self.overlay = Some(Overlay::Capture(capture)),
                 CaptureOutcome::Cancel => {
@@ -480,8 +533,11 @@ impl App {
     /// Opens what a picker row stands for.
     fn choose(&mut self, key: PickerKey) {
         match key {
-            // Only the profile picker has these rows, and it is handled above.
-            PickerKey::Profile(_) | PickerKey::McpServer(_) => {}
+            // Handled directly by the picker's own overlay.
+            PickerKey::Profile(_)
+            | PickerKey::McpServer(_)
+            | PickerKey::Model { .. }
+            | PickerKey::UsageGroup(_) => {}
             // `:keys`: run what can run from here, otherwise the picker just closed.
             PickerKey::Action(action) => {
                 if help::runnable(&self.keymap, &self.scopes(), action) {

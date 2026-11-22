@@ -9,6 +9,7 @@ use crate::action::Action;
 pub const DOVETAIL_SLASH: &[(&str, &str, &str)] = &[
     ("model", "Pick model and effort", "[name]"),
     ("mcp", "MCP servers: status, tools, reconnect, log in", ""),
+    ("usage", "Usage limits of Claude Code and agy", ""),
     ("handoff", "Fresh coordinator seeded with a handoff", ""),
     ("fresh", "Fresh coordinator, no handoff", ""),
 ];
@@ -25,6 +26,8 @@ pub enum Intercept<'a> {
     Model(&'a str),
     /// An exact `/mcp`: open the MCP server menu.
     Mcp,
+    /// An exact `/usage`: open the usage limits menu.
+    Usage,
     /// An exact `/handoff` or `/fresh`: run the action.
     Run(Action),
     /// `/handoff …` or `/fresh …`: refused, the text stays in the bar. Holds the command name.
@@ -42,6 +45,8 @@ pub fn intercept(text: &str) -> Option<Intercept<'_>> {
         "/model" => Some(Intercept::Model(rest)),
         "/mcp" if rest.is_empty() => Some(Intercept::Mcp),
         "/mcp" => Some(Intercept::Refused("/mcp")),
+        "/usage" if rest.is_empty() => Some(Intercept::Usage),
+        "/usage" => Some(Intercept::Refused("/usage")),
         "/handoff" if rest.is_empty() => Some(Intercept::Run(Action::Handoff)),
         "/fresh" if rest.is_empty() => Some(Intercept::Run(Action::FreshSession)),
         "/handoff" => Some(Intercept::Refused("/handoff")),
@@ -91,6 +96,13 @@ mod tests {
         assert_eq!(intercept("/handoffs"), None);
         assert_eq!(intercept("/freshen"), None);
         assert_eq!(intercept("/models"), None);
+        assert_eq!(intercept("/usages"), None);
+    }
+
+    #[test]
+    fn usage_opens_only_without_arguments() {
+        assert_eq!(intercept("/usage"), Some(Intercept::Usage));
+        assert_eq!(intercept("/usage foo"), Some(Intercept::Refused("/usage")));
     }
 
     #[test]

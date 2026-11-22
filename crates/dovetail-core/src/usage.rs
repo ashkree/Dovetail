@@ -1,21 +1,26 @@
-//! Usage limits and the model in use (task #16).
+//! Usage limits and the model in use (task #16, task #46).
 //!
-//! Every turn's `rate_limit_event` carries a 5-hour and a weekly window, parsed by the driver.
-//! Limits are per account, so the core keeps the latest per Claude home (profile, ADR 0009) and
-//! shows the project's. Here the driver's
-//! windows become the API's: reset times in milliseconds, the status word as [`UsageStatus`].
-//! The model comes from `system/init` and main-thread assistant messages.
+//! Every Claude turn's `rate_limit_event` carries a 5-hour and a weekly window, parsed by the
+//! driver. Limits are per account, so the core keeps the latest per Claude home (profile,
+//! ADR 0009) and shows the project's. Here the driver's windows become the API's: reset times in
+//! milliseconds, the status word as [`UsageStatus`]. The model comes from `system/init` and
+//! main-thread assistant messages.
+//!
+//! For the `:usage` menu, [`Core::load_usage`] (`Command::LoadUsage`) probes every registered
+//! driver in [`crate::Drivers`] concurrently via `SessionDriver::usage` and emits
+//! [`Event::UsageLoaded`] in [`DriverKind::ALL`] order.
 
 use std::path::PathBuf;
 
 use dovetail_api::{
     Event,
     agent::AgentId,
-    status::{StatusEvent, UsageLimits, UsageStatus, UsageWindow},
+    model::DriverKind,
+    status::{DriverUsage, StatusEvent, UsageLimits, UsageStatus, UsageWindow},
 };
-use dovetail_driver::{RateLimitInfo, RateLimitWindow};
+use dovetail_driver::{RateLimitInfo, RateLimitWindow, UsageQuery};
 
-use crate::service::Core;
+use crate::service::{Core, Input};
 
 /// The API's view of a `rate_limit_event`. `None` when it carries neither window.
 pub(crate) fn from_rate_limit(info: &RateLimitInfo) -> Option<UsageLimits> {
@@ -89,6 +94,63 @@ impl Core {
             .get(id)
             .and_then(|r| r.claude_home.clone())
             .unwrap_or_else(crate::profile::default_dir)
+    }
+
+    /// The folder a short-lived driver query (usage, model list) runs in.
+    pub(crate) fn query_cwd(&self) -> std::path::PathBuf {
+        self.project
+            .first_repo_path()
+            .unwrap_or_else(|| self.project.coordinator_folder(&self.paths))
+    }
+
+    /// Reads each registered driver's usage limits concurrently on the runtime and sends the
+    /// reports back in [`DriverKind::ALL`] order (task #46).
+    pub(crate) fn load_usage(&self) {
+        let cwd = self.query_cwd();
+        let claude_env = match &self.claude {
+            Ok(home) if home.explicit => vec![(
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                home.dir.to_string_lossy().into_owned(),
+            )],
+            _ => Vec::new(),
+        };
+        let queries: Vec<_> = DriverKind::ALL
+            .into_iter()
+            .filter_map(|kind| {
+                let driver = self.options.drivers.get(kind)?.clone();
+                let env = if kind == DriverKind::Claude {
+                    claude_env.clone()
+                } else {
+                    Vec::new()
+                };
+                Some((
+                    kind,
+                    driver,
+                    UsageQuery {
+                        cwd: cwd.clone(),
+                        env,
+                    },
+                ))
+            })
+            .collect();
+        let inputs = self.inputs.clone();
+        tokio::spawn(async move {
+            let handles: Vec<_> = queries
+                .into_iter()
+                .map(|(kind, driver, query)| {
+                    (kind, tokio::spawn(async move { driver.usage(query).await }))
+                })
+                .collect();
+            let mut reports = Vec::with_capacity(handles.len());
+            for (kind, handle) in handles {
+                let report = match handle.await {
+                    Ok(report) => report,
+                    Err(e) => DriverUsage::failed(kind, e.to_string()),
+                };
+                reports.push(report);
+            }
+            let _ = inputs.send(Input::UsageLoaded(reports));
+        });
     }
 
     /// The session reported its model. Claude Code's own placeholder messages (`<synthetic>`)

@@ -1,6 +1,6 @@
 //! The `status` feature's events.
 
-use super::{Totals, UsageLimits, Warning, WarningId};
+use super::{DriverUsage, Totals, UsageLimits, Warning, WarningId};
 use serde::{Deserialize, Serialize};
 
 /// A change to the client's snapshot, or an answer, in the feature `status`.
@@ -15,4 +15,7 @@ pub enum StatusEvent {
     WarningCleared(WarningId),
     /// A session reported new usage-limit figures.
     UsageChanged(UsageLimits),
+    /// Every driver's usage limits, in [`crate::model::DriverKind::ALL`] order, for the usage
+    /// menu ([`super::StatusCommand::LoadUsage`], task #46). Changes nothing in the snapshot.
+    UsageLoaded(Vec<DriverUsage>),
 }

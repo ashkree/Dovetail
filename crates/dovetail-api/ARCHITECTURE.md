@@ -49,7 +49,7 @@ Not every feature needs all four:
 - **Pass-through** features (`library`, `mcp`) carry events the UI reacts to directly without storing anything in [`Snapshot`], so they have no `apply.rs`.
 - Extra files are fine: `agents/conversation/attachment.rs` holds the attachment types; `visual/canvas` exposes `pub mod geometry`.
 
-The `app` feature is the one place several things share a feature: its `AppCommand` and `AppEvent` carry the terminal hand-over (`OpenEditor`, `TakeOver`, `TerminalLend`, …), the clipboard (`Paste`, `Pasted`, …) and `:upgrade` (`StartUpgrade`, `UpgradeBuilding`, …), named by prefix. `status` likewise carries `UsageChanged` for the usage limits.
+The `app` feature is the one place several things share a feature: its `AppCommand` and `AppEvent` carry the terminal hand-over (`OpenEditor`, `TakeOver`, `TerminalLend`, …), the clipboard (`Paste`, `Pasted`, …) and `:upgrade` (`StartUpgrade`, `UpgradeBuilding`, …), named by prefix. `status` likewise carries the usage limits: `UsageChanged` (live figure), `StatusCommand::LoadUsage` and `UsageLoaded` (the per-driver usage menu, with `DriverUsage`, `UsageGroup`, `LimitWindow`). `LimitWindow` is not folded into `UsageWindow`: it is a named window from an on-demand report with no status word, while `UsageWindow` is the live figure from a session event.
 
 ```text
 src/

@@ -55,6 +55,11 @@ pub fn effort_shorthand(effort: ReasoningEffort) -> &'static str {
     }
 }
 
+/// A usage fraction (`0.0..=1.0`, possibly above `1.0`) rounded to whole percent.
+pub fn pct(used_fraction: f64) -> u32 {
+    (used_fraction * 100.0).round().max(0.0) as u32
+}
+
 /// A reset time in `tz`: `14:20` within 24 hours of `now_ms`, otherwise the weekday (`Thu`).
 pub fn reset_label(resets_at_ms: i64, now_ms: i64, tz: &TimeZone) -> String {
     let Ok(ts) = Timestamp::from_millisecond(resets_at_ms) else {
@@ -104,7 +109,7 @@ fn part(label: &str, window: Option<&UsageWindow>, now_ms: i64, tz: &TimeZone) -
         return dash();
     }
     // Rounded, and never negative: the colour thresholds work on whole percent.
-    let pct = (w.utilization * 100.0).round().max(0.0) as u32;
+    let pct = pct(w.utilization);
     Part {
         figure: format!("{label} {pct}%"),
         resets: w

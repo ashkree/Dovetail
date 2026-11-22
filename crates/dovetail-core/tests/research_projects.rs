@@ -23,7 +23,7 @@ use dovetail_core::config::Config;
 use dovetail_core::db::Db;
 use dovetail_core::paths::Paths;
 use dovetail_core::projects::{self, Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions};
+use dovetail_core::{CoreHandle, CoreOptions, Drivers};
 use dovetail_driver::FakeDriver;
 use dovetail_tools::{
     SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool,
@@ -75,7 +75,7 @@ struct App {
 impl App {
     fn start(driver: &FakeDriver, paths: &Paths, project: Project) -> App {
         let options = CoreOptions {
-            driver: Arc::new(driver.clone()),
+            drivers: Drivers::single(Arc::new(driver.clone())),
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,
@@ -318,6 +318,7 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
                 repo: None,
                 model: None,
                 effort: None,
+                driver: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),

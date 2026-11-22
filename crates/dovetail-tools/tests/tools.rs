@@ -242,3 +242,32 @@ fn start_slice_takes_an_optional_model_and_an_optional_effort() {
     let alone = Tool::parse("project_start_slice", alone).expect("parses");
     assert_eq!(alone.validate(Role::Coordinator), Ok(()));
 }
+
+#[test]
+fn start_slice_takes_an_optional_driver() {
+    use dovetail_api::model::DriverKind;
+
+    let base = json!({"task": 3, "name": "x", "brief": "go"});
+    let without = Tool::parse("project_start_slice", base.clone()).expect("parses");
+    assert!(matches!(
+        &without,
+        Tool::Project(ProjectTool::StartSlice(StartSlice { driver: None, .. }))
+    ));
+    let wire = serde_json::to_value(&without).unwrap();
+    assert!(wire["project"]["start_slice"].get("driver").is_none());
+    roundtrip(&without);
+
+    let mut with_agy = base;
+    with_agy["driver"] = json!("agy");
+    with_agy["model"] = json!("gemini-3.8-flash");
+    let with = Tool::parse("project_start_slice", with_agy).expect("parses");
+    assert!(matches!(
+        &with,
+        Tool::Project(ProjectTool::StartSlice(StartSlice {
+            driver: Some(DriverKind::Agy),
+            ..
+        }))
+    ));
+    assert_eq!(with.validate(Role::Coordinator), Ok(()));
+    roundtrip(&with);
+}

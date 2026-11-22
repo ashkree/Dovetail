@@ -1,6 +1,6 @@
 //! Tools of the `project` suite: slice lifecycle and project registration.
 
-use dovetail_api::model::ReasoningEffort;
+use dovetail_api::model::{DriverKind, ReasoningEffort};
 use dovetail_api::task::TaskId;
 use serde::{Deserialize, Serialize};
 
@@ -72,6 +72,10 @@ pub struct StartSlice {
     /// The effort it starts at. Left out, Claude Code's default applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<ReasoningEffort>,
+    /// The driver the slice runs on (`claude` by default). When set to `agy`, `model` names
+    /// an agy family (`claude-opus-5-5`, `gemini-3.8-flash`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver: Option<DriverKind>,
 }
 
 /// `project_archive_slice`: archive a slice by name (task #9). Clean, pushed work goes at once; unsaved

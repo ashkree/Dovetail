@@ -186,7 +186,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `toml` | core | default | Recipe and `config.toml` |
 | `thiserror`, `anyhow` | libraries, binary | none | Required by conventions |
 | `tracing`, `tracing-subscriber`, `tracing-appender` | core, tui, binary | `fmt`, `env-filter` | File logging only. The TUI uses only the `tracing` macros; the binary sets up the file writer (M2) |
-| `jiff` | core, tui, binary | default | Local-time display with no unsafe of ours; the binary passes the system time zone to the UI; the core names journal files by local date (ADR 0012) |
+| `jiff` | core, driver, tui, binary | default | Local-time display with no unsafe of ours; the driver reads the usage reports' RFC 3339 reset times; the binary passes the system time zone to the UI; the core names journal files by local date (ADR 0012) |
 | `unicode-width` | tui | default | Pad, clip and wrap rows by terminal cell width (already a `ratatui` dependency) |
 | `uuid` | core | `v4` | Choose session ids |
 | `notify` (latest stable, not the 9 rc) | core | `default-features = false` | Watch native task files (M11). Its only default feature is `macos_fsevent` (FSEvents bindings through `objc2`); Linux uses inotify without it |

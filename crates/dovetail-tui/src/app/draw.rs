@@ -127,9 +127,7 @@ impl App {
         let screen = frame.area();
         match &self.overlay {
             Some(Overlay::Picker(picker, purpose)) => {
-                // The preview pane is the right 55 % of a box at most 130 wide, less its border.
-                let width = (usize::from(screen.width.saturating_sub(4).min(130)) * 55 / 100)
-                    .saturating_sub(4);
+                let width = picker_preview_width(screen);
                 let (title, lines) = match (picker.selected(), purpose) {
                     (Some(item), Purpose::Browse) => {
                         switcher::browse_preview(&self.snap, &item.key, width, &self.theme)
@@ -157,20 +155,24 @@ impl App {
             }
             Some(Overlay::Capture(capture)) => self.draw_capture(frame, screen, capture),
             Some(Overlay::Mcp(menu)) => {
-                let width = (usize::from(screen.width.saturating_sub(4).min(130)) * 55 / 100)
-                    .saturating_sub(4);
+                let width = picker_preview_width(screen);
                 let lines = menu.preview(width, &self.theme);
                 menu.picker()
                     .render(frame, screen, &self.theme, "Server", &lines);
             }
-            // Above the status bar, at the bottom left: where the chat bar is.
-            Some(Overlay::Model(selector, _)) => {
-                let above = Rect {
-                    height: screen.height.saturating_sub(1),
-                    ..screen
-                };
-                selector.render(frame, above, &self.theme);
+            Some(Overlay::Usage(menu)) => {
+                let width = picker_preview_width(screen);
+                let lines = menu.preview(width, self.now_ms, &self.tz, &self.theme);
+                menu.picker()
+                    .render(frame, screen, &self.theme, "Limits", &lines);
             }
+            Some(Overlay::Model(menu)) => {
+                let width = picker_preview_width(screen);
+                let lines = menu.preview(width, &self.theme);
+                menu.picker()
+                    .render(frame, screen, &self.theme, "Model", &lines);
+            }
+            Some(Overlay::Confirm(confirm)) => confirm.render(frame, screen, &self.theme),
             None => {}
         }
     }
@@ -474,6 +476,11 @@ impl App {
             .find(|a| &a.id == id)
             .map_or_else(|| id.0.clone(), |a| a.name.clone())
     }
+}
+
+/// The preview pane is the right 55 % of a picker box at most 130 wide, less its border.
+fn picker_preview_width(screen: Rect) -> usize {
+    (usize::from(screen.width.saturating_sub(4).min(130)) * 55 / 100).saturating_sub(4)
 }
 
 /// Keys of an unfinished sequence, for the status bar.

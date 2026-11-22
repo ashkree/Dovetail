@@ -1,29 +1,26 @@
 //! Launch settings: everything a session gets is passed as flags and files outside the repo
-//! (plan §4). Generated `settings.json` and `mcp.json` go in `Paths::run_dir`.
+//! (plan §4). Generated driver files go in `Paths::run_dir`.
 //!
-//! - `--settings`: the `WorktreeCreate` hook (15-minute timeout, B5), a no-op `WorktreeRemove`
-//!   hook (A9), `crossSessionInbound: accept`, and an ask rule for `gh pr merge` (B7).
-//! - `--mcp-config`: `dovetail mcp` with the agent id, socket, role and suites in its environment
-//!   (B18, ADR 0016). Never `--strict-mcp-config`, so the user's own MCP servers still load (B28).
-//! - `--append-system-prompt-file`: the installed role prompt (Decision 8c).
-//! - `--allowedTools`: Dovetail's tools in the session's suites and, for one release, their old
-//!   names (ADR 0016), plus `SendMessage` and `ListAgents` (S2).
-//! - A side chat (ADR 0011, read-only per the 2026-11-11 decision), and reading mode's Ask
-//!   (ADR 0018), which has no suites: `--permission-mode dontAsk`,
-//!   web tools and the read-only Bash commands of [`SIDE_CHAT_BASH`] allowed, and
-//!   `--disallowedTools` for the editing tools and the options of [`SIDE_CHAT_BASH_DENY`].
-//! - Environment: native to-do tools on, the to-do list id (A12), the hook's project id, and
-//!   `CLAUDE_CONFIG_DIR` when the project picks a Claude profile (ADR 0009).
+//! - Claude Code (`claude`): `--settings` (`WorktreeCreate`/`WorktreeRemove` hooks,
+//!   `crossSessionInbound: accept`, `gh pr merge` ask rule), `--mcp-config`, `--allowedTools`,
+//!   `--append-system-prompt-file`, side-chat `--permission-mode dontAsk` + `--disallowedTools`,
+//!   and `CLAUDE_*` / `CLAUDE_CONFIG_DIR` environment.
+//! - agy (`agy`): `--cli_dir_name` holding `settings.json` (`{"toolPermission":"request-review"}`),
+//!   inline `mcpServers` in `session/new`, `mcp_dovetail_*` pre-allowed in the driver,
+//!   `_meta.antigravity.systemPrompt.append`, and `DontAsk` for side chats.
 //!
 //! Never bare mode: it disables the messaging socket.
 
+mod agy;
+mod claude;
+
 use std::path::{Path, PathBuf};
 
+use dovetail_api::model::DriverKind;
 use dovetail_driver::{PermissionMode as CliMode, SessionSpec};
 use dovetail_tools::{Role, Suite, env, tools_in};
-use serde_json::json;
 
-use crate::paths::Paths;
+use crate::paths::{Paths, home_dir};
 
 /// Records each session's stream in the fixture format next to its launch files, for capturing
 /// new fixtures in live checks. Off unless set to `1`.
@@ -102,15 +99,15 @@ pub struct Launch {
     pub prompt: Option<&'static str>,
     /// The tool suites it gets (`config.toml` `[suites]`, ADR 0016).
     pub suites: Vec<Suite>,
-    /// The Claude Code session id.
+    /// The session id (Dovetail's `--session-id` for Claude Code, or agy's conversation id on resume).
     pub session_id: String,
     /// Resume the session instead of creating it.
     pub resume: bool,
     /// Working directory.
     pub cwd: PathBuf,
-    /// `--worktree <name>`, for a new slice in a git project.
+    /// `--worktree <name>`, for a new slice in a git project (Claude Code only).
     pub worktree: Option<String>,
-    /// `--add-dir` each: the repos of a session in the coordinator's folder (ADR 0021).
+    /// `--add-dir` / `additionalDirectories`: the repos of a session in the coordinator's folder (ADR 0021).
     pub add_dirs: Vec<PathBuf>,
     /// Starting permission mode.
     pub mode: CliMode,
@@ -120,9 +117,9 @@ pub struct Launch {
     pub socket: PathBuf,
     /// The `dovetail` binary, for the hook and the bridge.
     pub exe: PathBuf,
-    /// `--model`.
+    /// `--model` / model family.
     pub model: Option<String>,
-    /// `--effort`.
+    /// `--effort` / thought level.
     pub effort: Option<dovetail_api::model::ReasoningEffort>,
     /// Extra environment (a slice's recipe `[env]`).
     pub env: Vec<(String, String)>,
@@ -130,119 +127,73 @@ pub struct Launch {
     pub claude_config_dir: Option<PathBuf>,
 }
 
-/// Writes the launch files and returns the spec. The role prompt is passed only if installed.
-pub fn spec(paths: &Paths, launch: &Launch) -> std::io::Result<SessionSpec> {
+/// Writes the launch files for `driver` and returns the spec. The role prompt is passed only if
+/// installed.
+pub fn spec(paths: &Paths, launch: &Launch, driver: DriverKind) -> std::io::Result<SessionSpec> {
     let dir = paths.run_dir(&launch.project_key, &launch.agent_id);
     std::fs::create_dir_all(&dir)?;
-    // The hook and the bridge are this app's binary pinned to this app's state: a slice's
-    // session may carry `DOVETAIL_*_DIR` for its own dev builds (recipe `[env]`), and they
-    // must not follow it.
-    let pinned = paths.pinned_env();
-    let pin: String = pinned
-        .iter()
-        .map(|(k, v)| format!("{k}={} ", shell_quote(&v.to_string_lossy())))
-        .collect();
-    let exe = shell_quote(&launch.exe.to_string_lossy());
-
-    let settings_path = dir.join("settings.json");
-    let settings = json!({
-        "crossSessionInbound": "accept",
-        "permissions": { "ask": ["Bash(gh pr merge:*)"] },
-        "hooks": {
-            "WorktreeCreate": [{ "hooks": [{
-                "type": "command",
-                "command": format!("env {pin}{exe} hook worktree-create"),
-                "timeout": 900
-            }]}],
-            "WorktreeRemove": [{ "hooks": [{
-                "type": "command",
-                "command": format!("env {pin}{exe} hook worktree-remove"),
-                "timeout": 30
-            }]}]
-        }
-    });
-    write_json(&settings_path, &settings)?;
-
-    let mcp_path = dir.join("mcp.json");
-    let mut bridge_env = json!({
-        env::AGENT_ID: launch.agent_id,
-        env::SOCKET: launch.socket,
-        env::ROLE: launch.role.as_str(),
-        env::SUITES: Suite::join(&launch.suites),
-    });
-    for (k, v) in &pinned {
-        bridge_env[*k] = json!(v);
-    }
-    let mcp = json!({ "mcpServers": { "dovetail": {
-        "command": launch.exe,
-        "args": ["mcp"],
-        "env": bridge_env,
-    }}});
-    write_json(&mcp_path, &mcp)?;
 
     let role_prompt = paths.role_prompt(launch.prompt.unwrap_or(launch.role.as_str()));
-
     let mut spec = SessionSpec::new(launch.session_id.clone(), launch.cwd.clone());
     spec.resume = launch.resume;
     spec.name = Some(launch.name.clone());
     spec.model = launch.model.clone();
     spec.effort = launch.effort;
-    spec.permission_mode = launch.mode;
-    spec.claude.settings_path = Some(settings_path);
-    spec.claude.mcp_config_path = Some(mcp_path);
+    // A side chat reads and searches; it never edits. In `dontAsk` mode anything not allowed is
+    // denied without asking (decided 2026-11-11).
+    spec.permission_mode = if matches!(launch.role, Role::SideChat | Role::Ask) {
+        CliMode::DontAsk
+    } else {
+        launch.mode
+    };
     spec.append_system_prompt_file = role_prompt.exists().then_some(role_prompt);
-    spec.claude.allowed_tools = allowed_tools(&launch.suites);
-    // A side chat reads and searches; it never edits, and runs only read-only commands. In
-    // `dontAsk` mode anything not allowed here is denied, never asked (decided 2026-11-11).
-    if matches!(launch.role, Role::SideChat | Role::Ask) {
-        spec.permission_mode = CliMode::DontAsk;
-        spec.claude.allowed_tools.extend(side_chat_allowed());
-        spec.claude.extra_args.extend([
-            "--disallowedTools".to_string(),
-            side_chat_disallowed().join(","),
-        ]);
-    }
-    spec.claude.worktree = launch.worktree.clone();
     spec.add_dirs = launch.add_dirs.clone();
-    spec.env = vec![
-        ("CLAUDE_CODE_ENABLE_TODO_TOOLS".into(), "1".into()),
-        (
-            "CLAUDE_CODE_TASK_LIST_ID".into(),
-            launch.task_list_id.clone(),
-        ),
-        (env::AGENT_ID.into(), launch.agent_id.clone()),
-    ];
-    // The worktree hook names worktrees and finds the recipe by it (`new-<pid>` before
-    // registration: no recipe then).
-    spec.env
-        .push((env::PROJECT.into(), launch.project_key.clone()));
-    spec.env.extend(launch.env.iter().cloned());
-    // After the recipe's `[env]`, so the profile always wins.
-    if let Some(dir) = &launch.claude_config_dir {
-        spec.env.retain(|(k, _)| k != "CLAUDE_CONFIG_DIR");
-        spec.env.push((
-            "CLAUDE_CONFIG_DIR".into(),
-            dir.to_string_lossy().into_owned(),
-        ));
-    }
     if std::env::var(RECORD_ENV).is_ok_and(|v| v == "1") {
         spec.log_path = Some(dir.join(format!("stream-{}.ndjson", crate::db::now_ms())));
     }
+
+    match driver {
+        DriverKind::Claude => claude::configure(paths, launch, &dir, &mut spec)?,
+        DriverKind::Agy => agy::configure(paths, launch, &dir, &mut spec)?,
+    }
     Ok(spec)
+}
+
+/// Raw Dovetail MCP tool names in `suites`: new names first, then old aliases for one release
+/// (ADR 0016).
+pub(super) fn dovetail_tool_names(suites: &[Suite]) -> impl Iterator<Item = &'static str> {
+    let specs = || tools_in(suites);
+    specs()
+        .map(|t| t.name)
+        .chain(specs().filter_map(|t| t.old_name))
 }
 
 /// Dovetail's tools in `suites` as Claude Code names them, plus native messaging. Old names are
 /// allowed too for one release, so a resumed conversation that calls one still works (ADR 0016).
 pub fn allowed_tools(suites: &[Suite]) -> Vec<String> {
-    let specs = || tools_in(suites);
-    let mut tools: Vec<String> = specs()
-        .map(|t| t.name)
-        .chain(specs().filter_map(|t| t.old_name))
+    let mut tools: Vec<String> = dovetail_tool_names(suites)
         .map(|name| format!("mcp__dovetail__{name}"))
         .collect();
     tools.push("SendMessage".into());
     tools.push("ListAgents".into());
     tools
+}
+
+/// Environment pairs passed to the `dovetail mcp` bridge process under any driver.
+pub(super) fn bridge_env(paths: &Paths, launch: &Launch) -> Vec<(String, String)> {
+    let mut pairs = vec![
+        (env::AGENT_ID.into(), launch.agent_id.clone()),
+        (
+            env::SOCKET.into(),
+            launch.socket.to_string_lossy().into_owned(),
+        ),
+        (env::ROLE.into(), launch.role.as_str().into()),
+        (env::SUITES.into(), Suite::join(&launch.suites)),
+    ];
+    for (k, v) in paths.pinned_env() {
+        pairs.push((k.into(), v.to_string_lossy().into_owned()));
+    }
+    pairs
 }
 
 /// Where Claude Code files a session's transcript: `<claude home>/projects/<cwd with every
@@ -258,6 +209,14 @@ pub fn transcript_path(home: &Path, cwd: &Path, session_id: &str) -> PathBuf {
     home.join("projects")
         .join(encoded)
         .join(format!("{session_id}.jsonl"))
+}
+
+/// Where agy keeps a conversation's store: `~/.gemini/antigravity-cli/conversations/<id>.db`.
+/// Dovetail never reads it, but records it so `:fresh` and switch notices can name it.
+pub fn agy_transcript_path(session_id: &str) -> PathBuf {
+    home_dir()
+        .join(".gemini/antigravity-cli/conversations")
+        .join(format!("{session_id}.db"))
 }
 
 /// Single-quotes a word for `sh`.
@@ -285,6 +244,12 @@ mod tests {
             path,
             Path::new("/p/maveron/projects/-tmp-dovetail-spikes-driver-repo/abc.jsonl")
         );
+    }
+
+    #[test]
+    fn agy_transcripts_are_under_gemini_conversations() {
+        let path = agy_transcript_path("conv-123");
+        assert!(path.ends_with(".gemini/antigravity-cli/conversations/conv-123.db"));
     }
 
     #[test]
@@ -397,5 +362,84 @@ mod tests {
         ]
         .concat();
         assert_eq!(names(Role::Coordinator), coordinator);
+    }
+
+    #[test]
+    fn agy_spec_writes_settings_folder_and_inline_mcp() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            data: dir.path().join("data"),
+            config: dir.path().join("config"),
+            state: dir.path().join("state"),
+            runtime: dir.path().join("run"),
+        };
+        std::fs::create_dir_all(paths.config.join("roles")).unwrap();
+        let prompt = paths.role_prompt("coordinator");
+        std::fs::write(&prompt, "lead").unwrap();
+
+        let launch = Launch {
+            project_key: "proj".into(),
+            agent_id: "coordinator".into(),
+            name: "proj.coordinator".into(),
+            role: Role::Coordinator,
+            prompt: None,
+            suites: Role::Coordinator.default_suites().to_vec(),
+            session_id: "s1".into(),
+            resume: false,
+            cwd: dir.path().join("home"),
+            worktree: Some("ignored".into()),
+            add_dirs: vec![dir.path().join("repo")],
+            mode: CliMode::Auto,
+            task_list_id: "tl".into(),
+            socket: paths.socket("proj"),
+            exe: PathBuf::from("/usr/bin/dovetail"),
+            model: Some("gemini-3.8-flash".into()),
+            effort: Some(dovetail_api::model::ReasoningEffort::Low),
+            env: vec![("CUSTOM".into(), "1".into())],
+            claude_config_dir: Some(dir.path().join("claude-profile")),
+        };
+
+        let s = spec(&paths, &launch, DriverKind::Agy).unwrap();
+        let settings_dir = s.agy.settings_dir.as_ref().expect("settings_dir");
+        assert_eq!(
+            settings_dir,
+            &paths.run_dir("proj", "coordinator").join("agy")
+        );
+        let settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(settings_dir.join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            settings,
+            serde_json::json!({"toolPermission": "request-review"})
+        );
+        assert_eq!(s.agy.mcp_servers.len(), 1);
+        assert_eq!(s.agy.mcp_servers[0].name, "dovetail");
+        assert_eq!(
+            s.agy.mcp_servers[0].command,
+            PathBuf::from("/usr/bin/dovetail")
+        );
+        assert_eq!(s.agy.mcp_servers[0].args, vec!["mcp"]);
+        assert!(
+            s.agy.mcp_servers[0]
+                .env
+                .contains(&(env::AGENT_ID.into(), "coordinator".into()))
+        );
+        assert!(
+            s.agy
+                .allowed_tools
+                .contains(&"mcp_dovetail_core_report_status".into())
+        );
+        assert!(!s.agy.allowed_tools.iter().any(|t| t.contains("__")));
+        assert_eq!(s.append_system_prompt_file, Some(prompt));
+        assert_eq!(s.claude.worktree, None);
+        assert!(!s.env.iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"));
+        assert!(s.env.contains(&("CUSTOM".into(), "1".into())));
+
+        // Side chats get DontAsk.
+        let mut side = launch;
+        side.role = Role::SideChat;
+        let side_spec = spec(&paths, &side, DriverKind::Agy).unwrap();
+        assert_eq!(side_spec.permission_mode, CliMode::DontAsk);
     }
 }

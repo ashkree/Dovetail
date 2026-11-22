@@ -22,7 +22,7 @@ use dovetail_core::config::Config;
 use dovetail_core::db::Db;
 use dovetail_core::paths::Paths;
 use dovetail_core::projects::{self, Candidate, Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions};
+use dovetail_core::{CoreHandle, CoreOptions, Drivers};
 use dovetail_driver::FakeDriver;
 use tempfile::TempDir;
 
@@ -67,7 +67,7 @@ struct App {
 impl App {
     fn start(driver: &FakeDriver, paths: &Paths, project: Project) -> App {
         let options = CoreOptions {
-            driver: Arc::new(driver.clone()),
+            drivers: Drivers::single(Arc::new(driver.clone())),
             exe: PathBuf::from("/usr/bin/dovetail"),
             tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
             editor: None,

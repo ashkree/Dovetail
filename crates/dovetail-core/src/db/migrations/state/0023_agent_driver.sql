@@ -1,0 +1,2 @@
+ALTER TABLE agents ADD COLUMN driver TEXT NOT NULL DEFAULT 'claude';
+ALTER TABLE slice_queue ADD COLUMN driver TEXT NOT NULL DEFAULT 'claude';

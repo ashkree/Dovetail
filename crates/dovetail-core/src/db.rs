@@ -70,6 +70,7 @@ const REGISTRY_MIGRATIONS: &[Migration] = &[
     migration!("registry", "0002_optional_git.sql"),
     migration!("registry", "0003_project_kind.sql"),
     migration!("registry", "0004_repos.sql"),
+    migration!("registry", "0005_driver_models.sql"),
 ];
 /// Migrations of a project's `state.db`, in order.
 const STATE_MIGRATIONS: &[Migration] = &[
@@ -95,6 +96,7 @@ const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0020_design_variants.sql"),
     migration!("state", "0021_blocks.sql"),
     migration!("state", "0022_slice_queue_model.sql"),
+    migration!("state", "0023_agent_driver.sql"),
 ];
 
 /// Errors from the database layer.
@@ -237,6 +239,16 @@ impl Db {
     }
 
     // --- registry ---
+
+    /// The model list last saved for `driver` (a JSON array), if any.
+    pub fn driver_models(&self, driver: &'static str) -> Pending<Option<String>> {
+        self.run(move |c, _| registry::driver_models(&c.registry, driver))
+    }
+
+    /// Saves `models` (a JSON array) as `driver`'s last-known model list.
+    pub fn save_driver_models(&self, driver: &'static str, models: String) -> Pending<()> {
+        self.run(move |c, now| registry::save_driver_models(&c.registry, driver, &models, now))
+    }
 
     /// Registers a folder as a project with one repo, or returns the project that has it
     /// already. The id is `slug`, numbered (`slug-2`, ...) when taken.
@@ -1270,6 +1282,7 @@ mod tests {
                 model: "haiku".into(),
                 effort: Some(dovetail_api::model::ReasoningEffort::Low),
             }),
+            driver: dovetail_api::model::DriverKind::Claude,
         })
         .wait()
         .unwrap();
@@ -1313,6 +1326,66 @@ mod tests {
         assert_eq!(queue.len(), 1);
         assert_eq!(queue[0].name, "old");
         assert_eq!(queue[0].model_choice, None);
+    }
+
+    /// Task #46: state migration 0023 from version 22. Existing agents and queued slices read as
+    /// `DriverKind::Claude`, and `DriverKind::Agy` round-trips for both.
+    #[test]
+    fn agent_and_queue_drivers_migrate_up_from_version_22() {
+        use dovetail_api::{agent::AgentKind, model::DriverKind};
+
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let path = paths.state_db("p");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut old = Connection::open(&path).unwrap();
+        migrate(&mut old, &path, &STATE_MIGRATIONS[..22]).unwrap();
+        old.execute_batch(
+            "INSERT INTO agents (id, kind, name, status, permission_mode, created_ms)
+               VALUES ('coordinator', 'coordinator', 'coordinator', 'idle', 'auto', 1);
+             INSERT INTO slice_queue (name, brief, created_ms) VALUES ('old', 'go', 2);",
+        )
+        .unwrap();
+        drop(old);
+
+        let db = Db::open(&paths, Some("p")).unwrap();
+        let agents = db.load_agents().wait().unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].agent.driver, DriverKind::Claude);
+        let queue = db.load_queue().wait().unwrap();
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].driver, DriverKind::Claude);
+
+        let mut agy_agent = agents[0].clone();
+        agy_agent.agent.id = AgentId("slice-agy".into());
+        agy_agent.agent.name = "agy".into();
+        agy_agent.agent.kind = AgentKind::Slice;
+        agy_agent.agent.driver = DriverKind::Agy;
+        db.upsert_agent(agy_agent).wait().unwrap();
+        db.enqueue_slice(QueuedSlice {
+            id: 0,
+            task: None,
+            name: "next".into(),
+            brief: "work".into(),
+            by_coordinator: true,
+            repo: None,
+            model_choice: None,
+            driver: DriverKind::Agy,
+        })
+        .wait()
+        .unwrap();
+        drop(db);
+
+        let db = Db::open(&paths, Some("p")).unwrap();
+        let agents = db.load_agents().wait().unwrap();
+        let agy_loaded = agents
+            .iter()
+            .find(|r| r.agent.id.0 == "slice-agy")
+            .expect("agy agent");
+        assert_eq!(agy_loaded.agent.driver, DriverKind::Agy);
+        let queue = db.load_queue().wait().unwrap();
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue[1].driver, DriverKind::Agy);
     }
 
     /// Migration 0017 on a database as version 16 left it: every task goes to Unsorted, chat
@@ -1760,7 +1833,11 @@ mod tests {
         let path = paths.registry_db();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut old = Connection::open(&path).unwrap();
-        let before = REGISTRY_MIGRATIONS.len() - 1;
+        // Everything before 0004_repos.sql.
+        let before = REGISTRY_MIGRATIONS
+            .iter()
+            .position(|m| m.0.ends_with("0004_repos.sql"))
+            .expect("the repos migration");
         migrate(&mut old, &path, &REGISTRY_MIGRATIONS[..before]).unwrap();
         old.execute_batch(
             "INSERT INTO projects (id, name, kind, repo_path, git_common_dir, last_opened_ms) \

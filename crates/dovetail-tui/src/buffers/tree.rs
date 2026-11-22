@@ -956,6 +956,7 @@ mod tests {
             effort: None,
             subagent_tokens: 0,
             tool: None,
+            driver: dovetail_api::model::DriverKind::Claude,
         }
     }
 

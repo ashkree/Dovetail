@@ -8,7 +8,7 @@ use dovetail_api::{
     Command,
     agent::SlashCommand,
     conversation::ConversationCommand,
-    model::{ModelOption, ReasoningEffort},
+    model::{DriverKind, ModelOption, ReasoningEffort},
 };
 use dovetail_tui::Mode;
 use support::*;
@@ -36,6 +36,7 @@ fn app_with_skills() -> dovetail_tui::App {
         name: "haiku".into(),
         resolved: Some("claude-haiku-5-5".into()),
         efforts: Some(ReasoningEffort::ALL.to_vec()),
+        driver: DriverKind::Claude,
     }];
     let mut app = app_with(snap);
     press(&mut app, "i");

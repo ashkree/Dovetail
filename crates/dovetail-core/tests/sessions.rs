@@ -2,292 +2,56 @@
 //! cheap to replay (double `result`, concurrent permissions, subagent routing), the inbox round
 //! trips, the tool handlers over the real socket, and ADR 0005's unregistered folders.
 
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
+mod common;
+
+use common::*;
+
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dovetail_api::{
-    Command, CoreLink, Event, ServerMsg, Snapshot,
-    agent::{AgentCommand, AgentId, AgentKind, AgentStatus, PermissionMode},
-    app::{AppCommand, AppEvent},
+    Command, Event, ServerMsg, Snapshot,
+    agent::{AgentId, AgentKind, AgentStatus, PermissionMode},
     apply,
-    canvas::CanvasCommand,
-    conversation::{Attachment, ConversationCommand, EntryKind, ImageType},
+    conversation::{Attachment, EntryKind, ImageType},
     decision::{Alternative, DecisionId},
+    inbox::{InboxId, InboxKind, PermissionAnswer},
+    task::{Bucket, NewTask, PLevel, TaskId, TaskStatus},
+};
+use dovetail_api::{
+    agent::AgentCommand,
+    app::{AppCommand, AppEvent},
+    canvas::CanvasCommand,
+    conversation::ConversationCommand,
     design::DesignCommand,
     effort::EffortCommand,
-    inbox::{InboxCommand, InboxId, InboxKind, PermissionAnswer},
+    inbox::InboxCommand,
     journal::JournalCommand,
     map::{Map, MapCommand, MapEvent, MapId, MapKind},
-    mcp::{McpCommand, McpEvent},
+    mcp::McpCommand,
     model::ModelCommand,
     project::ProjectCommand,
-    task::{Bucket, NewTask, PLevel, TaskCommand, TaskId, TaskStatus},
+    task::TaskCommand,
     worktree::WorktreeCommand,
 };
 use dovetail_core::config::Config;
 use dovetail_core::memory::Scopes;
 use dovetail_core::paths::Paths;
-use dovetail_core::projects::{Candidate, Project, Resolution};
-use dovetail_core::{CoreHandle, CoreOptions};
 use dovetail_driver::{ControlAnswer, FakeDriver, ReplayOptions, Sent};
+use dovetail_tools::project::archive_result::{ARCHIVED, WAITING_FOR_USER};
+use dovetail_tools::{SocketRequestBody, SocketResponseBody};
 use dovetail_tools::{
-    SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool,
-    map::{DrawMap, MapTool},
-    project::{
-        ArchiveSlice, ProjectTool, StartSlice,
-        archive_result::{ARCHIVED, WAITING_FOR_USER},
-    },
-    report::{AskUser, LogDecision, ReportStatus, ReportTool},
-    task::{ArchiveTask, BucketFilter, GetTask, ListTasks, TaskTool, UpdateTask},
+    Tool, map::DrawMap, project::ArchiveSlice, project::StartSlice, report::AskUser,
+    report::LogDecision, report::ReportStatus, task::ArchiveTask, task::BucketFilter,
+    task::GetTask, task::ListTasks, task::UpdateTask,
+};
+use dovetail_tools::{
+    canvas::CanvasTool, coordination::CoordinationTool, design::DesignTool, map::MapTool,
+    project::ProjectTool, report::ReportTool, task::TaskTool,
 };
 use tempfile::TempDir;
-
-thread_local! {
-    /// Taken by the next `Harness::start` on this test's thread: what `:upgrade` runs with.
-    static UPGRADE: std::cell::RefCell<Option<dovetail_core::service::UpgradeOptions>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-thread_local! {
-    /// Taken by the next `Harness::start` on this test's thread: the project it opens, when a
-    /// test registered its own (ADR 0021: several repos).
-    static PROJECT: std::cell::RefCell<Option<Project>> = const { std::cell::RefCell::new(None) };
-}
-
-thread_local! {
-    /// Taken by the next `Harness::start` on this test's thread: the fake `gh` it looks pull
-    /// requests up with.
-    static GH: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
-}
-
-fn fixture(name: &str) -> FakeDriver {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../dovetail-driver/tests/fixtures")
-        .join(format!("{name}.ndjson"));
-    FakeDriver::from_file(path).expect("fixture")
-}
-
-struct Harness {
-    link: CoreLink,
-    core: Option<CoreHandle>,
-    fake: FakeDriver,
-    snap: Snapshot,
-    paths: Paths,
-    repo: PathBuf,
-    /// `TerminalReturned` events, in order: the error each carried.
-    returned: Vec<Option<String>>,
-    /// How many `LendTerminal` events came.
-    lent: usize,
-    /// `CommandFailed` messages, in order.
-    failures: Vec<String>,
-    /// `McpReply` events, in order: what was asked and the answer.
-    mcp: Vec<(dovetail_api::mcp::McpRequest, dovetail_api::mcp::McpOutcome)>,
-    _dir: TempDir,
-    _run: TempDir,
-}
-
-const COORDINATOR: &str = "coordinator";
-
-impl Harness {
-    fn start(driver: FakeDriver, registered: bool, config: Config) -> Harness {
-        Self::start_scoped(driver, registered, config, None)
-    }
-
-    /// With `scopes` in place of the probe (a temp dir standing in for the cgroup slice).
-    fn start_scoped(
-        driver: FakeDriver,
-        registered: bool,
-        config: Config,
-        scopes: Option<Scopes>,
-    ) -> Harness {
-        let dir = tempfile::tempdir().expect("tempdir");
-        // Unix socket paths are limited to about 108 bytes: keep the runtime dir short.
-        let run = tempfile::Builder::new()
-            .prefix("dvt.")
-            .tempdir_in("/tmp")
-            .expect("short tempdir");
-        let paths = Paths {
-            data: dir.path().join("data"),
-            config: dir.path().join("config"),
-            state: dir.path().join("state"),
-            runtime: run.path().to_path_buf(),
-        };
-        let repo = dir.path().join("work");
-        std::fs::create_dir_all(&repo).expect("work dir");
-        let resolution = if registered {
-            Resolution::Registered(Project::with_repo("p", "work", repo.clone(), None))
-        } else {
-            Resolution::Candidate(Candidate {
-                name: "work".into(),
-                repo_path: repo.clone(),
-                git_common_dir: None,
-            })
-        };
-        // `:upgrade` tests give the installed binary, which the app must be running.
-        let upgrade = UPGRADE.with(|u| u.borrow_mut().take());
-        let options = CoreOptions {
-            driver: Arc::new(driver.clone()),
-            exe: upgrade
-                .as_ref()
-                .map_or_else(|| PathBuf::from("/usr/bin/dovetail"), |u| u.install.clone()),
-            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
-            editor: None,
-            claude: None,
-            processes: None,
-            memory_caps: false,
-            check_claude: false,
-            scopes,
-            upgrade,
-            opener: None,
-            gh: GH.with(|g| g.borrow_mut().take()),
-        };
-        let (link, core) =
-            dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
-        let mut h = Harness {
-            link,
-            core: Some(core),
-            fake: driver,
-            snap: Snapshot::default(),
-            paths,
-            repo,
-            returned: Vec::new(),
-            lent: 0,
-            failures: Vec::new(),
-            mcp: Vec::new(),
-            _dir: dir,
-            _run: run,
-        };
-        h.wait_for("the snapshot", |s| !s.agents.is_empty());
-        h
-    }
-
-    fn send(&self, command: Command) {
-        self.link.commands.send(command).expect("core is running");
-    }
-
-    /// Applies messages until `done` holds.
-    fn wait_for(&mut self, what: &str, done: impl Fn(&Snapshot) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !done(&self.snap) {
-            let left = deadline
-                .checked_duration_since(Instant::now())
-                .unwrap_or_else(|| panic!("timed out waiting for {what}: {:#?}", self.snap));
-            match self.link.messages.recv_timeout(left) {
-                Ok(ServerMsg::Hello { .. }) => {}
-                Ok(ServerMsg::Snapshot(s)) => self.snap = s,
-                Ok(ServerMsg::Event { seq, event }) => self.fold(seq, event),
-                Err(_) => panic!("timed out waiting for {what}: {:#?}", self.snap),
-            }
-        }
-    }
-
-    /// Applies an event, noting the ones that change nothing in the snapshot.
-    fn fold(&mut self, seq: u64, event: dovetail_api::Event) {
-        match &event {
-            dovetail_api::Event::App(AppEvent::TerminalReturned { error }) => {
-                self.returned.push(error.clone())
-            }
-            dovetail_api::Event::App(AppEvent::CommandFailed { message }) => {
-                self.failures.push(message.clone())
-            }
-            dovetail_api::Event::App(AppEvent::TerminalLend) => self.lent += 1,
-            dovetail_api::Event::Mcp(McpEvent::Reply {
-                request, outcome, ..
-            }) => self.mcp.push((request.clone(), outcome.clone())),
-            _ => {}
-        }
-        apply(&mut self.snap, seq, event);
-    }
-
-    /// Applies whatever arrives within `window`, for checking that something did not happen.
-    fn drain(&mut self, window: Duration) {
-        let until = Instant::now() + window;
-        while let Some(left) = until.checked_duration_since(Instant::now()) {
-            match self.link.messages.recv_timeout(left) {
-                Ok(ServerMsg::Snapshot(s)) => self.snap = s,
-                Ok(ServerMsg::Event { seq, event }) => self.fold(seq, event),
-                Ok(ServerMsg::Hello { .. }) => {}
-                Err(_) => return,
-            }
-        }
-    }
-
-    fn entries(&self, agent: &str) -> Vec<(EntryKind, String)> {
-        self.snap
-            .conversations
-            .get(&AgentId(agent.into()))
-            .map(|t| t.entries.iter().map(|e| (e.kind, e.text.clone())).collect())
-            .unwrap_or_default()
-    }
-
-    fn socket(&self) -> PathBuf {
-        let mut found: Vec<PathBuf> = std::fs::read_dir(&self.paths.runtime)
-            .expect("runtime dir")
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .collect();
-        found.sort();
-        found.pop().expect("a socket")
-    }
-
-    /// Quits and waits for the core. Returns the state directory, which must outlive a reopen.
-    fn quit(mut self) -> TempDir {
-        self.send(Command::App(AppCommand::Quit { end_sessions: true }));
-        let core = self.core.take().expect("core handle");
-        assert!(core.wait(Duration::from_secs(10)), "core stopped");
-        self._dir
-    }
-}
-
-/// One NDJSON round trip on the app socket, as the bridge does it.
-fn socket_call(path: &Path, body: SocketRequestBody) -> SocketResponseBody {
-    let stream = UnixStream::connect(path).expect("connect");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .expect("timeout");
-    let mut line = serde_json::to_string(&SocketRequest { id: 7, body }).expect("encode");
-    line.push('\n');
-    (&stream).write_all(line.as_bytes()).expect("write");
-    let mut reply = String::new();
-    BufReader::new(&stream).read_line(&mut reply).expect("read");
-    let response: SocketResponse = serde_json::from_str(&reply).expect("decode");
-    assert_eq!(response.id, 7);
-    response.body
-}
-
-fn tool(agent: &str, call: Tool) -> SocketRequestBody {
-    SocketRequestBody::ToolCall {
-        agent: AgentId(agent.into()),
-        tool_use_id: None,
-        called_as: None,
-        call,
-    }
-}
-
-fn result_text(body: SocketResponseBody) -> (String, bool) {
-    match body {
-        SocketResponseBody::ToolResult { text, is_error } => (text, is_error),
-        other => panic!("not a tool result: {other:?}"),
-    }
-}
-
-fn prompt(h: &Harness, text: &str) {
-    h.send(Command::Conversation(ConversationCommand::Prompt {
-        agent: AgentId(COORDINATOR.into()),
-        text: text.into(),
-        attachments: Vec::new(),
-        effort: None,
-    }));
-}
-
-fn finished_turns(s: &Snapshot) -> usize {
-    s.inbox
-        .iter()
-        .filter(|i| matches!(i.kind, InboxKind::FinishedTurn { .. }))
-        .count()
-}
 
 #[test]
 fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result() {
@@ -342,10 +106,6 @@ fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result()
     fake.resume();
     h.wait_for("the second result", |s| finished_turns(s) == 1);
     h.quit();
-}
-
-fn s_util(w: &Option<dovetail_api::status::UsageWindow>) -> Option<f64> {
-    w.as_ref().map(|w| w.utilization)
 }
 
 #[test]
@@ -550,105 +310,6 @@ fn a_prompt_with_an_image_sends_an_image_block_and_keeps_the_path_after_a_restar
     h.quit();
 }
 
-impl Harness {
-    /// A second app on the state of an earlier one (registered project `p`).
-    fn start_on(driver: FakeDriver, paths: Paths) -> Harness {
-        Self::start_in(driver, paths, None)
-    }
-
-    /// A second app on earlier state, in `repo` (a git repo) or a fresh folder.
-    fn start_in(driver: FakeDriver, paths: Paths, repo: Option<PathBuf>) -> Harness {
-        Self::start_with(driver, paths, repo, Config::default())
-    }
-
-    fn start_with(
-        driver: FakeDriver,
-        paths: Paths,
-        repo: Option<PathBuf>,
-        config: Config,
-    ) -> Harness {
-        Self::start_native(driver, paths, repo, config, None)
-    }
-
-    /// [`Harness::start_with`], running `claude` (a fake) for take-over.
-    fn start_native(
-        driver: FakeDriver,
-        paths: Paths,
-        repo: Option<PathBuf>,
-        config: Config,
-        claude: Option<std::ffi::OsString>,
-    ) -> Harness {
-        Self::start_full(driver, paths, repo, config, claude, None)
-    }
-
-    /// [`Harness::start_native`], checking take-over locks with `processes` instead of `/proc`.
-    fn start_full(
-        driver: FakeDriver,
-        paths: Paths,
-        repo: Option<PathBuf>,
-        config: Config,
-        claude: Option<std::ffi::OsString>,
-        processes: Option<Arc<dyn dovetail_core::takeover::Processes + Send + Sync>>,
-    ) -> Harness {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let run = tempfile::Builder::new()
-            .prefix("dvt.")
-            .tempdir_in("/tmp")
-            .expect("short tempdir");
-        let paths = Paths {
-            runtime: run.path().to_path_buf(),
-            ..paths
-        };
-        let git_common_dir = repo.as_ref().map(|r| r.join(".git"));
-        // Reopened on earlier state: the same `work` folder the first app ran its slices in, so
-        // their sessions resume where they were filed (ADR 0021).
-        let earlier = paths.data.with_file_name("work");
-        let repo = repo.unwrap_or_else(|| {
-            if earlier.is_dir() {
-                earlier
-            } else {
-                dir.path().to_path_buf()
-            }
-        });
-        let project = PROJECT
-            .with(|p| p.borrow_mut().take())
-            .unwrap_or_else(|| Project::with_repo("p", "work", repo.clone(), git_common_dir));
-        let resolution = Resolution::Registered(project);
-        let options = CoreOptions {
-            driver: Arc::new(driver.clone()),
-            exe: PathBuf::from("/usr/bin/dovetail"),
-            tasks_dir: Some(paths.data.with_file_name("claude-tasks")),
-            editor: None,
-            claude,
-            processes,
-            memory_caps: false,
-            check_claude: false,
-            scopes: None,
-            upgrade: None,
-            opener: None,
-            gh: GH.with(|g| g.borrow_mut().take()),
-        };
-        let (link, core) =
-            dovetail_core::spawn(resolution, paths.clone(), config, options).expect("core");
-        let mut h = Harness {
-            link,
-            core: Some(core),
-            fake: driver,
-            snap: Snapshot::default(),
-            paths,
-            repo,
-            returned: Vec::new(),
-            lent: 0,
-            failures: Vec::new(),
-            mcp: Vec::new(),
-            _dir: dir,
-            _run: run,
-        };
-        h.wait_for("the snapshot", |s| !s.agents.is_empty());
-        h
-    }
-}
-
 #[test]
 fn a_background_subagent_means_one_finished_turn_and_none_of_its_events() {
     let mut h = Harness::start(fixture("double_result"), true, Config::default());
@@ -764,20 +425,6 @@ fn a_subagents_permission_request_reaches_the_inbox_marked_as_its() {
         "{progress:?}"
     );
     h.quit();
-}
-
-/// The one subagent node in the snapshot.
-fn subagent(s: &Snapshot) -> Option<&dovetail_api::agent::Agent> {
-    s.agents
-        .iter()
-        .find(|a| matches!(a.kind, AgentKind::Subagent { .. }))
-}
-
-fn coordinator_of(s: &Snapshot) -> &dovetail_api::agent::Agent {
-    s.agents
-        .iter()
-        .find(|a| a.kind == AgentKind::Coordinator)
-        .expect("coordinator")
 }
 
 #[test]
@@ -916,38 +563,6 @@ fn a_subagent_cut_off_by_a_restart_reopens_as_stopped() {
     h.quit();
 }
 
-/// `memory.events` text with `oom_kill` at `kills`, as the kernel writes it.
-fn memory_events(kills: u64) -> String {
-    format!("low 0\nhigh 0\nmax {kills}\noom {kills}\noom_kill {kills}\noom_group_kill 0\n")
-}
-
-/// The text of the coordinator's out-of-memory items.
-fn oom_items(s: &Snapshot) -> Vec<String> {
-    s.inbox
-        .iter()
-        .filter_map(|i| match &i.kind {
-            InboxKind::Error { text } if text.starts_with("Out of memory") => Some(text.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Waits until the restarted session was told, in one line, that it was OOM-killed and
-/// restarted, followed by the in-flight subagent `work`.
-fn wait_restart_note(fake: &FakeDriver, work: &str) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let is_note = |s: &Sent| {
-        matches!(s, Sent::User(t) if t.lines().next().is_some_and(|l| {
-            l.starts_with("You were killed for running out of memory")
-                && l.ends_with("and have been restarted.")
-        }) && t.contains(work))
-    };
-    while !fake.sent().iter().any(is_note) {
-        assert!(Instant::now() < deadline, "{:?}", fake.sent());
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
 #[test]
 fn a_session_killed_for_memory_is_resumed_with_its_subagent_work_listed() {
     // A temp dir stands in for the cgroup slice; the coordinator's scope is in it.
@@ -1063,36 +678,6 @@ fn report_status_sets_the_line_cut_at_120_characters() {
     h.quit();
 }
 
-/// Waits until the fake session was sent `wanted` as a user message.
-fn wait_sent(fake: &FakeDriver, wanted: &str) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let wanted = Sent::User(wanted.into());
-    while !fake.sent().contains(&wanted) {
-        assert!(Instant::now() < deadline, "{:?}", fake.sent());
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn ask(h: &Harness, question: &str) -> (String, bool) {
-    result_text(socket_call(
-        &h.socket(),
-        tool(
-            COORDINATOR,
-            Tool::Report(ReportTool::AskUser(AskUser {
-                question: question.into(),
-            })),
-        ),
-    ))
-}
-
-fn open_questions(s: &Snapshot) -> Vec<InboxId> {
-    s.inbox
-        .iter()
-        .filter(|i| matches!(i.kind, InboxKind::Question { .. }))
-        .map(|i| i.id)
-        .collect()
-}
-
 #[test]
 fn ask_user_returns_at_once_and_an_inbox_answer_arrives_as_a_message() {
     let fake = fixture("plain_turn");
@@ -1181,6 +766,7 @@ fn slices_cannot_call_coordinator_tools_and_bad_names_are_refused() {
             repo: None,
             model: None,
             effort: None,
+            driver: None,
             task: TaskId(1),
             name: name.into(),
             brief: "go".into(),
@@ -1432,6 +1018,7 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
                 repo: None,
                 model: None,
                 effort: None,
+                driver: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -1460,6 +1047,7 @@ fn start_slice_outside_auto_mode_returns_pending_and_the_answer_comes_as_a_messa
                 repo: None,
                 model: None,
                 effort: None,
+                driver: None,
                 task: TaskId(1),
                 name: "later".into(),
                 brief: "go".into(),
@@ -1533,28 +1121,6 @@ fn interrupt_reaches_a_session_waiting_on_background_tasks() {
     }
     fake.resume();
     h.quit();
-}
-
-/// A turn that never reaches its `result`: init, some text, then the replay holds.
-fn held_turn() -> FakeDriver {
-    let lines = [
-        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
-        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"working on it"}]},"parent_tool_use_id":null}"#,
-        r#"{"type":"result","subtype":"success","is_error":false,"result":"done","total_cost_usd":0.01}"#,
-    ];
-    FakeDriver::from_ndjson(&lines.join("\n"))
-        .expect("fixture")
-        .with_options(ReplayOptions {
-            pause_before: vec![2],
-            ..ReplayOptions::default()
-        })
-}
-
-fn cut_off_text(s: &Snapshot) -> Option<String> {
-    s.inbox.iter().find_map(|i| match &i.kind {
-        InboxKind::Error { text } if text.contains("cut off by a restart") => Some(text.clone()),
-        _ => None,
-    })
 }
 
 #[test]
@@ -1707,18 +1273,6 @@ fn at_restart_permissions_expire_and_questions_stay_answerable() {
     h.quit();
 }
 
-fn git(dir: &Path, args: &[&str]) {
-    let ok = std::process::Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["-c", "user.email=t@t", "-c", "user.name=t"])
-        .args(args)
-        .status()
-        .expect("git")
-        .success();
-    assert!(ok, "git {args:?}");
-}
-
 #[test]
 fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -1775,6 +1329,7 @@ fn the_sweep_archives_lost_slices_and_asks_about_unowned_worktrees() {
             effort: None,
             subagent_tokens: 0,
             tool: None,
+            driver: dovetail_api::model::DriverKind::Claude,
         };
         agent.status_line.clear();
         db.upsert_agent(dovetail_core::db::AgentRow {
@@ -2056,57 +1611,6 @@ fn inputs_folded_into_the_running_turn_end_with_its_result() {
     h.quit();
 }
 
-/// Raises a pending `project_start_slice` approval: the coordinator to acceptEdits, a task, the call.
-fn pending_start(h: &mut Harness) {
-    h.send(Command::Agent(AgentCommand::CyclePermissionMode {
-        agent: AgentId(COORDINATOR.into()),
-    }));
-    h.send(Command::Task(TaskCommand::Create(NewTask {
-        title: "t".into(),
-        p_level: None,
-        bucket: None,
-        notes: String::new(),
-        follow_up_of: None,
-        pr: None,
-        related: vec![],
-        effort: Default::default(),
-        criterion: None,
-    })));
-    h.wait_for("mode and task", |s| {
-        !s.tasks.is_empty()
-            && s.agents
-                .iter()
-                .any(|a| a.permission_mode == PermissionMode::AcceptEdits)
-    });
-    let (text, _) = result_text(socket_call(
-        &h.socket(),
-        tool(
-            COORDINATOR,
-            Tool::Project(ProjectTool::StartSlice(StartSlice {
-                repo: None,
-                model: None,
-                effort: None,
-                task: TaskId(1),
-                name: "later".into(),
-                brief: "go".into(),
-            })),
-        ),
-    ));
-    assert!(text.starts_with("pending"), "{text}");
-}
-
-fn sent_users(fake: &FakeDriver) -> Vec<String> {
-    fake.sent()
-        .into_iter()
-        .filter_map(|s| match s {
-            Sent::User(t) => Some(t),
-            _ => None,
-        })
-        .collect()
-}
-
-const EXPIRED: &str = "project_start_slice later expired at restart; call it again if still needed";
-
 #[test]
 fn a_start_slice_approval_pending_at_quit_is_answered_after_reopen() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
@@ -2193,88 +1697,6 @@ fn a_turn_that_ends_normally_during_quit_is_not_reported_as_cut_off() {
     h.drain(Duration::from_millis(300));
     assert!(cut_off_text(&h.snap).is_none(), "{:#?}", h.snap.inbox);
     h.quit();
-}
-
-/// A git repo with slices `names` already open (idle, restored on start), each in a real
-/// worktree on its `dovetail/<name>` branch at the main checkout's HEAD.
-fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let repo = dir.path().join("repo");
-    std::fs::create_dir_all(&repo).unwrap();
-    git(&repo, &["init", "-q", "-b", "main"]);
-    std::fs::write(repo.join("README"), "hi").unwrap();
-    git(&repo, &["add", "."]);
-    git(&repo, &["commit", "-qm", "init"]);
-    let paths = Paths {
-        data: dir.path().join("data"),
-        config: dir.path().join("config"),
-        state: dir.path().join("state"),
-        runtime: dir.path().join("run"),
-    };
-    std::fs::create_dir_all(paths.worktrees("p")).unwrap();
-    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
-    for name in names {
-        let wt = paths.worktrees("p").join(name);
-        let branch = format!("dovetail/{name}");
-        git(
-            &repo,
-            &["worktree", "add", "-q", "-b", &branch, wt.to_str().unwrap()],
-        );
-        let agent = dovetail_api::agent::Agent {
-            id: AgentId(format!("slice-{name}")),
-            name: (*name).into(),
-            kind: AgentKind::Slice,
-            parent: None,
-            task: None,
-            worktree: Some(dovetail_api::agent::WorktreeRef { path: wt, branch }),
-            status: dovetail_api::agent::AgentStatus::Idle,
-            status_line: String::new(),
-            memory_mb: None,
-            cost_usd: 0.0,
-            permission_mode: PermissionMode::Auto,
-            context_pct: None,
-            progress: None,
-            last_activity_ms: 0,
-            lock: dovetail_api::agent::SessionLock::Headless,
-            model: None,
-            effort: None,
-            subagent_tokens: 0,
-            tool: None,
-        };
-        db.upsert_agent(dovetail_core::db::AgentRow {
-            agent,
-            session_id: None,
-            transcript_path: None,
-            task_list_id: None,
-            created_ms: 0,
-            tool_use_id: None,
-            claude_home: None,
-            takeover: None,
-            model_choice: None,
-            repo: None,
-        })
-        .wait()
-        .expect("agent");
-    }
-    drop(db);
-    (dir, repo, paths)
-}
-
-fn archive_slice(name: &str) -> Tool {
-    Tool::Project(ProjectTool::ArchiveSlice(ArchiveSlice {
-        name: name.into(),
-    }))
-}
-
-fn branch_exists(repo: &Path, branch: &str) -> bool {
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(["rev-parse", "--verify", "--quiet", branch])
-        .stdout(std::process::Stdio::null())
-        .status()
-        .expect("git")
-        .success()
 }
 
 #[test]
@@ -2578,19 +2000,6 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
     h.quit();
 }
 
-// --- updating tasks (task #25) ---
-
-fn update(id: i64) -> UpdateTask {
-    UpdateTask {
-        id: TaskId(id),
-        status: None,
-        bucket: None,
-        p_level: None,
-        title: None,
-        notes: None,
-    }
-}
-
 #[test]
 fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
@@ -2766,31 +2175,6 @@ fn update_task_changes_only_the_given_fields_and_may_move_into_now() {
     let (text, is_error) = call(COORDINATOR, update(1));
     assert!(is_error && text.contains("at least one field"), "{text}");
     h.quit();
-}
-
-// --- native to-do lists (M11, task #12) ---
-
-/// The temp dir standing in for `~/.claude/tasks` (see `Harness::start`).
-fn tasks_dir(paths: &Paths) -> PathBuf {
-    paths.data.with_file_name("claude-tasks")
-}
-
-/// Writes one task file the way Claude Code does.
-fn write_item(list: &Path, id: &str, subject: &str, status: &str) {
-    std::fs::create_dir_all(list).expect("list dir");
-    let text = format!(
-        "{{\n  \"id\": \"{id}\",\n  \"subject\": \"{subject}\",\n  \"description\": \"{subject}\",\n  \
-         \"status\": \"{status}\",\n  \"blocks\": [],\n  \"blockedBy\": []\n}}"
-    );
-    std::fs::write(list.join(format!("{id}.json")), text).expect("task file");
-}
-
-fn todo(s: &Snapshot, id: &str) -> Option<dovetail_api::agent::TodoItem> {
-    s.todos.iter().find(|t| t.id == id).cloned()
-}
-
-fn owner(s: &Snapshot, id: &str) -> Option<String> {
-    todo(s, id).and_then(|t| t.created_by).map(|a| a.0)
 }
 
 #[test]
@@ -3025,63 +2409,6 @@ fn archiving_a_task_deletes_its_todo_list() {
     h.quit();
 }
 
-// --- Profiles (task #27, ADR 0009) ---
-
-/// State dirs for a run whose recipe and config are written before the core starts.
-fn profile_paths(dir: &Path) -> Paths {
-    Paths {
-        data: dir.join("data"),
-        config: dir.join("config"),
-        state: dir.join("state"),
-        runtime: dir.join("unused"),
-    }
-}
-
-fn profiles_config(dir: &Path) -> Config {
-    let mut config = Config::default();
-    for name in ["mine", "work"] {
-        config.profiles.insert(
-            name.into(),
-            dir.join("profiles")
-                .join(name)
-                .to_string_lossy()
-                .into_owned(),
-        );
-    }
-    config
-}
-
-fn write_recipe(paths: &Paths, text: &str) {
-    let file = paths.recipe("p");
-    std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
-    std::fs::write(file, text).expect("recipe");
-}
-
-fn config_dir_env(spec: &dovetail_driver::SessionSpec) -> Option<String> {
-    spec.env
-        .iter()
-        .find(|(k, _)| k == "CLAUDE_CONFIG_DIR")
-        .map(|(_, v)| v.clone())
-}
-
-fn error_texts(s: &Snapshot) -> Vec<String> {
-    s.inbox
-        .iter()
-        .filter_map(|i| match &i.kind {
-            InboxKind::Error { text } => Some(text.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
-fn wait_started(fake: &FakeDriver, count: usize) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while fake.started_specs().len() < count {
-        assert!(Instant::now() < deadline, "sessions did not start");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
 #[test]
 fn a_project_profile_sets_claude_config_dir_and_a_changed_one_is_not_resumed() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -3143,10 +2470,6 @@ fn a_project_profile_sets_claude_config_dir_and_a_changed_one_is_not_resumed() {
         .count();
     assert!(notices <= 1, "{:?}", error_texts(&h.snap));
     h.quit();
-}
-
-fn profile_errors(s: &Snapshot, needle: &str) -> usize {
-    error_texts(s).iter().filter(|t| t.contains(needle)).count()
 }
 
 /// Review of PR #26: exactly one inbox error, also for a coordinator that would resume at open,
@@ -3285,87 +2608,6 @@ fn sessions_keep_their_launch_prefix_after_project_add() {
     h.quit();
 }
 
-fn write_recipe_for(paths: &Paths, project: &str, text: &str) {
-    let file = paths.recipe(project);
-    std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
-    std::fs::write(file, text).expect("recipe");
-}
-
-// --- Take-over (M14) ---
-
-/// The transcript folder name Claude Code uses for `cwd`.
-fn encoded(cwd: &Path) -> String {
-    cwd.to_string_lossy()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect()
-}
-
-/// A fake native `claude`: records its arguments, folder and Claude home in `out`, appends one
-/// native turn to the session's transcript (under `$CLAUDE_CONFIG_DIR/projects/<folder>`), and
-/// exits once `wait` exists (at once without one).
-fn fake_claude(out: &Path, folder: &str, wait: Option<&Path>) -> std::ffi::OsString {
-    use std::os::unix::fs::PermissionsExt;
-    let wait = wait.map(|w| w.display().to_string()).unwrap_or_default();
-    let script = out.join("fake-claude");
-    let body = format!(
-        r#"#!/bin/sh
-out='{out}'
-printf '%s\n' "$@" > "$out/argv"
-pwd -P > "$out/cwd"
-printf '%s' "$CLAUDE_CONFIG_DIR" > "$out/config_dir"
-printf '%s' "$DOVETAIL_AGENT_ID" > "$out/agent"
-prev=
-for a in "$@"; do [ "$prev" = --resume ] && id=$a; prev=$a; done
-t="$CLAUDE_CONFIG_DIR/projects/{folder}/$id.jsonl"
-mkdir -p "$(dirname "$t")"
-cat >> "$t" <<'LINES'
-{{"type":"user","message":{{"role":"user","content":"native hello"}}}}
-{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"native reply"}},{{"type":"tool_use","id":"t1","name":"Bash","input":{{}}}}]}}}}
-LINES
-touch "$out/started"
-while [ -n '{wait}' ] && [ ! -e '{wait}' ]; do sleep 0.05; done
-exit 0
-"#,
-        out = out.display(),
-    );
-    std::fs::write(&script, body).expect("fake claude");
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("runnable");
-    script.into_os_string()
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-}
-
-fn lock_of(s: &Snapshot, id: &str) -> dovetail_api::agent::SessionLock {
-    s.agents
-        .iter()
-        .find(|a| a.id.0 == id)
-        .map(|a| a.lock)
-        .unwrap_or_else(|| panic!("no agent {id}"))
-}
-
-fn wait_file(path: &Path) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !path.exists() {
-        assert!(
-            Instant::now() < deadline,
-            "{} never appeared",
-            path.display()
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn wait_sent_shutdown(fake: &FakeDriver) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !fake.sent().iter().any(|s| matches!(s, Sent::Shutdown(_))) {
-        assert!(Instant::now() < deadline, "headless was not stopped");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
 /// The hand-off with a live headless coordinator: the lock is taken, headless stops, native
 /// `claude` runs with headless's flags, Claude home and folder, and on exit the terminal comes
 /// back, the native turn shows in the conversation and headless resumes the same session.
@@ -3477,57 +2719,6 @@ fn take_over_stops_headless_runs_native_with_its_flags_and_resumes_headless() {
     h.quit();
 }
 
-/// Stores an agent row before the core opens.
-fn seed(paths: &Paths, row: dovetail_core::db::AgentRow) {
-    let db = dovetail_core::db::Db::open(paths, Some("p")).expect("db");
-    db.upsert_agent(row).wait().expect("agent");
-}
-
-fn session_row(
-    id: &str,
-    kind: AgentKind,
-    worktree: Option<PathBuf>,
-    home: &Path,
-    transcript: PathBuf,
-    takeover: Option<dovetail_core::takeover::TakeoverLock>,
-) -> dovetail_core::db::AgentRow {
-    dovetail_core::db::AgentRow {
-        agent: dovetail_api::agent::Agent {
-            id: AgentId(id.into()),
-            name: id.trim_start_matches("slice-").into(),
-            kind,
-            parent: None,
-            task: None,
-            worktree: worktree.map(|path| dovetail_api::agent::WorktreeRef {
-                path,
-                branch: "dovetail/s4".into(),
-            }),
-            status: dovetail_api::agent::AgentStatus::Idle,
-            status_line: String::new(),
-            memory_mb: None,
-            cost_usd: 0.0,
-            permission_mode: PermissionMode::Auto,
-            context_pct: None,
-            progress: None,
-            last_activity_ms: 0,
-            lock: dovetail_api::agent::SessionLock::Headless,
-            model: None,
-            effort: None,
-            subagent_tokens: 0,
-            tool: None,
-        },
-        session_id: Some(format!("{id}-session")),
-        transcript_path: Some(transcript),
-        task_list_id: None,
-        created_ms: 0,
-        tool_use_id: None,
-        claude_home: Some(home.to_path_buf()),
-        takeover,
-        model_choice: None,
-        repo: None,
-    }
-}
-
 /// While a slice is taken over nothing starts it headless, archives it or removes its
 /// worktree; native runs in the worktree, and exiting it leaves the worktree and the slice
 /// alone and resumes headless there.
@@ -3621,55 +2812,6 @@ fn while_taken_over_headless_never_starts_and_exiting_native_keeps_the_worktree(
     h.quit();
 }
 
-/// Opens a project whose coordinator was taken over when Dovetail stopped: its transcript has
-/// one line from before the take-over and one native turn after, and its lock names `pid`.
-fn open_after_crash(pid: u32, ticks: Option<u64>) -> (Harness, FakeDriver, TempDir) {
-    use dovetail_core::takeover::TakeoverLock;
-    let dir = tempfile::tempdir().expect("tempdir");
-    let paths = profile_paths(dir.path());
-    let config = profiles_config(dir.path());
-    let mine = dir.path().join("profiles/mine");
-    write_recipe(&paths, "profile = \"mine\"\n");
-    // Filed where Claude Code files the coordinator's session: under its `home/` folder.
-    let transcript = dovetail_core::session::launch::transcript_path(
-        &mine,
-        &paths.project_home("p"),
-        &format!("{COORDINATOR}-session"),
-    );
-    std::fs::create_dir_all(transcript.parent().expect("parent")).expect("dir");
-    std::fs::write(&transcript, "{\"type\":\"summary\"}\n").expect("transcript");
-    let offset = std::fs::metadata(&transcript).expect("len").len();
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open(&transcript)
-        .expect("open");
-    writeln!(
-        file,
-        "{{\"type\":\"user\",\"message\":{{\"content\":\"typed while Dovetail was down\"}}}}"
-    )
-    .expect("append");
-    let lock = TakeoverLock {
-        since_ms: 1,
-        pid: Some(pid),
-        start_ticks: ticks,
-        transcript_offset: Some(offset),
-    };
-    seed(
-        &paths,
-        session_row(
-            COORDINATOR,
-            AgentKind::Coordinator,
-            None,
-            &mine,
-            transcript,
-            Some(lock),
-        ),
-    );
-    let fake = fixture("plain_turn");
-    let h = Harness::start_with(fake.clone(), paths, None, config);
-    (h, fake, dir)
-}
-
 /// A lock left by a crash whose native run is gone is released at open, with the native turn
 /// shown, and the coordinator resumes as usual.
 #[test]
@@ -3742,18 +2884,6 @@ fn a_crash_lock_whose_native_still_runs_holds_until_it_exits() {
         lock_of(s, COORDINATOR) == dovetail_api::agent::SessionLock::Headless
     });
     h.quit();
-}
-
-/// Processes that cannot be checked, as when `/proc` is unreadable.
-struct Blind;
-
-impl dovetail_core::takeover::Processes for Blind {
-    fn start_ticks(&self, _: u32) -> std::io::Result<Option<u64>> {
-        Err(std::io::Error::other("no /proc here"))
-    }
-    fn find_native(&self, _: &str) -> std::io::Result<Option<u32>> {
-        Err(std::io::Error::other("no /proc here"))
-    }
 }
 
 /// A crash lock that cannot be checked asks the user; `y` goes through the same release as
@@ -3914,73 +3044,6 @@ fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() 
     h.quit();
 }
 
-// --- maps_draw (M15) ---
-
-fn draw(h: &Harness, map: serde_json::Value) -> (String, bool) {
-    result_text(socket_call(
-        &h.socket(),
-        tool(COORDINATOR, Tool::Map(MapTool::Draw(DrawMap(map)))),
-    ))
-}
-
-fn checkout_map(title: &str) -> serde_json::Value {
-    serde_json::json!({
-        "map": { "title": title, "type": "structure" },
-        "nodes": [
-            { "id": "api", "kind": "endpoint", "label": "POST /checkout", "description": "Takes the order." },
-            { "id": "orders", "kind": "data", "label": "orders", "description": "Orders table." }
-        ],
-        "connections": [ { "from": "api", "to": "orders", "label": "writes" } ]
-    })
-}
-
-fn login_lanes(lane_node: &str) -> serde_json::Value {
-    serde_json::json!({
-        "map": { "title": "Logging in", "type": "swimlane" },
-        "nodes": [
-            { "id": "user", "kind": "actor", "label": "User", "description": "Signs in." },
-            { "id": "check", "kind": "endpoint", "label": "/login", "description": "Checks it." }
-        ],
-        "lanes": [
-            { "id": "you", "label": "User" },
-            { "id": "web", "label": "Web", "node": lane_node }
-        ],
-        "flows": [ { "name": "Log in", "steps": [
-            { "node": "user", "lane": "you", "note": "Types a password." },
-            { "node": "check", "lane": "web", "arrow": "submits", "note": "Checks it." }
-        ] } ]
-    })
-}
-
-/// Sends `LoadMap` and waits for its answer, folding events in on the way.
-fn load_map(h: &mut Harness, id: &str, version: Option<u32>) -> Result<Map, String> {
-    h.send(Command::Map(MapCommand::Load {
-        id: MapId(id.into()),
-        version,
-    }));
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        let left = deadline
-            .checked_duration_since(Instant::now())
-            .expect("timed out waiting for the map");
-        match h.link.messages.recv_timeout(left).expect("a message") {
-            ServerMsg::Event { seq, event } => {
-                let answer = match &event {
-                    Event::Map(MapEvent::Loaded(map)) => Some(Ok(map.clone())),
-                    Event::App(AppEvent::CommandFailed { message }) => Some(Err(message.clone())),
-                    _ => None,
-                };
-                apply(&mut h.snap, seq, event);
-                if let Some(answer) = answer {
-                    return answer;
-                }
-            }
-            ServerMsg::Snapshot(s) => h.snap = s,
-            ServerMsg::Hello { .. } => {}
-        }
-    }
-}
-
 #[test]
 fn draw_map_stores_a_map_on_the_shelf_and_loads_it() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
@@ -4092,21 +3155,6 @@ fn draw_map_checks_lane_links_against_structure_maps() {
     h.quit();
 }
 
-/// The local date of `days_ago` days back, as journal files are named (ADR 0012).
-fn local_date(days_ago: i64) -> String {
-    let now = jiff::Zoned::now();
-    now.date()
-        .checked_sub(jiff::Span::new().days(days_ago))
-        .expect("a date")
-        .to_string()
-}
-
-fn journal(s: &Snapshot) -> dovetail_api::journal::JournalState {
-    s.journal
-        .clone()
-        .expect("a registered project has a journal")
-}
-
 #[test]
 fn eod_asks_the_coordinator_and_writes_its_reply_and_the_facts() {
     let lines = [
@@ -4169,34 +3217,6 @@ fn eod_asks_the_coordinator_and_writes_its_reply_and_the_facts() {
     assert!(text.contains("## Facts"), "{text}");
     assert!(text.contains("**Now**\n\n- #1 ship the journal"), "{text}");
     h.quit();
-}
-
-/// Two turns of the coordinator: "first", then a handoff reply. `pause_before` holds the replay
-/// before that line of the script.
-fn fresh_fixture(pause_before: usize) -> FakeDriver {
-    let lines = [
-        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
-        r#"{"type":"user","message":{"role":"user","content":"first"},"parent_tool_use_id":null,"isReplay":true}"#,
-        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"one"}]},"parent_tool_use_id":null}"#,
-        r#"{"type":"result","subtype":"success","is_error":false,"result":"one","total_cost_usd":0.01}"#,
-        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
-        r#"{"type":"user","message":{"role":"user","content":"fresh"},"parent_tool_use_id":null,"isReplay":true}"#,
-        r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"Open: PR 20 waits on review."}]},"parent_tool_use_id":null}"#,
-        r#"{"type":"result","subtype":"success","is_error":false,"result":"Open: PR 20 waits on review.","total_cost_usd":0.02}"#,
-    ];
-    FakeDriver::from_ndjson(&lines.join("\n"))
-        .expect("fixture")
-        .with_options(ReplayOptions {
-            pause_before: vec![pause_before],
-            ..ReplayOptions::default()
-        })
-}
-
-/// No fresh start raises a Needs-you item: the old transcript just stays on disk (task #38).
-fn no_permission_item(s: &Snapshot) -> bool {
-    s.inbox
-        .iter()
-        .all(|i| !matches!(i.kind, InboxKind::Permission { .. }))
 }
 
 #[test]
@@ -4554,282 +3574,6 @@ fn a_day_that_was_never_closed_keeps_its_coordinator_and_says_so() {
     h.quit();
 }
 
-// --- :upgrade (ADR 0014) ---
-
-mod upgrade {
-    use std::sync::atomic::AtomicBool;
-
-    use dovetail_api::{
-        app::AppCommand,
-        inbox::{InboxCommand, UPGRADE_READY_PERMISSION},
-    };
-    use dovetail_core::service::UpgradeOptions;
-    use dovetail_core::upgrade::{Call, Exec, ExecError};
-
-    use super::*;
-
-    /// Plays git and cargo: a worktree add makes the folder, cargo writes a binary into
-    /// `CARGO_TARGET_DIR`, `rev-parse` answers `abc1234`.
-    struct FakeExec {
-        fail_cargo: bool,
-    }
-
-    impl Exec for FakeExec {
-        fn run(&self, call: &Call, _cancel: &AtomicBool) -> Result<String, ExecError> {
-            if call.program == "cargo" {
-                if self.fail_cargo {
-                    if let Some(log) = &call.log {
-                        std::fs::write(log, "error[E0432]: unresolved import\n").unwrap();
-                    }
-                    return Err(ExecError::Failed {
-                        program: "cargo".into(),
-                        code: Some(101),
-                    });
-                }
-                let target = call.env.iter().find(|(k, _)| k == "CARGO_TARGET_DIR");
-                let target = PathBuf::from(&target.expect("target dir").1);
-                std::fs::create_dir_all(target.join("release")).unwrap();
-                std::fs::write(target.join("release/dovetail"), "new binary").unwrap();
-            }
-            if call.args.starts_with(&["worktree".into(), "add".into()]) {
-                std::fs::create_dir_all(&call.args[3]).unwrap();
-            }
-            Ok(if call.args.first().is_some_and(|a| a == "rev-parse") {
-                "abc1234\n".into()
-            } else {
-                String::new()
-            })
-        }
-    }
-
-    struct Upgrading {
-        h: Harness,
-        /// Holds the fake installed binary.
-        _install: TempDir,
-    }
-
-    impl Upgrading {
-        fn start(driver: FakeDriver, fail_cargo: bool) -> Upgrading {
-            let install_dir = tempfile::tempdir().expect("tempdir");
-            let install = install_dir.path().join("dovetail");
-            std::fs::write(&install, "old binary").unwrap();
-            UPGRADE.with(|u| {
-                *u.borrow_mut() = Some(UpgradeOptions {
-                    exec: Arc::new(FakeExec { fail_cargo }),
-                    install,
-                });
-            });
-            let h = Harness::start(driver, true, Config::default());
-            // A Dovetail checkout, for the build's first check.
-            std::fs::create_dir_all(h.repo.join("crates/dovetail")).unwrap();
-            std::fs::write(h.repo.join("crates/dovetail/Cargo.toml"), "").unwrap();
-            Upgrading {
-                h,
-                _install: install_dir,
-            }
-        }
-
-        fn ready_item(&self) -> Option<dovetail_api::inbox::InboxItem> {
-            self.h.snap.inbox.iter().find(|i| is_ready(i)).cloned()
-        }
-
-        fn wait_for_item(&mut self) -> dovetail_api::inbox::InboxItem {
-            self.h
-                .wait_for("Upgrade ready", |s| s.inbox.iter().any(is_ready));
-            self.ready_item().expect("the item")
-        }
-
-        fn answer(&self, item: &dovetail_api::inbox::InboxItem, answer: PermissionAnswer) {
-            self.h.send(Command::Inbox(InboxCommand::AnswerPermission {
-                item: item.id,
-                answer,
-            }));
-        }
-
-        /// Reads until the UI would be told to quit.
-        fn wait_for_restart_event(&mut self) {
-            let deadline = Instant::now() + Duration::from_secs(5);
-            loop {
-                let left = deadline
-                    .checked_duration_since(Instant::now())
-                    .expect("timed out waiting for UpgradeRestarting");
-                match self.h.link.messages.recv_timeout(left) {
-                    Ok(ServerMsg::Event {
-                        event: Event::App(AppEvent::UpgradeRestarting),
-                        ..
-                    }) => return,
-                    Ok(ServerMsg::Event { seq, event }) => self.h.fold(seq, event),
-                    Ok(_) => {}
-                    Err(_) => panic!("timed out waiting for UpgradeRestarting"),
-                }
-            }
-        }
-    }
-
-    fn is_ready(item: &dovetail_api::inbox::InboxItem) -> bool {
-        matches!(&item.kind, InboxKind::Permission { tool, .. } if tool == UPGRADE_READY_PERMISSION)
-    }
-
-    fn input_of(item: &dovetail_api::inbox::InboxItem) -> serde_json::Value {
-        match &item.kind {
-            InboxKind::Permission { input, .. } => input.clone(),
-            other => panic!("not a permission item: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn upgrade_builds_in_the_background_and_offers_the_build() {
-        let mut u = Upgrading::start(fixture("plain_turn"), false);
-        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
-        let item = u.wait_for_item();
-        let input = input_of(&item);
-        assert_eq!(input["source"], "abc1234");
-        assert_eq!(input["restarting"], false);
-        // The staged build is on disk, under the data directory only.
-        assert!(u.h.paths.data.join("upgrade/staged/dovetail").is_file());
-        // A second `:upgrade` while the item waits is refused.
-        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
-        u.h.drain(Duration::from_millis(300));
-        assert!(
-            u.h.failures
-                .iter()
-                .any(|f| f.contains("an upgrade is ready")),
-            "{:?}",
-            u.h.failures
-        );
-    }
-
-    #[test]
-    fn d_keeps_the_build_staged_and_does_not_restart() {
-        let mut u = Upgrading::start(fixture("plain_turn"), false);
-        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
-        let item = u.wait_for_item();
-        u.answer(&item, PermissionAnswer::Deny { message: None });
-        u.h.wait_for("the item to go", |s| !s.inbox.iter().any(is_ready));
-        u.h.drain(Duration::from_millis(300));
-        assert!(u.h.paths.data.join("upgrade/staged/ready.json").is_file());
-        let core = u.h.core.take().expect("handle");
-        assert!(!core.restart_requested());
-        u.h.send(Command::App(AppCommand::Quit { end_sessions: true }));
-        assert!(core.wait(Duration::from_secs(10)));
-    }
-
-    #[test]
-    fn y_with_every_agent_idle_quits_to_restart() {
-        let mut u = Upgrading::start(fixture("plain_turn"), false);
-        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
-        let item = u.wait_for_item();
-        u.answer(&item, PermissionAnswer::Allow);
-        u.wait_for_restart_event();
-        let core = u.h.core.take().expect("handle");
-        assert!(core.restart_requested());
-        assert!(
-            core.wait(Duration::from_secs(10)),
-            "the core stopped on its own"
-        );
-    }
-
-    #[test]
-    fn y_waits_for_a_busy_agent_and_says_which() {
-        let lines = [
-            r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
-            r#"{"type":"user","message":{"role":"user","content":"go"},"parent_tool_use_id":null,"isReplay":true}"#,
-            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"working"}]},"parent_tool_use_id":null}"#,
-            r#"{"type":"result","subtype":"success","is_error":false,"result":"done","total_cost_usd":0.01}"#,
-        ];
-        let fake = FakeDriver::from_ndjson(&lines.join("\n"))
-            .expect("fixture")
-            .with_options(ReplayOptions {
-                pause_before: vec![3],
-                ..ReplayOptions::default()
-            });
-        let mut u = Upgrading::start(fake.clone(), false);
-        prompt(&u.h, "go");
-        u.h.wait_for("the reply", |s| {
-            s.conversations
-                .get(&AgentId(COORDINATOR.into()))
-                .is_some_and(|t| t.entries.iter().any(|e| e.text == "working"))
-        });
-        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
-        let item = u.wait_for_item();
-        u.answer(&item, PermissionAnswer::Allow);
-        u.h.wait_for("the item to list who it waits for", |s| {
-            s.inbox.iter().any(|i| {
-                is_ready(i) && {
-                    let input = input_of(i);
-                    input["restarting"] == true
-                        && input["waiting"] == serde_json::json!(["coordinator"])
-                }
-            })
-        });
-        // Nothing was cut off: the turn is still held.
-        assert!(!u.h.core.as_ref().unwrap().restart_requested());
-
-        fake.resume();
-        u.wait_for_restart_event();
-        let core = u.h.core.take().expect("handle");
-        assert!(core.restart_requested());
-        assert!(core.wait(Duration::from_secs(10)));
-    }
-
-    #[test]
-    fn a_failed_build_is_an_error_item_with_the_tail() {
-        let mut u = Upgrading::start(fixture("plain_turn"), true);
-        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
-        u.h.wait_for("the error item", |s| {
-            s.inbox.iter().any(|i| {
-                matches!(&i.kind, InboxKind::Error { text }
-                    if text.contains("cargo build failed")
-                        && text.contains("unresolved import")
-                        && text.contains("Nothing was replaced"))
-            })
-        });
-        assert!(u.ready_item().is_none());
-        assert!(!u.h.paths.data.join("upgrade/staged/dovetail").exists());
-        u.h.quit();
-    }
-
-    #[test]
-    fn upgrade_is_refused_when_it_is_off() {
-        let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
-        h.send(Command::App(AppCommand::StartUpgrade { local: false }));
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while h.failures.is_empty() {
-            assert!(Instant::now() < deadline, "no refusal");
-            h.drain(Duration::from_millis(50));
-        }
-        assert!(h.failures[0].contains("not available"), "{:?}", h.failures);
-        h.quit();
-    }
-
-    #[test]
-    fn a_build_handed_over_the_socket_raises_the_item() {
-        let mut u = Upgrading::start(fixture("plain_turn"), false);
-        // Nothing staged yet.
-        let refused = socket_call(&u.h.socket(), SocketRequestBody::StagedUpgrade);
-        assert!(
-            matches!(refused, SocketResponseBody::Error { .. }),
-            "{refused:?}"
-        );
-
-        // `dovetail upgrade` builds into the staging folder, then hands it over.
-        let staged = u.h.paths.data.join("upgrade/staged");
-        std::fs::create_dir_all(&staged).unwrap();
-        std::fs::write(staged.join("dovetail"), "new binary").unwrap();
-        std::fs::write(
-            staged.join("ready.json"),
-            r#"{"source":"def5678","differing":["roles/slice.md"],"built_at_ms":1}"#,
-        )
-        .unwrap();
-        let reply = socket_call(&u.h.socket(), SocketRequestBody::StagedUpgrade);
-        assert_eq!(reply, SocketResponseBody::UpgradeStaged);
-        let input = input_of(&u.wait_for_item());
-        assert_eq!(input["source"], "def5678");
-        assert_eq!(input["differing"], serde_json::json!(["roles/slice.md"]));
-        u.h.quit();
-    }
-}
-
 #[test]
 fn a_side_chat_gets_only_the_core_suite_whatever_the_config_says() {
     let fake = fixture("plain_turn");
@@ -5174,36 +3918,6 @@ fn a_stale_or_out_of_order_settings_answer_does_not_confirm_a_switch() {
     h.quit();
 }
 
-// --- efforts (docs/design-v2.md §4) ---
-
-fn effort_named<'a>(s: &'a Snapshot, name: &str) -> Option<&'a dovetail_api::effort::Effort> {
-    s.efforts.iter().find(|e| e.name == name)
-}
-
-fn create_effort(h: &mut Harness, typed: &str, stored: &str) -> dovetail_api::effort::EffortId {
-    h.send(Command::Effort(EffortCommand::Create(
-        dovetail_api::effort::NewEffort {
-            name: typed.into(),
-            kind: dovetail_api::effort::EffortKind::Feature,
-            question_or_goal: " A buyer can pay without an account ".into(),
-        },
-    )));
-    h.wait_for("the effort", |s| effort_named(s, stored).is_some());
-    effort_named(&h.snap, stored).expect("effort").id
-}
-
-fn wait_sent_containing(fake: &FakeDriver, wanted: &str) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !fake
-        .sent()
-        .iter()
-        .any(|s| matches!(s, Sent::User(text) if text.contains(wanted)))
-    {
-        assert!(Instant::now() < deadline, "{:?}", fake.sent());
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
 /// Commands are handled in order, so once a later command's effect shows, an earlier one that
 /// was refused has reported its failure.
 #[test]
@@ -5324,7 +4038,7 @@ fn an_effort_is_named_in_kebab_case_and_its_criterion_goes_claimed_then_met() {
 #[test]
 fn an_agent_claims_a_criterion_and_only_the_user_approves_it() {
     use dovetail_api::effort::CriterionState;
-    use dovetail_tools::coordination::{ClaimCriterion, CoordinationTool};
+    use dovetail_tools::coordination::ClaimCriterion;
 
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     let effort = create_effort(&mut h, "providers", "providers");
@@ -5375,22 +4089,6 @@ fn an_agent_claims_a_criterion_and_only_the_user_approves_it() {
     h.drain(Duration::from_millis(100));
     assert_eq!(state_of(&h.snap), Some(CriterionState::Met));
     h.quit();
-}
-
-// --- blocks and cards (ADR 0025, ADR 0027) ---
-
-fn idea(effort: dovetail_api::effort::EffortId, text: &str) -> dovetail_api::canvas::NewCard {
-    dovetail_api::canvas::NewCard {
-        effort,
-        block: None,
-        kind: dovetail_api::canvas::CardKind::Idea,
-        reference: None,
-        text: text.into(),
-    }
-}
-
-fn card_titled<'a>(s: &'a Snapshot, title: &str) -> Option<&'a dovetail_api::canvas::Card> {
-    s.cards.iter().find(|c| c.title == title)
 }
 
 /// Blocks placed by the core, a card made incoming, placed, moved and linked, all still there
@@ -5692,8 +4390,7 @@ fn the_canvas_tools_add_and_link_and_nothing_else() {
     use dovetail_api::canvas::geometry::{CARD_H, GAP};
     use dovetail_api::canvas::{BlockId, CardId, CardKind, Layout};
     use dovetail_tools::{
-        Suite, TOOLS,
-        canvas::{CanvasAddBlock, CanvasAddCard, CanvasLinkCards, CanvasTool},
+        Suite, TOOLS, canvas::CanvasAddBlock, canvas::CanvasAddCard, canvas::CanvasLinkCards,
     };
 
     let canvas_tools: Vec<&str> = TOOLS
@@ -5945,29 +4642,6 @@ fn a_tagged_message_tags_the_reply_and_the_tag_survives_a_restart() {
     h.quit();
 }
 
-// --- session names and slice reports (ADR 0022), automatic task status (ADR 0024) ---
-
-fn task_status(s: &Snapshot, id: i64) -> Option<TaskStatus> {
-    s.tasks
-        .iter()
-        .find(|t| t.id == TaskId(id))
-        .map(|t| t.status)
-}
-
-fn report(
-    state: dovetail_tools::coordination::ReportState,
-    summary: &str,
-    pr: Option<u32>,
-) -> Tool {
-    Tool::Coordination(dovetail_tools::coordination::CoordinationTool::Report(
-        dovetail_tools::coordination::Report {
-            state,
-            summary: summary.into(),
-            pr,
-        },
-    ))
-}
-
 #[test]
 fn sessions_are_named_after_the_project_and_a_slice_reports_through_dovetail() {
     use dovetail_api::task::NewTask;
@@ -6065,74 +4739,6 @@ fn sessions_are_named_after_the_project_and_a_slice_reports_through_dovetail() {
          pass (PR #41)",
     );
     h.quit();
-}
-
-/// A fake `gh`: `gh pr list --head <branch> ...` prints `<dir>/<branch with _ for />.json`, or
-/// `[]` when there is no such file.
-fn fake_gh(dir: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-    let script = dir.join("gh");
-    let text = format!(
-        "#!/bin/sh\nbranch=\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = --head ]; then branch=$2; fi\n  \
-         shift\ndone\nfile=\"{}/$(echo \"$branch\" | tr / _).json\"\nif [ -f \"$file\" ]; then cat \
-         \"$file\"; else echo '[]'; fi\n",
-        dir.display()
-    );
-    std::fs::write(&script, text).expect("fake gh");
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-    script
-}
-
-fn set_pr(dir: &Path, slice: &str, state: &str) {
-    let text = format!(
-        "[{{\"number\": 42, \"state\": \"{state}\", \"url\": \"https://example.test/pr/42\"}}]"
-    );
-    std::fs::write(dir.join(format!("dovetail_{slice}.json")), text).expect("pr file");
-}
-
-/// Slices `names` in a git repo, each on its own task (ids from 1, in order), all in progress.
-/// With `shared`, every slice works on task 1.
-fn repo_with_task_slices(names: &[&str], shared: bool) -> (TempDir, PathBuf, Paths) {
-    use dovetail_api::task::{NewTask, TaskChange};
-    let (dir, repo, paths) = repo_with_slices(names);
-    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
-    let mut rows = db.load_agents().wait().expect("agents");
-    for (index, name) in names.iter().enumerate() {
-        let task = if shared && index > 0 {
-            TaskId(1)
-        } else {
-            let created = db
-                .create_task(
-                    NewTask {
-                        title: format!("task for {name}"),
-                        p_level: None,
-                        bucket: None,
-                        notes: String::new(),
-                        follow_up_of: None,
-                        pr: None,
-                        related: Vec::new(),
-                        effort: None,
-                        criterion: None,
-                    },
-                    false,
-                )
-                .wait()
-                .expect("task");
-            let id = created[0].id;
-            db.update_task(id, vec![TaskChange::Status(TaskStatus::InProgress)])
-                .wait()
-                .expect("status");
-            id
-        };
-        let row = rows
-            .iter_mut()
-            .find(|r| r.agent.name == *name)
-            .expect("slice row");
-        row.agent.task = Some(task);
-        db.upsert_agent(row.clone()).wait().expect("agent");
-    }
-    drop(db);
-    (dir, repo, paths)
 }
 
 #[test]
@@ -6303,49 +4909,6 @@ fn a_merge_is_seen_when_the_slice_is_archived() {
         task_status(s, 1) == Some(TaskStatus::Done) && !s.agents.iter().any(|a| a.name == "api")
     });
     h.quit();
-}
-
-// --- multi-repo projects (ADR 0021) ---
-
-/// A git repo with one commit at `<dir>/<name>`, by its canonical path.
-fn committed_repo(dir: &Path, name: &str) -> PathBuf {
-    let repo = dir.join(name);
-    std::fs::create_dir_all(&repo).unwrap();
-    git(&repo, &["init", "-q", "-b", "main"]);
-    std::fs::write(repo.join("README"), name).unwrap();
-    git(&repo, &["add", "."]);
-    git(&repo, &["commit", "-qm", "init"]);
-    repo.canonicalize().unwrap()
-}
-
-/// Project `p`, registered in the registry with a repo for each of `names`, and the paths
-/// under `dir` it lives in. The next harness opens it.
-fn registered_project(dir: &Path, names: &[&str]) -> (Paths, Vec<PathBuf>) {
-    let paths = Paths {
-        data: dir.join("data"),
-        config: dir.join("config"),
-        state: dir.join("state"),
-        runtime: dir.join("run"),
-    };
-    let repos: Vec<PathBuf> = names.iter().map(|n| committed_repo(dir, n)).collect();
-    let db = dovetail_core::db::Db::open(&paths, None).expect("registry");
-    let mut project = db
-        .create_project("p".into(), "work".into(), None, None)
-        .wait()
-        .expect("project");
-    for repo in &repos {
-        let new = dovetail_core::projects::repo_at(repo, None).expect("repo");
-        project = db.add_repo("p".into(), new).wait().expect("add");
-    }
-    drop(db);
-    PROJECT.with(|p| *p.borrow_mut() = Some(project));
-    (paths, repos)
-}
-
-fn replied(s: &Snapshot) -> bool {
-    s.conversations
-        .get(&AgentId(COORDINATOR.into()))
-        .is_some_and(|t| t.entries.iter().any(|e| e.text == "alpha"))
 }
 
 #[test]
@@ -6542,56 +5105,6 @@ fn a_coordinator_recorded_in_its_repo_starts_fresh_in_home() {
     h.quit();
 }
 
-// ---- ADR 0026: slice previews and declared variants
-
-/// The preview state of slice `name` in the snapshot.
-fn preview_of(s: &Snapshot, agent: &str) -> Option<dovetail_api::design::PreviewState> {
-    s.previews
-        .iter()
-        .find(|p| p.agent.0 == agent)
-        .map(|p| p.state.clone())
-}
-
-/// `GET /` of a preview URL, as plain HTTP on a socket: the body, or `None` if nothing answers.
-fn fetch(url: &str) -> Option<String> {
-    let addr = url.strip_prefix("http://")?.trim_end_matches('/');
-    let mut stream = std::net::TcpStream::connect(addr).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(3))).ok()?;
-    stream
-        .write_all(format!("GET / HTTP/1.0\r\nHost: {addr}\r\n\r\n").as_bytes())
-        .ok()?;
-    let mut body = String::new();
-    std::io::Read::read_to_string(&mut stream, &mut body).ok()?;
-    Some(body)
-}
-
-/// Waits (up to 5 s) for nothing to answer at `url`.
-fn gone(url: &str) -> bool {
-    let until = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < until {
-        if fetch(url).is_none() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    false
-}
-
-fn start_viewer_harness(recipe: Option<&str>) -> (Harness, TempDir, PathBuf) {
-    let (dir, repo, paths) = repo_with_slices(&["web"]);
-    if let Some(text) = recipe {
-        write_recipe(&paths, text);
-    }
-    let mut h = Harness::start_with(
-        fixture("plain_turn"),
-        paths.clone(),
-        Some(repo.clone()),
-        Config::default(),
-    );
-    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "web"));
-    (h, dir, repo)
-}
-
 #[test]
 fn a_preview_runs_in_the_worktree_serves_the_page_and_stops_with_the_slice() {
     let (mut h, _dir, _repo) = start_viewer_harness(Some(
@@ -6744,25 +5257,6 @@ fn a_repo_override_replaces_the_projects_preview_line() {
         preview_of(&h.snap, "slice-web")
     );
     h.quit();
-}
-
-fn declare(slots: Vec<dovetail_api::design::VariantSlot>) -> Tool {
-    Tool::Design(dovetail_tools::design::DesignTool::DeclareVariants(
-        dovetail_tools::design::DeclareVariants { slots },
-    ))
-}
-
-fn slot(
-    name: &str,
-    level: dovetail_api::design::VariantLevel,
-    options: &[&str],
-) -> dovetail_api::design::VariantSlot {
-    dovetail_api::design::VariantSlot {
-        name: name.into(),
-        level,
-        options: options.iter().map(|o| (*o).into()).collect(),
-        kept: None,
-    }
 }
 
 #[test]
@@ -6920,69 +5414,6 @@ fn declared_variants_and_picks_survive_a_restart() {
     h.quit();
 }
 
-// --- slices started on a chosen model and effort (task #42) ---
-
-fn start_on(
-    name: &str,
-    model: Option<&str>,
-    effort: Option<dovetail_api::model::ReasoningEffort>,
-) -> Tool {
-    Tool::Project(ProjectTool::StartSlice(StartSlice {
-        repo: None,
-        model: model.map(str::to_owned),
-        effort,
-        task: TaskId(1),
-        name: name.into(),
-        brief: "go".into(),
-    }))
-}
-
-fn make_task(h: &mut Harness) {
-    h.send(Command::Task(TaskCommand::Create(NewTask {
-        title: "t".into(),
-        p_level: None,
-        bucket: None,
-        notes: String::new(),
-        follow_up_of: None,
-        pr: None,
-        related: vec![],
-        effort: Default::default(),
-        criterion: None,
-    })));
-    h.wait_for("the task", |s| !s.tasks.is_empty());
-}
-
-fn wait_specs(fake: &FakeDriver, n: usize) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while fake.started_specs().len() < n {
-        assert!(Instant::now() < deadline, "session {n} never started");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
-/// The spec the session named `p.<name>` was started with, once it has started. The
-/// coordinator is woken by "slice ready" and starts too, so a slice is found by its name.
-fn wait_spec(fake: &FakeDriver, name: &str) -> dovetail_driver::SessionSpec {
-    let want = format!("p.{name}");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        let found = fake
-            .started_specs()
-            .into_iter()
-            .rev()
-            .find(|s| s.name.as_deref() == Some(want.as_str()));
-        if let Some(spec) = found {
-            return spec;
-        }
-        assert!(Instant::now() < deadline, "{want} never started");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn call_coordinator(h: &Harness, call: Tool) -> (String, bool) {
-    result_text(socket_call(&h.socket(), tool(COORDINATOR, call)))
-}
-
 #[test]
 fn a_slice_starts_on_the_model_and_effort_asked_for_and_defaults_when_left_out() {
     use dovetail_api::model::ReasoningEffort;
@@ -7108,12 +5539,6 @@ fn a_queued_slice_keeps_its_model_and_effort_and_a_refused_effort_is_reported() 
     h.quit();
 }
 
-fn notices_containing(s: &Snapshot, agent: &str, needle: &str) -> usize {
-    s.conversations.get(&AgentId(agent.into())).map_or(0, |t| {
-        t.entries.iter().filter(|e| e.text.contains(needle)).count()
-    })
-}
-
 #[test]
 fn a_typo_accepted_while_models_are_unknown_is_reported_after_the_start_up_read() {
     use dovetail_api::model::ReasoningEffort;
@@ -7195,4 +5620,1088 @@ fn a_restart_before_the_start_up_read_still_checks_the_launch_choice_once() {
     h.drain(Duration::from_millis(300));
     assert_eq!(notices_containing(&h.snap, "slice-r", "did not get"), 1);
     h.quit();
+}
+
+// --- :upgrade (ADR 0014) ---
+
+mod upgrade {
+    use std::sync::atomic::AtomicBool;
+
+    use dovetail_api::{
+        app::{AppCommand, AppEvent},
+        inbox::{InboxCommand, UPGRADE_READY_PERMISSION},
+    };
+    use dovetail_core::service::UpgradeOptions;
+    use dovetail_core::upgrade::{Call, Exec, ExecError};
+
+    use super::*;
+
+    /// Plays git and cargo: a worktree add makes the folder, cargo writes a binary into
+    /// `CARGO_TARGET_DIR`, `rev-parse` answers `abc1234`.
+    struct FakeExec {
+        fail_cargo: bool,
+    }
+
+    impl Exec for FakeExec {
+        fn run(&self, call: &Call, _cancel: &AtomicBool) -> Result<String, ExecError> {
+            if call.program == "cargo" {
+                if self.fail_cargo {
+                    if let Some(log) = &call.log {
+                        std::fs::write(log, "error[E0432]: unresolved import\n").unwrap();
+                    }
+                    return Err(ExecError::Failed {
+                        program: "cargo".into(),
+                        code: Some(101),
+                    });
+                }
+                let target = call.env.iter().find(|(k, _)| k == "CARGO_TARGET_DIR");
+                let target = PathBuf::from(&target.expect("target dir").1);
+                std::fs::create_dir_all(target.join("release")).unwrap();
+                std::fs::write(target.join("release/dovetail"), "new binary").unwrap();
+            }
+            if call.args.starts_with(&["worktree".into(), "add".into()]) {
+                std::fs::create_dir_all(&call.args[3]).unwrap();
+            }
+            Ok(if call.args.first().is_some_and(|a| a == "rev-parse") {
+                "abc1234\n".into()
+            } else {
+                String::new()
+            })
+        }
+    }
+
+    struct Upgrading {
+        h: Harness,
+        /// Holds the fake installed binary.
+        _install: TempDir,
+    }
+
+    impl Upgrading {
+        fn start(driver: FakeDriver, fail_cargo: bool) -> Upgrading {
+            let install_dir = tempfile::tempdir().expect("tempdir");
+            let install = install_dir.path().join("dovetail");
+            std::fs::write(&install, "old binary").unwrap();
+            UPGRADE.with(|u| {
+                *u.borrow_mut() = Some(UpgradeOptions {
+                    exec: Arc::new(FakeExec { fail_cargo }),
+                    install,
+                });
+            });
+            let h = Harness::start(driver, true, Config::default());
+            // A Dovetail checkout, for the build's first check.
+            std::fs::create_dir_all(h.repo.join("crates/dovetail")).unwrap();
+            std::fs::write(h.repo.join("crates/dovetail/Cargo.toml"), "").unwrap();
+            Upgrading {
+                h,
+                _install: install_dir,
+            }
+        }
+
+        fn ready_item(&self) -> Option<dovetail_api::inbox::InboxItem> {
+            self.h.snap.inbox.iter().find(|i| is_ready(i)).cloned()
+        }
+
+        fn wait_for_item(&mut self) -> dovetail_api::inbox::InboxItem {
+            self.h
+                .wait_for("Upgrade ready", |s| s.inbox.iter().any(is_ready));
+            self.ready_item().expect("the item")
+        }
+
+        fn answer(&self, item: &dovetail_api::inbox::InboxItem, answer: PermissionAnswer) {
+            self.h.send(Command::Inbox(InboxCommand::AnswerPermission {
+                item: item.id,
+                answer,
+            }));
+        }
+
+        /// Reads until the UI would be told to quit.
+        fn wait_for_restart_event(&mut self) {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let left = deadline
+                    .checked_duration_since(Instant::now())
+                    .expect("timed out waiting for UpgradeRestarting");
+                match self.h.link.messages.recv_timeout(left) {
+                    Ok(ServerMsg::Event {
+                        event: Event::App(AppEvent::UpgradeRestarting),
+                        ..
+                    }) => return,
+                    Ok(ServerMsg::Event { seq, event }) => self.h.fold(seq, event),
+                    Ok(_) => {}
+                    Err(_) => panic!("timed out waiting for UpgradeRestarting"),
+                }
+            }
+        }
+    }
+
+    fn is_ready(item: &dovetail_api::inbox::InboxItem) -> bool {
+        matches!(&item.kind, InboxKind::Permission { tool, .. } if tool == UPGRADE_READY_PERMISSION)
+    }
+
+    fn input_of(item: &dovetail_api::inbox::InboxItem) -> serde_json::Value {
+        match &item.kind {
+            InboxKind::Permission { input, .. } => input.clone(),
+            other => panic!("not a permission item: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn upgrade_builds_in_the_background_and_offers_the_build() {
+        let mut u = Upgrading::start(fixture("plain_turn"), false);
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
+        let item = u.wait_for_item();
+        let input = input_of(&item);
+        assert_eq!(input["source"], "abc1234");
+        assert_eq!(input["restarting"], false);
+        // The staged build is on disk, under the data directory only.
+        assert!(u.h.paths.data.join("upgrade/staged/dovetail").is_file());
+        // A second `:upgrade` while the item waits is refused.
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
+        u.h.drain(Duration::from_millis(300));
+        assert!(
+            u.h.failures
+                .iter()
+                .any(|f| f.contains("an upgrade is ready")),
+            "{:?}",
+            u.h.failures
+        );
+    }
+
+    #[test]
+    fn d_keeps_the_build_staged_and_does_not_restart() {
+        let mut u = Upgrading::start(fixture("plain_turn"), false);
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
+        let item = u.wait_for_item();
+        u.answer(&item, PermissionAnswer::Deny { message: None });
+        u.h.wait_for("the item to go", |s| !s.inbox.iter().any(is_ready));
+        u.h.drain(Duration::from_millis(300));
+        assert!(u.h.paths.data.join("upgrade/staged/ready.json").is_file());
+        let core = u.h.core.take().expect("handle");
+        assert!(!core.restart_requested());
+        u.h.send(Command::App(AppCommand::Quit { end_sessions: true }));
+        assert!(core.wait(Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn y_with_every_agent_idle_quits_to_restart() {
+        let mut u = Upgrading::start(fixture("plain_turn"), false);
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
+        let item = u.wait_for_item();
+        u.answer(&item, PermissionAnswer::Allow);
+        u.wait_for_restart_event();
+        let core = u.h.core.take().expect("handle");
+        assert!(core.restart_requested());
+        assert!(
+            core.wait(Duration::from_secs(10)),
+            "the core stopped on its own"
+        );
+    }
+
+    #[test]
+    fn y_waits_for_a_busy_agent_and_says_which() {
+        let lines = [
+            r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+            r#"{"type":"user","message":{"role":"user","content":"go"},"parent_tool_use_id":null,"isReplay":true}"#,
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"working"}]},"parent_tool_use_id":null}"#,
+            r#"{"type":"result","subtype":"success","is_error":false,"result":"done","total_cost_usd":0.01}"#,
+        ];
+        let fake = FakeDriver::from_ndjson(&lines.join("\n"))
+            .expect("fixture")
+            .with_options(ReplayOptions {
+                pause_before: vec![3],
+                ..ReplayOptions::default()
+            });
+        let mut u = Upgrading::start(fake.clone(), false);
+        prompt(&u.h, "go");
+        u.h.wait_for("the reply", |s| {
+            s.conversations
+                .get(&AgentId(COORDINATOR.into()))
+                .is_some_and(|t| t.entries.iter().any(|e| e.text == "working"))
+        });
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
+        let item = u.wait_for_item();
+        u.answer(&item, PermissionAnswer::Allow);
+        u.h.wait_for("the item to list who it waits for", |s| {
+            s.inbox.iter().any(|i| {
+                is_ready(i) && {
+                    let input = input_of(i);
+                    input["restarting"] == true
+                        && input["waiting"] == serde_json::json!(["coordinator"])
+                }
+            })
+        });
+        // Nothing was cut off: the turn is still held.
+        assert!(!u.h.core.as_ref().unwrap().restart_requested());
+
+        fake.resume();
+        u.wait_for_restart_event();
+        let core = u.h.core.take().expect("handle");
+        assert!(core.restart_requested());
+        assert!(core.wait(Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn a_failed_build_is_an_error_item_with_the_tail() {
+        let mut u = Upgrading::start(fixture("plain_turn"), true);
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
+        u.h.wait_for("the error item", |s| {
+            s.inbox.iter().any(|i| {
+                matches!(&i.kind, InboxKind::Error { text }
+                    if text.contains("cargo build failed")
+                        && text.contains("unresolved import")
+                        && text.contains("Nothing was replaced"))
+            })
+        });
+        assert!(u.ready_item().is_none());
+        assert!(!u.h.paths.data.join("upgrade/staged/dovetail").exists());
+        u.h.quit();
+    }
+
+    #[test]
+    fn upgrade_is_refused_when_it_is_off() {
+        let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
+        h.send(Command::App(AppCommand::StartUpgrade { local: false }));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while h.failures.is_empty() {
+            assert!(Instant::now() < deadline, "no refusal");
+            h.drain(Duration::from_millis(50));
+        }
+        assert!(h.failures[0].contains("not available"), "{:?}", h.failures);
+        h.quit();
+    }
+
+    #[test]
+    fn a_build_handed_over_the_socket_raises_the_item() {
+        let mut u = Upgrading::start(fixture("plain_turn"), false);
+        // Nothing staged yet.
+        let refused = socket_call(&u.h.socket(), SocketRequestBody::StagedUpgrade);
+        assert!(
+            matches!(refused, SocketResponseBody::Error { .. }),
+            "{refused:?}"
+        );
+
+        // `dovetail upgrade` builds into the staging folder, then hands it over.
+        let staged = u.h.paths.data.join("upgrade/staged");
+        std::fs::create_dir_all(&staged).unwrap();
+        std::fs::write(staged.join("dovetail"), "new binary").unwrap();
+        std::fs::write(
+            staged.join("ready.json"),
+            r#"{"source":"def5678","differing":["roles/slice.md"],"built_at_ms":1}"#,
+        )
+        .unwrap();
+        let reply = socket_call(&u.h.socket(), SocketRequestBody::StagedUpgrade);
+        assert_eq!(reply, SocketResponseBody::UpgradeStaged);
+        let input = input_of(&u.wait_for_item());
+        assert_eq!(input["source"], "def5678");
+        assert_eq!(input["differing"], serde_json::json!(["roles/slice.md"]));
+        u.h.quit();
+    }
+}
+
+fn s_util(w: &Option<dovetail_api::status::UsageWindow>) -> Option<f64> {
+    w.as_ref().map(|w| w.utilization)
+}
+
+/// The one subagent node in the snapshot.
+fn subagent(s: &Snapshot) -> Option<&dovetail_api::agent::Agent> {
+    s.agents
+        .iter()
+        .find(|a| matches!(a.kind, AgentKind::Subagent { .. }))
+}
+
+/// `memory.events` text with `oom_kill` at `kills`, as the kernel writes it.
+fn memory_events(kills: u64) -> String {
+    format!("low 0\nhigh 0\nmax {kills}\noom {kills}\noom_kill {kills}\noom_group_kill 0\n")
+}
+
+/// The text of the coordinator's out-of-memory items.
+fn oom_items(s: &Snapshot) -> Vec<String> {
+    s.inbox
+        .iter()
+        .filter_map(|i| match &i.kind {
+            InboxKind::Error { text } if text.starts_with("Out of memory") => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Waits until the restarted session was told, in one line, that it was OOM-killed and
+/// restarted, followed by the in-flight subagent `work`.
+fn wait_restart_note(fake: &FakeDriver, work: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let is_note = |s: &Sent| {
+        matches!(s, Sent::User(t) if t.lines().next().is_some_and(|l| {
+            l.starts_with("You were killed for running out of memory")
+                && l.ends_with("and have been restarted.")
+        }) && t.contains(work))
+    };
+    while !fake.sent().iter().any(is_note) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Waits until the fake session was sent `wanted` as a user message.
+fn wait_sent(fake: &FakeDriver, wanted: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let wanted = Sent::User(wanted.into());
+    while !fake.sent().contains(&wanted) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn ask(h: &Harness, question: &str) -> (String, bool) {
+    result_text(socket_call(
+        &h.socket(),
+        tool(
+            COORDINATOR,
+            Tool::Report(ReportTool::AskUser(AskUser {
+                question: question.into(),
+            })),
+        ),
+    ))
+}
+
+fn open_questions(s: &Snapshot) -> Vec<InboxId> {
+    s.inbox
+        .iter()
+        .filter(|i| matches!(i.kind, InboxKind::Question { .. }))
+        .map(|i| i.id)
+        .collect()
+}
+
+/// A turn that never reaches its `result`: init, some text, then the replay holds.
+fn held_turn() -> FakeDriver {
+    let lines = [
+        r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/tmp","permissionMode":"auto"}"#,
+        r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"working on it"}]},"parent_tool_use_id":null}"#,
+        r#"{"type":"result","subtype":"success","is_error":false,"result":"done","total_cost_usd":0.01}"#,
+    ];
+    FakeDriver::from_ndjson(&lines.join("\n"))
+        .expect("fixture")
+        .with_options(ReplayOptions {
+            pause_before: vec![2],
+            ..ReplayOptions::default()
+        })
+}
+
+fn cut_off_text(s: &Snapshot) -> Option<String> {
+    s.inbox.iter().find_map(|i| match &i.kind {
+        InboxKind::Error { text } if text.contains("cut off by a restart") => Some(text.clone()),
+        _ => None,
+    })
+}
+
+/// Raises a pending `project_start_slice` approval: the coordinator to acceptEdits, a task, the call.
+fn pending_start(h: &mut Harness) {
+    h.send(Command::Agent(AgentCommand::CyclePermissionMode {
+        agent: AgentId(COORDINATOR.into()),
+    }));
+    h.send(Command::Task(TaskCommand::Create(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+        effort: Default::default(),
+        criterion: None,
+    })));
+    h.wait_for("mode and task", |s| {
+        !s.tasks.is_empty()
+            && s.agents
+                .iter()
+                .any(|a| a.permission_mode == PermissionMode::AcceptEdits)
+    });
+    let (text, _) = result_text(socket_call(
+        &h.socket(),
+        tool(
+            COORDINATOR,
+            Tool::Project(ProjectTool::StartSlice(StartSlice {
+                repo: None,
+                model: None,
+                effort: None,
+                driver: None,
+                task: TaskId(1),
+                name: "later".into(),
+                brief: "go".into(),
+            })),
+        ),
+    ));
+    assert!(text.starts_with("pending"), "{text}");
+}
+
+fn sent_users(fake: &FakeDriver) -> Vec<String> {
+    fake.sent()
+        .into_iter()
+        .filter_map(|s| match s {
+            Sent::User(t) => Some(t),
+            _ => None,
+        })
+        .collect()
+}
+
+const EXPIRED: &str = "project_start_slice later expired at restart; call it again if still needed";
+
+/// A git repo with slices `names` already open (idle, restored on start), each in a real
+/// worktree on its `dovetail/<name>` branch at the main checkout's HEAD.
+fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), "hi").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    std::fs::create_dir_all(paths.worktrees("p")).unwrap();
+    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+    for name in names {
+        let wt = paths.worktrees("p").join(name);
+        let branch = format!("dovetail/{name}");
+        git(
+            &repo,
+            &["worktree", "add", "-q", "-b", &branch, wt.to_str().unwrap()],
+        );
+        let agent = dovetail_api::agent::Agent {
+            id: AgentId(format!("slice-{name}")),
+            name: (*name).into(),
+            kind: AgentKind::Slice,
+            parent: None,
+            task: None,
+            worktree: Some(dovetail_api::agent::WorktreeRef { path: wt, branch }),
+            status: dovetail_api::agent::AgentStatus::Idle,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: None,
+            last_activity_ms: 0,
+            lock: dovetail_api::agent::SessionLock::Headless,
+            model: None,
+            effort: None,
+            subagent_tokens: 0,
+            tool: None,
+            driver: dovetail_api::model::DriverKind::Claude,
+        };
+        db.upsert_agent(dovetail_core::db::AgentRow {
+            agent,
+            session_id: None,
+            transcript_path: None,
+            task_list_id: None,
+            created_ms: 0,
+            tool_use_id: None,
+            claude_home: None,
+            takeover: None,
+            model_choice: None,
+            repo: None,
+        })
+        .wait()
+        .expect("agent");
+    }
+    drop(db);
+    (dir, repo, paths)
+}
+
+fn archive_slice(name: &str) -> Tool {
+    Tool::Project(ProjectTool::ArchiveSlice(ArchiveSlice {
+        name: name.into(),
+    }))
+}
+
+fn branch_exists(repo: &Path, branch: &str) -> bool {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "--verify", "--quiet", branch])
+        .stdout(std::process::Stdio::null())
+        .status()
+        .expect("git")
+        .success()
+}
+
+// --- updating tasks (task #25) ---
+
+fn update(id: i64) -> UpdateTask {
+    UpdateTask {
+        id: TaskId(id),
+        status: None,
+        bucket: None,
+        p_level: None,
+        title: None,
+        notes: None,
+    }
+}
+
+/// Writes one task file the way Claude Code does.
+fn write_item(list: &Path, id: &str, subject: &str, status: &str) {
+    std::fs::create_dir_all(list).expect("list dir");
+    let text = format!(
+        "{{\n  \"id\": \"{id}\",\n  \"subject\": \"{subject}\",\n  \"description\": \"{subject}\",\n  \
+         \"status\": \"{status}\",\n  \"blocks\": [],\n  \"blockedBy\": []\n}}"
+    );
+    std::fs::write(list.join(format!("{id}.json")), text).expect("task file");
+}
+
+fn todo(s: &Snapshot, id: &str) -> Option<dovetail_api::agent::TodoItem> {
+    s.todos.iter().find(|t| t.id == id).cloned()
+}
+
+fn owner(s: &Snapshot, id: &str) -> Option<String> {
+    todo(s, id).and_then(|t| t.created_by).map(|a| a.0)
+}
+
+// --- Profiles (task #27, ADR 0009) ---
+
+/// State dirs for a run whose recipe and config are written before the core starts.
+fn profile_paths(dir: &Path) -> Paths {
+    Paths {
+        data: dir.join("data"),
+        config: dir.join("config"),
+        state: dir.join("state"),
+        runtime: dir.join("unused"),
+    }
+}
+
+fn profiles_config(dir: &Path) -> Config {
+    let mut config = Config::default();
+    for name in ["mine", "work"] {
+        config.profiles.insert(
+            name.into(),
+            dir.join("profiles")
+                .join(name)
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+    config
+}
+
+fn write_recipe(paths: &Paths, text: &str) {
+    let file = paths.recipe("p");
+    std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
+    std::fs::write(file, text).expect("recipe");
+}
+
+fn config_dir_env(spec: &dovetail_driver::SessionSpec) -> Option<String> {
+    spec.env
+        .iter()
+        .find(|(k, _)| k == "CLAUDE_CONFIG_DIR")
+        .map(|(_, v)| v.clone())
+}
+
+fn error_texts(s: &Snapshot) -> Vec<String> {
+    s.inbox
+        .iter()
+        .filter_map(|i| match &i.kind {
+            InboxKind::Error { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn wait_started(fake: &FakeDriver, count: usize) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < count {
+        assert!(Instant::now() < deadline, "sessions did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn profile_errors(s: &Snapshot, needle: &str) -> usize {
+    error_texts(s).iter().filter(|t| t.contains(needle)).count()
+}
+
+fn write_recipe_for(paths: &Paths, project: &str, text: &str) {
+    let file = paths.recipe(project);
+    std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
+    std::fs::write(file, text).expect("recipe");
+}
+
+// --- Take-over (M14) ---
+
+/// The transcript folder name Claude Code uses for `cwd`.
+fn encoded(cwd: &Path) -> String {
+    cwd.to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// A fake native `claude`: records its arguments, folder and Claude home in `out`, appends one
+/// native turn to the session's transcript (under `$CLAUDE_CONFIG_DIR/projects/<folder>`), and
+/// exits once `wait` exists (at once without one).
+fn fake_claude(out: &Path, folder: &str, wait: Option<&Path>) -> std::ffi::OsString {
+    use std::os::unix::fs::PermissionsExt;
+    let wait = wait.map(|w| w.display().to_string()).unwrap_or_default();
+    let script = out.join("fake-claude");
+    let body = format!(
+        r#"#!/bin/sh
+out='{out}'
+printf '%s\n' "$@" > "$out/argv"
+pwd -P > "$out/cwd"
+printf '%s' "$CLAUDE_CONFIG_DIR" > "$out/config_dir"
+printf '%s' "$DOVETAIL_AGENT_ID" > "$out/agent"
+prev=
+for a in "$@"; do [ "$prev" = --resume ] && id=$a; prev=$a; done
+t="$CLAUDE_CONFIG_DIR/projects/{folder}/$id.jsonl"
+mkdir -p "$(dirname "$t")"
+cat >> "$t" <<'LINES'
+{{"type":"user","message":{{"role":"user","content":"native hello"}}}}
+{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"native reply"}},{{"type":"tool_use","id":"t1","name":"Bash","input":{{}}}}]}}}}
+LINES
+touch "$out/started"
+while [ -n '{wait}' ] && [ ! -e '{wait}' ]; do sleep 0.05; done
+exit 0
+"#,
+        out = out.display(),
+    );
+    std::fs::write(&script, body).expect("fake claude");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("runnable");
+    script.into_os_string()
+}
+
+fn lock_of(s: &Snapshot, id: &str) -> dovetail_api::agent::SessionLock {
+    s.agents
+        .iter()
+        .find(|a| a.id.0 == id)
+        .map(|a| a.lock)
+        .unwrap_or_else(|| panic!("no agent {id}"))
+}
+
+fn wait_file(path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "{} never appeared",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn wait_sent_shutdown(fake: &FakeDriver) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fake.sent().iter().any(|s| matches!(s, Sent::Shutdown(_))) {
+        assert!(Instant::now() < deadline, "headless was not stopped");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Opens a project whose coordinator was taken over when Dovetail stopped: its transcript has
+/// one line from before the take-over and one native turn after, and its lock names `pid`.
+fn open_after_crash(pid: u32, ticks: Option<u64>) -> (Harness, FakeDriver, TempDir) {
+    use dovetail_core::takeover::TakeoverLock;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = profile_paths(dir.path());
+    let config = profiles_config(dir.path());
+    let mine = dir.path().join("profiles/mine");
+    write_recipe(&paths, "profile = \"mine\"\n");
+    // Filed where Claude Code files the coordinator's session: under its `home/` folder.
+    let transcript = dovetail_core::session::launch::transcript_path(
+        &mine,
+        &paths.project_home("p"),
+        &format!("{COORDINATOR}-session"),
+    );
+    std::fs::create_dir_all(transcript.parent().expect("parent")).expect("dir");
+    std::fs::write(&transcript, "{\"type\":\"summary\"}\n").expect("transcript");
+    let offset = std::fs::metadata(&transcript).expect("len").len();
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&transcript)
+        .expect("open");
+    writeln!(
+        file,
+        "{{\"type\":\"user\",\"message\":{{\"content\":\"typed while Dovetail was down\"}}}}"
+    )
+    .expect("append");
+    let lock = TakeoverLock {
+        since_ms: 1,
+        pid: Some(pid),
+        start_ticks: ticks,
+        transcript_offset: Some(offset),
+    };
+    seed(
+        &paths,
+        session_row(
+            COORDINATOR,
+            AgentKind::Coordinator,
+            None,
+            &mine,
+            transcript,
+            Some(lock),
+        ),
+    );
+    let fake = fixture("plain_turn");
+    let h = Harness::start_with(fake.clone(), paths, None, config);
+    (h, fake, dir)
+}
+
+/// Processes that cannot be checked, as when `/proc` is unreadable.
+struct Blind;
+
+impl dovetail_core::takeover::Processes for Blind {
+    fn start_ticks(&self, _: u32) -> std::io::Result<Option<u64>> {
+        Err(std::io::Error::other("no /proc here"))
+    }
+    fn find_native(&self, _: &str) -> std::io::Result<Option<u32>> {
+        Err(std::io::Error::other("no /proc here"))
+    }
+}
+
+// --- maps_draw (M15) ---
+
+fn draw(h: &Harness, map: serde_json::Value) -> (String, bool) {
+    result_text(socket_call(
+        &h.socket(),
+        tool(COORDINATOR, Tool::Map(MapTool::Draw(DrawMap(map)))),
+    ))
+}
+
+fn checkout_map(title: &str) -> serde_json::Value {
+    serde_json::json!({
+        "map": { "title": title, "type": "structure" },
+        "nodes": [
+            { "id": "api", "kind": "endpoint", "label": "POST /checkout", "description": "Takes the order." },
+            { "id": "orders", "kind": "data", "label": "orders", "description": "Orders table." }
+        ],
+        "connections": [ { "from": "api", "to": "orders", "label": "writes" } ]
+    })
+}
+
+fn login_lanes(lane_node: &str) -> serde_json::Value {
+    serde_json::json!({
+        "map": { "title": "Logging in", "type": "swimlane" },
+        "nodes": [
+            { "id": "user", "kind": "actor", "label": "User", "description": "Signs in." },
+            { "id": "check", "kind": "endpoint", "label": "/login", "description": "Checks it." }
+        ],
+        "lanes": [
+            { "id": "you", "label": "User" },
+            { "id": "web", "label": "Web", "node": lane_node }
+        ],
+        "flows": [ { "name": "Log in", "steps": [
+            { "node": "user", "lane": "you", "note": "Types a password." },
+            { "node": "check", "lane": "web", "arrow": "submits", "note": "Checks it." }
+        ] } ]
+    })
+}
+
+/// Sends `LoadMap` and waits for its answer, folding events in on the way.
+fn load_map(h: &mut Harness, id: &str, version: Option<u32>) -> Result<Map, String> {
+    h.send(Command::Map(MapCommand::Load {
+        id: MapId(id.into()),
+        version,
+    }));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let left = deadline
+            .checked_duration_since(Instant::now())
+            .expect("timed out waiting for the map");
+        match h.link.messages.recv_timeout(left).expect("a message") {
+            ServerMsg::Event { seq, event } => {
+                let answer = match &event {
+                    Event::Map(MapEvent::Loaded(map)) => Some(Ok(map.clone())),
+                    Event::App(AppEvent::CommandFailed { message }) => Some(Err(message.clone())),
+                    _ => None,
+                };
+                apply(&mut h.snap, seq, event);
+                if let Some(answer) = answer {
+                    return answer;
+                }
+            }
+            ServerMsg::Snapshot(s) => h.snap = s,
+            ServerMsg::Hello { .. } => {}
+        }
+    }
+}
+
+/// No fresh start raises a Needs-you item: the old transcript just stays on disk (task #38).
+fn no_permission_item(s: &Snapshot) -> bool {
+    s.inbox
+        .iter()
+        .all(|i| !matches!(i.kind, InboxKind::Permission { .. }))
+}
+
+// --- efforts (docs/design-v2.md §4) ---
+
+fn effort_named<'a>(s: &'a Snapshot, name: &str) -> Option<&'a dovetail_api::effort::Effort> {
+    s.efforts.iter().find(|e| e.name == name)
+}
+
+fn create_effort(h: &mut Harness, typed: &str, stored: &str) -> dovetail_api::effort::EffortId {
+    h.send(Command::Effort(EffortCommand::Create(
+        dovetail_api::effort::NewEffort {
+            name: typed.into(),
+            kind: dovetail_api::effort::EffortKind::Feature,
+            question_or_goal: " A buyer can pay without an account ".into(),
+        },
+    )));
+    h.wait_for("the effort", |s| effort_named(s, stored).is_some());
+    effort_named(&h.snap, stored).expect("effort").id
+}
+
+fn wait_sent_containing(fake: &FakeDriver, wanted: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fake
+        .sent()
+        .iter()
+        .any(|s| matches!(s, Sent::User(text) if text.contains(wanted)))
+    {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+// --- blocks and cards (ADR 0025, ADR 0027) ---
+
+fn idea(effort: dovetail_api::effort::EffortId, text: &str) -> dovetail_api::canvas::NewCard {
+    dovetail_api::canvas::NewCard {
+        effort,
+        block: None,
+        kind: dovetail_api::canvas::CardKind::Idea,
+        reference: None,
+        text: text.into(),
+    }
+}
+
+fn card_titled<'a>(s: &'a Snapshot, title: &str) -> Option<&'a dovetail_api::canvas::Card> {
+    s.cards.iter().find(|c| c.title == title)
+}
+
+// --- session names and slice reports (ADR 0022), automatic task status (ADR 0024) ---
+
+fn task_status(s: &Snapshot, id: i64) -> Option<TaskStatus> {
+    s.tasks
+        .iter()
+        .find(|t| t.id == TaskId(id))
+        .map(|t| t.status)
+}
+
+fn report(
+    state: dovetail_tools::coordination::ReportState,
+    summary: &str,
+    pr: Option<u32>,
+) -> Tool {
+    Tool::Coordination(CoordinationTool::Report(
+        dovetail_tools::coordination::Report {
+            state,
+            summary: summary.into(),
+            pr,
+        },
+    ))
+}
+
+/// A fake `gh`: `gh pr list --head <branch> ...` prints `<dir>/<branch with _ for />.json`, or
+/// `[]` when there is no such file.
+fn fake_gh(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let script = dir.join("gh");
+    let text = format!(
+        "#!/bin/sh\nbranch=\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = --head ]; then branch=$2; fi\n  \
+         shift\ndone\nfile=\"{}/$(echo \"$branch\" | tr / _).json\"\nif [ -f \"$file\" ]; then cat \
+         \"$file\"; else echo '[]'; fi\n",
+        dir.display()
+    );
+    std::fs::write(&script, text).expect("fake gh");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    script
+}
+
+fn set_pr(dir: &Path, slice: &str, state: &str) {
+    let text = format!(
+        "[{{\"number\": 42, \"state\": \"{state}\", \"url\": \"https://example.test/pr/42\"}}]"
+    );
+    std::fs::write(dir.join(format!("dovetail_{slice}.json")), text).expect("pr file");
+}
+
+/// Slices `names` in a git repo, each on its own task (ids from 1, in order), all in progress.
+/// With `shared`, every slice works on task 1.
+fn repo_with_task_slices(names: &[&str], shared: bool) -> (TempDir, PathBuf, Paths) {
+    use dovetail_api::task::{NewTask, TaskChange};
+    let (dir, repo, paths) = repo_with_slices(names);
+    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+    let mut rows = db.load_agents().wait().expect("agents");
+    for (index, name) in names.iter().enumerate() {
+        let task = if shared && index > 0 {
+            TaskId(1)
+        } else {
+            let created = db
+                .create_task(
+                    NewTask {
+                        title: format!("task for {name}"),
+                        p_level: None,
+                        bucket: None,
+                        notes: String::new(),
+                        follow_up_of: None,
+                        pr: None,
+                        related: Vec::new(),
+                        effort: None,
+                        criterion: None,
+                    },
+                    false,
+                )
+                .wait()
+                .expect("task");
+            let id = created[0].id;
+            db.update_task(id, vec![TaskChange::Status(TaskStatus::InProgress)])
+                .wait()
+                .expect("status");
+            id
+        };
+        let row = rows
+            .iter_mut()
+            .find(|r| r.agent.name == *name)
+            .expect("slice row");
+        row.agent.task = Some(task);
+        db.upsert_agent(row.clone()).wait().expect("agent");
+    }
+    drop(db);
+    (dir, repo, paths)
+}
+
+// --- multi-repo projects (ADR 0021) ---
+
+/// A git repo with one commit at `<dir>/<name>`, by its canonical path.
+fn committed_repo(dir: &Path, name: &str) -> PathBuf {
+    let repo = dir.join(name);
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), name).unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    repo.canonicalize().unwrap()
+}
+
+/// Project `p`, registered in the registry with a repo for each of `names`, and the paths
+/// under `dir` it lives in. The next harness opens it.
+fn registered_project(dir: &Path, names: &[&str]) -> (Paths, Vec<PathBuf>) {
+    let paths = Paths {
+        data: dir.join("data"),
+        config: dir.join("config"),
+        state: dir.join("state"),
+        runtime: dir.join("run"),
+    };
+    let repos: Vec<PathBuf> = names.iter().map(|n| committed_repo(dir, n)).collect();
+    let db = dovetail_core::db::Db::open(&paths, None).expect("registry");
+    let mut project = db
+        .create_project("p".into(), "work".into(), None, None)
+        .wait()
+        .expect("project");
+    for repo in &repos {
+        let new = dovetail_core::projects::repo_at(repo, None).expect("repo");
+        project = db.add_repo("p".into(), new).wait().expect("add");
+    }
+    drop(db);
+    PROJECT.with(|p| *p.borrow_mut() = Some(project));
+    (paths, repos)
+}
+
+fn replied(s: &Snapshot) -> bool {
+    s.conversations
+        .get(&AgentId(COORDINATOR.into()))
+        .is_some_and(|t| t.entries.iter().any(|e| e.text == "alpha"))
+}
+
+// ---- ADR 0026: slice previews and declared variants
+
+/// The preview state of slice `name` in the snapshot.
+fn preview_of(s: &Snapshot, agent: &str) -> Option<dovetail_api::design::PreviewState> {
+    s.previews
+        .iter()
+        .find(|p| p.agent.0 == agent)
+        .map(|p| p.state.clone())
+}
+
+/// `GET /` of a preview URL, as plain HTTP on a socket: the body, or `None` if nothing answers.
+fn fetch(url: &str) -> Option<String> {
+    let addr = url.strip_prefix("http://")?.trim_end_matches('/');
+    let mut stream = std::net::TcpStream::connect(addr).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(3))).ok()?;
+    stream
+        .write_all(format!("GET / HTTP/1.0\r\nHost: {addr}\r\n\r\n").as_bytes())
+        .ok()?;
+    let mut body = String::new();
+    std::io::Read::read_to_string(&mut stream, &mut body).ok()?;
+    Some(body)
+}
+
+/// Waits (up to 5 s) for nothing to answer at `url`.
+fn gone(url: &str) -> bool {
+    let until = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < until {
+        if fetch(url).is_none() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+fn start_viewer_harness(recipe: Option<&str>) -> (Harness, TempDir, PathBuf) {
+    let (dir, repo, paths) = repo_with_slices(&["web"]);
+    if let Some(text) = recipe {
+        write_recipe(&paths, text);
+    }
+    let mut h = Harness::start_with(
+        fixture("plain_turn"),
+        paths.clone(),
+        Some(repo.clone()),
+        Config::default(),
+    );
+    h.wait_for("the slice", |s| s.agents.iter().any(|a| a.name == "web"));
+    (h, dir, repo)
+}
+
+fn declare(slots: Vec<dovetail_api::design::VariantSlot>) -> Tool {
+    Tool::Design(DesignTool::DeclareVariants(
+        dovetail_tools::design::DeclareVariants { slots },
+    ))
+}
+
+fn slot(
+    name: &str,
+    level: dovetail_api::design::VariantLevel,
+    options: &[&str],
+) -> dovetail_api::design::VariantSlot {
+    dovetail_api::design::VariantSlot {
+        name: name.into(),
+        level,
+        options: options.iter().map(|o| (*o).into()).collect(),
+        kept: None,
+    }
+}
+
+/// The spec the session named `p.<name>` was started with, once it has started. The
+/// coordinator is woken by "slice ready" and starts too, so a slice is found by its name.
+fn wait_spec(fake: &FakeDriver, name: &str) -> dovetail_driver::SessionSpec {
+    let want = format!("p.{name}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let found = fake
+            .started_specs()
+            .into_iter()
+            .rev()
+            .find(|s| s.name.as_deref() == Some(want.as_str()));
+        if let Some(spec) = found {
+            return spec;
+        }
+        assert!(Instant::now() < deadline, "{want} never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn notices_containing(s: &Snapshot, agent: &str, needle: &str) -> usize {
+    s.conversations.get(&AgentId(agent.into())).map_or(0, |t| {
+        t.entries.iter().filter(|e| e.text.contains(needle)).count()
+    })
 }

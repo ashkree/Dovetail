@@ -147,6 +147,7 @@ pub fn agent(id: &str, status: AgentStatus) -> Agent {
         effort: None,
         subagent_tokens: 0,
         tool: None,
+        driver: dovetail_api::model::DriverKind::Claude,
     }
 }
 
@@ -180,6 +181,7 @@ pub fn subagent() -> Agent {
         effort: Some(ReasoningEffort::Xhigh),
         subagent_tokens: 12_345,
         tool: None,
+        driver: dovetail_api::model::DriverKind::Claude,
     }
 }
 

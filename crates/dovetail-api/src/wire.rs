@@ -21,7 +21,7 @@ use crate::model::{ModelCommand, ModelEvent};
 use crate::project::{ProjectCommand, ProjectEvent};
 use crate::research::{ResearchCommand, ResearchEvent};
 use crate::snapshot::Snapshot;
-use crate::status::StatusEvent;
+use crate::status::{StatusCommand, StatusEvent};
 use crate::tangent::{TangentCommand, TangentEvent};
 use crate::task::{TaskCommand, TaskEvent};
 use crate::worktree::{WorktreeCommand, WorktreeEvent};
@@ -103,6 +103,8 @@ pub enum Command {
     Research(ResearchCommand),
     /// A command about the library.
     Library(LibraryCommand),
+    /// A command about the status bar and usage menu.
+    Status(StatusCommand),
     /// A command about the app.
     App(AppCommand),
 }

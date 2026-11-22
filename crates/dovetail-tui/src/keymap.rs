@@ -176,6 +176,8 @@ pub enum Scope {
     Global,
     /// Only when this buffer has focus.
     Buffer(BufferKind),
+    /// A modal confirm dialog.
+    Confirm,
 }
 
 /// One row of the keymap table.
@@ -219,6 +221,7 @@ const LIBRARY: Scope = Scope::Buffer(BufferKind::Library);
 const READER: Scope = Scope::Buffer(BufferKind::Reader);
 const ASK: Scope = Scope::Buffer(BufferKind::Ask);
 const TANGENTS: Scope = Scope::Buffer(BufferKind::Tangents);
+const CONFIRM: Scope = Scope::Confirm;
 
 /// The v1 keymap (Decisions 10, 17 and 24; plan B2).
 pub const BINDINGS: &[Binding] = &[
@@ -445,6 +448,15 @@ pub const BINDINGS: &[Binding] = &[
     bind(M, G, "u", Action::MapRedraw),
     // An inbox item in full goes back with Esc; the answer keys are in `INBOX_ANSWERS`.
     bind(N, INBOX_DETAIL, "<Esc>", Action::BackToConversation),
+    // Modal confirm dialogs (driver switching).
+    bind(N, CONFIRM, "<CR>", Action::ConfirmAccept),
+    bind(N, CONFIRM, "<Esc>", Action::ConfirmCancel),
+    bind(N, CONFIRM, "<Tab>", Action::ConfirmToggle),
+    bind(N, CONFIRM, "<S-Tab>", Action::ConfirmToggle),
+    bind(N, CONFIRM, "l", Action::ConfirmNext),
+    bind(N, CONFIRM, "<Right>", Action::ConfirmNext),
+    bind(N, CONFIRM, "h", Action::ConfirmPrev),
+    bind(N, CONFIRM, "<Left>", Action::ConfirmPrev),
 ];
 
 /// The inbox answer keys (Decision 17), bound in both the inbox list and an inbox item in full
@@ -540,7 +552,7 @@ impl Keymap {
     }
 
     /// The single-key binding for `key` in `mode` and exactly `scope`, if any.
-    fn chord(&self, mode: Mode, scope: Scope, key: Key) -> Option<Action> {
+    pub fn chord(&self, mode: Mode, scope: Scope, key: Key) -> Option<Action> {
         self.entries
             .iter()
             .find(|e| e.mode == mode && e.scope == scope && e.keys == [key])

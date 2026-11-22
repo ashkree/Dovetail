@@ -4,6 +4,13 @@ use std::path::PathBuf;
 
 use dovetail_tools::env;
 
+/// The user's home directory (`$HOME`), or empty if unset.
+pub(crate) fn home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default()
+}
+
 /// Base directories, resolved once from the environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
@@ -46,9 +53,7 @@ impl Paths {
     }
 
     fn from_xdg() -> Self {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_default();
+        let home = home_dir();
         let xdg = |var: &str, fallback: &str| {
             std::env::var_os(var)
                 .filter(|v| !v.is_empty())

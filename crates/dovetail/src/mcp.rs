@@ -450,8 +450,11 @@ fn tool_defs() -> Vec<ToolDef> {
                 ready\"; a setup failure arrives the same way. The brief becomes the slice's \
                 first prompt, so make it complete: goal, scope, files, checks to run. The \
                 slice works in one of the project's repos: name it with `repo` when the \
-                project has several (refused without it); with one it may be left out. Pick the \
-                session's `model` (optional, default `sonnet`) and `effort` for the work. An unknown model is `denied`; if the model or effort did not take, \
+                project has several (refused without it); with one it may be left out. Pick \
+                `driver` (`claude` by default, or `agy`; an agy slice cannot receive \
+                SendMessage), the session's `model` (optional, default `sonnet` on `claude`, \
+                or an agy family such as `claude-opus-5-5` or `gemini-3.8-flash` on `agy`), and \
+                `effort` for the work. An unknown model is `denied`; if the model or effort did not take, \
                 you are told in a message.",
             schema: || {
                 json!({"type": "object", "properties": {
@@ -459,8 +462,9 @@ fn tool_defs() -> Vec<ToolDef> {
                     "name": {"type": "string", "description": "Short slice name, used for the branch and worktree."},
                     "brief": {"type": "string", "description": "The slice's first prompt."},
                     "repo": {"type": "string", "description": "The repo it works in, by name, as Dovetail listed it to you. Required when the project has several repos."},
-                    "model": {"type": "string", "description": "Optional, default sonnet. The model the slice runs on: an alias (`haiku`, `sonnet`, `opus`) or a full model id."},
-                    "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"], "description": "The slice's effort level. Left out, Claude Code's default applies."}
+                    "driver": {"type": "string", "enum": ["claude", "agy"], "description": "Optional, default claude. Set to `agy` to run the slice on agy (note: an agy slice cannot receive SendMessage)."},
+                    "model": {"type": "string", "description": "Optional (default sonnet on claude, or agy's default on agy). The model the slice runs on: a Claude alias/id, or an agy family (`claude-opus-5-5`, `gemini-3.8-flash`)."},
+                    "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"], "description": "The slice's effort level. Left out, the driver's default applies."}
                 }, "required": ["task", "name", "brief"]})
             },
         },

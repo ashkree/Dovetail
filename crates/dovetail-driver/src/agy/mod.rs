@@ -11,6 +11,7 @@ mod models;
 mod permission;
 mod rpc;
 mod turn;
+mod usage;
 
 pub use args::{AgyOptions, McpServerSpec};
 
@@ -48,6 +49,13 @@ impl AgyDriver {
         Self {
             program: "agy".into(),
         }
+    }
+
+    /// `agy` from `PATH`, or `None` when no executable of that name is there: a machine without
+    /// agy then has no agy driver at all.
+    pub fn if_installed() -> Option<Self> {
+        let path = std::env::var_os("PATH")?;
+        on_path("agy", &path).then(Self::new)
     }
 
     /// Uses a specific binary.
@@ -116,6 +124,14 @@ impl Link {
 impl SessionDriver for AgyDriver {
     fn kind(&self) -> DriverKind {
         DriverKind::Agy
+    }
+
+    fn usage(&self, query: crate::UsageQuery) -> crate::UsageFuture {
+        Box::pin(usage::usage(self.program.clone(), query))
+    }
+
+    fn models(&self, query: crate::UsageQuery) -> crate::ModelsFuture {
+        Box::pin(models::list(self.program.clone(), query))
     }
 
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {
@@ -242,9 +258,34 @@ impl Session for AgySession {
     }
 }
 
+/// Whether `program` is an executable file in one of the `path` folders.
+fn on_path(program: &str, path: &std::ffi::OsStr) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::env::split_paths(path).any(|dir| {
+        std::fs::metadata(dir.join(program))
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agy_is_found_only_as_an_executable_file_on_the_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("dvt-agy-path-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = std::env::join_paths([&dir]).expect("path");
+        assert!(!on_path("agy", &path), "nothing there yet");
+        let file = dir.join("agy");
+        std::fs::write(&file, "#!/bin/sh\n").expect("file");
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).expect("mode");
+        assert!(!on_path("agy", &path), "not executable");
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).expect("mode");
+        assert!(on_path("agy", &path));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_capped_session_runs_agy_acp_under_its_scope() {

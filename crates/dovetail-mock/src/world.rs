@@ -13,7 +13,7 @@ use dovetail_api::{
     decision::{Alternative, Decision, DecisionAuthor, DecisionId},
     inbox::{InboxId, InboxItem, InboxKind, RuleSuggestion},
     mcp::{McpServer, McpStatus, McpTool},
-    model::{ModelOption, ReasoningEffort},
+    model::{DriverKind, ModelOption, ReasoningEffort},
     project::{ProjectId, ProjectKind, ProjectSummary},
     research::{Evidence, FindingId, SourceId},
     status::Totals,
@@ -80,6 +80,7 @@ pub(crate) fn session(id: &str, kind: AgentKind, status: AgentStatus, now_ms: i6
         effort: Some(ReasoningEffort::High),
         subagent_tokens: 0,
         tool: None,
+        driver: DriverKind::Claude,
     }
 }
 
@@ -90,6 +91,7 @@ pub(crate) fn models() -> Vec<ModelOption> {
         name: name.into(),
         resolved: Some(resolved.into()),
         efforts: Some(efforts.to_vec()),
+        driver: DriverKind::Claude,
     };
     vec![
         listed("opus", "claude-opus-5-5", &ReasoningEffort::ALL),
@@ -169,6 +171,7 @@ pub(crate) fn subagent(id: &str, parent: &Agent, background: bool, now_ms: i64) 
         effort: None,
         subagent_tokens: 0,
         tool: None,
+        driver: DriverKind::Claude,
     }
 }
 

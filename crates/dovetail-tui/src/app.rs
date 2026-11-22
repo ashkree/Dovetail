@@ -16,6 +16,7 @@ macro_rules! cx {
     };
 }
 
+mod confirm;
 mod draw;
 mod focus;
 mod overlay;
@@ -39,6 +40,7 @@ use dovetail_api::{
     mcp::McpEvent,
     project::{ProjectCommand, ProjectEvent},
     research::{ResearchCommand, ResearchEvent},
+    status::StatusEvent,
     task::{TaskChange, TaskCommand, TaskEvent},
     worktree::WorktreeCommand,
 };
@@ -513,6 +515,9 @@ impl App {
                 {
                     self.mcp_reply(agent, request, outcome.clone());
                 }
+                if let Event::Status(StatusEvent::UsageLoaded(reports)) = &event {
+                    self.usage_loaded(reports.clone());
+                }
                 if let Event::App(AppEvent::Pasted { agent, paste }) = &event
                     && let Some(notice) = self.chat_view_mut().receive_paste(agent, paste.clone())
                 {
@@ -745,6 +750,7 @@ impl App {
     /// and MAP mode it is ignored, as the keys it would have been are not commands.
     pub fn on_paste(&mut self, text: &str, mono_ms: u64) {
         if self.confirm.is_some()
+            || matches!(self.overlay, Some(Overlay::Confirm(_)))
             || matches!(self.mode, Mode::Normal | Mode::Map) && self.overlay.is_none()
         {
             return;
@@ -951,6 +957,10 @@ impl App {
                     slash::Intercept::Mcp => {
                         self.open_mcp_menu(Some(agent));
                         "/mcp opens the MCP menu"
+                    }
+                    slash::Intercept::Usage => {
+                        self.open_usage_menu();
+                        "/usage opens the usage menu"
                     }
                     slash::Intercept::Run(action) => {
                         if !self.run_on_coordinator(Some(&agent), action) {
@@ -1361,6 +1371,7 @@ impl App {
             Action::CyclePermissionMode => self.cycle_permission_mode(),
             Action::PickModel => self.open_model_selector(None),
             Action::ShowMcp => self.open_mcp_menu(None),
+            Action::ShowUsage => self.open_usage_menu(),
             Action::TakeOver => self.take_over(),
             Action::RegisterProject => {
                 // The open folder (ADR 0005); the core refuses any other.

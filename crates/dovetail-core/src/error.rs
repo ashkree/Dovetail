@@ -58,6 +58,9 @@ pub enum SessionError {
         /// The cause.
         source: DriverError,
     },
+    /// No driver for this session's CLI was registered.
+    #[error("no session driver for {}", .0.label())]
+    NoDriver(dovetail_api::model::DriverKind),
 }
 
 /// Why a slice could not start (`project_start_slice` answers `denied: <this>`).
@@ -98,12 +101,12 @@ pub enum SliceError {
         /// The project's repo names, comma-separated.
         known: String,
     },
-    /// The `model` asked for is not one Claude Code lists (task #42).
+    /// The `model` asked for is not one the driver lists (task #42).
     #[error("there is no model `{model}`; the models are: {known}")]
     UnknownModel {
         /// The name asked for.
         model: String,
-        /// The models Claude Code listed, comma-separated.
+        /// The models the driver listed, comma-separated.
         known: String,
     },
     /// `project_archive_slice` named the coordinator.

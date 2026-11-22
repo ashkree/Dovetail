@@ -28,6 +28,7 @@ pub mod switcher;
 pub mod tabs;
 pub mod theme;
 pub mod usage;
+pub mod usage_menu;
 
 pub use app::App;
 pub use event_loop::{Clock, run};

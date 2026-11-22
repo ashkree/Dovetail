@@ -375,6 +375,10 @@ pub fn preview(
         PickerKey::Profile(_) => ("Profile", Vec::new()),
         // Previewed by `help::keys_preview`, which knows the keymap.
         PickerKey::Action(_) => ("Keys", Vec::new()),
+        // Previewed by `ModelPicker`, which knows the agent and models.
+        PickerKey::Model { .. } => ("Model", Vec::new()),
+        // Previewed by `UsageMenu`, which holds the reports.
+        PickerKey::UsageGroup(_) => ("Usage", Vec::new()),
         PickerKey::Inbox(id) => (
             "Inbox item",
             snap.inbox
@@ -730,6 +734,7 @@ fn inbox_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dovetail_api::model::DriverKind;
     use dovetail_api::{
         Snapshot,
         agent::{
@@ -763,6 +768,7 @@ mod tests {
             effort: None,
             subagent_tokens: 0,
             tool: None,
+            driver: DriverKind::Claude,
         }
     }
 
@@ -863,13 +869,14 @@ mod tests {
             vec![
                 ("/model", "◆"),
                 ("/mcp", "◆"),
+                ("/usage", "◆"),
                 ("/handoff", "◆"),
                 ("/fresh", "◆"),
                 ("/compact", "/")
             ]
         );
         assert!(items[0].detail.starts_with("Dovetail"));
-        assert_eq!(items[4].detail, "");
+        assert_eq!(items[5].detail, "");
     }
 
     #[test]

@@ -6,13 +6,16 @@ mod claude;
 mod event;
 mod fake;
 mod process;
+mod query;
 mod spec;
 
 pub use agy::{AgyDriver, AgyOptions, McpServerSpec};
 pub use claude::{ClaudeDriver, ClaudeOptions, parse, transcript};
 pub use dovetail_api::model::DriverKind;
+pub use dovetail_api::status::DriverUsage;
 pub use event::*;
 pub use fake::{FakeDriver, ReplayOptions, ReplayTiming, Sent};
+pub use query::UsageQuery;
 pub use spec::{PermissionMode, SessionSpec, SystemdScope};
 
 use serde_json::Value;
@@ -49,7 +52,36 @@ pub trait SessionDriver: Send + Sync + 'static {
     /// Start (or, with [`SessionSpec::resume`], resume) a session. Must be called inside a tokio
     /// runtime. Returns once the process is spawned; events arrive on the session's stream.
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError>;
+    /// The account's limits and current usage, read by a short-lived process that makes no
+    /// model call (limits are per account, not per session). Never fails: a report that could
+    /// not be read comes back with [`DriverUsage::failed`] set and the reason.
+    fn usage(&self, query: UsageQuery) -> UsageFuture;
+    /// The models this driver offers, read by a short-lived process that makes no model call,
+    /// for drivers that can list them without a session (agy: `agy models`). The error is the
+    /// reason it could not be read. The default is "not supported": Claude Code lists its
+    /// models inside a session.
+    fn models(&self, _query: UsageQuery) -> ModelsFuture {
+        Box::pin(async {
+            Err(ModelsError(
+                "this driver cannot list its models without a session".to_owned(),
+            ))
+        })
+    }
 }
+
+/// What [`SessionDriver::models`] returns: run it on the tokio runtime.
+pub type ModelsFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<Vec<ModelInfo>, ModelsError>> + Send + 'static>,
+>;
+
+/// Why a driver could not list its models.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct ModelsError(pub String);
+
+/// What [`SessionDriver::usage`] returns: run it on the tokio runtime.
+pub type UsageFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = DriverUsage> + Send + 'static>>;
 
 /// One running session. Methods only enqueue: they never wait on the process, so a held
 /// permission request can never block anything else.

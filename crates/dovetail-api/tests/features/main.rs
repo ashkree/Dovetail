@@ -160,6 +160,7 @@ fn hello_and_a_full_snapshot_roundtrip() {
                 name: "claude-haiku-4-5-20251001".into(),
                 resolved: Some("claude-haiku-4-5-20251001".into()),
                 efforts: Some(vec![]),
+                driver: dovetail_api::model::DriverKind::Claude,
             },
         ],
     };

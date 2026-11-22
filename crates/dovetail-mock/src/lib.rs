@@ -56,7 +56,7 @@ use dovetail_api::{
     model::ModelCommand,
     project::ProjectCommand,
     research::{ResearchCommand, ResearchEvent},
-    status::StatusEvent,
+    status::{StatusCommand, StatusEvent},
     tangent::{TangentCommand, TangentEvent},
     task::{TaskCommand, TaskEvent},
     worktree::{WorktreeCommand, WorktreeEvent},
@@ -805,7 +805,9 @@ impl MockCore {
             | Command::Effort(EffortCommand::ApproveCriterion { .. })
             | Command::Effort(EffortCommand::ReturnCriterion { .. })
             | Command::Task(TaskCommand::Move { .. })
-            | Command::Research(ResearchCommand::FileUnfiled { .. }) => {
+            | Command::Research(ResearchCommand::FileUnfiled { .. })
+            | Command::Model(ModelCommand::SwitchDriver { .. })
+            | Command::Status(StatusCommand::LoadUsage) => {
                 self.fail("not available in the mock".into())
             }
             Command::App(AppCommand::OpenExternal { url }) => {

@@ -80,6 +80,18 @@ _Avoid_: blocking subagent, inline subagent
 A subagent that cannot have to-do items and appears as one node with its description, progress, summary and cost.
 _Avoid_: background task
 
+**Driver**:
+The headless CLI backend that runs a session behind `SessionDriver`, either Claude Code (`claude`, stream-json) or agy (`agy`, ACP JSON-RPC). Each coordinator or slice runs on one driver at a time.
+_Avoid_: backend, provider, runner
+
+**Driver switch**:
+Moving the coordinator from one driver to another through the `:fresh` flow, seeded with a handoff (or Dovetail's facts and the old transcript path when the outgoing session cannot answer) or as a clean start. Only the coordinator switches driver; slices stay on the driver they started with.
+_Avoid_: live migration, hot swap
+
+**Quota group**:
+A provider-reported bucket of models that share rate-limit windows (such as Claude Code's 5-hour and weekly limits, or an agy model group shown in `:usage`).
+_Avoid_: tier, pool, rate-limit bucket
+
 ### Work
 
 **Task** (changed in v2):

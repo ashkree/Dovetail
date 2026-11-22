@@ -14,6 +14,7 @@ pub fn cases() -> Vec<Case> {
                 name: "opus".into(),
                 resolved: None,
                 efforts: None,
+                driver: dovetail_api::model::DriverKind::Claude,
             }])),
         )],
     )]
@@ -32,4 +33,31 @@ fn model_commands_and_events_roundtrip() {
         model: "sonnet".into(),
         effort: Some(ReasoningEffort::Max),
     }));
+    for command in [
+        Command::Model(ModelCommand::SwitchDriver {
+            agent: id("coordinator"),
+            driver: DriverKind::Agy,
+            model: "claude-opus-5-5".into(),
+            effort: Some(ReasoningEffort::High),
+            handoff: true,
+        }),
+        Command::Model(ModelCommand::SwitchDriver {
+            agent: id("coordinator"),
+            driver: DriverKind::Claude,
+            model: "opus".into(),
+            effort: None,
+            handoff: false,
+        }),
+    ] {
+        roundtrip(&command);
+    }
+    roundtrip(&ModelOption::named_on(DriverKind::Agy, "gemini-3.8-flash"));
+}
+
+#[test]
+fn driver_defaults_to_claude_when_missing() {
+    let mut old_option = serde_json::to_value(ModelOption::named("sonnet")).unwrap();
+    old_option.as_object_mut().unwrap().remove("driver");
+    let parsed: ModelOption = serde_json::from_value(old_option).unwrap();
+    assert_eq!(parsed.driver, DriverKind::Claude);
 }

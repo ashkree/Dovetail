@@ -7,7 +7,7 @@ pub(crate) use apply::apply;
 pub use command::AgentCommand;
 pub use event::AgentEvent;
 
-use crate::model::ReasoningEffort;
+use crate::model::{DriverKind, ReasoningEffort};
 use crate::task::TaskId;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -84,6 +84,10 @@ pub struct Agent {
     /// the model thinks or writes, and when idle. Not stored: a restart starts without it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<RunningTool>,
+    /// The CLI the session runs on (task #46); fixed for the life of a session. Older data
+    /// reads as Claude Code.
+    #[serde(default)]
+    pub driver: DriverKind,
 }
 
 /// A tool call in flight: what the working line says the agent is doing ("Reading plan.md").
