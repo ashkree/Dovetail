@@ -95,11 +95,15 @@ impl Core {
 
     /// Reads each registered driver's usage limits concurrently on the runtime and sends the
     /// reports back in [`DriverKind::ALL`] order (task #46).
-    pub(crate) fn load_usage(&self) {
-        let cwd = self
-            .project
+    /// The folder a short-lived driver query (usage, model list) runs in.
+    pub(crate) fn query_cwd(&self) -> std::path::PathBuf {
+        self.project
             .first_repo_path()
-            .unwrap_or_else(|| self.project.coordinator_folder(&self.paths));
+            .unwrap_or_else(|| self.project.coordinator_folder(&self.paths))
+    }
+
+    pub(crate) fn load_usage(&self) {
+        let cwd = self.query_cwd();
         let claude_env = match &self.claude {
             Ok(home) if home.explicit => vec![(
                 "CLAUDE_CONFIG_DIR".to_owned(),

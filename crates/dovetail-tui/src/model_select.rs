@@ -177,7 +177,10 @@ impl ModelPicker {
             }
         } else if !self.options.iter().any(|o| o.driver == DriverKind::Agy) {
             out.push(Line::default());
-            for line in fmt::wrap("agy models appear once an agy session has run.", width) {
+            for line in fmt::wrap(
+                "agy is not available here, so there are no agy models.",
+                width,
+            ) {
                 out.push(Line::from(Span::styled(line, theme.dim())));
             }
         }
@@ -389,7 +392,7 @@ mod tests {
         assert!(
             preview
                 .iter()
-                .any(|l| l.contains("agy models appear once an agy session has run")),
+                .any(|l| l.contains("agy is not available here")),
             "{preview:?}"
         );
 

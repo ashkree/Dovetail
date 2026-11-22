@@ -120,6 +120,10 @@ impl SessionDriver for AgyDriver {
         Box::pin(usage::usage(self.program.clone(), query))
     }
 
+    fn models(&self, query: crate::UsageQuery) -> crate::ModelsFuture {
+        Box::pin(models::list(self.program.clone(), query))
+    }
+
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {
         let handle = tokio::runtime::Handle::try_current().map_err(|_| DriverError::NoRuntime)?;
         let _guard = handle.enter();

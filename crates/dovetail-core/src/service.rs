@@ -269,6 +269,8 @@ pub(crate) enum Input {
     },
     /// Driver usage limits loaded concurrently on the runtime (`Command::LoadUsage`).
     UsageLoaded(Vec<dovetail_api::DriverUsage>),
+    /// agy's model list, read in the background at start (`agy_models`).
+    AgyModelsRefreshed(Result<Vec<dovetail_driver::ModelInfo>, String>),
     /// A slice's worktree removal finished.
     WorktreeRemoved {
         agent: AgentId,
@@ -619,7 +621,9 @@ impl Core {
             }
         };
         self.startup_warnings();
+        self.load_agy_models().await;
         self.send_snapshot(true).await;
+        self.refresh_agy_models();
         self.sweep_attachments();
         self.rebuild_research_files().await;
         // After the first snapshot, so a slow user systemd never holds up the UI; before
@@ -730,6 +734,7 @@ impl Core {
                     result,
                 } => self.on_agy_worktree_created(agent, brief, result),
                 Input::UsageLoaded(reports) => self.emit(Event::UsageLoaded(reports)),
+                Input::AgyModelsRefreshed(result) => self.on_agy_models_refreshed(result),
                 Input::WorktreeRemoved { agent, result } => {
                     self.on_worktree_removed(agent, result).await;
                 }

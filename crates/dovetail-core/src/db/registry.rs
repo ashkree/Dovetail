@@ -8,6 +8,32 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use super::DbError;
 use crate::projects::{Project, Repo};
 
+/// The model list saved for `driver`.
+pub(crate) fn driver_models(conn: &Connection, driver: &str) -> Result<Option<String>, DbError> {
+    Ok(conn
+        .query_row(
+            "SELECT models FROM driver_models WHERE driver = ?1",
+            [driver],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// Saves (or replaces) the model list of `driver`.
+pub(crate) fn save_driver_models(
+    conn: &Connection,
+    driver: &str,
+    models: &str,
+    now: i64,
+) -> Result<(), DbError> {
+    conn.execute(
+        "INSERT INTO driver_models (driver, models, saved_ms) VALUES (?1, ?2, ?3)
+         ON CONFLICT(driver) DO UPDATE SET models = ?2, saved_ms = ?3",
+        params![driver, models, now],
+    )?;
+    Ok(())
+}
+
 const COLUMNS: &str = "id, name, account, last_opened_ms";
 const REPO_COLUMNS: &str = "id, name, path, git_common_dir";
 

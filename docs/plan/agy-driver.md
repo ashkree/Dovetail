@@ -162,9 +162,10 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
   `model_catalog`; an agy session's `DriverEvent::Models` would overwrite Claude's. Keep
   `model_catalog: BTreeMap<DriverKind, Vec<ModelInfo>>`, filled from the session's driver.
   `model_options()` returns Claude's options (from `config.toml` names, as today) followed by
-  agy's families with `driver: Agy`. Before any agy session has run, agy's list is empty:
-  optionally fill it at start from `agy models` (check its output format first; skip if it
-  needs a model call).
+  agy's families with `driver: Agy`. Before any agy session has run, agy's list comes from
+  `src/agy_models.rs`: the last list saved in `registry.db` (`driver_models`), else a built-in
+  list of the spike's families, refreshed once at start by `agy models` (no model call) and by
+  every agy `Models` event; a failed refresh keeps the list and logs.
 - [x] **SwitchDriver.** A handler that checks the agent is the coordinator and no turn runs, sets
   the coordinator row's `driver` and `model_choice` to the new driver and model, then runs the
   existing flow: `handoff: true` → `handoff_start()`, `false` → `fresh_session()`
@@ -247,8 +248,8 @@ Decisions (task #46's log; ask the coordinator for `tasks_get 46` if you need th
    its `settings.json`.
 4. **Usage reads spawn processes** (`claude` ~1–2 s, `agy` ~1 s, each a few hundred MB
    briefly). Only on `LoadUsage`; never on a timer.
-5. **agy's model list before any agy session runs** is empty unless filled from `agy models`.
-   The picker then shows no agy rows; acceptable for a first version, say so in the preview.
+5. **agy's model list before any agy session runs** is the saved list, else the built-in one
+   (see C3), so the picker always has agy rows when agy is installed.
 6. **Rule 1 (subagent routing) was not probed for agy**: every agy event is the session's own.
 7. **Messages to agy slices** stay out (#53): an agy slice can report with
    `coordination_report`, but the coordinator cannot `SendMessage` it.

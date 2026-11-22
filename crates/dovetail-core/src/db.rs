@@ -66,6 +66,7 @@ const REGISTRY_MIGRATIONS: &[Migration] = &[
     migration!("registry", "0002_optional_git.sql"),
     migration!("registry", "0003_project_kind.sql"),
     migration!("registry", "0004_repos.sql"),
+    migration!("registry", "0005_driver_models.sql"),
 ];
 /// Migrations of a project's `state.db`, in order.
 const STATE_MIGRATIONS: &[Migration] = &[
@@ -234,6 +235,16 @@ impl Db {
     }
 
     // --- registry ---
+
+    /// The model list last saved for `driver` (a JSON array), if any.
+    pub fn driver_models(&self, driver: &'static str) -> Pending<Option<String>> {
+        self.run(move |c, _| registry::driver_models(&c.registry, driver))
+    }
+
+    /// Saves `models` (a JSON array) as `driver`'s last-known model list.
+    pub fn save_driver_models(&self, driver: &'static str, models: String) -> Pending<()> {
+        self.run(move |c, now| registry::save_driver_models(&c.registry, driver, &models, now))
+    }
 
     /// Registers a folder as a project with one repo, or returns the project that has it
     /// already. The id is `slug`, numbered (`slug-2`, ...) when taken.

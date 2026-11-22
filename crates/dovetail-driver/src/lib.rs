@@ -55,7 +55,19 @@ pub trait SessionDriver: Send + Sync + 'static {
     /// model call (limits are per account, not per session). Never fails: a report that could
     /// not be read comes back with [`DriverUsage::failed`] set and the reason.
     fn usage(&self, query: UsageQuery) -> UsageFuture;
+    /// The models this driver offers, read by a short-lived process that makes no model call,
+    /// for drivers that can list them without a session (agy: `agy models`). The error is the
+    /// reason it could not be read. The default is "not supported": Claude Code lists its
+    /// models inside a session.
+    fn models(&self, _query: UsageQuery) -> ModelsFuture {
+        Box::pin(async { Err("this driver cannot list its models without a session".to_owned()) })
+    }
 }
+
+/// What [`SessionDriver::models`] returns: run it on the tokio runtime.
+pub type ModelsFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<Vec<ModelInfo>, String>> + Send + 'static>,
+>;
 
 /// What [`SessionDriver::usage`] returns: run it on the tokio runtime.
 pub type UsageFuture =

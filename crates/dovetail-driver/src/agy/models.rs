@@ -10,6 +10,21 @@ use crate::event::ModelInfo;
 use dovetail_api::ReasoningEffort;
 use serde_json::Value;
 
+/// Asks `program models` for the account's models.
+pub(crate) async fn list(
+    program: std::ffi::OsString,
+    query: crate::UsageQuery,
+) -> Result<Vec<ModelInfo>, String> {
+    let text = crate::query::run_text(program, vec!["models".into()], &query)
+        .await
+        .map_err(|e| e.to_string())?;
+    let infos = ModelTable::from_listing(&text).infos();
+    if infos.is_empty() {
+        return Err("agy models listed no models".into());
+    }
+    Ok(infos)
+}
+
 /// One family: the name the selector passes back, and the agy id for each effort.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Family {
@@ -66,6 +81,21 @@ impl ModelTable {
             family.ids.sort();
         }
         table
+    }
+
+    /// Reads the `agy models` listing: an optional "Fetching available models..." line, then
+    /// `<id>\t<label>` lines. Anything else is skipped.
+    pub(crate) fn from_listing(text: &str) -> Self {
+        let list: Vec<Value> = text
+            .lines()
+            .filter_map(|line| {
+                let (id, name) = line.split_once('\t')?;
+                let id = id.trim();
+                (!id.is_empty() && !id.contains(' '))
+                    .then(|| serde_json::json!({"modelId": id, "name": name.trim()}))
+            })
+            .collect();
+        Self::from_available(&Value::Array(list))
     }
 
     /// The selector's view: one entry per family with the efforts it accepts.
@@ -135,6 +165,24 @@ impl ModelTable {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_models_listing_groups_into_families_and_skips_the_progress_line() {
+        let table = ModelTable::from_listing(
+            "Fetching available models...\n\
+             gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n\
+             gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n\
+             gemini-pro-orchestrator-neon\tOrchestrator (Neon)\n",
+        );
+        let infos = table.infos();
+        assert_eq!(infos.len(), 2);
+        assert_eq!(infos[0].value, "gemini-3.8-flash");
+        assert_eq!(
+            infos[0].efforts,
+            vec![ReasoningEffort::Low, ReasoningEffort::High]
+        );
+        assert!(infos[1].efforts.is_empty());
+    }
 
     fn table() -> ModelTable {
         ModelTable::from_available(&json!([

@@ -829,3 +829,86 @@ fn queued_agy_slice_preserves_driver_across_queue() {
     assert_eq!(spec.model.as_deref(), Some("gemini-3.8-flash"));
     h.quit();
 }
+
+fn agy_model_names(s: &Snapshot) -> Vec<String> {
+    s.models
+        .iter()
+        .filter(|m| m.driver == dovetail_api::DriverKind::Agy)
+        .map(|m| m.name.clone())
+        .collect()
+}
+
+fn agy_listing(name: &str) -> Vec<dovetail_driver::ModelInfo> {
+    vec![dovetail_driver::ModelInfo {
+        value: name.into(),
+        resolved: None,
+        display_name: None,
+        efforts: vec![dovetail_api::ReasoningEffort::Low],
+    }]
+}
+
+fn test_paths(dir: &tempfile::TempDir) -> Paths {
+    Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    }
+}
+
+#[test]
+fn a_first_run_with_no_saved_list_and_a_failed_read_offers_the_built_in_agy_models() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let agy_fake = agy_fixture("plain_turn");
+    agy_fake.set_models(Err("agy is not logged in".into()));
+    let mut h = Harness::start_both(
+        fixture("plain_turn"),
+        agy_fake.clone(),
+        test_paths(&dir),
+        None,
+        Config::default(),
+    );
+    h.wait_for("built-in agy models", |s| {
+        agy_model_names(s).contains(&"claude-opus-5-5".to_string())
+    });
+    h.wait_for("the refresh was tried", |_| agy_fake.models_asked() == 1);
+    h.drain(Duration::from_millis(200));
+    assert!(agy_model_names(&h.snap).contains(&"claude-opus-5-5".to_string()));
+    h.quit();
+}
+
+#[test]
+fn the_background_read_replaces_agy_models_and_saves_them_and_a_later_failure_keeps_them() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let first = agy_fixture("plain_turn");
+    first.set_models(Ok(agy_listing("gemini-9")));
+    let mut h = Harness::start_both(
+        fixture("plain_turn"),
+        first.clone(),
+        test_paths(&dir),
+        None,
+        Config::default(),
+    );
+    h.wait_for("the listed models replace the built-in ones", |s| {
+        agy_model_names(s) == vec!["gemini-9".to_string()]
+    });
+    h.quit();
+
+    // The next start: agy cannot list its models, yet the saved list is there at once.
+    let second = agy_fixture("plain_turn");
+    second.set_models(Err("timed out".into()));
+    let mut h = Harness::start_both(
+        fixture("plain_turn"),
+        second.clone(),
+        test_paths(&dir),
+        None,
+        Config::default(),
+    );
+    h.wait_for("the saved list at start", |s| {
+        agy_model_names(s) == vec!["gemini-9".to_string()]
+    });
+    h.wait_for("the refresh was tried", |_| second.models_asked() == 1);
+    h.drain(Duration::from_millis(200));
+    assert_eq!(agy_model_names(&h.snap), vec!["gemini-9".to_string()]);
+    h.quit();
+}

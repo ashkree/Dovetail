@@ -3,6 +3,7 @@
 //! The core hands the UI the same [`dovetail_api::CoreLink`] that `MockCore` does, and launches
 //! sessions through the registered [`Drivers`] (`ClaudeDriver`, `AgyDriver`, or fakes in tests).
 
+mod agy_models;
 mod ask;
 mod attachments;
 mod browse;

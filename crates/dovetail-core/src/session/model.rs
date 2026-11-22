@@ -273,7 +273,8 @@ impl Core {
         if models.is_empty() || self.model_catalog.get(&driver) == Some(&models) {
             return;
         }
-        self.model_catalog.insert(driver, models);
+        self.model_catalog.insert(driver, models.clone());
+        self.save_models(driver, &models);
         self.emit(Event::ModelsChanged(self.model_options()));
     }
 

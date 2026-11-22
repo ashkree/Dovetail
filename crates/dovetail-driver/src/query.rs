@@ -94,6 +94,31 @@ pub(crate) async fn ask(
     answer
 }
 
+/// Runs `program args` in the query's folder and returns what it printed to stdout once it
+/// exits (for a command that prints a plain list and ends). Killed at the deadline.
+pub(crate) async fn run_text(
+    program: OsString,
+    args: Vec<OsString>,
+    query: &UsageQuery,
+) -> Result<String, QueryError> {
+    let spawned = process::spawn_in(program, args, &query.cwd, &query.env)?;
+    let mut child = spawned.child;
+    drop(spawned.stdin);
+    let read = async {
+        let mut out = String::new();
+        let mut stdout = spawned.stdout;
+        tokio::io::AsyncReadExt::read_to_string(&mut stdout, &mut out).await?;
+        Ok(out)
+    };
+    let answer = match tokio::time::timeout(QUERY_TIMEOUT, read).await {
+        Ok(answer) => answer,
+        Err(_) => Err(QueryError::Timeout(QUERY_TIMEOUT.as_secs())),
+    };
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+    answer
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,6 +153,13 @@ mod tests {
         })
         .await;
         assert_eq!(got.ok(), Some(json!(7)));
+    }
+
+    #[tokio::test]
+    async fn run_text_returns_what_the_command_printed() {
+        let (p, a) = sh("echo one; echo two");
+        let got = run_text(p, a, &query()).await;
+        assert_eq!(got.ok().as_deref(), Some("one\ntwo\n"));
     }
 
     #[tokio::test]

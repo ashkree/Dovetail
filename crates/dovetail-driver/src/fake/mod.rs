@@ -140,6 +140,10 @@ struct Recorder {
     usage: Mutex<Option<dovetail_api::DriverUsage>>,
     /// The queries `usage` was asked.
     usage_queries: Mutex<Vec<crate::UsageQuery>>,
+    /// What `models` answers ([`FakeDriver::set_models`]); `None`: an error.
+    models: Mutex<Option<Result<Vec<crate::ModelInfo>, String>>>,
+    /// How many times `models` was asked.
+    models_asked: std::sync::atomic::AtomicUsize,
 }
 
 /// Replays a fixture as the event stream of every session it starts, and records what it is
@@ -264,6 +268,20 @@ impl FakeDriver {
         }
     }
 
+    /// What `models` answers from now on.
+    pub fn set_models(&self, models: Result<Vec<crate::ModelInfo>, String>) {
+        if let Ok(mut m) = self.recorder.models.lock() {
+            *m = Some(models);
+        }
+    }
+
+    /// How many times `models` was asked.
+    pub fn models_asked(&self) -> usize {
+        self.recorder
+            .models_asked
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// The queries `usage` was asked, in order.
     pub fn usage_queries(&self) -> Vec<crate::UsageQuery> {
         self.recorder
@@ -346,6 +364,20 @@ impl SessionDriver for FakeDriver {
                 failed: false,
             });
         Box::pin(async move { usage })
+    }
+
+    fn models(&self, _query: crate::UsageQuery) -> crate::ModelsFuture {
+        self.recorder
+            .models_asked
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let answer = self
+            .recorder
+            .models
+            .lock()
+            .ok()
+            .and_then(|m| m.clone())
+            .unwrap_or_else(|| Err("no models set".to_owned()));
+        Box::pin(async move { answer })
     }
 
     fn start(&self, spec: SessionSpec) -> Result<Box<dyn Session>, DriverError> {
