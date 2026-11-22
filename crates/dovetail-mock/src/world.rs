@@ -17,9 +17,9 @@ use dovetail_api::{
     project::{ProjectId, ProjectKind, ProjectSummary},
     research::{Evidence, FindingId, SourceId},
     status::Totals,
+    status::{UsageLimits, UsageStatus, UsageWindow},
     tangent::tangent_agent,
     task::{Bucket, PLevel, Task, TaskId, TaskStatus},
-    usage::{UsageLimits, UsageStatus, UsageWindow},
     worktree::{Changes, PrLookup, PrState, PullRequest, SyncState, WorktreeInfo, WorktreeSetup},
 };
 use serde_json::json;

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use dovetail_api::{
     Event,
     agent::AgentId,
-    usage::{UsageEvent, UsageLimits, UsageStatus, UsageWindow},
+    status::{StatusEvent, UsageLimits, UsageStatus, UsageWindow},
 };
 use dovetail_driver::{RateLimitInfo, RateLimitWindow};
 
@@ -57,7 +57,7 @@ impl Core {
         }
         self.usage.insert(home.clone(), usage.clone());
         if home == self.current_home_dir() {
-            self.emit(Event::Usage(UsageEvent::Changed(usage)));
+            self.emit(Event::Status(StatusEvent::UsageChanged(usage)));
         }
     }
 

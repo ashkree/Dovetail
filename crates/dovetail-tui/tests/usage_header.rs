@@ -4,7 +4,7 @@ mod support;
 
 use dovetail_api::{
     Event, ServerMsg,
-    usage::{UsageEvent, UsageLimits, UsageStatus, UsageWindow},
+    status::{StatusEvent, UsageLimits, UsageStatus, UsageWindow},
 };
 use support::*;
 
@@ -87,7 +87,7 @@ fn a_reset_passing_redraws_once_and_shows_a_dash() {
     }
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::Usage(UsageEvent::Changed(next)),
+        event: Event::Status(StatusEvent::UsageChanged(next)),
     });
     let row = header(&mut app, 120);
     assert!(row.contains("5h 2%"), "{row}");

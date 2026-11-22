@@ -5,8 +5,8 @@ use dovetail_api::inbox::InboxKind;
 use dovetail_api::model::ReasoningEffort;
 use dovetail_api::task::{PLevel, TaskStatus};
 use dovetail_tools::coordination::{ClaimCriterion, CoordinationTool, Report, ReportState};
-use dovetail_tools::core::{AskUser, CoreTool};
 use dovetail_tools::project::{ProjectTool, StartSlice};
+use dovetail_tools::report::{AskUser, ReportTool};
 use dovetail_tools::socket::{SocketRequest, SocketRequestBody};
 use dovetail_tools::task::{BucketFilter, TaskTool};
 use dovetail_tools::{Role, TOOLS, Tool, ToolError, deprecated_alias, deprecation_note, tool_spec};
@@ -58,7 +58,7 @@ fn an_old_blocking_ask_user_and_inbox_payload_still_parse() {
     );
     assert_eq!(
         tool,
-        Ok(Tool::Core(CoreTool::AskUser(AskUser {
+        Ok(Tool::Report(ReportTool::AskUser(AskUser {
             question: "Which port?".into()
         })))
     );

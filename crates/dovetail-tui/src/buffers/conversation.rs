@@ -7,7 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use dovetail_api::{
     Command,
     agent::{AgentId, AgentStatus},
-    clipboard::Paste,
+    app::Paste,
     conversation::{Attachment, ConversationCommand, EntryId, EntryKind, MAX_ATTACHMENTS},
 };
 use ratatui::Frame;

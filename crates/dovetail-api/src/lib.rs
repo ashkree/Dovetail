@@ -2,32 +2,25 @@
 #![warn(missing_docs)]
 
 pub mod activity;
-pub mod agent;
+pub mod agents;
 pub mod app;
 mod apply;
-pub mod canvas;
-pub mod clipboard;
-pub mod conversation;
-pub mod decision;
-pub mod design;
-pub mod effort;
-pub mod inbox;
-pub mod journal;
-pub mod library;
-pub mod map;
-pub mod mcp;
-pub mod model;
-pub mod project;
+pub mod code;
 pub mod research;
 pub mod snapshot;
-pub mod status;
-pub mod tangent;
-pub mod task;
-pub mod terminal;
-pub mod upgrade;
-pub mod usage;
+pub mod tracking;
+pub mod visual;
 mod wire;
-pub mod worktree;
+
+// Short paths: every feature module is also reachable at the crate root, so callers write
+// `dovetail_api::task::Task` as well as `dovetail_api::tracking::task::Task`. (The `research`
+// and `activity` domains re-export their namesake feature's items instead; see `research/mod.rs`.)
+pub use activity::{feed, inbox, status};
+pub use agents::{agent, conversation, journal, mcp, model, tangent};
+pub use code::worktree;
+pub use research::library;
+pub use tracking::{decision, effort, project, task};
+pub use visual::{canvas, design, map};
 
 pub use apply::{ApplyResult, apply};
 pub use snapshot::Snapshot;

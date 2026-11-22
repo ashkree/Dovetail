@@ -142,7 +142,7 @@ pub enum Effect {
     /// A one-line note for the status bar.
     Note(String),
     /// Let go of the terminal and have the core open this path in the user's editor
-    /// ([`TerminalCommand::OpenEditor`](dovetail_api::terminal::TerminalCommand::OpenEditor)); the terminal comes back on `TerminalEvent::Returned`.
+    /// ([`AppCommand::OpenEditor`](dovetail_api::terminal::AppCommand::OpenEditor)); the terminal comes back on `AppEvent::TerminalReturned`.
     OpenEditor(std::path::PathBuf),
     /// Show a document in reading mode's reading column (fetching it from the core first, for
     /// research documents and docs).

@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use dovetail_api::{
-    clipboard::Paste,
+    app::Paste,
     conversation::{ImageType, MAX_ATTACHMENT_BYTES},
 };
 

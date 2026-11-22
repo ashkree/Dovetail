@@ -14,13 +14,13 @@ use dovetail_tools::{
     SocketResponseBody, Tool,
     canvas::CanvasTool,
     coordination::CoordinationTool,
-    core::CoreTool,
     design::DesignTool,
     map::MapTool,
     project::{
         ProjectTool,
         archive_result::{ARCHIVED, WAITING_FOR_USER},
     },
+    report::ReportTool,
     research::ResearchTool,
     task::{TaskTool, UpdateTask},
 };
@@ -158,7 +158,7 @@ impl Core {
             return;
         }
         let answer = match call {
-            Tool::Core(CoreTool::AskUser(ask)) => {
+            Tool::Report(ReportTool::AskUser(ask)) => {
                 let kind = InboxKind::Question {
                     text: ask.question.clone(),
                 };
@@ -180,7 +180,7 @@ impl Core {
                     anything that does not depend on it, or end your turn if nothing is left.",
                 )
             }
-            Tool::Core(CoreTool::ReportStatus(report)) => {
+            Tool::Report(ReportTool::ReportStatus(report)) => {
                 let line: String = report
                     .status
                     .lines()
@@ -229,7 +229,7 @@ impl Core {
                     Err(e) => error(format!("could not create the task: {e}")),
                 }
             }
-            Tool::Core(CoreTool::LogDecision(decision)) => {
+            Tool::Report(ReportTool::LogDecision(decision)) => {
                 let own_task = self.agents.get(&agent).and_then(|r| r.agent.task);
                 match decision.task.or(own_task) {
                     None => error("you have no task of your own: name the `task`"),

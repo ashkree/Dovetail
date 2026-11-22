@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, Event, ServerMsg,
-    clipboard::{ClipboardCommand, ClipboardEvent, Paste},
+    app::{AppCommand, AppEvent, Paste},
     conversation::{
         Attachment, ConversationCommand, ConversationEvent, EntryKind, ImageType, MAX_ATTACHMENTS,
     },
@@ -33,7 +33,7 @@ fn paste(app: &mut dovetail_tui::App, at: u64, answer: Paste) {
     let agent = agent_id("coordinator");
     let commands = app.take_commands();
     assert!(
-        commands.contains(&Command::Clipboard(ClipboardCommand::Paste {
+        commands.contains(&Command::App(AppCommand::Paste {
             agent: agent.clone()
         })),
         "{commands:?}"
@@ -46,7 +46,7 @@ fn reply(app: &mut dovetail_tui::App, answer: Paste) {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::Clipboard(ClipboardEvent::Pasted {
+        event: Event::App(AppEvent::Pasted {
             agent: agent_id("coordinator"),
             paste: answer,
         }),
@@ -195,7 +195,7 @@ fn ctrl_v_outside_the_chat_bar_asks_for_nothing() {
     assert!(
         !app.take_commands()
             .iter()
-            .any(|c| matches!(c, Command::Clipboard(ClipboardCommand::Paste { .. })))
+            .any(|c| matches!(c, Command::App(AppCommand::Paste { .. })))
     );
 }
 
@@ -291,7 +291,7 @@ fn pasted_text_in_the_chat_bar_goes_to_the_core_and_its_answer_is_used() {
     let agent = agent_id("coordinator");
     assert_eq!(
         app.take_commands(),
-        vec![Command::Clipboard(ClipboardCommand::PasteText {
+        vec![Command::App(AppCommand::PasteText {
             agent,
             text: "'/tmp/a b.png'".into()
         })]

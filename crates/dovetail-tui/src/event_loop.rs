@@ -5,13 +5,13 @@
 //! the timeout of a half-typed key sequence, or a usage-limit reset passing. With nothing
 //! changing it sleeps forever.
 //!
-//! **Lending the terminal** (`e` in the worktree view, [`TerminalCommand::OpenEditor`](dovetail_api::terminal::TerminalCommand::OpenEditor); `<leader>st`,
-//! [`TerminalCommand::TakeOver`](dovetail_api::terminal::TerminalCommand::TakeOver)). The input thread reads one key, hands it over, and waits for a go
+//! **Lending the terminal** (`e` in the worktree view, [`AppCommand::OpenEditor`](dovetail_api::terminal::AppCommand::OpenEditor); `<leader>st`,
+//! [`AppCommand::TakeOver`](dovetail_api::terminal::AppCommand::TakeOver)). The input thread reads one key, hands it over, and waits for a go
 //! before reading the next, so it is never inside a read when a key asks for the terminal. If
 //! the key leaves a hand-off in the app ([`App::take_handoff`]), the loop sends the commands
 //! already queued, leaves the alternate screen and raw mode ([`Lend::release`]), sends the
 //! hand-off command, and holds the go back: the editor or native `claude` the core starts gets
-//! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::terminal::TerminalEvent::Returned`] the loop takes the
+//! every key. Core messages are still folded in but nothing is drawn. On [`dovetail_api::terminal::AppEvent::TerminalReturned`] the loop takes the
 //! terminal back ([`Lend::reclaim`]), redraws it in full and lets the input thread read again.
 //!
 //! **The map canvas** (M15 f). Mouse capture is switched on only while the app is in MAP mode
@@ -673,7 +673,6 @@ mod tests {
                 Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock, WorktreeRef,
             },
             app::{AppCommand, AppEvent},
-            terminal::{TerminalCommand, TerminalEvent},
         };
 
         let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -732,24 +731,24 @@ mod tests {
                 match command {
                     // Like the core: a path that is gone is refused, else the UI is asked to
                     // let go, and the editor runs once it says it has.
-                    Command::Terminal(TerminalCommand::OpenEditor { path }) if path.exists() => {
-                        answer(Event::Terminal(TerminalEvent::Lend))
+                    Command::App(AppCommand::OpenEditor { path }) if path.exists() => {
+                        answer(Event::App(AppEvent::TerminalLend))
                     }
-                    Command::Terminal(TerminalCommand::OpenEditor { path }) => {
+                    Command::App(AppCommand::OpenEditor { path }) => {
                         answer(Event::App(AppEvent::CommandFailed {
                             message: format!("{} does not exist", path.display()),
                         }))
                     }
-                    Command::Terminal(TerminalCommand::Released)
-                    | Command::Terminal(TerminalCommand::TakeOver { .. }) => {
+                    Command::App(AppCommand::TerminalReleased)
+                    | Command::App(AppCommand::TakeOver { .. }) => {
                         let what = match &command {
-                            Command::Terminal(TerminalCommand::TakeOver { agent }) => {
+                            Command::App(AppCommand::TakeOver { agent }) => {
                                 format!("native {}", agent.0)
                             }
                             _ => "editor".into(),
                         };
                         note(&core_log, &what);
-                        answer(Event::Terminal(TerminalEvent::Returned { error: None }));
+                        answer(Event::App(AppEvent::TerminalReturned { error: None }));
                     }
                     Command::App(AppCommand::Quit { .. }) => return,
                     other => note(&core_log, &format!("{other:?}")),

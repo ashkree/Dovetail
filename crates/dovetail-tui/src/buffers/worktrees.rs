@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use dovetail_api::{
     Command, Event, Snapshot,
     agent::{Agent, AgentCommand, AgentEvent, AgentId, AgentKind, WorktreeRef},
-    clipboard::ClipboardCommand,
+    app::AppCommand,
     inbox::{InboxEvent, InboxKind, REMOVE_WORKTREE_PERMISSION},
     worktree::{Changes, PrLookup, PrState, SyncState, WorktreeEvent, WorktreeInfo, WorktreeSetup},
 };
@@ -261,11 +261,9 @@ impl Buffer for WorktreesBuffer {
                     Action::WorktreeEdit => effects.push(Effect::OpenEditor(path)),
                     Action::WorktreeCopyPath => {
                         // A failure comes back as `CommandFailed`, which replaces the note.
-                        effects.push(Effect::Command(Command::Clipboard(
-                            ClipboardCommand::Copy {
-                                text: path.display().to_string(),
-                            },
-                        )));
+                        effects.push(Effect::Command(Command::App(AppCommand::Copy {
+                            text: path.display().to_string(),
+                        })));
                         effects.push(Effect::Note(format!("copied {}", path.display())));
                     }
                     // The archive path, as `dd` on a slice in the tree: the core removes a

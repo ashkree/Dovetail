@@ -23,16 +23,15 @@ use dovetail_api::{
     decision::DecisionAuthor,
     inbox::{InboxId, InboxItem},
     snapshot::{ACTIVITY_TAIL, CONVERSATION_TAIL, MESSAGE_TAIL},
+    status::UsageLimits,
     status::{Totals, Warning, WarningId},
     task::{NewTask, Task, TaskChange, TaskId, TaskStatus},
-    usage::UsageLimits,
 };
 use dovetail_api::{
     activity::ActivityEvent,
     agent::{AgentCommand, AgentEvent},
     app::{AppCommand, AppEvent},
     canvas::CanvasCommand,
-    clipboard::{ClipboardCommand, ClipboardEvent},
     conversation::{ConversationCommand, ConversationEvent},
     decision::{DecisionCommand, DecisionEvent},
     design::DesignCommand,
@@ -48,8 +47,6 @@ use dovetail_api::{
     status::StatusEvent,
     tangent::TangentCommand,
     task::{TaskCommand, TaskEvent},
-    terminal::{TerminalCommand, TerminalEvent},
-    upgrade::UpgradeCommand,
     worktree::WorktreeCommand,
 };
 use dovetail_driver::{DriverEvent, SessionDriver};
@@ -98,7 +95,7 @@ pub struct CoreOptions {
     /// Where Claude Code keeps native to-do lists; `None` for `tasks/` in each session's Claude
     /// home (its profile's folder, ADR 0009). Tests point it at a temp dir.
     pub tasks_dir: Option<PathBuf>,
-    /// The editor command line for [`TerminalCommand::OpenEditor`]; `None` for `$EDITOR`, else `nvim`.
+    /// The editor command line for [`AppCommand::OpenEditor`]; `None` for `$EDITOR`, else `nvim`.
     /// Tests give a fake one.
     pub editor: Option<std::ffi::OsString>,
     /// The `claude` program run for take-over (M14); `None` for `claude` on `PATH`. Tests give
@@ -323,7 +320,7 @@ pub(crate) enum Input {
     /// A clipboard read for an agent's chat bar finished.
     Pasted {
         agent: AgentId,
-        paste: dovetail_api::clipboard::Paste,
+        paste: dovetail_api::app::Paste,
     },
     /// Paths for an agent's `@` completion were listed.
     PathsListed {
@@ -426,7 +423,7 @@ pub(crate) struct Core {
     pub(crate) inputs: tokio_mpsc::UnboundedSender<Input>,
     seq: u64,
     ui_alive: bool,
-    /// An editor runs in the UI's terminal ([`TerminalCommand::OpenEditor`]).
+    /// An editor runs in the UI's terminal ([`AppCommand::OpenEditor`]).
     pub(crate) editor_open: bool,
     /// An editor the core accepted and is waiting for the UI to let go of the terminal for.
     pub(crate) editor_pending: Option<PathBuf>,
@@ -760,7 +757,7 @@ impl Core {
                 Input::TodosChanged { list } => self.mark_todos(list),
                 Input::WorktreeGathered(info) => self.on_worktree_gathered(info).await,
                 Input::Pasted { agent, paste } => {
-                    self.emit(Event::Clipboard(ClipboardEvent::Pasted { agent, paste }));
+                    self.emit(Event::App(AppEvent::Pasted { agent, paste }));
                 }
                 Input::PathsListed { agent, dir, paths } => {
                     self.emit(Event::Conversation(ConversationEvent::PathsListed {
@@ -773,7 +770,7 @@ impl Core {
                 Input::OpenerFailed(message) => self.fail(message),
                 Input::EditorExited(error) => {
                     self.editor_open = false;
-                    self.emit(Event::Terminal(TerminalEvent::Returned { error }));
+                    self.emit(Event::App(AppEvent::TerminalReturned { error }));
                 }
                 Input::OomKills { cgroup, count } => self.on_oom_kills(cgroup, count),
                 Input::CloseDay => self.write_journal().await,
@@ -1465,16 +1462,14 @@ impl Core {
                 attachments,
                 effort,
             }) => self.prompt(&agent, text, attachments, effort).await,
-            Command::Clipboard(ClipboardCommand::Paste { agent }) => self.paste_clipboard(agent),
-            Command::Clipboard(ClipboardCommand::PasteText { agent, text }) => {
-                self.paste_text(agent, text)
-            }
+            Command::App(AppCommand::Paste { agent }) => self.paste_clipboard(agent),
+            Command::App(AppCommand::PasteText { agent, text }) => self.paste_text(agent, text),
             Command::Conversation(ConversationCommand::ListPaths { agent, dir }) => {
                 self.list_paths(agent, dir)
             }
-            Command::Clipboard(ClipboardCommand::Copy { text }) => self.copy_to_clipboard(text),
-            Command::Terminal(TerminalCommand::OpenEditor { path }) => self.open_editor(path),
-            Command::Terminal(TerminalCommand::Released) => self.run_editor(),
+            Command::App(AppCommand::Copy { text }) => self.copy_to_clipboard(text),
+            Command::App(AppCommand::OpenEditor { path }) => self.open_editor(path),
+            Command::App(AppCommand::TerminalReleased) => self.run_editor(),
             Command::Agent(AgentCommand::Interrupt { agent }) => self.interrupt(&agent),
             Command::Inbox(InboxCommand::AnswerPermission { item, answer }) => {
                 self.answer_permission(item, answer).await
@@ -1514,7 +1509,7 @@ impl Core {
             Command::Journal(JournalCommand::EndOfDay) => self.end_of_day(),
             Command::Journal(JournalCommand::Handoff) => self.handoff_start(),
             Command::Journal(JournalCommand::FreshSession) => self.fresh_session(),
-            Command::Upgrade(UpgradeCommand::Start { local }) => self.start_upgrade(local),
+            Command::App(AppCommand::StartUpgrade { local }) => self.start_upgrade(local),
             Command::Agent(AgentCommand::NewSlice {
                 task,
                 name,
@@ -1710,7 +1705,7 @@ impl Core {
             }
             Command::Worktree(WorktreeCommand::Refresh) => self.refresh_worktrees(),
             Command::App(AppCommand::Resync) => self.send_snapshot(false).await,
-            Command::Terminal(TerminalCommand::TakeOver { agent }) => self.take_over(agent).await,
+            Command::App(AppCommand::TakeOver { agent }) => self.take_over(agent).await,
             Command::Project(ProjectCommand::Open { id }) => self.open_other_project(id).await,
             Command::Project(ProjectCommand::NewResearch { name }) => {
                 self.new_research_project(name).await
@@ -1721,7 +1716,7 @@ impl Core {
     }
 
     /// Reads the clipboard on a blocking thread (the tools may take seconds) and answers with
-    /// [`ClipboardEvent::Pasted`] when done. Images are saved under `attachments/`.
+    /// [`AppEvent::Pasted`] when done. Images are saved under `attachments/`.
     fn paste_clipboard(&mut self, agent: AgentId) {
         let dir = self.paths.attachments();
         let inputs = self.inputs.clone();
@@ -1829,8 +1824,8 @@ impl Core {
         });
     }
 
-    /// Accepts [`TerminalCommand::OpenEditor`]: checks the path, then asks the UI to let go of the
-    /// terminal ([`TerminalEvent::Lend`]). A missing path or a terminal already lent out is
+    /// Accepts [`AppCommand::OpenEditor`]: checks the path, then asks the UI to let go of the
+    /// terminal ([`AppEvent::TerminalLend`]). A missing path or a terminal already lent out is
     /// answered with [`AppEvent::CommandFailed`] and the UI keeps the terminal, so nothing
     /// flickers.
     fn open_editor(&mut self, path: PathBuf) {
@@ -1845,11 +1840,11 @@ impl Core {
             return;
         }
         self.editor_pending = Some(path);
-        self.emit(Event::Terminal(TerminalEvent::Lend));
+        self.emit(Event::App(AppEvent::TerminalLend));
     }
 
     /// Runs the accepted editor in the terminal the UI has let go of, and answers
-    /// [`TerminalEvent::Returned`] when it exits.
+    /// [`AppEvent::TerminalReturned`] when it exits.
     fn run_editor(&mut self) {
         let Some(path) = self.editor_pending.take() else {
             return;

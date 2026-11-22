@@ -5,8 +5,7 @@ mod support;
 use dovetail_api::{
     Command, Event, ServerMsg, Snapshot,
     agent::{AgentKind, AgentStatus},
-    app::AppEvent,
-    clipboard::{ClipboardEvent, Paste},
+    app::{AppEvent, Paste},
     conversation::{Attachment, ConversationCommand, ImageType},
     journal::{JournalCommand, JournalEvent, JournalState},
 };
@@ -263,7 +262,7 @@ fn paste_image(app: &mut dovetail_tui::App, who: &str) {
     let seq = app.snapshot().seq + 1;
     app.on_server(ServerMsg::Event {
         seq,
-        event: Event::Clipboard(ClipboardEvent::Pasted {
+        event: Event::App(AppEvent::Pasted {
             agent: agent_id(who),
             paste: Paste::Image(Attachment {
                 path: std::path::PathBuf::from("/data/attachments/1.png"),

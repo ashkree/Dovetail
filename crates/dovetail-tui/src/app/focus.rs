@@ -3,11 +3,10 @@
 use dovetail_api::{
     Command,
     agent::{AgentCommand, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock},
+    app::AppCommand,
     inbox::InboxId,
     research::ResearchCommand,
     task::TaskId,
-    terminal::TerminalCommand,
-    upgrade::UpgradeCommand,
 };
 
 use super::{App, ChatSite, Confirm, Then};
@@ -228,7 +227,7 @@ impl App {
             }
             Action::NewTangent => self.new_tangent(arg.to_string()),
             Action::Upgrade if arg.is_empty() || arg == "--local" => {
-                self.outbox.push(Command::Upgrade(UpgradeCommand::Start {
+                self.outbox.push(Command::App(AppCommand::StartUpgrade {
                     local: arg == "--local",
                 }));
                 self.note = Some(if arg.is_empty() {
@@ -484,7 +483,7 @@ impl App {
             self.note = Some(format!("{name} is still setting up"));
             return;
         }
-        let command = Command::Terminal(TerminalCommand::TakeOver { agent: session });
+        let command = Command::App(AppCommand::TakeOver { agent: session });
         if agent.status == AgentStatus::Working {
             let whose = if redirected {
                 format!("{name} (the session this subagent runs in)")

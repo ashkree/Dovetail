@@ -1,31 +1,14 @@
-//! Protocol integration tests, organised by feature.
+//! Protocol integration tests, organised by domain and feature.
 
 mod activity;
-mod agent;
+mod agents;
 mod app;
-mod canvas;
-mod clipboard;
+mod code;
 mod common;
-mod conversation;
 mod coverage;
-mod decision;
-mod design;
-mod effort;
-mod inbox;
-mod journal;
-mod library;
-mod map;
-mod mcp;
-mod model;
-mod project;
 mod research;
-mod status;
-mod tangent;
-mod task;
-mod terminal;
-mod upgrade;
-mod usage;
-mod worktree;
+mod tracking;
+mod visual;
 
 use std::collections::BTreeMap;
 
@@ -43,8 +26,8 @@ use dovetail_api::effort::EffortId;
 use dovetail_api::journal::JournalState;
 use dovetail_api::model::ModelOption;
 use dovetail_api::project::{ProjectId, ProjectKind, ProjectSummary};
+use dovetail_api::status::{UsageLimits, UsageStatus, UsageWindow};
 use dovetail_api::task::TaskEvent;
-use dovetail_api::usage::{UsageLimits, UsageStatus, UsageWindow};
 use dovetail_api::{ApplyResult, Event, PROTOCOL_VERSION, ServerMsg, Snapshot, apply};
 
 #[test]
@@ -256,29 +239,12 @@ fn old_or_repeated_seq_is_stale_and_changes_nothing() {
 pub(crate) fn all_cases() -> Vec<Case> {
     [
         activity::cases(),
-        agent::cases(),
+        agents::cases(),
         app::cases(),
-        canvas::cases(),
-        clipboard::cases(),
-        conversation::cases(),
-        decision::cases(),
-        design::cases(),
-        effort::cases(),
-        inbox::cases(),
-        journal::cases(),
-        library::cases(),
-        map::cases(),
-        mcp::cases(),
-        model::cases(),
-        project::cases(),
+        code::cases(),
         research::cases(),
-        status::cases(),
-        tangent::cases(),
-        task::cases(),
-        terminal::cases(),
-        upgrade::cases(),
-        usage::cases(),
-        worktree::cases(),
+        tracking::cases(),
+        visual::cases(),
     ]
     .into_iter()
     .flatten()

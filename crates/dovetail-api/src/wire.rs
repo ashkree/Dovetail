@@ -4,15 +4,14 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use serde::{Deserialize, Serialize};
 
-use crate::activity::ActivityEvent;
 use crate::agent::{AgentCommand, AgentEvent};
 use crate::app::{AppCommand, AppEvent};
 use crate::canvas::{CanvasCommand, CanvasEvent};
-use crate::clipboard::{ClipboardCommand, ClipboardEvent};
 use crate::conversation::{ConversationCommand, ConversationEvent};
 use crate::decision::{DecisionCommand, DecisionEvent};
 use crate::design::{DesignCommand, DesignEvent};
 use crate::effort::{EffortCommand, EffortEvent};
+use crate::feed::ActivityEvent;
 use crate::inbox::{InboxCommand, InboxEvent};
 use crate::journal::{JournalCommand, JournalEvent};
 use crate::library::{LibraryCommand, LibraryEvent};
@@ -25,9 +24,6 @@ use crate::snapshot::Snapshot;
 use crate::status::StatusEvent;
 use crate::tangent::{TangentCommand, TangentEvent};
 use crate::task::{TaskCommand, TaskEvent};
-use crate::terminal::{TerminalCommand, TerminalEvent};
-use crate::upgrade::{UpgradeCommand, UpgradeEvent};
-use crate::usage::UsageEvent;
 use crate::worktree::{WorktreeCommand, WorktreeEvent};
 
 /// Version of this protocol, sent in [`ServerMsg::Hello`].
@@ -91,12 +87,6 @@ pub enum Command {
     Journal(JournalCommand),
     /// A command about tangents.
     Tangent(TangentCommand),
-    /// A command about the terminal.
-    Terminal(TerminalCommand),
-    /// A command about the clipboard.
-    Clipboard(ClipboardCommand),
-    /// A command about upgrades.
-    Upgrade(UpgradeCommand),
     /// A command about canvases.
     Canvas(CanvasCommand),
     /// A command about design previews and variants.
@@ -142,8 +132,6 @@ pub enum Event {
     Conversation(ConversationEvent),
     /// An event about the status bar.
     Status(StatusEvent),
-    /// An event about usage limits.
-    Usage(UsageEvent),
     /// An event about decision logs.
     Decision(DecisionEvent),
     /// An event about maps.
@@ -160,14 +148,8 @@ pub enum Event {
     Mcp(McpEvent),
     /// An event about the app.
     App(AppEvent),
-    /// An event about the clipboard.
-    Clipboard(ClipboardEvent),
-    /// An event about the terminal.
-    Terminal(TerminalEvent),
     /// An event about the journal.
     Journal(JournalEvent),
-    /// An event about upgrades.
-    Upgrade(UpgradeEvent),
     /// An event about projects.
     Project(ProjectEvent),
 }

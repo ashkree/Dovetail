@@ -1,4 +1,6 @@
-//! Ensures every `Event` variant declared in `src/*/event.rs` is exercised by `cases()`.
+//! Ensures every `Event` variant declared in `src/<domain>/<feature>/event.rs` is exercised by
+//! `cases()`. The feature key comes from the enum name (`TaskEvent` is `task`), so a domain
+//! folder or a renamed feature folder changes nothing.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -17,8 +19,9 @@ fn pascal_to_snake(name: &str) -> String {
     out
 }
 
-fn extract_event_variants(feature: &str, source: &str) -> Vec<String> {
+fn extract_event_variants(path: &Path, source: &str) -> Vec<String> {
     let mut variants = Vec::new();
+    let mut feature = String::new();
     let mut in_enum = false;
     let mut depth: usize = 0;
 
@@ -30,6 +33,12 @@ fn extract_event_variants(feature: &str, source: &str) -> Vec<String> {
                 && trimmed.ends_with('{')
             {
                 in_enum = true;
+                let name = trimmed
+                    .trim_start_matches("pub enum ")
+                    .split(' ')
+                    .next()
+                    .unwrap_or("");
+                feature = pascal_to_snake(name.trim_end_matches("Event"));
                 depth = 1;
             }
             continue;
@@ -51,7 +60,8 @@ fn extract_event_variants(feature: &str, source: &str) -> Vec<String> {
                     .collect();
                 assert!(
                     !variant.is_empty(),
-                    "failed to parse variant name in {feature}/event.rs: {line}"
+                    "failed to parse variant name in {}: {line}",
+                    path.display()
                 );
                 variants.push(format!("{feature}.{}", pascal_to_snake(&variant)));
             }
@@ -74,43 +84,41 @@ fn extract_event_variants(feature: &str, source: &str) -> Vec<String> {
 
     assert!(
         in_enum,
-        "did not find `pub enum <Feature>Event {{` in src/{feature}/event.rs"
+        "did not find `pub enum <Feature>Event {{` in {}",
+        path.display()
     );
     assert!(
         !variants.is_empty(),
-        "extracted zero event variants from src/{feature}/event.rs"
+        "extracted zero event variants from {}",
+        path.display()
     );
     variants
 }
 
+fn collect_event_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in
+        fs::read_dir(dir).unwrap_or_else(|err| panic!("cannot read {}: {err}", dir.display()))
+    {
+        let path = entry.expect("readable directory entry").path();
+        if path.is_dir() {
+            collect_event_files(&path, out);
+        } else if path.file_name().is_some_and(|n| n == "event.rs") {
+            out.push(path);
+        }
+    }
+}
+
 fn declared_event_keys() -> BTreeSet<String> {
     let src_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut event_files: Vec<(String, PathBuf)> = fs::read_dir(&src_dir)
-        .expect("CARGO_MANIFEST_DIR/src exists and is readable")
-        .filter_map(|entry| {
-            let path = entry.expect("readable src directory entry").path();
-            if !path.is_dir() {
-                return None;
-            }
-            let event_path = path.join("event.rs");
-            if !event_path.is_file() {
-                return None;
-            }
-            let feature = path
-                .file_name()
-                .expect("feature directory has a name")
-                .to_string_lossy()
-                .into_owned();
-            Some((feature, event_path))
-        })
-        .collect();
-    event_files.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut event_files = Vec::new();
+    collect_event_files(&src_dir, &mut event_files);
+    event_files.sort();
 
     let mut keys = BTreeSet::new();
-    for (feature, path) in event_files {
+    for path in event_files {
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
-        for key in extract_event_variants(&feature, &source) {
+        for key in extract_event_variants(&path, &source) {
             let inserted = keys.insert(key.clone());
             assert!(inserted, "duplicate event key {key}");
         }

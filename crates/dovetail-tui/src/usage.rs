@@ -9,7 +9,7 @@
 
 use dovetail_api::{
     model::ReasoningEffort,
-    usage::{UsageLimits, UsageWindow},
+    status::{UsageLimits, UsageWindow},
 };
 use jiff::{Timestamp, tz::TimeZone};
 use ratatui::text::Span;
@@ -210,7 +210,7 @@ pub fn variants(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::usage::UsageStatus;
+    use dovetail_api::status::UsageStatus;
 
     fn text(spans: &[Span]) -> String {
         spans.iter().map(|s| s.content.as_ref()).collect()

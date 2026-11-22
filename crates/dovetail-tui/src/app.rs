@@ -31,7 +31,6 @@ use dovetail_api::{
     agent::{AgentCommand, AgentEvent, AgentId, AgentKind, AgentStatus, SlashCommand},
     app::{AppCommand, AppEvent},
     apply,
-    clipboard::{ClipboardCommand, ClipboardEvent},
     conversation::{ConversationCommand, ConversationEvent},
     decision::DecisionCommand,
     inbox::{InboxCommand, InboxKind, PermissionAnswer},
@@ -41,8 +40,6 @@ use dovetail_api::{
     project::{ProjectCommand, ProjectEvent},
     research::{ResearchCommand, ResearchEvent},
     task::{TaskChange, TaskCommand, TaskEvent},
-    terminal::{TerminalCommand, TerminalEvent},
-    upgrade::UpgradeEvent,
     worktree::WorktreeCommand,
 };
 use jiff::tz::TimeZone;
@@ -141,10 +138,10 @@ pub struct App {
     open_after_create: Option<String>,
     note: Option<String>,
     outbox: Vec<Command>,
-    /// A command that needs the terminal ([`TerminalCommand::OpenEditor`], [`TerminalCommand::TakeOver`]), for
+    /// A command that needs the terminal ([`AppCommand::OpenEditor`], [`AppCommand::TakeOver`]), for
     /// the loop to send once it has let go of the terminal.
     handoff: Option<Command>,
-    /// The terminal is lent out until the core sends [`TerminalEvent::Returned`].
+    /// The terminal is lent out until the core sends [`AppEvent::TerminalReturned`].
     terminal_away: bool,
     /// `OpenEditor` is out and the core has not answered yet: the loop keeps the terminal and
     /// reads no key until it does ([`App::awaiting_lend`]).
@@ -319,7 +316,7 @@ impl App {
     /// A command that must run with the terminal lent out (`e` in the worktree view,
     /// `<leader>st`). The loop
     /// lets go of the terminal (alternate screen, raw mode, key reading) and then sends it; from
-    /// here until [`TerminalEvent::Returned`] arrives, [`App::terminal_away`] is true.
+    /// here until [`AppEvent::TerminalReturned`] arrives, [`App::terminal_away`] is true.
     pub fn take_handoff(&mut self) -> Option<Command> {
         let command = self.handoff.take();
         if command.is_some() {
@@ -335,7 +332,7 @@ impl App {
 
     /// Whether the core has yet to say if it will take the terminal (it checks the editor's
     /// path first). The loop keeps the terminal and reads no key meanwhile; the answer is
-    /// either a hand-off ([`TerminalEvent::Lend`]) or a note ([`AppEvent::CommandFailed`]).
+    /// either a hand-off ([`AppEvent::TerminalLend`]) or a note ([`AppEvent::CommandFailed`]).
     pub fn awaiting_lend(&self) -> bool {
         self.awaiting_lend
     }
@@ -480,15 +477,15 @@ impl App {
                 }
                 if self.awaiting_lend {
                     match &event {
-                        Event::Terminal(TerminalEvent::Lend) => {
+                        Event::App(AppEvent::TerminalLend) => {
                             self.awaiting_lend = false;
-                            self.handoff = Some(Command::Terminal(TerminalCommand::Released));
+                            self.handoff = Some(Command::App(AppCommand::TerminalReleased));
                         }
                         Event::App(AppEvent::CommandFailed { .. }) => self.awaiting_lend = false,
                         _ => {}
                     }
                 }
-                if let Event::Terminal(TerminalEvent::Returned { error }) = &event {
+                if let Event::App(AppEvent::TerminalReturned { error }) = &event {
                     self.terminal_away = false;
                     if let Some(error) = error {
                         self.note = Some(error.clone());
@@ -516,7 +513,7 @@ impl App {
                 {
                     self.mcp_reply(agent, request, outcome.clone());
                 }
-                if let Event::Clipboard(ClipboardEvent::Pasted { agent, paste }) = &event
+                if let Event::App(AppEvent::Pasted { agent, paste }) = &event
                     && let Some(notice) = self.chat_view_mut().receive_paste(agent, paste.clone())
                 {
                     self.note = Some(notice);
@@ -566,7 +563,7 @@ impl App {
                 // Likewise when the user picked another project (B24) and said yes.
                 if matches!(
                     event,
-                    Event::Upgrade(UpgradeEvent::Restarting)
+                    Event::App(AppEvent::UpgradeRestarting)
                         | Event::Project(ProjectEvent::Opening { .. })
                 ) {
                     self.quit = true;
@@ -744,7 +741,7 @@ impl App {
 
     /// Handles pasted or dropped text (a bracketed paste). In an open chat bar it goes to the core,
     /// which attaches it when it is a path to an image and hands back the text otherwise
-    /// ([`ClipboardCommand::PasteText`]). Into any other input it is typed as keys, one line. In Normal
+    /// ([`AppCommand::PasteText`]). Into any other input it is typed as keys, one line. In Normal
     /// and MAP mode it is ignored, as the keys it would have been are not commands.
     pub fn on_paste(&mut self, text: &str, mono_ms: u64) {
         if self.confirm.is_some()
@@ -759,11 +756,10 @@ impl App {
         {
             self.dirty = true;
             self.note = None;
-            self.outbox
-                .push(Command::Clipboard(ClipboardCommand::PasteText {
-                    agent,
-                    text: text.to_string(),
-                }));
+            self.outbox.push(Command::App(AppCommand::PasteText {
+                agent,
+                text: text.to_string(),
+            }));
             return;
         }
         let line = text.lines().next().unwrap_or("");
@@ -1025,14 +1021,13 @@ impl App {
     }
 
     /// Ctrl-V in the chat bar: ask the core to read the clipboard. It answers with
-    /// [`ClipboardEvent::Pasted`]: an image saved as an attachment, text, or a refusal.
+    /// [`AppEvent::Pasted`]: an image saved as an attachment, text, or a refusal.
     fn paste_clipboard(&mut self) {
         if !self.chat_view().is_chatting() {
             return;
         }
         if let Some(agent) = self.chat_view().agent().cloned() {
-            self.outbox
-                .push(Command::Clipboard(ClipboardCommand::Paste { agent }));
+            self.outbox.push(Command::App(AppCommand::Paste { agent }));
         }
     }
 
@@ -1460,7 +1455,7 @@ impl App {
             Effect::OpenEditor(path) => {
                 // The core checks the path before the terminal is let go of.
                 self.outbox
-                    .push(Command::Terminal(TerminalCommand::OpenEditor { path }));
+                    .push(Command::App(AppCommand::OpenEditor { path }));
                 self.awaiting_lend = true;
             }
             Effect::Read {

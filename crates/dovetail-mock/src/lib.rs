@@ -26,8 +26,8 @@ use dovetail_api::{
         Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SubagentProgress, TodoItem,
         TodoListId, TodoStatus, WorktreeRef,
     },
+    app::Paste,
     apply,
-    clipboard::Paste,
     conversation::{Attachment, ConversationEntry, EntryId, EntryKind},
     decision::{Alternative, Decision, DecisionAuthor, DecisionId, NewDecision},
     inbox::{InboxId, InboxItem, InboxKind, PermissionAnswer, REMOVE_WORKTREE_PERMISSION},
@@ -44,7 +44,6 @@ use dovetail_api::{
     agent::{AgentCommand, AgentEvent},
     app::{AppCommand, AppEvent},
     canvas::CanvasCommand,
-    clipboard::{ClipboardCommand, ClipboardEvent},
     conversation::{ConversationCommand, ConversationEvent},
     decision::{DecisionCommand, DecisionEvent},
     design::DesignCommand,
@@ -60,9 +59,6 @@ use dovetail_api::{
     status::StatusEvent,
     tangent::{TangentCommand, TangentEvent},
     task::{TaskCommand, TaskEvent},
-    terminal::{TerminalCommand, TerminalEvent},
-    upgrade::{UpgradeCommand, UpgradeEvent},
-    usage::UsageEvent,
     worktree::{WorktreeCommand, WorktreeEvent},
 };
 use rng::Rng;
@@ -122,7 +118,7 @@ pub struct MockCore {
     next_subagent: u64,
     next_task: i64,
     reply_count: u64,
-    /// What [`ClipboardCommand::Paste`] answers, in turn; see [`MockCore::queue_clipboard`].
+    /// What [`AppCommand::Paste`] answers, in turn; see [`MockCore::queue_clipboard`].
     clipboard: VecDeque<Paste>,
     /// The servers `/mcp` lists, for every session; actions change them ([`world::mcp_servers`]).
     mcp: Vec<dovetail_api::mcp::McpServer>,
@@ -196,7 +192,7 @@ impl MockCore {
         &self.opened
     }
 
-    /// Queues what the next [`ClipboardCommand::Paste`] answers. The mock reads no real
+    /// Queues what the next [`AppCommand::Paste`] answers. The mock reads no real
     /// clipboard: with nothing queued it refuses, as the core does with no clipboard tool.
     pub fn queue_clipboard(&mut self, paste: Paste) {
         self.clipboard.push_back(paste);
@@ -347,29 +343,29 @@ impl MockCore {
                     outcome,
                 }));
             }
-            Command::Clipboard(ClipboardCommand::Paste { agent }) => {
+            Command::App(AppCommand::Paste { agent }) => {
                 let paste = self
                     .clipboard
                     .pop_front()
                     .unwrap_or_else(|| Paste::Refused("the mock core has no clipboard".into()));
-                self.emit(Event::Clipboard(ClipboardEvent::Pasted { agent, paste }));
+                self.emit(Event::App(AppEvent::Pasted { agent, paste }));
             }
             // The mock reads no files, so a pasted path stays text.
-            Command::Clipboard(ClipboardCommand::PasteText { agent, text }) => {
-                self.emit(Event::Clipboard(ClipboardEvent::Pasted {
+            Command::App(AppCommand::PasteText { agent, text }) => {
+                self.emit(Event::App(AppEvent::Pasted {
                     agent,
                     paste: Paste::Text(text),
                 }))
             }
             // The mock touches nothing outside itself: no clipboard, no editor and no native
             // claude. The answer still comes, so the UI takes its terminal back.
-            Command::Clipboard(ClipboardCommand::Copy { .. }) => {}
-            Command::Terminal(TerminalCommand::OpenEditor { .. }) => {
+            Command::App(AppCommand::Copy { .. }) => {}
+            Command::App(AppCommand::OpenEditor { .. }) => {
                 self.fail("the mock core opens no editor".into())
             }
-            Command::Terminal(TerminalCommand::Released) => {}
-            Command::Terminal(TerminalCommand::TakeOver { .. }) => {
-                self.emit(Event::Terminal(TerminalEvent::Returned {
+            Command::App(AppCommand::TerminalReleased) => {}
+            Command::App(AppCommand::TakeOver { .. }) => {
+                self.emit(Event::App(AppEvent::TerminalReturned {
                     error: Some("the mock core runs no native claude".into()),
                 }))
             }
@@ -770,10 +766,10 @@ impl MockCore {
                 self.fail("the mock does not switch projects; the real app restarts on it".into())
             }
             // A pretend build, so the working indicator can be tried: it ends with a failure.
-            Command::Upgrade(UpgradeCommand::Start { .. }) => {
-                self.emit(Event::Upgrade(UpgradeEvent::Building(true)));
+            Command::App(AppCommand::StartUpgrade { .. }) => {
+                self.emit(Event::App(AppEvent::UpgradeBuilding(true)));
                 self.after(6_000, |core| {
-                    core.emit(Event::Upgrade(UpgradeEvent::Building(false)));
+                    core.emit(Event::App(AppEvent::UpgradeBuilding(false)));
                     core.fail("not available in the mock".into());
                 });
             }
@@ -1537,7 +1533,7 @@ impl MockCore {
             .as_ref()
             .map_or(0.0, |w| w.utilization);
         let usage = world::usage(self.state.now_ms, ((used + 0.01) * 100.0).round() / 100.0);
-        self.emit(Event::Usage(UsageEvent::Changed(usage)));
+        self.emit(Event::Status(StatusEvent::UsageChanged(usage)));
         // Reading mode's Ask answers in its column: no finished-turn item (ADR 0018).
         if !self.running_background_children(agent)
             && self

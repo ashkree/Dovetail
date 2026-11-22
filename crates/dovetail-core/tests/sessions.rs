@@ -25,7 +25,6 @@ use dovetail_api::{
     model::ModelCommand,
     project::ProjectCommand,
     task::{Bucket, NewTask, PLevel, TaskCommand, TaskId, TaskStatus},
-    terminal::{TerminalCommand, TerminalEvent},
     worktree::WorktreeCommand,
 };
 use dovetail_core::config::Config;
@@ -36,12 +35,12 @@ use dovetail_core::{CoreHandle, CoreOptions};
 use dovetail_driver::{ControlAnswer, FakeDriver, ReplayOptions, Sent};
 use dovetail_tools::{
     SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool,
-    core::{AskUser, CoreTool, LogDecision, ReportStatus},
     map::{DrawMap, MapTool},
     project::{
         ArchiveSlice, ProjectTool, StartSlice,
         archive_result::{ARCHIVED, WAITING_FOR_USER},
     },
+    report::{AskUser, LogDecision, ReportStatus, ReportTool},
     task::{ArchiveTask, BucketFilter, GetTask, ListTasks, TaskTool, UpdateTask},
 };
 use tempfile::TempDir;
@@ -188,13 +187,13 @@ impl Harness {
     /// Applies an event, noting the ones that change nothing in the snapshot.
     fn fold(&mut self, seq: u64, event: dovetail_api::Event) {
         match &event {
-            dovetail_api::Event::Terminal(TerminalEvent::Returned { error }) => {
+            dovetail_api::Event::App(AppEvent::TerminalReturned { error }) => {
                 self.returned.push(error.clone())
             }
             dovetail_api::Event::App(AppEvent::CommandFailed { message }) => {
                 self.failures.push(message.clone())
             }
-            dovetail_api::Event::Terminal(TerminalEvent::Lend) => self.lent += 1,
+            dovetail_api::Event::App(AppEvent::TerminalLend) => self.lent += 1,
             dovetail_api::Event::Mcp(McpEvent::Reply {
                 request, outcome, ..
             }) => self.mcp.push((request.clone(), outcome.clone())),
@@ -345,7 +344,7 @@ fn a_second_input_sent_mid_turn_keeps_the_session_working_until_its_own_result()
     h.quit();
 }
 
-fn s_util(w: &Option<dovetail_api::usage::UsageWindow>) -> Option<f64> {
+fn s_util(w: &Option<dovetail_api::status::UsageWindow>) -> Option<f64> {
     w.as_ref().map(|w| w.utilization)
 }
 
@@ -353,7 +352,7 @@ fn s_util(w: &Option<dovetail_api::usage::UsageWindow>) -> Option<f64> {
 fn the_core_checks_the_editors_path_before_asking_the_ui_to_let_go() {
     let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
     let missing = h.repo.join("no-such-folder");
-    h.send(Command::Terminal(TerminalCommand::OpenEditor {
+    h.send(Command::App(AppCommand::OpenEditor {
         path: missing.clone(),
     }));
     h.drain(Duration::from_millis(200));
@@ -366,12 +365,12 @@ fn the_core_checks_the_editors_path_before_asking_the_ui_to_let_go() {
 
     // A path that exists is accepted; until the UI answers, a second request is refused and a
     // stray release does nothing.
-    h.send(Command::Terminal(TerminalCommand::OpenEditor {
+    h.send(Command::App(AppCommand::OpenEditor {
         path: h.repo.clone(),
     }));
     h.drain(Duration::from_millis(200));
     assert_eq!(h.lent, 1);
-    h.send(Command::Terminal(TerminalCommand::OpenEditor {
+    h.send(Command::App(AppCommand::OpenEditor {
         path: h.repo.clone(),
     }));
     h.drain(Duration::from_millis(200));
@@ -1051,7 +1050,7 @@ fn report_status_sets_the_line_cut_at_120_characters() {
         &socket,
         tool(
             COORDINATOR,
-            Tool::Core(CoreTool::ReportStatus(ReportStatus {
+            Tool::Report(ReportTool::ReportStatus(ReportStatus {
                 status: format!("{}\nsecond line", "x".repeat(200)),
             })),
         ),
@@ -1079,7 +1078,7 @@ fn ask(h: &Harness, question: &str) -> (String, bool) {
         &h.socket(),
         tool(
             COORDINATOR,
-            Tool::Core(CoreTool::AskUser(AskUser {
+            Tool::Report(ReportTool::AskUser(AskUser {
                 question: question.into(),
             })),
         ),
@@ -1652,7 +1651,7 @@ fn at_restart_permissions_expire_and_questions_stay_answerable() {
         &socket,
         tool(
             COORDINATOR,
-            Tool::Core(CoreTool::AskUser(AskUser {
+            Tool::Report(ReportTool::AskUser(AskUser {
                 question: "Which port?".into(),
             })),
         ),
@@ -2501,7 +2500,7 @@ fn list_tasks_and_get_task_read_tasks_slices_and_decisions_for_the_coordinator_o
     let call = |agent: &str, t: Tool| result_text(socket_call(&socket, tool(agent, t)));
 
     let decide = |text: &str, supersedes: Option<DecisionId>| {
-        Tool::Core(CoreTool::LogDecision(LogDecision {
+        Tool::Report(ReportTool::LogDecision(LogDecision {
             task: Some(TaskId(3)),
             decision: text.into(),
             why: Some(format!("why {text}")),
@@ -3116,7 +3115,7 @@ fn a_project_profile_sets_claude_config_dir_and_a_changed_one_is_not_resumed() {
     });
     assert_eq!(h.snap.profile.as_deref(), Some("work"));
     // Limits are per account: `mine`'s figures are not shown for `work`.
-    assert_eq!(h.snap.usage, dovetail_api::usage::UsageLimits::default());
+    assert_eq!(h.snap.usage, dovetail_api::status::UsageLimits::default());
     wait_started(&fake, 1);
     let second = fake.started_specs()[0].clone();
     assert!(!second.resume, "resumed across profiles");
@@ -3394,7 +3393,7 @@ fn take_over_stops_headless_runs_native_with_its_flags_and_resumes_headless() {
             .is_some_and(|t| t.entries.iter().any(|e| e.kind == EntryKind::Assistant))
     });
 
-    h.send(Command::Terminal(TerminalCommand::TakeOver {
+    h.send(Command::App(AppCommand::TakeOver {
         agent: AgentId(COORDINATOR.into()),
     }));
     h.wait_for("the lock", |s| {
@@ -3566,7 +3565,7 @@ fn while_taken_over_headless_never_starts_and_exiting_native_keeps_the_worktree(
     let slice = AgentId("slice-s4".into());
     let mut h = Harness::start_native(fake.clone(), paths, None, config, Some(claude));
 
-    h.send(Command::Terminal(TerminalCommand::TakeOver {
+    h.send(Command::App(AppCommand::TakeOver {
         agent: slice.clone(),
     }));
     wait_file(&out.join("started"));
@@ -3589,7 +3588,7 @@ fn while_taken_over_headless_never_starts_and_exiting_native_keeps_the_worktree(
         agent: slice.clone(),
         confirmed: true,
     }));
-    h.send(Command::Terminal(TerminalCommand::TakeOver {
+    h.send(Command::App(AppCommand::TakeOver {
         agent: slice.clone(),
     }));
     h.drain(Duration::from_millis(300));
@@ -3864,7 +3863,7 @@ fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() 
     let fake = fixture("plain_turn");
     let slice = AgentId("slice-s4".into());
     let mut h = Harness::start_native(fake.clone(), paths, None, config, Some(claude));
-    h.send(Command::Terminal(TerminalCommand::TakeOver {
+    h.send(Command::App(AppCommand::TakeOver {
         agent: slice.clone(),
     }));
     wait_file(&out.join("started"));
@@ -3875,7 +3874,7 @@ fn ask_user_from_native_returns_at_once_and_is_answered_once_headless_is_back() 
         &h.socket(),
         tool(
             "slice-s4",
-            Tool::Core(CoreTool::AskUser(AskUser {
+            Tool::Report(ReportTool::AskUser(AskUser {
                 question: "Which branch?".into(),
             })),
         ),
@@ -4563,7 +4562,6 @@ mod upgrade {
     use dovetail_api::{
         app::AppCommand,
         inbox::{InboxCommand, UPGRADE_READY_PERMISSION},
-        upgrade::{UpgradeCommand, UpgradeEvent},
     };
     use dovetail_core::service::UpgradeOptions;
     use dovetail_core::upgrade::{Call, Exec, ExecError};
@@ -4657,7 +4655,7 @@ mod upgrade {
                     .expect("timed out waiting for UpgradeRestarting");
                 match self.h.link.messages.recv_timeout(left) {
                     Ok(ServerMsg::Event {
-                        event: Event::Upgrade(UpgradeEvent::Restarting),
+                        event: Event::App(AppEvent::UpgradeRestarting),
                         ..
                     }) => return,
                     Ok(ServerMsg::Event { seq, event }) => self.h.fold(seq, event),
@@ -4682,7 +4680,7 @@ mod upgrade {
     #[test]
     fn upgrade_builds_in_the_background_and_offers_the_build() {
         let mut u = Upgrading::start(fixture("plain_turn"), false);
-        u.h.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
         let item = u.wait_for_item();
         let input = input_of(&item);
         assert_eq!(input["source"], "abc1234");
@@ -4690,7 +4688,7 @@ mod upgrade {
         // The staged build is on disk, under the data directory only.
         assert!(u.h.paths.data.join("upgrade/staged/dovetail").is_file());
         // A second `:upgrade` while the item waits is refused.
-        u.h.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
         u.h.drain(Duration::from_millis(300));
         assert!(
             u.h.failures
@@ -4704,7 +4702,7 @@ mod upgrade {
     #[test]
     fn d_keeps_the_build_staged_and_does_not_restart() {
         let mut u = Upgrading::start(fixture("plain_turn"), false);
-        u.h.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
         let item = u.wait_for_item();
         u.answer(&item, PermissionAnswer::Deny { message: None });
         u.h.wait_for("the item to go", |s| !s.inbox.iter().any(is_ready));
@@ -4719,7 +4717,7 @@ mod upgrade {
     #[test]
     fn y_with_every_agent_idle_quits_to_restart() {
         let mut u = Upgrading::start(fixture("plain_turn"), false);
-        u.h.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
         let item = u.wait_for_item();
         u.answer(&item, PermissionAnswer::Allow);
         u.wait_for_restart_event();
@@ -4752,7 +4750,7 @@ mod upgrade {
                 .get(&AgentId(COORDINATOR.into()))
                 .is_some_and(|t| t.entries.iter().any(|e| e.text == "working"))
         });
-        u.h.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
         let item = u.wait_for_item();
         u.answer(&item, PermissionAnswer::Allow);
         u.h.wait_for("the item to list who it waits for", |s| {
@@ -4777,7 +4775,7 @@ mod upgrade {
     #[test]
     fn a_failed_build_is_an_error_item_with_the_tail() {
         let mut u = Upgrading::start(fixture("plain_turn"), true);
-        u.h.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
+        u.h.send(Command::App(AppCommand::StartUpgrade { local: false }));
         u.h.wait_for("the error item", |s| {
             s.inbox.iter().any(|i| {
                 matches!(&i.kind, InboxKind::Error { text }
@@ -4794,7 +4792,7 @@ mod upgrade {
     #[test]
     fn upgrade_is_refused_when_it_is_off() {
         let mut h = Harness::start(fixture("plain_turn"), true, Config::default());
-        h.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
+        h.send(Command::App(AppCommand::StartUpgrade { local: false }));
         let deadline = Instant::now() + Duration::from_secs(5);
         while h.failures.is_empty() {
             assert!(Instant::now() < deadline, "no refusal");

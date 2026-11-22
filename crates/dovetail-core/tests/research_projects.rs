@@ -17,7 +17,6 @@ use dovetail_api::{
     library::{LibraryCommand, LibraryEvent},
     project::{ProjectCommand, ProjectEvent, ProjectId, ProjectKind},
     task::{NewTask, TaskCommand, TaskId},
-    upgrade::UpgradeCommand,
     worktree::{WorktreeCommand, WorktreeEvent},
 };
 use dovetail_core::config::Config;
@@ -349,7 +348,7 @@ fn a_research_project_runs_no_slices_and_has_no_worktrees_or_git() {
     if have_git {
         assert_eq!(listed, Some(Vec::new()), "git listed the state folder");
     }
-    app.send(Command::Upgrade(UpgradeCommand::Start { local: false }));
+    app.send(Command::App(AppCommand::StartUpgrade { local: false }));
     app.wait_until("the upgrade refusal", |a| a.failures.len() >= 2);
     assert!(
         app.failures[1].contains("research project"),

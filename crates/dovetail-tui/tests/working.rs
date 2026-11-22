@@ -6,8 +6,8 @@ mod support;
 use dovetail_api::{
     Event, ServerMsg,
     agent::{Agent, AgentEvent, AgentKind, AgentStatus, RunningTool},
+    app::AppEvent,
     journal::{JournalEvent, JournalState},
-    upgrade::UpgradeEvent,
 };
 use support::*;
 
@@ -209,7 +209,7 @@ fn fresh_and_upgrade_say_their_own_words() {
     let mut app = idle_app();
     app.on_server(ServerMsg::Event {
         seq: app_seq(&app),
-        event: Event::Upgrade(UpgradeEvent::Building(true)),
+        event: Event::App(AppEvent::UpgradeBuilding(true)),
     });
     assert!(draw(&mut app).contains("Building the upgrade…"));
 }

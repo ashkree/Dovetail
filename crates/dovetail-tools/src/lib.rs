@@ -1,18 +1,20 @@
 #![doc = include_str!("../ARCHITECTURE.md")]
 #![warn(missing_docs)]
 
-pub mod canvas;
+pub mod agents;
 pub mod catalog;
-pub mod coordination;
-pub mod core;
-pub mod design;
 pub mod env;
 pub mod error;
-pub mod map;
-pub mod project;
 pub mod research;
 pub mod socket;
-pub mod task;
+pub mod tracking;
+pub mod visual;
+
+// Short paths: every feature module is also reachable at the crate root, so callers write
+// `dovetail_tools::task::ListTasks` as well as `dovetail_tools::tracking::task::ListTasks`.
+pub use agents::report;
+pub use tracking::{coordination, project, task};
+pub use visual::{canvas, design, map};
 
 pub use catalog::{
     Role, Suite, TOOLS, ToolSpec, deprecated_alias, deprecation_note, tool_spec, tools_in,
@@ -24,10 +26,10 @@ use serde::{Deserialize, Serialize};
 
 use canvas::CanvasTool;
 use coordination::CoordinationTool;
-use core::CoreTool;
 use design::DesignTool;
 use map::MapTool;
 use project::ProjectTool;
+use report::ReportTool;
 use research::ResearchTool;
 use task::TaskTool;
 
@@ -40,7 +42,7 @@ use task::TaskTool;
 #[serde(rename_all = "snake_case")]
 pub enum Tool {
     /// Tools in the `core` suite.
-    Core(CoreTool),
+    Report(ReportTool),
     /// Tools in the `tasks` suite.
     Task(TaskTool),
     /// Tools in the `project` suite.
@@ -61,7 +63,7 @@ impl Tool {
     /// The tool's name, without the server prefix.
     pub fn name(&self) -> &'static str {
         match self {
-            Tool::Core(t) => t.name(),
+            Tool::Report(t) => t.name(),
             Tool::Task(t) => t.name(),
             Tool::Project(t) => t.name(),
             Tool::Coordination(t) => t.name(),
@@ -88,9 +90,9 @@ impl Tool {
             })
         }
         let tool = match spec.name {
-            "core_ask_user" => Tool::Core(CoreTool::AskUser(args(name, arguments)?)),
-            "core_report_status" => Tool::Core(CoreTool::ReportStatus(args(name, arguments)?)),
-            "core_log_decision" => Tool::Core(CoreTool::LogDecision(args(name, arguments)?)),
+            "core_ask_user" => Tool::Report(ReportTool::AskUser(args(name, arguments)?)),
+            "core_report_status" => Tool::Report(ReportTool::ReportStatus(args(name, arguments)?)),
+            "core_log_decision" => Tool::Report(ReportTool::LogDecision(args(name, arguments)?)),
             "tasks_create" => Tool::Task(TaskTool::Create(args(name, arguments)?)),
             "tasks_list" => Tool::Task(TaskTool::List(args(name, arguments)?)),
             "tasks_get" => Tool::Task(TaskTool::Get(args(name, arguments)?)),
@@ -136,7 +138,7 @@ impl Tool {
     /// coordinator names the task of a decision.
     pub fn validate(&self, role: Role) -> Result<(), ToolError> {
         match self {
-            Tool::Core(t) => t.validate(role),
+            Tool::Report(t) => t.validate(role),
             Tool::Task(t) => t.validate(role),
             Tool::Project(t) => t.validate(role),
             Tool::Coordination(t) => t.validate(role),

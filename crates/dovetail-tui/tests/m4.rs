@@ -8,12 +8,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, Event, ServerMsg, Snapshot,
     agent::{AgentCommand, AgentEvent, AgentStatus, PermissionMode, SessionLock},
-    app::AppEvent,
+    app::{AppCommand, AppEvent},
     conversation::{ConversationTail, EntryKind},
     decision::{Alternative, Decision, DecisionAuthor, DecisionCommand, DecisionId, NewDecision},
     inbox::{InboxCommand, InboxId},
     task::{Bucket, NewTask, PLevel, Task, TaskChange, TaskCommand, TaskEvent, TaskId, TaskStatus},
-    terminal::TerminalCommand,
 };
 use dovetail_tui::Mode;
 use dovetail_tui::region::RegionId;
@@ -816,7 +815,7 @@ fn leader_s_t_lends_the_terminal_for_the_session_under_the_cursor() {
     );
     assert_eq!(
         app.take_handoff(),
-        Some(Command::Terminal(TerminalCommand::TakeOver {
+        Some(Command::App(AppCommand::TakeOver {
             agent: agent_id("slice-7")
         }))
     );
@@ -838,7 +837,7 @@ fn taking_over_a_session_mid_turn_asks_first_and_a_subagent_means_its_session() 
     app.on_key(key('y'), 20);
     assert_eq!(
         app.take_handoff(),
-        Some(Command::Terminal(TerminalCommand::TakeOver {
+        Some(Command::App(AppCommand::TakeOver {
             agent: agent_id("slice-4")
         }))
     );

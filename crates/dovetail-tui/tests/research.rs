@@ -4,6 +4,7 @@ mod support;
 
 use dovetail_api::{
     Command, Event, ServerMsg,
+    app::{AppCommand, AppEvent},
     inbox::{InboxId, InboxItem, InboxKind},
     task::TaskId,
 };
@@ -15,7 +16,6 @@ use dovetail_api::{
         SourceKind, SourceSummary,
     },
     task::TaskCommand,
-    terminal::{TerminalCommand, TerminalEvent},
 };
 use dovetail_tui::App;
 use ratatui::Terminal;
@@ -344,18 +344,18 @@ fn e_hands_the_documents_file_to_the_editor_and_a_listed_source_has_none() {
     app.on_key(key('e'), 3);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Terminal(TerminalCommand::OpenEditor {
+        vec![Command::App(AppCommand::OpenEditor {
             path: "/data/research/1-pricing/report.md".into()
         })]
     );
-    deliver(&mut app, Event::Terminal(TerminalEvent::Lend));
+    deliver(&mut app, Event::App(AppEvent::TerminalLend));
     assert_eq!(
         app.take_handoff(),
-        Some(Command::Terminal(TerminalCommand::Released))
+        Some(Command::App(AppCommand::TerminalReleased))
     );
     deliver(
         &mut app,
-        Event::Terminal(TerminalEvent::Returned { error: None }),
+        Event::App(AppEvent::TerminalReturned { error: None }),
     );
     // A source that was listed but not cached has no file.
     app.on_key(esc(), 4);
@@ -587,18 +587,18 @@ fn e_on_a_selected_research_row_opens_that_file_in_the_editor() {
     app.on_key(key('e'), 2);
     assert_eq!(
         app.take_commands(),
-        vec![Command::Terminal(TerminalCommand::OpenEditor {
+        vec![Command::App(AppCommand::OpenEditor {
             path: "/data/research/1-pricing/findings/1-seat-plans.md".into()
         })]
     );
-    deliver(&mut app, Event::Terminal(TerminalEvent::Lend));
+    deliver(&mut app, Event::App(AppEvent::TerminalLend));
     assert_eq!(
         app.take_handoff(),
-        Some(Command::Terminal(TerminalCommand::Released))
+        Some(Command::App(AppCommand::TerminalReleased))
     );
     deliver(
         &mut app,
-        Event::Terminal(TerminalEvent::Returned { error: None }),
+        Event::App(AppEvent::TerminalReturned { error: None }),
     );
 }
 

@@ -12,9 +12,8 @@ mod support;
 use dovetail_api::{
     Command, Event, ServerMsg,
     agent::{AgentCommand, AgentStatus},
-    clipboard::ClipboardCommand,
+    app::{AppCommand, AppEvent},
     inbox::{InboxCommand, InboxKind, PermissionAnswer, REMOVE_WORKTREE_PERMISSION},
-    terminal::{TerminalCommand, TerminalEvent},
     worktree::WorktreeCommand,
 };
 use dovetail_mock::{MockConfig, MockCore};
@@ -264,23 +263,23 @@ fn e_hands_off_the_terminal_and_takes_it_back_on_the_core_answer() {
     // The core is asked first; the terminal is not let go of until it says so.
     assert_eq!(
         app.take_commands(),
-        vec![Command::Terminal(TerminalCommand::OpenEditor { path })]
+        vec![Command::App(AppCommand::OpenEditor { path })]
     );
     assert!(app.awaiting_lend());
     assert!(!app.has_handoff());
     assert!(!app.terminal_away());
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::Terminal(TerminalEvent::Lend),
+        event: Event::App(AppEvent::TerminalLend),
     });
     assert!(!app.awaiting_lend());
     let handoff = app.take_handoff().expect("a hand-off");
-    assert_eq!(handoff, Command::Terminal(TerminalCommand::Released));
+    assert_eq!(handoff, Command::App(AppCommand::TerminalReleased));
     assert!(app.terminal_away());
     assert_eq!(app.take_handoff(), None, "one hand-off per key");
     app.on_server(ServerMsg::Event {
         seq: 2,
-        event: Event::Terminal(TerminalEvent::Returned { error: None }),
+        event: Event::App(AppEvent::TerminalReturned { error: None }),
     });
     assert!(!app.terminal_away());
 
@@ -304,7 +303,7 @@ fn ctrl_c_in_the_editor_is_the_editor_s_but_sigterm_still_quits() {
     app.on_key(key('e'), 10);
     app.on_server(ServerMsg::Event {
         seq: 1,
-        event: Event::Terminal(TerminalEvent::Lend),
+        event: Event::App(AppEvent::TerminalLend),
     });
     app.take_handoff().expect("a hand-off");
     app.on_signal(Signal::Interrupt);
@@ -324,9 +323,7 @@ fn c_copies_the_path() {
     let path = "/home/you/.local/share/dovetail/projects/dovetail/worktrees/picker";
     assert_eq!(
         app.take_commands(),
-        vec![Command::Clipboard(ClipboardCommand::Copy {
-            text: path.into()
-        })]
+        vec![Command::App(AppCommand::Copy { text: path.into() })]
     );
     assert_eq!(app.note(), Some(format!("copied {path}").as_str()));
 }

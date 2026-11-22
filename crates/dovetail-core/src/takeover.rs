@@ -1,14 +1,14 @@
 //! Take-over (M14, digest §2): `<leader>st` hands a session to native `claude` in the user's
 //! terminal and takes it back.
 //!
-//! **The hand-off.** The UI lets go of the terminal and sends [`TerminalCommand::TakeOver`]. The core
+//! **The hand-off.** The UI lets go of the terminal and sends [`AppCommand::TakeOver`]. The core
 //! stores a [`TakeoverLock`] on the agent (awaited, so it is on disk before anything stops),
 //! stops the headless process, and once it has exited runs `claude --resume <id>` built from
 //! the same [`dovetail_driver::SessionSpec`] as headless: same settings and hooks, MCP config,
 //! role prompt, tools, model, permission mode, profile and recipe environment, in the same
 //! working directory, under the same capped scope unit. When native exits, the lines it added to
 //! the transcript are shown in the conversation under a note, the lock is cleared, the terminal
-//! goes back ([`TerminalEvent::Returned`]) and headless resumes from the same session id.
+//! goes back ([`AppEvent::TerminalReturned`]) and headless resumes from the same session id.
 //! Nothing on this path removes a worktree or archives anything.
 //!
 //! **The lock.** While a session is locked, headless never starts: [`Core::launch`], which
@@ -37,8 +37,8 @@
 //! OOM watcher only follows headless processes, and an automatic restart goes through
 //! [`Core::launch`], so it cannot start headless beside native.
 //!
-//! [`TerminalCommand::TakeOver`]: dovetail_api::terminal::TerminalCommand::TakeOver
-//! [`TerminalEvent::Returned`]: dovetail_api::terminal::TerminalEvent::Returned
+//! [`AppCommand::TakeOver`]: dovetail_api::terminal::AppCommand::TakeOver
+//! [`AppEvent::TerminalReturned`]: dovetail_api::terminal::AppEvent::TerminalReturned
 //! [`RELEASE_TAKEOVER_PERMISSION`]: dovetail_api::inbox::RELEASE_TAKEOVER_PERMISSION
 
 use std::ffi::OsString;
@@ -49,9 +49,9 @@ use std::time::Duration;
 use dovetail_api::{
     Event,
     agent::{AgentEvent, AgentId, AgentKind, SessionLock},
+    app::AppEvent,
     conversation::EntryKind,
     inbox::{InboxKind, RELEASE_TAKEOVER_PERMISSION},
-    terminal::TerminalEvent,
 };
 use dovetail_driver::transcript::{self, NativeEntry};
 use serde::{Deserialize, Serialize};
@@ -394,9 +394,7 @@ impl Core {
     /// starts native once it has exited. Every refusal hands the terminal back at once.
     pub(crate) async fn take_over(&mut self, id: AgentId) {
         if let Some(why) = self.refuse_take_over(&id) {
-            self.emit(Event::Terminal(TerminalEvent::Returned {
-                error: Some(why),
-            }));
+            self.emit(Event::App(AppEvent::TerminalReturned { error: Some(why) }));
             return;
         }
         let live = self.live.contains_key(&id);
@@ -421,7 +419,7 @@ impl Core {
                 row.takeover = None;
                 row.agent.lock = SessionLock::Headless;
             });
-            self.emit(Event::Terminal(TerminalEvent::Returned {
+            self.emit(Event::App(AppEvent::TerminalReturned {
                 error: Some(format!("could not store the take-over lock: {e}")),
             }));
             return;
@@ -546,7 +544,7 @@ impl Core {
     /// Native has exited (or never started): give the terminal back, then release the lock,
     /// showing what happened in native, and resume headless.
     pub(crate) fn native_exited(&mut self, id: &AgentId, end: NativeEnd) {
-        self.emit(Event::Terminal(TerminalEvent::Returned {
+        self.emit(Event::App(AppEvent::TerminalReturned {
             error: end.error.clone(),
         }));
         let name = self.name_of(id);

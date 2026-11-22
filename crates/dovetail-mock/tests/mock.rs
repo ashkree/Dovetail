@@ -16,7 +16,6 @@ use dovetail_api::{
     snapshot::CONVERSATION_TAIL,
     status::StatusEvent,
     task::{Bucket, NewTask, PLevel, TaskChange, TaskCommand, TaskId, TaskStatus},
-    terminal::{TerminalCommand, TerminalEvent},
     worktree::WorktreeCommand,
 };
 use dovetail_mock::{MockConfig, MockCore, spawn};
@@ -231,7 +230,7 @@ fn answering_a_permission_resolves_it_and_frees_the_agent() {
 #[test]
 fn opening_an_editor_is_refused_and_the_terminal_stays_with_the_ui() {
     let mut core = MockCore::new(config(1));
-    core.handle(Command::Terminal(TerminalCommand::OpenEditor {
+    core.handle(Command::App(AppCommand::OpenEditor {
         path: "/tmp/wt".into(),
     }));
     assert!(matches!(
@@ -246,13 +245,13 @@ fn opening_an_editor_is_refused_and_the_terminal_stays_with_the_ui() {
 #[test]
 fn taking_over_hands_the_terminal_straight_back() {
     let mut core = MockCore::new(config(1));
-    core.handle(Command::Terminal(TerminalCommand::TakeOver {
+    core.handle(Command::App(AppCommand::TakeOver {
         agent: AgentId("coordinator".into()),
     }));
     assert!(matches!(
         core.next_message().expect("runs").msg,
         ServerMsg::Event {
-            event: Event::Terminal(TerminalEvent::Returned { error: Some(_) }),
+            event: Event::App(AppEvent::TerminalReturned { error: Some(_) }),
             ..
         }
     ));

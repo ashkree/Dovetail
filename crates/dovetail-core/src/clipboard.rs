@@ -1,5 +1,5 @@
-//! The system clipboard, for Ctrl-V in a chat bar ([`dovetail_api::ClipboardCommand::Paste`])
-//! and for copying text ([`dovetail_api::ClipboardCommand::Copy`]). Terminals cannot carry an
+//! The system clipboard, for Ctrl-V in a chat bar ([`dovetail_api::AppCommand::Paste`])
+//! and for copying text ([`dovetail_api::AppCommand::Copy`]). Terminals cannot carry an
 //! image through a paste, so the core asks the clipboard itself: `wl-paste`/`wl-copy` on
 //! Wayland, `xclip` on X11. Both run as short-lived child processes that are always
 //! reaped; no clipboard crate is used. The service calls [`paste`] on a blocking thread, off its
@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use dovetail_api::{
-    clipboard::Paste,
+    app::Paste,
     conversation::{Attachment, ImageType, MAX_ATTACHMENT_BYTES, attachment_limit_text, size_text},
 };
 

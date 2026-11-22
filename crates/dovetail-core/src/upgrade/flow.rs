@@ -4,7 +4,7 @@
 //! One build at a time; one item at a time. `y` on the item does not resolve it: it starts the
 //! wait for idle, and the item then lists the agents it waits for. When none is left the core
 //! quits the normal way (sessions end and resume as after any restart), tells the UI to quit
-//! ([`UpgradeEvent::Restarting`]) and raises the flag the binary reads after the core stopped:
+//! ([`AppEvent::UpgradeRestarting`]) and raises the flag the binary reads after the core stopped:
 //! swap the staged build in, then `exec` it.
 
 use std::sync::Arc;
@@ -14,8 +14,8 @@ use dovetail_api::{
     Event,
     activity::ActivityKind,
     agent::AgentId,
+    app::AppEvent,
     inbox::{InboxEvent, InboxId, InboxKind, PermissionAnswer, UPGRADE_READY_PERMISSION},
-    upgrade::UpgradeEvent,
 };
 use serde_json::json;
 
@@ -127,7 +127,7 @@ impl Core {
         let staging = Staging::new(&self.paths);
         let cancel = Arc::new(AtomicBool::new(false));
         self.upgrade.building = Some(cancel.clone());
-        self.emit(Event::Upgrade(UpgradeEvent::Building(true)));
+        self.emit(Event::App(AppEvent::UpgradeBuilding(true)));
         let what = if local { "the checkout" } else { "origin/main" };
         self.activity(
             ActivityKind::Lifecycle,
@@ -144,7 +144,7 @@ impl Core {
     /// The build finished: "Upgrade ready", or an Error item with the build's tail.
     pub(crate) fn on_upgrade_built(&mut self, result: Result<Ready, BuildError>) {
         self.upgrade.building = None;
-        self.emit(Event::Upgrade(UpgradeEvent::Building(false)));
+        self.emit(Event::App(AppEvent::UpgradeBuilding(false)));
         if self.quitting.is_some() {
             return;
         }
@@ -306,7 +306,7 @@ impl Core {
                 None,
                 "every agent is idle: restarting into the upgrade".into(),
             );
-            self.emit(Event::Upgrade(UpgradeEvent::Restarting));
+            self.emit(Event::App(AppEvent::UpgradeRestarting));
             self.begin_quit();
         }
     }

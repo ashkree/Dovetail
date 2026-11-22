@@ -6,8 +6,8 @@
 use crate::snapshot::Snapshot;
 use crate::wire::Event;
 use crate::{
-    activity, agent, canvas, conversation, decision, design, effort, inbox, journal, map, model,
-    project, research, status, tangent, task, upgrade, usage, worktree,
+    agent, app, canvas, conversation, decision, design, effort, feed, inbox, journal, map, model,
+    project, research, status, tangent, task, worktree,
 };
 
 /// What [`apply`] did with an event.
@@ -48,24 +48,19 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
         Event::Agent(event) => agent::apply(state, event),
         Event::Inbox(event) => inbox::apply(state, event),
         Event::Worktree(event) => worktree::apply(state, event),
-        Event::Activity(event) => activity::apply(state, event),
+        Event::Activity(event) => feed::apply(state, event),
         Event::Conversation(event) => conversation::apply(state, event),
         Event::Status(event) => status::apply(state, event),
-        Event::Usage(event) => usage::apply(state, event),
         Event::Decision(event) => decision::apply(state, event),
         Event::Map(event) => map::apply(state, event),
         Event::Research(event) => research::apply(state, event),
         Event::Tangent(event) => tangent::apply(state, event),
         Event::Model(event) => model::apply(state, event),
         Event::Journal(event) => journal::apply(state, event),
-        Event::Upgrade(event) => upgrade::apply(state, event),
+        Event::App(event) => app::apply(state, event),
         Event::Project(event) => project::apply(state, event),
         // Nothing to store: the UI shows these as they pass through.
-        Event::Library(_)
-        | Event::Mcp(_)
-        | Event::App(_)
-        | Event::Clipboard(_)
-        | Event::Terminal(_) => {}
+        Event::Library(_) | Event::Mcp(_) => {}
     }
     ApplyResult::Applied
 }
