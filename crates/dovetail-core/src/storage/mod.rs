@@ -11,16 +11,15 @@
 //! (ADR 0005).
 
 mod counts;
-mod efforts;
 mod registry;
 
 pub use registry::NewRepo;
 pub(crate) mod sessions;
-mod tasks;
 
 pub use crate::research::db as research;
+pub use crate::tracking::db::CriterionStep;
+use crate::tracking::db::{efforts, tasks};
 pub use crate::visual::db::{CanvasState, Drawn, NewMapVersion, USER};
-pub use efforts::CriterionStep;
 pub use sessions::{AgentRow, ModelChoice, QueuedSlice};
 
 use std::collections::HashSet;

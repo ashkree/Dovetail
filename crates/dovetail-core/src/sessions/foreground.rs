@@ -1,5 +1,5 @@
-//! Waiting for a program that has the user's terminal: the editor ([`crate::editor`]) and
-//! native `claude` on take-over ([`crate::takeover`]).
+//! Waiting for a program that has the user's terminal: the editor ([`crate::app::editor`]) and
+//! native `claude` on take-over ([`crate::sessions::takeover`]).
 //!
 //! **Ctrl-Z.** A program that suspends itself (`kill(getpid(), SIGTSTP)`, as full-screen apps do
 //! for Ctrl-Z in raw mode) stops alone. Dovetail is not a shell and never continues it, and a

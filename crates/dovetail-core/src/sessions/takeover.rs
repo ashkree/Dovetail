@@ -57,10 +57,10 @@ use dovetail_driver::transcript::{self, NativeEntry};
 use serde::{Deserialize, Serialize};
 
 use crate::db::now_ms;
-use crate::error::SessionError;
 use crate::inbox::Waiter;
 use crate::service::{Core, Input};
 use crate::session::state::ToolTally;
+use crate::sessions::SessionError;
 
 /// The program run for native take-over when [`crate::CoreOptions::claude`] is not set.
 pub const NATIVE_CLAUDE: &str = "claude";

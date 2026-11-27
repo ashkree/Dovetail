@@ -4,14 +4,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use dovetail_api::{
-    activity::ActivityKind,
-    agent::{AgentId, AgentKind},
-    project::{ProjectEvent, ProjectSummary, RepoId},
-};
+use dovetail_api::activity::ActivityKind;
+use dovetail_api::agents::agent::{AgentId, AgentKind};
+use dovetail_api::tracking::project::{ProjectEvent, ProjectSummary, RepoId};
 
 use crate::db::DbError;
-use crate::error::RegisterError;
 use crate::paths::Paths;
 use crate::project_admin::{self, ProjectOp};
 use crate::projects::{Candidate, Project, ProjectError, Repo};
@@ -19,8 +16,16 @@ use crate::recipe;
 use crate::service::{Core, CoreHandler, serve};
 use crate::socket::{self, SocketHandler};
 
+/// Registering the open folder as a project (ADR 0005).
+#[derive(Debug, thiserror::Error)]
+pub enum RegisterError {
+    /// Storage failed.
+    #[error(transparent)]
+    Db(#[from] DbError),
+}
+
 /// The warning shown until the folder is a project.
-pub(crate) use dovetail_api::status::UNREGISTERED_WARNING;
+pub(crate) use dovetail_api::activity::status::UNREGISTERED_WARNING;
 
 /// The open folder: a registered project, or one that is not a project yet (ADR 0005). It
 /// carries its key, so registering switches everything named after it at once.
@@ -314,7 +319,10 @@ impl Core {
     /// The user picked another project in the switcher (B24): remember it for the binary, tell
     /// the UI, and quit the way `:q` does (sessions end and resume when the project is opened
     /// again).
-    pub(crate) async fn open_other_project(&mut self, id: dovetail_api::project::ProjectId) {
+    pub(crate) async fn open_other_project(
+        &mut self,
+        id: dovetail_api::tracking::project::ProjectId,
+    ) {
         if self.quitting.is_some() {
             return;
         }
@@ -443,7 +451,7 @@ impl Core {
     /// start (ADR 0009).
     pub(crate) fn set_recipe_profile(
         &mut self,
-        id: dovetail_api::project::ProjectId,
+        id: dovetail_api::tracking::project::ProjectId,
         profile: String,
     ) {
         let Some(project) = self.project.registered().filter(|p| p.id == id.0).cloned() else {

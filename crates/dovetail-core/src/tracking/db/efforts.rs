@@ -10,8 +10,8 @@ use dovetail_api::tracking::{
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use super::DbError;
-use super::sessions::{from_text, to_text};
+use crate::storage::DbError;
+use crate::storage::sessions::{from_text, to_text};
 
 fn no_effort(id: EffortId) -> DbError {
     DbError::NotFound(format!("no effort {}", id.0))
@@ -22,7 +22,7 @@ fn no_criterion(id: CriterionId) -> DbError {
 }
 
 /// Every effort with its criteria, in id order.
-pub(super) fn load_efforts(conn: &Connection) -> Result<Vec<Effort>, DbError> {
+pub(crate) fn load_efforts(conn: &Connection) -> Result<Vec<Effort>, DbError> {
     efforts_where(conn, None)
 }
 
@@ -122,7 +122,7 @@ fn check_name(conn: &Connection, name: &str, own: Option<EffortId>) -> Result<()
 }
 
 /// Inserts an effort. `new.name` is already in its stored form.
-pub(super) fn create_effort(
+pub(crate) fn create_effort(
     conn: &mut Connection,
     new: NewEffort,
     now_ms: i64,
@@ -137,7 +137,7 @@ pub(super) fn create_effort(
 }
 
 /// Renames an effort. `name` is already in its stored form. Unsorted keeps its name.
-pub(super) fn rename_effort(
+pub(crate) fn rename_effort(
     conn: &mut Connection,
     id: EffortId,
     name: String,
@@ -158,7 +158,7 @@ pub(super) fn rename_effort(
 }
 
 /// Applies a patch in order. Unsorted cannot be closed.
-pub(super) fn update_effort(
+pub(crate) fn update_effort(
     conn: &mut Connection,
     id: EffortId,
     patch: Vec<EffortChange>,
@@ -202,7 +202,7 @@ pub(super) fn update_effort(
 }
 
 /// Replaces an effort's "where was I" card.
-pub(super) fn set_where_was_i(
+pub(crate) fn set_where_was_i(
     conn: &mut Connection,
     id: EffortId,
     card: &WhereWasI,
@@ -221,7 +221,7 @@ pub(super) fn set_where_was_i(
 }
 
 /// Adds an open criterion to an effort.
-pub(super) fn add_criterion(
+pub(crate) fn add_criterion(
     conn: &mut Connection,
     effort: EffortId,
     text: String,
@@ -256,7 +256,7 @@ pub enum CriterionStep {
 
 /// Moves a criterion from one state to the next, refusing steps that make no sense. Resolves to
 /// its effort.
-pub(super) fn step_criterion(
+pub(crate) fn step_criterion(
     conn: &mut Connection,
     id: CriterionId,
     step: CriterionStep,
@@ -303,7 +303,7 @@ pub(super) fn step_criterion(
 
 /// Checks that a task may be put in `effort` serving `criterion`: the effort exists and is open,
 /// and the criterion is one of its own.
-pub(super) fn check_place(
+pub(crate) fn check_place(
     tx: &Transaction<'_>,
     effort: EffortId,
     criterion: Option<CriterionId>,
@@ -347,7 +347,7 @@ pub(super) fn check_place(
 }
 
 /// Puts a task in an effort, serving `criterion` or none. Resolves to the task.
-pub(super) fn move_task(
+pub(crate) fn move_task(
     conn: &mut Connection,
     id: TaskId,
     effort: EffortId,

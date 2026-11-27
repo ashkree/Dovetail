@@ -1,4 +1,4 @@
-//! Paths for `@` completion in a chat bar ([`dovetail_api::conversation::ConversationCommand::ListPaths`]). Claude Code
+//! Paths for `@` completion in a chat bar ([`dovetail_api::agents::conversation::ConversationCommand::ListPaths`]). Claude Code
 //! reads `@path` itself, headless too (docs/spikes/slash-and-at.md), so this only helps type it.
 
 use std::path::Path;

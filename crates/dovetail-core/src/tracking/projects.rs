@@ -15,7 +15,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use dovetail_api::project::{ProjectId, ProjectKind, ProjectSummary, RepoId, RepoSummary};
+use dovetail_api::tracking::project::{
+    ProjectId, ProjectKind, ProjectSummary, RepoId, RepoSummary,
+};
 
 use crate::db::{Db, DbError, NewRepo};
 use crate::paths::Paths;

@@ -15,12 +15,10 @@
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
-use dovetail_api::{
-    Command, CoreLink, Event, PROTOCOL_VERSION, ServerMsg, Snapshot,
-    app::{AppCommand, AppEvent},
-    project::{ProjectCommand, ProjectEvent},
-    status::{Warning, WarningId},
-};
+use dovetail_api::activity::status::{Warning, WarningId};
+use dovetail_api::app::{AppCommand, AppEvent};
+use dovetail_api::tracking::project::{ProjectCommand, ProjectEvent};
+use dovetail_api::{Command, CoreLink, Event, PROTOCOL_VERSION, ServerMsg, Snapshot};
 
 use crate::CoreError;
 use crate::config::Config;
@@ -74,7 +72,11 @@ pub fn spawn_home(
 }
 
 /// `project` as Home lists it, with its counts (zero, logged, when they cannot be read).
-fn summary(db: &Db, paths: &Paths, project: &Project) -> dovetail_api::project::ProjectSummary {
+fn summary(
+    db: &Db,
+    paths: &Paths,
+    project: &Project,
+) -> dovetail_api::tracking::project::ProjectSummary {
     let mut summary = project.summary(paths);
     match db.project_counts(paths.state_db(&project.id)).wait() {
         Ok(counts) => summary.counts = counts,
@@ -189,11 +191,9 @@ fn run(
 mod tests {
     use std::time::Duration;
 
-    use dovetail_api::{
-        app::{AppCommand, AppEvent},
-        project::{ProjectCommand, ProjectEvent, ProjectId},
-        worktree::WorktreeCommand,
-    };
+    use dovetail_api::app::{AppCommand, AppEvent};
+    use dovetail_api::code::worktree::WorktreeCommand;
+    use dovetail_api::tracking::project::{ProjectCommand, ProjectEvent, ProjectId};
 
     use super::*;
 
@@ -286,7 +286,7 @@ mod tests {
         dir.canonicalize().unwrap()
     }
 
-    fn upserted(link: &CoreLink) -> dovetail_api::project::ProjectSummary {
+    fn upserted(link: &CoreLink) -> dovetail_api::tracking::project::ProjectSummary {
         match next(link) {
             ServerMsg::Event {
                 event: Event::Project(ProjectEvent::Upserted(p)),
@@ -337,7 +337,10 @@ mod tests {
             .unwrap();
         let shop = upserted(&link);
         assert_eq!(shop.id.0, "shop-front");
-        assert_eq!(shop.kind, dovetail_api::project::ProjectKind::Code);
+        assert_eq!(
+            shop.kind,
+            dovetail_api::tracking::project::ProjectKind::Code
+        );
         assert_eq!(shop.repos.len(), 1);
         assert_eq!(shop.repos[0].name, "shop-api");
         assert_eq!(shop.repos[0].path, api);
@@ -432,7 +435,10 @@ mod tests {
             .unwrap();
         let notes = upserted(&link);
         assert!(notes.repos.is_empty());
-        assert_eq!(notes.kind, dovetail_api::project::ProjectKind::Research);
+        assert_eq!(
+            notes.kind,
+            dovetail_api::tracking::project::ProjectKind::Research
+        );
         link.commands
             .send(Command::Project(ProjectCommand::Create {
                 name: "  ".into(),

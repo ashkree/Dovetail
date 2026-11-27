@@ -34,13 +34,12 @@ use crate::db::ModelChoice;
 
 /// The model a coordinator-started slice gets when it names none (task #42).
 const DEFAULT_SLICE_MODEL: &str = "sonnet";
-use crate::error::SliceError;
+use crate::agents::SliceError;
 use crate::inbox::Waiter;
 use crate::service::Core;
 use crate::slice::{ArchiveCall, SliceRequest, SliceStart};
 use crate::socket::ToolCall;
-
-mod read;
+use crate::tracking::read;
 
 /// Most characters of a status line (B17).
 const STATUS_MAX: usize = 120;

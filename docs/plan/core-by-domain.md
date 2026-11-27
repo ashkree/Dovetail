@@ -11,16 +11,16 @@ Reorganize `crates/dovetail-core/` from ~50 flat files around a 2,000-line `serv
 - **Infrastructure:**
   - `engine/` — the single-threaded core loop (`Core`, `Input`, `CoreOptions`, `CoreHandle`, `spawn`, thin command/tool/driver routers, startup checks, shutdown).
   - `storage/` — the dedicated SQLite DB thread (`Db`, `DbError`, typed channel), `migrations/` (`state/` and `registry/`), and cross-domain summary queries (`counts.rs`, `registry.rs`). Domain-specific SQL lives next to each domain.
-  - `sessions/` — session process lifecycle, kept separate from `agents/`: `Drivers`, launch (`claude`, `agy`), stream state, restore, takeover, cgroup memory caps, OOM watcher, context window/fill tracking, and session DB rows.
+  - `sessions/` — session process lifecycle, kept separate from `agents/`: `Drivers`, launch (`claude`, `agy`), stream state, restore, takeover, foreground (`foreground.rs`), cgroup memory caps, OOM watcher, context window/fill tracking, and session DB rows.
   - `mcp/` — Unix socket server (`socket.rs`), `CoreHandler`, and thin MCP tool dispatch (`mod.rs`). Domain tool handlers live inside their owning domains.
 - **Domains (mirroring `dovetail-api` + `settings/`):**
   - `settings/` — `config.rs`, `recipe.rs`, `profile.rs`, `paths.rs`.
-  - `app/` — `clipboard.rs`, `editor.rs`, `external.rs`, `foreground.rs`, `upgrade/` (`mod.rs`, `flow.rs`, `tests.rs`).
+  - `app/` — `clipboard.rs`, `editor.rs`, `external.rs`, `upgrade/` (`mod.rs`, `flow.rs`, `tests.rs`).
   - `code/` — `worktree.rs`, `worktree_info.rs`.
-  - `visual/` — `canvas.rs`, `design.rs`, `preview.rs`, map tool handlers (`tools/map.rs`), plus visual SQL (`db/canvas.rs`, `db/design.rs`, `db/maps.rs`).
-  - `research/` — `capture.rs`, `files.rs`, `report.rs`, `ask.rs`, `browse.rs`, `docs.rs`, research tool handlers (`tools/research.rs`), plus research SQL (`db/research.rs`).
+  - `visual/` — `canvas.rs`, `design.rs`, `preview.rs`, map tool handlers (`map.rs`, moved from `mcp/tools/map.rs`), plus visual SQL (`db/canvas.rs`, `db/design.rs`, `db/maps.rs`, moved from `storage/`).
+  - `research/` — `capture.rs`, `files.rs`, `report.rs`, `ask.rs`, `browse.rs`, `docs.rs`, research tool handlers (`tools.rs`, moved from `mcp/tools/research.rs`), plus research SQL (`db.rs`, moved from `storage/research.rs`).
   - `activity/` — `inbox.rs`, `usage.rs`, activity/message feed & warning helpers.
-  - `tracking/` — `projects.rs`, `project_admin.rs`, `registration.rs`, `home.rs`, `efforts.rs`, task/decision/effort command & tool handlers, plus tracking SQL (`db/efforts.rs`, `db/tasks.rs`).
+  - `tracking/` — `projects.rs`, `project_admin.rs`, `registration.rs`, `home.rs`, `efforts.rs`, task read formatting (`read.rs`, moved from `mcp/tools/read.rs`), task/decision/effort command & tool handlers, plus tracking SQL (`db/efforts.rs`, `db/tasks.rs`, moved from `storage/`).
   - `agents/` — `slice.rs`, `tangents.rs`, `journal/` (`mod.rs`, `switch.rs`), `todos.rs`, `attachments.rs`, `completion.rs`, `side_chat.rs`, `report.rs`, `agy_models.rs`, and agent/conversation/model/mcp command & tool handlers.
 
 Additional goals folded in:
@@ -78,15 +78,15 @@ Each step lands as one or more clean commits on `restructure` with `CARGO_BUILD_
 - [x] Switch `dovetail_api` imports in moved files to full domain paths. Keep temporary `lib.rs` re-exports (`drivers`, `memory`, `session`, `socket`, `takeover`, etc.).
 
 ### Step 5 — Move `visual/`, `research/`, and `activity/`
-- [ ] `visual/`: move `canvas.rs`, `design.rs`, `preview.rs`, `mcp/tools/map.rs`, and SQL (`canvas.rs`, `design.rs`, `maps.rs` from `storage/`) into `src/visual/`.
-- [ ] `research/`: move `research/` (`mod.rs`, `capture.rs`, `files.rs`, `report.rs`), `ask.rs`, `browse.rs`, `docs.rs`, `mcp/tools/research.rs`, and `storage/research.rs` into `src/research/`.
-- [ ] `activity/`: move `inbox.rs`, `usage.rs`, and extract feed/warning/totals helpers from `service.rs` into `src/activity/`.
-- [ ] Switch `dovetail_api` imports in moved files to full domain paths.
+- [x] `visual/`: move `canvas.rs`, `design.rs`, `preview.rs`, `mcp/tools/map.rs`, and SQL (`canvas.rs`, `design.rs`, `maps.rs` from `storage/`) into `src/visual/`.
+- [x] `research/`: move `research/` (`mod.rs`, `capture.rs`, `files.rs`, `report.rs`), `ask.rs`, `browse.rs`, `docs.rs`, `mcp/tools/research.rs`, and `storage/research.rs` into `src/research/`.
+- [x] `activity/`: move `inbox.rs` and `usage.rs` into `src/activity/` (feed/warning/totals helpers stay in `service.rs` until Step 7's `Core` router split).
+- [x] Switch `dovetail_api` imports in moved files to full domain paths.
 
 ### Step 6 — Move `tracking/` and `agents/`
-- [ ] `tracking/`: move `projects.rs`, `project_admin.rs`, `registration.rs`, `home.rs`, `efforts.rs`, and SQL (`efforts.rs`, `tasks.rs` from `storage/`) into `src/tracking/`. Move `RegisterError` from `error.rs` into `tracking/registration.rs`.
-- [ ] `agents/`: move `slice.rs`, `tangents.rs`, `journal/` (`mod.rs`, `switch.rs`), `todos.rs`, `attachments.rs`, `completion.rs`, `side_chat.rs`, `report.rs`, `agy_models.rs` into `src/agents/`. Move `SliceError` and `SetupFailure` from `error.rs` into `agents/slice.rs`, and dissolve `src/error.rs`. Tidy manual `From` impls in `tangents.rs` where `#[from]` fits.
-- [ ] Switch `dovetail_api` imports in moved files to full domain paths.
+- [x] `tracking/`: move `projects.rs`, `project_admin.rs`, `registration.rs`, `home.rs`, `efforts.rs`, `mcp/tools/read.rs`, and SQL (`efforts.rs`, `tasks.rs` from `storage/`) into `src/tracking/`. Move `RegisterError` from `error.rs` into `tracking/registration.rs`.
+- [x] `agents/`: move `slice.rs`, `tangents.rs`, `journal/` (`mod.rs`, `switch.rs`), `todos.rs`, `attachments.rs`, `completion.rs`, `side_chat.rs`, `report.rs`, `agy_models.rs` into `src/agents/`. Move `SliceError` and `SetupFailure` from `error.rs` into `agents/slice.rs`, and dissolve `src/error.rs`. (Manual `From` impls in `tangents.rs` kept as-is: `TangentError` derives `Clone`, whereas `DbError`/`JoinError`/`ResearchDirError` do not.)
+- [x] Switch `dovetail_api` imports in moved files to full domain paths.
 
 ### Step 7 — `engine/`, `Core` state structs, thin routers, and import cleanup
 - [ ] Move `service.rs`, `shutdown.rs`, `startup.rs` into `src/engine/`.

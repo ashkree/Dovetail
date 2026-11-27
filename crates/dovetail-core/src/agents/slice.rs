@@ -16,26 +16,90 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
+use dovetail_api::Event;
+use dovetail_api::activity::{ActivityKind, inbox::InboxKind};
+use dovetail_api::agents::{
     agent::{AgentEvent, AgentId, AgentKind, AgentStatus, WorktreeRef},
-    inbox::InboxKind,
     model::DriverKind,
-    task::{Bucket, TaskChange, TaskId, TaskStatus},
 };
+use dovetail_api::tracking::task::{Bucket, TaskChange, TaskId, TaskStatus};
 use dovetail_tools::SocketResponseBody;
 use serde_json::json;
 use tokio::sync::oneshot;
 
-use crate::db::{AgentRow, ModelChoice, QueuedSlice, now_ms};
-use crate::error::{SessionError, SetupFailure, SliceError};
+use crate::db::{AgentRow, DbError, ModelChoice, QueuedSlice, now_ms};
 use crate::inbox::Waiter;
 use crate::projects;
 use crate::projects::Repo;
 use crate::recipe::Recipe;
 use crate::service::{COORDINATOR, Core, Input, new_agent};
+use crate::sessions::SessionError;
 use crate::worktree::{self, SUBAGENT_PREFIX, WorktreeError};
+
+/// Why a slice could not start (`project_start_slice` answers `denied: <this>`).
+#[derive(Debug, thiserror::Error)]
+pub enum SliceError {
+    /// The name is not usable as a directory and branch name.
+    #[error("{0}: use letters, digits, `-`, `_` or `.`, not starting with `.` or `-`")]
+    BadName(#[source] WorktreeError),
+    /// The name has the subagent prefix.
+    #[error(
+        "slice names may not start with `{SUBAGENT_PREFIX}`: that prefix marks subagent \
+         worktrees, which skip setup"
+    )]
+    SubagentPrefix,
+    /// The name is the coordinator's.
+    #[error("`coordinator` is taken")]
+    Reserved,
+    /// Another slice, running or queued, has the name.
+    #[error("a slice named `{0}` already exists")]
+    Taken(String),
+    /// The task does not exist.
+    #[error("there is no task #{0}; create it first with `tasks_create`")]
+    NoTask(i64),
+    /// The open project is a research project: it has no repo, so no slices.
+    #[error(
+        "this is a research project: it has no repo, so it runs no slices. Use research rounds \
+         and subagents here; code work belongs in a code project"
+    )]
+    ResearchProject,
+    /// The project has several repos and the request named none (ADR 0021).
+    #[error("this project has several repos: name one with `repo` ({0})")]
+    RepoRequired(String),
+    /// No repo of the project has this name.
+    #[error("there is no repo `{name}` in this project; its repos are: {known}")]
+    UnknownRepo {
+        /// The name asked for.
+        name: String,
+        /// The project's repo names, comma-separated.
+        known: String,
+    },
+    /// The `model` asked for is not one the driver lists (task #42).
+    #[error("there is no model `{model}`; the models are: {known}")]
+    UnknownModel {
+        /// The name asked for.
+        model: String,
+        /// The models the driver listed, comma-separated.
+        known: String,
+    },
+    /// `project_archive_slice` named the coordinator.
+    #[error("the coordinator cannot be archived")]
+    ArchiveCoordinator,
+    /// `project_archive_slice` named no open slice.
+    #[error("there is no slice named {0} (unknown or already archived)")]
+    NoSlice(String),
+    /// The session did not start.
+    #[error(transparent)]
+    Session(#[from] SessionError),
+    /// Storage failed.
+    #[error(transparent)]
+    Db(#[from] DbError),
+}
+
+/// Why a slice's worktree setup failed, as the hook (or the wait for it) reported it.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct SetupFailure(pub String);
 
 /// Longer than the hook's own 15-minute timeout (B5), so the hook always reports first.
 const SETUP_TIMEOUT: Duration = Duration::from_secs(16 * 60);
@@ -482,7 +546,7 @@ impl Core {
             && let Err(e) = self.send_text(
                 agent,
                 &brief,
-                dovetail_api::conversation::EntryKind::User,
+                dovetail_api::agents::conversation::EntryKind::User,
                 brief.clone(),
             )
         {
@@ -535,7 +599,7 @@ impl Core {
 
     /// The key a slice's worktree files live under: a worktree made before registration stays
     /// under `new-<pid>`, so read it from the recorded path; else the current key.
-    pub(crate) fn worktree_key(&self, agent: &dovetail_api::agent::Agent) -> String {
+    pub(crate) fn worktree_key(&self, agent: &dovetail_api::agents::agent::Agent) -> String {
         agent
             .worktree
             .as_ref()
@@ -653,7 +717,7 @@ impl Core {
                 self.raise(
                     &agent,
                     InboxKind::Permission {
-                        tool: dovetail_api::inbox::REMOVE_WORKTREE_PERMISSION.into(),
+                        tool: dovetail_api::activity::inbox::REMOVE_WORKTREE_PERMISSION.into(),
                         input,
                         reason: Some(
                             "the slice has uncommitted or unpushed work, which removing it \

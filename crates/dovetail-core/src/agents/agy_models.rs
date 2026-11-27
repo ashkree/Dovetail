@@ -4,10 +4,8 @@
 //! when it answers and differs; a session's own `Models` event does the same
 //! (`session::model::on_models_listed`). A failed refresh keeps what is there and only logs.
 
-use dovetail_api::{
-    Event,
-    model::{DriverKind, ModelEvent, ReasoningEffort},
-};
+use dovetail_api::Event;
+use dovetail_api::agents::model::{DriverKind, ModelEvent, ReasoningEffort};
 use dovetail_driver::{ModelInfo, UsageQuery};
 use serde_json::{Value, json};
 

@@ -1,6 +1,6 @@
 //! Creating and changing projects (ADR 0021): the five project commands, shared by Home and
 //! the core. Each checks its input, then makes one registry request; the caller waits for it
-//! (Home blocks, the core awaits) and sends [`dovetail_api::project::ProjectEvent::Upserted`].
+//! (Home blocks, the core awaits) and sends [`dovetail_api::tracking::project::ProjectEvent::Upserted`].
 //!
 //! Only the core knows what runs, so the checks that need it (a repo with a live slice cannot
 //! be removed) and the reactions (the coordinator restarted with its new repos) live in the
@@ -8,10 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::{
-    Command,
-    project::{ProjectCommand, ProjectId, RepoId},
-};
+use dovetail_api::Command;
+use dovetail_api::tracking::project::{ProjectCommand, ProjectId, RepoId};
 
 use crate::config::Config;
 use crate::db::{Db, Pending};

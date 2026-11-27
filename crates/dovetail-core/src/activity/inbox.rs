@@ -15,8 +15,8 @@ use dovetail_driver::{ControlAnswer, ControlId, PermissionRequest};
 use serde_json::Value;
 
 use crate::db::now_ms;
-use crate::error::SessionError;
 use crate::service::{Core, InboxEntry};
+use crate::sessions::SessionError;
 use crate::slice::{SliceRequest, SliceStart};
 
 /// What waits on an inbox item's answer.

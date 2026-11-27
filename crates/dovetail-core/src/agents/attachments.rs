@@ -16,10 +16,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use dovetail_api::{
-    app::Paste,
-    conversation::{ImageType, MAX_ATTACHMENT_BYTES},
-};
+use dovetail_api::agents::conversation::{ImageType, MAX_ATTACHMENT_BYTES};
+use dovetail_api::app::Paste;
 
 use crate::clipboard::{self, Clip, ClipError};
 

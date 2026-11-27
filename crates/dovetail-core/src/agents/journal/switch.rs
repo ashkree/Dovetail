@@ -4,7 +4,7 @@
 use super::*;
 use crate::db::AgentRow;
 
-/// Where [`ModelCommand::SwitchDriver`](dovetail_api::model::ModelCommand::SwitchDriver) moves the coordinator
+/// Where [`ModelCommand::SwitchDriver`](dovetail_api::agents::model::ModelCommand::SwitchDriver) moves the coordinator
 /// once its old session stops.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SwitchTarget {

@@ -20,11 +20,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use dovetail_api::{
-    Event,
-    agent::{AgentEvent, AgentId, AgentKind, TodoItem, TodoListId, TodoStatus},
-    task::TaskId,
+use dovetail_api::Event;
+use dovetail_api::agents::agent::{
+    AgentEvent, AgentId, AgentKind, TodoItem, TodoListId, TodoStatus,
 };
+use dovetail_api::tracking::task::TaskId;
 use dovetail_driver::{ContentBlock, DriverEvent};
 use notify::Watcher;
 use serde::Deserialize;

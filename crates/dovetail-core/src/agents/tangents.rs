@@ -16,21 +16,20 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
+use dovetail_api::Event;
+use dovetail_api::activity::{
+    ActivityKind,
+    inbox::{InboxEvent, InboxKind},
+};
+use dovetail_api::agents::{
     agent::{AgentId, AgentKind, PermissionMode},
     conversation::EntryKind,
-    inbox::InboxKind,
-    project::ProjectId,
-    tangent::{TANGENTS_PROJECT, TangentSummary, tangent_agent, tangent_task},
-    task::{NewTask, Task, TaskChange, TaskId, TaskStatus},
+    tangent::{TANGENTS_PROJECT, TangentEvent, TangentSummary, tangent_agent, tangent_task},
 };
-use dovetail_api::{
-    inbox::InboxEvent,
-    research::{FindingId, ResearchWhat},
-    tangent::TangentEvent,
-    task::TaskEvent,
+use dovetail_api::research::{FindingId, ResearchWhat};
+use dovetail_api::tracking::{
+    project::ProjectId,
+    task::{NewTask, Task, TaskChange, TaskEvent, TaskId, TaskStatus},
 };
 use dovetail_driver::DriverEvent;
 
@@ -845,7 +844,7 @@ impl Core {
         );
     }
 
-    fn new_tangents_item(&self) -> Option<dovetail_api::inbox::InboxId> {
+    fn new_tangents_item(&self) -> Option<dovetail_api::activity::inbox::InboxId> {
         self.inbox
             .values()
             .find(|e| matches!(e.item.kind, InboxKind::NewTangents { .. }))

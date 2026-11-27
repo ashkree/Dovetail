@@ -288,7 +288,7 @@ pub(crate) enum Input {
     SetupFinished {
         agent: AgentId,
         generation: u64,
-        outcome: Result<PathBuf, crate::error::SetupFailure>,
+        outcome: Result<PathBuf, crate::agents::SetupFailure>,
     },
     /// An `agy` slice's blocking `worktree::create` finished.
     AgyWorktreeCreated {

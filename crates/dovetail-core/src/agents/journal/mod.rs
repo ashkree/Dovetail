@@ -23,21 +23,21 @@
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::{
+use dovetail_api::activity::inbox::{InboxItem, InboxKind};
+use dovetail_api::agents::{
     agent::{Agent, AgentId, AgentKind, AgentStatus},
     conversation::EntryKind,
-    inbox::{InboxItem, InboxKind},
     journal::{JournalEvent, JournalState},
     model::{DriverKind, ReasoningEffort},
-    task::{Bucket, Task, TaskStatus},
 };
+use dovetail_api::tracking::task::{Bucket, Task, TaskStatus};
 use jiff::civil::Date;
 
 use crate::db::ModelChoice;
-use crate::error::SessionError;
 use crate::inbox::Waiter;
 use crate::service::{COORDINATOR, Core, Input};
 use crate::session::model::describe;
+use crate::sessions::SessionError;
 
 mod switch;
 pub(crate) use switch::SwitchTarget;
@@ -1003,7 +1003,7 @@ impl Core {
         if switched {
             self.commands.remove(&id);
             self.emit(dovetail_api::Event::Agent(
-                dovetail_api::agent::AgentEvent::CommandsChanged {
+                dovetail_api::agents::agent::AgentEvent::CommandsChanged {
                     agent: id.clone(),
                     commands: Vec::new(),
                 },
@@ -1045,7 +1045,7 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::task::{PLevel, TaskId};
+    use dovetail_api::tracking::task::{PLevel, TaskId};
 
     fn d(s: &str) -> Date {
         s.parse().unwrap()

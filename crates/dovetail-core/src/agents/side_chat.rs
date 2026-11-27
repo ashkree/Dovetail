@@ -3,8 +3,8 @@
 //! ([`Core::close_slice`]). They run in `dontAsk` mode with a read-only allow-list
 //! (`session::launch::side_chat_allowed`).
 
-use dovetail_api::{
-    activity::ActivityKind,
+use dovetail_api::activity::ActivityKind;
+use dovetail_api::agents::{
     agent::{AgentId, AgentKind, PermissionMode},
     conversation::EntryKind,
 };

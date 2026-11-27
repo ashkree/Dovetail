@@ -10,7 +10,7 @@ use dovetail_api::tracking::{
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use super::DbError;
+use crate::storage::DbError;
 
 fn status_to_text(status: TaskStatus) -> &'static str {
     match status {
@@ -70,7 +70,7 @@ fn p_level_from_int(n: i64) -> Result<PLevel, DbError> {
 }
 
 /// Every task, with dependencies and relations filled in, in id order.
-pub(super) fn load_tasks(conn: &mut Connection) -> Result<Vec<Task>, DbError> {
+pub(crate) fn load_tasks(conn: &mut Connection) -> Result<Vec<Task>, DbError> {
     let mut deps: BTreeMap<i64, Vec<TaskId>> = BTreeMap::new();
     let mut stmt = conn.prepare("SELECT task_id, depends_on FROM task_deps ORDER BY depends_on")?;
     for row in stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
@@ -144,7 +144,7 @@ pub(super) fn load_tasks(conn: &mut Connection) -> Result<Vec<Task>, DbError> {
 }
 
 /// The tasks with these ids, in id order. Ids that do not exist are skipped.
-pub(super) fn tasks_by_ids(conn: &mut Connection, ids: &[TaskId]) -> Result<Vec<Task>, DbError> {
+pub(crate) fn tasks_by_ids(conn: &mut Connection, ids: &[TaskId]) -> Result<Vec<Task>, DbError> {
     let mut tasks = load_tasks(conn)?;
     tasks.retain(|t| ids.contains(&t.id));
     // Keep the caller's order, which puts the main task first.
@@ -184,7 +184,7 @@ fn relate(tx: &Transaction<'_>, a: TaskId, b: TaskId, on: bool) -> Result<bool, 
 }
 
 /// Inserts a task. Resolves to the new task, then the tasks it got related to.
-pub(super) fn create_task(
+pub(crate) fn create_task(
     conn: &mut Connection,
     new: NewTask,
     coordinator_created: bool,
@@ -224,7 +224,7 @@ pub(super) fn create_task(
 }
 
 /// Applies a patch in order. Resolves to every task it changed.
-pub(super) fn update_task(
+pub(crate) fn update_task(
     conn: &mut Connection,
     id: TaskId,
     patch: Vec<TaskChange>,
@@ -321,7 +321,7 @@ pub(super) fn update_task(
 
 /// Moves a task within its bucket and renumbers the bucket from 0. Resolves to the tasks whose
 /// position changed.
-pub(super) fn reorder(conn: &mut Connection, id: TaskId, delta: i32) -> Result<Vec<Task>, DbError> {
+pub(crate) fn reorder(conn: &mut Connection, id: TaskId, delta: i32) -> Result<Vec<Task>, DbError> {
     let tx = conn.transaction()?;
     if !exists(&tx, id)? {
         return Err(DbError::NotFound(format!("no task {}", id.0)));
@@ -374,7 +374,7 @@ fn author_from_text(text: String) -> DecisionAuthor {
 }
 
 /// Appends a decision-log entry.
-pub(super) fn log_decision(
+pub(crate) fn log_decision(
     conn: &mut Connection,
     new: NewDecision,
     by: DecisionAuthor,
@@ -427,7 +427,7 @@ pub(super) fn log_decision(
 }
 
 /// Every decision, or only those of `task`, oldest first.
-pub(super) fn load_decisions(
+pub(crate) fn load_decisions(
     conn: &mut Connection,
     task: Option<TaskId>,
 ) -> Result<Vec<Decision>, DbError> {

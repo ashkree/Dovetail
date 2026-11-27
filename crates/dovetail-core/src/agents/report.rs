@@ -5,10 +5,12 @@
 //! the slice's task, and reaches the coordinator's session as a message. A `done` report moves
 //! the task to review (ADR 0024).
 
-use dovetail_api::{
-    activity::ActivityKind,
+use dovetail_api::activity::ActivityKind;
+use dovetail_api::agents::{
     agent::AgentId,
     conversation::{EntryKind, agent_message_text},
+};
+use dovetail_api::tracking::{
     effort::EffortId,
     task::{TaskChange, TaskStatus},
 };

@@ -39,7 +39,7 @@ pub(crate) enum AskError {
     Db(#[from] crate::db::DbError),
     /// The session could not start or take the message.
     #[error(transparent)]
-    Session(#[from] crate::error::SessionError),
+    Session(#[from] crate::sessions::SessionError),
 }
 
 /// The agent id of task `task`'s Ask session.
@@ -103,7 +103,7 @@ impl Core {
             .agents
             .get(id)
             .and_then(|r| r.agent.task)
-            .ok_or_else(|| crate::error::SessionError::NoAgent(id.0.clone()))?;
+            .ok_or_else(|| crate::sessions::SessionError::NoAgent(id.0.clone()))?;
         let images = crate::session::read_attachments(&attachments)?;
         let (dir, grounding) = self.grounding(task).await?;
         if !self.live.contains_key(id) {
