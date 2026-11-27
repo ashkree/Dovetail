@@ -10,21 +10,17 @@
 //! ([`Db::open_unregistered`]) until [`Db::persist_state`] writes it to the new project's file
 //! (ADR 0005).
 
-mod canvas;
 mod counts;
-mod design;
 mod efforts;
-mod maps;
 mod registry;
 
 pub use registry::NewRepo;
-pub mod research;
-mod sessions;
+pub(crate) mod sessions;
 mod tasks;
 
-pub use canvas::{CanvasState, USER};
+pub use crate::research::db as research;
+pub use crate::visual::db::{CanvasState, Drawn, NewMapVersion, USER};
 pub use efforts::CriterionStep;
-pub use maps::{Drawn, NewMapVersion};
 pub use sessions::{AgentRow, ModelChoice, QueuedSlice};
 
 use std::collections::HashSet;
@@ -78,7 +74,7 @@ const REGISTRY_MIGRATIONS: &[Migration] = &[
     migration!("registry", "0005_driver_models.sql"),
 ];
 /// Migrations of a project's `state.db`, in order.
-const STATE_MIGRATIONS: &[Migration] = &[
+pub(crate) const STATE_MIGRATIONS: &[Migration] = &[
     migration!("state", "0001_init.sql"),
     migration!("state", "0002_agents_conversation.sql"),
     migration!("state", "0003_inbox_activity.sql"),
@@ -173,13 +169,13 @@ impl<T> Future for Pending<T> {
 }
 
 /// The connections the DB thread owns.
-struct Conns {
+pub(crate) struct Conns {
     registry: Connection,
     state: Option<Connection>,
 }
 
 impl Conns {
-    fn state(&mut self) -> Result<&mut Connection, DbError> {
+    pub(crate) fn state(&mut self) -> Result<&mut Connection, DbError> {
         self.state.as_mut().ok_or(DbError::NoProject)
     }
 }
@@ -231,7 +227,7 @@ impl Db {
         Ok(Self { requests })
     }
 
-    fn run<T: Send + 'static>(
+    pub(crate) fn run<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Conns, i64) -> Result<T, DbError> + Send + 'static,
     ) -> Pending<T> {
@@ -488,22 +484,22 @@ impl Db {
 
     /// Every map's shelf entry, most recently drawn first.
     pub fn load_maps(&self) -> Pending<Vec<MapSummary>> {
-        self.run(|c, _| maps::load_maps(c.state()?))
+        self.run(|c, _| crate::visual::db::maps::load_maps(c.state()?))
     }
 
     /// One version of a map (`None`: the latest); `None` when there is no such map or version.
     pub fn load_map(&self, id: MapId, version: Option<u32>) -> Pending<Option<Map>> {
-        self.run(move |c, _| maps::load_map(c.state()?, &id, version))
+        self.run(move |c, _| crate::visual::db::maps::load_map(c.state()?, &id, version))
     }
 
     /// Ids of every node on the latest version of each structure map, which lanes may link.
     pub fn structure_nodes(&self) -> Pending<HashSet<NodeId>> {
-        self.run(|c, _| maps::structure_nodes(c.state()?))
+        self.run(|c, _| crate::visual::db::maps::structure_nodes(c.state()?))
     }
 
     /// Stores a new map, or a new version of the one its id names.
     pub fn save_map(&self, new: NewMapVersion) -> Pending<Drawn> {
-        self.run(move |c, now| maps::save_map(c.state()?, new, now))
+        self.run(move |c, now| crate::visual::db::maps::save_map(c.state()?, new, now))
     }
 
     // --- research (R1) ---
@@ -908,7 +904,11 @@ fn open_connection(path: &Path, migrations: &[Migration]) -> Result<Connection, 
 
 /// Applies the steps after the database's `user_version`, each in its own transaction. A database
 /// from a newer build is refused rather than touched.
-fn migrate(conn: &mut Connection, path: &Path, steps: &[Migration]) -> Result<(), DbError> {
+pub(crate) fn migrate(
+    conn: &mut Connection,
+    path: &Path,
+    steps: &[Migration],
+) -> Result<(), DbError> {
     let current: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     let supported = steps.len() as u32;
     if current > supported {

@@ -23,9 +23,9 @@ use dovetail_tools::{
 };
 use serde_json::json;
 
-use super::{error, ok};
 use crate::db::research::TaskResearch;
 use crate::inbox::Waiter;
+use crate::mcp::tools::{error, ok};
 use crate::research::files;
 use crate::research::report::{self, Known, KnownSource, id_ranges};
 use crate::service::Core;
@@ -75,7 +75,7 @@ impl Core {
     }
 
     /// `research_start_round`.
-    pub(super) async fn research_start_round(
+    pub(crate) async fn research_start_round(
         &mut self,
         args: ResearchStartRound,
     ) -> SocketResponseBody {
@@ -120,7 +120,7 @@ impl Core {
     }
 
     /// `research_write_report`.
-    pub(super) async fn research_write_report(
+    pub(crate) async fn research_write_report(
         &mut self,
         args: ResearchWriteReport,
     ) -> SocketResponseBody {
@@ -218,7 +218,7 @@ impl Core {
     }
 
     /// `research_propose`: raises the inbox item and returns at once.
-    pub(super) async fn research_propose(
+    pub(crate) async fn research_propose(
         &mut self,
         agent: &AgentId,
         args: ResearchPropose,
@@ -271,7 +271,7 @@ impl Core {
     }
 
     /// `research_get`: one stored document, shortened.
-    pub(super) async fn research_get(&mut self, args: ResearchGet) -> SocketResponseBody {
+    pub(crate) async fn research_get(&mut self, args: ResearchGet) -> SocketResponseBody {
         let what = match args.target() {
             Ok(what) => what,
             Err(e) => return error(e.to_string()),

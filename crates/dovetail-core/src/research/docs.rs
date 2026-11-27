@@ -6,9 +6,9 @@ use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
-use dovetail_api::{
+use dovetail_api::research::{
+    ResearchDocument,
     library::{DocEntry, DocImage},
-    research::ResearchDocument,
 };
 
 /// The repo folder the docs are read from.

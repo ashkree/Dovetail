@@ -1,6 +1,6 @@
 //! Slice previews (ADR 0026): the recipe's `preview` command, run per slice.
 //!
-//! The viewer asks for a preview ([`dovetail_api::design::DesignCommand::StartPreview`]) the first time it
+//! The viewer asks for a preview ([`dovetail_api::visual::design::DesignCommand::StartPreview`]) the first time it
 //! opens on a slice. The core picks a free port, runs the command in the slice's worktree with
 //! the recipe's `[env]`, inside a capped scope like the slice's session when caps are on, and
 //! reports its state: starting until the port accepts a connection (checked every
@@ -13,11 +13,9 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use dovetail_api::{
-    Event,
-    agent::{AgentId, AgentKind},
-    design::{DesignEvent, OUTPUT_LINES, Preview, PreviewState},
-};
+use dovetail_api::Event;
+use dovetail_api::agents::agent::{AgentId, AgentKind};
+use dovetail_api::visual::design::{DesignEvent, OUTPUT_LINES, Preview, PreviewState};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::{mpsc, oneshot};
 

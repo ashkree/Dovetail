@@ -4,7 +4,9 @@
 //! The database is the only copy, as for canvases: every handler writes through the DB thread,
 //! then announces the stored row.
 
-use dovetail_api::{Event, agent::AgentId, design::DesignEvent, design::VariantSet};
+use dovetail_api::Event;
+use dovetail_api::agents::agent::AgentId;
+use dovetail_api::visual::design::{DesignEvent, VariantSet};
 use dovetail_tools::{SocketResponseBody, design::DeclareVariants};
 
 use crate::service::Core;
@@ -83,7 +85,7 @@ fn keep_prompt(set: &VariantSet) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::design::{VariantLevel, VariantSlot};
+    use dovetail_api::visual::design::{VariantLevel, VariantSlot};
     use std::collections::BTreeMap;
 
     #[test]

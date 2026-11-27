@@ -20,8 +20,9 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use dovetail_api::agents::agent::AgentId;
 use dovetail_api::research::{FindingId, SourceKind};
-use dovetail_api::{agent::AgentId, task::TaskId};
+use dovetail_api::tracking::task::TaskId;
 use dovetail_driver::{ContentBlock, DriverEvent, TaskEvent, TaskPhase, ToolResult};
 use serde_json::Value;
 

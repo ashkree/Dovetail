@@ -6,11 +6,12 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::{Event, project::ProjectId};
-use dovetail_api::{
+use dovetail_api::Event;
+use dovetail_api::research::{
+    ResearchContent, ResearchWhat,
     library::{BrowseWhat, BrowsedDoc, BrowsedListing, BrowsedProject, LibraryEvent},
-    research::{ResearchContent, ResearchWhat},
 };
+use dovetail_api::tracking::project::ProjectId;
 
 use crate::projects::Project;
 use crate::research::{LoadError, content_of, files, listing, root_of, summary};
@@ -113,7 +114,7 @@ impl Core {
     async fn browsed_research(
         &self,
         project: &Project,
-        task: dovetail_api::task::TaskId,
+        task: dovetail_api::tracking::task::TaskId,
         what: &ResearchWhat,
     ) -> Result<dovetail_api::research::ResearchDocument, LoadError> {
         let path = self.paths.state_db(&project.id);

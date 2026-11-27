@@ -5,12 +5,12 @@
 //! for approval, or a worktree removal waiting for confirmation. Answers go straight to whatever waits, so one held item never blocks
 //! another (stream rule 3).
 
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
-    agent::AgentId,
+use dovetail_api::Event;
+use dovetail_api::activity::{
+    ActivityKind,
     inbox::{InboxEvent, InboxId, InboxItem, InboxKind, PermissionAnswer, RuleSuggestion},
 };
+use dovetail_api::agents::agent::AgentId;
 use dovetail_driver::{ControlAnswer, ControlId, PermissionRequest};
 use serde_json::Value;
 
@@ -178,7 +178,7 @@ impl Core {
         let ask = self
             .agents
             .get(agent)
-            .is_some_and(|r| r.agent.kind == dovetail_api::agent::AgentKind::Ask);
+            .is_some_and(|r| r.agent.kind == dovetail_api::agents::agent::AgentKind::Ask);
         if ask {
             return;
         }
@@ -493,7 +493,11 @@ impl Core {
                 source,
             })?;
         live.turn.input_sent();
-        self.add_entry(agent, dovetail_api::conversation::EntryKind::User, shown);
+        self.add_entry(
+            agent,
+            dovetail_api::agents::conversation::EntryKind::User,
+            shown,
+        );
         self.refresh_status(agent);
         Ok(())
     }

@@ -15,7 +15,7 @@ use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 use dovetail_api::research::SourceKind;
-use dovetail_api::task::TaskId;
+use dovetail_api::tracking::task::TaskId;
 
 use crate::db::research::{FindingRow, RoundRow, SourceRow, TaskResearch};
 

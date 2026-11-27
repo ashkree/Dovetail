@@ -7,14 +7,14 @@ use dovetail_maps::{DrawMapInput, MapError, check_lane_links, report, validate};
 use dovetail_tools::SocketResponseBody;
 use serde_json::{Value, json};
 
-use super::{error, ok};
 use crate::db::{Drawn, NewMapVersion};
+use crate::mcp::tools::{error, ok};
 use crate::service::Core;
 
 impl Core {
     /// Answers `maps_draw`: the agent-readable report when the map is refused, else
     /// `{"id", "version"}` and a line saying how to redraw it.
-    pub(super) async fn draw_map(
+    pub(crate) async fn draw_map(
         &mut self,
         agent: &AgentId,
         arguments: Value,

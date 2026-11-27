@@ -6,16 +6,15 @@
 //! every position a new block or card gets; only the user's commands move or delete a card. The
 //! agents' tools add blocks, cards and links.
 
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
-    agent::AgentId,
-    canvas::{
-        BlockId, CanvasEvent, Card, CardId, CardKind, CardRef, Layout, NewCard, Point, RefKind,
-    },
-    conversation::EntryId,
+use dovetail_api::Event;
+use dovetail_api::activity::ActivityKind;
+use dovetail_api::agents::{agent::AgentId, conversation::EntryId};
+use dovetail_api::tracking::{
     effort::{EffortId, UNSORTED_EFFORT},
     task::TaskId,
+};
+use dovetail_api::visual::canvas::{
+    BlockId, CanvasEvent, Card, CardId, CardKind, CardRef, Layout, NewCard, Point, RefKind,
 };
 use dovetail_tools::{
     SocketResponseBody,

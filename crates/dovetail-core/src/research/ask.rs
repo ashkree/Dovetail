@@ -10,12 +10,12 @@
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::{
-    activity::ActivityKind,
+use dovetail_api::activity::ActivityKind;
+use dovetail_api::agents::{
     agent::{AgentEvent, AgentId, AgentKind, PermissionMode},
     conversation::{Attachment, EntryKind},
-    task::TaskId,
 };
+use dovetail_api::tracking::task::TaskId;
 use dovetail_driver::UserInput;
 
 use crate::db::{AgentRow, now_ms};
@@ -119,8 +119,8 @@ impl Core {
             format!("{grounding}\n\n## Question\n\n{text}")
         };
         self.update_agent(id, |row| {
-            if row.agent.status == dovetail_api::agent::AgentStatus::Error {
-                row.agent.status = dovetail_api::agent::AgentStatus::Idle;
+            if row.agent.status == dovetail_api::agents::agent::AgentStatus::Error {
+                row.agent.status = dovetail_api::agents::agent::AgentStatus::Idle;
             }
         });
         self.send_input(

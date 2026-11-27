@@ -84,14 +84,14 @@ fn kind_from_text(text: &str) -> Result<AgentKind, DbError> {
 
 /// A unit enum's text in the database: its serde name in the API (`setting_up`,
 /// `accept_edits`, `tool_summary`, ...), so the API is the one source of these names.
-pub(super) fn to_text<T: serde::Serialize>(value: &T) -> Result<String, DbError> {
+pub(crate) fn to_text<T: serde::Serialize>(value: &T) -> Result<String, DbError> {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => Ok(s),
         _ => Err(DbError::Corrupt("a value with no text form".into())),
     }
 }
 
-pub(super) fn from_text<T: serde::de::DeserializeOwned>(
+pub(crate) fn from_text<T: serde::de::DeserializeOwned>(
     what: &str,
     text: &str,
 ) -> Result<T, DbError> {

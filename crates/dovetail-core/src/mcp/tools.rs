@@ -40,9 +40,7 @@ use crate::service::Core;
 use crate::slice::{ArchiveCall, SliceRequest, SliceStart};
 use crate::socket::ToolCall;
 
-mod map;
 mod read;
-mod research;
 
 /// Most characters of a status line (B17).
 const STATUS_MAX: usize = 120;

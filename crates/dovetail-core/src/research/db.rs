@@ -8,7 +8,7 @@ use dovetail_api::tracking::task::TaskId;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use super::DbError;
+use crate::storage::DbError;
 
 /// A research round.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,7 +235,7 @@ fn finding(row: &Row<'_>) -> rusqlite::Result<FindingRow> {
 }
 
 /// The round still open, if any (at most one is).
-pub(super) fn open_round(conn: &Connection) -> Result<Option<RoundRow>, DbError> {
+pub(crate) fn open_round(conn: &Connection) -> Result<Option<RoundRow>, DbError> {
     Ok(conn
         .query_row(
             &format!(
@@ -249,7 +249,7 @@ pub(super) fn open_round(conn: &Connection) -> Result<Option<RoundRow>, DbError>
 
 /// Requests round `n + 1` of `task`: open at once, or queued (`queued` on the row) while any
 /// round is open or waiting. Refused for an unknown or archived task or an empty brief.
-pub(super) fn start_round(
+pub(crate) fn start_round(
     conn: &mut Connection,
     task: TaskId,
     brief: &str,
@@ -306,7 +306,7 @@ pub(super) fn start_round(
 }
 
 /// The rounds waiting for the open one, oldest request first.
-pub(super) fn queued_rounds(conn: &Connection) -> Result<Vec<RoundRow>, DbError> {
+pub(crate) fn queued_rounds(conn: &Connection) -> Result<Vec<RoundRow>, DbError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {ROUND_COLUMNS} FROM research_rounds WHERE queued = 1 AND closed_ms IS NULL \
          ORDER BY id"
@@ -318,7 +318,7 @@ pub(super) fn queued_rounds(conn: &Connection) -> Result<Vec<RoundRow>, DbError>
 
 /// Closes the open round of `task` and opens the next queued one, if any. Resolves to the closed
 /// round and the one that opened.
-pub(super) fn close_round(
+pub(crate) fn close_round(
     conn: &mut Connection,
     task: TaskId,
     now: i64,
@@ -362,7 +362,7 @@ fn promote_next(conn: &Connection, now: i64) -> Result<Option<RoundRow>, DbError
 }
 
 /// Deletes a queued round of `task`: round `n`, or the one requested last.
-pub(super) fn drop_round(
+pub(crate) fn drop_round(
     conn: &Connection,
     task: TaskId,
     n: Option<u32>,
@@ -390,7 +390,7 @@ pub(super) fn drop_round(
 }
 
 /// Deletes every queued round of `task` (archiving it). Resolves to them.
-pub(super) fn drop_queued_for(conn: &Connection, task: TaskId) -> Result<Vec<RoundRow>, DbError> {
+pub(crate) fn drop_queued_for(conn: &Connection, task: TaskId) -> Result<Vec<RoundRow>, DbError> {
     let mine: Vec<RoundRow> = queued_rounds(conn)?
         .into_iter()
         .filter(|r| r.task == task)
@@ -404,7 +404,7 @@ pub(super) fn drop_queued_for(conn: &Connection, task: TaskId) -> Result<Vec<Rou
 /// Files a finding: the row, its sources (one row per locator and content, shared by every
 /// finding that reached the same thing) and the links. Resolves to the stored finding and the
 /// rows of its sources.
-pub(super) fn file_finding(
+pub(crate) fn file_finding(
     conn: &mut Connection,
     new: NewFinding,
     now: i64,
@@ -534,7 +534,7 @@ fn store_sources(
 }
 
 /// Replaces a finding's body with one from a better source.
-pub(super) fn set_finding_body(
+pub(crate) fn set_finding_body(
     conn: &Connection,
     id: FindingId,
     body: &str,
@@ -559,7 +559,7 @@ fn research_tasks(conn: &Connection) -> Result<Vec<TaskId>, DbError> {
 }
 
 /// The summary counts of every task with research.
-pub(super) fn load_summaries(conn: &Connection) -> Result<Vec<SummaryRow>, DbError> {
+pub(crate) fn load_summaries(conn: &Connection) -> Result<Vec<SummaryRow>, DbError> {
     research_tasks(conn)?
         .into_iter()
         .map(|t| load_summary(conn, t))
@@ -567,7 +567,7 @@ pub(super) fn load_summaries(conn: &Connection) -> Result<Vec<SummaryRow>, DbErr
 }
 
 /// The summary counts of one task (empty when it has no research).
-pub(super) fn load_summary(conn: &Connection, task: TaskId) -> Result<SummaryRow, DbError> {
+pub(crate) fn load_summary(conn: &Connection, task: TaskId) -> Result<SummaryRow, DbError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {ROUND_COLUMNS}, (SELECT COUNT(*) FROM findings f WHERE f.round_id = r.id) \
          FROM research_rounds r WHERE task_id = ?1 ORDER BY n"
@@ -604,7 +604,7 @@ pub(super) fn load_summary(conn: &Connection, task: TaskId) -> Result<SummaryRow
 }
 
 /// Everything about one task's research.
-pub(super) fn load_task(conn: &Connection, task: TaskId) -> Result<TaskResearch, DbError> {
+pub(crate) fn load_task(conn: &Connection, task: TaskId) -> Result<TaskResearch, DbError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {ROUND_COLUMNS} FROM research_rounds WHERE task_id = ?1 ORDER BY n"
     ))?;
@@ -652,7 +652,7 @@ pub(super) fn load_task(conn: &Connection, task: TaskId) -> Result<TaskResearch,
 }
 
 /// Every task's research in full, for rebuilding missing files at start.
-pub(super) fn load_all(conn: &Connection) -> Result<Vec<(TaskId, TaskResearch)>, DbError> {
+pub(crate) fn load_all(conn: &Connection) -> Result<Vec<(TaskId, TaskResearch)>, DbError> {
     research_tasks(conn)?
         .into_iter()
         .map(|t| Ok((t, load_task(conn, t)?)))
@@ -660,7 +660,7 @@ pub(super) fn load_all(conn: &Connection) -> Result<Vec<(TaskId, TaskResearch)>,
 }
 
 /// Stores a report (`research_write_report`). The latest by time is the task's `report.md`.
-pub(super) fn insert_report(
+pub(crate) fn insert_report(
     conn: &Connection,
     task: TaskId,
     round: Option<i64>,
@@ -677,7 +677,7 @@ pub(super) fn insert_report(
 }
 
 /// The task's `research_kind`: `question`, `decision` or none.
-pub(super) fn research_kind(conn: &Connection, task: TaskId) -> Result<Option<String>, DbError> {
+pub(crate) fn research_kind(conn: &Connection, task: TaskId) -> Result<Option<String>, DbError> {
     Ok(conn
         .query_row(
             "SELECT research_kind FROM tasks WHERE id = ?1",
@@ -689,7 +689,7 @@ pub(super) fn research_kind(conn: &Connection, task: TaskId) -> Result<Option<St
 }
 
 /// Sets the task's `research_kind`.
-pub(super) fn set_research_kind(
+pub(crate) fn set_research_kind(
     conn: &Connection,
     task: TaskId,
     kind: Option<&str>,
@@ -756,7 +756,7 @@ fn unfiled_sources(conn: &Connection, id: i64) -> Result<(Vec<SourceId>, Vec<Sou
 
 /// Stores a finding with no task (`new.task` is ignored). Its file goes to
 /// `findings/<id>-<label>.md` under the research root's `unfiled/` folder.
-pub(super) fn file_unfiled(
+pub(crate) fn file_unfiled(
     conn: &mut Connection,
     new: NewFinding,
     now: i64,
@@ -814,7 +814,7 @@ pub(super) fn file_unfiled(
 }
 
 /// One unfiled finding with its sources; `None` when it is gone (filed or dropped).
-pub(super) fn load_unfiled(
+pub(crate) fn load_unfiled(
     conn: &Connection,
     id: i64,
 ) -> Result<Option<(FindingRow, Vec<SourceRow>)>, DbError> {
@@ -834,7 +834,7 @@ pub(super) fn load_unfiled(
 }
 
 /// Every unfiled finding with its sources, for rebuilding missing files at start.
-pub(super) fn load_all_unfiled(
+pub(crate) fn load_all_unfiled(
     conn: &Connection,
 ) -> Result<Vec<(FindingRow, Vec<SourceRow>)>, DbError> {
     let ids: Vec<i64> = {
@@ -853,7 +853,7 @@ pub(super) fn load_all_unfiled(
 
 /// Replaces an unfiled finding's body with one from a better source. Resolves to whether it was
 /// still there (it may have been filed or dropped meanwhile).
-pub(super) fn set_unfiled_body(
+pub(crate) fn set_unfiled_body(
     conn: &Connection,
     id: i64,
     body: &str,
@@ -900,7 +900,7 @@ fn remove_unfiled(conn: &Connection, id: i64) -> Result<Option<Removed>, DbError
 }
 
 /// Deletes an unfiled finding (`d`). `None` when it is already gone.
-pub(super) fn drop_unfiled(conn: &mut Connection, id: i64) -> Result<Option<Removed>, DbError> {
+pub(crate) fn drop_unfiled(conn: &mut Connection, id: i64) -> Result<Option<Removed>, DbError> {
     let tx = conn.transaction()?;
     let removed = remove_unfiled(&tx, id)?;
     tx.commit()?;
@@ -910,7 +910,7 @@ pub(super) fn drop_unfiled(conn: &mut Connection, id: i64) -> Result<Option<Remo
 /// Files an unfiled finding under `task` as a quick finding: a `findings` row with the same
 /// body and sources and a new id, the unfiled row gone. Resolves to the new finding, its sources
 /// and what was removed from `unfiled/`.
-pub(super) fn file_unfiled_to_task(
+pub(crate) fn file_unfiled_to_task(
     conn: &mut Connection,
     id: i64,
     task: TaskId,

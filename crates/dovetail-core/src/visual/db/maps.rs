@@ -8,8 +8,8 @@ use dovetail_api::visual::map::{Map, MapContent, MapId, MapKind, MapSummary, Nod
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use super::DbError;
 use crate::projects::slug;
+use crate::storage::DbError;
 
 /// Longest id Dovetail makes from a title; agents' own ids follow the validation limit.
 const MAX_MADE_ID: usize = 48;
@@ -67,7 +67,7 @@ fn summary(row: &Row<'_>) -> rusqlite::Result<MapSummary> {
 }
 
 /// Every map's shelf entry, most recently drawn first.
-pub(super) fn load_maps(conn: &Connection) -> Result<Vec<MapSummary>, DbError> {
+pub(crate) fn load_maps(conn: &Connection) -> Result<Vec<MapSummary>, DbError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {SUMMARY_COLUMNS} FROM maps ORDER BY updated_ms DESC, id"
     ))?;
@@ -86,7 +86,7 @@ fn load_summary(conn: &Connection, id: &MapId) -> Result<Option<MapSummary>, DbE
 }
 
 /// One version of a map (`None`: the latest), or `None` when there is no such map or version.
-pub(super) fn load_map(
+pub(crate) fn load_map(
     conn: &Connection,
     id: &MapId,
     version: Option<u32>,
@@ -112,7 +112,7 @@ pub(super) fn load_map(
 }
 
 /// Ids of every node on the latest version of each structure map: what a lane may link.
-pub(super) fn structure_nodes(conn: &Connection) -> Result<HashSet<NodeId>, DbError> {
+pub(crate) fn structure_nodes(conn: &Connection) -> Result<HashSet<NodeId>, DbError> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT json_extract(n.value, '$.id') \
          FROM maps m JOIN map_versions v ON v.map_id = m.id AND v.version = m.current_version, \
@@ -123,7 +123,7 @@ pub(super) fn structure_nodes(conn: &Connection) -> Result<HashSet<NodeId>, DbEr
 }
 
 /// Stores a new map, or a new version of the map the id names.
-pub(super) fn save_map(
+pub(crate) fn save_map(
     conn: &mut Connection,
     new: NewMapVersion,
     now: i64,

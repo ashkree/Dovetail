@@ -10,23 +10,25 @@
 //!
 //! Context isolation (§5.6): nothing here sends input to a session or touches its prompt.
 
+pub(crate) mod ask;
+pub(crate) mod browse;
 pub(crate) mod capture;
+pub mod db;
+pub(crate) mod docs;
 pub(crate) mod files;
 pub(crate) mod report;
+pub(crate) mod tools;
 
 use std::path::PathBuf;
 
+use dovetail_api::Event;
+use dovetail_api::activity::{ActivityKind, inbox::InboxKind};
+use dovetail_api::agents::agent::AgentId;
 use dovetail_api::research::{
     FindingSummary, ResearchContent, ResearchDocument, ResearchEvent, ResearchKind,
     ResearchListing, ResearchSummary, ResearchWhat, RoundSummary, SourceSummary, ordinal,
 };
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
-    agent::AgentId,
-    inbox::InboxKind,
-    task::{Task, TaskId},
-};
+use dovetail_api::tracking::task::{Task, TaskId};
 use dovetail_driver::{ContentBlock, DriverEvent};
 
 use crate::db::research::{FindingRow, RoundRow, SourceRow, SummaryRow, TaskResearch};
@@ -755,7 +757,11 @@ impl Core {
 
     /// `ResearchCommand::FileUnfiled`: the finding becomes a quick finding of `task`, its files move to
     /// the task's research folder, and the item leaves Needs you.
-    pub(crate) async fn file_unfiled(&mut self, item: dovetail_api::inbox::InboxId, task: TaskId) {
+    pub(crate) async fn file_unfiled(
+        &mut self,
+        item: dovetail_api::activity::inbox::InboxId,
+        task: TaskId,
+    ) {
         let finding = match self.inbox.get(&item).map(|e| &e.waiter) {
             Some(Waiter::UnfiledFinding { finding }) => *finding,
             _ => {

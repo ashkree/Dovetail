@@ -12,12 +12,11 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::{
-    Event,
-    agent::AgentId,
-    model::DriverKind,
-    status::{DriverUsage, StatusEvent, UsageLimits, UsageStatus, UsageWindow},
+use dovetail_api::Event;
+use dovetail_api::activity::status::{
+    DriverUsage, StatusEvent, UsageLimits, UsageStatus, UsageWindow,
 };
+use dovetail_api::agents::{agent::AgentId, model::DriverKind};
 use dovetail_driver::{RateLimitInfo, RateLimitWindow, UsageQuery};
 
 use crate::service::{Core, Input};
@@ -176,7 +175,7 @@ mod tests {
     /// The first `rate_limit_event` of a recorded fixture, through the driver's parser.
     fn fixture_info() -> RateLimitInfo {
         first_rate_limit(include_str!(
-            "../../dovetail-driver/tests/fixtures/flags.ndjson"
+            "../../../dovetail-driver/tests/fixtures/flags.ndjson"
         ))
     }
 
@@ -248,7 +247,7 @@ mod tests {
     #[test]
     fn a_week_only_event_keeps_the_earlier_5h_window() {
         let week_only = first_rate_limit(include_str!(
-            "../../dovetail-driver/tests/fixtures/rate_limit_week_only.ndjson"
+            "../../../dovetail-driver/tests/fixtures/rate_limit_week_only.ndjson"
         ));
         let next = from_rate_limit(&week_only).unwrap_or_default();
         assert_eq!(next.five_hour, None);

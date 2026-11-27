@@ -6,7 +6,7 @@ use dovetail_api::agents::agent::AgentId;
 use dovetail_api::visual::design::{VariantSet, VariantSlot};
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::{Db, DbError, Pending};
+use crate::storage::{Db, DbError, Pending};
 
 impl Db {
     /// Every declared variant set of the open project.

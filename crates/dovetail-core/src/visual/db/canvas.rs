@@ -22,8 +22,8 @@ use dovetail_api::visual::canvas::{
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
-use super::sessions::{from_text, to_text};
-use super::{Db, DbError, Pending};
+use crate::storage::sessions::{from_text, to_text};
+use crate::storage::{Db, DbError, Pending};
 
 /// What a card reads as when its target is gone.
 pub const MISSING_TITLE: &str = "(missing)";
