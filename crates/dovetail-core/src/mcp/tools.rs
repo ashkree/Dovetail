@@ -2,13 +2,15 @@
 //! the core checks the role again: a slice must not reach a coordinator tool even through a
 //! hand-written socket client.
 
-use dovetail_api::{
-    Event,
+use dovetail_api::Event;
+use dovetail_api::activity::inbox::InboxKind;
+use dovetail_api::agents::{
     agent::{Agent, AgentKind, PermissionMode},
     conversation::EntryKind,
-    decision::{DecisionAuthor, DecisionEvent, NewDecision},
-    inbox::InboxKind,
     model::DriverKind,
+};
+use dovetail_api::tracking::{
+    decision::{DecisionAuthor, DecisionEvent, NewDecision},
     task::{NewTask, TaskChange, TaskId, TaskStatus},
 };
 use dovetail_tools::{
@@ -312,7 +314,7 @@ impl Core {
                     self.raise(
                         &agent,
                         InboxKind::Permission {
-                            tool: dovetail_api::inbox::START_SLICE_PERMISSION.into(),
+                            tool: dovetail_api::activity::inbox::START_SLICE_PERMISSION.into(),
                             input,
                             reason: Some("the coordinator wants to start a slice".into()),
                             suggestions: Vec::new(),
@@ -458,14 +460,14 @@ impl Core {
             Some(t) if t.status == TaskStatus::Archived => {
                 return error(format!("task #{} is archived", id.0));
             }
-            Some(t) => t.bucket == Some(dovetail_api::task::Bucket::Now),
+            Some(t) => t.bucket == Some(dovetail_api::tracking::task::Bucket::Now),
         };
         // Validation refused a status: Dovetail sets it (ADR 0024).
         let mut patch = Vec::new();
         if let Some(bucket) = update.new_bucket() {
             patch.push(TaskChange::Bucket(bucket));
             // The user did not put it in Now, so it carries the marker new tasks have.
-            if bucket == Some(dovetail_api::task::Bucket::Now) && !was_in_now {
+            if bucket == Some(dovetail_api::tracking::task::Bucket::Now) && !was_in_now {
                 patch.push(TaskChange::Unseen);
             }
         }

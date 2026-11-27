@@ -6,13 +6,15 @@
 //! (`research::report`) before anything is written. A proposal never writes anything itself: it
 //! raises an inbox item, and `y` does the write.
 
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
-    agent::AgentId,
-    decision::{DecisionAuthor, DecisionEvent, NewDecision},
+use dovetail_api::Event;
+use dovetail_api::activity::{
+    ActivityKind,
     inbox::{InboxId, InboxKind, PermissionAnswer},
-    research::{Evidence, ProposalKind, ResearchContent},
+};
+use dovetail_api::agents::agent::AgentId;
+use dovetail_api::research::{Evidence, ProposalKind, ResearchContent};
+use dovetail_api::tracking::{
+    decision::{DecisionAuthor, DecisionEvent, NewDecision},
     task::{NewTask, TaskId, TaskStatus},
 };
 use dovetail_tools::{
@@ -59,7 +61,10 @@ fn known(r: &TaskResearch) -> Known {
 
 impl Core {
     /// The task, if it exists and is not archived; else the error to return.
-    async fn live_task(&self, id: TaskId) -> Result<dovetail_api::task::Task, SocketResponseBody> {
+    async fn live_task(
+        &self,
+        id: TaskId,
+    ) -> Result<dovetail_api::tracking::task::Task, SocketResponseBody> {
         match self.task(id).await {
             None => Err(error(format!("there is no task #{}", id.0))),
             Some(t) if t.status == TaskStatus::Archived => {

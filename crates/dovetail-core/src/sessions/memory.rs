@@ -330,19 +330,27 @@ pub fn oom_verdict(
 /// Automatic restarts after OOM kills, per agent: at most one per [`RESTART_WINDOW`].
 #[derive(Debug, Default)]
 pub struct RestartGuard {
-    last: std::collections::HashMap<dovetail_api::agent::AgentId, std::time::Instant>,
+    last: std::collections::HashMap<dovetail_api::agents::agent::AgentId, std::time::Instant>,
 }
 
 impl RestartGuard {
     /// Whether `agent` may be restarted automatically at `now`.
-    pub fn allowed(&self, agent: &dovetail_api::agent::AgentId, now: std::time::Instant) -> bool {
+    pub fn allowed(
+        &self,
+        agent: &dovetail_api::agents::agent::AgentId,
+        now: std::time::Instant,
+    ) -> bool {
         self.last
             .get(agent)
             .is_none_or(|at| now.saturating_duration_since(*at) >= RESTART_WINDOW)
     }
 
     /// Counts an automatic restart of `agent` at `now`. Only restarts that happened count.
-    pub fn record(&mut self, agent: &dovetail_api::agent::AgentId, now: std::time::Instant) {
+    pub fn record(
+        &mut self,
+        agent: &dovetail_api::agents::agent::AgentId,
+        now: std::time::Instant,
+    ) {
         self.last.insert(agent.clone(), now);
     }
 }
@@ -598,8 +606,8 @@ mod tests {
     #[test]
     fn an_agent_is_restarted_automatically_at_most_once_per_window() {
         let mut guard = RestartGuard::default();
-        let a = dovetail_api::agent::AgentId("a".into());
-        let b = dovetail_api::agent::AgentId("b".into());
+        let a = dovetail_api::agents::agent::AgentId("a".into());
+        let b = dovetail_api::agents::agent::AgentId("b".into());
         let t = std::time::Instant::now();
         // A check alone (a restart that then failed) uses nothing up.
         assert!(guard.allowed(&a, t));

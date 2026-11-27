@@ -39,20 +39,20 @@
 //!
 //! [`AppCommand::TakeOver`]: dovetail_api::app::AppCommand::TakeOver
 //! [`AppEvent::TerminalReturned`]: dovetail_api::app::AppEvent::TerminalReturned
-//! [`RELEASE_TAKEOVER_PERMISSION`]: dovetail_api::inbox::RELEASE_TAKEOVER_PERMISSION
+//! [`RELEASE_TAKEOVER_PERMISSION`]: dovetail_api::activity::inbox::RELEASE_TAKEOVER_PERMISSION
 
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use dovetail_api::{
-    Event,
+use dovetail_api::Event;
+use dovetail_api::activity::inbox::{InboxKind, RELEASE_TAKEOVER_PERMISSION};
+use dovetail_api::agents::{
     agent::{AgentEvent, AgentId, AgentKind, SessionLock},
-    app::AppEvent,
     conversation::EntryKind,
-    inbox::{InboxKind, RELEASE_TAKEOVER_PERMISSION},
 };
+use dovetail_api::app::AppEvent;
 use dovetail_driver::transcript::{self, NativeEntry};
 use serde::{Deserialize, Serialize};
 
@@ -355,7 +355,7 @@ impl Core {
         if row.agent.kind == AgentKind::Ask {
             return Some(format!("{name} is reading mode's Ask: it stays headless"));
         }
-        if row.agent.driver != dovetail_api::model::DriverKind::Claude {
+        if row.agent.driver != dovetail_api::agents::model::DriverKind::Claude {
             return Some(format!(
                 "{name} runs on {}: native take-over is only for Claude Code",
                 row.agent.driver.label()
@@ -756,7 +756,7 @@ impl Core {
 
     /// The working directory of agent `agent`'s session: a slice's worktree (or, without git,
     /// its repo's folder), else the coordinator's folder (ADR 0021).
-    pub(crate) fn session_cwd(&self, agent: &dovetail_api::agent::Agent) -> PathBuf {
+    pub(crate) fn session_cwd(&self, agent: &dovetail_api::agents::agent::Agent) -> PathBuf {
         match (agent.kind, &agent.worktree) {
             (AgentKind::Slice, Some(w)) => w.path.clone(),
             (AgentKind::Slice, None) => self
@@ -773,7 +773,7 @@ impl Core {
     /// agent, the first repo. `None` in a project with no repos, or when the repo was removed.
     pub(crate) fn repo_of(
         &self,
-        id: &dovetail_api::agent::AgentId,
+        id: &dovetail_api::agents::agent::AgentId,
     ) -> Option<crate::projects::Repo> {
         let row = self.agents.get(id)?;
         match (row.agent.kind, &row.agent.parent) {

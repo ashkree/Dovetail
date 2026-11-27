@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use dovetail_api::model::DriverKind;
+use dovetail_api::agents::model::DriverKind;
 use dovetail_driver::SessionDriver;
 
 /// The session drivers the core can launch (`ClaudeDriver`, `AgyDriver`, or fakes in tests).

@@ -12,23 +12,35 @@
 //!   id Dovetail picked on each per-turn `Init`; `agy` picks its own conversation id on its single
 //!   open-time `Init`, which `on_init` stores without marking a turn running).
 
+pub(crate) mod context;
+pub mod drivers;
+pub mod error;
+pub(crate) mod foreground;
 pub mod launch;
+pub mod memory;
 pub(crate) mod model;
+pub(crate) mod oom;
+pub(crate) mod restore;
 pub mod state;
 pub(crate) mod subagent;
+pub mod takeover;
+
+pub use error::SessionError;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
+use dovetail_api::Event;
+use dovetail_api::activity::{
+    ActivityKind,
+    inbox::InboxKind,
+    status::{StatusEvent, Warning, WarningId},
+};
+use dovetail_api::agents::{
     agent::{AgentEvent, AgentId, AgentKind, AgentStatus, RunningTool},
     conversation::{Attachment, EntryKind, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS},
-    inbox::InboxKind,
     mcp::McpEvent,
     model::DriverKind,
-    status::{StatusEvent, Warning, WarningId},
 };
 use dovetail_driver::{
     ContentBlock, DriverEvent, ExitInfo, ImageInput, InitInfo, PeerMessage, Session, TurnResult,
@@ -36,7 +48,6 @@ use dovetail_driver::{
 };
 use dovetail_tools::Role;
 
-use crate::error::SessionError;
 use crate::recipe::Recipe;
 use crate::service::{COORDINATOR, Core, Input};
 use state::{Streaming, Turn};
@@ -528,7 +539,7 @@ impl Core {
         id: &AgentId,
         text: String,
         attachments: Vec<Attachment>,
-        effort: Option<dovetail_api::effort::EffortId>,
+        effort: Option<dovetail_api::tracking::effort::EffortId>,
     ) {
         if self.live.get(id).is_some_and(|l| l.setting_up) {
             self.fail("this slice is still setting up");
@@ -683,7 +694,11 @@ impl Core {
 
     /// `McpCommand::Request`: one request of the MCP menu, sent to `id`'s session (a subagent's parent,
     /// since subagents share it). The answer arrives as `DriverEvent::McpReply`.
-    pub(crate) fn mcp_request(&mut self, id: &AgentId, request: dovetail_api::mcp::McpRequest) {
+    pub(crate) fn mcp_request(
+        &mut self,
+        id: &AgentId,
+        request: dovetail_api::agents::mcp::McpRequest,
+    ) {
         let target = match self.agents.get(id) {
             Some(row) => match (&row.agent.kind, &row.agent.parent) {
                 (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
@@ -707,7 +722,7 @@ impl Core {
             self.emit(Event::Mcp(McpEvent::Reply {
                 agent: target,
                 request,
-                outcome: dovetail_api::mcp::McpOutcome::Failed(why),
+                outcome: dovetail_api::agents::mcp::McpOutcome::Failed(why),
             }));
         }
     }
@@ -771,7 +786,7 @@ impl Core {
             DriverEvent::Commands(list) => {
                 let commands: Vec<_> = list
                     .into_iter()
-                    .map(|c| dovetail_api::agent::SlashCommand {
+                    .map(|c| dovetail_api::agents::agent::SlashCommand {
                         name: c.name,
                         description: c.description,
                         argument_hint: c.argument_hint,
@@ -854,7 +869,7 @@ impl Core {
                         .get(&from)
                         .is_some_and(|r| matches!(r.agent.kind, AgentKind::Subagent { .. }));
                     let sender = self.bare_name(&peer.name).to_owned();
-                    let text = dovetail_api::conversation::agent_message_text(
+                    let text = dovetail_api::agents::conversation::agent_message_text(
                         &sender, subagent, &peer.body,
                     );
                     self.add_entry(&agent, EntryKind::AgentMessage, text);
@@ -991,17 +1006,18 @@ impl Core {
                     row.agent.kind,
                     AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent
                 ) {
-                    row.agent.permission_mode = dovetail_api::agent::PermissionMode::Manual;
+                    row.agent.permission_mode = dovetail_api::agents::agent::PermissionMode::Manual;
                 } else if driver == DriverKind::Claude
-                    && row.agent.permission_mode == dovetail_api::agent::PermissionMode::Auto
-                    && mode != Some(dovetail_api::agent::PermissionMode::Auto)
+                    && row.agent.permission_mode
+                        == dovetail_api::agents::agent::PermissionMode::Auto
+                    && mode != Some(dovetail_api::agents::agent::PermissionMode::Auto)
                 {
                     warn = Some(format!(
                         "{} started in {} mode, not auto: running as manual",
                         row.agent.name,
                         init.permission_mode.as_deref().unwrap_or("an unknown")
                     ));
-                    row.agent.permission_mode = dovetail_api::agent::PermissionMode::Manual;
+                    row.agent.permission_mode = dovetail_api::agents::agent::PermissionMode::Manual;
                 }
             });
             if let Some(text) = warn {
@@ -1036,7 +1052,7 @@ impl Core {
         &mut self,
         agent: &AgentId,
         message_id: Option<String>,
-    ) -> dovetail_api::conversation::EntryId {
+    ) -> dovetail_api::agents::conversation::EntryId {
         if let Some(s) = self
             .live
             .get(agent)

@@ -19,11 +19,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use dovetail_api::{
-    activity::ActivityKind,
-    agent::{AgentId, AgentKind, AgentStatus},
+use dovetail_api::activity::{
+    ActivityKind,
     inbox::{InboxId, InboxKind},
 };
+use dovetail_api::agents::agent::{AgentId, AgentKind, AgentStatus};
 use notify::Watcher;
 use tokio::sync::mpsc as tokio_mpsc;
 
@@ -105,7 +105,7 @@ fn restart_note(cap_gb: u32, work: &[String]) -> String {
 }
 
 /// A subagent that was still running when its session died, for the inbox item and the note.
-fn in_flight_line(agent: &dovetail_api::agent::Agent) -> String {
+fn in_flight_line(agent: &dovetail_api::agents::agent::Agent) -> String {
     let what = agent
         .progress
         .as_ref()
@@ -366,13 +366,13 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::agent::SubagentProgress;
+    use dovetail_api::agents::agent::SubagentProgress;
 
     fn subagent(
         background: bool,
         description: &str,
         output: Option<&str>,
-    ) -> dovetail_api::agent::Agent {
+    ) -> dovetail_api::agents::agent::Agent {
         let mut agent = crate::service::new_agent(
             AgentId("c:t1".into()),
             "general-purpose".into(),

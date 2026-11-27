@@ -76,7 +76,6 @@ thread_local! {
 }
 
 /// Standard test paths under a temporary directory (`runtime` is replaced per run by `Harness`).
-#[allow(dead_code)]
 pub fn test_paths(dir: &Path) -> Paths {
     Paths {
         data: dir.join("data"),
@@ -93,7 +92,6 @@ pub fn fixture(name: &str) -> FakeDriver {
     FakeDriver::from_file(path).expect("fixture")
 }
 
-#[allow(dead_code)] // used by agy_sessions.rs only
 pub fn agy_fixture(name: &str) -> FakeDriver {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../dovetail-driver/tests/fixtures/agy")
@@ -108,7 +106,6 @@ pub fn both_drivers(claude: &FakeDriver, agy: &FakeDriver) -> Drivers {
     drivers
 }
 
-#[allow(dead_code)]
 pub struct Harness {
     pub link: CoreLink,
     pub core: Option<CoreHandle>,
@@ -136,7 +133,6 @@ pub struct Harness {
 
 pub const COORDINATOR: &str = "coordinator";
 
-#[allow(dead_code)]
 impl Harness {
     pub fn start(driver: FakeDriver, registered: bool, config: Config) -> Harness {
         Self::start_scoped(driver, registered, config, None)
@@ -450,7 +446,6 @@ pub fn finished_turns(s: &Snapshot) -> usize {
         .count()
 }
 
-#[allow(dead_code)]
 impl Harness {
     /// A second app on the state of an earlier one (registered project `p`).
     pub fn start_on(driver: FakeDriver, paths: Paths) -> Harness {
@@ -607,12 +602,10 @@ pub fn git(dir: &Path, args: &[&str]) {
 // --- native to-do lists (M11, task #12) ---
 
 /// The temp dir standing in for `~/.claude/tasks` (see `Harness::start`).
-#[allow(dead_code)] // used by sessions.rs only
 pub fn tasks_dir(paths: &Paths) -> PathBuf {
     paths.data.with_file_name("claude-tasks")
 }
 
-#[allow(dead_code)] // used by sessions.rs only
 pub fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
@@ -707,7 +700,6 @@ pub fn fresh_fixture(pause_before: usize) -> FakeDriver {
 
 // --- slices started on a chosen model and effort (task #42) ---
 
-#[allow(dead_code)] // used by sessions.rs only
 pub fn start_on(
     name: &str,
     model: Option<&str>,

@@ -15,10 +15,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use dovetail_api::{
-    agent::AgentId,
-    task::{NewTask, TaskId},
-};
+use dovetail_api::agents::agent::AgentId;
+use dovetail_api::tracking::task::{NewTask, TaskId};
 use dovetail_tools::{
     SocketRequest, SocketRequestBody, SocketResponse, SocketResponseBody, Tool, deprecated_alias,
     deprecation_note,

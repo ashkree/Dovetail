@@ -1,6 +1,8 @@
 //! `maps_draw` (M15, design 23i): validate, check lane links across maps, store a version.
 
-use dovetail_api::{Event, agent::AgentId, map::MapEvent};
+use dovetail_api::Event;
+use dovetail_api::agents::agent::AgentId;
+use dovetail_api::visual::map::MapEvent;
 use dovetail_maps::{DrawMapInput, MapError, check_lane_links, report, validate};
 use dovetail_tools::SocketResponseBody;
 use serde_json::{Value, json};

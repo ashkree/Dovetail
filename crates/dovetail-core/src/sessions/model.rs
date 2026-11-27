@@ -9,8 +9,8 @@
 //! switch's answer never confirms another switch. One switch at a time: another is refused until
 //! the first is confirmed or refused. Each driver keeps its own entry in `model_catalog`.
 
-use dovetail_api::{
-    Event,
+use dovetail_api::Event;
+use dovetail_api::agents::{
     agent::{AgentId, AgentKind},
     model::{DriverKind, ModelEvent, ModelOption, ReasoningEffort},
 };
@@ -350,7 +350,7 @@ fn options(names: &[String], catalog: &[ModelInfo]) -> Vec<ModelOption> {
                 name: name.clone(),
                 resolved: info.and_then(|m| m.resolved.clone()),
                 efforts: info.map(|m| m.efforts.clone()),
-                driver: dovetail_api::model::DriverKind::Claude,
+                driver: dovetail_api::agents::model::DriverKind::Claude,
             }
         })
         .collect()

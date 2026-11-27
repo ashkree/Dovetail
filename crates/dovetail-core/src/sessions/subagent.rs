@@ -20,10 +20,10 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
-    agent::{Agent, AgentEvent, AgentId, AgentKind, AgentStatus, SubagentProgress},
+use dovetail_api::Event;
+use dovetail_api::activity::ActivityKind;
+use dovetail_api::agents::agent::{
+    Agent, AgentEvent, AgentId, AgentKind, AgentStatus, SubagentProgress,
 };
 use dovetail_driver::{ContentBlock, DriverEvent, Origin, TaskEvent, TaskPhase, ToolResult};
 use serde_json::Value;

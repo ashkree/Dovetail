@@ -16,15 +16,17 @@
 //! The state at quit is kept as it was: statuses are not recomputed while quitting, so a turn
 //! running at quit reads as cut off next time.
 
-use dovetail_api::{
-    Event,
-    activity::ActivityKind,
-    agent::{AgentId, AgentStatus},
-    conversation::EntryKind,
+use dovetail_api::Event;
+use dovetail_api::activity::{
+    ActivityKind,
     inbox::{
         InboxEvent, InboxItem, InboxKind, RELEASE_TAKEOVER_PERMISSION, REMOVE_WORKTREE_PERMISSION,
         START_SLICE_PERMISSION, UPGRADE_READY_PERMISSION,
     },
+};
+use dovetail_api::agents::{
+    agent::{AgentId, AgentStatus},
+    conversation::EntryKind,
 };
 
 use crate::inbox::Waiter;
@@ -305,10 +307,12 @@ impl Core {
         let coord_driver = self
             .agents
             .get(&coordinator)
-            .map_or(dovetail_api::model::DriverKind::Claude, |r| r.agent.driver);
+            .map_or(dovetail_api::agents::model::DriverKind::Claude, |r| {
+                r.agent.driver
+            });
         // One still taken over waits: Needs you says why.
         if has_run
-            && (coord_driver == dovetail_api::model::DriverKind::Agy || self.claude.is_ok())
+            && (coord_driver == dovetail_api::agents::model::DriverKind::Agy || self.claude.is_ok())
             && !self.locked(&coordinator)
         {
             self.start_coordinator(last_used).await;
@@ -328,7 +332,7 @@ impl Core {
             }
         };
         let moved = |r: &crate::db::AgentRow| {
-            r.agent.driver == dovetail_api::model::DriverKind::Claude
+            r.agent.driver == dovetail_api::agents::model::DriverKind::Claude
                 && r.agent.kind.is_session()
                 && r.transcript_path.is_some()
                 && !crate::profile::same_dir(

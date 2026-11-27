@@ -3,8 +3,8 @@
 
 use std::fmt::Write as _;
 
-use dovetail_api::{
-    agent::Agent,
+use dovetail_api::agents::agent::Agent;
+use dovetail_api::tracking::{
     decision::{Decision, DecisionAuthor},
     task::{Bucket, PLevel, Task, TaskId, TaskStatus},
 };
@@ -209,10 +209,8 @@ pub(crate) fn task_detail(task: &Task, slices: &[&Agent], decisions: &[Decision]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::{
-        agent::AgentId,
-        decision::{Alternative, DecisionId},
-    };
+    use dovetail_api::agents::agent::AgentId;
+    use dovetail_api::tracking::decision::{Alternative, DecisionId};
 
     fn task(id: i64, bucket: Option<Bucket>, p: Option<PLevel>, status: TaskStatus) -> Task {
         Task {

@@ -16,7 +16,7 @@ mod claude;
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::model::DriverKind;
+use dovetail_api::agents::model::DriverKind;
 use dovetail_driver::{PermissionMode as CliMode, SessionSpec};
 use dovetail_tools::{Role, Suite, env, tools_in};
 
@@ -120,7 +120,7 @@ pub struct Launch {
     /// `--model` / model family.
     pub model: Option<String>,
     /// `--effort` / thought level.
-    pub effort: Option<dovetail_api::model::ReasoningEffort>,
+    pub effort: Option<dovetail_api::agents::model::ReasoningEffort>,
     /// Extra environment (a slice's recipe `[env]`).
     pub env: Vec<(String, String)>,
     /// `CLAUDE_CONFIG_DIR`: the project's profile folder; `None` to inherit Dovetail's own.
@@ -394,7 +394,7 @@ mod tests {
             socket: paths.socket("proj"),
             exe: PathBuf::from("/usr/bin/dovetail"),
             model: Some("gemini-3.8-flash".into()),
-            effort: Some(dovetail_api::model::ReasoningEffort::Low),
+            effort: Some(dovetail_api::agents::model::ReasoningEffort::Low),
             env: vec![("CUSTOM".into(), "1".into())],
             claude_config_dir: Some(dir.path().join("claude-profile")),
         };

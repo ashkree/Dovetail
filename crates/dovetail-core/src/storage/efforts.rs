@@ -101,7 +101,7 @@ fn effort_exists(conn: &Connection, id: EffortId) -> Result<bool, DbError> {
 }
 
 /// Refuses a name that is empty or that another effort has. `name` is already in its stored
-/// form (`dovetail_api::effort::effort_name`).
+/// form (`dovetail_api::tracking::effort::effort_name`).
 fn check_name(conn: &Connection, name: &str, own: Option<EffortId>) -> Result<(), DbError> {
     if name.is_empty() {
         return Err(DbError::Refused(

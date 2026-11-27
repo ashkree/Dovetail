@@ -7,7 +7,7 @@
 //! model for the app's run so later sessions of that model know it from their first call; before
 //! any result, from [`table_window`]. Subagents run their own context and get no fill.
 
-use dovetail_api::agent::AgentId;
+use dovetail_api::agents::agent::AgentId;
 use dovetail_driver::{TokenUsage, TurnResult};
 
 use crate::service::Core;
@@ -144,7 +144,8 @@ mod tests {
             .collect()
     }
 
-    const PLAIN_TURN: &str = include_str!("../../dovetail-driver/tests/fixtures/plain_turn.ndjson");
+    const PLAIN_TURN: &str =
+        include_str!("../../../dovetail-driver/tests/fixtures/plain_turn.ndjson");
 
     #[test]
     fn the_fill_rounds_to_the_nearest_point_and_caps_at_100() {

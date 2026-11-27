@@ -5,7 +5,7 @@
 //! but the session is only done when no background tasks remain: never on the first `result`
 //! alone (stream rule 2).
 
-use dovetail_api::{
+use dovetail_api::agents::{
     agent::{AgentStatus, PermissionMode},
     conversation::EntryId,
 };

@@ -65,23 +65,22 @@ Each step lands as one or more clean commits on `restructure` with `CARGO_BUILD_
 - [x] Switch `dovetail_api` imports inside all moved files to full domain paths (`dovetail_api::app::...`, `dovetail_api::code::worktree::...`, `dovetail_api::agents::conversation::...`, etc.).
 
 ### Step 3 — Move `storage/` (+ atomic migration path update)
-- [ ] Move `src/db.rs` and `src/db/` into `src/storage/` (`src/storage/mod.rs`, `src/storage/migrations/`, `src/storage/counts.rs`, `src/storage/registry.rs`, plus the domain SQL files temporarily under `src/storage/` until their owning domains move in Steps 4–6).
-- [ ] Atomically update all migration path references in the same commit:
-  - `include_str!` macro in `src/storage/mod.rs` (`storage/migrations/...`),
+- [x] Move `src/db.rs` and `src/db/` into `src/storage/` (`src/storage/mod.rs`, `src/storage/migrations/`, `src/storage/counts.rs`, `src/storage/registry.rs`, plus the domain SQL files temporarily under `src/storage/` until their owning domains move in Steps 4–6).
+- [x] Atomically update all migration path references in the same commit:
+  - `include_str!` macro in `src/storage/mod.rs` (`migrations/...`),
   - `migrations_are_contiguous_and_listed_in_order` in `src/storage/mod.rs` (`src/storage/migrations`),
-  - `scripts/check.sh` (`mig=crates/dovetail-core/src/storage/migrations` and comment).
-- [ ] Keep `pub use storage as db;` temporarily in `src/lib.rs` until Step 7.
+  - `scripts/check.sh` (`mig=crates/dovetail-core/src/storage/migrations`, checking both `storage/migrations` and `db/migrations` on `origin/main`).
+- [x] Keep `pub use storage as db;` temporarily in `src/lib.rs` until Step 7.
 
 ### Step 4 — Move `sessions/` and `mcp/`
-- [ ] `sessions/`: move `drivers.rs`, `session/` (`mod.rs`, `state.rs`, `model.rs`, `subagent.rs`, `launch/`), `restore.rs`, `takeover.rs`, `memory.rs`, `oom.rs`, `context.rs`, and `storage/sessions.rs` into `src/sessions/`. Move `SessionError` from `error.rs` into `sessions/`.
-- [ ] `mcp/`: move `socket.rs` and `tools.rs` (plus `tools/read.rs` shared read helpers) into `src/mcp/`.
-- [ ] Switch `dovetail_api` imports in moved files to full domain paths. Keep temporary `lib.rs` re-exports (`drivers`, `memory`, `session`, `socket`, `takeover`).
+- [x] `sessions/`: move `drivers.rs`, `session/` (`mod.rs`, `state.rs`, `model.rs`, `subagent.rs`, `launch/`), `restore.rs`, `takeover.rs`, `foreground.rs`, `memory.rs`, `oom.rs`, and `context.rs` into `src/sessions/`. Move `SessionError` from `error.rs` into `sessions/error.rs` (`storage/sessions.rs` stays in `storage/` while `storage/canvas.rs` and `storage/efforts.rs` still share its helpers).
+- [x] `mcp/`: move `socket.rs`, `tools.rs`, and `tools/` (`read.rs`, `map.rs`, `research.rs`) into `src/mcp/`.
+- [x] Switch `dovetail_api` imports in moved files to full domain paths. Keep temporary `lib.rs` re-exports (`drivers`, `memory`, `session`, `socket`, `takeover`, etc.).
 
 ### Step 5 — Move `visual/`, `research/`, and `activity/`
-- [ ] `visual/`: move `canvas.rs`, `design.rs`, `preview.rs`, `tools/map.rs`, and SQL (`canvas.rs`, `design.rs`, `maps.rs` from `storage/`) into `src/visual/`.
-- [ ] `research/`: move `research/` (`mod.rs`, `capture.rs`, `files.rs`, `report.rs`), `ask.rs`, `browse.rs`, `docs.rs`, `tools/research.rs`, and `storage/research.rs` into `src/research/`.
+- [ ] `visual/`: move `canvas.rs`, `design.rs`, `preview.rs`, `mcp/tools/map.rs`, and SQL (`canvas.rs`, `design.rs`, `maps.rs` from `storage/`) into `src/visual/`.
+- [ ] `research/`: move `research/` (`mod.rs`, `capture.rs`, `files.rs`, `report.rs`), `ask.rs`, `browse.rs`, `docs.rs`, `mcp/tools/research.rs`, and `storage/research.rs` into `src/research/`.
 - [ ] `activity/`: move `inbox.rs`, `usage.rs`, and extract feed/warning/totals helpers from `service.rs` into `src/activity/`.
-- [ ] Move `foreground.rs` into `src/app/` (where `editor` and terminal hand-over live).
 - [ ] Switch `dovetail_api` imports in moved files to full domain paths.
 
 ### Step 6 — Move `tracking/` and `agents/`
