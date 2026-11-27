@@ -34,32 +34,37 @@ use std::pin::Pin;
 use std::sync::mpsc;
 use std::task::{Context, Poll};
 
-use dovetail_api::map::{Map, MapId, MapSummary, NodeId};
-use dovetail_api::{
-    activity::{ActivityItem, AgentMessage},
+use dovetail_api::activity::{
+    ActivityItem, AgentMessage,
+    inbox::{InboxId, InboxItem},
+};
+use dovetail_api::agents::{
     agent::AgentId,
     conversation::{ConversationEntry, EntryId},
+};
+use dovetail_api::tracking::{
     decision::{Decision, DecisionAuthor, NewDecision},
     effort::{CriterionId, Effort, EffortChange, EffortId, NewEffort, WhereWasI},
-    inbox::{InboxId, InboxItem},
     task::{NewTask, Task, TaskChange, TaskId},
 };
+use dovetail_api::visual::map::{Map, MapId, MapSummary, NodeId};
 use rusqlite::Connection;
 use tokio::sync::oneshot;
 
 use crate::paths::Paths;
 use crate::projects::Project;
 
-/// One migration: its path under `db/migrations/` (`<db>/NNNN_slug.sql`) and its SQL. The path is
-/// kept so `migrations_are_contiguous_and_listed_in_order` can check each list against its directory:
-/// `user_version` counts steps, so a gap or a misordered entry would silently skip a migration.
+/// One migration: its path under `storage/migrations/` (`<db>/NNNN_slug.sql`) and its SQL. The
+/// path is kept so `migrations_are_contiguous_and_listed_in_order` can check each list against its
+/// directory: `user_version` counts steps, so a gap or a misordered entry would silently skip a
+/// migration.
 type Migration = (&'static str, &'static str);
 
 macro_rules! migration {
     ($db:literal, $file:literal) => {
         (
             concat!($db, "/", $file),
-            include_str!(concat!("db/migrations/", $db, "/", $file)),
+            include_str!(concat!("migrations/", $db, "/", $file)),
         )
     };
 }
@@ -283,7 +288,11 @@ impl Db {
     }
 
     /// Removes a repo from project `id`.
-    pub fn remove_repo(&self, id: String, repo: dovetail_api::project::RepoId) -> Pending<Project> {
+    pub fn remove_repo(
+        &self,
+        id: String,
+        repo: dovetail_api::tracking::project::RepoId,
+    ) -> Pending<Project> {
         self.run(move |c, _| registry::remove_repo(&c.registry, &id, repo))
     }
 
@@ -304,7 +313,10 @@ impl Db {
     }
 
     /// Home's counts for project `id`, read from its `state.db` without migrating it.
-    pub fn project_counts(&self, path: PathBuf) -> Pending<dovetail_api::project::ProjectCounts> {
+    pub fn project_counts(
+        &self,
+        path: PathBuf,
+    ) -> Pending<dovetail_api::tracking::project::ProjectCounts> {
         self.run(move |_, _| counts::read(&path))
     }
 
@@ -343,7 +355,7 @@ impl Db {
     /// Records the git common dir of a folder repo that has become a git repo.
     pub fn set_git_dir(
         &self,
-        repo: dovetail_api::project::RepoId,
+        repo: dovetail_api::tracking::project::RepoId,
         git_common_dir: PathBuf,
     ) -> Pending<Project> {
         self.run(move |c, _| registry::set_git_dir(&c.registry, repo, &git_common_dir))
@@ -432,7 +444,7 @@ impl Db {
     }
 
     /// Creates an effort. `new.name` must already be in its stored form
-    /// ([`dovetail_api::effort::effort_name`]); an empty or taken name is refused.
+    /// ([`dovetail_api::tracking::effort::effort_name`]); an empty or taken name is refused.
     pub fn create_effort(&self, new: NewEffort) -> Pending<Effort> {
         self.run(move |c, now| efforts::create_effort(c.state()?, new, now))
     }
@@ -924,7 +936,7 @@ mod tests {
     /// list in this file names exactly those files in that order. Fix a failure by renumbering the files or the `migration!` list.
     #[test]
     fn migrations_are_contiguous_and_listed_in_order() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/db/migrations");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/storage/migrations");
         let lists = [
             ("registry", REGISTRY_MIGRATIONS),
             ("state", STATE_MIGRATIONS),
@@ -938,7 +950,7 @@ mod tests {
         known.sort();
         assert_eq!(
             dirs, known,
-            "a migrations directory has no list in db.rs (or vice versa)"
+            "a migrations directory has no list in storage/mod.rs (or vice versa)"
         );
         for (db, list) in lists {
             let mut files: Vec<String> = std::fs::read_dir(root.join(db))
@@ -967,7 +979,7 @@ mod tests {
             let listed: Vec<&str> = list.iter().map(|(name, _)| *name).collect();
             assert_eq!(
                 listed, expected,
-                "the {db} migration list in db.rs must name exactly the files in db/migrations/{db}, in order"
+                "the {db} migration list in storage/mod.rs must name exactly the files in storage/migrations/{db}, in order"
             );
         }
     }
@@ -983,7 +995,7 @@ mod tests {
 
     #[test]
     fn live_attachments_skip_archived_agents_across_projects() {
-        use dovetail_api::{
+        use dovetail_api::agents::{
             agent::AgentKind,
             conversation::{Attachment, EntryKind, ImageType},
         };
@@ -1045,7 +1057,7 @@ mod tests {
 
     #[test]
     fn agent_messages_and_old_notices_both_load() {
-        use dovetail_api::{
+        use dovetail_api::agents::{
             agent::AgentKind,
             conversation::{EntryKind, agent_message_text},
         };
@@ -1222,7 +1234,7 @@ mod tests {
     /// Migration 0017 on a database from empty: Unsorted is there, and a new task lands in it.
     #[test]
     fn a_new_project_starts_with_the_unsorted_effort() {
-        use dovetail_api::effort::{
+        use dovetail_api::tracking::effort::{
             EffortKind, EffortStatus, UNSORTED_EFFORT, UNSORTED_EFFORT_NAME,
         };
 
@@ -1269,7 +1281,7 @@ mod tests {
             ("b", None)
         );
 
-        agents[0].repo = Some(dovetail_api::project::RepoId(7));
+        agents[0].repo = Some(dovetail_api::tracking::project::RepoId(7));
         db.upsert_agent(agents[0].clone()).wait().unwrap();
         db.enqueue_slice(QueuedSlice {
             id: 0,
@@ -1280,9 +1292,9 @@ mod tests {
             repo: Some("web".into()),
             model_choice: Some(ModelChoice {
                 model: "haiku".into(),
-                effort: Some(dovetail_api::model::ReasoningEffort::Low),
+                effort: Some(dovetail_api::agents::model::ReasoningEffort::Low),
             }),
-            driver: dovetail_api::model::DriverKind::Claude,
+            driver: dovetail_api::agents::model::DriverKind::Claude,
         })
         .wait()
         .unwrap();
@@ -1290,7 +1302,7 @@ mod tests {
         let db = Db::open(&paths, Some("p")).unwrap();
         assert_eq!(
             db.load_agents().wait().unwrap()[0].repo,
-            Some(dovetail_api::project::RepoId(7))
+            Some(dovetail_api::tracking::project::RepoId(7))
         );
         assert_eq!(
             db.load_queue().wait().unwrap()[1].repo.as_deref(),
@@ -1300,7 +1312,7 @@ mod tests {
             db.load_queue().wait().unwrap()[1].model_choice,
             Some(ModelChoice {
                 model: "haiku".into(),
-                effort: Some(dovetail_api::model::ReasoningEffort::Low)
+                effort: Some(dovetail_api::agents::model::ReasoningEffort::Low)
             })
         );
     }
@@ -1332,7 +1344,7 @@ mod tests {
     /// `DriverKind::Claude`, and `DriverKind::Agy` round-trips for both.
     #[test]
     fn agent_and_queue_drivers_migrate_up_from_version_22() {
-        use dovetail_api::{agent::AgentKind, model::DriverKind};
+        use dovetail_api::agents::{agent::AgentKind, model::DriverKind};
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
@@ -1392,7 +1404,8 @@ mod tests {
     /// lines keep no tag, and nothing else about them changes.
     #[test]
     fn efforts_migrate_up_from_version_16_and_existing_tasks_go_to_unsorted() {
-        use dovetail_api::{conversation::EntryKind, effort::UNSORTED_EFFORT, task::TaskStatus};
+        use dovetail_api::agents::conversation::EntryKind;
+        use dovetail_api::tracking::{effort::UNSORTED_EFFORT, task::TaskStatus};
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
@@ -1459,14 +1472,14 @@ mod tests {
     fn new_effort(name: &str) -> NewEffort {
         NewEffort {
             name: name.into(),
-            kind: dovetail_api::effort::EffortKind::Feature,
+            kind: dovetail_api::tracking::effort::EffortKind::Feature,
             question_or_goal: String::new(),
         }
     }
 
     #[test]
     fn effort_names_are_unique_and_unsorted_is_fixed() {
-        use dovetail_api::effort::{EffortStatus, UNSORTED_EFFORT};
+        use dovetail_api::tracking::effort::{EffortStatus, UNSORTED_EFFORT};
 
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
@@ -1504,7 +1517,7 @@ mod tests {
             Err(DbError::Refused(_))
         ));
         assert!(matches!(
-            db.rename_effort(dovetail_api::effort::EffortId(99), "x".into())
+            db.rename_effort(dovetail_api::tracking::effort::EffortId(99), "x".into())
                 .wait(),
             Err(DbError::NotFound(_))
         ));
@@ -1512,7 +1525,7 @@ mod tests {
 
     #[test]
     fn a_criterion_goes_open_claimed_met_and_can_be_sent_back() {
-        use dovetail_api::effort::CriterionState;
+        use dovetail_api::tracking::effort::CriterionState;
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
@@ -1577,7 +1590,7 @@ mod tests {
 
     #[test]
     fn a_task_moves_between_efforts_and_serves_only_its_own_efforts_criteria() {
-        use dovetail_api::effort::{EffortStatus, UNSORTED_EFFORT};
+        use dovetail_api::tracking::effort::{EffortStatus, UNSORTED_EFFORT};
 
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
@@ -1643,7 +1656,7 @@ mod tests {
 
     #[test]
     fn an_entrys_effort_tag_is_stored_and_read_back() {
-        use dovetail_api::{agent::AgentKind, conversation::EntryKind};
+        use dovetail_api::agents::{agent::AgentKind, conversation::EntryKind};
 
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
@@ -1690,7 +1703,7 @@ mod tests {
 
     #[test]
     fn maps_migrate_up_from_the_previous_version_and_keep_versions() {
-        use dovetail_api::map::{MapContent, MapKind, Node, NodeKind};
+        use dovetail_api::visual::map::{MapContent, MapKind, Node, NodeKind};
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
@@ -1826,7 +1839,7 @@ mod tests {
     /// and a folder project each get one repo named after the project, a research project none.
     #[test]
     fn an_existing_registry_migrates_to_repos() {
-        use dovetail_api::project::{ProjectKind, RepoId};
+        use dovetail_api::tracking::project::{ProjectKind, RepoId};
 
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());

@@ -2,8 +2,9 @@
 
 use std::collections::HashSet;
 
-use dovetail_api::map::{Map, MapContent, MapId, MapKind, MapSummary, NodeId};
-use dovetail_api::{agent::AgentId, task::TaskId};
+use dovetail_api::agents::agent::AgentId;
+use dovetail_api::tracking::task::TaskId;
+use dovetail_api::visual::map::{Map, MapContent, MapId, MapKind, MapSummary, NodeId};
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 

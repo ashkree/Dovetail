@@ -3,14 +3,16 @@
 
 use std::path::PathBuf;
 
-use dovetail_api::{
-    activity::{ActivityItem, AgentMessage},
+use dovetail_api::activity::{
+    ActivityItem, AgentMessage,
+    inbox::{InboxId, InboxItem, InboxKind},
+};
+use dovetail_api::agents::{
     agent::{Agent, AgentId, AgentKind, SessionLock, SubagentProgress, WorktreeRef},
     conversation::{Attachment, ConversationEntry, EntryId},
-    inbox::{InboxId, InboxItem, InboxKind},
     model::{DriverKind, ReasoningEffort},
-    task::TaskId,
 };
+use dovetail_api::tracking::task::TaskId;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::DbError;
@@ -43,7 +45,7 @@ pub struct AgentRow {
     pub model_choice: Option<ModelChoice>,
     /// A slice's repo (ADR 0021), by registry id; `None` for other agents and for slices from
     /// before the migration, which work in the project's first repo.
-    pub repo: Option<dovetail_api::project::RepoId>,
+    pub repo: Option<dovetail_api::tracking::project::RepoId>,
 }
 
 /// A model and effort the user picked for a session.
@@ -313,7 +315,7 @@ pub(super) fn load_agents(conn: &mut Connection) -> Result<Vec<AgentRow>, DbErro
             claude_home: claude_home.map(PathBuf::from),
             takeover,
             model_choice,
-            repo: repo.map(dovetail_api::project::RepoId),
+            repo: repo.map(dovetail_api::tracking::project::RepoId),
         });
     }
     Ok(out)
@@ -424,7 +426,7 @@ pub(super) fn load_entries(
             kind: from_text("entry kind", &kind)?,
             text,
             attachments,
-            effort: effort.map(dovetail_api::effort::EffortId),
+            effort: effort.map(dovetail_api::tracking::effort::EffortId),
         });
     }
     let has_more = entries.len() > limit;

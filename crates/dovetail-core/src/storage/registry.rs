@@ -2,7 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use dovetail_api::{project::RepoId, tangent::TANGENTS_PROJECT};
+use dovetail_api::agents::tangent::TANGENTS_PROJECT;
+use dovetail_api::tracking::project::RepoId;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::DbError;

@@ -10,17 +10,17 @@ cargo test
 
 # Also enforced by `cargo test` (CODING_STANDARDS.md "Architecture", schema changes go through
 # migrations): migrations are contiguous and listed in order
-# (dovetail-core `db::tests::migrations_are_contiguous_and_listed_in_order`).
+# (dovetail-core `storage::tests::migrations_are_contiguous_and_listed_in_order`).
 
 # Parallel branches each take "the next" migration number; the second to merge clashes. A migration
 # this branch adds must not reuse a number main already has under another name. Offline, the last
 # fetched origin/main is used.
 git fetch -q origin main 2>/dev/null || true
 if git rev-parse -q --verify origin/main >/dev/null; then
-    mig=crates/dovetail-core/src/db/migrations
+    mig=crates/dovetail-core/src/storage/migrations
     clashes=""
     for db in state registry; do
-        main_files=$(git ls-tree --name-only origin/main -- "$mig/$db/" | xargs -rn1 basename)
+        main_files=$(git ls-tree --name-only origin/main -- "$mig/$db/" "crates/dovetail-core/src/db/migrations/$db/" | xargs -rn1 basename | sort -u)
         for f in "$mig/$db"/*.sql; do
             name=$(basename "$f")
             grep -qxF "$name" <<<"$main_files" && continue

@@ -2,8 +2,9 @@
 //! `docs/research.md` §3). Paths are stored relative to the task's research folder, which the
 //! core resolves (`research::files`).
 
+use dovetail_api::agents::agent::AgentId;
 use dovetail_api::research::{FindingId, SourceId, SourceKind};
-use dovetail_api::{agent::AgentId, task::TaskId};
+use dovetail_api::tracking::task::TaskId;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 

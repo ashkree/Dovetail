@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use dovetail_api::{effort::UNSORTED_EFFORT, project::ProjectCounts};
+use dovetail_api::tracking::{effort::UNSORTED_EFFORT, project::ProjectCounts};
 use rusqlite::{Connection, OpenFlags};
 
 use super::DbError;

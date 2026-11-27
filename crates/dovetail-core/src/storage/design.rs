@@ -2,10 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use dovetail_api::{
-    agent::AgentId,
-    design::{VariantSet, VariantSlot},
-};
+use dovetail_api::agents::agent::AgentId;
+use dovetail_api::visual::design::{VariantSet, VariantSlot};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{Db, DbError, Pending};

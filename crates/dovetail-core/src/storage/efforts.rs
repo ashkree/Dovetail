@@ -1,7 +1,7 @@
 //! Queries on a project's `state.db`: efforts, their acceptance criteria, and which effort and
 //! criterion a task belongs to.
 
-use dovetail_api::{
+use dovetail_api::tracking::{
     effort::{
         Criterion, CriterionId, CriterionState, Effort, EffortChange, EffortId, EffortStatus,
         NewEffort, UNSORTED_EFFORT, WhereWasI,

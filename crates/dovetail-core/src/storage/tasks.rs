@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use dovetail_api::research::{Evidence, FindingId, SourceId};
-use dovetail_api::{
+use dovetail_api::tracking::{
     decision::{Alternative, Decision, DecisionAuthor, DecisionId, NewDecision},
     effort::{CriterionId, EffortId, UNSORTED_EFFORT},
     task::{Bucket, NewTask, PLevel, Task, TaskChange, TaskId, TaskStatus},
@@ -369,7 +369,7 @@ fn author_from_text(text: String) -> DecisionAuthor {
     if text == "user" {
         DecisionAuthor::User
     } else {
-        DecisionAuthor::Agent(dovetail_api::agent::AgentId(text))
+        DecisionAuthor::Agent(dovetail_api::agents::agent::AgentId(text))
     }
 }
 
