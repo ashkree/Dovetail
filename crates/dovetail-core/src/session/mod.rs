@@ -954,6 +954,9 @@ impl Core {
         live.inited = true;
         let setting_up = live.setting_up;
         self.set_model(agent, init.model.as_deref());
+        if driver == DriverKind::Agy {
+            self.refresh_agy_usage();
+        }
         if first {
             // The process runs, so its scope exists.
             self.watch_oom(agent);
@@ -1145,6 +1148,13 @@ impl Core {
 
     fn on_result(&mut self, agent: &AgentId, result: TurnResult) {
         self.set_running_tool(agent, None);
+        let driver = self
+            .agents
+            .get(agent)
+            .map_or(DriverKind::Claude, |r| r.agent.driver);
+        if driver == DriverKind::Agy {
+            self.refresh_agy_usage();
+        }
         let Some(live) = self.live.get_mut(agent) else {
             return;
         };

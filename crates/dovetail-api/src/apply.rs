@@ -1,5 +1,6 @@
 //! The reducer: the only way client state changes.
 
+use crate::driver::DriverKind;
 use crate::model::{
     ACTIVITY_TAIL, CONVERSATION_KEEP, ConversationEntry, ConversationTail, EntryKind, MESSAGE_TAIL,
     Snapshot,
@@ -149,10 +150,14 @@ pub fn apply(state: &mut Snapshot, seq: u64, event: Event) -> ApplyResult {
             }
             upsert(&mut state.projects, project, |p| p.id.clone());
         }
+        Event::UsageLoaded(reports) => {
+            if let Some(agy) = reports.into_iter().find(|r| r.driver == DriverKind::Agy) {
+                state.agy_usage = Some(agy);
+            }
+        }
         // Nothing to store: the UI shows the message as the event passes through.
         Event::CommandFailed { .. }
         | Event::McpReply { .. }
-        | Event::UsageLoaded(_)
         | Event::MapLoaded(_)
         | Event::CardLoaded { .. }
         | Event::ResearchLoaded { .. }

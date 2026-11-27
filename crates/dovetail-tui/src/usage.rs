@@ -7,7 +7,7 @@
 //! profile's. Parts drop as the row narrows: the reset times, then the profile and model, then the
 //! week, then the context fill; the 5-hour figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
 
-use dovetail_api::{ReasoningEffort, UsageLimits, UsageWindow};
+use dovetail_api::{ReasoningEffort, UsageGroup, UsageLimits, UsageStatus, UsageWindow};
 use jiff::{Timestamp, tz::TimeZone};
 use ratatui::text::Span;
 
@@ -68,6 +68,105 @@ pub fn reset_label(resets_at_ms: i64, now_ms: i64, tz: &TimeZone) -> String {
         "%a"
     };
     ts.to_zoned(tz.clone()).strftime(format).to_string()
+}
+
+/// Matches the agent's model to the matching quota group in an agy usage report (task #58).
+///
+/// Falls back to the first group if there is only one group or no model/name match.
+pub fn match_usage_group<'a>(
+    groups: &'a [UsageGroup],
+    model: Option<&str>,
+) -> Option<&'a UsageGroup> {
+    if groups.is_empty() {
+        return None;
+    }
+    if groups.len() == 1 {
+        return Some(&groups[0]);
+    }
+    let Some(raw_model) = model.filter(|m| !m.is_empty()) else {
+        return Some(&groups[0]);
+    };
+
+    // Strip trailing effort suffix if present (e.g. gemini-4-neon-medium -> gemini-4-neon)
+    let clean = ["-low", "-medium", "-high", "-xhigh", "-max"]
+        .into_iter()
+        .find_map(|eff| raw_model.strip_suffix(eff))
+        .unwrap_or(raw_model);
+
+    let clean_lower = clean.to_ascii_lowercase();
+    let clean_spaced = clean_lower.replace(['-', '_'], " ");
+
+    // 1. Direct or spaced match in group.models or group.name
+    if let Some(g) = groups.iter().find(|g| {
+        let m = g.models.to_ascii_lowercase();
+        let n = g.name.to_ascii_lowercase();
+        m.contains(&clean_lower)
+            || m.contains(&clean_spaced)
+            || n.contains(&clean_lower)
+            || n.contains(&clean_spaced)
+    }) {
+        return Some(g);
+    }
+
+    // 2. Distinguishing sub-family or specific model keywords:
+    // e.g. "argon", "neon", "flash", "opus", "sonnet", "haiku", "fable"
+    const SUB_FAMILIES: &[&str] = &["argon", "neon", "flash", "opus", "sonnet", "haiku", "fable"];
+    for &sub in SUB_FAMILIES {
+        if clean_lower.contains(sub)
+            && let Some(g) = groups.iter().find(|g| {
+                g.name.to_ascii_lowercase().contains(sub)
+                    || g.models.to_ascii_lowercase().contains(sub)
+            })
+        {
+            return Some(g);
+        }
+    }
+
+    // 3. Top-level family keywords: "gemini", "claude", "gpt"
+    const FAMILIES: &[&str] = &["gemini", "claude", "gpt"];
+    for &fam in FAMILIES {
+        if clean_lower.contains(fam)
+            && let Some(g) = groups.iter().find(|g| {
+                g.name.to_ascii_lowercase().contains(fam)
+                    || g.models.to_ascii_lowercase().contains(fam)
+            })
+        {
+            return Some(g);
+        }
+    }
+
+    // Fallback: first group
+    Some(&groups[0])
+}
+
+/// Converts an agy `UsageGroup` into `UsageLimits` for status bar rendering and reset timers (task #58).
+pub fn group_to_usage_limits(group: &UsageGroup) -> UsageLimits {
+    let five_hour = group
+        .windows
+        .iter()
+        .find(|w| {
+            w.name.starts_with('5')
+                || w.name.eq_ignore_ascii_case("5-hour")
+                || w.name.eq_ignore_ascii_case("5h")
+        })
+        .map(|w| UsageWindow {
+            utilization: w.used_fraction,
+            resets_at_ms: w.resets_at_ms,
+            status: UsageStatus::Allowed,
+        });
+    let seven_day = group
+        .windows
+        .iter()
+        .find(|w| w.name.to_ascii_lowercase().starts_with("week"))
+        .map(|w| UsageWindow {
+            utilization: w.used_fraction,
+            resets_at_ms: w.resets_at_ms,
+            status: UsageStatus::Allowed,
+        });
+    UsageLimits {
+        five_hour,
+        seven_day,
+    }
 }
 
 /// When the indicator next changes on its own, in Unix ms: a reset time passing, or one coming
@@ -428,5 +527,120 @@ mod tests {
         let after_5h = now + 2 * 3_600_000;
         assert_eq!(next_change_ms(&u, after_5h), Some(now + 2 * DAY_MS));
         assert_eq!(next_change_ms(&UsageLimits::default(), now), None);
+    }
+
+    #[test]
+    fn match_usage_group_finds_matching_group_and_handles_edge_cases() {
+        use dovetail_api::LimitWindow;
+
+        let groups = vec![
+            UsageGroup {
+                name: "Gemini Models".into(),
+                models: "Gemini 4 Neon, Gemini 3.8 Flash".into(),
+                windows: vec![LimitWindow {
+                    name: "5-hour".into(),
+                    used_fraction: 0.1,
+                    resets_at_ms: Some(1_000),
+                }],
+            },
+            UsageGroup {
+                name: "Gemini 4 Argon".into(),
+                models: String::new(),
+                windows: vec![LimitWindow {
+                    name: "5-hour".into(),
+                    used_fraction: 0.4,
+                    resets_at_ms: Some(2_000),
+                }],
+            },
+            UsageGroup {
+                name: "Claude Models".into(),
+                models: "Claude Opus, Claude Sonnet".into(),
+                windows: vec![LimitWindow {
+                    name: "Weekly".into(),
+                    used_fraction: 0.7,
+                    resets_at_ms: Some(3_000),
+                }],
+            },
+        ];
+
+        // Empty groups returns None
+        assert!(match_usage_group(&[], Some("gemini-4-neon")).is_none());
+
+        // Single group returns it
+        assert_eq!(
+            match_usage_group(&groups[..1], Some("claude-opus-5-5")),
+            Some(&groups[0])
+        );
+
+        // None or empty model falls back to first group
+        assert_eq!(match_usage_group(&groups, None), Some(&groups[0]));
+        assert_eq!(match_usage_group(&groups, Some("")), Some(&groups[0]));
+
+        // Direct/keyword matching with effort stripped:
+        assert_eq!(
+            match_usage_group(&groups, Some("gemini-4-neon-medium")),
+            Some(&groups[0])
+        );
+        assert_eq!(
+            match_usage_group(&groups, Some("gemini-3.8-flash-low")),
+            Some(&groups[0])
+        );
+        assert_eq!(
+            match_usage_group(&groups, Some("gemini-4-argon")),
+            Some(&groups[1])
+        );
+        assert_eq!(
+            match_usage_group(&groups, Some("gemini-4-argon-high")),
+            Some(&groups[1])
+        );
+        assert_eq!(
+            match_usage_group(&groups, Some("claude-opus-5-5")),
+            Some(&groups[2])
+        );
+
+        // Unknown model falls back to first group
+        assert_eq!(
+            match_usage_group(&groups, Some("unknown-custom-model")),
+            Some(&groups[0])
+        );
+    }
+
+    #[test]
+    fn group_to_usage_limits_converts_windows_correctly() {
+        use dovetail_api::LimitWindow;
+
+        let g = UsageGroup {
+            name: "Gemini".into(),
+            models: "".into(),
+            windows: vec![
+                LimitWindow {
+                    name: "5-hour".into(),
+                    used_fraction: 0.25,
+                    resets_at_ms: Some(1_000_000),
+                },
+                LimitWindow {
+                    name: "Weekly".into(),
+                    used_fraction: 0.50,
+                    resets_at_ms: Some(2_000_000),
+                },
+            ],
+        };
+        let limits = group_to_usage_limits(&g);
+        assert_eq!(
+            limits.five_hour,
+            Some(UsageWindow {
+                utilization: 0.25,
+                resets_at_ms: Some(1_000_000),
+                status: UsageStatus::Allowed,
+            })
+        );
+        assert_eq!(
+            limits.seven_day,
+            Some(UsageWindow {
+                utilization: 0.50,
+                resets_at_ms: Some(2_000_000),
+                status: UsageStatus::Allowed,
+            })
+        );
     }
 }

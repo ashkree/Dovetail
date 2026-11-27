@@ -921,3 +921,75 @@ fn without_agy_there_are_no_agy_models_usage_group_or_refresh() {
     );
     h.quit();
 }
+
+#[test]
+fn agy_session_start_refreshes_agy_usage_on_snapshot_and_throttles_turn() {
+    use dovetail_api::{DriverKind, DriverUsage, LimitWindow, UsageGroup};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    std::fs::create_dir_all(paths.recipe("p").parent().unwrap()).unwrap();
+    std::fs::write(paths.recipe("p"), "profile = \"missing\"\n").unwrap();
+
+    let mut row = session_row(
+        COORDINATOR,
+        AgentKind::Coordinator,
+        None,
+        dir.path(),
+        dovetail_core::session::launch::agy_transcript_path("old-agy-id"),
+        None,
+    );
+    row.agent.driver = DriverKind::Agy;
+    row.session_id = Some("old-agy-id".into());
+    seed(&paths, row);
+
+    let agy_report = DriverUsage {
+        driver: DriverKind::Agy,
+        plan: Some("Pro".into()),
+        groups: vec![UsageGroup {
+            name: "Gemini Models".into(),
+            models: "Gemini 4 Neon".into(),
+            windows: vec![LimitWindow {
+                name: "5-hour".into(),
+                used_fraction: 0.15,
+                resets_at_ms: Some(1_700_000_000_000),
+            }],
+        }],
+        note: None,
+        failed: false,
+    };
+
+    let claude_fake = fixture("plain_turn");
+    let agy_fake = agy_fixture("plain_turn");
+    agy_fake.set_usage(agy_report.clone());
+
+    let mut h = Harness::start_both(
+        claude_fake.clone(),
+        agy_fake.clone(),
+        paths.clone(),
+        None,
+        Config::default(),
+    );
+
+    // Initial session start (on_init) triggers background agy usage refresh
+    h.wait_for("agy usage loaded into snapshot", |s| {
+        s.agy_usage.as_ref() == Some(&agy_report)
+    });
+    assert_eq!(agy_fake.usage_queries().len(), 1);
+
+    // Prompting and running a turn finishes (on_result), but refresh is throttled (within 3 mins)
+    prompt(&h, "Reply with the single word: pong");
+    h.wait_for("turn finished", |s| finished_turns(s) == 1);
+
+    // Ensure no additional usage query was triggered due to throttling
+    h.drain(Duration::from_millis(200));
+    assert_eq!(agy_fake.usage_queries().len(), 1);
+    assert_eq!(h.snap.agy_usage.as_ref(), Some(&agy_report));
+
+    h.quit();
+}

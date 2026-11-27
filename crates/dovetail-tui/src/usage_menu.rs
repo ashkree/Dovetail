@@ -76,6 +76,20 @@ impl UsageMenu {
 
     /// Fills the menu with the core's reports.
     pub fn set_reports(&mut self, reports: Vec<DriverUsage>, theme: &Theme) {
+        let reports = match self.reports.take() {
+            Some(mut existing) => {
+                for r in reports {
+                    if let Some(pos) = existing.iter().position(|e| e.driver == r.driver) {
+                        existing[pos] = r;
+                    } else {
+                        existing.push(r);
+                    }
+                }
+                existing.sort_by_key(|r| r.driver);
+                existing
+            }
+            None => reports,
+        };
         let (items, rows) = build_rows(&reports, theme);
         self.rows = rows;
         self.reports = Some(reports);

@@ -631,4 +631,28 @@ fn usage_loaded_leaves_snapshot_unchanged() {
         ApplyResult::Applied
     );
     assert_eq!(state, expected);
+
+    let agy_report = DriverUsage {
+        driver: DriverKind::Agy,
+        plan: None,
+        groups: vec![UsageGroup {
+            name: "Gemini Models".into(),
+            models: "Gemini 4 Neon".into(),
+            windows: vec![LimitWindow {
+                name: "5-hour".into(),
+                used_fraction: 0.1,
+                resets_at_ms: Some(1_700_000_000_000),
+            }],
+        }],
+        note: None,
+        failed: false,
+    };
+    let mut expected_agy = state.clone();
+    expected_agy.seq = 6;
+    expected_agy.agy_usage = Some(agy_report.clone());
+    assert_eq!(
+        apply(&mut state, 6, Event::UsageLoaded(vec![agy_report])),
+        ApplyResult::Applied
+    );
+    assert_eq!(state, expected_agy);
 }

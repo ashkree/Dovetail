@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::driver::DriverKind;
+use crate::driver::{DriverKind, DriverUsage};
 use crate::effort::{CriterionId, Effort, EffortId};
 use crate::map::MapSummary;
 use crate::research::ResearchSummary;
@@ -118,6 +118,9 @@ pub struct Snapshot {
     /// names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// The latest usage report for the agy driver, if agy is registered and reported (task #58).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agy_usage: Option<DriverUsage>,
     /// Git and PR state of each slice's worktree, as last gathered (empty until the first
     /// refresh).
     #[serde(default)]

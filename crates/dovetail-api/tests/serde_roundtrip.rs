@@ -516,6 +516,21 @@ fn hello_and_a_full_snapshot_roundtrip() {
             }],
         )]),
         profile: Some("maveron".into()),
+        agy_usage: Some(DriverUsage {
+            driver: DriverKind::Agy,
+            plan: None,
+            groups: vec![UsageGroup {
+                name: "Gemini Models".into(),
+                models: "Gemini 4 Neon".into(),
+                windows: vec![LimitWindow {
+                    name: "5-hour".into(),
+                    used_fraction: 0.1,
+                    resets_at_ms: Some(1_700_000_000_000),
+                }],
+            }],
+            note: None,
+            failed: false,
+        }),
         journal: Some(JournalState {
             latest: Some("2026-11-10".into()),
             closing: false,

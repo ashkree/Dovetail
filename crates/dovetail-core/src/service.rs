@@ -424,6 +424,12 @@ pub(crate) struct Core {
     /// Usage limits per Claude home (limits are per account, task #16 and ADR 0009), as last
     /// reported by a session running under it.
     pub(crate) usage: BTreeMap<PathBuf, UsageLimits>,
+    /// Cached latest usage report for the agy driver (task #58).
+    pub(crate) agy_usage: Option<dovetail_api::DriverUsage>,
+    /// Whether an agy usage refresh is currently in flight.
+    pub(crate) agy_usage_in_flight: bool,
+    /// When agy usage last successfully refreshed, for 3-minute throttling.
+    pub(crate) agy_usage_last_refreshed: Option<tokio::time::Instant>,
     /// Context windows by model id, as `result`s report them (decision #22, `context`).
     pub(crate) context_windows: BTreeMap<String, u64>,
     pub(crate) next_entry: u64,
@@ -572,6 +578,9 @@ impl Core {
             warnings: Vec::new(),
             totals: Totals::default(),
             usage: BTreeMap::new(),
+            agy_usage: None,
+            agy_usage_in_flight: false,
+            agy_usage_last_refreshed: None,
             context_windows: BTreeMap::new(),
             next_entry: 1,
             next_inbox: 1,
@@ -733,7 +742,7 @@ impl Core {
                     brief,
                     result,
                 } => self.on_agy_worktree_created(agent, brief, result),
-                Input::UsageLoaded(reports) => self.emit(Event::UsageLoaded(reports)),
+                Input::UsageLoaded(reports) => self.on_usage_loaded(reports),
                 Input::AgyModelsRefreshed(result) => self.on_agy_models_refreshed(result),
                 Input::WorktreeRemoved { agent, result } => {
                     self.on_worktree_removed(agent, result).await;
@@ -981,6 +990,7 @@ impl Core {
             previews: self.previews.list(),
             variants: self.db.load_variants().await?,
             effort_limit: self.config.max_efforts,
+            agy_usage: self.agy_usage.clone(),
             ..Snapshot::default()
         };
         self.totals = totals_of(&snapshot);
