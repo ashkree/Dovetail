@@ -23,8 +23,7 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use super::{
-    Buffer, Effect, ViewCx, clip_spans, footer, pane, scroll_to, spans_width, status_glyph, step,
-    title,
+    Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane, spans_width, status_glyph, title,
 };
 use crate::action::Action;
 use crate::region::BufferKind;
@@ -47,10 +46,7 @@ const DETAIL_ROWS: u16 = 12;
 /// The worktree buffer: the selected slice, kept by id so live updates never move the cursor.
 #[derive(Default)]
 pub struct WorktreesBuffer {
-    selected: Option<AgentId>,
-    /// Where the selection was last, for when its row goes away.
-    last_index: usize,
-    offset: usize,
+    cursor: ListCursor<AgentId>,
     /// Worktrees asked about by the last refresh that have not answered yet.
     refreshing: HashSet<AgentId>,
     /// Slices `X` asked to remove, by id with their name, until the core removes them or asks
@@ -121,20 +117,7 @@ impl WorktreesBuffer {
     }
 
     fn resolve(&self, rows: &[Row]) -> Option<usize> {
-        if rows.is_empty() {
-            return None;
-        }
-        if let Some(id) = &self.selected
-            && let Some(i) = rows.iter().position(|r| &r.agent.id == id)
-        {
-            return Some(i);
-        }
-        Some(self.last_index.min(rows.len() - 1))
-    }
-
-    fn select(&mut self, rows: &[Row], index: usize) {
-        self.selected = Some(rows[index].agent.id.clone());
-        self.last_index = index;
+        self.cursor.resolve(rows, |r, k| &r.agent.id == k)
     }
 }
 
@@ -185,14 +168,15 @@ impl Buffer for WorktreesBuffer {
         let selected = self.resolve(&rows);
         let fit = usize::from(list_height.saturating_sub(1)).max(1);
         if let Some(i) = selected {
-            self.offset = scroll_to(self.offset, i, i, fit);
+            self.cursor.scroll_into_view(i, rows.len(), fit);
+        } else {
+            self.cursor.clamp_offset(rows.len(), fit);
         }
-        self.offset = self.offset.min(rows.len().saturating_sub(fit));
 
         let header: [Vec<Span<'static>>; 7] =
             HEADINGS.map(|h| vec![Span::styled(h.to_owned(), theme.dim())]);
         let mut lines = vec![table_line(header, &widths, width)];
-        for cells in cells.into_iter().skip(self.offset).take(fit) {
+        for cells in cells.into_iter().skip(self.cursor.offset()).take(fit) {
             lines.push(table_line(cells, &widths, width));
         }
         let list_area = Rect {
@@ -202,7 +186,7 @@ impl Buffer for WorktreesBuffer {
         frame.render_widget(Paragraph::new(lines), list_area);
         if focused && let Some(i) = selected {
             // The whole row is highlighted, not just its text.
-            let y = list_area.y + 1 + (i - self.offset) as u16;
+            let y = list_area.y + 1 + (i - self.cursor.offset()) as u16;
             if y < list_area.y + list_area.height {
                 frame.buffer_mut().set_style(
                     Rect {
@@ -238,21 +222,20 @@ impl Buffer for WorktreesBuffer {
 
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
         let rows = rows(cx.snap);
-        let current = self.resolve(&rows);
+        if self.cursor.handle_nav(
+            action,
+            &rows,
+            |r, k| &r.agent.id == k,
+            |r| r.agent.id.clone(),
+        ) {
+            return true;
+        }
         match action {
-            Action::MoveDown | Action::MoveUp => {
-                if let Some(i) = current {
-                    let delta = if action == Action::MoveDown { 1 } else { -1 };
-                    self.select(&rows, step(i, rows.len(), delta));
-                }
-            }
-            Action::GoTop if !rows.is_empty() => self.select(&rows, 0),
-            Action::GoBottom if !rows.is_empty() => self.select(&rows, rows.len() - 1),
             Action::WorktreeOpen
             | Action::WorktreeEdit
             | Action::WorktreeCopyPath
             | Action::WorktreeRemove => {
-                let Some(row) = current.map(|i| &rows[i]) else {
+                let Some(row) = self.resolve(&rows).map(|i| &rows[i]) else {
                     effects.push(Effect::Note("no worktree here".into()));
                     return true;
                 };
@@ -300,9 +283,7 @@ impl Buffer for WorktreesBuffer {
 
     fn goto_row(&mut self, row: usize, cx: &ViewCx, _effects: &mut Vec<Effect>) {
         let rows = rows(cx.snap);
-        if row < rows.len() {
-            self.select(&rows, row);
-        }
+        self.cursor.select_index(&rows, row, |r| r.agent.id.clone());
     }
 }
 

@@ -65,12 +65,7 @@ pub fn next_frame_in(now_ms: i64) -> Duration {
 
 /// `12s`, `1m 05s`, `1h 02m`.
 pub fn elapsed(ms: i64) -> String {
-    let s = ms.max(0) / 1000;
-    match s {
-        0..60 => format!("{s}s"),
-        60..3600 => format!("{}m {:02}s", s / 60, s % 60),
-        _ => format!("{}h {:02}m", s / 3600, s % 3600 / 60),
-    }
+    fmt::duration(u64::try_from(ms.max(0)).unwrap_or(0))
 }
 
 /// The woodworking word for the turn that began with `turn_seed` (an entry id). One word per

@@ -21,8 +21,8 @@ use ratatui::widgets::Paragraph;
 
 use super::task_research::{self, Doc, Item, Loaded};
 use super::{
-    Buffer, Effect, ViewCx, bucket_label, footer, next_bucket, next_p_level, next_status, pane,
-    scroll_to, status_glyph, status_label, status_word, title, tree::p_label,
+    Buffer, Effect, ViewCx, body_height, bucket_label, footer, next_bucket, next_p_level,
+    next_status, pane, scroll_to, status_glyph, status_label, status_word, title, tree::p_label,
 };
 use crate::action::Action;
 use crate::fmt;
@@ -502,7 +502,7 @@ impl Buffer for TaskDetailBuffer {
         let all = built.lines;
         self.items = built.items;
         self.selected = self.selected.filter(|i| *i < self.items.len());
-        let height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
+        let height = body_height(inner);
         self.last_lines = all.len();
         self.last_height = height;
         if std::mem::take(&mut self.follow)
@@ -627,10 +627,7 @@ impl Buffer for TaskDetailBuffer {
 
     fn search_rows(&self, cx: &ViewCx) -> Vec<String> {
         let text = |lines: &[Line<'static>]| -> Vec<String> {
-            lines
-                .iter()
-                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
-                .collect()
+            lines.iter().map(fmt::line_plain_text).collect()
         };
         if let Some(reading) = &self.reading {
             return text(&reading.lines);

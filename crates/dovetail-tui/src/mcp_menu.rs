@@ -264,12 +264,11 @@ impl McpMenu {
                 format!("Log in to {}", p.server),
                 theme.accent(),
             )));
-            for line in fmt::wrap(
+            out.extend(fmt::wrapped_lines(
                 "Finish in the browser, then paste the address it ends at (it will not load) and press Enter. Esc cancels.",
                 width,
-            ) {
-                out.push(Line::from(Span::styled(line, theme.body())));
-            }
+                theme.body(),
+            ));
             out.push(Line::default());
             let cursor_line = out.len();
             let cursor_col =
@@ -299,9 +298,7 @@ impl McpMenu {
             } else {
                 theme.dim()
             };
-            for line in fmt::wrap(&note.text, width) {
-                out.push(Line::from(Span::styled(line, style)));
-            }
+            out.extend(fmt::wrapped_lines(&note.text, width, style));
         }
         (out, None)
     }

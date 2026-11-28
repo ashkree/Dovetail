@@ -34,7 +34,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::reader::ReadTarget;
-use super::{Buffer, Effect, ViewCx, clip_spans, footer, pane, scroll_to, step, title};
+use super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane, title};
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
@@ -140,7 +140,7 @@ struct Source<'a> {
 /// The library buffer.
 #[derive(Default)]
 pub struct LibraryBuffer {
-    selected: Option<LibKey>,
+    cursor: ListCursor<LibKey>,
     /// Rows whose fold differs from their default.
     toggled: HashSet<LibKey>,
     listings: HashMap<TaskId, ResearchListing>,
@@ -148,7 +148,6 @@ pub struct LibraryBuffer {
     tangent_listings: HashMap<TaskId, ResearchListing>,
     docs: Option<Vec<DocEntry>>,
     browsing: Option<Browsing>,
-    offset: usize,
 }
 
 impl LibraryBuffer {
@@ -156,8 +155,8 @@ impl LibraryBuffer {
     /// [`Self::receive_browsed`]; the cursor goes to its row. Folds start over.
     pub fn browse(&mut self, id: ProjectId, name: String) {
         self.toggled.clear();
-        self.selected = Some(LibKey::Project(id.clone()));
-        self.offset = 0;
+        self.cursor.reset();
+        self.cursor.set_key(LibKey::Project(id.clone()));
         self.browsing = Some(Browsing {
             id,
             name,
@@ -169,8 +168,10 @@ impl LibraryBuffer {
     pub fn stop_browsing(&mut self, open: Option<&ProjectId>) {
         if self.browsing.take().is_some() {
             self.toggled.clear();
-            self.offset = 0;
-            self.selected = open.map(|id| LibKey::Project(id.clone()));
+            self.cursor.reset();
+            if let Some(id) = open {
+                self.cursor.set_key(LibKey::Project(id.clone()));
+            }
         }
     }
 
@@ -295,12 +296,12 @@ impl LibraryBuffer {
 
     /// The row under the cursor.
     pub fn selected(&self) -> Option<&LibKey> {
-        self.selected.as_ref()
+        self.cursor.key()
     }
 
     /// The research task of the row under the cursor, if it belongs to one.
     pub fn selected_task(&self) -> Option<TaskId> {
-        match self.selected.as_ref()? {
+        match self.cursor.key()? {
             LibKey::Task(t)
             | LibKey::Report(t)
             | LibKey::Round(t, _)
@@ -316,7 +317,7 @@ impl LibraryBuffer {
 
     /// Puts the cursor on a row (opening its parents is the caller's business).
     pub fn select(&mut self, key: LibKey) {
-        self.selected = Some(key);
+        self.cursor.set_key(key);
     }
 
     fn is_open(&self, key: &LibKey) -> bool {
@@ -729,10 +730,7 @@ impl LibraryBuffer {
     }
 
     fn index(&self, rows: &[Row]) -> usize {
-        self.selected
-            .as_ref()
-            .and_then(|k| rows.iter().position(|r| &r.key == k))
-            .unwrap_or(0)
+        self.cursor.resolve(rows, |r, k| &r.key == k).unwrap_or(0)
     }
 
     /// What `Enter` on `key` opens, with its pane title. A browsed project's document is
@@ -884,14 +882,19 @@ impl Buffer for LibraryBuffer {
         };
         let inner = pane(frame, area, title(&heading, focused, theme), focused, theme);
         let rows = self.rows(cx.snap, theme);
-        let at = self.index(&rows);
-        if self.selected.is_none() {
-            self.selected = rows.first().map(|r| r.key.clone());
-        }
+        let at = self
+            .cursor
+            .sync(&rows, |r, k| &r.key == k, |r| r.key.clone())
+            .unwrap_or(0);
         let height = usize::from(inner.height.saturating_sub(1)).max(1);
-        self.offset = scroll_to(self.offset.min(rows.len()), at, at, height);
+        self.cursor.scroll_into_view(at, rows.len(), height);
         let width = usize::from(inner.width);
-        for (n, row) in rows.iter().enumerate().skip(self.offset).take(height) {
+        for (n, row) in rows
+            .iter()
+            .enumerate()
+            .skip(self.cursor.offset())
+            .take(height)
+        {
             let mut spans = vec![Span::raw("  ".repeat(row.depth))];
             spans.push(match row.fold {
                 Some(true) => Span::styled("▾ ", theme.dim()),
@@ -904,7 +907,7 @@ impl Buffer for LibraryBuffer {
                 line = line.style(theme.selected());
             }
             let rect = Rect {
-                y: inner.y + (n - self.offset) as u16,
+                y: inner.y + (n - self.cursor.offset()) as u16,
                 height: 1,
                 ..inner
             };
@@ -923,19 +926,22 @@ impl Buffer for LibraryBuffer {
 
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
         let rows = self.rows(cx.snap, cx.theme);
+        if self
+            .cursor
+            .handle_nav(action, &rows, |r, k| &r.key == k, |r| r.key.clone())
+        {
+            return true;
+        }
         let at = self.index(&rows);
-        let len = rows.len();
-        let go = |delta: isize, this: &mut Self| {
-            let i = step(at, len, delta);
-            this.selected = rows.get(i).map(|r| r.key.clone());
-        };
         match action {
-            Action::MoveDown => go(1, self),
-            Action::MoveUp => go(-1, self),
-            Action::PageDown => go(10, self),
-            Action::PageUp => go(-10, self),
-            Action::GoTop => go(-(len as isize), self),
-            Action::GoBottom => go(len as isize, self),
+            Action::PageDown => {
+                self.cursor
+                    .step(&rows, 10, |r, k| &r.key == k, |r| r.key.clone());
+            }
+            Action::PageUp => {
+                self.cursor
+                    .step(&rows, -10, |r, k| &r.key == k, |r| r.key.clone());
+            }
             Action::LibraryToggleFold => {
                 if let Some(row) = rows.get(at)
                     && row.fold.is_some()
@@ -1014,9 +1020,7 @@ impl Buffer for LibraryBuffer {
 
     fn goto_row(&mut self, row: usize, cx: &ViewCx, _effects: &mut Vec<Effect>) {
         let rows = self.rows(cx.snap, cx.theme);
-        if let Some(r) = rows.get(row) {
-            self.selected = Some(r.key.clone());
-        }
+        self.cursor.select_index(&rows, row, |r| r.key.clone());
     }
 }
 

@@ -7,7 +7,7 @@ use ratatui::layout::Rect;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
-use super::{Buffer, Effect, ViewCx, footer, pane, scroll_to, spread, step, title};
+use super::{Buffer, Effect, ListCursor, ViewCx, body_height, footer, pane, spread, title};
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
@@ -37,27 +37,16 @@ struct FeedView<'a> {
 /// Selection and scroll shared by both feeds.
 #[derive(Default)]
 struct Feed {
-    selected: Option<u64>,
-    last_index: usize,
-    offset: usize,
+    cursor: ListCursor<u64>,
 }
 
 impl Feed {
     fn resolve(&self, rows: &[Row]) -> Option<usize> {
-        if rows.is_empty() {
-            return None;
-        }
-        if let Some(id) = self.selected
-            && let Some(i) = rows.iter().position(|r| r.id == id)
-        {
-            return Some(i);
-        }
-        Some(self.last_index.min(rows.len() - 1))
+        self.cursor.resolve(rows, |r, k| r.id == *k)
     }
 
     fn select(&mut self, rows: &[Row], index: usize) {
-        self.selected = Some(rows[index].id);
-        self.last_index = index;
+        self.cursor.select_index(rows, index, |r| r.id);
     }
 
     fn render(
@@ -82,20 +71,18 @@ impl Feed {
             );
             return;
         }
-        let selected = self.resolve(rows);
+        let selected = self.cursor.sync(rows, |r, k| r.id == *k, |r| r.id);
+        let height = body_height(inner);
         if let Some(i) = selected {
-            self.select(rows, i);
+            self.cursor.scroll_into_view(i, rows.len(), height);
+        } else {
+            self.cursor.clamp_offset(rows.len(), height);
         }
-        let height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
-        if let Some(i) = selected {
-            self.offset = scroll_to(self.offset, i, i, height);
-        }
-        self.offset = self.offset.min(rows.len().saturating_sub(height));
         let width = usize::from(inner.width);
         for (n, (i, row)) in rows
             .iter()
             .enumerate()
-            .skip(self.offset)
+            .skip(self.cursor.offset())
             .take(height)
             .enumerate()
         {
@@ -125,21 +112,17 @@ impl Feed {
     }
 
     fn on_action(&mut self, action: Action, rows: &[Row], effects: &mut Vec<Effect>) -> bool {
-        let current = self.resolve(rows);
+        if self
+            .cursor
+            .handle_nav(action, rows, |r, k| r.id == *k, |r| r.id)
+        {
+            return true;
+        }
         match action {
-            Action::MoveDown | Action::MoveUp => {
-                if let Some(i) = current {
-                    let delta = if action == Action::MoveDown { 1 } else { -1 };
-                    self.select(rows, step(i, rows.len(), delta));
-                }
-            }
-            Action::GoTop if !rows.is_empty() => self.select(rows, 0),
-            Action::GoBottom if !rows.is_empty() => self.select(rows, rows.len() - 1),
-            Action::FeedOpen => match current.and_then(|i| rows[i].agent.clone()) {
+            Action::FeedOpen => match self.resolve(rows).and_then(|i| rows[i].agent.clone()) {
                 Some(agent) => effects.push(Effect::OpenAgent(agent)),
                 None => effects.push(Effect::Note("no agent on this row".into())),
             },
-            Action::GoTop | Action::GoBottom => {}
             _ => return false,
         }
         true

@@ -453,9 +453,7 @@ fn agent_preview(
         }
         if let Some(summary) = &progress.summary {
             out.push(Line::default());
-            for line in fmt::wrap(summary, width) {
-                out.push(Line::from(Span::styled(line, theme.body())));
-            }
+            out.extend(fmt::wrapped_lines(summary, width, theme.body()));
         }
         return out;
     }
@@ -500,9 +498,7 @@ fn command_preview(
         )));
     }
     out.push(Line::default());
-    for line in fmt::wrap(&entry.description, width) {
-        out.push(Line::from(Span::styled(line, theme.body())));
-    }
+    out.extend(fmt::wrapped_lines(&entry.description, width, theme.body()));
     Some(out)
 }
 
@@ -593,9 +589,7 @@ pub fn browse_preview(
         Line::from(Span::styled(p.name.clone(), theme.accent())),
         Line::default(),
     ];
-    for line in fmt::wrap(text, width) {
-        out.push(Line::from(Span::styled(line, theme.body())));
-    }
+    out.extend(fmt::wrapped_lines(text, width, theme.body()));
     ("Browse", out)
 }
 
@@ -659,11 +653,7 @@ pub fn profile_preview(
             recipe.display()
         ),
     };
-    let mut out = Vec::new();
-    for line in fmt::wrap(&what, width) {
-        out.push(Line::from(Span::styled(line, theme.body())));
-    }
-    out
+    fmt::wrapped_lines(&what, width, theme.body())
 }
 
 fn project_preview(p: &ProjectSummary, width: usize, theme: &Theme) -> Vec<Line<'static>> {
@@ -682,9 +672,7 @@ fn project_preview(p: &ProjectSummary, width: usize, theme: &Theme) -> Vec<Line<
         what,
         "Enter opens it: this project's sessions stop and resume when you come back.".into(),
     ] {
-        for line in fmt::wrap(&text, width) {
-            out.push(Line::from(Span::styled(line, theme.body())));
-        }
+        out.extend(fmt::wrapped_lines(&text, width, theme.body()));
         out.push(Line::default());
     }
     out
@@ -725,9 +713,7 @@ fn inbox_preview(
         Line::from(Span::styled(head, theme.accent())),
         Line::default(),
     ];
-    for line in fmt::wrap(&body, width) {
-        out.push(Line::from(Span::styled(line, theme.body())));
-    }
+    out.extend(fmt::wrapped_lines(&body, width, theme.body()));
     out
 }
 

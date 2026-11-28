@@ -25,7 +25,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::map_canvas::Canvas;
-use super::{Buffer, Effect, ViewCx, footer, pane, scroll_to, step, title};
+use super::{Buffer, Effect, ListCursor, ViewCx, footer, pane, title};
 use crate::action::Action;
 use crate::canvas::kitty::Scene;
 use crate::canvas::view::CellPx;
@@ -50,11 +50,8 @@ pub struct MapOutlineBuffer {
     map: Option<Arc<Map>>,
     /// A map asked for with [`MapCommand::Load`] that has not arrived.
     loading: Option<MapId>,
-    /// The selected node, kept by id so a redrawn version never moves the cursor.
-    selected: Option<NodeId>,
-    /// Where the selection was last, for when its node goes away.
-    last_index: usize,
-    offset: usize,
+    /// The selected node and viewport scroll, kept by id so a redrawn version never moves the cursor.
+    cursor: ListCursor<NodeId>,
     /// Groups folded shut.
     folded: HashSet<NodeId>,
     /// Index of the flow shown below the list.
@@ -96,7 +93,7 @@ impl MapOutlineBuffer {
 
     /// The selected node.
     pub fn selected_node(&self) -> Option<&NodeId> {
-        self.selected.as_ref()
+        self.cursor.key()
     }
 
     /// The open map.
@@ -132,7 +129,7 @@ impl MapOutlineBuffer {
     /// What kitty should show after the last frame, or `None` (nothing to show, or the canvas
     /// was not drawn).
     pub fn scene(&self, ring: [u8; 3]) -> Option<Scene> {
-        let selected = self.selected.as_ref().map(|id| (id, self.flow_step));
+        let selected = self.cursor.key().map(|id| (id, self.flow_step));
         self.canvas.scene(selected, ring)
     }
 
@@ -207,9 +204,7 @@ impl MapOutlineBuffer {
         if self.map_id() != Some(&map.id) {
             self.canvas.reset();
             self.flow_step = None;
-            self.selected = None;
-            self.last_index = 0;
-            self.offset = 0;
+            self.cursor.reset();
             self.folded.clear();
             self.flow = 0;
         }
@@ -218,20 +213,11 @@ impl MapOutlineBuffer {
     }
 
     fn resolve(&self, rows: &[Row]) -> Option<usize> {
-        if rows.is_empty() {
-            return None;
-        }
-        if let Some(id) = &self.selected
-            && let Some(i) = rows.iter().position(|r| &r.node.id == id)
-        {
-            return Some(i);
-        }
-        Some(self.last_index.min(rows.len() - 1))
+        self.cursor.resolve(rows, |r, k| &r.node.id == k)
     }
 
     fn select(&mut self, rows: &[Row], index: usize) {
-        self.selected = Some(rows[index].node.id.clone());
-        self.last_index = index;
+        self.cursor.select_index(rows, index, |r| r.node.id.clone());
     }
 
     /// Selects a node by id, opening the groups that hide it.
@@ -292,12 +278,13 @@ impl MapOutlineBuffer {
             .min(usable * 3 / 5);
         let list_height = (usable - tail_height).max(1);
         if let Some(i) = selected {
-            self.offset = scroll_to(self.offset, i, i, list_height);
+            self.cursor.scroll_into_view(i, rows.len(), list_height);
+        } else {
+            self.cursor.clamp_offset(rows.len(), list_height);
         }
-        self.offset = self.offset.min(rows.len().saturating_sub(list_height));
         let lines: Vec<Line<'static>> = rows
             .iter()
-            .skip(self.offset)
+            .skip(self.cursor.offset())
             .take(list_height)
             .map(|r| row_line(r, theme, width))
             .collect();
@@ -307,7 +294,7 @@ impl MapOutlineBuffer {
         };
         frame.render_widget(Paragraph::new(lines), list_area);
         if focused && let Some(i) = selected {
-            let y = list_area.y + (i - self.offset) as u16;
+            let y = list_area.y + (i - self.cursor.offset()) as u16;
             if y < list_area.y + list_area.height {
                 frame.buffer_mut().set_style(
                     Rect {
@@ -334,7 +321,7 @@ impl MapOutlineBuffer {
 
     /// The selected node's box on the canvas.
     fn selected_box(&self) -> Option<crate::canvas::Placed> {
-        let id = self.selected.as_ref()?;
+        let id = self.cursor.key()?;
         self.canvas.picture()?.box_of(id, self.flow_step).cloned()
     }
 
@@ -350,9 +337,15 @@ impl MapOutlineBuffer {
     fn select_toward(&mut self, content: &MapContent, dir: Direction, effects: &mut Vec<Effect>) {
         if self.canvas.picture().is_none() {
             let rows = rows(content, &self.folded);
-            match (dir, self.resolve(&rows)) {
-                (Direction::Down, Some(i)) => self.select(&rows, step(i, rows.len(), 1)),
-                (Direction::Up, Some(i)) => self.select(&rows, step(i, rows.len(), -1)),
+            match dir {
+                Direction::Down => {
+                    self.cursor
+                        .step(&rows, 1, |r, k| &r.node.id == k, |r| r.node.id.clone());
+                }
+                Direction::Up => {
+                    self.cursor
+                        .step(&rows, -1, |r, k| &r.node.id == k, |r| r.node.id.clone());
+                }
                 _ => effects.push(Effect::Note(
                     "h and l move on the map picture, which this terminal cannot show".into(),
                 )),
@@ -373,7 +366,7 @@ impl MapOutlineBuffer {
 
     /// MAP mode `Tab`/`Shift-Tab`: along the selected node's first connection out (or in).
     fn follow(&mut self, content: &MapContent, forward: bool, effects: &mut Vec<Effect>) {
-        let Some(at) = self.selected.clone() else {
+        let Some(at) = self.cursor.key().cloned() else {
             effects.push(Effect::Note("select a node first (hjkl)".into()));
             return;
         };
@@ -404,7 +397,7 @@ impl MapOutlineBuffer {
     /// MAP mode `Enter`: zoom into the selected group. Anything else has nothing inside it to
     /// show; its file, if it has one, goes to the status bar.
     fn drill_in(&mut self, content: &MapContent, effects: &mut Vec<Effect>) {
-        let Some(id) = self.selected.clone() else {
+        let Some(id) = self.cursor.key().cloned() else {
             effects.push(Effect::Note("select a node first (hjkl)".into()));
             return;
         };
@@ -869,23 +862,15 @@ impl Buffer for MapOutlineBuffer {
         };
         let content = &map.content;
         let rows = rows(content, &self.folded);
+        if self
+            .cursor
+            .handle_nav(action, &rows, |r, k| &r.node.id == k, |r| r.node.id.clone())
+        {
+            self.flow_step = None;
+            return true;
+        }
         let current = self.resolve(&rows);
         match action {
-            Action::MoveDown | Action::MoveUp => {
-                if let Some(i) = current {
-                    let delta = if action == Action::MoveDown { 1 } else { -1 };
-                    self.select(&rows, step(i, rows.len(), delta));
-                    self.flow_step = None;
-                }
-            }
-            Action::GoTop if !rows.is_empty() => {
-                self.select(&rows, 0);
-                self.flow_step = None;
-            }
-            Action::GoBottom if !rows.is_empty() => {
-                self.select(&rows, rows.len() - 1);
-                self.flow_step = None;
-            }
             Action::MapSelectLeft => self.select_toward(content, Direction::Left, effects),
             Action::MapSelectDown => self.select_toward(content, Direction::Down, effects),
             Action::MapSelectUp => self.select_toward(content, Direction::Up, effects),

@@ -116,6 +116,12 @@ impl App {
         self.overlay_chat.take()
     }
 
+    /// Closes the overlay and hands typing back to the chat bar it was opened from, if unchanged.
+    fn close_overlay_restoring_chat(&mut self) {
+        let from = self.close_overlay();
+        self.restore_chat(from);
+    }
+
     /// Hands typing back to the chat bar an overlay was opened from, if it is still the one
     /// focused and open (choosing an agent or task may have moved focus elsewhere).
     fn restore_chat(&mut self, from: Option<ChatMark>) {
@@ -234,10 +240,7 @@ impl App {
                     }));
                 }
                 Step::Open(url) => self.open_external(url),
-                Step::Close => {
-                    let from = self.close_overlay();
-                    self.restore_chat(from);
-                }
+                Step::Close => self.close_overlay_restoring_chat(),
             }
         }
     }
@@ -340,8 +343,7 @@ impl App {
             Overlay::Picker(mut picker, purpose) => match picker.key(event) {
                 PickerOutcome::Pending => self.overlay = Some(Overlay::Picker(picker, purpose)),
                 PickerOutcome::Closed => {
-                    let from = self.close_overlay();
-                    self.restore_chat(from);
+                    self.close_overlay_restoring_chat();
                     if let Purpose::Profile { path, .. } = purpose {
                         self.note = Some(no_profile_note(&path));
                     }
@@ -409,24 +411,17 @@ impl App {
                     self.outbox.push(Command::Status(StatusCommand::LoadUsage));
                     self.overlay = Some(Overlay::Usage(menu));
                 }
-                UsageStep::Close => {
-                    let from = self.close_overlay();
-                    self.restore_chat(from);
-                }
+                UsageStep::Close => self.close_overlay_restoring_chat(),
             },
             Overlay::Model(mut picker) => match picker.key(event) {
                 ModelOutcome::Pending => self.overlay = Some(Overlay::Model(picker)),
-                ModelOutcome::Cancel => {
-                    let from = self.close_overlay();
-                    self.restore_chat(from);
-                }
+                ModelOutcome::Cancel => self.close_overlay_restoring_chat(),
                 ModelOutcome::SetModel {
                     agent,
                     model,
                     effort,
                 } => {
-                    let from = self.close_overlay();
-                    self.restore_chat(from);
+                    self.close_overlay_restoring_chat();
                     let level =
                         effort.map_or(String::new(), |e| format!(" at {} effort", e.as_str()));
                     self.note = Some(format!("switching to {model}{level}…"));
@@ -454,13 +449,9 @@ impl App {
                         .chord(Mode::Normal, Scope::Confirm, Key::from_event(event));
                 match action.map_or(ConfirmOutcome::Pending, |a| confirm.on_action(a)) {
                     ConfirmOutcome::Pending => self.overlay = Some(Overlay::Confirm(confirm)),
-                    ConfirmOutcome::Cancel => {
-                        let from = self.close_overlay();
-                        self.restore_chat(from);
-                    }
+                    ConfirmOutcome::Cancel => self.close_overlay_restoring_chat(),
                     ConfirmOutcome::Confirmed(cmd) => {
-                        let from = self.close_overlay();
-                        self.restore_chat(from);
+                        self.close_overlay_restoring_chat();
                         self.note = Some(format!(
                             "switching coordinator to {}…",
                             confirm.driver().label()
@@ -471,13 +462,9 @@ impl App {
             }
             Overlay::Capture(mut capture) => match capture.key(event) {
                 CaptureOutcome::Pending => self.overlay = Some(Overlay::Capture(capture)),
-                CaptureOutcome::Cancel => {
-                    let from = self.close_overlay();
-                    self.restore_chat(from);
-                }
+                CaptureOutcome::Cancel => self.close_overlay_restoring_chat(),
                 CaptureOutcome::Save { open_detail } => {
-                    let from = self.close_overlay();
-                    self.restore_chat(from);
+                    self.close_overlay_restoring_chat();
                     match capture.build() {
                         Some(task) => {
                             if open_detail {

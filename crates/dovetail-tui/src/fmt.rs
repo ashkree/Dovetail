@@ -1,6 +1,8 @@
 //! Small formatting helpers shared by the buffers.
 
 use jiff::{Timestamp, tz::TimeZone};
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// `HH:MM` in `tz`.
@@ -40,13 +42,13 @@ pub fn tokens(n: u64) -> String {
     }
 }
 
-/// A run time as `45s` or `3m 05s`.
+/// A run time as `45s`, `3m 05s` or `1h 02m`.
 pub fn duration(ms: u64) -> String {
     let s = ms / 1_000;
-    if s >= 60 {
-        format!("{}m {:02}s", s / 60, s % 60)
-    } else {
-        format!("{s}s")
+    match s {
+        0..60 => format!("{s}s"),
+        60..3_600 => format!("{}m {:02}s", s / 60, s % 60),
+        _ => format!("{}h {:02}m", s / 3_600, s % 3_600 / 60),
     }
 }
 
@@ -112,6 +114,19 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
         lines.push(line);
     }
     lines
+}
+
+/// Wraps `text` to `width` cells and styles each resulting line with `style`.
+pub fn wrapped_lines(text: &str, width: usize, style: Style) -> Vec<Line<'static>> {
+    wrap(text, width)
+        .into_iter()
+        .map(|line| Line::from(Span::styled(line, style)))
+        .collect()
+}
+
+/// Concatenates the plain text of every span in `line`.
+pub fn line_plain_text(line: &Line<'_>) -> String {
+    line.spans.iter().map(|s| s.content.as_ref()).collect()
 }
 
 /// Time since `then_ms`, as the switcher shows it: `now`, `2m`, `3h`, `4d`.

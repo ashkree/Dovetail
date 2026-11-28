@@ -155,16 +155,16 @@ impl ModelPicker {
                             .join(", ")
                     ),
                 };
-                for line in fmt::wrap(&efforts_text, width) {
-                    out.push(Line::from(Span::styled(line, theme.body())));
-                }
+                out.extend(fmt::wrapped_lines(&efforts_text, width, theme.body()));
                 if *driver != self.agent_driver {
                     out.push(Line::default());
                     let switch_note =
                         format!("Starts a new coordinator session on {}.", driver.label());
-                    for line in fmt::wrap(&switch_note, width) {
-                        out.push(Line::from(Span::styled(line, theme.fg(theme.needs_you))));
-                    }
+                    out.extend(fmt::wrapped_lines(
+                        &switch_note,
+                        width,
+                        theme.fg(theme.needs_you),
+                    ));
                 }
             }
             _ => {
@@ -173,17 +173,18 @@ impl ModelPicker {
         }
         if self.agent_kind != AgentKind::Coordinator {
             out.push(Line::default());
-            for line in fmt::wrap("Only the coordinator switches driver.", width) {
-                out.push(Line::from(Span::styled(line, theme.dim())));
-            }
+            out.extend(fmt::wrapped_lines(
+                "Only the coordinator switches driver.",
+                width,
+                theme.dim(),
+            ));
         } else if !self.options.iter().any(|o| o.driver == DriverKind::Agy) {
             out.push(Line::default());
-            for line in fmt::wrap(
+            out.extend(fmt::wrapped_lines(
                 "agy is not available here, so there are no agy models.",
                 width,
-            ) {
-                out.push(Line::from(Span::styled(line, theme.dim())));
-            }
+                theme.dim(),
+            ));
         }
         out
     }

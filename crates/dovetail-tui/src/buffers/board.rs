@@ -16,7 +16,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::tree::{agents_waiting, p_label};
-use super::{Buffer, Effect, ViewCx, clip_spans, footer, next_status, pane, scroll_to, title};
+use super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, next_status, pane, title};
 use crate::action::Action;
 use crate::region::BufferKind;
 use crate::theme::Theme;
@@ -33,12 +33,8 @@ const CARD_GAP: u16 = 1;
 #[derive(Default)]
 pub struct BoardBuffer {
     column: usize,
-    /// The card selected in each column, kept by id so a live update never moves the cursor.
-    selected: [Option<TaskId>; 3],
-    /// Where each column's selection was last, for when its card leaves the column.
-    last_index: [usize; 3],
-    /// First card shown in each column.
-    offset: [usize; 3],
+    /// Selection and scroll state per column, kept by task id so live updates never move the cursor.
+    cursors: [ListCursor<TaskId>; 3],
     /// A card sent to another column: the cursor follows it once the core confirms the new
     /// status, and stays put if the change is refused.
     pending: Option<(TaskId, TaskStatus)>,
@@ -58,20 +54,7 @@ impl BoardBuffer {
 
     /// Index of the selected card in `column`, or the nearest one to where it was.
     fn resolve(&self, column: usize, cards: &[&Task]) -> Option<usize> {
-        if cards.is_empty() {
-            return None;
-        }
-        if let Some(id) = self.selected[column]
-            && let Some(i) = cards.iter().position(|t| t.id == id)
-        {
-            return Some(i);
-        }
-        Some(self.last_index[column].min(cards.len() - 1))
-    }
-
-    fn select(&mut self, column: usize, cards: &[&Task], index: usize) {
-        self.selected[column] = Some(cards[index].id);
-        self.last_index[column] = index;
+        self.cursors[column].resolve(cards, |t, k| t.id == *k)
     }
 
     /// Moves the cursor onto a card whose status change the core has confirmed.
@@ -83,7 +66,7 @@ impl BoardBuffer {
             && let Some(column) = COLUMNS.iter().position(|&s| s == status)
         {
             self.column = column;
-            self.selected[column] = Some(id);
+            self.cursors[column].set_key(id);
             self.pending = None;
         }
     }
@@ -217,13 +200,14 @@ impl BoardBuffer {
         let selected = self.resolve(column, &cards);
         let fit = usize::from((body.height + CARD_GAP) / (CARD_HEIGHT + CARD_GAP)).max(1);
         if let Some(i) = selected.filter(|_| column == self.column) {
-            self.offset[column] = scroll_to(self.offset[column], i, i, fit);
+            self.cursors[column].scroll_into_view(i, cards.len(), fit);
+        } else {
+            self.cursors[column].clamp_offset(cards.len(), fit);
         }
-        self.offset[column] = self.offset[column].min(cards.len().saturating_sub(fit));
         for (n, (i, task)) in cards
             .iter()
             .enumerate()
-            .skip(self.offset[column])
+            .skip(self.cursors[column].offset())
             .take(fit)
             .enumerate()
         {
@@ -293,18 +277,11 @@ impl Buffer for BoardBuffer {
         self.pending = None;
         let column = self.column;
         let cards = cards(cx.snap, COLUMNS[column]);
+        if self.cursors[column].handle_nav(action, &cards, |t, k| t.id == *k, |t| t.id) {
+            return true;
+        }
         let current = self.resolve(column, &cards);
         match action {
-            Action::MoveDown | Action::MoveUp => {
-                if let Some(i) = current {
-                    let delta = if action == Action::MoveDown { 1 } else { -1 };
-                    self.select(column, &cards, super::step(i, cards.len(), delta));
-                }
-            }
-            Action::GoTop if !cards.is_empty() => self.select(column, &cards, 0),
-            Action::GoBottom if !cards.is_empty() => {
-                self.select(column, &cards, cards.len() - 1);
-            }
             // `Tab` and `Shift-Tab` wrap around, as a cycle of three columns.
             Action::BoardColumnLeft => self.column = (column + COLUMNS.len() - 1) % COLUMNS.len(),
             Action::BoardColumnRight => self.column = (column + 1) % COLUMNS.len(),

@@ -14,7 +14,9 @@ use ratatui::widgets::Paragraph;
 use super::inbox::{
     answer_action, input_summary, item_label, kind_color, last_message, source_name,
 };
-use super::{Buffer, Effect, ViewCx, footer, pane, tangents_title, title, unfiled_title};
+use super::{
+    Buffer, Effect, ViewCx, body_height, footer, pane, tangents_title, title, unfiled_title,
+};
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
@@ -64,9 +66,7 @@ fn lines(cx: &ViewCx, item: &InboxItem, width: usize) -> Vec<Line<'static>> {
         Line::default(),
     ];
     let plain = |out: &mut Vec<Line<'static>>, text: &str, style| {
-        for line in fmt::wrap(text, width) {
-            out.push(Line::from(Span::styled(line, style)));
-        }
+        out.extend(fmt::wrapped_lines(text, width, style));
         out.push(Line::default());
     };
     match &item.kind {
@@ -227,7 +227,7 @@ impl Buffer for InboxDetailBuffer {
         };
         let column = reading_column::column(inner, reading_column::DEFAULT_WIDTH);
         let all = lines(cx, item, usize::from(column.width));
-        let height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
+        let height = body_height(inner);
         self.last_lines = all.len();
         self.last_height = height;
         self.top = self.top.min(all.len().saturating_sub(height));
@@ -289,7 +289,7 @@ impl Buffer for InboxDetailBuffer {
             .map(|item| {
                 lines(cx, item, usize::from(reading_column::DEFAULT_WIDTH))
                     .iter()
-                    .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+                    .map(fmt::line_plain_text)
                     .collect()
             })
             .unwrap_or_default()

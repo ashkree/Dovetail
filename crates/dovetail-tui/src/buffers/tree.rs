@@ -728,7 +728,7 @@ impl Buffer for TreeBuffer {
             self.selected = Some(rows[i].key.clone());
             self.last_index = i;
         }
-        let body_height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
+        let body_height = super::body_height(inner);
         if let Some(i) = selected {
             self.offset = scroll_to(self.offset, i, i, body_height);
         }

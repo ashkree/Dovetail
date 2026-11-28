@@ -16,7 +16,9 @@ use ratatui::layout::Rect;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
-use super::{Buffer, Effect, InputTarget, ViewCx, footer, pane, scroll_to, spread, step, title};
+use super::{
+    Buffer, Effect, InputTarget, ListCursor, ViewCx, body_height, footer, pane, spread, title,
+};
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
@@ -45,23 +47,13 @@ fn rank(kind: &InboxKind) -> u8 {
 /// The inbox buffer.
 #[derive(Default)]
 pub struct InboxBuffer {
-    selected: Option<InboxId>,
-    last_index: usize,
-    offset: usize,
+    cursor: ListCursor<InboxId>,
 }
 
 impl InboxBuffer {
     /// Index of the selected item, or of the item nearest where it was.
     fn resolve(&self, items: &[&InboxItem]) -> Option<usize> {
-        if items.is_empty() {
-            return None;
-        }
-        if let Some(id) = self.selected
-            && let Some(i) = items.iter().position(|item| item.id == id)
-        {
-            return Some(i);
-        }
-        Some(self.last_index.min(items.len() - 1))
+        self.cursor.resolve(items, |item, k| item.id == *k)
     }
 
     /// The selected item.
@@ -74,13 +66,8 @@ impl InboxBuffer {
     pub fn select_item(&mut self, snap: &Snapshot, id: InboxId) {
         let items = ordered(snap);
         if let Some(i) = items.iter().position(|item| item.id == id) {
-            self.select(&items, i);
+            self.cursor.select_key(id, i);
         }
-    }
-
-    fn select(&mut self, items: &[&InboxItem], index: usize) {
-        self.selected = Some(items[index].id);
-        self.last_index = index;
     }
 }
 
@@ -410,21 +397,19 @@ impl Buffer for InboxBuffer {
         let items = ordered(cx.snap);
         let inner = pane(frame, area, title("inbox", focused, theme), focused, theme);
         let width = usize::from(inner.width);
-        let selected = self.resolve(&items);
-        if let Some(i) = selected {
-            self.select(&items, i);
-        }
+        let selected = self.cursor.sync(&items, |item, k| item.id == *k, |i| i.id);
 
         // One line per item; the full text opens with Enter.
-        let body_height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
+        let body_height = body_height(inner);
         if let Some(i) = selected {
-            self.offset = scroll_to(self.offset, i, i, body_height);
+            self.cursor.scroll_into_view(i, items.len(), body_height);
+        } else {
+            self.cursor.clamp_offset(items.len(), body_height);
         }
-        self.offset = self.offset.min(items.len().saturating_sub(body_height));
         for (n, (i, item)) in items
             .iter()
             .enumerate()
-            .skip(self.offset)
+            .skip(self.cursor.offset())
             .take(body_height)
             .enumerate()
         {
@@ -466,30 +451,13 @@ impl Buffer for InboxBuffer {
 
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
         let items = ordered(cx.snap);
-        let current = self.resolve(&items);
-        match action {
-            Action::MoveDown | Action::MoveUp => {
-                if let Some(i) = current {
-                    let delta = if action == Action::MoveDown { 1 } else { -1 };
-                    self.select(&items, step(i, items.len(), delta));
-                }
-                return true;
-            }
-            Action::GoTop => {
-                if !items.is_empty() {
-                    self.select(&items, 0);
-                }
-                return true;
-            }
-            Action::GoBottom => {
-                if !items.is_empty() {
-                    self.select(&items, items.len() - 1);
-                }
-                return true;
-            }
-            _ => {}
+        if self
+            .cursor
+            .handle_nav(action, &items, |item, k| item.id == *k, |i| i.id)
+        {
+            return true;
         }
-        let Some(item) = current.map(|i| items[i]) else {
+        let Some(item) = self.resolve(&items).map(|i| items[i]) else {
             effects.push(Effect::Note("the inbox is empty".into()));
             return true;
         };
@@ -538,9 +506,7 @@ impl Buffer for InboxBuffer {
 
     fn goto_row(&mut self, row: usize, cx: &ViewCx, _effects: &mut Vec<Effect>) {
         let items = ordered(cx.snap);
-        if row < items.len() {
-            self.select(&items, row);
-        }
+        self.cursor.select_index(&items, row, |i| i.id);
     }
 }
 

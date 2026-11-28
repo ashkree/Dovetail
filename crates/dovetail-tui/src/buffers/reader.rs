@@ -560,7 +560,7 @@ fn figure_size(image: &DocImage, cell: CellPx, width: usize) -> (u16, usize) {
 fn stops_in(lines: &[Line<'static>]) -> Vec<Stop> {
     let mut out = Vec::new();
     for (n, line) in lines.iter().enumerate() {
-        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let text = crate::fmt::line_plain_text(line);
         let chars: Vec<char> = text.chars().collect();
         for (a, b) in citations::markers(&text) {
             // Inside the brackets: ids separated by commas.
@@ -770,7 +770,7 @@ impl Buffer for ReaderBuffer {
         self.layout
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .map(crate::fmt::line_plain_text)
             .collect()
     }
 

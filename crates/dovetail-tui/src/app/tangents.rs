@@ -2,10 +2,7 @@
 //! reading mode, and sending one to a task or a project.
 
 use dovetail_api::{Command, tracking::task::TaskId};
-use dovetail_api::{
-    agents::tangent::TangentCommand,
-    research::{Evidence, ResearchWhat, SourceKind},
-};
+use dovetail_api::{agents::tangent::TangentCommand, research::ResearchWhat};
 
 use super::overlay::{Overlay, Purpose};
 use super::{App, Confirm, Then};
@@ -80,86 +77,6 @@ impl App {
             None,
             title,
         );
-    }
-
-    /// `gd` and `gx` in a tangent's document: its own findings and sources.
-    pub(super) fn follow_tangent_citation(
-        &mut self,
-        tangent: TaskId,
-        evidence: Option<Evidence>,
-        browse: bool,
-        from: ReadTarget,
-    ) {
-        let listing = self.buffers.library.tangent_listing(tangent);
-        let Some(evidence) = evidence else {
-            // `gx` on a web source with no citation in view opens the page itself.
-            if browse
-                && let ReadTarget::Tangent {
-                    what: ResearchWhat::Source(id),
-                    ..
-                } = from
-                && let Some(s) = listing.and_then(|l| l.sources.iter().find(|s| s.id == id))
-                && s.kind == SourceKind::Web
-            {
-                let url = s.locator.clone();
-                self.open_external(url);
-                return;
-            }
-            self.note = Some("no citation in view: ]s selects one".into());
-            return;
-        };
-        match evidence {
-            Evidence::Finding(id) => {
-                if browse {
-                    self.note = Some(format!(
-                        "F{} is a finding: gd reads it; gx opens web sources ([S n])",
-                        id.0
-                    ));
-                    return;
-                }
-                if listing.is_some_and(|l| !l.findings.iter().any(|f| f.id == id)) {
-                    self.note = Some(format!("F{} is not one of this tangent's findings", id.0));
-                    return;
-                }
-                self.read(
-                    ReadTarget::Tangent {
-                        task: tangent,
-                        what: ResearchWhat::Finding(id),
-                    },
-                    None,
-                    format!("tangent F{}", id.0),
-                );
-            }
-            Evidence::Source(id) => {
-                let source = listing.and_then(|l| l.sources.iter().find(|s| s.id == id));
-                if listing.is_some() && source.is_none() {
-                    self.note = Some(format!("S{} is not one of this tangent's sources", id.0));
-                    return;
-                }
-                if browse {
-                    match source {
-                        Some(s) if s.kind == SourceKind::Web => {
-                            let url = s.locator.clone();
-                            self.open_external(url);
-                        }
-                        Some(_) => {
-                            self.note = Some(format!("S{} is not a web page: gd reads it", id.0));
-                        }
-                        None => self.note = Some("the sources are still loading".into()),
-                    }
-                    return;
-                }
-                let locator = source.map_or_else(String::new, |s| format!(" · {}", s.locator));
-                self.read(
-                    ReadTarget::Tangent {
-                        task: tangent,
-                        what: ResearchWhat::Source(id),
-                    },
-                    None,
-                    format!("tangent S{}{locator}", id.0),
-                );
-            }
-        }
     }
 
     /// `f` or `s` in the tangents list: pick the project to file it into, or to start a task

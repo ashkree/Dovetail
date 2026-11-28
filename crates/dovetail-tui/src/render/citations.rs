@@ -67,7 +67,7 @@ pub fn colour(lines: Vec<Line<'static>>, theme: &Theme) -> Vec<Line<'static>> {
 }
 
 fn colour_line(line: Line<'static>, theme: &Theme) -> Line<'static> {
-    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    let text = crate::fmt::line_plain_text(&line);
     let found = markers(&text);
     if found.is_empty() {
         return line;

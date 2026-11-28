@@ -141,9 +141,7 @@ impl UsageMenu {
                     .note
                     .as_deref()
                     .unwrap_or("could not read usage limits");
-                for line in fmt::wrap(reason, width) {
-                    out.push(Line::from(Span::styled(line, theme.fg(theme.error))));
-                }
+                out.extend(fmt::wrapped_lines(reason, width, theme.fg(theme.error)));
             }
             (Some(_), Some((report, RowKind::Empty))) => {
                 out.push(driver_plan_line(report, theme, true));
@@ -151,9 +149,7 @@ impl UsageMenu {
                 out.push(Line::from(Span::styled("no limits reported", theme.dim())));
                 if let Some(note) = &report.note {
                     out.push(Line::default());
-                    for line in fmt::wrap(note, width) {
-                        out.push(Line::from(Span::styled(line, theme.body())));
-                    }
+                    out.extend(fmt::wrapped_lines(note, width, theme.body()));
                 }
             }
             (Some(_), Some((report, RowKind::Group(g_idx)))) => {
@@ -162,9 +158,7 @@ impl UsageMenu {
                 out.push(driver_plan_line(report, theme, false));
                 if !group.models.is_empty() {
                     out.push(Line::default());
-                    for line in fmt::wrap(&group.models, width) {
-                        out.push(Line::from(Span::styled(line, theme.body())));
-                    }
+                    out.extend(fmt::wrapped_lines(&group.models, width, theme.body()));
                 }
                 if !group.windows.is_empty() {
                     out.push(Line::default());
@@ -187,9 +181,7 @@ impl UsageMenu {
                 }
                 if let Some(note) = &report.note {
                     out.push(Line::default());
-                    for line in fmt::wrap(note, width) {
-                        out.push(Line::from(Span::styled(line, theme.dim())));
-                    }
+                    out.extend(fmt::wrapped_lines(note, width, theme.dim()));
                 }
             }
         }

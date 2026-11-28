@@ -14,7 +14,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::{Buffer, Effect, ViewCx, clip_spans, footer, pane, scroll_to, step, title};
+use super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane, title};
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
@@ -67,8 +67,7 @@ pub fn counts(t: &TangentSummary) -> String {
 #[derive(Default)]
 pub struct TangentsBuffer {
     /// The selected tangent, kept by id so a live update never moves the cursor.
-    selected: Option<TaskId>,
-    offset: usize,
+    cursor: ListCursor<TaskId>,
 }
 
 impl TangentsBuffer {
@@ -79,14 +78,7 @@ impl TangentsBuffer {
     }
 
     fn index(&self, list: &[&TangentSummary]) -> Option<usize> {
-        if list.is_empty() {
-            return None;
-        }
-        Some(
-            self.selected
-                .and_then(|id| list.iter().position(|t| t.task.id == id))
-                .unwrap_or(0),
-        )
+        self.cursor.resolve(list, |t, k| t.task.id == *k)
     }
 }
 
@@ -112,24 +104,25 @@ impl Buffer for TangentsBuffer {
         );
         let width = usize::from(inner.width);
         if list.is_empty() {
-            let lines: Vec<Line> = fmt::wrap(EMPTY, width)
-                .into_iter()
-                .map(|l| Line::from(Span::styled(l, theme.dim())))
-                .collect();
+            let lines = fmt::wrapped_lines(EMPTY, width, theme.dim());
             frame.render_widget(Paragraph::new(lines), inner);
             return;
         }
-        let at = self.index(&list);
-        if self.selected.is_none() {
-            self.selected = at.map(|i| list[i].task.id);
-        }
+        let at = self
+            .cursor
+            .sync(&list, |t, k| t.task.id == *k, |t| t.task.id);
         // The rows, then a blank line and the selected tangent's notes, then the footer.
         let height = usize::from(inner.height.saturating_sub(1));
         let rows_height = (height / 2).max(1).min(list.len().max(1));
         if let Some(i) = at {
-            self.offset = scroll_to(self.offset, i, i, rows_height);
+            self.cursor.scroll_into_view(i, list.len(), rows_height);
         }
-        for (n, t) in list.iter().enumerate().skip(self.offset).take(rows_height) {
+        for (n, t) in list
+            .iter()
+            .enumerate()
+            .skip(self.cursor.offset())
+            .take(rows_height)
+        {
             let word = state_word(cx.snap, t);
             let color = match word {
                 "new" => theme.needs_you,
@@ -147,7 +140,7 @@ impl Buffer for TangentsBuffer {
                 line = line.style(theme.selected());
             }
             let rect = Rect {
-                y: inner.y + (n - self.offset) as u16,
+                y: inner.y + (n - self.cursor.offset()) as u16,
                 height: 1,
                 ..inner
             };
@@ -157,11 +150,8 @@ impl Buffer for TangentsBuffer {
             let top = inner.y + rows_height as u16 + 1;
             let room = inner.height.saturating_sub(rows_height as u16 + 2);
             if room > 0 && !t.task.notes.trim().is_empty() {
-                let lines: Vec<Line> = fmt::wrap(t.task.notes.trim(), width)
-                    .into_iter()
-                    .take(usize::from(room))
-                    .map(|l| Line::from(Span::styled(l, theme.dim())))
-                    .collect();
+                let mut lines = fmt::wrapped_lines(t.task.notes.trim(), width, theme.dim());
+                lines.truncate(usize::from(room));
                 let rect = Rect {
                     y: top,
                     height: room,
@@ -185,26 +175,27 @@ impl Buffer for TangentsBuffer {
 
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
         let list = ordered(cx.snap);
-        let at = self.index(&list);
-        let len = list.len();
-        let mut go = |delta: isize| {
-            if let Some(i) = at {
-                self.selected = Some(list[step(i, len, delta)].task.id);
-            }
-        };
+        if self
+            .cursor
+            .handle_nav(action, &list, |t, k| t.task.id == *k, |t| t.task.id)
+        {
+            return true;
+        }
         match action {
-            Action::MoveDown => go(1),
-            Action::MoveUp => go(-1),
-            Action::PageDown => go(10),
-            Action::PageUp => go(-10),
-            Action::GoTop => go(-(len as isize)),
-            Action::GoBottom => go(len as isize),
+            Action::PageDown => {
+                self.cursor
+                    .step(&list, 10, |t, k| t.task.id == *k, |t| t.task.id);
+            }
+            Action::PageUp => {
+                self.cursor
+                    .step(&list, -10, |t, k| t.task.id == *k, |t| t.task.id);
+            }
             Action::TangentOpen
             | Action::TangentFile
             | Action::TangentStart
             | Action::AttachTangent
             | Action::TangentDrop => {
-                let Some(t) = at.map(|i| list[i]) else {
+                let Some(t) = self.index(&list).map(|i| list[i]) else {
                     effects.push(Effect::Note(
                         "no tangents: :tangent <question> asks one".into(),
                     ));
@@ -251,8 +242,7 @@ impl Buffer for TangentsBuffer {
     }
 
     fn goto_row(&mut self, row: usize, cx: &ViewCx, _effects: &mut Vec<Effect>) {
-        if let Some(t) = ordered(cx.snap).get(row) {
-            self.selected = Some(t.task.id);
-        }
+        let list = ordered(cx.snap);
+        self.cursor.select_index(&list, row, |t| t.task.id);
     }
 }

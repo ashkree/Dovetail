@@ -372,37 +372,81 @@ impl App {
         browse: bool,
         from: ReadTarget,
     ) {
-        // A tangent's citations are its own findings and sources (ADR 0017).
-        if let ReadTarget::Tangent { task: tangent, .. } = &from {
-            let tangent = *tangent;
-            return self.follow_tangent_citation(tangent, evidence, browse, from);
+        enum Origin {
+            Research {
+                task: TaskId,
+                elsewhere: Option<ProjectId>,
+            },
+            Tangent(TaskId),
         }
-        let Some(task) = task else {
-            self.note =
-                Some("this document is not research: it cites nothing Dovetail keeps".into());
-            return;
+
+        let (origin, inner_from) = match from {
+            ReadTarget::Tangent { task: tangent, .. } => (Origin::Tangent(tangent), from),
+            from => {
+                let Some(task) = task else {
+                    self.note = Some(
+                        "this document is not research: it cites nothing Dovetail keeps".into(),
+                    );
+                    return;
+                };
+                let elsewhere = from.elsewhere().cloned();
+                let inner = match from {
+                    ReadTarget::Elsewhere(_, inner) => *inner,
+                    other => other,
+                };
+                (Origin::Research { task, elsewhere }, inner)
+            }
         };
-        // A browsed project's document cites that project's findings and sources.
-        let elsewhere = from.elsewhere().cloned();
-        let from = match from {
-            ReadTarget::Elsewhere(_, inner) => *inner,
-            from => from,
+
+        let listing = match &origin {
+            Origin::Tangent(tangent) => self.buffers.library.tangent_listing(*tangent),
+            Origin::Research {
+                task,
+                elsewhere: Some(project),
+            } => self.buffers.library.browsed_listing(project, *task),
+            Origin::Research {
+                task,
+                elsewhere: None,
+            } => self.buffers.library.listing(*task),
         };
-        let there = |target: ReadTarget| match &elsewhere {
-            Some(project) => ReadTarget::Elsewhere(project.clone(), Box::new(target)),
-            None => target,
+
+        let make_target = |what: ResearchWhat| match &origin {
+            Origin::Tangent(tangent) => (
+                ReadTarget::Tangent {
+                    task: *tangent,
+                    what,
+                },
+                None,
+            ),
+            Origin::Research { task, elsewhere } => {
+                let base = ReadTarget::Research { task: *task, what };
+                let target = match elsewhere {
+                    Some(project) => ReadTarget::Elsewhere(project.clone(), Box::new(base)),
+                    None => base,
+                };
+                (target, Some(*task))
+            }
         };
-        let listing = match &elsewhere {
-            Some(project) => self.buffers.library.browsed_listing(project, task),
-            None => self.buffers.library.listing(task),
+        let owner = match &origin {
+            Origin::Tangent(_) => "this tangent's".to_string(),
+            Origin::Research { task, .. } => format!("#{}'s", task.0),
         };
+
         let Some(evidence) = evidence else {
             // `gx` on a web source with no citation in view opens the page itself.
-            if browse
-                && let ReadTarget::Research {
+            let current_source = match inner_from {
+                ReadTarget::Research {
                     what: ResearchWhat::Source(id),
                     ..
-                } = from
+                }
+                | ReadTarget::Tangent {
+                    what: ResearchWhat::Source(id),
+                    ..
+                } => Some(id),
+                _ => None,
+            };
+            if browse
+                && let Some(id) = current_source
                 && let Some(source) = listing.and_then(|l| l.sources.iter().find(|s| s.id == id))
                 && source.kind == SourceKind::Web
             {
@@ -413,10 +457,11 @@ impl App {
             self.note = Some("no citation in view: ]s selects one".into());
             return;
         };
+
         match evidence {
             Evidence::Finding(id) => {
                 if listing.is_some_and(|l| !l.findings.iter().any(|f| f.id == id)) {
-                    self.note = Some(format!("F{} is not one of #{}'s findings", id.0, task.0));
+                    self.note = Some(format!("F{} is not one of {owner} findings", id.0));
                     return;
                 }
                 if browse {
@@ -426,22 +471,22 @@ impl App {
                     ));
                     return;
                 }
-                let label = listing
-                    .and_then(|l| l.findings.iter().find(|f| f.id == id))
-                    .map_or_else(String::new, |f| format!(" · {}", f.label));
-                self.read(
-                    there(ReadTarget::Research {
-                        task,
-                        what: ResearchWhat::Finding(id),
-                    }),
-                    Some(task),
-                    format!("F{}{label}", id.0),
-                );
+                let title = match &origin {
+                    Origin::Tangent(_) => format!("tangent F{}", id.0),
+                    Origin::Research { .. } => {
+                        let label = listing
+                            .and_then(|l| l.findings.iter().find(|f| f.id == id))
+                            .map_or_else(String::new, |f| format!(" · {}", f.label));
+                        format!("F{}{label}", id.0)
+                    }
+                };
+                let (target, read_task) = make_target(ResearchWhat::Finding(id));
+                self.read(target, read_task, title);
             }
             Evidence::Source(id) => {
                 let source = listing.and_then(|l| l.sources.iter().find(|s| s.id == id));
                 if listing.is_some() && source.is_none() {
-                    self.note = Some(format!("S{} is not one of #{}'s sources", id.0, task.0));
+                    self.note = Some(format!("S{} is not one of {owner} sources", id.0));
                     return;
                 }
                 if browse {
@@ -464,14 +509,12 @@ impl App {
                     return;
                 }
                 let locator = source.map_or_else(String::new, |s| format!(" · {}", s.locator));
-                self.read(
-                    there(ReadTarget::Research {
-                        task,
-                        what: ResearchWhat::Source(id),
-                    }),
-                    Some(task),
-                    format!("S{}{locator}", id.0),
-                );
+                let title = match &origin {
+                    Origin::Tangent(_) => format!("tangent S{}{locator}", id.0),
+                    Origin::Research { .. } => format!("S{}{locator}", id.0),
+                };
+                let (target, read_task) = make_target(ResearchWhat::Source(id));
+                self.read(target, read_task, title);
             }
         }
     }

@@ -944,11 +944,7 @@ impl Buffer for ConversationBuffer {
     }
 
     fn search_rows(&self, _cx: &ViewCx) -> Vec<String> {
-        self.layout
-            .lines
-            .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
-            .collect()
+        self.layout.lines.iter().map(fmt::line_plain_text).collect()
     }
 
     fn current_row(&self, _cx: &ViewCx) -> usize {

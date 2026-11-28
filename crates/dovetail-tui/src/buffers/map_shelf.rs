@@ -9,7 +9,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::{Buffer, Effect, ViewCx, footer, pane, scroll_to, spread_fit, step, title};
+use super::{Buffer, Effect, ListCursor, ViewCx, footer, pane, spread_fit, title};
 use crate::action::Action;
 use crate::fmt;
 use crate::region::BufferKind;
@@ -18,10 +18,7 @@ use crate::render::reading_column;
 /// The shelf: the selected map, kept by id so a live redraw never moves the cursor.
 #[derive(Default)]
 pub struct MapShelfBuffer {
-    selected: Option<MapId>,
-    /// Where the selection was last, for when its row goes away.
-    last_index: usize,
-    offset: usize,
+    cursor: ListCursor<MapId>,
 }
 
 /// The shelf's maps, most recently drawn first (ties keep the snapshot's order).
@@ -33,20 +30,7 @@ fn shelf(snap: &Snapshot) -> Vec<&MapSummary> {
 
 impl MapShelfBuffer {
     fn resolve(&self, maps: &[&MapSummary]) -> Option<usize> {
-        if maps.is_empty() {
-            return None;
-        }
-        if let Some(id) = &self.selected
-            && let Some(i) = maps.iter().position(|m| &m.id == id)
-        {
-            return Some(i);
-        }
-        Some(self.last_index.min(maps.len() - 1))
-    }
-
-    fn select(&mut self, maps: &[&MapSummary], index: usize) {
-        self.selected = Some(maps[index].id.clone());
-        self.last_index = index;
+        self.cursor.resolve(maps, |m, k| &m.id == k)
     }
 
     /// The selected map, if the shelf has any.
@@ -89,11 +73,12 @@ impl Buffer for MapShelfBuffer {
             .max(1);
         let selected = self.resolve(&maps);
         if let Some(i) = selected {
-            self.offset = scroll_to(self.offset, i, i, fit);
+            self.cursor.scroll_into_view(i, maps.len(), fit);
+        } else {
+            self.cursor.clamp_offset(maps.len(), fit);
         }
-        self.offset = self.offset.min(maps.len().saturating_sub(fit));
         let mut lines: Vec<Line<'static>> = Vec::new();
-        for map in maps.iter().skip(self.offset).take(fit) {
+        for map in maps.iter().skip(self.cursor.offset()).take(fit) {
             let drawn_by = map
                 .drawn_by
                 .as_ref()
@@ -117,7 +102,7 @@ impl Buffer for MapShelfBuffer {
         }
         frame.render_widget(Paragraph::new(lines), column);
         if focused && let Some(i) = selected {
-            let y = column.y + 2 * (i - self.offset) as u16;
+            let y = column.y + 2 * (i - self.cursor.offset()) as u16;
             if y < column.y + column.height {
                 frame.buffer_mut().set_style(
                     Rect {
@@ -142,17 +127,14 @@ impl Buffer for MapShelfBuffer {
 
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
         let maps = shelf(cx.snap);
-        let current = self.resolve(&maps);
+        if self
+            .cursor
+            .handle_nav(action, &maps, |m, k| &m.id == k, |m| m.id.clone())
+        {
+            return true;
+        }
         match action {
-            Action::MoveDown | Action::MoveUp => {
-                if let Some(i) = current {
-                    let delta = if action == Action::MoveDown { 1 } else { -1 };
-                    self.select(&maps, step(i, maps.len(), delta));
-                }
-            }
-            Action::GoTop if !maps.is_empty() => self.select(&maps, 0),
-            Action::GoBottom if !maps.is_empty() => self.select(&maps, maps.len() - 1),
-            Action::MapOpen => match current {
+            Action::MapOpen => match self.resolve(&maps) {
                 Some(i) => effects.push(Effect::OpenMap(maps[i].id.clone())),
                 None => effects.push(Effect::Note("no map here".into())),
             },
@@ -171,8 +153,6 @@ impl Buffer for MapShelfBuffer {
 
     fn goto_row(&mut self, row: usize, cx: &ViewCx, _effects: &mut Vec<Effect>) {
         let maps = shelf(cx.snap);
-        if row < maps.len() {
-            self.select(&maps, row);
-        }
+        self.cursor.select_index(&maps, row, |m| m.id.clone());
     }
 }

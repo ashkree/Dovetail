@@ -8,6 +8,7 @@ mod feed;
 mod inbox;
 mod inbox_detail;
 pub mod library;
+mod list;
 mod map_canvas;
 mod map_outline;
 mod map_shelf;
@@ -44,6 +45,7 @@ pub use inbox::{InboxBuffer, ordered as inbox_order};
 pub(crate) use inbox::{input_summary, tangents_title, unfiled_title};
 pub use inbox_detail::InboxDetailBuffer;
 pub use library::LibraryBuffer;
+pub(crate) use list::ListCursor;
 pub use map_canvas::Canvas as MapCanvas;
 pub use map_outline::{MapOutlineBuffer, MouseKind as MapMouse, Reaction as MapReaction};
 pub use map_shelf::MapShelfBuffer;
@@ -326,10 +328,22 @@ pub(crate) fn title(text: &str, focused: bool, theme: &Theme) -> Line<'static> {
     Line::from(Span::styled(format!(" {text} "), theme.fg(color)))
 }
 
+/// Minimum inner height for a pane to show a footer hint line.
+pub(crate) const FOOTER_MIN_HEIGHT: u16 = 5;
+
+/// Usable body rows inside `inner`, leaving one row for [`footer`] when it fits.
+pub(crate) fn body_height(inner: Rect) -> usize {
+    usize::from(
+        inner
+            .height
+            .saturating_sub(u16::from(inner.height >= FOOTER_MIN_HEIGHT)),
+    )
+}
+
 /// Draws a hint line on the last row of `inner`: the longest of `options` that fits, or the
 /// shortest cut to size.
 pub(crate) fn footer(frame: &mut Frame, inner: Rect, options: &[&str], theme: &Theme) {
-    if inner.height < 5 || inner.width == 0 || options.is_empty() {
+    if inner.height < FOOTER_MIN_HEIGHT || inner.width == 0 || options.is_empty() {
         return;
     }
     let row = Rect {
