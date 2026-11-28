@@ -36,7 +36,7 @@ The project is maintained for the long term, so code is judged on how easy it is
 
 ## Readability (the user has poor eyesight: a requirement, not polish)
 
-120-column reading column centred in wide panes; blank rows between paragraphs, list items, code blocks and headings; markdown keeps bold/italic/code styling and each also gets its own colour; off-white body text, never pure white; tool activity folded into one summary line per turn; thinking hidden; long output truncated with "show more"; no solid backgrounds on areas (panes, columns, views): the selection highlight and badges are the only exceptions (ADR 0018 amendment, 2026-11-11). Details in `docs/ui-session-brief.md`.
+88-column reading column centred in wide panes, with 4-column margins (D49, 2026-11-27); blank rows between paragraphs, list items, code blocks and headings; non-scaled headings (no OSC 66 scaled headings); syntax highlighting on code blocks; box-drawn fitted tables (12-column floor, per-block sideways panning); markdown keeps bold/italic/code styling and each also gets its own colour; off-white body text, never pure white; tool activity folded into one summary line per turn; thinking hidden; long output truncated with "show more"; transparent background by default, with a solid-background toggle on content panes per ADR 0030 §5. Details in `docs/ui-session-brief.md` and `docs/spikes/tui-readability.md`.
 
 ## Testing
 
