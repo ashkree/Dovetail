@@ -592,7 +592,7 @@ dependencies = [
 name = "dovetail-driver"
 version = "0.0.0"
 dependencies = [
- "base64 0.23.1",
+ "base64 0.22.1",
  "dovetail-api",
  "jiff",
  "serde",
@@ -638,7 +638,7 @@ dependencies = [
 name = "dovetail-tui"
 version = "0.0.0"
 dependencies = [
- "base64 0.23.1",
+ "base64 0.22.1",
  "crossterm",
  "dovetail-api",
  "dovetail-mock",

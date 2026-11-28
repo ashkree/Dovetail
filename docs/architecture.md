@@ -8,31 +8,31 @@ Every claim links to the file that proves it. Read the keywords first; the rest 
 
 | Word | What it is | Where |
 | --- | --- | --- |
-| **Core** | The one part that knows and changes everything: sessions, tasks, inbox, database. It runs on its own thread. | [`service.rs`](../crates/dovetail-core/src/service.rs) |
-| **Core loop** | One `loop` inside the core. Everything that changes state passes through it, one item at a time. | `Core::run` in [`service.rs`](../crates/dovetail-core/src/service.rs) |
-| **Input** | One item the loop handles: a command from the UI, an event from a session, a tool call, a finished background job. | `enum Input` in [`service.rs`](../crates/dovetail-core/src/service.rs) |
+| **Core** | The one part that knows and changes everything: sessions, tasks, inbox, database. It runs on its own thread. | [`engine/mod.rs`](../crates/dovetail-core/src/engine/mod.rs) |
+| **Core loop** | One `loop` inside the core. Everything that changes state passes through it, one item at a time. | `Core::run` in [`engine/mod.rs`](../crates/dovetail-core/src/engine/mod.rs) |
+| **Input** | One item the loop handles: a command from the UI, an event from a session, a tool call, a finished background job. | `enum Input` in [`engine/mod.rs`](../crates/dovetail-core/src/engine/mod.rs) |
 | **Snapshot** | The whole state the UI may see, as one plain value: tasks, agents, inbox, chat tails. | `struct Snapshot` in [`snapshot.rs`](../crates/dovetail-api/src/snapshot.rs) |
 | **Event** | One change to the snapshot, sent by the core, with a number (`seq`). | `enum Event` in [`wire.rs`](../crates/dovetail-api/src/wire.rs) |
 | **`seq`** | The event's number. Each is one more than the last, so the UI can tell when it missed one. | [`apply.rs`](../crates/dovetail-api/src/apply.rs) |
 | **Command** | One request from the UI to the core ("send this prompt", "allow this"). | `enum Command` in [`wire.rs`](../crates/dovetail-api/src/wire.rs) |
 | **`apply()`** | The one function that folds an event into a snapshot. The UI's copy changes no other way. | [`apply.rs`](../crates/dovetail-api/src/apply.rs) |
 | **CoreLink** | The UI's end of the wire: a channel to send commands, a channel to receive the snapshot and events. | `struct CoreLink` in [`wire.rs`](../crates/dovetail-api/src/wire.rs) |
-| **Session** | One running agent CLI process (`claude` or `agy`) that Dovetail drives without a terminal. Coordinator and slices are sessions. | [`session/mod.rs`](../crates/dovetail-core/src/session/mod.rs) |
+| **Session** | One running agent CLI process (`claude` or `agy`) that Dovetail drives without a terminal. Coordinator and slices are sessions. | [`sessions/mod.rs`](../crates/dovetail-core/src/sessions/mod.rs) |
 | **Agent** | A row in the tree: a session, or a subagent running inside one. | `struct Agent` in [`agents/agent/mod.rs`](../crates/dovetail-api/src/agents/agent/mod.rs) |
-| **Driver** | The `SessionDriver` trait and its implementations (`ClaudeDriver` for Claude Code, `AgyDriver` for agy) held in the core's `Drivers` map. The core sees typed events, never JSON. | [`dovetail-driver`](../crates/dovetail-driver/src/lib.rs), [`drivers.rs`](../crates/dovetail-core/src/drivers.rs) |
+| **Driver** | The `SessionDriver` trait and its implementations (`ClaudeDriver` for Claude Code, `AgyDriver` for agy) held in the core's `Drivers` map. The core sees typed events, never JSON. | [`dovetail-driver`](../crates/dovetail-driver/src/lib.rs), [`sessions/drivers.rs`](../crates/dovetail-core/src/sessions/drivers.rs) |
 | **Stream** | What a session prints: one JSON object per line (Claude Code `stream-json` NDJSON, or `agy` ACP JSON-RPC 2.0). | [`claude/parse.rs`](../crates/dovetail-driver/src/claude/parse.rs), [`agy/conversation.rs`](../crates/dovetail-driver/src/agy/conversation.rs) |
 | **Control request** | A request where a session asks permission (Claude `control_request` or ACP `session/request_permission`) and waits for an answer. | `PermissionRequest` in [`event.rs`](../crates/dovetail-driver/src/event.rs) |
-| **MCP bridge** | A tiny program (`dovetail mcp`) that each session starts beside it. It passes Dovetail's tool calls to the core. | [`mcp.rs`](../crates/dovetail/src/mcp.rs) |
-| **Socket** | A local connection file, one per open project. The bridge and `dovetail add` reach the core through it. | [`socket.rs`](../crates/dovetail-core/src/socket.rs) |
-| **DB thread** | The one thread that touches SQLite. Everyone else sends it a request and waits for the answer. | [`db.rs`](../crates/dovetail-core/src/db.rs) |
-| **Migration** | A numbered SQL file that moves a database one version forward. Never edited after release, never run backwards. | [`db/migrations/`](../crates/dovetail-core/src/db/migrations/) |
+| **MCP bridge** | A tiny program (`dovetail mcp`) that each session starts beside it. It passes Dovetail's tool calls to the core. | [`mcp/mod.rs`](../crates/dovetail/src/mcp/mod.rs) |
+| **Socket** | A local connection file, one per open project. The bridge and `dovetail add` reach the core through it. | [`mcp/socket.rs`](../crates/dovetail-core/src/mcp/socket.rs) |
+| **DB thread** | The one thread that touches SQLite. Everyone else sends it a request and waits for the answer. | [`storage/mod.rs`](../crates/dovetail-core/src/storage/mod.rs) |
+| **Migration** | A numbered SQL file that moves a database one version forward. Never edited after release, never run backwards. | [`storage/migrations/`](../crates/dovetail-core/src/storage/migrations/) |
 | **`registry.db`** | One small database for the whole machine: the list of projects. | `~/.local/share/dovetail/registry.db` |
 | **`state.db`** | One database per project: tasks, agents, chat, inbox, research. | `~/.local/share/dovetail/projects/<id>/state.db` |
-| **Worktree** | A second checkout of a repo on its own branch. Each slice gets one, outside the repo. | [`worktree.rs`](../crates/dovetail-core/src/worktree.rs) |
+| **Worktree** | A second checkout of a repo on its own branch. Each slice gets one, outside the repo. | [`code/worktree.rs`](../crates/dovetail-core/src/code/worktree.rs) |
 | **Hook** | A command Claude Code runs at a set moment. Dovetail's hook creates the worktree for Claude slices (`agy` slices create theirs in the core before launch). | [`hook.rs`](../crates/dovetail/src/hook.rs) |
-| **Recipe** | A per-project TOML file: how to set up a worktree, extra environment, which Claude profile. | [`recipe.rs`](../crates/dovetail-core/src/recipe.rs) |
-| **Inbox** | "Needs you": permission requests, questions, finished turns, errors. | [`inbox.rs`](../crates/dovetail-core/src/inbox.rs) |
-| **Waiter** | What is held open behind an inbox item, such as the session's pending permission request. Lives in memory only. | `enum Waiter` in [`inbox.rs`](../crates/dovetail-core/src/inbox.rs) |
+| **Recipe** | A per-project TOML file: how to set up a worktree, extra environment, which Claude profile. | [`settings/recipe.rs`](../crates/dovetail-core/src/settings/recipe.rs) |
+| **Inbox** | "Needs you": permission requests, questions, finished turns, errors. | [`activity/inbox.rs`](../crates/dovetail-core/src/activity/inbox.rs) |
+| **Waiter** | What is held open behind an inbox item, such as the session's pending permission request. Lives in memory only. | `enum Waiter` in [`activity/inbox.rs`](../crates/dovetail-core/src/activity/inbox.rs) |
 
 ---
 
@@ -106,8 +106,8 @@ You type "Start the web form" to the coordinator and press Enter.
 
 Step by step, with the real names:
 
-1. **TUI.** The chat bar pushes `ConversationCommand::Prompt { agent, text, attachments, effort }` ([`app.rs`](../crates/dovetail-tui/src/app.rs)); the event loop sends it on `CoreLink.commands` ([`event_loop.rs`](../crates/dovetail-tui/src/event_loop.rs)).
-2. **Into the loop.** A small thread forwards it as `Input::Command` (`spawn` in [`service.rs`](../crates/dovetail-core/src/service.rs)). `Core::run` picks it up and calls `Core::command`, which calls `Core::prompt` ([`session/mod.rs`](../crates/dovetail-core/src/session/mod.rs)).
+1. **TUI.** The chat bar pushes `ConversationCommand::Prompt { agent, text, attachments, effort }` ([`app/mod.rs`](../crates/dovetail-tui/src/app/mod.rs)); the event loop sends it on `CoreLink.commands` ([`event_loop.rs`](../crates/dovetail-tui/src/event_loop.rs)).
+2. **Into the loop.** A small thread forwards it as `Input::Command` (`spawn` in [`engine/mod.rs`](../crates/dovetail-core/src/engine/mod.rs)). `Core::run` picks it up and calls `Core::command`, which calls `Core::prompt` ([`sessions/mod.rs`](../crates/dovetail-core/src/sessions/mod.rs)).
 3. **To the session.** `prompt` calls `send_input`, which calls `ensure_live` (looks up the agent's `DriverKind` in `Drivers`, then starts or resumes the `claude` or `agy` process if none runs), then `session.send(...)`. The driver writes a JSON line to the process's stdin ([`claude/mod.rs`](../crates/dovetail-driver/src/claude/mod.rs), [`agy/mod.rs`](../crates/dovetail-driver/src/agy/mod.rs)).
 4. **Recorded and shown.** `add_entry_with` gives the message an id, stores it through the DB thread (`Db::upsert_entry`), and emits `ConversationEvent::Appended`. `emit` adds one to `seq` and sends it.
 5. **Reply streams back.** The CLI prints JSON lines. The driver's reader parses each ([`claude/parse.rs`](../crates/dovetail-driver/src/claude/parse.rs) or [`agy/conversation.rs`](../crates/dovetail-driver/src/agy/conversation.rs)) into `DriverEvent`s; a task forwards each as `Input::Driver`. `Core::on_driver` handles it. Text chunks go to `queue_delta`, which holds them up to 33 ms so the UI gets at most about 30 updates a second, then sends `ConversationEvent::AssistantDelta`.
@@ -127,9 +127,9 @@ These look alike to the user but take different roads.
          ◄──── tool result ─────              ◄── response ───           (Core::tool)
 ```
 
-1. At launch the core configures `dovetail mcp` with the agent's id and socket path: an `mcp.json` file for Claude Code, or inline `mcpServers` in `session/new` for `agy` ([`session/launch/mod.rs`](../crates/dovetail-core/src/session/launch/mod.rs)). Nothing is written into your repo.
-2. When an agent calls `mcp__dovetail__core_report_status` (`mcp_dovetail_core_report_status` on `agy`), the bridge checks the arguments and sends `SocketRequestBody::ToolCall { agent, call, .. }` over the socket ([`mcp.rs`](../crates/dovetail/src/mcp.rs), [`socket.rs`](../crates/dovetail-tools/src/socket.rs)).
-3. The socket server turns it into `Input::Tool`; the loop calls `Core::tool` ([`tools.rs`](../crates/dovetail-core/src/tools.rs)), which checks the agent's role and tool suites, does the work, and replies.
+1. At launch the core configures `dovetail mcp` with the agent's id and socket path: an `mcp.json` file for Claude Code, or inline `mcpServers` in `session/new` for `agy` ([`sessions/launch/mod.rs`](../crates/dovetail-core/src/sessions/launch/mod.rs)). Nothing is written into your repo.
+2. When an agent calls `mcp__dovetail__core_report_status` (`mcp_dovetail_core_report_status` on `agy`), the bridge checks the arguments and sends `SocketRequestBody::ToolCall { agent, call, .. }` over the socket ([`mcp/mod.rs`](../crates/dovetail/src/mcp/mod.rs), [`socket.rs`](../crates/dovetail-tools/src/socket.rs)).
+3. The socket server turns it into `Input::Tool`; the loop calls `Core::tool` ([`mcp/tools.rs`](../crates/dovetail-core/src/mcp/tools.rs)), which checks the agent's role and tool suites, does the work, and replies.
 
 **Example.** A slice calls `core_report_status("writing tests")`. `Core::tool` sets `agent.status_line`, emits `AgentEvent::Upserted`, and answers "Status set." The tree shows the new line.
 
@@ -146,7 +146,7 @@ Tool calls never wait for you. `core_ask_user` puts a question in the inbox and 
 ```
 
 1. The CLI asks permission and waits (a `control_request` from `claude`, or an ACP `session/request_permission` from `agy`). The driver emits `DriverEvent::PermissionRequest`; it never waits itself, so the stream keeps flowing and other requests can arrive meanwhile (stream rule 3).
-2. `Core::permission_request` ([`inbox.rs`](../crates/dovetail-core/src/inbox.rs)) calls `raise`, which stores an `inbox_items` row, emits `InboxEvent::Upserted`, and keeps a `Waiter::Control` in memory holding the request's id.
+2. `Core::permission_request` ([`activity/inbox.rs`](../crates/dovetail-core/src/activity/inbox.rs)) calls `raise`, which stores an `inbox_items` row, emits `InboxEvent::Upserted`, and keeps a `Waiter::Control` in memory holding the request's id.
 3. You answer. The UI sends `InboxCommand::AnswerPermission { item, answer }`. `Core::answer_permission` resolves the item (`InboxEvent::Resolved`) and calls `session.answer_control(...)`; the driver writes the answer and the session carries on.
 
 **Example.** The coordinator runs `gh pr merge 42`. The launch settings force that command to ask, so an item "Bash: gh pr merge 42" appears in Needs you. `y` lets the merge run; `d` denies it and the session is told why.
@@ -155,7 +155,7 @@ Tool calls never wait for you. `core_ask_user` puts a question in the inbox and 
 
 ## 4. The database
 
-Two files. All access goes through the DB thread: callers use typed methods such as `Db::create_task` and never write SQL themselves ([`db.rs`](../crates/dovetail-core/src/db.rs)).
+Two files. All access goes through the DB thread: callers use typed methods such as `Db::create_task` and never write SQL themselves ([`storage/mod.rs`](../crates/dovetail-core/src/storage/mod.rs)).
 
 ```
  ~/.local/share/dovetail/
@@ -196,19 +196,19 @@ This is the shape up to version 16. Version 17, added with this guide, puts `eff
 
 | Table | One row is | Written by |
 | --- | --- | --- |
-| `tasks` | One of your tasks: title, status, bucket, notes, PR number | [`db/tasks.rs`](../crates/dovetail-core/src/db/tasks.rs) |
-| `agents` | A coordinator, slice or subagent, with its driver, session id, transcript path, worktree, cost, status | [`db/sessions.rs`](../crates/dovetail-core/src/db/sessions.rs) |
-| `conversation_entries` | One chat line of one agent | [`db/sessions.rs`](../crates/dovetail-core/src/db/sessions.rs) |
-| `inbox_items` | One Needs-you item; `resolved_ms` is set when it is answered | [`db/sessions.rs`](../crates/dovetail-core/src/db/sessions.rs) |
-| `decisions` | One decision-log entry; never edited, only superseded | [`db/tasks.rs`](../crates/dovetail-core/src/db/tasks.rs) |
-| `research_rounds`, `findings`, `sources`, `reports` | Research: a round of subagents, what each reported, what each read, the written report | [`db/research.rs`](../crates/dovetail-core/src/db/research.rs) |
-| `maps`, `map_versions` | A drawn map and every version of it | [`db/maps.rs`](../crates/dovetail-core/src/db/maps.rs) |
+| `tasks` | One of your tasks: title, status, bucket, notes, PR number | [`tracking/db/tasks.rs`](../crates/dovetail-core/src/tracking/db/tasks.rs) |
+| `agents` | A coordinator, slice or subagent, with its driver, session id, transcript path, worktree, cost, status | [`storage/sessions.rs`](../crates/dovetail-core/src/storage/sessions.rs) |
+| `conversation_entries` | One chat line of one agent | [`storage/sessions.rs`](../crates/dovetail-core/src/storage/sessions.rs) |
+| `inbox_items` | One Needs-you item; `resolved_ms` is set when it is answered | [`storage/sessions.rs`](../crates/dovetail-core/src/storage/sessions.rs) |
+| `decisions` | One decision-log entry; never edited, only superseded | [`tracking/db/tasks.rs`](../crates/dovetail-core/src/tracking/db/tasks.rs) |
+| `research_rounds`, `findings`, `sources`, `reports` | Research: a round of subagents, what each reported, what each read, the written report | [`research/db.rs`](../crates/dovetail-core/src/research/db.rs) |
+| `maps`, `map_versions` | A drawn map and every version of it | [`visual/db/maps.rs`](../crates/dovetail-core/src/visual/db/maps.rs) |
 
 **Example: one slice's footprint.** Starting slice `api-guest` on task 52 writes: one `agents` row (`id = slice-api-guest`, `task_id = 52`, `branch = dovetail/api-guest`), one `conversation_entries` row for its brief, one `activity` row "slice api-guest started", and sets `tasks.status` of 52 to `in_progress`.
 
 **What is not in the database.** The full transcript (each CLI keeps its own; Dovetail stores its path), tool output (only one summary line per turn), memory use, and the Waiters.
 
-**Migrations.** Each database stores its version number. On open, `migrate` runs every file after that number, each in its own transaction ([`db.rs`](../crates/dovetail-core/src/db.rs)). A database from a newer Dovetail is refused, never touched. A test fails the build if the files are not numbered 0001…N in order.
+**Migrations.** Each database stores its version number. On open, `migrate` runs every file after that number, each in its own transaction ([`storage/mod.rs`](../crates/dovetail-core/src/storage/mod.rs)). A database from a newer Dovetail is refused, never touched. A test fails the build if the files are not numbered 0001…N in order.
 
 ## 5. Start, restart and crash
 
@@ -217,10 +217,10 @@ This is the shape up to version 16. Version 17, added with this guide, puts `eff
 ```
  dovetail (in a repo)
    1. read config.toml, open registry.db, find the project for this folder   tui.rs: run_real
-   2. dovetail_core::spawn → open state.db (run migrations), bind the socket service.rs: spawn
-   3. core thread: Core::load  → agents, chat tails, queue, open inbox items service.rs: load
+   2. dovetail_core::spawn → open state.db (run migrations), bind the socket engine/mod.rs: spawn
+   3. core thread: Core::load  → agents, chat tails, queue, open inbox items engine/mod.rs: load
    4. send Hello + Snapshot    → the UI can draw                              send_snapshot
-   5. reconcile                → deal with what a previous run left behind    restore.rs
+   5. reconcile                → deal with what a previous run left behind    sessions/restore.rs
    6. coordinator resumes; slices resume when first touched (ensure_live)
 ```
 
@@ -228,9 +228,9 @@ The first frame never waits for git, `systemd` or the CLI: those checks run afte
 
 ### Quit, then open again
 
-Quitting stops every session; Dovetail waits up to 10 s for them to exit ([`shutdown.rs`](../crates/dovetail-core/src/shutdown.rs)). State stays on disk exactly as it was. On the next open:
+Quitting stops every session; Dovetail waits up to 10 s for them to exit ([`engine/shutdown.rs`](../crates/dovetail-core/src/engine/shutdown.rs)). State stays on disk exactly as it was. On the next open:
 
-| Left behind | What `reconcile` does ([`restore.rs`](../crates/dovetail-core/src/restore.rs)) |
+| Left behind | What `reconcile` does ([`sessions/restore.rs`](../crates/dovetail-core/src/sessions/restore.rs)) |
 | --- | --- |
 | An agent stored as "working" | Its turn was cut off. One inbox item with its last prompt. It is **never continued automatically**. |
 | A pending permission request | Expired (the process that asked is gone). Activity note. |
@@ -239,7 +239,7 @@ Quitting stops every session; Dovetail waits up to 10 s for them to exit ([`shut
 | A worktree no agent owns | One inbox item: `y` removes it, `d` keeps it for good. Nothing is deleted without `y`. |
 | Notes for a coordinator that was not running | Delivered when it next starts. |
 
-Sessions resume with their driver's own resume: Claude Code uses the session id Dovetail chose at first start, while `agy` picks its conversation id on its first `Init` and resumes by that id via `session/resume`. Switching the coordinator between drivers (`ModelCommand::SwitchDriver`, confirmed in the grouped `/model` picker) runs through `:fresh` (`journal.rs`), seeding the new session with the handoff (or Dovetail's facts and the old transcript path when the outgoing session cannot answer) or starting clean. agy's model list is saved in `registry.db` and refreshed in the background by `agy models` (`agy_models.rs`), so the picker has agy rows at start. Usage limits for both drivers are probed on demand via `StatusCommand::LoadUsage` (`:usage` / `/usage`), which runs `SessionDriver::usage` concurrently and returns `StatusEvent::UsageLoaded` ([`usage.rs`](../crates/dovetail-core/src/usage.rs)).
+Sessions resume with their driver's own resume: Claude Code uses the session id Dovetail chose at first start, while `agy` picks its conversation id on its first `Init` and resumes by that id via `session/resume`. Switching the coordinator between drivers (`ModelCommand::SwitchDriver`, confirmed in the grouped `/model` picker) runs through `:fresh` (`agents/journal/`), seeding the new session with the handoff (or Dovetail's facts and the old transcript path when the outgoing session cannot answer) or starting clean. agy's model list is saved in `registry.db` and refreshed in the background by `agy models` (`agents/agy_models.rs`), so the picker has agy rows at start. Usage limits for both drivers are probed on demand via `StatusCommand::LoadUsage` (`:usage` / `/usage`), which runs `SessionDriver::usage` concurrently and returns `StatusEvent::UsageLoaded` ([`activity/usage.rs`](../crates/dovetail-core/src/activity/usage.rs)).
 
 **Example.** You quit while slice `web-form` is mid-turn and a `git push` approval is waiting. Next open: "web-form's turn was cut off by a restart — Last prompt: …" in Needs you, and "web-form: Bash git push: request expired at restart" in Activity. You send web-form a message; `ensure_live` resumes its session and it carries on.
 
@@ -247,7 +247,7 @@ Sessions resume with their driver's own resume: Claude Code uses the session id 
 
 A crash of Dovetail is the same as a quit, because nothing important lives only in memory: every chat line, inbox item and agent change is written as it happens. What is lost is small and known: text still streaming (the entry is stored when complete) and the Waiters.
 
-A crash of one session process is handled live: `on_exit` ([`session/mod.rs`](../crates/dovetail-core/src/session/mod.rs)) raises an Error item with the last lines of its error output. If the kernel killed it for memory, [`oom.rs`](../crates/dovetail-core/src/oom.rs) says so and restarts it once.
+A crash of one session process is handled live: `on_exit` ([`sessions/mod.rs`](../crates/dovetail-core/src/sessions/mod.rs)) raises an Error item with the last lines of its error output. If the kernel killed it for memory, [`sessions/oom.rs`](../crates/dovetail-core/src/sessions/oom.rs) says so and restarts it once.
 
 ---
 
@@ -325,7 +325,7 @@ Nothing new is invented: `ServerMsg` and `Command` already have JSON forms, and 
  V2      todo ──agent starts──► in_progress ──PR open──► review ──PR merged──► done
 ```
 
-The first arrow exists today (`start_slice` in [`slice.rs`](../crates/dovetail-core/src/slice.rs)). The core already learns when a PR opens or merges (`on_worktree_gathered` in [`worktree_info.rs`](../crates/dovetail-core/src/worktree_info.rs)); v2 connects that to the task.
+The first arrow exists today (`start_slice` in [`agents/slice.rs`](../crates/dovetail-core/src/agents/slice.rs)). The core already learns when a PR opens or merges (`on_worktree_gathered` in [`code/worktree_info.rs`](../crates/dovetail-core/src/code/worktree_info.rs)); v2 connects that to the task.
 
 ## What was built, and what waits
 

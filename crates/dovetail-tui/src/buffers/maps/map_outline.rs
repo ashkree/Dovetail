@@ -106,11 +106,6 @@ impl MapOutlineBuffer {
         self.canvas.set_graphics(cell);
     }
 
-    /// The terminal's size in cells: the picture is painted to fit the whole screen.
-    pub fn set_screen(&mut self, cols: u16, rows: u16) {
-        self.canvas.set_screen(cols, rows);
-    }
-
     /// Whether MAP mode is on, for the hints.
     pub fn set_map_mode(&mut self, on: bool) {
         self.map_mode = on;

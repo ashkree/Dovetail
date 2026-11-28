@@ -1,7 +1,7 @@
 //! The worktree view (`<leader>g`): one row per slice worktree with its branch, sync state,
 //! uncommitted changes, unpushed commits, pull request and setup, and the selected row in full
 //! below. The data is the core's ([`WorktreeInfo`], M12b); opening the view asks for a fresh
-//! look ([`WorktreeCommand::Refresh`]) and the title says "refreshing…" until every worktree
+//! look ([`dovetail_api::code::worktree::WorktreeCommand::Refresh`]) and the title says "refreshing…" until every worktree
 //! has answered. Anything the core could not tell shows as `—`.
 
 use std::collections::HashSet;

@@ -20,7 +20,7 @@ dovetail-mock = { path = "crates/dovetail-mock" }
 dovetail-tools = { path = "crates/dovetail-tools" }
 dovetail-tui = { path = "crates/dovetail-tui" }
 anyhow = "1"
-base64 = "0.23"
+base64 = "0.22"
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
 crossterm = "0.29"
 insta = "1"

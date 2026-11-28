@@ -761,6 +761,7 @@ impl App {
                 Some(Then::QuitDayOpen) => self.quit_asking(false),
                 None => {}
             }
+            self.settle();
             return;
         }
         // Ctrl-C works in every mode and over pickers, mid-sequence too, so it is looked up
@@ -773,12 +774,14 @@ impl App {
         }
         if self.overlay.is_some() {
             self.overlay_key(event);
+            self.settle();
             return;
         }
         match self.mode {
             Mode::Normal | Mode::Map => self.normal_key(event, mono_ms),
             Mode::Insert | Mode::Command => self.input_key(event),
         }
+        self.settle();
     }
 
     /// Handles pasted or dropped text (a bracketed paste). In an open chat bar it goes to the core,

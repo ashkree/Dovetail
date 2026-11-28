@@ -399,3 +399,17 @@ fn focus_mode_hides_the_side_column_and_l_brings_it_back() {
     let screen = render(&mut app, 100, 30);
     assert!(screen.contains("┌ inbox "), "{screen}");
 }
+
+#[test]
+fn picking_inbox_item_from_finder_in_focus_mode_exits_focus_mode() {
+    let mut app = app_with(world());
+    press(&mut app, " z");
+    assert!(app.focus_mode());
+    // Open the finder (<leader><leader>), filter to the question inbox item, and pick it.
+    type_keys(&mut app, "  route prefix");
+    app.on_key(enter(), 0);
+    assert!(!app.focus_mode());
+    assert_eq!(app.focus(), RegionId::SideTop);
+    let screen = render(&mut app, 120, 32);
+    assert!(screen.contains("┌ inbox "), "{screen}");
+}

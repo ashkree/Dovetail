@@ -96,8 +96,9 @@ Callers hold a cheap, cloneable `storage::Db` handle and invoke typed methods re
 
 Migrations are forward-only SQL files under `src/storage/migrations/{registry,state}/`,
 tracked via `PRAGMA user_version`. Domain-specific SQL queries live next to their owning
-domain (`tracking/db/`, `visual/db/`, `research/db.rs`), while `storage/mod.rs` dispatches
-each `DbReq` variant to those functions on the single DB thread.
+domain (`tracking/db/`, `visual/db/`, `research/db.rs`), while `storage/mod.rs` runs closure
+`Job`s submitted via `Db::run` against `Conns` on the single DB thread, and domain `db`
+modules add typed methods directly via `impl Db`.
 
 # Extending `dovetail-core`
 
@@ -124,6 +125,6 @@ each `DbReq` variant to those functions on the single DB thread.
 1. Create `src/<domain>/mod.rs` with a `<Domain>State` struct (and `db.rs` / `db/` if it
    owns SQLite tables, plus a new contiguous migration in `src/storage/migrations/state/`).
 2. Wire the module in `src/lib.rs`, add its state field to `Core` in `src/engine/mod.rs`,
-   and register its command/tool/DB dispatch arms in `engine/mod.rs`, `mcp/tools.rs`, and
-   `storage/mod.rs`.
+   register its command/tool dispatch arms in `engine/mod.rs` and `mcp/tools.rs`, and add
+   typed `impl Db` methods via `Db::run` in the domain's `db` module.
 3. Add a matching integration test file `tests/<domain>.rs` reusing `tests/common/mod.rs`.

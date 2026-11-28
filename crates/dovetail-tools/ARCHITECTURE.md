@@ -63,7 +63,7 @@ tests/
 
 1. Add the input struct and a new variant to `<Feature>Tool` in `src/<domain>/<feature>.rs`. Update its `name()` and `validate()` arms.
 2. Add a [`ToolSpec`] row to [`TOOLS`] in `src/catalog.rs` and a match arm in [`Tool::parse`] in `src/lib.rs`.
-3. Handle the new variant in `dovetail-core` (`crates/dovetail-core/src/tools.rs`) and add its MCP description and JSON `inputSchema` in `crates/dovetail/src/mcp.rs` (`tool_defs()`, which a test asserts stays in sync with [`TOOLS`]).
+3. Handle the new variant in `dovetail-core` (`crates/dovetail-core/src/mcp/tools.rs`) and add its MCP description and JSON `inputSchema` in `crates/dovetail/src/mcp/schema.rs` (`tool_defs()`, which a test asserts stays in sync with [`TOOLS`]).
 4. Add parsing, round-trip and validation tests in `tests/tools.rs`.
 
 # How to add a feature (suite)
@@ -71,4 +71,4 @@ tests/
 1. Add the variant to [`Suite`] in `src/catalog.rs` (including `Suite::ALL`, `Suite::as_str`, and [`Role::default_suites`] if a role gets it by default).
 2. Create `src/<domain>/<feature>.rs` as described above, add `pub mod <feature>;` to the domain's `mod.rs` and a `pub use <domain>::<feature>;` to `src/lib.rs`. A new domain is a folder with a `mod.rs`; a domain with one feature can be a plain file, as `research.rs` is.
 3. Add a `<Feature>(<Feature>Tool)` variant to [`Tool`] in `src/lib.rs`, wiring its `name()`, `parse()` and `validate()` arms.
-4. Register the tools in [`TOOLS`], `dovetail-core`, `crates/dovetail/src/mcp.rs` and `tests/tools.rs` as above.
+4. Register the tools in [`TOOLS`], `dovetail-core`, `crates/dovetail/src/mcp/schema.rs` and `tests/tools.rs` as above.
