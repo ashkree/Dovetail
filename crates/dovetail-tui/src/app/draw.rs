@@ -1,6 +1,6 @@
 //! Drawing: the screens bar, the regions, the status bar, the prompt row and the overlays.
 
-use dovetail_api::{agent::AgentId, status::UNREGISTERED_WARNING};
+use dovetail_api::{agent::AgentId, model::DriverKind, status::UNREGISTERED_WARNING};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
@@ -375,12 +375,19 @@ impl App {
             .coordinator()
             .and_then(|id| snap.agents.iter().find(|a| a.id == id))
             .and_then(|a| a.context_pct);
+        let is_agy = in_view.is_some_and(|a| a.driver == DriverKind::Agy);
+        let (profile, limits) = if is_agy {
+            (None, self.active_usage_limits())
+        } else {
+            (snap.profile.as_deref(), snap.usage.clone())
+        };
+
         // Task #16: the project's profile (ADR 0009), the model of the conversation in view and
         // the profile's usage limits.
         let usage = usage::variants(
-            &snap.usage,
+            &limits,
             &usage::Lead {
-                profile: snap.profile.as_deref(),
+                profile,
                 model: in_view.and_then(|a| a.model.as_deref()),
                 effort: in_view.and_then(|a| a.effort),
                 context_pct,

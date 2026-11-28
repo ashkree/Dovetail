@@ -254,13 +254,15 @@ impl Capture {
                 agent,
                 task,
                 round,
-                description: field("description"),
-                subagent_type: field("subagent_type"),
+                description: field("description").or_else(|| field("Role")),
+                subagent_type: field("subagent_type").or_else(|| field("TypeName")),
                 started_ms: now_ms,
                 background: input
                     .get("run_in_background")
                     .and_then(Value::as_bool)
-                    .unwrap_or(false),
+                    .unwrap_or_else(|| {
+                        input.get("TypeName").is_some() || input.get("Role").is_some()
+                    }),
                 calls: HashMap::new(),
                 sources: Vec::new(),
                 research_shaped: false,

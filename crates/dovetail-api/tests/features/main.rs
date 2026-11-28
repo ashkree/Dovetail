@@ -24,9 +24,11 @@ use dovetail_api::decision::DecisionAuthor;
 use dovetail_api::design::{Preview, PreviewState, VariantLevel, VariantSet, VariantSlot};
 use dovetail_api::effort::EffortId;
 use dovetail_api::journal::JournalState;
-use dovetail_api::model::ModelOption;
+use dovetail_api::model::{DriverKind, ModelOption};
 use dovetail_api::project::{ProjectId, ProjectKind, ProjectSummary};
-use dovetail_api::status::{UsageLimits, UsageStatus, UsageWindow};
+use dovetail_api::status::{
+    DriverUsage, LimitWindow, UsageGroup, UsageLimits, UsageStatus, UsageWindow,
+};
 use dovetail_api::task::TaskEvent;
 use dovetail_api::{ApplyResult, Event, PROTOCOL_VERSION, ServerMsg, Snapshot, apply};
 
@@ -145,6 +147,21 @@ fn hello_and_a_full_snapshot_roundtrip() {
             }],
         )]),
         profile: Some("maveron".into()),
+        agy_usage: Some(DriverUsage {
+            driver: DriverKind::Agy,
+            plan: None,
+            groups: vec![UsageGroup {
+                name: "Gemini Models".into(),
+                models: "Gemini 4 Neon".into(),
+                windows: vec![LimitWindow {
+                    name: "5-hour".into(),
+                    used_fraction: 0.1,
+                    resets_at_ms: Some(1_700_000_000_000),
+                }],
+            }],
+            note: None,
+            failed: false,
+        }),
         journal: Some(JournalState {
             latest: Some("2026-11-10".into()),
             closing: false,

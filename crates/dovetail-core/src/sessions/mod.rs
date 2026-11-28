@@ -980,6 +980,9 @@ impl Core {
         live.inited = true;
         let setting_up = live.setting_up;
         self.set_model(agent, init.model.as_deref());
+        if driver == DriverKind::Agy {
+            self.refresh_agy_usage();
+        }
         if first {
             // The process runs, so its scope exists.
             self.watch_oom(agent);
@@ -1174,6 +1177,14 @@ impl Core {
 
     fn on_result(&mut self, agent: &AgentId, result: TurnResult) {
         self.set_running_tool(agent, None);
+        let driver = self
+            .agents
+            .get(agent)
+            .map_or(DriverKind::Claude, |r| r.agent.driver);
+        if driver == DriverKind::Agy {
+            self.refresh_agy_usage();
+            self.parent_turn_ended(agent, !result.is_error);
+        }
         let Some(live) = self.live.get_mut(agent) else {
             return;
         };
@@ -1373,7 +1384,7 @@ pub(crate) fn read_attachments(
 /// The main argument of a tool call, for the working line: a path, command, pattern, URL or
 /// query, the first line of it; empty when the call has none of those.
 fn tool_arg(input: &serde_json::Value) -> String {
-    const KEYS: [&str; 8] = [
+    const KEYS: [&str; 10] = [
         "file_path",
         "notebook_path",
         "path",
@@ -1381,7 +1392,9 @@ fn tool_arg(input: &serde_json::Value) -> String {
         "pattern",
         "url",
         "query",
+        "Role",
         "description",
+        "Prompt",
     ];
     KEYS.iter()
         .find_map(|k| input.get(k).and_then(|v| v.as_str()))
@@ -1406,6 +1419,10 @@ mod tool_arg_tests {
             "cargo test"
         );
         assert_eq!(tool_arg(&json!({"pattern": "fn main"})), "fn main");
+        assert_eq!(
+            tool_arg(&json!({"Role": "Line Counter", "Prompt": "count lines"})),
+            "Line Counter"
+        );
         assert_eq!(tool_arg(&json!({"other": 1})), "");
     }
 }

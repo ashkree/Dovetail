@@ -9,7 +9,7 @@ use dovetail_api::{Command, Event, ServerMsg, Snapshot};
 
 pub fn cases() -> Vec<Case> {
     vec![
-        Case::no_op(
+        Case::new(
             "usage_loaded",
             Snapshot::default(),
             vec![(1, Event::Status(StatusEvent::UsageLoaded(driver_usage())))],
@@ -123,7 +123,7 @@ fn usage_loaded_and_load_usage_roundtrip() {
 }
 
 #[test]
-fn usage_loaded_leaves_snapshot_unchanged() {
+fn usage_loaded_updates_agy_usage_and_ignores_claude_only() {
     let mut state = Snapshot {
         seq: 4,
         ..Snapshot::default()
@@ -134,7 +134,33 @@ fn usage_loaded_leaves_snapshot_unchanged() {
     };
     run(
         &mut state,
-        vec![Event::Status(StatusEvent::UsageLoaded(driver_usage()))],
+        vec![Event::Status(StatusEvent::UsageLoaded(vec![
+            driver_usage().remove(0),
+        ]))],
     );
     assert_eq!(state, expected);
+
+    let agy_report = DriverUsage {
+        driver: DriverKind::Agy,
+        plan: None,
+        groups: vec![UsageGroup {
+            name: "Gemini Models".into(),
+            models: "Gemini 4 Neon".into(),
+            windows: vec![LimitWindow {
+                name: "5-hour".into(),
+                used_fraction: 0.1,
+                resets_at_ms: Some(1_700_000_000_000),
+            }],
+        }],
+        note: None,
+        failed: false,
+    };
+    let mut expected_agy = state.clone();
+    expected_agy.seq = 6;
+    expected_agy.agy_usage = Some(agy_report.clone());
+    run(
+        &mut state,
+        vec![Event::Status(StatusEvent::UsageLoaded(vec![agy_report]))],
+    );
+    assert_eq!(state, expected_agy);
 }

@@ -40,7 +40,7 @@ const STATUS_MAX: usize = 120;
 
 /// Tool names that launch a subagent.
 pub(crate) fn launches_subagent(tool: &str) -> bool {
-    matches!(tool, "Agent" | "Task")
+    matches!(tool, "Agent" | "Task" | "invoke_subagent")
 }
 
 /// Marks a subagent that can no longer report as stopped.
@@ -106,15 +106,16 @@ impl Core {
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned)
         };
-        let description = field("description");
+        let description = field("description").or_else(|| field("Role"));
+        let subagent_type = field("subagent_type").or_else(|| field("TypeName"));
         let name = description
             .clone()
-            .or_else(|| field("subagent_type"))
+            .or_else(|| subagent_type.clone())
             .unwrap_or_else(|| "subagent".into());
         let background = input
             .get("run_in_background")
             .and_then(Value::as_bool)
-            .unwrap_or(false);
+            .unwrap_or_else(|| input.get("TypeName").is_some() || input.get("Role").is_some());
         let Some(parent_row) = self.agents.get(parent) else {
             return;
         };
@@ -127,7 +128,7 @@ impl Core {
         agent.parent = Some(parent.clone());
         agent.permission_mode = parent_row.agent.permission_mode;
         agent.status = AgentStatus::Working;
-        agent.status_line = field("subagent_type").unwrap_or_default();
+        agent.status_line = subagent_type.unwrap_or_default();
         agent.progress = Some(SubagentProgress {
             description: description.unwrap_or_default(),
             ..SubagentProgress::default()
@@ -319,6 +320,20 @@ impl Core {
             }
         });
         self.subagent_finished(parent, &id, !result.is_error);
+    }
+
+    /// When a parent turn ends, any running subagents under that parent are finished if its
+    /// driver does not provide asynchronous task lifecycle events (e.g. agy over ACP).
+    pub(crate) fn parent_turn_ended(&mut self, parent: &AgentId, ok: bool) {
+        let ids: Vec<AgentId> = self
+            .agents
+            .values()
+            .filter(|r| r.agent.parent.as_ref() == Some(parent) && !finished(&r.agent))
+            .map(|r| r.agent.id.clone())
+            .collect();
+        for id in ids {
+            self.subagent_finished(parent, &id, ok);
+        }
     }
 
     /// The subagent `id` is over: status, the summary's first line, worktree cleanup, pruning.

@@ -591,6 +591,7 @@ pub(crate) fn initial(now_ms: i64) -> Snapshot {
         decisions: decisions(now_ms),
         usage: usage(now_ms, 0.34),
         profile: Some("maveron".into()),
+        agy_usage: None,
         // Like the core: empty until the worktree view asks for a refresh.
         worktrees: vec![],
         maps: crate::maps::seeded(now_ms)

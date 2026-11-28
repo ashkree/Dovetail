@@ -119,7 +119,7 @@ pub fn tool_label(tool: &RunningTool) -> String {
         "Glob" | "LS" => with("Finding", text()),
         "WebFetch" => with("Fetching", text()),
         "WebSearch" => with("Searching the web for", text()),
-        "Task" | "Agent" => with("Waiting on subagent", text()),
+        "Task" | "Agent" | "invoke_subagent" => with("Waiting on subagent", text()),
         "TodoWrite" | "TaskCreate" | "TaskUpdate" => "Updating the to-do list…".into(),
         name => {
             // `mcp__dovetail__core_ask_user` is "ask_user": the server prefix tells nothing.
@@ -292,6 +292,10 @@ mod tests {
         assert_eq!(
             label(Some(&tool("mcp__dovetail__core_ask_user", "")), 0),
             "Calling ask_user…"
+        );
+        assert_eq!(
+            label(Some(&tool("invoke_subagent", "Line Counter")), 0),
+            "Waiting on subagent Line Counter…"
         );
     }
 

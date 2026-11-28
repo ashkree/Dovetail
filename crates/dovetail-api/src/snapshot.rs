@@ -13,8 +13,7 @@ use crate::map::MapSummary;
 use crate::model::ModelOption;
 use crate::project::ProjectSummary;
 use crate::research::ResearchSummary;
-use crate::status::UsageLimits;
-use crate::status::{Totals, Warning};
+use crate::status::{DriverUsage, Totals, UsageLimits, Warning};
 use crate::tangent::TangentSummary;
 use crate::task::Task;
 use crate::worktree::WorktreeInfo;
@@ -74,6 +73,9 @@ pub struct Snapshot {
     /// names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// The latest usage report for the agy driver, if agy is registered and reported (task #58).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agy_usage: Option<DriverUsage>,
     /// Git and PR state of each slice's worktree, as last gathered (empty until the first
     /// refresh).
     #[serde(default)]

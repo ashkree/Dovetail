@@ -152,6 +152,47 @@ impl Core {
         });
     }
 
+    /// Receives usage reports from `:usage` or background refreshes, caching agy quota (task #58).
+    pub(crate) fn on_usage_loaded(&mut self, reports: Vec<DriverUsage>) {
+        for report in &reports {
+            if report.driver == DriverKind::Agy {
+                self.agy_usage_in_flight = false;
+                self.agy_usage = Some(report.clone());
+                if !report.failed {
+                    self.agy_usage_last_refreshed = Some(tokio::time::Instant::now());
+                }
+            }
+        }
+        self.emit(Event::Status(StatusEvent::UsageLoaded(reports)));
+    }
+
+    /// Throttled background refresh of agy usage (task #58).
+    pub(crate) fn refresh_agy_usage(&mut self) {
+        let Some(driver) = self.options.drivers.get(DriverKind::Agy).cloned() else {
+            return;
+        };
+        if self.agy_usage_in_flight {
+            return;
+        }
+        if self
+            .agy_usage_last_refreshed
+            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(3 * 60))
+        {
+            return;
+        }
+        self.agy_usage_in_flight = true;
+        let cwd = self.query_cwd();
+        let query = UsageQuery {
+            cwd,
+            env: Vec::new(),
+        };
+        let inputs = self.inputs.clone();
+        tokio::spawn(async move {
+            let report = driver.usage(query).await;
+            let _ = inputs.send(Input::UsageLoaded(vec![report]));
+        });
+    }
+
     /// The session reported its model. Claude Code's own placeholder messages (`<synthetic>`)
     /// are not a model.
     pub(crate) fn set_model(&mut self, agent: &AgentId, model: Option<&str>) {

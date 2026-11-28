@@ -932,3 +932,206 @@ fn without_agy_there_are_no_agy_models_usage_group_or_refresh() {
     );
     h.quit();
 }
+
+#[test]
+fn agy_session_start_refreshes_agy_usage_on_snapshot_and_throttles_turn() {
+    use dovetail_api::{
+        model::DriverKind,
+        status::{DriverUsage, LimitWindow, UsageGroup},
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    std::fs::create_dir_all(paths.recipe("p").parent().unwrap()).unwrap();
+    std::fs::write(paths.recipe("p"), "profile = \"missing\"\n").unwrap();
+
+    let mut row = session_row(
+        COORDINATOR,
+        AgentKind::Coordinator,
+        None,
+        dir.path(),
+        dovetail_core::session::launch::agy_transcript_path("old-agy-id"),
+        None,
+    );
+    row.agent.driver = DriverKind::Agy;
+    row.session_id = Some("old-agy-id".into());
+    seed(&paths, row);
+
+    let agy_report = DriverUsage {
+        driver: DriverKind::Agy,
+        plan: Some("Pro".into()),
+        groups: vec![UsageGroup {
+            name: "Gemini Models".into(),
+            models: "Gemini 4 Neon".into(),
+            windows: vec![LimitWindow {
+                name: "5-hour".into(),
+                used_fraction: 0.15,
+                resets_at_ms: Some(1_700_000_000_000),
+            }],
+        }],
+        note: None,
+        failed: false,
+    };
+
+    let claude_fake = fixture("plain_turn");
+    let agy_fake = agy_fixture("plain_turn");
+    agy_fake.set_usage(agy_report.clone());
+
+    let mut h = Harness::start_both(
+        claude_fake.clone(),
+        agy_fake.clone(),
+        paths.clone(),
+        None,
+        Config::default(),
+    );
+
+    // Initial session start (on_init) triggers background agy usage refresh
+    h.wait_for("agy usage loaded into snapshot", |s| {
+        s.agy_usage.as_ref() == Some(&agy_report)
+    });
+    assert_eq!(agy_fake.usage_queries().len(), 1);
+
+    // Prompting and running a turn finishes (on_result), but refresh is throttled (within 3 mins)
+    prompt(&h, "Reply with the single word: pong");
+    h.wait_for("turn finished", |s| finished_turns(s) == 1);
+
+    // Ensure no additional usage query was triggered due to throttling
+    h.drain(Duration::from_millis(200));
+    assert_eq!(agy_fake.usage_queries().len(), 1);
+    assert_eq!(h.snap.agy_usage.as_ref(), Some(&agy_report));
+
+    h.quit();
+}
+
+#[test]
+fn agy_invoke_subagent_lifecycle_in_tui_tree() {
+    use dovetail_api::model::DriverKind;
+    use dovetail_driver::{
+        AssistantMessage, ContentBlock, DriverEvent, Origin, ToolResult, TurnResult,
+    };
+    use serde_json::json;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    std::fs::create_dir_all(paths.recipe("p").parent().unwrap()).unwrap();
+    std::fs::write(paths.recipe("p"), "profile = \"missing\"\n").unwrap();
+
+    let mut row = session_row(
+        COORDINATOR,
+        AgentKind::Coordinator,
+        None,
+        dir.path(),
+        PathBuf::new(),
+        None,
+    );
+    row.agent.driver = DriverKind::Agy;
+    row.session_id = None;
+    row.transcript_path = None;
+    seed(&paths, row);
+
+    let claude_fake = fixture("plain_turn");
+    let agy_fake = agy_fixture("plain_turn").with_options(ReplayOptions {
+        pause_before: vec![10],
+        ..Default::default()
+    });
+    let mut h = Harness::start_both(
+        claude_fake,
+        agy_fake.clone(),
+        paths,
+        None,
+        Config::default(),
+    );
+
+    // Initial prompt starts the agy session and turn
+    prompt(&h, "count the lines with subagent");
+    h.wait_for("agy coordinator working", |s| {
+        s.agents
+            .iter()
+            .any(|a| a.id.0 == COORDINATOR && a.status == AgentStatus::Working)
+    });
+
+    // Send invoke_subagent tool call
+    let tool_id = "call_invoke_1";
+    agy_fake.send_event(DriverEvent::Assistant(AssistantMessage {
+        origin: Origin::default(),
+        message_id: None,
+        uuid: None,
+        blocks: vec![ContentBlock::ToolUse {
+            id: tool_id.into(),
+            name: "invoke_subagent".into(),
+            input: json!({
+                "Role": "Line Counter",
+                "TypeName": "research",
+                "Prompt": "Read lines.txt and count lines."
+            }),
+        }],
+        model: None,
+        usage: None,
+    }));
+
+    // 1. invoke_subagent creates a subagent row in Snapshot.agents named after Role with background: true
+    h.wait_for("subagent created in snapshot", |s| {
+        s.agents.iter().any(|a| {
+            matches!(a.kind, AgentKind::Subagent { background: true })
+                && a.name == "Line Counter"
+                && a.status == AgentStatus::Working
+        })
+    });
+
+    // 2. Immediate ToolResult for invoke_subagent leaves the subagent running (does NOT close it)
+    agy_fake.send_event(DriverEvent::ToolResult(ToolResult {
+        origin: Origin::default(),
+        tool_use_id: tool_id.into(),
+        content: serde_json::Value::Null,
+        is_error: false,
+        meta: None,
+    }));
+
+    h.drain(Duration::from_millis(100));
+    let sub = h
+        .snap
+        .agents
+        .iter()
+        .find(|a| matches!(a.kind, AgentKind::Subagent { .. }))
+        .expect("subagent still in snapshot");
+    assert_eq!(sub.name, "Line Counter");
+    assert_eq!(sub.kind, AgentKind::Subagent { background: true });
+    assert_eq!(sub.status, AgentStatus::Working);
+
+    // 3. Parent TurnResult marks the agy subagent Done
+    agy_fake.send_event(DriverEvent::TurnResult(TurnResult {
+        subtype: "success".into(),
+        is_error: false,
+        result: Some("3 lines".into()),
+        result_index: Some(1),
+        terminal_reason: None,
+        stop_reason: Some("end_turn".into()),
+        num_turns: None,
+        duration_ms: None,
+        total_cost_usd: None,
+        model_usage: vec![],
+        permission_denials: vec![],
+        queued_turn_count: None,
+        raw: serde_json::Value::Null,
+    }));
+
+    h.wait_for("subagent marked Done on parent turn completion", |s| {
+        s.agents.iter().any(|a| {
+            matches!(a.kind, AgentKind::Subagent { .. })
+                && a.name == "Line Counter"
+                && a.status == AgentStatus::Done
+        })
+    });
+
+    h.quit();
+}

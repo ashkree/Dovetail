@@ -38,9 +38,10 @@ use dovetail_api::{
     journal::{JournalCommand, JournalEvent},
     map::MapCommand,
     mcp::McpEvent,
+    model::DriverKind,
     project::{ProjectCommand, ProjectEvent},
     research::{ResearchCommand, ResearchEvent},
-    status::StatusEvent,
+    status::{StatusEvent, UsageLimits},
     task::{TaskChange, TaskCommand, TaskEvent},
     worktree::WorktreeCommand,
 };
@@ -285,10 +286,35 @@ impl App {
             .then(|| activity::next_frame_in(self.now_ms))
     }
 
+    /// The active usage limits to show in the status bar and watch for reset timers (task #58).
+    pub fn active_usage_limits(&self) -> UsageLimits {
+        let in_view = self
+            .buffers
+            .conversation
+            .agent()
+            .and_then(|id| self.snap.agents.iter().find(|a| &a.id == id));
+        match in_view.map(|a| a.driver) {
+            Some(DriverKind::Agy) => {
+                let agy = self.snap.agy_usage.as_ref().filter(|u| !u.failed);
+                let group = agy.and_then(|u| {
+                    crate::usage::match_usage_group(
+                        &u.groups,
+                        in_view.and_then(|a| a.model.as_deref()),
+                    )
+                });
+                group
+                    .map(crate::usage::group_to_usage_limits)
+                    .unwrap_or_default()
+            }
+            _ => self.snap.usage.clone(),
+        }
+    }
+
     /// When the screen next changes with the wall clock alone (a usage-limit reset passing),
     /// in Unix ms. `None` when nothing is pending, so an idle UI sleeps.
     pub fn next_clock_change_ms(&self) -> Option<i64> {
-        crate::usage::next_change_ms(&self.snap.usage, self.now_ms)
+        let limits = self.active_usage_limits();
+        crate::usage::next_change_ms(&limits, self.now_ms)
     }
 
     /// Whether the screen needs drawing.

@@ -141,3 +141,143 @@ fn the_not_a_project_warning_shows_in_the_status_bar_only_while_it_applies() {
     assert!(narrow.contains("⚠ not a project yet"), "{narrow}");
     assert!(!narrow.contains("Dovetail project yet"), "{narrow}");
 }
+
+#[test]
+fn agy_agent_hides_claude_limits_and_profile_when_uncached() {
+    let mut snap = world();
+    snap.profile = Some("custom-claude".into());
+    snap.usage = usage(0.34, 0.18);
+    for a in &mut snap.agents {
+        if a.id == agent_id("coordinator") {
+            a.driver = dovetail_api::model::DriverKind::Agy;
+            a.model = Some("gemini-4-neon-medium".into());
+        }
+    }
+    snap.agy_usage = None;
+    let mut app = app_with(snap);
+    let row = header(&mut app, 160);
+    // Profile "custom-claude" must NOT appear
+    assert!(!row.contains("custom-claude"), "{row}");
+    // Claude limits must NOT appear
+    assert!(!row.contains("5h"), "{row}");
+    assert!(!row.contains("week"), "{row}");
+    // Only model and context show
+    assert!(row.contains("gemini-4-neon"), "{row}");
+    assert!(row.contains("ctx"), "{row}");
+}
+
+#[test]
+fn agy_agent_displays_matching_quota_group_when_loaded() {
+    use dovetail_api::{
+        model::DriverKind,
+        status::{DriverUsage, LimitWindow, UsageGroup},
+    };
+
+    let make_snap = |model: &str| {
+        let mut snap = world();
+        snap.profile = Some("claude-profile".into());
+        snap.usage = usage(0.50, 0.50); // Claude limits (50%)
+        for a in &mut snap.agents {
+            if a.id == agent_id("coordinator") {
+                a.driver = DriverKind::Agy;
+                a.model = Some(model.into());
+            }
+        }
+        snap.agy_usage = Some(DriverUsage {
+            driver: DriverKind::Agy,
+            plan: None,
+            groups: vec![
+                UsageGroup {
+                    name: "Gemini Models".into(),
+                    models: "Gemini 4 Neon, Gemini 3.8 Flash".into(),
+                    windows: vec![
+                        LimitWindow {
+                            name: "5-hour".into(),
+                            used_fraction: 0.10,
+                            resets_at_ms: Some(NOW_MS + 3_600_000),
+                        },
+                        LimitWindow {
+                            name: "Weekly".into(),
+                            used_fraction: 0.25,
+                            resets_at_ms: Some(NOW_MS + 86_400_000),
+                        },
+                    ],
+                },
+                UsageGroup {
+                    name: "Gemini 4 Argon".into(),
+                    models: String::new(),
+                    windows: vec![
+                        LimitWindow {
+                            name: "5-hour".into(),
+                            used_fraction: 0.40,
+                            resets_at_ms: Some(NOW_MS + 7_200_000),
+                        },
+                        LimitWindow {
+                            name: "Weekly".into(),
+                            used_fraction: 0.60,
+                            resets_at_ms: Some(NOW_MS + 2 * 86_400_000),
+                        },
+                    ],
+                },
+                UsageGroup {
+                    name: "Claude Models".into(),
+                    models: "Claude Opus, Claude Sonnet".into(),
+                    windows: vec![
+                        LimitWindow {
+                            name: "5-hour".into(),
+                            used_fraction: 0.70,
+                            resets_at_ms: Some(NOW_MS + 10_800_000),
+                        },
+                        LimitWindow {
+                            name: "Weekly".into(),
+                            used_fraction: 0.90,
+                            resets_at_ms: Some(NOW_MS + 3 * 86_400_000),
+                        },
+                    ],
+                },
+            ],
+            note: None,
+            failed: false,
+        });
+        snap
+    };
+
+    // 1. Gemini Models matching (gemini-4-neon-medium)
+    let mut app = app_with(make_snap("gemini-4-neon-medium"));
+    let row = header(&mut app, 160);
+    assert!(!row.contains("claude-profile"), "{row}");
+    assert!(row.contains("5h 10%"), "{row}");
+    assert!(row.contains("week 25%"), "{row}");
+    assert_eq!(app.next_clock_change_ms(), Some(NOW_MS + 3_600_000));
+
+    // 2. Gemini 4 Argon matching (gemini-4-argon)
+    let mut app = app_with(make_snap("gemini-4-argon"));
+    let row = header(&mut app, 160);
+    assert!(!row.contains("claude-profile"), "{row}");
+    assert!(row.contains("5h 40%"), "{row}");
+    assert!(row.contains("week 60%"), "{row}");
+    assert_eq!(app.next_clock_change_ms(), Some(NOW_MS + 7_200_000));
+
+    // 3. Claude Models matching (claude-opus-5-5)
+    let mut app = app_with(make_snap("claude-opus-5-5"));
+    let row = header(&mut app, 160);
+    assert!(!row.contains("claude-profile"), "{row}");
+    assert!(row.contains("5h 70%"), "{row}");
+    assert!(row.contains("week 90%"), "{row}");
+    assert_eq!(app.next_clock_change_ms(), Some(NOW_MS + 10_800_000));
+
+    // 4. Claude agent is unchanged
+    let mut snap = make_snap("claude-opus-5-5");
+    for a in &mut snap.agents {
+        if a.id == agent_id("coordinator") {
+            a.driver = DriverKind::Claude;
+        }
+    }
+    let mut app = app_with(snap);
+    let row = header(&mut app, 160);
+    // Profile shown
+    assert!(row.contains("claude-profile"), "{row}");
+    // Claude limits shown (50%, not agy's 70%)
+    assert!(row.contains("5h 50%"), "{row}");
+    assert!(row.contains("week 50%"), "{row}");
+}
