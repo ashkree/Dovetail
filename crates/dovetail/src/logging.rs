@@ -2,7 +2,7 @@
 //! included, goes to the state directory (`Paths::state`: `~/.local/state/dovetail/`, or
 //! `$XDG_STATE_HOME/dovetail/`, or `$DOVETAIL_STATE_DIR`).
 
-use dovetail_core::paths::Paths;
+use dovetail_core::settings::paths::Paths;
 use tracing_subscriber::EnvFilter;
 
 /// Starts logging to `dovetail.log` in the state directory and records panics there. Logging is

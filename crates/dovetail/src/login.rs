@@ -10,29 +10,35 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use dovetail_core::config::Config;
-use dovetail_core::paths::Paths;
-use dovetail_core::profile;
+use dovetail_core::settings::config::Config;
+use dovetail_core::settings::paths::Paths;
+use dovetail_core::settings::profile;
 
-const USAGE: &str =
-    "usage: dovetail login <profile>   log a Claude profile in (creates it if needed)
-       dovetail login --list        list profiles and whether each is logged in";
+#[derive(Debug, clap::Args)]
+#[command(group(
+    clap::ArgGroup::new("action")
+        .required(true)
+        .args(["profile", "list"])
+))]
+pub struct Args {
+    /// Claude profile name to sign in (created if needed).
+    pub profile: Option<String>,
+    /// List profiles and whether each is logged in.
+    #[arg(long)]
+    pub list: bool,
+}
 
-/// Runs `dovetail login` with the arguments after `login`.
-pub fn run(args: Vec<String>) -> Result<()> {
+/// Runs `dovetail login`.
+pub fn run(args: Args) -> Result<()> {
     let paths = Paths::from_env();
-    match args.as_slice() {
-        [flag] if flag == "--list" => {
-            print!("{}", list(&paths)?);
-            Ok(())
-        }
-        [flag] if flag == "-h" || flag == "--help" => {
-            println!("{USAGE}");
-            Ok(())
-        }
-        [name] if !name.starts_with('-') => login(&paths, name),
-        _ => bail!("{USAGE}"),
+    if args.list {
+        print!("{}", list(&paths)?);
+        return Ok(());
     }
+    if let Some(name) = args.profile.as_deref() {
+        return login(&paths, name);
+    }
+    unreachable!("clap ArgGroup requires either profile or --list")
 }
 
 /// The `--list` text.

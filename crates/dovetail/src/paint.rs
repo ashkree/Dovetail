@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use dovetail_api::map::Map;
+use dovetail_api::visual::map::Map;
 use dovetail_maps::{MapRenderer, RenderOptions};
 use dovetail_tui::canvas::{MapPainter, PaintError, Picture, Placed, PxRect};
 
@@ -54,10 +54,8 @@ pub fn painter() -> Arc<dyn MapPainter> {
 
 #[cfg(test)]
 mod tests {
-    use dovetail_api::{
-        Command, Event, ServerMsg,
-        map::{MapCommand, MapEvent},
-    };
+    use dovetail_api::visual::map::{MapCommand, MapEvent};
+    use dovetail_api::{Command, Event, ServerMsg};
     use dovetail_mock::{MockConfig, MockCore};
 
     use super::*;

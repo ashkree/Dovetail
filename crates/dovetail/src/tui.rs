@@ -4,12 +4,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use dovetail_core::config::Config;
-use dovetail_core::db::Db;
-use dovetail_core::paths::Paths;
-use dovetail_core::service::UpgradeOptions;
-use dovetail_core::upgrade;
-use dovetail_core::{CoreOptions, Drivers, projects};
+use dovetail_core::app::upgrade;
+use dovetail_core::engine::{self, CoreOptions, UpgradeOptions};
+use dovetail_core::sessions::drivers::Drivers;
+use dovetail_core::settings::config::Config;
+use dovetail_core::settings::paths::Paths;
+use dovetail_core::storage::Db;
+use dovetail_core::tracking::projects;
 use dovetail_driver::{AgyDriver, ClaudeDriver};
 use dovetail_mock::{MockConfig, spawn};
 use dovetail_tui::{App, Clock};
@@ -84,8 +85,8 @@ pub fn run_real(project: Option<&str>) -> Result<()> {
         opener: None,
         gh: None,
     };
-    let (link, core) = dovetail_core::spawn(resolution, paths.clone(), config, options)
-        .context("starting the core")?;
+    let (link, core) =
+        engine::spawn(resolution, paths.clone(), config, options).context("starting the core")?;
     let clock: Clock = Box::new(|| {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -118,6 +119,8 @@ fn open_project(paths: &Paths, id: &str) {
     while let Some(arg) = old.next() {
         if arg == "--project" {
             old.next();
+        } else if arg.to_str().is_some_and(|s| s.starts_with("--project=")) {
+            // Drop `--project=<id>` as well as `--project <id>`.
         } else {
             args.push(arg);
         }

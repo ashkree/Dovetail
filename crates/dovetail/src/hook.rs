@@ -45,11 +45,25 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use dovetail_core::paths::Paths;
-use dovetail_core::recipe::Recipe;
-use dovetail_core::worktree::{self, CreateRequest, HookOutcome};
+use dovetail_core::code::worktree::{self, CreateRequest, HookOutcome};
+use dovetail_core::settings::paths::Paths;
+use dovetail_core::settings::recipe::Recipe;
 use dovetail_tools::env;
 use serde::Deserialize;
+
+#[derive(Debug, clap::Args)]
+pub struct Args {
+    #[command(subcommand)]
+    pub event: HookEvent,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum HookEvent {
+    /// Create (or reuse) a slice or subagent worktree from hook JSON on stdin.
+    WorktreeCreate,
+    /// No-op: Dovetail removes worktrees itself.
+    WorktreeRemove,
+}
 
 /// The fields of the hook input that we use.
 #[derive(Debug, Deserialize)]
@@ -60,15 +74,11 @@ struct HookInput {
     hook_event_name: Option<String>,
 }
 
-/// Run the subcommand with the arguments after its name.
-pub fn run(args: Vec<String>) -> Result<()> {
-    match args.first().map(String::as_str) {
-        Some("worktree-create") => worktree_create(),
-        Some("worktree-remove") => Ok(()),
-        Some(other) => {
-            bail!("unknown hook `{other}` (expected worktree-create or worktree-remove)")
-        }
-        None => bail!("usage: dovetail hook <worktree-create|worktree-remove>"),
+/// Run the subcommand with the parsed arguments.
+pub fn run(args: Args) -> Result<()> {
+    match args.event {
+        HookEvent::WorktreeCreate => worktree_create(),
+        HookEvent::WorktreeRemove => Ok(()),
     }
 }
 

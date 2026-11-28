@@ -2,7 +2,7 @@
 //! install it at once when no app runs, or hand it to the running app, which offers "Upgrade
 //! ready" in Needs you.
 //!
-//! The same staging, build and swap code as `:upgrade` in the app (`dovetail_core::upgrade`).
+//! The same staging, build and swap code as `:upgrade` in the app (`dovetail_core::app::upgrade`).
 //! Output goes to the terminal: this is the command line, no TUI is running.
 
 use std::path::Path;
@@ -10,28 +10,28 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
-use dovetail_core::db::Db;
-use dovetail_core::paths::Paths;
-use dovetail_core::projects;
-use dovetail_core::socket;
-use dovetail_core::upgrade::{
+use dovetail_core::app::upgrade::{
     BuildRequest, Source, Staging, Swap, SwapError, SwapGuard, SystemExec, UpgradeError, build,
     install_path, install_staged, is_installed_binary, running_blockers,
 };
+use dovetail_core::mcp::socket;
+use dovetail_core::settings::paths::Paths;
+use dovetail_core::storage::Db;
+use dovetail_core::tracking::projects;
 
-const USAGE: &str = "usage: dovetail upgrade [--local]";
+#[derive(Debug, clap::Args)]
+pub struct Args {
+    /// Build this checkout instead of origin/main.
+    #[arg(long)]
+    pub local: bool,
+}
 
-/// Run the subcommand with the arguments after its name.
-pub fn run(args: Vec<String>) -> Result<()> {
-    let source = match args
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .as_slice()
-    {
-        [] => Source::OriginMain,
-        ["--local"] => Source::Local,
-        _ => bail!("{USAGE}"),
+/// Run the subcommand with the parsed arguments.
+pub fn run(args: Args) -> Result<()> {
+    let source = if args.local {
+        Source::Local
+    } else {
+        Source::OriginMain
     };
 
     let paths = Paths::from_env();
