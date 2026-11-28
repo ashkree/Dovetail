@@ -638,6 +638,7 @@ dependencies = [
 name = "dovetail-tui"
 version = "0.0.0"
 dependencies = [
+ "base64 0.23.1",
  "crossterm",
  "dovetail-api",
  "dovetail-mock",
@@ -648,6 +649,7 @@ dependencies = [
  "ratatui",
  "serde_json",
  "signal-hook",
+ "thiserror 2.0.21",
  "tracing",
  "unicode-width",
 ]
