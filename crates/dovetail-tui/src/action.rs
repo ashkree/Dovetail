@@ -201,7 +201,7 @@ pub enum Action {
     RegisterProject,
     /// Create a project: `:project new <name> --research` makes a research project.
     NewProject,
-    /// Edit the task's notes in `$EDITOR` (arrives with storage in M5).
+    /// Edit the selected research file (or task notes once supported) in `$EDITOR`.
     TaskEditNotes,
     /// Relate the task to another, or remove the relation, through the picker.
     TaskRelate,

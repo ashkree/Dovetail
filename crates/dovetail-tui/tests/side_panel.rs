@@ -6,8 +6,8 @@ mod support;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, Event, ServerMsg, Snapshot,
-    agent::{AgentCommand, AgentEvent, AgentKind, AgentStatus, PermissionMode},
-    conversation::{ConversationCommand, ConversationTail, EntryKind},
+    agents::agent::{AgentCommand, AgentEvent, AgentKind, AgentStatus, PermissionMode},
+    agents::conversation::{ConversationCommand, ConversationTail, EntryKind},
 };
 use dovetail_tui::mode::Mode;
 use dovetail_tui::region::RegionId;

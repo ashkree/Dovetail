@@ -7,10 +7,10 @@ mod support;
 
 use dovetail_api::{
     Command,
-    inbox::InboxKind,
-    project::ProjectId,
-    tangent::{TangentCommand, tangent_agent},
-    task::TaskId,
+    activity::inbox::InboxKind,
+    agents::tangent::{TangentCommand, tangent_agent},
+    tracking::project::ProjectId,
+    tracking::task::TaskId,
 };
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;

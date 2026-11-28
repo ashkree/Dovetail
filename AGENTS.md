@@ -66,7 +66,7 @@ Which skill when:
 ## Hard constraints
 
 - **Core:** Rust stable, `rusqlite` with `bundled` (SQLite, FTS5, WAL) on a dedicated thread, `tokio` for process/IO in the core only.
-- **TUI:** `ratatui` + `crossterm`, `nucleo`, `pulldown-cmark`. It redraws only when state changed. The target terminal is kitty: the text-sizing protocol and kitty graphics (maps) are used there and fall back quietly elsewhere and under tmux; readability never depends on them. No kitty keyboard protocol. Transparent by default; solid backgrounds on content panes are a toggle (ADR 0030 §5).
+- **TUI:** `ratatui` + `crossterm`, `nucleo`, `pulldown-cmark`. It redraws only when state changed. The target terminal is kitty: kitty graphics (maps and reading-mode figures) are used there and fall back quietly elsewhere and under tmux; readability never depends on them. Only `DISAMBIGUATE_ESCAPE_CODES` (no full kitty keyboard protocol). Transparent by default; solid backgrounds on content panes are a toggle (ADR 0030 §5).
 - **Page:** one small HTTP server in the core, bound to `127.0.0.1` on a free port, serving a single-page app (React + TypeScript, React Flow for canvases). Its types are not generated yet; ts-rs was shelved (task #52) and the page decides how it gets them. Keyboard-first; the mouse is never the only way.
 - **Low memory:** 16 GB target machine, most of it for Claude Code. Lean dependencies. About 100 MB RSS for the TUI with its core; the browser tab is not budgeted.
 - **Linux** primary. cgroup caps via `systemd-run --user`.

@@ -8,19 +8,19 @@
 
 use dovetail_api::{
     Command, Event,
-    agent::{AgentId, AgentKind},
-    project::{ProjectId, ProjectKind},
-    task::TaskId,
+    agents::agent::{AgentId, AgentKind},
+    tracking::project::{ProjectId, ProjectKind},
+    tracking::task::TaskId,
 };
 use dovetail_api::{
-    agent::AgentEvent,
+    agents::agent::AgentEvent,
+    agents::tangent::{TangentCommand, TangentEvent},
     app::{AppCommand, AppEvent},
-    library::{BrowseWhat, LibraryCommand, LibraryEvent},
+    research::library::{BrowseWhat, LibraryCommand, LibraryEvent},
     research::{
         Evidence, ResearchCommand, ResearchContent, ResearchDocument, ResearchEvent, ResearchWhat,
         SourceKind,
     },
-    tangent::{TangentCommand, TangentEvent},
 };
 
 use super::overlay::{Overlay, Purpose};

@@ -29,21 +29,21 @@ mod tangents;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dovetail_api::{
     ApplyResult, Command, Event, PROTOCOL_VERSION, ServerMsg, Snapshot,
-    agent::{AgentCommand, AgentEvent, AgentId, AgentKind, AgentStatus, SlashCommand},
+    activity::inbox::{InboxCommand, InboxKind, PermissionAnswer},
+    activity::status::{StatusEvent, UsageLimits},
+    agents::agent::{AgentCommand, AgentEvent, AgentId, AgentKind, AgentStatus, SlashCommand},
+    agents::conversation::{ConversationCommand, ConversationEvent},
+    agents::journal::{JournalCommand, JournalEvent},
+    agents::mcp::McpEvent,
+    agents::model::DriverKind,
     app::{AppCommand, AppEvent},
     apply,
-    conversation::{ConversationCommand, ConversationEvent},
-    decision::DecisionCommand,
-    inbox::{InboxCommand, InboxKind, PermissionAnswer},
-    journal::{JournalCommand, JournalEvent},
-    map::MapCommand,
-    mcp::McpEvent,
-    model::DriverKind,
-    project::{ProjectCommand, ProjectEvent},
+    code::worktree::WorktreeCommand,
     research::{ResearchCommand, ResearchEvent},
-    status::{StatusEvent, UsageLimits},
-    task::{TaskChange, TaskCommand, TaskEvent},
-    worktree::WorktreeCommand,
+    tracking::decision::DecisionCommand,
+    tracking::project::{ProjectCommand, ProjectEvent},
+    tracking::task::{TaskChange, TaskCommand, TaskEvent},
+    visual::map::MapCommand,
 };
 use jiff::tz::TimeZone;
 
@@ -165,9 +165,9 @@ pub struct App {
     /// Whose chat bar is open (or was open last): the main region's, the side panel's or Ask's.
     chat_site: ChatSite,
     /// `i` asked for a new Ask session for this task: type in it when it appears.
-    pending_ask: Option<dovetail_api::task::TaskId>,
+    pending_ask: Option<dovetail_api::tracking::task::TaskId>,
     /// A tangent whose latest answer opens once its listing arrives (ADR 0017).
-    pending_tangent_read: Option<dovetail_api::task::TaskId>,
+    pending_tangent_read: Option<dovetail_api::tracking::task::TaskId>,
     /// Focus mode (`<leader>z`): the side column is hidden.
     focus_mode: bool,
     /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
@@ -826,7 +826,7 @@ impl App {
     }
 
     /// The node selected in the open map.
-    pub fn selected_map_node(&self) -> Option<&dovetail_api::map::NodeId> {
+    pub fn selected_map_node(&self) -> Option<&dovetail_api::visual::map::NodeId> {
         self.buffers.map_outline.selected_node()
     }
 
@@ -1123,9 +1123,9 @@ impl App {
         }
     }
 
-    fn log_decision(&mut self, task: dovetail_api::task::TaskId, text: String) {
+    fn log_decision(&mut self, task: dovetail_api::tracking::task::TaskId, text: String) {
         self.outbox.push(Command::Decision(DecisionCommand::Log(
-            dovetail_api::decision::NewDecision {
+            dovetail_api::tracking::decision::NewDecision {
                 task,
                 text,
                 why: None,
@@ -1578,8 +1578,8 @@ pub(crate) fn commands_for<'a>(snap: &'a Snapshot, agent: &AgentId) -> &'a [Slas
 
 /// This UI is frozen as built before the review status (ADR 0024): it shows a task in review as
 /// in progress. Done once, where tasks arrive, so nothing downstream meets the status.
-fn without_review(task: &mut dovetail_api::task::Task) {
-    if task.status == dovetail_api::task::TaskStatus::Review {
-        task.status = dovetail_api::task::TaskStatus::InProgress;
+fn without_review(task: &mut dovetail_api::tracking::task::Task) {
+    if task.status == dovetail_api::tracking::task::TaskStatus::Review {
+        task.status = dovetail_api::tracking::task::TaskStatus::InProgress;
     }
 }

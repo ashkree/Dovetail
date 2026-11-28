@@ -11,8 +11,12 @@
 //! itself, so the UI never opens the file.
 
 use std::collections::HashMap;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+use base64::Engine as _;
 
 use super::Picture;
 use super::ring::Ring;
@@ -28,21 +32,9 @@ pub const RING_ID: u32 = 7_302;
 const MAP_Z: i32 = -2;
 const RING_Z: i32 = -1;
 
-const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
 /// Standard padded base64.
 pub fn base64(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let at = |i: usize| u32::from(chunk.get(i).copied().unwrap_or(0));
-        let n = (at(0) << 16) | (at(1) << 8) | at(2);
-        let sextet = |shift: u32| char::from(BASE64[((n >> shift) & 0x3f) as usize]);
-        out.push(sextet(18));
-        out.push(sextet(12));
-        out.push(if chunk.len() > 1 { sextet(6) } else { '=' });
-        out.push(if chunk.len() > 2 { sextet(0) } else { '=' });
-    }
-    out
+    base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
 /// One graphics command: `ESC _ G <control> ; <payload> ESC \`.
@@ -144,8 +136,11 @@ pub struct Figure {
 
 /// Sends a PNG file as image `id`: kitty reads it from `path`.
 pub fn send_png_file(out: &mut Vec<u8>, id: u32, path: &std::path::Path) {
-    let path = path.to_string_lossy();
-    transmit(out, &format!("a=t,f=100,t=f,i={id},q=2"), path.as_bytes());
+    #[cfg(unix)]
+    let bytes = path.as_os_str().as_bytes();
+    #[cfg(not(unix))]
+    let bytes = path.as_os_str().as_encoded_bytes();
+    transmit(out, &format!("a=t,f=100,t=f,i={id},q=2"), bytes);
 }
 
 /// Places a figure scaled into its cells, under the text.

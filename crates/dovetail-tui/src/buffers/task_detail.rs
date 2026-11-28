@@ -1,16 +1,16 @@
 //! One task in full: title, fields, related tasks, notes, the agents working on it and its
-//! decision log (in v1 since 2026-11-03, ADR 0003). Notes are edited in `$EDITOR` from M5.
+//! decision log (in v1 since 2026-11-03, ADR 0003). Research files can be edited in `$EDITOR`.
 
 use dovetail_api::{
     Command, Event, Snapshot,
-    agent::Agent,
-    decision::{Decision, DecisionAuthor},
-    task::{Task, TaskChange, TaskId},
+    agents::agent::Agent,
+    tracking::decision::{Decision, DecisionAuthor},
+    tracking::task::{Task, TaskChange, TaskId},
 };
 use dovetail_api::{
     app::AppEvent,
     research::{ResearchContent, ResearchEvent, ResearchWhat},
-    task::TaskCommand,
+    tracking::task::TaskCommand,
 };
 use jiff::tz::TimeZone;
 use ratatui::Frame;
@@ -551,14 +551,14 @@ impl Buffer for TaskDetailBuffer {
 
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
         if let Some(reading) = &mut self.reading {
-            let last = reading.lines.len().saturating_sub(1);
+            let max_top = reading.lines.len().saturating_sub(reading.page.max(1));
             match action {
-                Action::MoveDown => reading.top = (reading.top + 1).min(last),
+                Action::MoveDown => reading.top = (reading.top + 1).min(max_top),
                 Action::MoveUp => reading.top = reading.top.saturating_sub(1),
-                Action::PageDown => reading.top = (reading.top + reading.page).min(last),
+                Action::PageDown => reading.top = (reading.top + reading.page).min(max_top),
                 Action::PageUp => reading.top = reading.top.saturating_sub(reading.page),
                 Action::GoTop => reading.top = 0,
-                Action::GoBottom => reading.top = last,
+                Action::GoBottom => reading.top = max_top,
                 Action::TaskEditNotes => match &reading.doc.path {
                     Some(path) => effects.push(Effect::OpenEditor(path.clone())),
                     None => effects.push(Effect::Note(
@@ -569,6 +569,7 @@ impl Buffer for TaskDetailBuffer {
             }
             return true;
         }
+        let max_top = self.last_lines.saturating_sub(self.last_height.max(1));
         let task = self
             .task
             .and_then(|id| cx.snap.tasks.iter().find(|t| t.id == id));
@@ -582,17 +583,14 @@ impl Buffer for TaskDetailBuffer {
             // `j`/`k` scroll line by line; `Tab`/`Shift-Tab` pick between the research rows.
             (Action::ResearchNext, _) => self.pick(true),
             (Action::ResearchPrev, _) => self.pick(false),
-            (Action::MoveDown, _) => {
-                self.top = (self.top + 1).min(self.last_lines.saturating_sub(1))
-            }
+            (Action::MoveDown, _) => self.top = (self.top + 1).min(max_top),
             (Action::MoveUp, _) => self.top = self.top.saturating_sub(1),
             (Action::PageDown, _) => {
-                self.top =
-                    (self.top + self.last_height.max(1)).min(self.last_lines.saturating_sub(1))
+                self.top = (self.top + self.last_height.max(1)).min(max_top);
             }
             (Action::PageUp, _) => self.top = self.top.saturating_sub(self.last_height.max(1)),
             (Action::GoTop, _) => self.top = 0,
-            (Action::GoBottom, _) => self.top = self.last_lines.saturating_sub(1),
+            (Action::GoBottom, _) => self.top = max_top,
             (Action::ResearchOpen, Some(t)) => self.open_selected(t.id, effects),
             (Action::TaskCycleStatus, Some(t)) => {
                 effects.push(change(TaskChange::Status(next_status(t.status)), t));
@@ -619,7 +617,7 @@ impl Buffer for TaskDetailBuffer {
             }
             (Action::TaskEditNotes, _) => {
                 effects.push(Effect::Note(
-                    "editing notes in $EDITOR arrives with storage (M5)".into(),
+                    "task notes cannot be edited in $EDITOR yet".into(),
                 ));
             }
             _ => return false,

@@ -3,14 +3,14 @@
 
 use dovetail_api::{
     Command, Snapshot,
-    agent::AgentId,
-    conversation::EntryKind,
-    inbox::{
+    activity::inbox::{
         InboxId, InboxItem, InboxKind, PermissionAnswer, RELEASE_TAKEOVER_PERMISSION,
         REMOVE_WORKTREE_PERMISSION, START_SLICE_PERMISSION, UPGRADE_READY_PERMISSION,
     },
+    agents::agent::AgentId,
+    agents::conversation::EntryKind,
 };
-use dovetail_api::{inbox::InboxCommand, research::ProposalKind};
+use dovetail_api::{activity::inbox::InboxCommand, research::ProposalKind};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Span;

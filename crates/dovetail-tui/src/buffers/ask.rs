@@ -8,11 +8,11 @@
 
 use dovetail_api::{
     Command, Snapshot,
-    agent::{Agent, AgentId, AgentKind},
-    conversation::EntryKind,
-    task::TaskId,
+    agents::agent::{Agent, AgentId, AgentKind},
+    agents::conversation::EntryKind,
+    tracking::task::TaskId,
 };
-use dovetail_api::{agent::AgentCommand, research::Evidence};
+use dovetail_api::{agents::agent::AgentCommand, research::Evidence};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Span;

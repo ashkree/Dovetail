@@ -20,7 +20,7 @@ pub mod view;
 use std::fmt;
 use std::sync::Arc;
 
-use dovetail_api::map::{Map, MapId, NodeId};
+use dovetail_api::visual::map::{Map, MapId, NodeId};
 
 /// A rectangle in picture pixels, from the top left.
 #[derive(Debug, Clone, Copy, PartialEq)]

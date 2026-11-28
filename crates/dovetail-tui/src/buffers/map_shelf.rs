@@ -1,9 +1,9 @@
 //! The map shelf (`<leader>M`): every map of the project, newest first. `Enter` opens the
 //! selected one in the outline ([`super::MapOutlineBuffer`]); its content is fetched with
-//! [`dovetail_api::map::MapCommand::Load`] when it opens, not carried in the snapshot.
+//! [`dovetail_api::visual::map::MapCommand::Load`] when it opens, not carried in the snapshot.
 
 use dovetail_api::Snapshot;
-use dovetail_api::map::{MapId, MapSummary};
+use dovetail_api::visual::map::{MapId, MapSummary};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};

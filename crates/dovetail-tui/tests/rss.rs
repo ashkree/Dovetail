@@ -7,8 +7,8 @@ mod support;
 use dovetail_api::{
     Event, ServerMsg,
     activity::{ActivityEvent, ActivityItem, ActivityKind},
-    agent::AgentStatus,
-    conversation::{ConversationEvent, EntryId, EntryKind},
+    agents::agent::AgentStatus,
+    agents::conversation::{ConversationEvent, EntryId, EntryKind},
     snapshot::{ACTIVITY_TAIL, CONVERSATION_KEEP},
 };
 use ratatui::Terminal;

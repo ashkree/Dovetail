@@ -6,8 +6,8 @@ use std::collections::HashSet;
 
 use dovetail_api::{
     Command, Snapshot,
-    agent::{AgentKind, AgentStatus},
-    task::{Bucket, Task, TaskChange, TaskCommand, TaskId, TaskStatus},
+    agents::agent::{AgentKind, AgentStatus},
+    tracking::task::{Bucket, Task, TaskChange, TaskCommand, TaskId, TaskStatus},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;

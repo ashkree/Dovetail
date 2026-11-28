@@ -128,44 +128,25 @@ impl Key {
 
 /// A key sequence that does not parse. The keymap table becomes user TOML later, so this is
 /// what a user would see.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KeyError {
     /// Nothing to parse.
+    #[error("empty key sequence")]
     Empty,
     /// `<name>` is not a key Dovetail knows.
+    #[error("unknown key <{0}>")]
     Unknown(String),
 }
 
-impl std::fmt::Display for KeyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            KeyError::Empty => f.write_str("empty key sequence"),
-            KeyError::Unknown(name) => write!(f, "unknown key <{name}>"),
-        }
-    }
-}
-
-impl std::error::Error for KeyError {}
-
 /// A binding whose keys do not parse.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("binding {keys:?}: {source}")]
 pub struct KeymapError {
     /// The binding's keys as written.
     pub keys: String,
     /// What is wrong with them.
+    #[source]
     pub source: KeyError,
-}
-
-impl std::fmt::Display for KeymapError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "binding {:?}: {}", self.keys, self.source)
-    }
-}
-
-impl std::error::Error for KeymapError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.source)
-    }
 }
 
 /// Where a binding applies. Movement is bound in [`Scope::Global`]; actions in a buffer's scope.

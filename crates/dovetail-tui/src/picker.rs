@@ -4,11 +4,11 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
-    agent::AgentId,
-    inbox::InboxId,
-    model::{DriverKind, ReasoningEffort},
-    project::ProjectId,
-    task::TaskId,
+    activity::inbox::InboxId,
+    agents::agent::AgentId,
+    agents::model::{DriverKind, ReasoningEffort},
+    tracking::project::ProjectId,
+    tracking::task::TaskId,
 };
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32Str};
@@ -45,7 +45,7 @@ pub enum PickerKey {
     Model {
         /// The driver offering this model.
         driver: DriverKind,
-        /// The model, as [`dovetail_api::model::ModelOption::name`].
+        /// The model, as [`dovetail_api::agents::model::ModelOption::name`].
         model: String,
         /// The effort level, or `None` when the model has no effort levels.
         effort: Option<ReasoningEffort>,
@@ -244,6 +244,20 @@ impl Picker {
         preview_title: &str,
         preview: &[Line<'static>],
     ) {
+        self.render_with_cursor(frame, screen, theme, preview_title, preview, None);
+    }
+
+    /// Like [`render`](Self::render), optionally placing the terminal cursor at `(line, col)` in
+    /// the preview pane instead of the search box (used when typing into the preview).
+    pub fn render_with_cursor(
+        &self,
+        frame: &mut Frame,
+        screen: Rect,
+        theme: &Theme,
+        preview_title: &str,
+        preview: &[Line<'static>],
+        preview_cursor: Option<(usize, u16)>,
+    ) {
         let width = screen.width.saturating_sub(4).min(130);
         let height = screen.height.saturating_sub(4).min(26);
         let area = Rect {
@@ -285,11 +299,15 @@ impl Picker {
                 ..row
             },
         );
-        frame.set_cursor_position((
-            (row.x + 2 + unicode_width::UnicodeWidthStr::width(self.query.text()) as u16)
-                .min(row.x + row.width.saturating_sub(1)),
-            row.y,
-        ));
+        if preview_cursor.is_none() {
+            frame.set_cursor_position((
+                (row.x
+                    + 2
+                    + unicode_width::UnicodeWidthStr::width(self.query.before_cursor()) as u16)
+                    .min(row.x + row.width.saturating_sub(1)),
+                row.y,
+            ));
+        }
 
         // Results.
         let list_area = Rect {
@@ -364,6 +382,16 @@ impl Picker {
                 height: 1,
             };
             frame.render_widget(Paragraph::new(line.clone()), rect);
+        }
+        if let Some((line_idx, col)) = preview_cursor
+            && line_idx >= skip
+            && line_idx - skip < pheight
+            && pinner.width > 2
+        {
+            frame.set_cursor_position((
+                (pinner.x + 1 + col).min(pinner.x + pinner.width.saturating_sub(2)),
+                pinner.y + (line_idx - skip) as u16,
+            ));
         }
     }
 }
@@ -517,6 +545,28 @@ mod tests {
             p.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
             PickerOutcome::Pending
         );
+    }
+
+    #[test]
+    fn cursor_tracks_before_cursor_when_moved_left() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut p = picker();
+        for c in "abcd".chars() {
+            p.key(key(c));
+        }
+        let mut term = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let theme = Theme::default();
+        term.draw(|f| p.render(f, f.area(), &theme, "Preview", &[]))
+            .unwrap();
+        let pos_end = term.get_cursor_position().unwrap();
+        p.key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        p.key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        term.draw(|f| p.render(f, f.area(), &theme, "Preview", &[]))
+            .unwrap();
+        let pos_mid = term.get_cursor_position().unwrap();
+        assert_eq!(pos_mid.x + 2, pos_end.x);
     }
 
     #[test]

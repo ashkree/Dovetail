@@ -563,7 +563,7 @@ mod tests {
     fn core_events_redraw_the_screen_with_no_key_pressed() {
         use dovetail_api::{
             Event, Snapshot,
-            task::{Task, TaskEvent, TaskId, TaskStatus},
+            tracking::task::{Task, TaskEvent, TaskId, TaskStatus},
         };
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).expect("terminal");
@@ -669,7 +669,7 @@ mod tests {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         use dovetail_api::{
             Event, Snapshot,
-            agent::{
+            agents::agent::{
                 Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock, WorktreeRef,
             },
             app::{AppCommand, AppEvent},
@@ -703,7 +703,7 @@ mod tests {
             effort: None,
             subagent_tokens: 0,
             tool: None,
-            driver: dovetail_api::model::DriverKind::Claude,
+            driver: dovetail_api::agents::model::DriverKind::Claude,
         };
         snap.agents
             .push(session("coordinator", AgentKind::Coordinator, None));

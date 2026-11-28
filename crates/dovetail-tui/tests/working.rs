@@ -5,9 +5,9 @@ mod support;
 
 use dovetail_api::{
     Event, ServerMsg,
-    agent::{Agent, AgentEvent, AgentKind, AgentStatus, RunningTool},
+    agents::agent::{Agent, AgentEvent, AgentKind, AgentStatus, RunningTool},
+    agents::journal::{JournalEvent, JournalState},
     app::AppEvent,
-    journal::{JournalEvent, JournalState},
 };
 use support::*;
 

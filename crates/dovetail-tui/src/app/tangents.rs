@@ -1,10 +1,10 @@
 //! Tangents (ADR 0017, amended 2026-11-11): asking one, the tangents list, reading one in
 //! reading mode, and sending one to a task or a project.
 
-use dovetail_api::{Command, task::TaskId};
+use dovetail_api::{Command, tracking::task::TaskId};
 use dovetail_api::{
+    agents::tangent::TangentCommand,
     research::{Evidence, ResearchWhat, SourceKind},
-    tangent::TangentCommand,
 };
 
 use super::overlay::{Overlay, Purpose};

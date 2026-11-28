@@ -7,7 +7,7 @@ mod support;
 use dovetail_api::{
     Command, Event, ServerMsg, Snapshot,
     app::AppEvent,
-    project::{ProjectCommand, ProjectEvent, ProjectId, ProjectKind, ProjectSummary},
+    tracking::project::{ProjectCommand, ProjectEvent, ProjectId, ProjectKind, ProjectSummary},
 };
 use support::*;
 

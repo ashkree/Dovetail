@@ -1,10 +1,10 @@
 //! The usage limits menu (task #46): `/usage` in the chat bar and `:usage`. It wraps the one
-//! [`Picker`], asking the core for [`dovetail_api::status::DriverUsage`] reports on open and on `Tab`
+//! [`Picker`], asking the core for [`dovetail_api::activity::status::DriverUsage`] reports on open and on `Tab`
 //! (`UsageCommand::LoadUsage`), showing one row per quota group grouped by driver (`Claude Code`, then
 //! `agy`) and a failed report's reason when reading failed.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use dovetail_api::status::DriverUsage;
+use dovetail_api::activity::status::DriverUsage;
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
 
@@ -42,14 +42,14 @@ struct UsageRow {
 
 /// The open usage limits menu.
 pub struct UsageMenu {
-    /// `None` until the first [`dovetail_api::status::StatusEvent::UsageLoaded`] arrives.
+    /// `None` until the first [`dovetail_api::activity::status::StatusEvent::UsageLoaded`] arrives.
     reports: Option<Vec<DriverUsage>>,
     rows: Vec<UsageRow>,
     picker: Picker,
 }
 
 impl UsageMenu {
-    /// A menu in the loading state; the caller sends [`dovetail_api::status::StatusCommand::LoadUsage`].
+    /// A menu in the loading state; the caller sends [`dovetail_api::activity::status::StatusCommand::LoadUsage`].
     pub fn new() -> Self {
         Self {
             reports: None,
@@ -317,8 +317,8 @@ mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
     use dovetail_api::{
-        model::DriverKind,
-        status::{LimitWindow, UsageGroup},
+        activity::status::{LimitWindow, UsageGroup},
+        agents::model::DriverKind,
     };
 
     // 2026-11-09 12:00 UTC, a Monday.

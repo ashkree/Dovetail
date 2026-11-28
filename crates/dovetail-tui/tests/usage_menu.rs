@@ -8,8 +8,8 @@ mod support;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, Event, ServerMsg,
-    model::DriverKind,
-    status::{DriverUsage, LimitWindow, StatusCommand, StatusEvent, UsageGroup},
+    activity::status::{DriverUsage, LimitWindow, StatusCommand, StatusEvent, UsageGroup},
+    agents::model::DriverKind,
 };
 use dovetail_tui::{App, Mode};
 use support::*;

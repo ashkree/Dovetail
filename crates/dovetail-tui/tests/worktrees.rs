@@ -11,10 +11,10 @@ mod support;
 
 use dovetail_api::{
     Command, Event, ServerMsg,
-    agent::{AgentCommand, AgentStatus},
+    activity::inbox::{InboxCommand, InboxKind, PermissionAnswer, REMOVE_WORKTREE_PERMISSION},
+    agents::agent::{AgentCommand, AgentStatus},
     app::{AppCommand, AppEvent},
-    inbox::{InboxCommand, InboxKind, PermissionAnswer, REMOVE_WORKTREE_PERMISSION},
-    worktree::WorktreeCommand,
+    code::worktree::WorktreeCommand,
 };
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;

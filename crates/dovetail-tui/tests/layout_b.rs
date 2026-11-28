@@ -38,17 +38,17 @@ fn the_tree_groups_tasks_and_hides_empty_unsorted() {
 #[test]
 fn unsorted_tasks_show_above_now_with_their_markers() {
     let mut snap = world();
-    snap.tasks.push(dovetail_api::task::Task {
-        id: dovetail_api::task::TaskId(9),
+    snap.tasks.push(dovetail_api::tracking::task::Task {
+        id: dovetail_api::tracking::task::TaskId(9),
         title: "rename the flag".into(),
-        status: dovetail_api::task::TaskStatus::Todo,
+        status: dovetail_api::tracking::task::TaskStatus::Todo,
         p_level: None,
         bucket: None,
         order: 9,
         deps: vec![],
         notes: String::new(),
         pr: None,
-        follow_up_of: Some(dovetail_api::task::TaskId(1)),
+        follow_up_of: Some(dovetail_api::tracking::task::TaskId(1)),
         coordinator_created: true,
         related: vec![],
         effort: Default::default(),
@@ -65,8 +65,8 @@ fn unsorted_tasks_show_above_now_with_their_markers() {
 #[test]
 fn a_p0_in_later_and_a_p3_in_now_are_flagged() {
     let mut snap = world();
-    snap.tasks[2].p_level = Some(dovetail_api::task::PLevel::P3);
-    snap.tasks[2].bucket = Some(dovetail_api::task::Bucket::Now);
+    snap.tasks[2].p_level = Some(dovetail_api::tracking::task::PLevel::P3);
+    snap.tasks[2].bucket = Some(dovetail_api::tracking::task::Bucket::Now);
     let mut app = app_with(snap);
     let screen = render(&mut app, 120, 40);
     let line = screen
@@ -106,11 +106,11 @@ fn needs_you_is_derived_from_the_agents_inbox_items() {
 fn a_coordinator_item_marks_no_task() {
     let mut snap = world();
     snap.inbox.clear();
-    snap.inbox.push(dovetail_api::inbox::InboxItem {
-        id: dovetail_api::inbox::InboxId(7),
+    snap.inbox.push(dovetail_api::activity::inbox::InboxItem {
+        id: dovetail_api::activity::inbox::InboxId(7),
         agent: agent_id("coordinator"),
         at_ms: NOW_MS,
-        kind: dovetail_api::inbox::InboxKind::FinishedTurn {
+        kind: dovetail_api::activity::inbox::InboxKind::FinishedTurn {
             preview: "done".into(),
         },
     });
@@ -183,7 +183,7 @@ fn status_lines_show_on_agent_rows_and_drop_first_when_narrow() {
 /// JSON and type names. The inbox rows, then each item opened in full (the main pane).
 #[test]
 fn dovetail_permission_items_read_as_plain_lines() {
-    use dovetail_api::inbox::{InboxId, InboxItem, InboxKind, RuleSuggestion};
+    use dovetail_api::activity::inbox::{InboxId, InboxItem, InboxKind, RuleSuggestion};
     let mut snap = world();
     snap.inbox.clear();
     let item = |id, agent: &str, tool: &str, input, suggestions| InboxItem {
@@ -200,14 +200,14 @@ fn dovetail_permission_items_read_as_plain_lines() {
     snap.inbox.push(item(
         1,
         "coordinator",
-        dovetail_api::inbox::START_SLICE_PERMISSION,
+        dovetail_api::activity::inbox::START_SLICE_PERMISSION,
         serde_json::json!({"brief": "reply ok", "name": "demo-1", "task": 1}),
         vec![],
     ));
     snap.inbox.push(item(
         2,
         "slice-4",
-        dovetail_api::inbox::REMOVE_WORKTREE_PERMISSION,
+        dovetail_api::activity::inbox::REMOVE_WORKTREE_PERMISSION,
         serde_json::json!({"branch": "dovetail/demo-1", "uncommitted": [],
             "unpushed_commits": 1, "worktree": "/w/demo-1"}),
         vec![],
@@ -262,7 +262,7 @@ fn dovetail_permission_items_read_as_plain_lines() {
 
 /// Task #5: long items filled the inbox. Each is one row, cut with …; Enter shows it in full.
 fn long_items() -> dovetail_api::Snapshot {
-    use dovetail_api::inbox::{InboxId, InboxItem, InboxKind};
+    use dovetail_api::activity::inbox::{InboxId, InboxItem, InboxKind};
     let mut snap = world();
     snap.inbox.clear();
     let item = |id: u64, agent: &str, kind| InboxItem {
@@ -361,8 +361,8 @@ fn enter_shows_a_long_item_in_full_with_its_keys() {
     assert_eq!(
         app.take_commands(),
         vec![dovetail_api::Command::Inbox(
-            dovetail_api::inbox::InboxCommand::AnswerQuestion {
-                item: dovetail_api::inbox::InboxId(1),
+            dovetail_api::activity::inbox::InboxCommand::AnswerQuestion {
+                item: dovetail_api::activity::inbox::InboxId(1),
                 text: "/v2 please".into()
             }
         )]
@@ -379,9 +379,9 @@ fn y_in_a_permission_items_detail_allows_it() {
     assert_eq!(
         press(&mut app, "y"),
         vec![dovetail_api::Command::Inbox(
-            dovetail_api::inbox::InboxCommand::AnswerPermission {
-                item: dovetail_api::inbox::InboxId(2),
-                answer: dovetail_api::inbox::PermissionAnswer::Allow
+            dovetail_api::activity::inbox::InboxCommand::AnswerPermission {
+                item: dovetail_api::activity::inbox::InboxId(2),
+                answer: dovetail_api::activity::inbox::PermissionAnswer::Allow
             }
         )]
     );

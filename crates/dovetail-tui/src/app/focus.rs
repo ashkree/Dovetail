@@ -2,11 +2,11 @@
 
 use dovetail_api::{
     Command,
-    agent::{AgentCommand, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock},
+    activity::inbox::InboxId,
+    agents::agent::{AgentCommand, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock},
     app::AppCommand,
-    inbox::InboxId,
     research::ResearchCommand,
-    task::TaskId,
+    tracking::task::TaskId,
 };
 
 use super::{App, ChatSite, Confirm, Then};
@@ -325,9 +325,11 @@ impl App {
                 .and_then(|t| t.trim_start_matches('#').parse::<i64>().ok());
             let round = words.next().map(str::parse::<u32>);
             match (task, round) {
-                (Some(task), None) => self.drop_round(dovetail_api::task::TaskId(task), None),
+                (Some(task), None) => {
+                    self.drop_round(dovetail_api::tracking::task::TaskId(task), None)
+                }
                 (Some(task), Some(Ok(n))) => {
-                    self.drop_round(dovetail_api::task::TaskId(task), Some(n))
+                    self.drop_round(dovetail_api::tracking::task::TaskId(task), Some(n))
                 }
                 _ => self.note = Some(USAGE.into()),
             }
@@ -356,7 +358,7 @@ impl App {
         let task = task.trim_start_matches('#').parse::<i64>().ok();
         match (task, brief) {
             (Some(task), brief) if !brief.is_empty() => {
-                let task = dovetail_api::task::TaskId(task);
+                let task = dovetail_api::tracking::task::TaskId(task);
                 let busy = self.snap.research.iter().any(|r| r.open_round().is_some());
                 self.outbox
                     .push(Command::Research(ResearchCommand::StartRound {
@@ -380,7 +382,7 @@ impl App {
         }
     }
 
-    fn drop_round(&mut self, task: dovetail_api::task::TaskId, round: Option<u32>) {
+    fn drop_round(&mut self, task: dovetail_api::tracking::task::TaskId, round: Option<u32>) {
         let queued = self
             .snap
             .research
@@ -415,7 +417,7 @@ impl App {
             .filter(|a| {
                 a.parent.as_ref() == Some(session)
                     && &a.id != sub
-                    && a.status == dovetail_api::agent::AgentStatus::Working
+                    && a.status == dovetail_api::agents::agent::AgentStatus::Working
             })
             .count();
         let rest = match others {

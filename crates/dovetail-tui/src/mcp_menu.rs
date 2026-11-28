@@ -15,8 +15,8 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
-    agent::AgentId,
-    mcp::{McpAction, McpOutcome, McpRequest, McpServer, McpStatus},
+    agents::agent::AgentId,
+    agents::mcp::{McpAction, McpOutcome, McpRequest, McpServer, McpStatus},
 };
 use ratatui::style::Color;
 use ratatui::text::{Line, Span};
@@ -249,6 +249,15 @@ impl McpMenu {
 
     /// The preview pane's lines for the selected server.
     pub fn preview(&self, width: usize, theme: &Theme) -> Vec<Line<'static>> {
+        self.preview_with_cursor(width, theme).0
+    }
+
+    /// The preview pane's lines and an optional `(line, col)` cursor when pasting an OAuth URL.
+    pub fn preview_with_cursor(
+        &self,
+        width: usize,
+        theme: &Theme,
+    ) -> (Vec<Line<'static>>, Option<(usize, u16)>) {
         let mut out = Vec::new();
         if let Some(p) = &self.pasting {
             out.push(Line::from(Span::styled(
@@ -262,12 +271,14 @@ impl McpMenu {
                 out.push(Line::from(Span::styled(line, theme.body())));
             }
             out.push(Line::default());
+            let cursor_line = out.len();
+            let cursor_col =
+                2 + unicode_width::UnicodeWidthStr::width(p.input.before_cursor()) as u16;
             out.push(Line::from(vec![
                 Span::styled("› ", theme.accent()),
                 Span::styled(p.input.text().to_owned(), theme.body()),
-                Span::styled("▏", theme.accent()),
             ]));
-            return out;
+            return (out, Some((cursor_line, cursor_col)));
         }
         match (&self.servers, self.selected()) {
             (None, _) => out.push(Line::from(Span::styled(
@@ -292,7 +303,7 @@ impl McpMenu {
                 out.push(Line::from(Span::styled(line, style)));
             }
         }
-        out
+        (out, None)
     }
 }
 
@@ -431,7 +442,7 @@ fn action_key(action: McpAction) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::mcp::McpTool;
+    use dovetail_api::agents::mcp::McpTool;
 
     fn server(name: &str, transport: &str, status: McpStatus) -> McpServer {
         McpServer {

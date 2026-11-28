@@ -8,7 +8,7 @@ mod support;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, ServerMsg,
-    task::{TaskChange, TaskCommand, TaskId, TaskStatus},
+    tracking::task::{TaskChange, TaskCommand, TaskId, TaskStatus},
 };
 use dovetail_tui::App;
 use dovetail_tui::region::RegionId;

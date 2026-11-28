@@ -6,9 +6,9 @@ mod support;
 
 use dovetail_api::{
     Command,
+    agents::conversation::ConversationCommand,
+    agents::mcp::{McpCommand, McpRequest},
     app::AppCommand,
-    conversation::ConversationCommand,
-    mcp::{McpCommand, McpRequest},
 };
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::{App, Mode};

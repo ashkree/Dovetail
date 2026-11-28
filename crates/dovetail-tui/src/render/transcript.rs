@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use dovetail_api::conversation::{ConversationEntry, EntryId, EntryKind};
+use dovetail_api::agents::conversation::{ConversationEntry, EntryId, EntryKind};
 use jiff::tz::TimeZone;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -674,7 +674,7 @@ mod tests {
         let entries = [entry(
             1,
             EntryKind::AgentMessage,
-            &dovetail_api::conversation::agent_message_text("scout", true, &report),
+            &dovetail_api::agents::conversation::agent_message_text("scout", true, &report),
         )];
         let folded = texts(&run(&entries, |_| {}));
         assert_eq!(folded[3], "· subagent scout finished · zo to show");
@@ -700,7 +700,8 @@ mod tests {
 
     #[test]
     fn a_message_from_a_peer_names_the_sender() {
-        let text = dovetail_api::conversation::agent_message_text("slice-7", false, "hello");
+        let text =
+            dovetail_api::agents::conversation::agent_message_text("slice-7", false, "hello");
         let entries = [entry(1, EntryKind::AgentMessage, &text)];
         let t = texts(&run(&entries, |_| {}));
         assert_eq!(t[3], "· message from slice-7 · zo to show");

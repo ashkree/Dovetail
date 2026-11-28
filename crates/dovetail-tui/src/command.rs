@@ -12,24 +12,15 @@ pub struct Parsed {
 }
 
 /// A command line that names no command.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CommandError {
     /// Nothing after `:`.
+    #[error("empty command")]
     Empty,
     /// No command has this name.
+    #[error("unknown command :{0}")]
     Unknown(String),
 }
-
-impl std::fmt::Display for CommandError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CommandError::Empty => f.write_str("empty command"),
-            CommandError::Unknown(name) => write!(f, "unknown command :{name}"),
-        }
-    }
-}
-
-impl std::error::Error for CommandError {}
 
 /// Every `:` command name and the action it runs. `:keys` reads it to show the commands of an
 /// action; [`parse`] reads it to resolve a name. `project add` and `project new` are two words

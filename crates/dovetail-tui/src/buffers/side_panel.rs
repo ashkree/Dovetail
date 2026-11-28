@@ -6,8 +6,8 @@
 
 use dovetail_api::{
     Command, Snapshot,
-    agent::{Agent, AgentCommand, AgentId, AgentKind},
-    tangent::tangent_task,
+    agents::agent::{Agent, AgentCommand, AgentId, AgentKind},
+    agents::tangent::tangent_task,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;

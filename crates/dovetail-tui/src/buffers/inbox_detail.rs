@@ -4,7 +4,7 @@
 use dovetail_api::research::ProposalKind;
 use dovetail_api::{
     Snapshot,
-    inbox::{InboxId, InboxItem, InboxKind, START_SLICE_PERMISSION},
+    activity::inbox::{InboxId, InboxItem, InboxKind, START_SLICE_PERMISSION},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -26,6 +26,7 @@ pub struct InboxDetailBuffer {
     item: Option<InboxId>,
     top: usize,
     last_lines: usize,
+    last_height: usize,
 }
 
 impl InboxDetailBuffer {
@@ -228,6 +229,7 @@ impl Buffer for InboxDetailBuffer {
         let all = lines(cx, item, usize::from(column.width));
         let height = usize::from(inner.height.saturating_sub(u16::from(inner.height >= 5)));
         self.last_lines = all.len();
+        self.last_height = height;
         self.top = self.top.min(all.len().saturating_sub(height));
         for (n, line) in all.into_iter().skip(self.top).take(height).enumerate() {
             let rect = Rect {
@@ -241,9 +243,10 @@ impl Buffer for InboxDetailBuffer {
     }
 
     fn on_action(&mut self, action: Action, cx: &ViewCx, effects: &mut Vec<Effect>) -> bool {
+        let max_top = self.last_lines.saturating_sub(self.last_height.max(1));
         match action {
             Action::MoveDown => {
-                self.top = (self.top + 1).min(self.last_lines.saturating_sub(1));
+                self.top = (self.top + 1).min(max_top);
                 return true;
             }
             Action::MoveUp => {
@@ -255,7 +258,7 @@ impl Buffer for InboxDetailBuffer {
                 return true;
             }
             Action::GoBottom => {
-                self.top = self.last_lines.saturating_sub(1);
+                self.top = max_top;
                 return true;
             }
             _ => {}

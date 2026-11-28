@@ -6,9 +6,9 @@ mod support;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command,
-    agent::SlashCommand,
-    conversation::ConversationCommand,
-    model::{DriverKind, ModelOption, ReasoningEffort},
+    agents::agent::SlashCommand,
+    agents::conversation::ConversationCommand,
+    agents::model::{DriverKind, ModelOption, ReasoningEffort},
 };
 use dovetail_tui::Mode;
 use support::*;

@@ -12,15 +12,17 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use dovetail_api::{Event, decision::DecisionId, project::ProjectId, task::TaskId};
 use dovetail_api::{
-    app::AppEvent,
-    library::{BrowseWhat, BrowsedDoc, LibraryEvent},
-    research::ResearchEvent,
-    tangent::TangentEvent,
+    Event, tracking::decision::DecisionId, tracking::project::ProjectId, tracking::task::TaskId,
 };
 use dovetail_api::{
-    library::DocImage,
+    agents::tangent::TangentEvent,
+    app::AppEvent,
+    research::ResearchEvent,
+    research::library::{BrowseWhat, BrowsedDoc, LibraryEvent},
+};
+use dovetail_api::{
+    research::library::DocImage,
     research::{Evidence, ResearchDocument, ResearchWhat},
 };
 use ratatui::Frame;

@@ -7,12 +7,16 @@ mod support;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, Event, ServerMsg, Snapshot,
-    agent::{AgentCommand, AgentEvent, AgentStatus, PermissionMode, SessionLock},
+    activity::inbox::{InboxCommand, InboxId},
+    agents::agent::{AgentCommand, AgentEvent, AgentStatus, PermissionMode, SessionLock},
+    agents::conversation::{ConversationTail, EntryKind},
     app::{AppCommand, AppEvent},
-    conversation::{ConversationTail, EntryKind},
-    decision::{Alternative, Decision, DecisionAuthor, DecisionCommand, DecisionId, NewDecision},
-    inbox::{InboxCommand, InboxId},
-    task::{Bucket, NewTask, PLevel, Task, TaskChange, TaskCommand, TaskEvent, TaskId, TaskStatus},
+    tracking::decision::{
+        Alternative, Decision, DecisionAuthor, DecisionCommand, DecisionId, NewDecision,
+    },
+    tracking::task::{
+        Bucket, NewTask, PLevel, Task, TaskChange, TaskCommand, TaskEvent, TaskId, TaskStatus,
+    },
 };
 use dovetail_tui::Mode;
 use dovetail_tui::region::RegionId;
@@ -619,7 +623,7 @@ fn the_detail_cycles_status_bucket_and_p_level_and_stubs_notes() {
     press(&mut app, "e");
     assert_eq!(
         app.note(),
-        Some("editing notes in $EDITOR arrives with storage (M5)")
+        Some("task notes cannot be edited in $EDITOR yet")
     );
 }
 

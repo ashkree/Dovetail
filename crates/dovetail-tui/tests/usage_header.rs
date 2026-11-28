@@ -4,7 +4,7 @@ mod support;
 
 use dovetail_api::{
     Event, ServerMsg,
-    status::{StatusEvent, UsageLimits, UsageStatus, UsageWindow},
+    activity::status::{StatusEvent, UsageLimits, UsageStatus, UsageWindow},
 };
 use support::*;
 
@@ -126,8 +126,10 @@ fn the_not_a_project_warning_shows_in_the_status_bar_only_while_it_applies() {
         "no warning, none shown"
     );
 
-    snap.warnings.push(dovetail_api::status::Warning {
-        id: dovetail_api::status::WarningId(dovetail_api::status::UNREGISTERED_WARNING.into()),
+    snap.warnings.push(dovetail_api::activity::status::Warning {
+        id: dovetail_api::activity::status::WarningId(
+            dovetail_api::activity::status::UNREGISTERED_WARNING.into(),
+        ),
         text: "not a Dovetail project".into(),
     });
     let mut app = app_with(snap);
@@ -149,7 +151,7 @@ fn agy_agent_hides_claude_limits_and_profile_when_uncached() {
     snap.usage = usage(0.34, 0.18);
     for a in &mut snap.agents {
         if a.id == agent_id("coordinator") {
-            a.driver = dovetail_api::model::DriverKind::Agy;
+            a.driver = dovetail_api::agents::model::DriverKind::Agy;
             a.model = Some("gemini-4-neon-medium".into());
         }
     }
@@ -169,8 +171,8 @@ fn agy_agent_hides_claude_limits_and_profile_when_uncached() {
 #[test]
 fn agy_agent_displays_matching_quota_group_when_loaded() {
     use dovetail_api::{
-        model::DriverKind,
-        status::{DriverUsage, LimitWindow, UsageGroup},
+        activity::status::{DriverUsage, LimitWindow, UsageGroup},
+        agents::model::DriverKind,
     };
 
     let make_snap = |model: &str| {

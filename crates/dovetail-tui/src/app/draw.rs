@@ -1,6 +1,8 @@
 //! Drawing: the screens bar, the regions, the status bar, the prompt row and the overlays.
 
-use dovetail_api::{agent::AgentId, model::DriverKind, status::UNREGISTERED_WARNING};
+use dovetail_api::{
+    activity::status::UNREGISTERED_WARNING, agents::agent::AgentId, agents::model::DriverKind,
+};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
@@ -156,9 +158,15 @@ impl App {
             Some(Overlay::Capture(capture)) => self.draw_capture(frame, screen, capture),
             Some(Overlay::Mcp(menu)) => {
                 let width = picker_preview_width(screen);
-                let lines = menu.preview(width, &self.theme);
-                menu.picker()
-                    .render(frame, screen, &self.theme, "Server", &lines);
+                let (lines, cursor) = menu.preview_with_cursor(width, &self.theme);
+                menu.picker().render_with_cursor(
+                    frame,
+                    screen,
+                    &self.theme,
+                    "Server",
+                    &lines,
+                    cursor,
+                );
             }
             Some(Overlay::Usage(menu)) => {
                 let width = picker_preview_width(screen);

@@ -20,12 +20,12 @@ pub(crate) use task_research::blocking_round;
 mod tree;
 mod worktrees;
 
-use dovetail_api::map::MapId;
+use dovetail_api::visual::map::MapId;
 use dovetail_api::{
     Command, Snapshot,
-    agent::{AgentId, AgentStatus},
-    inbox::InboxId,
-    task::{Bucket, PLevel, TaskId, TaskStatus},
+    activity::inbox::InboxId,
+    agents::agent::{AgentId, AgentStatus},
+    tracking::task::{Bucket, PLevel, TaskId, TaskStatus},
 };
 use jiff::tz::TimeZone;
 use ratatui::Frame;
@@ -167,7 +167,7 @@ pub enum Effect {
     },
     /// Show a project's library in reading mode, read-only: another project is browsed, the
     /// open one comes back (ADR 0018, decided 2026-11-11 later).
-    BrowseProject(dovetail_api::project::ProjectId),
+    BrowseProject(dovetail_api::tracking::project::ProjectId),
     /// Show the tangents list (ADR 0017).
     OpenTangents,
     /// Read a tangent's latest answer in reading mode.

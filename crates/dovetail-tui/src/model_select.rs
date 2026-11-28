@@ -1,13 +1,13 @@
 //! The model picker (tasks #39, #46): `:model [name]` and `/model [name]`. It wraps the one
 //! [`Picker`], grouping rows by driver (`Claude Code`, then `agy`) with one row per `(model,
-//! effort)` pair. Picking an own-driver row applies [`dovetail_api::model::ModelCommand::Set`]; picking
+//! effort)` pair. Picking an own-driver row applies [`dovetail_api::agents::model::ModelCommand::Set`]; picking
 //! another driver's row on the coordinator opens the switch confirm modal. Non-coordinator
 //! sessions hide the other driver's rows.
 
 use crossterm::event::KeyEvent;
 use dovetail_api::{
-    agent::{Agent, AgentId, AgentKind},
-    model::{DriverKind, ModelOption, ReasoningEffort, model_option_index},
+    agents::agent::{Agent, AgentId, AgentKind},
+    agents::model::{DriverKind, ModelOption, ReasoningEffort, model_option_index},
 };
 use ratatui::text::{Line, Span};
 
@@ -262,7 +262,7 @@ fn option_efforts(option: &ModelOption) -> Vec<Option<ReasoningEffort>> {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyModifiers};
-    use dovetail_api::agent::{AgentStatus, PermissionMode, SessionLock};
+    use dovetail_api::agents::agent::{AgentStatus, PermissionMode, SessionLock};
 
     fn agent_fixture(kind: AgentKind, driver: DriverKind) -> Agent {
         Agent {

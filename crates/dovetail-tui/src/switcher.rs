@@ -6,11 +6,11 @@ use std::collections::HashSet;
 
 use dovetail_api::{
     Snapshot,
-    agent::{Agent, AgentId, AgentKind, AgentStatus, SlashCommand},
-    inbox::{InboxItem, InboxKind},
-    project::{ProjectKind, ProjectSummary},
-    tangent::TANGENTS_PROJECT,
-    task::TaskStatus,
+    activity::inbox::{InboxItem, InboxKind},
+    agents::agent::{Agent, AgentId, AgentKind, AgentStatus, SlashCommand},
+    agents::tangent::TANGENTS_PROJECT,
+    tracking::project::{ProjectKind, ProjectSummary},
+    tracking::task::TaskStatus,
 };
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
@@ -257,7 +257,7 @@ pub fn research_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
 pub fn relate_items(
     snap: &Snapshot,
     theme: &Theme,
-    task: dovetail_api::task::TaskId,
+    task: dovetail_api::tracking::task::TaskId,
 ) -> Vec<PickerItem> {
     let related = snap
         .tasks
@@ -734,13 +734,13 @@ fn inbox_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::model::DriverKind;
+    use dovetail_api::agents::model::DriverKind;
     use dovetail_api::{
         Snapshot,
-        agent::{
+        activity::inbox::{InboxId, InboxItem, InboxKind},
+        agents::agent::{
             Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock, SlashCommand,
         },
-        inbox::{InboxId, InboxItem, InboxKind},
     };
 
     fn agent(id: &str, status: AgentStatus, last: i64, parent: Option<&str>) -> Agent {

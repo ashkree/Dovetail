@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use dovetail_api::{
     Snapshot,
-    agent::{AgentId, AgentStatus, RunningTool},
-    conversation::{ConversationEntry, EntryKind},
+    agents::agent::{AgentId, AgentStatus, RunningTool},
+    agents::conversation::{ConversationEntry, EntryKind},
 };
 
 use crate::fmt;

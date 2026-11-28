@@ -21,7 +21,7 @@ pub fn when(ms: i64, tz: &TimeZone) -> String {
 
 /// A file size as `412 KB` or `1.2 MB` (binary units, at least `1 KB`).
 pub fn bytes(size: u64) -> String {
-    dovetail_api::conversation::size_text(size)
+    dovetail_api::agents::conversation::size_text(size)
 }
 
 /// An attachment chip, as in the chat bar and the conversation: `[image 1 · 412 KB]`.

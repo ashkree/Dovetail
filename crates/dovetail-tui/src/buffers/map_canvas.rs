@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use dovetail_api::map::{Map, NodeId};
+use dovetail_api::visual::map::{Map, NodeId};
 use ratatui::layout::Rect;
 
 use crate::canvas::kitty::Scene;

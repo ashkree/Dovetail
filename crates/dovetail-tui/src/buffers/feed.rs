@@ -1,7 +1,7 @@
 //! The Activity feed and the message timeline: newest first, one row each, `Enter` opens the
 //! agent involved.
 
-use dovetail_api::{Snapshot, activity::ActivityKind, agent::AgentId};
+use dovetail_api::{Snapshot, activity::ActivityKind, agents::agent::AgentId};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Span;

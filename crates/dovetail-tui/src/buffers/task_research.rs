@@ -12,7 +12,7 @@ use dovetail_api::research::{
 };
 use dovetail_api::{
     Snapshot,
-    task::{Task, TaskId},
+    tracking::task::{Task, TaskId},
 };
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};

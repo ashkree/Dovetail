@@ -4,10 +4,10 @@ mod support;
 
 use dovetail_api::{
     Command, Event, ServerMsg, Snapshot,
-    agent::{AgentKind, AgentStatus},
+    agents::agent::{AgentKind, AgentStatus},
+    agents::conversation::{Attachment, ConversationCommand, ImageType},
+    agents::journal::{JournalCommand, JournalEvent, JournalState},
     app::{AppEvent, Paste},
-    conversation::{Attachment, ConversationCommand, ImageType},
-    journal::{JournalCommand, JournalEvent, JournalState},
 };
 use support::*;
 

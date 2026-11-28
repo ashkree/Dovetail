@@ -3,8 +3,8 @@
 
 use dovetail_api::{
     Command,
-    agent::AgentId,
-    model::{DriverKind, ModelCommand, ReasoningEffort},
+    agents::agent::AgentId,
+    agents::model::{DriverKind, ModelCommand, ReasoningEffort},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -177,7 +177,7 @@ mod tests {
     use crate::keymap::{Key, Keymap, Scope};
     use crate::mode::Mode;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use dovetail_api::model::ModelCommand;
+    use dovetail_api::agents::model::ModelCommand;
 
     fn resolve(map: &Keymap, code: KeyCode) -> Option<Action> {
         map.chord(

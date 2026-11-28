@@ -8,10 +8,12 @@ use std::collections::HashSet;
 
 use dovetail_api::{
     Command, Event, Snapshot,
-    agent::{Agent, AgentCommand, AgentEvent, AgentId, AgentKind, WorktreeRef},
+    activity::inbox::{InboxEvent, InboxKind, REMOVE_WORKTREE_PERMISSION},
+    agents::agent::{Agent, AgentCommand, AgentEvent, AgentId, AgentKind, WorktreeRef},
     app::AppCommand,
-    inbox::{InboxEvent, InboxKind, REMOVE_WORKTREE_PERMISSION},
-    worktree::{Changes, PrLookup, PrState, SyncState, WorktreeEvent, WorktreeInfo, WorktreeSetup},
+    code::worktree::{
+        Changes, PrLookup, PrState, SyncState, WorktreeEvent, WorktreeInfo, WorktreeSetup,
+    },
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;

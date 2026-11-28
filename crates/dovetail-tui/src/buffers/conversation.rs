@@ -6,9 +6,9 @@ use std::collections::{HashMap, HashSet};
 use crossterm::event::{KeyCode, KeyEvent};
 use dovetail_api::{
     Command,
-    agent::{AgentId, AgentStatus},
+    agents::agent::{AgentId, AgentStatus},
+    agents::conversation::{Attachment, ConversationCommand, EntryId, EntryKind, MAX_ATTACHMENTS},
     app::Paste,
-    conversation::{Attachment, ConversationCommand, EntryId, EntryKind, MAX_ATTACHMENTS},
 };
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};

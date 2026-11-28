@@ -7,15 +7,16 @@ mod support;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
-    Command, Event, ServerMsg, agent::AgentStatus, project::ProjectId, task::TaskId,
+    Command, Event, ServerMsg, agents::agent::AgentStatus, tracking::project::ProjectId,
+    tracking::task::TaskId,
 };
 use dovetail_api::{
+    agents::conversation::ConversationCommand,
+    agents::tangent::TangentCommand,
     app::AppCommand,
-    conversation::ConversationCommand,
-    library::{BrowseWhat, DocImage, LibraryCommand, LibraryEvent},
-    project::ProjectCommand,
+    research::library::{BrowseWhat, DocImage, LibraryCommand, LibraryEvent},
     research::{FindingId, ResearchCommand, ResearchDocument, ResearchWhat, SourceId},
-    tangent::TangentCommand,
+    tracking::project::ProjectCommand,
 };
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;

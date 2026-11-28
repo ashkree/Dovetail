@@ -8,8 +8,8 @@ mod support;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, Event, ServerMsg, Snapshot,
-    agent::{AgentEvent, AgentKind, AgentStatus},
-    model::{DriverKind, ModelCommand, ModelOption, ReasoningEffort},
+    agents::agent::{AgentEvent, AgentKind, AgentStatus},
+    agents::model::{DriverKind, ModelCommand, ModelOption, ReasoningEffort},
 };
 use dovetail_tui::App;
 use dovetail_tui::action::Action;
@@ -59,7 +59,7 @@ fn world_with_models() -> Snapshot {
     world_with(claude_models())
 }
 
-fn coordinator(app: &App) -> dovetail_api::agent::AgentId {
+fn coordinator(app: &App) -> dovetail_api::agents::agent::AgentId {
     app.snapshot()
         .agents
         .iter()

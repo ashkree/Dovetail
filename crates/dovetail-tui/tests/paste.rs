@@ -9,10 +9,10 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, Event, ServerMsg,
-    app::{AppCommand, AppEvent, Paste},
-    conversation::{
+    agents::conversation::{
         Attachment, ConversationCommand, ConversationEvent, EntryKind, ImageType, MAX_ATTACHMENTS,
     },
+    app::{AppCommand, AppEvent, Paste},
 };
 use dovetail_mock::{MockConfig, MockCore};
 use support::*;

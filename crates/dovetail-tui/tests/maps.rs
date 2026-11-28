@@ -5,7 +5,7 @@
 
 mod support;
 
-use dovetail_api::map::{MapCommand, MapEvent, MapId};
+use dovetail_api::visual::map::{MapCommand, MapEvent, MapId};
 use dovetail_api::{Command, Event, ServerMsg};
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;

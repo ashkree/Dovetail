@@ -11,8 +11,8 @@ use std::sync::Arc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dovetail_api::{Command, Event, ServerMsg};
 use dovetail_api::{
-    conversation::ConversationCommand,
-    map::{
+    agents::conversation::ConversationCommand,
+    visual::map::{
         Connection, Group, Map, MapCommand, MapContent, MapEvent, MapId, MapKind, MapSummary, Node,
         NodeId, NodeKind,
     },

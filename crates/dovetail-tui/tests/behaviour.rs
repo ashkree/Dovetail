@@ -6,12 +6,12 @@ mod support;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, Event, ServerMsg, Snapshot,
-    agent::AgentStatus,
+    activity::inbox::{InboxCommand, InboxEvent, InboxId, InboxItem, InboxKind, PermissionAnswer},
+    activity::status::{StatusEvent, Totals},
+    agents::agent::AgentStatus,
+    agents::conversation::ConversationCommand,
     app::{AppCommand, AppEvent},
-    conversation::ConversationCommand,
-    inbox::{InboxCommand, InboxEvent, InboxId, InboxItem, InboxKind, PermissionAnswer},
-    status::{StatusEvent, Totals},
-    task::{Bucket, NewTask, PLevel, TaskChange, TaskCommand, TaskId, TaskStatus},
+    tracking::task::{Bucket, NewTask, PLevel, TaskChange, TaskCommand, TaskId, TaskStatus},
 };
 use dovetail_tui::Mode;
 use dovetail_tui::keymap::{SEQUENCE_TIMEOUT_MS, WHICH_KEY_DELAY_MS};

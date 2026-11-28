@@ -18,13 +18,13 @@ use std::path::PathBuf;
 
 use dovetail_api::{
     Snapshot,
-    decision::{Decision, DecisionId},
-    project::{ProjectId, ProjectKind},
-    task::{Task, TaskId},
+    tracking::decision::{Decision, DecisionId},
+    tracking::project::{ProjectId, ProjectKind},
+    tracking::task::{Task, TaskId},
 };
-use dovetail_api::{library::BrowsedProject, research::ResearchSummary};
+use dovetail_api::{research::ResearchSummary, research::library::BrowsedProject};
 use dovetail_api::{
-    library::DocEntry,
+    research::library::DocEntry,
     research::{FindingId, FindingSummary, ResearchListing, ResearchWhat, SourceId, SourceKind},
 };
 use ratatui::Frame;
@@ -1034,8 +1034,8 @@ pub fn decision_markdown(
         .find(|t| t.id == d.task)
         .map_or_else(String::new, |t| format!(" {}", t.title));
     let by = match &d.by {
-        dovetail_api::decision::DecisionAuthor::User => "you".to_string(),
-        dovetail_api::decision::DecisionAuthor::Agent(a) => a.0.clone(),
+        dovetail_api::tracking::decision::DecisionAuthor::User => "you".to_string(),
+        dovetail_api::tracking::decision::DecisionAuthor::Agent(a) => a.0.clone(),
     };
     let mut md = format!(
         "# {}\n\nTask #{}{task} · {} · by {by}\n",

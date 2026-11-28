@@ -5,7 +5,7 @@ mod support;
 
 use std::time::Duration;
 
-use dovetail_api::{Command, worktree::WorktreeCommand};
+use dovetail_api::{Command, code::worktree::WorktreeCommand};
 use dovetail_tui::App;
 use dovetail_tui::event_loop::next_wake;
 use dovetail_tui::help::which_key;

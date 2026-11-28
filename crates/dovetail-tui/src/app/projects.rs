@@ -3,9 +3,9 @@
 
 use dovetail_api::{
     Command,
-    agent::AgentStatus,
-    project::{ProjectCommand, ProjectId, ProjectKind},
-    status::UNREGISTERED_WARNING,
+    activity::status::UNREGISTERED_WARNING,
+    agents::agent::AgentStatus,
+    tracking::project::{ProjectCommand, ProjectId, ProjectKind},
 };
 
 use super::overlay::{Overlay, Purpose};

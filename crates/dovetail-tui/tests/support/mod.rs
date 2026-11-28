@@ -6,17 +6,17 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command, PROTOCOL_VERSION, ServerMsg, Snapshot,
+    activity::inbox::{InboxId, InboxItem, InboxKind, RuleSuggestion},
+    activity::status::Totals,
     activity::{ActivityItem, ActivityKind, AgentMessage},
-    agent::{
+    agents::agent::{
         Agent, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock, SubagentProgress,
         TodoItem, TodoListId, TodoStatus, WorktreeRef,
     },
-    conversation::{ConversationEntry, ConversationTail, EntryId, EntryKind},
-    inbox::{InboxId, InboxItem, InboxKind, RuleSuggestion},
-    model::DriverKind,
-    project::{ProjectId, ProjectSummary},
-    status::Totals,
-    task::{Bucket, PLevel, Task, TaskId, TaskStatus},
+    agents::conversation::{ConversationEntry, ConversationTail, EntryId, EntryKind},
+    agents::model::DriverKind,
+    tracking::project::{ProjectId, ProjectSummary},
+    tracking::task::{Bucket, PLevel, Task, TaskId, TaskStatus},
 };
 use dovetail_tui::App;
 use jiff::tz::TimeZone;

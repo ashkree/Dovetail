@@ -4,8 +4,8 @@
 mod support;
 
 use dovetail_api::{
-    agent::AgentStatus,
-    conversation::{ConversationTail, EntryKind},
+    agents::agent::AgentStatus,
+    agents::conversation::{ConversationTail, EntryKind},
 };
 use support::*;
 

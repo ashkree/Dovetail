@@ -14,7 +14,9 @@ use std::sync::Arc;
 use dovetail_api::{Command, Event};
 use dovetail_api::{
     app::AppEvent,
-    map::{Flow, Map, MapCommand, MapContent, MapEvent, MapId, MapKind, Node, NodeId, NodeKind},
+    visual::map::{
+        Flow, Map, MapCommand, MapContent, MapEvent, MapId, MapKind, Node, NodeId, NodeKind,
+    },
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;

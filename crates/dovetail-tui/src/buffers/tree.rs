@@ -5,11 +5,11 @@ use std::collections::{HashMap, HashSet};
 
 use dovetail_api::{
     Command, Snapshot,
-    agent::{
+    agents::agent::{
         Agent, AgentCommand, AgentId, AgentKind, AgentStatus, PermissionMode, SessionLock,
         TodoStatus,
     },
-    task::{Bucket, PLevel, Task, TaskChange, TaskCommand, TaskId, TaskStatus},
+    tracking::task::{Bucket, PLevel, Task, TaskChange, TaskCommand, TaskId, TaskStatus},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -920,7 +920,7 @@ fn update(id: TaskId, change: TaskChange) -> Effect {
 
 #[cfg(test)]
 mod tests {
-    use dovetail_api::agent::{AgentId, SessionLock, SubagentProgress};
+    use dovetail_api::agents::agent::{AgentId, SessionLock, SubagentProgress};
 
     use super::*;
 
@@ -956,7 +956,7 @@ mod tests {
             effort: None,
             subagent_tokens: 0,
             tool: None,
-            driver: dovetail_api::model::DriverKind::Claude,
+            driver: dovetail_api::agents::model::DriverKind::Claude,
         }
     }
 
@@ -986,7 +986,7 @@ mod tests {
             status,
             context_pct: Some(41),
             model: Some("claude-sonnet-5-5".into()),
-            effort: Some(dovetail_api::model::ReasoningEffort::Medium),
+            effort: Some(dovetail_api::agents::model::ReasoningEffort::Medium),
             ..subagent(status, None)
         }
     }

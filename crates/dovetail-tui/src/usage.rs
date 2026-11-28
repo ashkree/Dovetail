@@ -8,8 +8,8 @@
 //! week, then the context fill; the 5-hour figure goes last. A window whose reset time has passed, or that the report left out, shows `—`.
 
 use dovetail_api::{
-    model::ReasoningEffort,
-    status::{UsageGroup, UsageLimits, UsageStatus, UsageWindow},
+    activity::status::{UsageGroup, UsageLimits, UsageStatus, UsageWindow},
+    agents::model::ReasoningEffort,
 };
 use jiff::{Timestamp, tz::TimeZone};
 use ratatui::text::Span;
@@ -314,7 +314,7 @@ pub fn variants(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dovetail_api::status::UsageStatus;
+    use dovetail_api::activity::status::UsageStatus;
 
     fn text(spans: &[Span]) -> String {
         spans.iter().map(|s| s.content.as_ref()).collect()
@@ -534,7 +534,7 @@ mod tests {
 
     #[test]
     fn match_usage_group_finds_matching_group_and_handles_edge_cases() {
-        use dovetail_api::status::LimitWindow;
+        use dovetail_api::activity::status::LimitWindow;
 
         let groups = vec![
             UsageGroup {
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     fn group_to_usage_limits_converts_windows_correctly() {
-        use dovetail_api::status::LimitWindow;
+        use dovetail_api::activity::status::LimitWindow;
 
         let g = UsageGroup {
             name: "Gemini".into(),

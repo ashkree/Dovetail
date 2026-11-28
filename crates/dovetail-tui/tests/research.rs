@@ -4,18 +4,18 @@ mod support;
 
 use dovetail_api::{
     Command, Event, ServerMsg,
+    activity::inbox::{InboxId, InboxItem, InboxKind},
     app::{AppCommand, AppEvent},
-    inbox::{InboxId, InboxItem, InboxKind},
-    task::TaskId,
+    tracking::task::TaskId,
 };
 use dovetail_api::{
-    inbox::InboxCommand,
+    activity::inbox::InboxCommand,
     research::{
         FindingId, FindingSummary, ResearchCommand, ResearchContent, ResearchDocument,
         ResearchEvent, ResearchListing, ResearchSummary, ResearchWhat, RoundSummary, SourceId,
         SourceKind, SourceSummary,
     },
-    task::TaskCommand,
+    tracking::task::TaskCommand,
 };
 use dovetail_tui::App;
 use ratatui::Terminal;

@@ -5,9 +5,9 @@
 
 use dovetail_api::{
     Command, Snapshot,
-    agent::AgentStatus,
-    tangent::{TangentCommand, TangentSummary, tangent_agent},
-    task::{TaskId, TaskStatus},
+    agents::agent::AgentStatus,
+    agents::tangent::{TangentCommand, TangentSummary, tangent_agent},
+    tracking::task::{TaskId, TaskStatus},
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;

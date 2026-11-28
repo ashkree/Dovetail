@@ -6,15 +6,15 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::{
     Command,
-    agent::AgentId,
-    inbox::InboxId,
-    mcp::McpCommand,
-    model::ModelCommand,
-    project::{ProjectCommand, ProjectId},
+    activity::inbox::InboxId,
+    activity::status::{DriverUsage, StatusCommand},
+    agents::agent::AgentId,
+    agents::mcp::McpCommand,
+    agents::model::ModelCommand,
+    agents::tangent::TangentCommand,
     research::ResearchCommand,
-    status::{DriverUsage, StatusCommand},
-    tangent::TangentCommand,
-    task::{TaskChange, TaskCommand, TaskId},
+    tracking::project::{ProjectCommand, ProjectId},
+    tracking::task::{TaskChange, TaskCommand, TaskId},
 };
 
 use super::App;
@@ -198,7 +198,7 @@ impl App {
             .map_or_else(|| session.0.clone(), |a| a.name.clone());
         self.outbox.push(Command::Mcp(McpCommand::Request {
             agent: session.clone(),
-            request: dovetail_api::mcp::McpRequest::Status,
+            request: dovetail_api::agents::mcp::McpRequest::Status,
         }));
         self.open_overlay(Overlay::Mcp(McpMenu::new(session, name)));
     }
@@ -207,8 +207,8 @@ impl App {
     pub(super) fn mcp_reply(
         &mut self,
         agent: &AgentId,
-        request: &dovetail_api::mcp::McpRequest,
-        outcome: dovetail_api::mcp::McpOutcome,
+        request: &dovetail_api::agents::mcp::McpRequest,
+        outcome: dovetail_api::agents::mcp::McpOutcome,
     ) {
         let Some(Overlay::Mcp(menu)) = &mut self.overlay else {
             return;

@@ -5,7 +5,7 @@
 //!
 //! A plain `@foo` matches the session's whole tree (files git does not ignore). `@~/`, `@/`,
 //! `@./` and `@../` complete one directory at a time, like a shell. Paths come from the core
-//! ([`ConversationCommand::ListPaths`](dovetail_api::conversation::ConversationCommand::ListPaths)); until they arrive the popup says
+//! ([`ConversationCommand::ListPaths`](dovetail_api::agents::conversation::ConversationCommand::ListPaths)); until they arrive the popup says
 //! so.
 
 use std::collections::HashMap;
@@ -208,7 +208,7 @@ impl Completion {
             KeyCode::Down if !self.rows.is_empty() => self.move_selection(true),
             KeyCode::Char('n') if ctrl && !self.rows.is_empty() => self.move_selection(true),
             KeyCode::Up if !self.rows.is_empty() => self.move_selection(false),
-            KeyCode::Char('p') if ctrl => self.move_selection(false),
+            KeyCode::Char('p') if ctrl && !self.rows.is_empty() => self.move_selection(false),
             KeyCode::Esc => self.dismissed = self.token.as_ref().map(|t| t.range.start),
             KeyCode::Tab | KeyCode::Enter if plain => {
                 return self.accept(key.code == KeyCode::Enter);
@@ -386,5 +386,17 @@ mod tests {
         c.update("", 0);
         c.update("@", 1);
         assert!(c.is_open());
+    }
+
+    #[test]
+    fn ctrl_p_passes_when_list_is_empty() {
+        let mut c = Completion::default();
+        c.update("@zzz", 4);
+        assert!(c.is_open());
+        assert!(c.rows().0.is_empty());
+        assert_eq!(
+            c.key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL)),
+            KeyResult::Pass
+        );
     }
 }
