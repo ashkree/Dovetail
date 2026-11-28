@@ -84,10 +84,11 @@ The mocks for every screen are on the layout canvas: https://claude.ai/artifact/
 
 ## Readability (important: I have poor eyesight)
 
-Dovetail draws all conversation text itself, so tune it for reading:
+Dovetail draws all conversation text itself, so tune it for reading (updated 2026-11-27 per D49 readability choice from the #36 spike):
 
-- **Width:** cap the reading column at **120 columns** (configurable), centered in wider panes. Code blocks and tables may use the full pane.
+- **Width & margins:** cap the reading column at **88 columns** centred in wider panes, with **4-column margins**. Code blocks and tables may use the full pane width.
 - **Spacing:** a blank row between paragraphs, between list items, and around code blocks and headings. Never render a dense block of text.
+- **Headings:** non-scaled headings (no OSC 66 scaled headings; Variant A quiet layout). Headings set off with weight, colour and rules.
 - **Emphasis by style AND color:** render markdown properly and keep the styling (bold stays bold, italic stays italic, code stays code), but also give each its own color:
   - body text: soft off-white, **never pure white**;
   - bold: a warm accent color;
@@ -95,8 +96,9 @@ Dovetail draws all conversation text itself, so tune it for reading:
   - inline code and file paths: a third color;
   - headings and speaker labels: the accent color;
   - tool summaries and older turns: dimmed.
-  Put all colors in one theme struct so they become configurable later. Use `pulldown-cmark` for parsing; no syntax highlighting in code blocks yet.
-- **Background:** my terminal is transparent and I want to keep that, so don't paint backgrounds by default. Add a toggle that gives the reading column a solid dark background, and turn it on automatically in focus mode. *(Changed: ADR 0013 took it out of focus mode, and on 2026-11-11 the toggle went too: `<leader>B` and `:solid` no longer exist. The conversation and focus mode never paint a background. Later on 2026-11-11 reading views went transparent too (ADR 0018 amendment), and the rule became: **no solid backgrounds on areas (panes, columns, views); the selection highlight and badges are the only exceptions.**)*
+  Put all colors in one theme struct so they become configurable later. Use `pulldown-cmark` for parsing. Code blocks have syntax highlighting (paired with Variant A's quiet layout; crate choice decided at adoption).
+- **Tables & wide blocks:** wide blocks never wrap. Tables are box-drawn with columns fitted to the space (12-col floor) and per-block sideways panning (`Tab`/`Shift-Tab` focus, `h`/`l` pan). Diagrams (box-drawing or arrows) preserve alignment without wrapping.
+- **Background:** my terminal is transparent and I want to keep that, so don't paint backgrounds by default. A solid-background toggle on content panes is available for legibility when needed (ADR 0030 §5).
 - **Message headers:** each message opens with a blank row and a header rule as wide as the reading column, `── <name> · hh:mm ───`. The name is bold in the speaker's colour, the rule dim. `You` for my messages; agents are named exactly as in the tree (e.g. `coordinator`, `slice-4`). Tool summaries, notices and later reply chunks stay under the agent's one header, and the streaming `◐` sits in it (task #6, 2026-11-09).
 - **Fold the noise:** tool activity in a turn collapses into one summary line (e.g. `Edited 3 files · ran tests ✓ · 42 s`), expandable. Hide thinking. Truncate long output with a "show more".
 - **Reading keys** (buffer-local in a conversation, Normal mode): `j`/`k` scroll, `gg`/`G` top and bottom, `]]`/`[[` next and previous turn, `zc`/`zo` cut and show in full the entry under the cursor (a `▎` bar in the margin marks it; it is the entry at the middle of the view, or the one `zc`/`zo` last acted on, until the next movement key; `zo` on a folded turn opens the turn), `zC`/`zO` fold and unfold the whole turn. Replies over 60 lines are cut to 40 only once a newer reply exists; the newest is never cut unless you `zc` it.

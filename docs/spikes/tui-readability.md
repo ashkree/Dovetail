@@ -1,10 +1,12 @@
 # tui-readability: tables, code, diagrams and headings in the TUI (with kitty-text-sizing)
 
-**Status:** built and measured headless 2026-11-18 (task #36). **Waiting for the user's run in kitty and kitty under tmux**; every row marked *pending* needs their eyes. Gates the TUI design session (ADR 0030 §7 step 1) and the `render/` changes in the v2 views.
+**Status:** decided 2026-11-27 (D49, after user run in kitty, task #36). Gates the TUI design session (ADR 0030 §7 step 1) and the `render/` changes in the v2 views.
 
-**Recommendation (provisional, from the headless numbers only):**
-- Highlighter: **the numbers say syntect is heavier than the proposal's bar** (+13 MB RSS once a `bash` block is first highlighted, over the ~8 MB line; +2 MB for `diff`), and **transcript code fences are almost never labelled** (see Findings). Prefer a small curated syntax set (bash, diff, ini/toml, rust, json) over the full default set, or `synoptic`. Decide after the user has seen highlighting on screen; it may not earn its weight at all.
-- Variant, OSC 66 and sideways-scroll keys: **pending the user's run.**
+**Decision (2026-11-27, D49):**
+- Adopt Variant A's quiet layout and non-scaled headings: no OSC 66 scaled headings, 88-col centred prose, 4-col margins, transparent background by default (solid-background toggle per ADR 0030 §5), box-drawn fitted tables (12-col floor, per-block sideways panning).
+- Pair with syntax highlighting on code blocks.
+- **Rejected:** Variant B (OSC 66 scaled headings); **rejected:** pure Variant A (no syntax highlighting).
+- Highlighter crate choice (`syntect` curated set vs `synoptic` or lighter alternative) stays open until adoption, when it will get a row in `docs/implementation-plan.md` §2.
 
 Proposal: `docs/plan/tui-readability-spike.md`. Code: `spikes/tui-readability/` (own Cargo project, empty `[workspace]`, nothing in `crates/` changed).
 
@@ -99,4 +101,4 @@ The other two fixtures give the same shape (p50 1.09–1.12 ms; C costs ~400 B m
 - `render` returns blocks (`Prose`, `Heading`, `Wide`, `Rule`) and layout owns spacing; prose and wide blocks are placed separately (`markdown.rs`, `layout.rs`).
 - Box-drawn tables with a 12-col floor and per-block sideways panning (`WideInfo`, `slice_line`).
 - Detection and heading pass need the backend writer (see above).
-- Reconsider highlighting before it gets a row in `docs/implementation-plan.md` §2.
+- Reconsider highlighting before it gets a row in `docs/implementation-plan.md` §2: highlighter crate choice (`syntect` curated set vs `synoptic` or lighter alternative) stays open until adoption.
