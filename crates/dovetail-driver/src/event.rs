@@ -479,7 +479,7 @@ pub enum DriverEvent {
         /// The full model name (`claude-sonnet-5-5`).
         model: Option<String>,
         /// The effort; `None` when the model has none or the level is not one we know.
-        effort: Option<dovetail_api::model::ReasoningEffort>,
+        effort: Option<dovetail_api::agents::model::ReasoningEffort>,
     },
     /// A [`crate::Session::set_model`] was refused (unknown model, say); the old model is
     /// still in use and nothing else was changed.
@@ -492,9 +492,9 @@ pub enum DriverEvent {
     /// The answer to a [`crate::Session::mcp`] request (task #44).
     McpReply {
         /// What was asked.
-        request: dovetail_api::mcp::McpRequest,
+        request: dovetail_api::agents::mcp::McpRequest,
         /// What Claude Code answered.
-        outcome: dovetail_api::mcp::McpOutcome,
+        outcome: dovetail_api::agents::mcp::McpOutcome,
     },
     /// The models the session can switch to (`list_models`, asked at start).
     Models(Vec<ModelInfo>),
@@ -539,7 +539,7 @@ pub struct ModelInfo {
     /// Claude Code's display name (`Opus 5.5`).
     pub display_name: Option<String>,
     /// The effort levels it accepts; empty when it has no effort setting.
-    pub efforts: Vec<dovetail_api::model::ReasoningEffort>,
+    pub efforts: Vec<dovetail_api::agents::model::ReasoningEffort>,
 }
 
 /// Names one [`crate::Session::set_model`] call, so its answer is never taken for another's.

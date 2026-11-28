@@ -71,7 +71,7 @@ impl Session for FakeSession {
     fn set_model(
         &self,
         model: Option<&str>,
-        effort: Option<dovetail_api::model::ReasoningEffort>,
+        effort: Option<dovetail_api::agents::model::ReasoningEffort>,
     ) -> Result<SwitchId, DriverError> {
         // Numbered across the fake's sessions; only distinctness matters.
         let switch = SwitchId(
@@ -113,8 +113,8 @@ impl Session for FakeSession {
     /// Records the request and answers it at once from [`FakeDriver::set_mcp_servers`]: a list
     /// for a status request, `Done` for an action on a listed server (an `AuthUrl` for a
     /// log-in), `Failed` for an unknown one.
-    fn mcp(&self, request: dovetail_api::mcp::McpRequest) -> Result<(), DriverError> {
-        use dovetail_api::mcp::{McpOutcome, McpRequest};
+    fn mcp(&self, request: dovetail_api::agents::mcp::McpRequest) -> Result<(), DriverError> {
+        use dovetail_api::agents::mcp::{McpOutcome, McpRequest};
         if self
             .recorder
             .mcp_closed

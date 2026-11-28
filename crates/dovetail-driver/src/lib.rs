@@ -1,7 +1,6 @@
 #![doc = include_str!("../ARCHITECTURE.md")]
 
 mod agy;
-mod base64;
 mod claude;
 mod event;
 mod fake;
@@ -11,13 +10,14 @@ mod spec;
 
 pub use agy::{AgyDriver, AgyOptions, McpServerSpec};
 pub use claude::{ClaudeDriver, ClaudeOptions, parse, transcript};
-pub use dovetail_api::model::DriverKind;
-pub use dovetail_api::status::DriverUsage;
+pub use dovetail_api::activity::status::DriverUsage;
+pub use dovetail_api::agents::model::DriverKind;
 pub use event::*;
 pub use fake::{FakeDriver, ReplayOptions, ReplayTiming, Sent};
 pub use query::UsageQuery;
 pub use spec::{PermissionMode, SessionSpec, SystemdScope};
 
+use base64::Engine as _;
 use serde_json::Value;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -104,12 +104,12 @@ pub trait Session: Send {
     fn set_model(
         &self,
         model: Option<&str>,
-        effort: Option<dovetail_api::model::ReasoningEffort>,
+        effort: Option<dovetail_api::agents::model::ReasoningEffort>,
     ) -> Result<SwitchId, DriverError>;
     /// Send one request of the MCP menu (task #44): the session's servers, or an action on one.
     /// The answer is a [`DriverEvent::McpReply`] carrying the request; a refusal is a
-    /// [`dovetail_api::mcp::McpOutcome::Failed`] there, not an error here.
-    fn mcp(&self, request: dovetail_api::mcp::McpRequest) -> Result<(), DriverError>;
+    /// [`dovetail_api::agents::mcp::McpOutcome::Failed`] there, not an error here.
+    fn mcp(&self, request: dovetail_api::agents::mcp::McpRequest) -> Result<(), DriverError>;
     /// Answer a pending [`DriverEvent::PermissionRequest`], in any order.
     fn answer_control(&self, id: ControlId, answer: ControlAnswer) -> Result<(), DriverError>;
     /// Take the event stream. Call once; later calls return an already-closed receiver. The
@@ -164,7 +164,7 @@ impl UserInput {
                         "source": {
                             "type": "base64",
                             "media_type": image.media_type,
-                            "data": base64::encode(&image.data),
+                            "data": base64::engine::general_purpose::STANDARD.encode(&image.data),
                         },
                     })
                 })

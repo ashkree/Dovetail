@@ -19,8 +19,7 @@ src/
   spec.rs       SessionSpec (what any driver needs to launch), PermissionMode, SystemdScope
   process.rs    the child process under any driver: spawn with piped stdio, stdin writer,
                 stdout line reader, stderr tail, supervisor (reaps, then sends Exited), fixture log
-  query.rs      a short-lived process asked one question (the usage reports); UsageQuery
-  base64.rs     image encoding for UserInput
+  query.rs      a short-lived process asked one question (usage reports, `agy models`); UsageQuery
   fake/         FakeDriver: replays a recorded fixture and records what it is sent
     mod.rs        FakeDriver, ReplayOptions, Sent, the recorder
     replay.rs     the replay loop, through the fixture's driver's own mapping
@@ -40,7 +39,7 @@ src/
     args.rs       AgyOptions, McpServerSpec, the argv, session/new params, mode names
     rpc.rs        request ids and what each was for
     turn.rs       session/update → DriverEvent; chunks gathered into messages; the result
-    models.rs     agy's ids (`<family>-<effort>`) as Dovetail's model and effort
+    models.rs     agy's ids (`<family>-<effort>`) as Dovetail's model and effort; `agy models` background listing
     permission.rs session/request_permission and its answer
     usage.rs      `agy --output-format json -p=/usage`: the quota groups
 ```
@@ -61,6 +60,7 @@ src/
 | Role prompt | `--append-system-prompt-file` | the file's text in `_meta.antigravity.systemPrompt.append` |
 | Settings | `--settings` file | `--cli_dir_name` folder holding `settings.json` |
 | Usage ([`SessionDriver::usage`]) | `get_usage`: 5-hour, weekly and per-model weekly windows, extra usage | `/usage`: quota groups, each with a 5-hour and a weekly bucket |
+| Models ([`SessionDriver::models`]) | `list_models` inside a session (not supported without one) | `agy models` in the background (no session, no model call), plus `session/new`'s `availableModels` |
 
 # How a session runs
 
@@ -70,4 +70,4 @@ Requests that take several steps keep their state behind a mutex shared by the h
 
 # Tests
 
-[`FakeDriver`] replays NDJSON fixtures (`tests/fixtures/`, `{"t","dir","msg"}` per line) through the same mapping the real driver uses, and records every [`Sent`] item. Claude Code fixtures are mapped line by line. agy fixtures (`tests/fixtures/agy/`, [`FakeDriver::for_agy`]) go through a conversation that also reads the recorded requests, so each answer finds its request. Setting [`SessionSpec::log_path`] on a real session writes this format, so any session of either driver can become a fixture. With `DOVETAIL_LIVE_TESTS=1`, `tests/agy_live.rs` runs one real agy turn and `tests/usage_live.rs` reads both real usage reports. The fake answers `usage` with a canned report ([`FakeDriver::set_usage`]).
+[`FakeDriver`] replays NDJSON fixtures (`tests/fixtures/`, `{"t","dir","msg"}` per line) through the same mapping the real driver uses, and records every [`Sent`] item. Claude Code fixtures are mapped line by line. agy fixtures (`tests/fixtures/agy/`, [`FakeDriver::for_agy`]) go through a conversation that also reads the recorded requests, so each answer finds its request. Setting [`SessionSpec::log_path`] on a real session writes this format, so any session of either driver can become a fixture. With `DOVETAIL_LIVE_TESTS=1`, `tests/agy_live.rs` runs one real agy turn and `tests/usage_live.rs` reads both real usage reports. The fake answers `usage` with a canned report ([`FakeDriver::set_usage`]) and `models` with a canned list ([`FakeDriver::set_models`]).

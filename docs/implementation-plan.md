@@ -196,6 +196,7 @@ Workspace changes at M1: add `exclude = ["spikes"]` to the root `Cargo.toml`, si
 | `resvg` `=0.47.0` | maps | `default-features = false`, `text`, `system-fonts` | M15 (f): rasterises the swimlane map's SVG, which Dovetail draws itself (23e). No new crates: merman's PNG export already pulls in this version |
 | `rustix` 1 | core | `std`, `process` only | `waitpid` with `WUNTRACED` and `SIGCONT`, so an editor or native `claude` that stops itself (Ctrl-Z) is continued instead of hanging the terminal (task #32); no unsafe of ours, and already in the tree through `crossterm` and `tempfile` |
 | `signal-hook` | tui, binary | default | Catch SIGINT, SIGTERM and SIGHUP on a thread so the TUI quits cleanly (terminal restored, sessions ended and reaped) instead of dying; the binary's `dovetail upgrade` sets a flag on SIGINT/SIGTERM so a Ctrl-C stops and reaps cargo (ADR 0014); no unsafe of ours |
+| `base64` | driver | default | Standard base64 encoding for `UserInput` image attachments; replaces hand-rolled `base64.rs` in `dovetail-driver` (D42, already in the dependency tree) |
 | `insta`, `tempfile` | dev only | default | Snapshot tests, temp databases |
 
 **Deliberately not added**

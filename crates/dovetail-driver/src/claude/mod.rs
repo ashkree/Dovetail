@@ -19,7 +19,7 @@ use crate::process::{self, Ctl, Log, WriterMsg};
 use crate::{
     ControlAnswer, DriverError, PermissionMode, Session, SessionDriver, SessionSpec, UserInput,
 };
-use dovetail_api::{
+use dovetail_api::agents::{
     mcp::McpRequest,
     model::{DriverKind, ReasoningEffort},
 };

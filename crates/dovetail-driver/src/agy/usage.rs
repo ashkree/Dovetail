@@ -3,8 +3,8 @@
 //! `docs/spikes/agy-headless.md`).
 
 use crate::query::{self, UsageQuery, rfc3339_ms};
-use dovetail_api::model::DriverKind;
-use dovetail_api::status::{DriverUsage, LimitWindow, UsageGroup};
+use dovetail_api::activity::status::{DriverUsage, LimitWindow, UsageGroup};
+use dovetail_api::agents::model::DriverKind;
 use serde_json::Value;
 use std::ffi::OsString;
 

@@ -7,7 +7,7 @@
 //! that family at that effort; anything else is a family of its own with no effort setting.
 
 use crate::event::ModelInfo;
-use dovetail_api::model::ReasoningEffort;
+use dovetail_api::agents::model::ReasoningEffort;
 use serde_json::Value;
 
 /// Asks `program models` for the account's models.

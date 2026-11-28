@@ -547,6 +547,7 @@ dependencies = [
 name = "dovetail-driver"
 version = "0.0.0"
 dependencies = [
+ "base64 0.23.1",
  "dovetail-api",
  "jiff",
  "serde",

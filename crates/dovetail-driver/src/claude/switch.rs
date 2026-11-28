@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use dovetail_api::model::ReasoningEffort;
+use dovetail_api::agents::model::ReasoningEffort;
 use serde_json::{Value, json};
 
 use crate::event::{DriverEvent, ModelInfo, SwitchId};

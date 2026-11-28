@@ -98,10 +98,10 @@ pub enum Sent {
         /// The model asked for; `None` keeps it.
         model: Option<String>,
         /// The effort asked for.
-        effort: Option<dovetail_api::model::ReasoningEffort>,
+        effort: Option<dovetail_api::agents::model::ReasoningEffort>,
     },
     /// An MCP menu request.
-    Mcp(dovetail_api::mcp::McpRequest),
+    Mcp(dovetail_api::agents::mcp::McpRequest),
     /// `shutdown(grace)`.
     Shutdown(Duration),
     /// `kill()`.
@@ -129,15 +129,20 @@ struct Recorder {
     held: Mutex<Vec<DriverEvent>>,
     /// Every session reports these settings as applied, as the start-up `get_settings` read
     /// does ([`FakeDriver::apply_at_start`]).
-    applied: Mutex<Option<(Option<String>, Option<dovetail_api::model::ReasoningEffort>)>>,
+    applied: Mutex<
+        Option<(
+            Option<String>,
+            Option<dovetail_api::agents::model::ReasoningEffort>,
+        )>,
+    >,
     /// What the fake's `mcp_status` lists ([`FakeDriver::set_mcp_servers`]).
-    mcp_servers: Mutex<Vec<dovetail_api::mcp::McpServer>>,
+    mcp_servers: Mutex<Vec<dovetail_api::agents::mcp::McpServer>>,
     /// Sessions refuse MCP requests, as a closed one does ([`FakeDriver::close_mcp`]).
     mcp_closed: std::sync::atomic::AtomicBool,
     /// The latest session's event stream, for [`FakeDriver::send_event`].
     latest: Mutex<Option<UnboundedSender<DriverEvent>>>,
     /// What `usage` reports ([`FakeDriver::set_usage`]); `None` reports an empty one.
-    usage: Mutex<Option<dovetail_api::status::DriverUsage>>,
+    usage: Mutex<Option<dovetail_api::activity::status::DriverUsage>>,
     /// The queries `usage` was asked.
     usage_queries: Mutex<Vec<crate::UsageQuery>>,
     /// What `models` answers ([`FakeDriver::set_models`]); `None`: an error.
@@ -206,7 +211,7 @@ impl FakeDriver {
     pub fn apply_at_start(
         &self,
         model: Option<&str>,
-        effort: Option<dovetail_api::model::ReasoningEffort>,
+        effort: Option<dovetail_api::agents::model::ReasoningEffort>,
     ) {
         if let Ok(mut applied) = self.recorder.applied.lock() {
             *applied = Some((model.map(str::to_owned), effort));
@@ -255,14 +260,14 @@ impl FakeDriver {
 
     /// What every session's `mcp_status` lists from now on. Actions on a server not in the list
     /// are refused, as Claude Code refuses an unknown server.
-    pub fn set_mcp_servers(&self, servers: Vec<dovetail_api::mcp::McpServer>) {
+    pub fn set_mcp_servers(&self, servers: Vec<dovetail_api::agents::mcp::McpServer>) {
         if let Ok(mut list) = self.recorder.mcp_servers.lock() {
             *list = servers;
         }
     }
 
     /// What `usage` reports from now on.
-    pub fn set_usage(&self, usage: dovetail_api::status::DriverUsage) {
+    pub fn set_usage(&self, usage: dovetail_api::activity::status::DriverUsage) {
         if let Ok(mut u) = self.recorder.usage.lock() {
             *u = Some(usage);
         }
@@ -356,7 +361,7 @@ impl SessionDriver for FakeDriver {
             .lock()
             .ok()
             .and_then(|u| u.clone())
-            .unwrap_or(dovetail_api::status::DriverUsage {
+            .unwrap_or(dovetail_api::activity::status::DriverUsage {
                 driver: self.kind,
                 plan: None,
                 groups: Vec::new(),

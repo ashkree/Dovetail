@@ -13,7 +13,8 @@ use super::rpc::{self, Call, Rpc};
 use super::turn::Turn;
 use crate::event::*;
 use crate::{ControlAnswer, DriverError, PermissionMode, SessionSpec, UserInput};
-use dovetail_api::model::ReasoningEffort;
+use base64::Engine as _;
+use dovetail_api::agents::model::ReasoningEffort;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 
@@ -482,7 +483,7 @@ fn prompt_blocks(input: &UserInput) -> Value {
             json!({
                 "type": "image",
                 "mimeType": image.media_type,
-                "data": crate::base64::encode(&image.data),
+                "data": base64::engine::general_purpose::STANDARD.encode(&image.data),
             })
         })
         .collect();
