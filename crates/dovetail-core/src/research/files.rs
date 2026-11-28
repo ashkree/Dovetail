@@ -17,7 +17,7 @@ use std::path::{Component, Path, PathBuf};
 use dovetail_api::research::SourceKind;
 use dovetail_api::tracking::task::TaskId;
 
-use crate::db::research::{FindingRow, RoundRow, SourceRow, TaskResearch};
+use crate::research::db::{FindingRow, RoundRow, SourceRow, TaskResearch};
 
 /// Longest slug of a task title in its folder name.
 const SLUG_MAX: usize = 48;

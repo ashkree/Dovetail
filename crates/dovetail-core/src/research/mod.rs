@@ -34,10 +34,10 @@ use dovetail_api::tracking::task::{Task, TaskId};
 use dovetail_driver::{ContentBlock, DriverEvent};
 use dovetail_tools::{SocketResponseBody, research::ResearchTool};
 
-use crate::db::research::{FindingRow, RoundRow, SourceRow, SummaryRow, TaskResearch};
-use crate::db::{DbError, now_ms};
 use crate::engine::{COORDINATOR, Core};
 use crate::inbox::Waiter;
+use crate::research::db::{FindingRow, RoundRow, SourceRow, SummaryRow, TaskResearch};
+use crate::storage::{DbError, now_ms};
 use capture::{Capture, Outcome};
 use files::ResearchDirError;
 
@@ -539,7 +539,7 @@ impl Core {
             DriverEvent::Assistant(message) => {
                 for block in &message.blocks {
                     if let ContentBlock::ToolUse { id, name, input } = block
-                        && crate::session::subagent::launches_subagent(name)
+                        && crate::sessions::subagent::launches_subagent(name)
                     {
                         self.research_launch(agent, id, input);
                     }
@@ -566,7 +566,7 @@ impl Core {
     fn research_launch(&mut self, agent: &AgentId, key: &str, input: &serde_json::Value) {
         // A tangent's research subagents become quick findings of its task in Tangents.
         if let Some(task) = self.tangent_of(agent) {
-            let sub = crate::session::subagent_id(agent, key);
+            let sub = crate::sessions::subagent_id(agent, key);
             self.research
                 .capture
                 .launched(agent, sub, key, input, Some(task), None, now_ms());
@@ -581,7 +581,7 @@ impl Core {
                 None => return,
             },
         };
-        let sub = crate::session::subagent_id(agent, key);
+        let sub = crate::sessions::subagent_id(agent, key);
         self.research
             .capture
             .launched(agent, sub, key, input, task, round, now_ms());
@@ -710,7 +710,7 @@ impl Core {
         &mut self,
         key: String,
         from: capture::BodyFrom,
-        finding: crate::db::research::NewFinding,
+        finding: crate::research::db::NewFinding,
     ) {
         let (row, sources) = match self.db.file_unfiled(finding).await {
             Ok(filed) => filed,
@@ -787,7 +787,7 @@ impl Core {
 
     /// Deletes the files of an unfiled finding that left the database (filed or dropped): its
     /// own, and the cached sources no other unfiled finding cites.
-    fn remove_unfiled_files(&self, removed: &crate::db::research::Removed) {
+    fn remove_unfiled_files(&self, removed: &crate::research::db::Removed) {
         let Ok(dir) = self.unfiled_dir() else {
             return;
         };

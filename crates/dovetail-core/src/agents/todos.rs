@@ -32,7 +32,7 @@ use serde_json::Value;
 use tokio::sync::mpsc as tokio_mpsc;
 
 use crate::engine::{Core, Input};
-use crate::session::subagent_id;
+use crate::sessions::subagent_id;
 
 /// How long changes to one list are gathered before it is read again.
 pub(crate) const TODO_WINDOW: Duration = Duration::from_millis(50);
@@ -254,7 +254,7 @@ impl Core {
     }
 
     /// At start: the recorded owners, and every known agent's list as it is on disk now.
-    pub(crate) async fn load_todos(&mut self) -> Result<(), crate::db::DbError> {
+    pub(crate) async fn load_todos(&mut self) -> Result<(), crate::storage::DbError> {
         for (list, item, agent) in self.db.load_todo_owners().await? {
             self.agents
                 .todos

@@ -22,10 +22,10 @@ use dovetail_api::{Command, CoreLink, Event, PROTOCOL_VERSION, ServerMsg, Snapsh
 
 use crate::CoreError;
 use crate::config::Config;
-use crate::db::{Db, now_ms};
 use crate::paths::Paths;
 use crate::project_admin::{self, ProjectOp};
 use crate::projects::Project;
+use crate::storage::{Db, now_ms};
 
 /// The id of the warning Home shows when sessions cannot start (the reason is its text).
 pub const NO_SESSIONS_WARNING: &str = "no-sessions";

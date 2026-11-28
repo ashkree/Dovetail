@@ -22,10 +22,10 @@ use dovetail_api::{
 use serde_json::json;
 
 use super::{BuildError, BuildRequest, Ready, Source, Staging, UpgradeError, is_installed_binary};
-use crate::db::now_ms;
 use crate::engine::{COORDINATOR, Core, Input};
 use crate::inbox::Waiter;
 use crate::socket::HandlerError;
+use crate::storage::now_ms;
 
 /// The core's upgrade state.
 #[derive(Debug, Default)]

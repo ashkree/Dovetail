@@ -9,8 +9,8 @@ use dovetail_api::agents::{
     conversation::EntryKind,
 };
 
-use crate::db::{AgentRow, now_ms};
 use crate::engine::{Core, new_agent};
+use crate::storage::{AgentRow, now_ms};
 
 impl Core {
     /// Starts a side chat named `side-N` and sends it `question`.

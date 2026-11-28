@@ -2,7 +2,7 @@
 //! coordinator row. The handoff and relaunch flow is shared with `:fresh` in the parent module.
 
 use super::*;
-use crate::db::AgentRow;
+use crate::storage::AgentRow;
 
 /// Where [`ModelCommand::SwitchDriver`](dovetail_api::agents::model::ModelCommand::SwitchDriver) moves the coordinator
 /// once its old session stops.

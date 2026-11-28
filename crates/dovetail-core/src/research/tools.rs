@@ -23,10 +23,10 @@ use dovetail_tools::{
 };
 use serde_json::json;
 
-use crate::db::research::TaskResearch;
 use crate::engine::Core;
 use crate::inbox::Waiter;
 use crate::mcp::tools::{error, ok};
+use crate::research::db::TaskResearch;
 use crate::research::files;
 use crate::research::report::{self, Known, KnownSource, id_ranges};
 

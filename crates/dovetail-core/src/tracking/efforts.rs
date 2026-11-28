@@ -20,8 +20,8 @@ use dovetail_api::tracking::{
 
 use dovetail_tools::{SocketResponseBody, coordination::ClaimCriterion};
 
-use crate::db::{CriterionStep, DbError};
 use crate::engine::Core;
+use crate::storage::{CriterionStep, DbError};
 use crate::tools::{error, ok};
 
 impl Core {

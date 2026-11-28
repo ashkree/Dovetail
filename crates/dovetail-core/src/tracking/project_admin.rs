@@ -12,10 +12,10 @@ use dovetail_api::Command;
 use dovetail_api::tracking::project::{ProjectCommand, ProjectId, RepoId};
 
 use crate::config::Config;
-use crate::db::{Db, Pending};
 use crate::paths::Paths;
 use crate::projects::{self, Project, ProjectError};
 use crate::recipe;
+use crate::storage::{Db, Pending};
 
 /// One of the five project commands, parsed out of a [`Command`].
 #[derive(Debug, Clone, PartialEq, Eq)]

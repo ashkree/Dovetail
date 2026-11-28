@@ -18,9 +18,9 @@ use dovetail_api::agents::{
 use dovetail_api::tracking::task::TaskId;
 use dovetail_driver::UserInput;
 
-use crate::db::{AgentRow, now_ms};
 use crate::engine::{Core, new_agent};
 use crate::research::files;
+use crate::storage::{AgentRow, now_ms};
 
 /// Why an Ask session could not start or take a question.
 #[derive(Debug, thiserror::Error)]
@@ -36,7 +36,7 @@ pub(crate) enum AskError {
     Dir(#[from] files::ResearchDirError),
     /// Storage failed.
     #[error(transparent)]
-    Db(#[from] crate::db::DbError),
+    Db(#[from] crate::storage::DbError),
     /// The session could not start or take the message.
     #[error(transparent)]
     Session(#[from] crate::sessions::SessionError),
@@ -105,7 +105,7 @@ impl Core {
             .get(id)
             .and_then(|r| r.agent.task)
             .ok_or_else(|| crate::sessions::SessionError::NoAgent(id.0.clone()))?;
-        let images = crate::session::read_attachments(&attachments)?;
+        let images = crate::sessions::read_attachments(&attachments)?;
         let (dir, grounding) = self.grounding(task).await?;
         if !self.sessions.live.contains_key(id) {
             self.launch(id, dir, None)?;

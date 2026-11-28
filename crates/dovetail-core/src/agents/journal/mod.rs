@@ -33,11 +33,11 @@ use dovetail_api::agents::{
 use dovetail_api::tracking::task::{Bucket, Task, TaskStatus};
 use jiff::civil::Date;
 
-use crate::db::ModelChoice;
 use crate::engine::{COORDINATOR, Core, Input};
 use crate::inbox::Waiter;
-use crate::session::model::describe;
 use crate::sessions::SessionError;
+use crate::sessions::model::describe;
+use crate::storage::ModelChoice;
 
 mod switch;
 pub(crate) use switch::SwitchTarget;

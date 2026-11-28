@@ -26,7 +26,7 @@ use dovetail_api::tracking::task::TaskId;
 use dovetail_driver::{ContentBlock, DriverEvent, TaskEvent, TaskPhase, ToolResult};
 use serde_json::Value;
 
-use crate::db::research::{NewFinding, NewSource};
+use crate::research::db::{NewFinding, NewSource};
 
 /// Longest output file read for a report (last resort); a transcript is about 335 KB for a
 /// four-call subagent.

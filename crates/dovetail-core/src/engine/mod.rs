@@ -292,7 +292,7 @@ pub(crate) enum Input {
     },
     /// The sweep inspected a worktree no agent owns.
     OrphanInspected {
-        found: crate::restore::Orphan,
+        found: crate::sessions::restore::Orphan,
         result: Result<crate::worktree::Inspection, WorktreeError>,
     },
     /// An unowned worktree's removal (after `y`) finished.
@@ -500,7 +500,7 @@ impl Core {
             Err(e) => {
                 tracing::error!("loading state: {e}");
                 self.fail(format!("loading state: {e}"));
-                crate::restore::Restored::default()
+                crate::sessions::restore::Restored::default()
             }
         };
         self.startup_warnings();
@@ -691,8 +691,8 @@ impl Core {
     }
 
     /// Loads agents, conversation tails and id counters, and makes sure a coordinator exists.
-    async fn load(&mut self) -> Result<crate::restore::Restored, DbError> {
-        let mut restored = crate::restore::Restored::default();
+    async fn load(&mut self) -> Result<crate::sessions::restore::Restored, DbError> {
+        let mut restored = crate::sessions::restore::Restored::default();
         let ids = self.db.max_ids().await?;
         self.agents.next_entry = ids.entry + 1;
         self.activity.next_inbox = ids.inbox + 1;
@@ -703,7 +703,7 @@ impl Core {
             // parent's cut-off turn is what gets reported.
             if !row.agent.kind.is_session() {
                 if row.agent.status == AgentStatus::Working {
-                    crate::session::subagent::mark_stopped(&mut row.agent, "stopped by a restart");
+                    crate::sessions::subagent::mark_stopped(&mut row.agent, "stopped by a restart");
                     self.db.upsert_agent(row.clone()).await?;
                 }
                 self.agents.rows.insert(row.agent.id.clone(), row);
@@ -789,7 +789,7 @@ impl Core {
         }
         if self.tracking.project.registered().is_none() {
             self.activity.warnings.push(Warning {
-                id: WarningId(crate::registration::UNREGISTERED_WARNING.into()),
+                id: WarningId(crate::tracking::registration::UNREGISTERED_WARNING.into()),
                 text: "not a Dovetail project yet: :project add keeps it".into(),
             });
         }

@@ -22,9 +22,9 @@ use dovetail_api::{
 };
 use serde::Deserialize;
 
-use crate::db::now_ms;
 use crate::engine::{Core, Input};
 use crate::paths::Paths;
+use crate::storage::now_ms;
 use crate::worktree::{self, SetupStatus};
 
 /// Longest a `git` command may run before it is killed. Every one here is local.

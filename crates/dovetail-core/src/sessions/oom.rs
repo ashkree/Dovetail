@@ -288,7 +288,7 @@ impl Core {
     pub(crate) fn oom_at_exit(
         &mut self,
         id: &AgentId,
-        live: &crate::session::Live,
+        live: &crate::sessions::Live,
         signal: Option<i32>,
     ) -> Option<OomKill> {
         let cgroup = live.cgroup.as_deref()?;

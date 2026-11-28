@@ -28,8 +28,8 @@ use dovetail_api::agents::agent::{
 use dovetail_driver::{ContentBlock, DriverEvent, Origin, TaskEvent, TaskPhase, ToolResult};
 use serde_json::Value;
 
-use crate::db::{AgentRow, now_ms};
 use crate::engine::{Core, Input, new_agent};
+use crate::storage::{AgentRow, now_ms};
 use crate::worktree::{self, SUBAGENT_PREFIX, SubagentCleanup};
 
 /// Finished subagents kept in the tree per parent, newest first; older ones are closed.

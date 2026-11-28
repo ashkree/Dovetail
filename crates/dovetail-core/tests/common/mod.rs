@@ -48,6 +48,12 @@ use dovetail_core::{CoreHandle, CoreOptions, Drivers};
 
 use dovetail_driver::{FakeDriver, ReplayOptions, Sent};
 
+use dovetail_api::{agent::AgentCommand, effort::EffortCommand, inbox::InboxId, task::TaskStatus};
+use dovetail_tools::{
+    coordination::CoordinationTool,
+    project::ArchiveSlice,
+    report::{AskUser, ReportTool},
+};
 use tempfile::TempDir;
 
 thread_local! {
@@ -741,4 +747,271 @@ pub fn wait_specs(fake: &FakeDriver, n: usize) {
 
 pub fn call_coordinator(h: &Harness, call: Tool) -> (String, bool) {
     result_text(socket_call(&h.socket(), tool(COORDINATOR, call)))
+}
+
+// --- Shared domain helpers ---
+
+pub fn s_util(w: &Option<dovetail_api::status::UsageWindow>) -> Option<f64> {
+    w.as_ref().map(|w| w.utilization)
+}
+
+/// The one subagent node in the snapshot.
+pub fn subagent(s: &Snapshot) -> Option<&dovetail_api::agent::Agent> {
+    s.agents
+        .iter()
+        .find(|a| matches!(a.kind, AgentKind::Subagent { .. }))
+}
+
+/// Waits until the fake session was sent `wanted` as a user message.
+pub fn wait_sent(fake: &FakeDriver, wanted: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let wanted = Sent::User(wanted.into());
+    while !fake.sent().contains(&wanted) {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+pub fn ask(h: &Harness, question: &str) -> (String, bool) {
+    result_text(socket_call(
+        &h.socket(),
+        tool(
+            COORDINATOR,
+            Tool::Report(ReportTool::AskUser(AskUser {
+                question: question.into(),
+            })),
+        ),
+    ))
+}
+
+pub fn open_questions(s: &Snapshot) -> Vec<InboxId> {
+    s.inbox
+        .iter()
+        .filter(|i| matches!(i.kind, InboxKind::Question { .. }))
+        .map(|i| i.id)
+        .collect()
+}
+
+/// Raises a pending `project_start_slice` approval: the coordinator to acceptEdits, a task, the call.
+pub fn pending_start(h: &mut Harness) {
+    h.send(Command::Agent(AgentCommand::CyclePermissionMode {
+        agent: AgentId(COORDINATOR.into()),
+    }));
+    h.send(Command::Task(TaskCommand::Create(NewTask {
+        title: "t".into(),
+        p_level: None,
+        bucket: None,
+        notes: String::new(),
+        follow_up_of: None,
+        pr: None,
+        related: vec![],
+        effort: Default::default(),
+        criterion: None,
+    })));
+    h.wait_for("mode and task", |s| {
+        !s.tasks.is_empty()
+            && s.agents
+                .iter()
+                .any(|a| a.permission_mode == PermissionMode::AcceptEdits)
+    });
+    let (text, _) = result_text(socket_call(
+        &h.socket(),
+        tool(
+            COORDINATOR,
+            Tool::Project(ProjectTool::StartSlice(StartSlice {
+                repo: None,
+                model: None,
+                effort: None,
+                driver: None,
+                task: TaskId(1),
+                name: "later".into(),
+                brief: "go".into(),
+            })),
+        ),
+    ));
+    assert!(text.starts_with("pending"), "{text}");
+}
+
+pub fn sent_users(fake: &FakeDriver) -> Vec<String> {
+    fake.sent()
+        .into_iter()
+        .filter_map(|s| match s {
+            Sent::User(t) => Some(t),
+            _ => None,
+        })
+        .collect()
+}
+
+pub const EXPIRED: &str =
+    "project_start_slice later expired at restart; call it again if still needed";
+
+/// A git repo with slices `names` already open (idle, restored on start), each in a real
+/// worktree on its `dovetail/<name>` branch at the main checkout's HEAD.
+pub fn repo_with_slices(names: &[&str]) -> (TempDir, PathBuf, Paths) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), "hi").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "init"]);
+    let paths = Paths {
+        data: dir.path().join("data"),
+        config: dir.path().join("config"),
+        state: dir.path().join("state"),
+        runtime: dir.path().join("run"),
+    };
+    std::fs::create_dir_all(paths.worktrees("p")).unwrap();
+    let db = dovetail_core::db::Db::open(&paths, Some("p")).expect("db");
+    for name in names {
+        let wt = paths.worktrees("p").join(name);
+        let branch = format!("dovetail/{name}");
+        git(
+            &repo,
+            &["worktree", "add", "-q", "-b", &branch, wt.to_str().unwrap()],
+        );
+        let agent = dovetail_api::agent::Agent {
+            id: AgentId(format!("slice-{name}")),
+            name: (*name).into(),
+            kind: AgentKind::Slice,
+            parent: None,
+            task: None,
+            worktree: Some(dovetail_api::agent::WorktreeRef { path: wt, branch }),
+            status: dovetail_api::agent::AgentStatus::Idle,
+            status_line: String::new(),
+            memory_mb: None,
+            cost_usd: 0.0,
+            permission_mode: PermissionMode::Auto,
+            context_pct: None,
+            progress: None,
+            last_activity_ms: 0,
+            lock: dovetail_api::agent::SessionLock::Headless,
+            model: None,
+            effort: None,
+            subagent_tokens: 0,
+            tool: None,
+            driver: dovetail_api::model::DriverKind::Claude,
+        };
+        db.upsert_agent(dovetail_core::db::AgentRow {
+            agent,
+            session_id: None,
+            transcript_path: None,
+            task_list_id: None,
+            created_ms: 0,
+            tool_use_id: None,
+            claude_home: None,
+            takeover: None,
+            model_choice: None,
+            repo: None,
+        })
+        .wait()
+        .expect("agent");
+    }
+    drop(db);
+    (dir, repo, paths)
+}
+
+pub fn archive_slice(name: &str) -> Tool {
+    Tool::Project(ProjectTool::ArchiveSlice(ArchiveSlice {
+        name: name.into(),
+    }))
+}
+
+pub fn profiles_config(dir: &Path) -> Config {
+    let mut config = Config::default();
+    for name in ["mine", "work"] {
+        config.profiles.insert(
+            name.into(),
+            dir.join("profiles")
+                .join(name)
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+    config
+}
+
+pub fn write_recipe(paths: &Paths, text: &str) {
+    let file = paths.recipe("p");
+    std::fs::create_dir_all(file.parent().expect("parent")).expect("projects dir");
+    std::fs::write(file, text).expect("recipe");
+}
+
+pub fn error_texts(s: &Snapshot) -> Vec<String> {
+    s.inbox
+        .iter()
+        .filter_map(|i| match &i.kind {
+            InboxKind::Error { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn wait_started(fake: &FakeDriver, count: usize) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.started_specs().len() < count {
+        assert!(Instant::now() < deadline, "sessions did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+pub fn profile_errors(s: &Snapshot, needle: &str) -> usize {
+    error_texts(s).iter().filter(|t| t.contains(needle)).count()
+}
+
+pub fn wait_sent_shutdown(fake: &FakeDriver) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fake.sent().iter().any(|s| matches!(s, Sent::Shutdown(_))) {
+        assert!(Instant::now() < deadline, "headless was not stopped");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+pub fn effort_named<'a>(s: &'a Snapshot, name: &str) -> Option<&'a dovetail_api::effort::Effort> {
+    s.efforts.iter().find(|e| e.name == name)
+}
+
+pub fn create_effort(h: &mut Harness, typed: &str, stored: &str) -> dovetail_api::effort::EffortId {
+    h.send(Command::Effort(EffortCommand::Create(
+        dovetail_api::effort::NewEffort {
+            name: typed.into(),
+            kind: dovetail_api::effort::EffortKind::Feature,
+            question_or_goal: " A buyer can pay without an account ".into(),
+        },
+    )));
+    h.wait_for("the effort", |s| effort_named(s, stored).is_some());
+    effort_named(&h.snap, stored).expect("effort").id
+}
+
+pub fn wait_sent_containing(fake: &FakeDriver, wanted: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !fake
+        .sent()
+        .iter()
+        .any(|s| matches!(s, Sent::User(text) if text.contains(wanted)))
+    {
+        assert!(Instant::now() < deadline, "{:?}", fake.sent());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+pub fn task_status(s: &Snapshot, id: i64) -> Option<TaskStatus> {
+    s.tasks
+        .iter()
+        .find(|t| t.id == TaskId(id))
+        .map(|t| t.status)
+}
+
+pub fn report(
+    state: dovetail_tools::coordination::ReportState,
+    summary: &str,
+    pr: Option<u32>,
+) -> Tool {
+    Tool::Coordination(CoordinationTool::Report(
+        dovetail_tools::coordination::Report {
+            state,
+            summary: summary.into(),
+            pr,
+        },
+    ))
 }

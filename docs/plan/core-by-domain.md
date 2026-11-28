@@ -96,9 +96,9 @@ Each step lands as one or more clean commits on `restructure` with `CARGO_BUILD_
 - [x] Keep intentional root re-exports in `lib.rs` for `crates/dovetail` and integration tests (`spawn`, `CoreOptions`, `UpgradeOptions`, `service`, `db`, `session`, etc.).
 
 ### Step 8 — Split `tests/sessions.rs` by domain + `ARCHITECTURE.md`
-- [ ] Split `crates/dovetail-core/tests/sessions.rs` into one integration test file per domain (`tests/tracking.rs`, `tests/agents.rs`, `tests/activity.rs`, `tests/visual.rs`, `tests/code.rs`, `tests/app.rs`, `tests/sessions.rs` for process lifecycle/restore/takeover/caps), all using `tests/common/mod.rs`.
-- [ ] Write `crates/dovetail-core/ARCHITECTURE.md` documenting the infrastructure/domain map, `Core` loop, state structs, storage thread, and how to add a command/tool/domain.
-- [ ] Include it in `crates/dovetail-core/src/lib.rs` via `#![doc = include_str!("../ARCHITECTURE.md")]`.
+- [x] Split `crates/dovetail-core/tests/sessions.rs` into one integration test file per domain (`tests/tracking.rs`, `tests/agents.rs`, `tests/activity.rs`, `tests/visual.rs`, `tests/code.rs`, `tests/app.rs`, `tests/sessions.rs` for process lifecycle/restore/takeover/caps), all using `tests/common/mod.rs`.
+- [x] Write `crates/dovetail-core/ARCHITECTURE.md` documenting the infrastructure/domain map, `Core` loop, state structs, storage thread, and how to add a command/tool/domain.
+- [x] Include it in `crates/dovetail-core/src/lib.rs` via `#![doc = include_str!("../ARCHITECTURE.md")]`.
 
 ## Risks and open questions
 

@@ -19,8 +19,8 @@ use dovetail_api::tracking::project::{
     ProjectId, ProjectKind, ProjectSummary, RepoId, RepoSummary,
 };
 
-use crate::db::{Db, DbError, NewRepo};
 use crate::paths::Paths;
+use crate::storage::{Db, DbError, NewRepo};
 
 /// One repo of a project (ADR 0021).
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -334,7 +334,7 @@ impl Core {
                 return;
             }
         };
-        let moved = |r: &crate::db::AgentRow| {
+        let moved = |r: &crate::storage::AgentRow| {
             r.agent.driver == dovetail_api::agents::model::DriverKind::Claude
                 && r.agent.kind.is_session()
                 && r.transcript_path.is_some()

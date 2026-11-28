@@ -7,9 +7,9 @@ use dovetail_maps::{DrawMapInput, MapError, check_lane_links, report, validate};
 use dovetail_tools::SocketResponseBody;
 use serde_json::{Value, json};
 
-use crate::db::{Drawn, NewMapVersion};
 use crate::engine::Core;
 use crate::mcp::tools::{error, ok};
+use crate::storage::{Drawn, NewMapVersion};
 
 impl Core {
     /// Answers `maps_draw`: the agent-readable report when the map is refused, else

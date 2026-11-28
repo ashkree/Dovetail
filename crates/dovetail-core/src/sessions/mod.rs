@@ -236,7 +236,7 @@ pub(crate) struct Live {
     pub(crate) brief: Option<String>,
     /// The model and effort the session was launched with (the row's `model_choice`), until
     /// Claude Code's start-up read confirms them or reports what it applied instead (task #42).
-    pub(crate) launch_choice: Option<crate::db::ModelChoice>,
+    pub(crate) launch_choice: Option<crate::storage::ModelChoice>,
     /// The first `system/init` has arrived.
     pub(crate) inited: bool,
     /// Pending `SendMessage` calls, by tool use id.
@@ -413,7 +413,7 @@ impl Core {
         driver: DriverKind,
         id: &AgentId,
         cwd: &std::path::Path,
-    ) -> Result<(crate::db::AgentRow, String, bool), SessionError> {
+    ) -> Result<(crate::storage::AgentRow, String, bool), SessionError> {
         if driver == DriverKind::Claude {
             let home = self.sessions.claude.clone()?;
             // Only sessions in the coordinator's folder moved (ADR 0021); a slice's never does,

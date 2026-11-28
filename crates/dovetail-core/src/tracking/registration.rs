@@ -8,13 +8,13 @@ use dovetail_api::activity::ActivityKind;
 use dovetail_api::agents::agent::{AgentId, AgentKind};
 use dovetail_api::tracking::project::{ProjectEvent, ProjectSummary, RepoId};
 
-use crate::db::DbError;
 use crate::engine::{Core, CoreHandler, serve};
 use crate::paths::Paths;
 use crate::project_admin::{self, ProjectOp};
 use crate::projects::{Candidate, Project, ProjectError, Repo};
 use crate::recipe;
 use crate::socket::{self, SocketHandler};
+use crate::storage::DbError;
 
 /// Registering the open folder as a project (ADR 0005).
 #[derive(Debug, thiserror::Error)]

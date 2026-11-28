@@ -1,7 +1,4 @@
-//! Dovetail's core: sessions, storage, worktrees and the MCP tool handlers.
-//!
-//! The core hands the UI the same [`dovetail_api::CoreLink`] that `MockCore` does, and launches
-//! sessions through the registered [`Drivers`] (`ClaudeDriver`, `AgyDriver`, or fakes in tests).
+#![doc = include_str!("../ARCHITECTURE.md")]
 
 pub(crate) mod activity;
 pub mod agents;
@@ -30,11 +27,11 @@ pub(crate) use mcp::tools;
 pub(crate) use research::docs;
 pub use sessions as session;
 pub use sessions::{drivers, memory, takeover};
-pub(crate) use sessions::{foreground, oom, restore};
+pub(crate) use sessions::{foreground, oom};
 pub use settings::{config, paths, profile, recipe};
 pub use storage as db;
+pub(crate) use tracking::project_admin;
 pub use tracking::{home, projects};
-pub(crate) use tracking::{project_admin, registration};
 pub(crate) use visual::preview;
 
 pub use engine::{COORDINATOR, CoreError, CoreHandle, CoreOptions, UpgradeOptions, spawn};

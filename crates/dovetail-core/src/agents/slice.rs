@@ -27,13 +27,13 @@ use dovetail_tools::SocketResponseBody;
 use serde_json::json;
 use tokio::sync::oneshot;
 
-use crate::db::{AgentRow, DbError, ModelChoice, QueuedSlice, now_ms};
 use crate::engine::{COORDINATOR, Core, Input, new_agent};
 use crate::inbox::Waiter;
 use crate::projects;
 use crate::projects::Repo;
 use crate::recipe::Recipe;
 use crate::sessions::SessionError;
+use crate::storage::{AgentRow, DbError, ModelChoice, QueuedSlice, now_ms};
 use crate::worktree::{self, SUBAGENT_PREFIX, WorktreeError};
 
 /// Why a slice could not start (`project_start_slice` answers `denied: <this>`).

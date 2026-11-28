@@ -14,10 +14,10 @@ use dovetail_api::agents::agent::AgentId;
 use dovetail_driver::{ControlAnswer, ControlId, PermissionRequest};
 use serde_json::Value;
 
-use crate::db::now_ms;
 use crate::engine::{Core, InboxEntry};
 use crate::sessions::SessionError;
 use crate::slice::{SliceRequest, SliceStart};
+use crate::storage::now_ms;
 
 /// What waits on an inbox item's answer.
 pub(crate) enum Waiter {
@@ -42,7 +42,9 @@ pub(crate) enum Waiter {
     RestoredQuestion { question: String },
     /// A worktree no agent owns, found by the sweep on open (M10): `y` removes it, `d` keeps
     /// it for good.
-    RemoveOrphan { found: crate::restore::Orphan },
+    RemoveOrphan {
+        found: crate::sessions::restore::Orphan,
+    },
     /// A take-over lock left by a crash whose native run cannot be checked (M14): `y` releases
     /// it, `d` keeps it.
     ReleaseLock,

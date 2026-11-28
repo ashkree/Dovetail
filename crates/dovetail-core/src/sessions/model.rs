@@ -16,8 +16,8 @@ use dovetail_api::agents::{
 };
 use dovetail_driver::{ModelInfo, SwitchId};
 
-use crate::db::{AgentRow, ModelChoice};
 use crate::engine::Core;
+use crate::storage::{AgentRow, ModelChoice};
 
 /// A switch sent to a live session and not yet answered.
 #[derive(Debug, Clone, PartialEq, Eq)]

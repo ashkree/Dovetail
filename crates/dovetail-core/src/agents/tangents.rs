@@ -33,14 +33,14 @@ use dovetail_api::tracking::{
 };
 use dovetail_driver::DriverEvent;
 
-use crate::db::research::{FindingRow, NewFinding, NewSource, SourceRow, TaskResearch};
-use crate::db::{AgentRow, Db, DbError, now_ms};
 use crate::engine::{COORDINATOR, Core, new_agent};
 use crate::inbox::Waiter;
 use crate::paths::Paths;
-use crate::registration::ProjectState;
 use crate::research::capture::{self, BodyFrom};
+use crate::research::db::{FindingRow, NewFinding, NewSource, SourceRow, TaskResearch};
 use crate::research::files;
+use crate::storage::{AgentRow, Db, DbError, now_ms};
+use crate::tracking::registration::ProjectState;
 
 /// Longest task title a question gives; the whole question is kept in the notes.
 const TITLE_MAX: usize = 80;

@@ -895,8 +895,8 @@ fn one(conn: &Connection, sql: &str, id: &str) -> Result<Option<String>, DbError
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{Db, STATE_MIGRATIONS, migrate};
     use crate::paths::Paths;
+    use crate::storage::{Db, STATE_MIGRATIONS, migrate};
     use dovetail_api::tracking::{decision::NewDecision, task::NewTask};
 
     fn db() -> (tempfile::TempDir, Db) {

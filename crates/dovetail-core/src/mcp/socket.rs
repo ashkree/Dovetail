@@ -50,7 +50,7 @@ pub enum HandlerError {
     NotRegistered,
     /// Storage failed.
     #[error(transparent)]
-    Db(#[from] crate::db::DbError),
+    Db(#[from] crate::storage::DbError),
     /// The app cannot take the staged upgrade; the text says why.
     #[error("{0}")]
     Refused(String),

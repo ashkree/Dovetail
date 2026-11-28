@@ -149,7 +149,7 @@ pub fn spec(paths: &Paths, launch: &Launch, driver: DriverKind) -> std::io::Resu
     spec.append_system_prompt_file = role_prompt.exists().then_some(role_prompt);
     spec.add_dirs = launch.add_dirs.clone();
     if std::env::var(RECORD_ENV).is_ok_and(|v| v == "1") {
-        spec.log_path = Some(dir.join(format!("stream-{}.ndjson", crate::db::now_ms())));
+        spec.log_path = Some(dir.join(format!("stream-{}.ndjson", crate::storage::now_ms())));
     }
 
     match driver {
