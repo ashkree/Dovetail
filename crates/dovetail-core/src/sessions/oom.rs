@@ -27,9 +27,9 @@ use dovetail_api::agents::agent::{AgentId, AgentKind, AgentStatus};
 use notify::Watcher;
 use tokio::sync::mpsc as tokio_mpsc;
 
+use crate::engine::{Core, Input};
 use crate::inbox::Waiter;
 use crate::memory::{self, OomKill};
-use crate::service::{Core, Input};
 
 /// The watcher, the next verdict due and the restart guard.
 #[derive(Default)]
@@ -127,7 +127,7 @@ fn in_flight_line(agent: &dovetail_api::agents::agent::Agent) -> String {
 impl Core {
     /// Watches a running capped session's `memory.events`, once its scope exists.
     pub(crate) fn watch_oom(&mut self, id: &AgentId) {
-        let Some(live) = self.live.get(id) else {
+        let Some(live) = self.sessions.live.get(id) else {
             return;
         };
         if live.oom_watched {
@@ -139,21 +139,21 @@ impl Core {
         if !file.exists() {
             return; // the scope is not up yet; the next sample tries again
         }
-        if self.oom.watcher.is_none() {
+        if self.sessions.oom.watcher.is_none() {
             match new_watcher(self.inputs.clone()) {
-                Ok(w) => self.oom.watcher = Some(w),
+                Ok(w) => self.sessions.oom.watcher = Some(w),
                 Err(e) => {
                     tracing::warn!("watching memory.events: {e}; OOM kills seen on samples only");
                     return;
                 }
             }
         }
-        let Some(watcher) = self.oom.watcher.as_mut() else {
+        let Some(watcher) = self.sessions.oom.watcher.as_mut() else {
             return;
         };
         match watcher.watch(&file, notify::RecursiveMode::NonRecursive) {
             Ok(()) => {
-                if let Some(live) = self.live.get_mut(id) {
+                if let Some(live) = self.sessions.live.get_mut(id) {
                     live.oom_watched = true;
                 }
             }
@@ -163,7 +163,7 @@ impl Core {
 
     /// Stops watching a scope's `memory.events` (its session exited).
     pub(crate) fn unwatch_oom(&mut self, cgroup: &Path) {
-        if let Some(w) = self.oom.watcher.as_mut() {
+        if let Some(w) = self.sessions.oom.watcher.as_mut() {
             // The watch is usually gone already with the scope.
             let _ = w.unwatch(&memory::events_file(cgroup));
         }
@@ -173,13 +173,14 @@ impl Core {
     /// count. Its scope stays watched until then.
     pub(crate) fn remember_exit(&mut self, cgroup: PathBuf, exit: UnexplainedExit) {
         self.prune_exits();
-        self.oom.exits.insert(cgroup, exit);
+        self.sessions.oom.exits.insert(cgroup, exit);
     }
 
     /// Forgets exits older than the grace: no OOM kill explains them.
     fn prune_exits(&mut self) {
         let now = Instant::now();
         let stale: Vec<PathBuf> = self
+            .sessions
             .oom
             .exits
             .iter()
@@ -187,7 +188,7 @@ impl Core {
             .map(|(cgroup, _)| cgroup.clone())
             .collect();
         for cgroup in stale {
-            self.oom.exits.remove(&cgroup);
+            self.sessions.oom.exits.remove(&cgroup);
             self.unwatch_oom(&cgroup);
         }
     }
@@ -196,17 +197,23 @@ impl Core {
     pub(crate) fn on_oom_kills(&mut self, cgroup: PathBuf, count: u64) {
         // The count may arrive after the session's exit was handled: the kill was its own.
         self.prune_exits();
-        if self.oom.exits.get(&cgroup).is_some_and(|e| count > e.kills)
-            && let Some(exit) = self.oom.exits.remove(&cgroup)
+        if self
+            .sessions
+            .oom
+            .exits
+            .get(&cgroup)
+            .is_some_and(|e| count > e.kills)
+            && let Some(exit) = self.sessions.oom.exits.remove(&cgroup)
         {
             self.unwatch_oom(&cgroup);
             tracing::warn!(agent = %exit.agent.0, count, "OOM kill seen after the session's exit");
             self.resolve(exit.item, None);
-            let restartable = exit.restartable && !self.live.contains_key(&exit.agent);
+            let restartable = exit.restartable && !self.sessions.live.contains_key(&exit.agent);
             self.session_oom(&exit.agent, exit.work, restartable);
             return;
         }
         let id = self
+            .sessions
             .live
             .iter()
             .find(|(_, l)| l.cgroup.as_deref() == Some(cgroup.as_path()))
@@ -219,7 +226,7 @@ impl Core {
 
     /// A session's scope reports `count` OOM kills so far: a rise waits for its verdict.
     pub(crate) fn oom_count(&mut self, id: &AgentId, count: u64) {
-        let Some(live) = self.live.get_mut(id) else {
+        let Some(live) = self.sessions.live.get_mut(id) else {
             return;
         };
         if count <= live.oom_kills {
@@ -229,16 +236,16 @@ impl Core {
         live.oom_kills = count;
         live.oom_seen.get_or_insert_with(Instant::now);
         let at = tokio::time::Instant::now() + memory::OOM_GRACE;
-        self.oom.check_at = Some(self.oom.check_at.map_or(at, |c| c.min(at)));
+        self.sessions.oom.check_at = Some(self.sessions.oom.check_at.map_or(at, |c| c.min(at)));
     }
 
     /// The grace after a kill is over: sessions still running lost a tool, not themselves.
     pub(crate) fn check_oom(&mut self) {
-        self.oom.check_at = None;
+        self.sessions.oom.check_at = None;
         let now = Instant::now();
         let mut tools = Vec::new();
         let mut next = None::<Instant>;
-        for (id, live) in &mut self.live {
+        for (id, live) in &mut self.sessions.live {
             let Some(seen) = live.oom_seen else { continue };
             match memory::oom_verdict(seen, now, None) {
                 Some(_) => {
@@ -252,7 +259,7 @@ impl Core {
             }
         }
         if let Some(due) = next {
-            self.oom.check_at = Some(tokio::time::Instant::from_std(due));
+            self.sessions.oom.check_at = Some(tokio::time::Instant::from_std(due));
         }
         for id in tools {
             self.tool_oom(&id);
@@ -304,6 +311,7 @@ impl Core {
     /// The subagents of `id` still running, one line each.
     pub(crate) fn in_flight(&self, id: &AgentId) -> Vec<String> {
         self.agents
+            .rows
             .values()
             .filter(|r| r.agent.parent.as_ref() == Some(id))
             .filter(|r| !matches!(r.agent.status, AgentStatus::Done | AgentStatus::Error))
@@ -329,7 +337,7 @@ impl Core {
         let restarted = if !restartable {
             text.push_str("It was not restarted.");
             false
-        } else if !self.oom.restarts.allowed(id, Instant::now()) {
+        } else if !self.sessions.oom.restarts.allowed(id, Instant::now()) {
             text.push_str(&format!(
                 "It was not restarted: it already ran out of memory less than {minutes} minutes \
                  after an automatic restart. Write to it to resume it."
@@ -339,7 +347,7 @@ impl Core {
             match self.ensure_live(id) {
                 Ok(()) => {
                     // Only a restart that happened uses up the allowance.
-                    self.oom.restarts.record(id, Instant::now());
+                    self.sessions.oom.restarts.record(id, Instant::now());
                     text.push_str("It was restarted from its session.");
                     true
                 }
@@ -373,7 +381,7 @@ mod tests {
         description: &str,
         output: Option<&str>,
     ) -> dovetail_api::agents::agent::Agent {
-        let mut agent = crate::service::new_agent(
+        let mut agent = crate::engine::new_agent(
             AgentId("c:t1".into()),
             "general-purpose".into(),
             AgentKind::Subagent { background },

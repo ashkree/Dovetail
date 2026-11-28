@@ -19,8 +19,8 @@ use dovetail_api::visual::design::{DesignEvent, OUTPUT_LINES, Preview, PreviewSt
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::engine::{Core, Input};
 use crate::recipe::Recipe;
-use crate::service::{Core, Input};
 
 /// How often the port is tried while the command starts.
 const READY_EVERY: Duration = Duration::from_millis(200);
@@ -86,6 +86,7 @@ impl Previews {
 impl Core {
     fn announce_preview(&mut self, agent: &AgentId) {
         let state = self
+            .visual
             .previews
             .state(agent)
             .cloned()
@@ -97,11 +98,11 @@ impl Core {
     }
 
     fn set_preview_state(&mut self, agent: &AgentId, state: PreviewState) {
-        self.previews.runs.insert(
+        self.visual.previews.runs.insert(
             agent.clone(),
             Run {
                 state,
-                run: self.previews.next_run,
+                run: self.visual.previews.next_run,
                 stop: None,
                 pid: None,
                 unit: None,
@@ -114,16 +115,16 @@ impl Core {
     /// `DesignCommand::StartPreview`: starts the slice's preview unless it starts or runs already.
     pub(crate) fn start_preview(&mut self, agent: AgentId) {
         if matches!(
-            self.previews.state(&agent),
+            self.visual.previews.state(&agent),
             Some(PreviewState::Starting | PreviewState::Running { .. })
         ) {
             return;
         }
-        self.previews.next_run += 1;
-        let run = self.previews.next_run;
+        self.visual.previews.next_run += 1;
+        let run = self.visual.previews.next_run;
         match self.spawn_preview(&agent, run) {
             Ok(Some(started)) => {
-                self.previews.runs.insert(agent.clone(), started);
+                self.visual.previews.runs.insert(agent.clone(), started);
                 self.announce_preview(&agent);
             }
             Ok(None) => self.set_preview_state(&agent, PreviewState::NoCommand),
@@ -139,7 +140,7 @@ impl Core {
 
     /// Stops a slice's preview and forgets it. With `announce`, tells the UI it is not started.
     pub(crate) fn stop_preview(&mut self, agent: &AgentId, announce: bool) {
-        let Some(run) = self.previews.runs.remove(agent) else {
+        let Some(run) = self.visual.previews.runs.remove(agent) else {
             return;
         };
         kill(&run);
@@ -150,14 +151,14 @@ impl Core {
 
     /// Stops every preview, for the app to quit. Returns once the processes have been signalled.
     pub(crate) fn stop_all_previews(&mut self) {
-        for (_, run) in self.previews.runs.drain() {
+        for (_, run) in self.visual.previews.runs.drain() {
             kill(&run);
         }
     }
 
     /// `Ok(None)`: the recipe has no preview command for the slice's repo.
     fn spawn_preview(&mut self, agent: &AgentId, run: u64) -> Result<Option<Run>, PreviewError> {
-        let Some(row) = self.agents.get(agent) else {
+        let Some(row) = self.agents.rows.get(agent) else {
             return Err(PreviewError(format!("no agent {}", agent.0)));
         };
         if row.agent.kind != AgentKind::Slice {
@@ -166,7 +167,7 @@ impl Core {
         let Some(worktree) = row.agent.worktree.as_ref().map(|w| w.path.clone()) else {
             return Err(PreviewError("this slice has no worktree yet".into()));
         };
-        let recipe = Recipe::load(&self.paths.recipe(self.project.key()))
+        let recipe = Recipe::load(&self.paths.recipe(self.tracking.project.key()))
             .map_err(|e| PreviewError(format!("reading the recipe: {e}")))?;
         let recipe = match self.repo_of(agent) {
             Some(repo) => recipe.for_repo(&repo.name),
@@ -179,14 +180,15 @@ impl Core {
         let command = template.replace("{port}", &port.to_string());
         let unit = format!(
             "{}-preview",
-            crate::memory::unit_name(self.project.key(), &agent.0)
+            crate::memory::unit_name(self.tracking.project.key(), &agent.0)
         );
         let scope = self
+            .sessions
             .scopes
             .scope(&unit, crate::memory::cap_bytes(self.cap_gb(agent)));
         let mut cmd = match &scope {
             Some(scope) => {
-                if let Some(cgroup) = self.scopes.cgroup(&unit) {
+                if let Some(cgroup) = self.sessions.scopes.cgroup(&unit) {
                     crate::memory::clear_stale_scope(&cgroup, &unit);
                 }
                 let mut c = tokio::process::Command::new("systemd-run");
@@ -250,18 +252,23 @@ impl Core {
 
     /// A watcher reported: the port answers, or the process ended.
     pub(crate) fn on_preview(&mut self, agent: &AgentId, run: u64, report: PreviewReport) {
-        let current = self.previews.runs.get(agent).is_some_and(|r| r.run == run);
+        let current = self
+            .visual
+            .previews
+            .runs
+            .get(agent)
+            .is_some_and(|r| r.run == run);
         if !current {
             return;
         }
         match report {
             PreviewReport::Ready => {
-                if let Some(r) = self.previews.runs.get_mut(agent) {
+                if let Some(r) = self.visual.previews.runs.get_mut(agent) {
                     r.state = PreviewState::Running { url: r.url.clone() };
                 }
             }
             PreviewReport::Ended { why } => {
-                if let Some(r) = self.previews.runs.get_mut(agent) {
+                if let Some(r) = self.visual.previews.runs.get_mut(agent) {
                     r.state = PreviewState::Failed { output: why };
                     r.stop = None;
                     kill_group(r.pid.take());

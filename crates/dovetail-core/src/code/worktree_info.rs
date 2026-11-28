@@ -23,8 +23,8 @@ use dovetail_api::{
 use serde::Deserialize;
 
 use crate::db::now_ms;
+use crate::engine::{Core, Input};
 use crate::paths::Paths;
-use crate::service::{Core, Input};
 use crate::worktree::{self, SetupStatus};
 
 /// Longest a `git` command may run before it is killed. Every one here is local.
@@ -497,6 +497,7 @@ impl Core {
     pub(crate) fn refresh_worktrees(&mut self) {
         let slices: Vec<AgentId> = self
             .agents
+            .rows
             .values()
             .filter(|r| r.agent.kind == AgentKind::Slice && r.agent.worktree.is_some())
             .map(|r| r.agent.id.clone())
@@ -519,12 +520,12 @@ impl Core {
     /// [`Input::WorktreeGathered`].
     fn gather_worktrees(&mut self, agents: &[AgentId], refresh: Refresh) {
         // No repo, no worktrees, no git (research projects, decided 2026-11-11).
-        if self.project.is_research() {
+        if self.tracking.project.is_research() {
             return;
         }
         // Grouped by repo (ADR 0021): each repo's base branch is looked up once.
         let mut by_repo: BTreeMap<PathBuf, Vec<Target>> = BTreeMap::new();
-        for r in agents.iter().filter_map(|id| self.agents.get(id)) {
+        for r in agents.iter().filter_map(|id| self.agents.rows.get(id)) {
             if r.agent.kind != AgentKind::Slice {
                 continue;
             }
@@ -577,9 +578,9 @@ impl Core {
     /// Stores and sends a gathered state, unless the slice is gone or a newer one is in.
     pub(crate) async fn on_worktree_gathered(&mut self, gathered: Gathered) {
         let pr_checked = gathered.pr_checked;
-        if !self.agents.contains_key(&gathered.info.agent) {
+        if !self.agents.rows.contains_key(&gathered.info.agent) {
             // Archived meanwhile: the lookup started as it closed still counts for its task.
-            if let Some(task) = self.closed_slices.remove(&gathered.info.agent)
+            if let Some(task) = self.agents.closed_slices.remove(&gathered.info.agent)
                 && pr_checked
             {
                 self.follow_pull_request(task, &gathered.info.agent, &gathered.info.pr)
@@ -587,19 +588,20 @@ impl Core {
             }
             return;
         }
-        let Some(info) = merge(self.worktrees.get(&gathered.info.agent), gathered) else {
+        let Some(info) = merge(self.code.worktrees.get(&gathered.info.agent), gathered) else {
             return;
         };
         let change = self
+            .code
             .worktrees
             .get(&info.agent)
             .and_then(|old| pr_change(&old.pr, &info.pr));
-        self.worktrees.insert(info.agent.clone(), info.clone());
+        self.code.worktrees.insert(info.agent.clone(), info.clone());
         if let Some(text) = change {
             let agent = info.agent.clone();
             self.activity(ActivityKind::Pr, Some(&agent), text);
         }
-        let task = self.agents.get(&info.agent).and_then(|r| r.agent.task);
+        let task = self.agents.rows.get(&info.agent).and_then(|r| r.agent.task);
         let (agent, pr) = (info.agent.clone(), info.pr.clone());
         self.emit(Event::Worktree(WorktreeEvent::Upserted(info)));
         if let Some(task) = task
@@ -624,11 +626,11 @@ impl Core {
             return;
         };
         let least = self.least_pr_stage(task, Some((seen, pr)));
-        if let Some(was) = self.sent_back.get(&task) {
+        if let Some(was) = self.tracking.sent_back.get(&task) {
             if *was == least {
                 return;
             }
-            self.sent_back.remove(&task);
+            self.tracking.sent_back.remove(&task);
         }
         let closed = matches!(pr, PrLookup::Found(found) if found.state == PrState::Closed);
         let next = match (current.status, least) {
@@ -648,7 +650,8 @@ impl Core {
             .iter()
             .filter(|slice| Some(*slice) != seen)
             .map(|slice| {
-                self.worktrees
+                self.code
+                    .worktrees
                     .get(slice)
                     .map_or(PrStage::None, |w| PrStage::of(&w.pr))
             })
@@ -669,9 +672,9 @@ impl Core {
             let was = self.task(id).await.map(|t| t.status);
             if was == Some(TaskStatus::Review) && status == TaskStatus::InProgress {
                 let stage = self.least_pr_stage(id, None);
-                self.sent_back.insert(id, stage);
+                self.tracking.sent_back.insert(id, stage);
             } else {
-                self.sent_back.remove(&id);
+                self.tracking.sent_back.remove(&id);
             }
         }
         self.update_task(id, patch).await;

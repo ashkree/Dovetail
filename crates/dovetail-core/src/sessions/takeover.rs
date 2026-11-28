@@ -57,8 +57,8 @@ use dovetail_driver::transcript::{self, NativeEntry};
 use serde::{Deserialize, Serialize};
 
 use crate::db::now_ms;
+use crate::engine::{Core, Input};
 use crate::inbox::Waiter;
-use crate::service::{Core, Input};
 use crate::session::state::ToolTally;
 use crate::sessions::SessionError;
 
@@ -313,20 +313,28 @@ pub(crate) struct Active {
 impl Core {
     /// Whether agent `id` is taken over (by this app, or by a lock left from before).
     pub(crate) fn locked(&self, id: &AgentId) -> bool {
-        self.agents.get(id).is_some_and(|r| r.takeover.is_some())
+        self.agents
+            .rows
+            .get(id)
+            .is_some_and(|r| r.takeover.is_some())
     }
 
     /// Before any headless start: `Ok` when `id` holds no lock, or held one whose native run
     /// is gone (then released, with its turns shown). Else the start is refused.
     pub(crate) fn check_lock(&mut self, id: &AgentId) -> Result<(), SessionError> {
-        let Some(row) = self.agents.get(id) else {
+        let Some(row) = self.agents.rows.get(id) else {
             return Ok(());
         };
         let Some(lock) = row.takeover.clone() else {
             return Ok(());
         };
         let name = row.agent.name.clone();
-        if self.takeover.as_ref().is_some_and(|t| &t.agent == id) {
+        if self
+            .sessions
+            .takeover
+            .as_ref()
+            .is_some_and(|t| &t.agent == id)
+        {
             return Err(SessionError::TakenOver(name));
         }
         let session = row.session_id.clone().unwrap_or_default();
@@ -342,7 +350,7 @@ impl Core {
 
     /// Why agent `id` cannot be taken over now, if it cannot.
     fn refuse_take_over(&self, id: &AgentId) -> Option<String> {
-        let Some(row) = self.agents.get(id) else {
+        let Some(row) = self.agents.rows.get(id) else {
             return Some(format!("no agent {}", id.0));
         };
         let name = &row.agent.name;
@@ -361,17 +369,20 @@ impl Core {
                 row.agent.driver.label()
             ));
         }
-        if self.takeover.is_some() || self.editor_open || self.editor_pending.is_some() {
+        if self.sessions.takeover.is_some()
+            || self.app.editor_open
+            || self.app.editor_pending.is_some()
+        {
             return Some("the terminal is already lent out".into());
         }
         if row.takeover.is_some() {
             return Some(format!("{name} is already taken over in a native terminal"));
         }
-        if self.live.get(id).is_some_and(|l| l.setting_up) {
+        if self.sessions.live.get(id).is_some_and(|l| l.setting_up) {
             return Some(format!("{name} is still setting up"));
         }
         // Being archived: its exit removes the worktree, which native would run in.
-        if self.live.get(id).is_some_and(|l| l.stopping) {
+        if self.sessions.live.get(id).is_some_and(|l| l.stopping) {
             return Some(format!("{name} is stopping"));
         }
         if row.transcript_path.is_none() || row.session_id.is_none() {
@@ -379,7 +390,7 @@ impl Core {
                 "{name} has no session to resume yet: send it a message first"
             ));
         }
-        let home = match &self.claude {
+        let home = match &self.sessions.claude {
             Ok(home) => home,
             Err(e) => return Some(e.to_string()),
         };
@@ -403,7 +414,7 @@ impl Core {
             self.emit(Event::App(AppEvent::TerminalReturned { error: Some(why) }));
             return;
         }
-        let live = self.live.contains_key(&id);
+        let live = self.sessions.live.contains_key(&id);
         let Some(phase) = Phase::Headless.after(Step::Begin { live }) else {
             return;
         };
@@ -413,7 +424,7 @@ impl Core {
             start_ticks: None,
             transcript_offset: None,
         };
-        let Some(row) = self.agents.get_mut(&id) else {
+        let Some(row) = self.agents.rows.get_mut(&id) else {
             return;
         };
         row.takeover = Some(lock);
@@ -432,7 +443,7 @@ impl Core {
         }
         // Stored above; the UI only needs to hear of it.
         self.emit(Event::Agent(AgentEvent::Upserted(row.agent)));
-        self.takeover = Some(Active {
+        self.sessions.takeover = Some(Active {
             agent: id.clone(),
             phase,
         });
@@ -442,7 +453,7 @@ impl Core {
             Some(&id),
             format!("{name} taken over in a native terminal"),
         );
-        match self.live.get_mut(&id) {
+        match self.sessions.live.get_mut(&id) {
             Some(live) => {
                 live.stopping = true;
                 live.session.shutdown(STOP_GRACE);
@@ -453,7 +464,7 @@ impl Core {
 
     /// A headless process exited: if it was stopping for a take-over, native starts now.
     pub(crate) fn takeover_headless_exited(&mut self, id: &AgentId) {
-        let Some(active) = self.takeover.as_mut().filter(|t| &t.agent == id) else {
+        let Some(active) = self.sessions.takeover.as_mut().filter(|t| &t.agent == id) else {
             return;
         };
         let Some(next) = active.phase.after(Step::HeadlessExited) else {
@@ -465,7 +476,7 @@ impl Core {
 
     /// Builds the native command line from the headless spec and runs it on a blocking thread.
     fn start_native(&mut self, id: &AgentId) {
-        if let Some(active) = self.takeover.as_mut().filter(|t| &t.agent == id) {
+        if let Some(active) = self.sessions.takeover.as_mut().filter(|t| &t.agent == id) {
             active.phase = Phase::Starting;
         }
         let prepared = self.native_run(id);
@@ -497,6 +508,7 @@ impl Core {
     fn native_run(&mut self, id: &AgentId) -> Result<NativeRun, SessionError> {
         let row = self
             .agents
+            .rows
             .get(id)
             .cloned()
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
@@ -512,8 +524,12 @@ impl Core {
             .clone()
             .unwrap_or_else(|| NATIVE_CLAUDE.into());
         let (program, args) = spec.wrap(&program, spec.native_args());
-        let unit = crate::memory::unit_name(self.project.key(), &id.0);
-        let stale_scope = self.scopes.cgroup(&unit).map(|cgroup| (unit, cgroup));
+        let unit = crate::memory::unit_name(self.tracking.project.key(), &id.0);
+        let stale_scope = self
+            .sessions
+            .scopes
+            .cgroup(&unit)
+            .map(|cgroup| (unit, cgroup));
         let transcript = row.transcript_path.clone();
         let offset = transcript
             .as_deref()
@@ -533,7 +549,7 @@ impl Core {
 
     /// The native process is running: its pid and start time go on the lock.
     pub(crate) fn native_started(&mut self, id: &AgentId, pid: u32) {
-        if let Some(active) = self.takeover.as_mut().filter(|t| &t.agent == id)
+        if let Some(active) = self.sessions.takeover.as_mut().filter(|t| &t.agent == id)
             && let Some(next) = active.phase.after(Step::NativeStarted)
         {
             active.phase = next;
@@ -574,8 +590,13 @@ impl Core {
     /// headless runs, so no path loses them; without `resume` they wait for the next start
     /// (`launch` is already on its way when a start finds the lock stale).
     fn release(&mut self, id: &AgentId, note: String, entries: &[NativeEntry], resume: bool) {
-        if self.takeover.as_ref().is_some_and(|t| &t.agent == id) {
-            self.takeover = None;
+        if self
+            .sessions
+            .takeover
+            .as_ref()
+            .is_some_and(|t| &t.agent == id)
+        {
+            self.sessions.takeover = None;
         }
         self.update_agent(id, |row| {
             row.takeover = None;
@@ -590,7 +611,12 @@ impl Core {
 
     /// Sends the notes held while `id` was taken over; `launch` calls it once headless runs.
     pub(crate) fn send_held(&mut self, id: &AgentId) {
-        for text in self.held_for_takeover.remove(id).unwrap_or_default() {
+        for text in self
+            .sessions
+            .held_for_takeover
+            .remove(id)
+            .unwrap_or_default()
+        {
             self.send_note(id, &text);
         }
     }
@@ -598,10 +624,11 @@ impl Core {
     /// Whether anything waits for `id`'s headless session: held notes, or for the coordinator
     /// its stored notes.
     fn notes_waiting(&self, id: &AgentId) -> bool {
-        self.held_for_takeover
+        self.sessions
+            .held_for_takeover
             .get(id)
             .is_some_and(|n| !n.is_empty())
-            || (id.0 == crate::service::COORDINATOR && !self.coordinator_notes.is_empty())
+            || (id.0 == crate::engine::COORDINATOR && !self.agents.coordinator_notes.is_empty())
     }
 
     /// How processes are checked: `/proc`, or what a test gave.
@@ -661,7 +688,10 @@ impl Core {
     /// what native added.
     fn release_stale(&mut self, id: &AgentId, lock: &TakeoverLock, resume: bool) {
         let entries = match (
-            self.agents.get(id).and_then(|r| r.transcript_path.clone()),
+            self.agents
+                .rows
+                .get(id)
+                .and_then(|r| r.transcript_path.clone()),
             lock.transcript_offset,
         ) {
             (Some(path), Some(offset)) => transcript::read_since(&path, offset).unwrap_or_default(),
@@ -682,6 +712,7 @@ impl Core {
     pub(crate) fn reconcile_locks(&mut self) {
         let locked: Vec<(AgentId, TakeoverLock, String, String)> = self
             .agents
+            .rows
             .values()
             .filter_map(|r| {
                 Some((
@@ -734,10 +765,16 @@ impl Core {
     /// once when something waits for it (held notes), and for the coordinator, which runs
     /// whenever Dovetail is open; a slice otherwise resumes on first touch, as at open.
     pub(crate) fn release_lock(&mut self, id: &AgentId) {
-        if !self.locked(id) || self.takeover.as_ref().is_some_and(|t| &t.agent == id) {
+        if !self.locked(id)
+            || self
+                .sessions
+                .takeover
+                .as_ref()
+                .is_some_and(|t| &t.agent == id)
+        {
             return;
         }
-        let resume = self.notes_waiting(id) || id.0 == crate::service::COORDINATOR;
+        let resume = self.notes_waiting(id) || id.0 == crate::engine::COORDINATOR;
         self.release(
             id,
             "Take-over lock released by the user".into(),
@@ -748,7 +785,8 @@ impl Core {
 
     /// A note from Dovetail for a locked session: kept, and sent once headless is back.
     pub(crate) fn hold_for_takeover(&mut self, id: &AgentId, text: &str) {
-        self.held_for_takeover
+        self.sessions
+            .held_for_takeover
             .entry(id.clone())
             .or_default()
             .push(text.to_owned());
@@ -759,12 +797,13 @@ impl Core {
     pub(crate) fn session_cwd(&self, agent: &dovetail_api::agents::agent::Agent) -> PathBuf {
         match (agent.kind, &agent.worktree) {
             (AgentKind::Slice, Some(w)) => w.path.clone(),
-            (AgentKind::Slice, None) => self
-                .repo_of(&agent.id)
-                .map_or_else(|| self.project.coordinator_folder(&self.paths), |r| r.path),
+            (AgentKind::Slice, None) => self.repo_of(&agent.id).map_or_else(
+                || self.tracking.project.coordinator_folder(&self.paths),
+                |r| r.path,
+            ),
             // Whatever project runs it, a tangent works in Tangents' folder (ADR 0017).
             (AgentKind::Tangent, _) => self.tangents_folder(),
-            _ => self.project.coordinator_folder(&self.paths),
+            _ => self.tracking.project.coordinator_folder(&self.paths),
         }
     }
 
@@ -775,11 +814,11 @@ impl Core {
         &self,
         id: &dovetail_api::agents::agent::AgentId,
     ) -> Option<crate::projects::Repo> {
-        let row = self.agents.get(id)?;
+        let row = self.agents.rows.get(id)?;
         match (row.agent.kind, &row.agent.parent) {
             (AgentKind::Subagent { .. }, Some(parent)) if parent != id => self.repo_of(parent),
-            (AgentKind::Slice, _) => self.project.repo(row.repo),
-            _ => self.project.repo(None),
+            (AgentKind::Slice, _) => self.tracking.project.repo(row.repo),
+            _ => self.tracking.project.repo(None),
         }
     }
 }

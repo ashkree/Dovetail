@@ -9,11 +9,11 @@ use dovetail_api::agents::agent::{AgentId, AgentKind};
 use dovetail_api::tracking::project::{ProjectEvent, ProjectSummary, RepoId};
 
 use crate::db::DbError;
+use crate::engine::{Core, CoreHandler, serve};
 use crate::paths::Paths;
 use crate::project_admin::{self, ProjectOp};
 use crate::projects::{Candidate, Project, ProjectError, Repo};
 use crate::recipe;
-use crate::service::{Core, CoreHandler, serve};
 use crate::socket::{self, SocketHandler};
 
 /// Registering the open folder as a project (ADR 0005).
@@ -147,13 +147,14 @@ impl Core {
     /// One of the five project commands (ADR 0021). Any project may be changed; when it is the
     /// open one, the core takes the change in at once ([`Core::open_project_changed`]).
     pub(crate) async fn project_op(&mut self, op: ProjectOp) {
-        let open = self.project.registered().map(|p| p.id.clone());
+        let open = self.tracking.project.registered().map(|p| p.id.clone());
         let is_open = op
             .project()
             .is_some_and(|id| open.as_deref() == Some(id.0.as_str()));
         if is_open && let ProjectOp::RemoveRepo { repo, .. } = &op {
             let busy: Vec<String> = self
                 .agents
+                .rows
                 .values()
                 .filter(|r| r.agent.kind == AgentKind::Slice)
                 .filter(|r| self.repo_of(&r.agent.id).is_some_and(|x| x.id == *repo))
@@ -199,13 +200,16 @@ impl Core {
     /// The open project changed in the registry: its account takes effect at each session's
     /// next start, and its repos at the coordinator's (ADR 0021 point 4).
     fn open_project_changed(&mut self, new: Project) {
-        let Some(old) = self.project.registered().cloned() else {
+        let Some(old) = self.tracking.project.registered().cloned() else {
             return;
         };
-        self.project = ProjectState::Registered(new.clone());
+        self.tracking.project = ProjectState::Registered(new.clone());
         if old.account != new.account {
-            self.claude =
-                crate::service::project_claude_home(&self.paths, &self.config, &self.project);
+            self.sessions.claude = crate::engine::project_claude_home(
+                &self.paths,
+                &self.config,
+                &self.tracking.project,
+            );
             self.profile_error_notice();
             self.activity(
                 ActivityKind::Lifecycle,
@@ -249,34 +253,34 @@ impl Core {
     /// (a resume, with the new `--add-dir` flags) and told `note`; a working one when its turn
     /// ends; one not running hears it at its next start, which has the new flags anyway.
     pub(crate) fn reattach_coordinator(&mut self, note: String) {
-        let id = AgentId(crate::service::COORDINATOR.into());
-        let Some(live) = self.live.get_mut(&id) else {
+        let id = AgentId(crate::engine::COORDINATOR.into());
+        let Some(live) = self.sessions.live.get_mut(&id) else {
             self.hold_for_coordinator(note);
             return;
         };
         // A second change before the restart adds to the note rather than replace it.
-        self.reattach = Some(match self.reattach.take() {
+        self.tracking.reattach = Some(match self.tracking.reattach.take() {
             Some(earlier) => format!("{earlier}\n{note}"),
             None => note,
         });
         if !live.turn.busy() && self.quitting.is_none() {
             live.stopping = true;
-            live.session.shutdown(crate::shutdown::QUIT_GRACE);
+            live.session.shutdown(crate::engine::shutdown::QUIT_GRACE);
         }
     }
 
     /// The coordinator's turn ended: a pending reattach stops it now.
     pub(crate) fn reattach_after_turn(&mut self) {
-        if self.reattach.is_none() || self.quitting.is_some() {
+        if self.tracking.reattach.is_none() || self.quitting.is_some() {
             return;
         }
-        let id = AgentId(crate::service::COORDINATOR.into());
-        if let Some(live) = self.live.get_mut(&id)
+        let id = AgentId(crate::engine::COORDINATOR.into());
+        if let Some(live) = self.sessions.live.get_mut(&id)
             && !live.turn.busy()
             && !live.stopping
         {
             live.stopping = true;
-            live.session.shutdown(crate::shutdown::QUIT_GRACE);
+            live.session.shutdown(crate::engine::shutdown::QUIT_GRACE);
         }
     }
 
@@ -326,7 +330,7 @@ impl Core {
         if self.quitting.is_some() {
             return;
         }
-        if id.0 == self.project.key() {
+        if id.0 == self.tracking.project.key() {
             return self.fail(format!("{} is already open", id.0));
         }
         match self.db.get_project(id.0.clone()).await {
@@ -362,7 +366,7 @@ impl Core {
     pub(crate) async fn register_project(
         &mut self,
     ) -> Result<(Project, Option<PathBuf>), RegisterError> {
-        let candidate = match &self.project {
+        let candidate = match &self.tracking.project {
             ProjectState::Registered(p) => return Ok((p.clone(), None)),
             ProjectState::Unregistered { candidate, .. } => candidate.clone(),
         };
@@ -384,24 +388,28 @@ impl Core {
                     inputs: self.inputs.clone(),
                 });
                 tokio::spawn(serve(listener, handler));
-                self.extra_sockets.push(path);
+                self.mcp.extra_sockets.push(path);
             }
             Err(e) => tracing::warn!("project socket: {e}"),
         }
-        let old_lists = format!("dovetail-{}-", self.project.key());
-        self.project = ProjectState::Registered(project.clone());
+        let old_lists = format!("dovetail-{}-", self.tracking.project.key());
+        self.tracking.project = ProjectState::Registered(project.clone());
         let starter = self.write_starter_recipe(&project);
         // A recipe may already pick a profile; sessions that ran before keep theirs until they
         // next start (ADR 0009).
-        self.claude = crate::service::project_claude_home(&self.paths, &self.config, &self.project);
+        self.sessions.claude =
+            crate::engine::project_claude_home(&self.paths, &self.config, &self.tracking.project);
         self.profile_error_notice();
         // An agent that never ran takes the project id in its to-do list id. One that has run
         // keeps the id its process uses (its lists live there), across every later resume.
         let new_lists = format!("dovetail-{}-", project.id);
         let ids: Vec<AgentId> = self
             .agents
+            .rows
             .values()
-            .filter(|r| r.transcript_path.is_none() && !self.live.contains_key(&r.agent.id))
+            .filter(|r| {
+                r.transcript_path.is_none() && !self.sessions.live.contains_key(&r.agent.id)
+            })
             .map(|r| r.agent.id.clone())
             .collect();
         for id in ids {
@@ -413,7 +421,9 @@ impl Core {
                 }
             });
         }
-        self.warnings.retain(|w| w.id.0 != UNREGISTERED_WARNING);
+        self.activity
+            .warnings
+            .retain(|w| w.id.0 != UNREGISTERED_WARNING);
         self.activity(
             ActivityKind::Lifecycle,
             None,
@@ -454,7 +464,13 @@ impl Core {
         id: dovetail_api::tracking::project::ProjectId,
         profile: String,
     ) {
-        let Some(project) = self.project.registered().filter(|p| p.id == id.0).cloned() else {
+        let Some(project) = self
+            .tracking
+            .project
+            .registered()
+            .filter(|p| p.id == id.0)
+            .cloned()
+        else {
             return self.fail(format!("{} is not the open project", id.0));
         };
         if !self.config.profiles.contains_key(&profile) {
@@ -473,7 +489,8 @@ impl Core {
         if let Err(e) = std::fs::write(&path, text) {
             return self.fail(format!("could not write {}: {e}", path.display()));
         }
-        self.claude = crate::service::project_claude_home(&self.paths, &self.config, &self.project);
+        self.sessions.claude =
+            crate::engine::project_claude_home(&self.paths, &self.config, &self.tracking.project);
         self.profile_error_notice();
         self.activity(
             ActivityKind::Lifecycle,

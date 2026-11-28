@@ -89,11 +89,11 @@ Each step lands as one or more clean commits on `restructure` with `CARGO_BUILD_
 - [x] Switch `dovetail_api` imports in moved files to full domain paths.
 
 ### Step 7 — `engine/`, `Core` state structs, thin routers, and import cleanup
-- [ ] Move `service.rs`, `shutdown.rs`, `startup.rs` into `src/engine/`.
-- [ ] Introduce per-domain state structs (`TrackingState`, `AgentState`, `ActivityState`, `VisualState`, `ResearchState`, `CodeState`, `AppState`, `SessionState`, `McpState`) on `Core`.
-- [ ] Split `Core::command`, `Core::tool`, and `Core::on_driver` into thin routers that delegate to domain handlers (`tracking`, `agents`, `activity`, `visual`, `research`, `code`, `app`, `sessions`).
-- [ ] Verify every `dovetail_api` import in `crates/dovetail-core/src/` uses full domain paths (D43).
-- [ ] Update `crates/dovetail` and `crates/dovetail-core/tests/` to use the new `dovetail_core::<domain>::...` paths if desired, or keep intentional root re-exports documented in `lib.rs` (decided at Step 7).
+- [x] Move `service.rs`, `shutdown.rs`, `startup.rs` into `src/engine/`.
+- [x] Introduce per-domain state structs (`TrackingState`, `AgentState`, `ActivityState`, `VisualState`, `Research`, `CodeState`, `AppState`, `SessionState`, `McpState`) on `Core`.
+- [x] Split `Core::command` and `Core::tool` into thin routers that delegate to domain handlers (`tracking`, `agents`, `activity`, `visual`, `research`, `code`, `app`, `sessions`).
+- [x] Verify every `dovetail_api` import in `crates/dovetail-core/src/` uses full domain paths (D43).
+- [x] Keep intentional root re-exports in `lib.rs` for `crates/dovetail` and integration tests (`spawn`, `CoreOptions`, `UpgradeOptions`, `service`, `db`, `session`, etc.).
 
 ### Step 8 — Split `tests/sessions.rs` by domain + `ARCHITECTURE.md`
 - [ ] Split `crates/dovetail-core/tests/sessions.rs` into one integration test file per domain (`tests/tracking.rs`, `tests/agents.rs`, `tests/activity.rs`, `tests/visual.rs`, `tests/code.rs`, `tests/app.rs`, `tests/sessions.rs` for process lifecycle/restore/takeover/caps), all using `tests/common/mod.rs`.

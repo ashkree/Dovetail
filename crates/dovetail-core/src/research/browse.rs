@@ -13,9 +13,9 @@ use dovetail_api::research::{
 };
 use dovetail_api::tracking::project::ProjectId;
 
+use crate::engine::Core;
 use crate::projects::Project;
 use crate::research::{LoadError, content_of, files, listing, root_of, summary};
-use crate::service::Core;
 
 impl Core {
     /// The registered project `id`, or a failure for the UI.

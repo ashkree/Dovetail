@@ -17,7 +17,7 @@ use dovetail_api::agents::{
 use dovetail_driver::{ModelInfo, SwitchId};
 
 use crate::db::{AgentRow, ModelChoice};
-use crate::service::Core;
+use crate::engine::Core;
 
 /// A switch sent to a live session and not yet answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +49,7 @@ impl Core {
             self.fail("No model given");
             return;
         }
-        let Some(row) = self.agents.get(id) else {
+        let Some(row) = self.agents.rows.get(id) else {
             self.fail(format!("no agent {}", id.0));
             return;
         };
@@ -57,14 +57,14 @@ impl Core {
             (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
             _ => id.clone(),
         };
-        let Some(row) = self.agents.get(&target) else {
+        let Some(row) = self.agents.rows.get(&target) else {
             return;
         };
         let name = row.agent.name.clone();
         // Only the effort changes: no `set_model` (spike note).
         let keep_model = self.runs_model(row, &model);
         let choice = ModelChoice { model, effort };
-        let Some(live) = self.live.get_mut(&target) else {
+        let Some(live) = self.sessions.live.get_mut(&target) else {
             // Not running (or taken over): the choice is used when it next starts.
             self.update_agent(&target, |row| row.model_choice = Some(choice.clone()));
             self.notice(
@@ -105,6 +105,7 @@ impl Core {
     fn runs_model_named(&self, driver: DriverKind, running: &str, model: &str) -> bool {
         running == model
             || self
+                .agents
                 .model_catalog
                 .get(&driver)
                 .into_iter()
@@ -115,7 +116,8 @@ impl Core {
     /// Whether `driver` lists `model` (by alias or full name): `None` while no session of that
     /// driver has listed its models, when it cannot be told.
     pub(crate) fn model_listed(&self, driver: DriverKind, model: &str) -> Option<bool> {
-        self.model_catalog
+        self.agents
+            .model_catalog
             .get(&driver)
             .filter(|c| !c.is_empty())
             .map(|catalog| {
@@ -128,6 +130,7 @@ impl Core {
     /// The listed models' names for `driver`, comma-separated, for an error.
     pub(crate) fn model_catalog_names(&self, driver: DriverKind) -> String {
         let names: Vec<&str> = self
+            .agents
             .model_catalog
             .get(&driver)
             .into_iter()
@@ -151,6 +154,7 @@ impl Core {
         let name = self.agent_name(agent);
         let driver = self
             .agents
+            .rows
             .get(agent)
             .map_or(DriverKind::Claude, |r| r.agent.driver);
         let mut kept = choice.clone();
@@ -189,6 +193,7 @@ impl Core {
 
     pub(crate) fn is_slice(&self, agent: &AgentId) -> bool {
         self.agents
+            .rows
             .get(agent)
             .is_some_and(|r| r.agent.kind == AgentKind::Slice)
     }
@@ -201,7 +206,7 @@ impl Core {
         model: Option<String>,
         effort: Option<ReasoningEffort>,
     ) {
-        let Some(live) = self.live.get_mut(agent) else {
+        let Some(live) = self.sessions.live.get_mut(agent) else {
             return;
         };
         if !is_current(live.last_switch, switch) {
@@ -249,6 +254,7 @@ impl Core {
         error: &str,
     ) {
         let asked = self
+            .sessions
             .live
             .get_mut(agent)
             .and_then(|l| l.switching.take_if(|p| p.id == switch));
@@ -259,6 +265,7 @@ impl Core {
         let name = self.agent_name(agent);
         let old = self
             .agents
+            .rows
             .get(agent)
             .and_then(|r| r.agent.model.clone())
             .unwrap_or_else(|| "its model".into());
@@ -271,13 +278,13 @@ impl Core {
     /// A session listed its models; the selector learns which models and effort levels each
     /// driver accepts.
     pub(crate) fn on_models_listed(&mut self, agent: &AgentId, models: Vec<ModelInfo>) {
-        let Some(driver) = self.agents.get(agent).map(|r| r.agent.driver) else {
+        let Some(driver) = self.agents.rows.get(agent).map(|r| r.agent.driver) else {
             return;
         };
-        if models.is_empty() || self.model_catalog.get(&driver) == Some(&models) {
+        if models.is_empty() || self.agents.model_catalog.get(&driver) == Some(&models) {
             return;
         }
-        self.model_catalog.insert(driver, models.clone());
+        self.agents.model_catalog.insert(driver, models.clone());
         self.save_models(driver, &models);
         self.emit(Event::Model(ModelEvent::Changed(self.model_options())));
     }
@@ -287,12 +294,13 @@ impl Core {
     pub(crate) fn model_options(&self) -> Vec<ModelOption> {
         let mut out = options(
             &self.config.model_names(),
-            self.model_catalog
+            self.agents
+                .model_catalog
                 .get(&DriverKind::Claude)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]),
         );
-        if let Some(agy) = self.model_catalog.get(&DriverKind::Agy) {
+        if let Some(agy) = self.agents.model_catalog.get(&DriverKind::Agy) {
             out.extend(agy.iter().map(|m| ModelOption {
                 name: m.value.clone(),
                 resolved: m.resolved.clone(),
@@ -325,6 +333,7 @@ impl Core {
 
     pub(crate) fn agent_name(&self, agent: &AgentId) -> String {
         self.agents
+            .rows
             .get(agent)
             .map_or_else(|| agent.0.clone(), |r| r.agent.name.clone())
     }

@@ -35,12 +35,12 @@ use dovetail_driver::DriverEvent;
 
 use crate::db::research::{FindingRow, NewFinding, NewSource, SourceRow, TaskResearch};
 use crate::db::{AgentRow, Db, DbError, now_ms};
+use crate::engine::{COORDINATOR, Core, new_agent};
 use crate::inbox::Waiter;
 use crate::paths::Paths;
 use crate::registration::ProjectState;
 use crate::research::capture::{self, BodyFrom};
 use crate::research::files;
-use crate::service::{COORDINATOR, Core, new_agent};
 
 /// Longest task title a question gives; the whole question is kept in the notes.
 const TITLE_MAX: usize = 80;
@@ -198,17 +198,18 @@ async fn file_all(
 impl Core {
     /// Tangents' database, or why tangents are off.
     pub(crate) fn tangents_db(&self) -> Result<Db, TangentError> {
-        self.tangents.clone()
+        self.agents.tangents.clone()
     }
 
     /// Whether the open project is Tangents itself: its tasks are then the snapshot's too.
     fn in_tangents(&self) -> bool {
-        self.project.key() == TANGENTS_PROJECT
+        self.tracking.project.key() == TANGENTS_PROJECT
     }
 
     /// The Tangents task of a tangent session, if `agent` is one.
     pub(crate) fn tangent_of(&self, agent: &AgentId) -> Option<TaskId> {
         self.agents
+            .rows
             .get(agent)
             .filter(|r| r.agent.kind == AgentKind::Tangent)
             .and_then(|_| tangent_task(agent))
@@ -312,7 +313,7 @@ impl Core {
         let title = title_of(&question);
         let asked = format!(
             "Asked from {} on {}.",
-            self.project.summary(&self.paths).name,
+            self.tracking.project.summary(&self.paths).name,
             today()
         );
         let notes = if title == question {
@@ -355,7 +356,7 @@ impl Core {
             model_choice: None,
             repo: None,
         };
-        self.agents.insert(id.clone(), row);
+        self.agents.rows.insert(id.clone(), row);
         self.save_agent(&id);
         self.activity(
             ActivityKind::Lifecycle,
@@ -535,7 +536,7 @@ impl Core {
     /// `TangentCommand::Attach`: the tangent's answers and sources become quick findings of a
     /// task of the open project, and the tangent leaves Tangents.
     pub(crate) async fn attach_tangent(&mut self, tangent: TaskId, task: TaskId) {
-        if self.project.registered().is_none() {
+        if self.tracking.project.registered().is_none() {
             return self.fail("this folder is not a project yet: :project add keeps it first");
         }
         if self.in_tangents() {
@@ -560,7 +561,7 @@ impl Core {
             self.write_finding_files(&dir, row, sources);
         }
         self.emit_research(task, &target.title).await;
-        let here = self.project.summary(&self.paths).name;
+        let here = self.tracking.project.summary(&self.paths).name;
         self.activity(
             ActivityKind::Task,
             None,
@@ -593,7 +594,12 @@ impl Core {
             self.db.get_project(id.0.clone()).await?.ok_or_else(|| {
                 crate::projects::ProjectError::UnknownId(id.0.clone()).to_string()
             })?;
-        if self.project.registered().is_some_and(|p| p.id == id.0) {
+        if self
+            .tracking
+            .project
+            .registered()
+            .is_some_and(|p| p.id == id.0)
+        {
             return Ok((project, self.db.clone(), true));
         }
         let paths = self.paths.clone();
@@ -789,6 +795,7 @@ impl Core {
         let agent = tangent_agent(t.id);
         if self
             .agents
+            .rows
             .get(&agent)
             .is_some_and(|r| r.agent.kind == AgentKind::Tangent)
         {
@@ -815,13 +822,13 @@ impl Core {
     pub(crate) async fn morning_tangents(&mut self, last_used: crate::journal::LastUse) {
         let today = crate::journal::today();
         let first_open = last_used.date.is_some_and(|d| d < today);
-        if !first_open || self.project.registered().is_none() {
+        if !first_open || self.tracking.project.registered().is_none() {
             return;
         }
         // Once a day: a second open before the coordinator is used again asks nothing more.
         let marker = self
             .paths
-            .project_dir(self.project.key())
+            .project_dir(self.tracking.project.key())
             .join(MORNING_MARKER);
         let stamp = today.to_string();
         if std::fs::read_to_string(&marker).is_ok_and(|seen| seen.trim() == stamp) {
@@ -845,7 +852,8 @@ impl Core {
     }
 
     fn new_tangents_item(&self) -> Option<dovetail_api::activity::inbox::InboxId> {
-        self.inbox
+        self.activity
+            .inbox
             .values()
             .find(|e| matches!(e.item.kind, InboxKind::NewTangents { .. }))
             .map(|e| e.item.id)
@@ -861,7 +869,7 @@ impl Core {
             self.resolve(id, Some("all triaged".into()));
             return;
         }
-        let Some(entry) = self.inbox.get_mut(&id) else {
+        let Some(entry) = self.activity.inbox.get_mut(&id) else {
             return;
         };
         if entry.item.kind == (InboxKind::NewTangents { count }) {

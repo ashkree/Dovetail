@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use crate::service::Core;
+use super::Core;
 
 /// How long sessions get to exit on quit before they are killed.
 pub(crate) const QUIT_GRACE: Duration = Duration::from_secs(3);
@@ -56,7 +56,7 @@ impl Core {
         }
         self.cancel_upgrade_build();
         self.stop_all_previews();
-        for live in self.live.values_mut() {
+        for live in self.sessions.live.values_mut() {
             live.stopping = true;
             live.session.shutdown(QUIT_GRACE);
         }
@@ -67,11 +67,14 @@ impl Core {
     /// `true` when the loop should stop waiting.
     pub(crate) fn quit_deadline(&mut self) -> bool {
         if self.killed {
-            tracing::warn!("{} sessions still not reaped; giving up", self.live.len());
+            tracing::warn!(
+                "{} sessions still not reaped; giving up",
+                self.sessions.live.len()
+            );
             return true;
         }
         tracing::warn!("sessions did not exit in time; killing them");
-        for live in self.live.values() {
+        for live in self.sessions.live.values() {
             live.session.kill();
         }
         self.killed = true;

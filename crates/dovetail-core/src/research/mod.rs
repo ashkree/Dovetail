@@ -25,16 +25,19 @@ use dovetail_api::Event;
 use dovetail_api::activity::{ActivityKind, inbox::InboxKind};
 use dovetail_api::agents::agent::AgentId;
 use dovetail_api::research::{
-    FindingSummary, ResearchContent, ResearchDocument, ResearchEvent, ResearchKind,
-    ResearchListing, ResearchSummary, ResearchWhat, RoundSummary, SourceSummary, ordinal,
+    FindingSummary, ResearchCommand, ResearchContent, ResearchDocument, ResearchEvent,
+    ResearchKind, ResearchListing, ResearchSummary, ResearchWhat, RoundSummary, SourceSummary,
+    library::{LibraryCommand, LibraryEvent},
+    ordinal,
 };
 use dovetail_api::tracking::task::{Task, TaskId};
 use dovetail_driver::{ContentBlock, DriverEvent};
+use dovetail_tools::{SocketResponseBody, research::ResearchTool};
 
 use crate::db::research::{FindingRow, RoundRow, SourceRow, SummaryRow, TaskResearch};
 use crate::db::{DbError, now_ms};
+use crate::engine::{COORDINATOR, Core};
 use crate::inbox::Waiter;
-use crate::service::{COORDINATOR, Core};
 use capture::{Capture, Outcome};
 use files::ResearchDirError;
 
@@ -76,9 +79,73 @@ pub(crate) struct Research {
 }
 
 impl Core {
+    pub(crate) async fn handle_research_command(&mut self, command: ResearchCommand) {
+        match command {
+            ResearchCommand::StartRound { task, brief } => self.start_round(task, brief).await,
+            ResearchCommand::CloseRound { task } => self.close_round(task).await,
+            ResearchCommand::DropRound { task, round } => self.drop_round(task, round).await,
+            ResearchCommand::SetKind { task, kind } => self.set_research_kind(task, kind).await,
+            ResearchCommand::FileUnfiled { item, task } => self.file_unfiled(item, task).await,
+            ResearchCommand::Load { task, what } => self.load_research_content(task, what).await,
+            ResearchCommand::StartAsk { task } => self.start_ask(task).await,
+        }
+    }
+
+    pub(crate) async fn handle_library_command(&mut self, command: LibraryCommand) {
+        match command {
+            LibraryCommand::ListDocs => self.list_docs(),
+            LibraryCommand::LoadDoc { path } => self.load_doc(path),
+            LibraryCommand::BrowseProject { id } => self.browse_project(id).await,
+            LibraryCommand::LoadBrowsed { project, what } => {
+                self.load_browsed(project, what).await;
+            }
+        }
+    }
+
+    pub(crate) async fn handle_research_tool(
+        &mut self,
+        agent: &AgentId,
+        tool: ResearchTool,
+    ) -> SocketResponseBody {
+        match tool {
+            ResearchTool::StartRound(args) => self.research_start_round(args).await,
+            ResearchTool::WriteReport(args) => self.research_write_report(args).await,
+            ResearchTool::Propose(args) => self.research_propose(agent, args).await,
+            ResearchTool::Get(args) => self.research_get(args).await,
+        }
+    }
+
+    /// The repo's `docs/` folder for reading mode's Docs · ADRs; `None` for a research project,
+    /// which has no repo.
+    fn docs_repo(&self) -> Option<PathBuf> {
+        self.tracking.project.first_repo_path()
+    }
+
+    /// `LibraryCommand::ListDocs`: small folders, read in place.
+    fn list_docs(&mut self) {
+        let docs = self
+            .docs_repo()
+            .map(|repo| docs::list(&repo))
+            .unwrap_or_default();
+        self.emit(Event::Library(LibraryEvent::DocsListed { docs }));
+    }
+
+    /// `LibraryCommand::LoadDoc`.
+    fn load_doc(&mut self, path: PathBuf) {
+        let Some(repo) = self.docs_repo() else {
+            self.fail("a research project has no repo docs");
+            return;
+        };
+        match docs::load(&repo, &path) {
+            Ok(document) => self.emit(Event::Library(LibraryEvent::DocLoaded { path, document })),
+            Err(e) => self.fail(e),
+        }
+    }
+
     /// The project's research root, from its recipe.
     pub(crate) fn research_root(&self) -> Result<PathBuf, ResearchDirError> {
         let project = self
+            .tracking
             .project
             .registered()
             .ok_or(ResearchDirError::NotRegistered)?;
@@ -456,7 +523,7 @@ impl Core {
     pub(crate) async fn research_event(&mut self, agent: &AgentId, event: &DriverEvent) {
         // A tangent files into Tangents, whatever the open folder is (ADR 0017).
         let tangent = self.tangent_of(agent);
-        if self.project.registered().is_none() && tangent.is_none() {
+        if self.tracking.project.registered().is_none() && tangent.is_none() {
             return;
         }
         if let Some(origin) = event.origin().filter(|o| !o.is_main()) {
@@ -509,7 +576,7 @@ impl Core {
         let (task, round) = match (&self.research.open, agent.0 == COORDINATOR) {
             (Some(open), true) => (Some(open.task), Some(open.id)),
             (None, true) => (None, None),
-            _ => match self.agents.get(agent).and_then(|r| r.agent.task) {
+            _ => match self.agents.rows.get(agent).and_then(|r| r.agent.task) {
                 Some(task) => (Some(task), None),
                 None => return,
             },
@@ -762,7 +829,7 @@ impl Core {
         item: dovetail_api::activity::inbox::InboxId,
         task: TaskId,
     ) {
-        let finding = match self.inbox.get(&item).map(|e| &e.waiter) {
+        let finding = match self.activity.inbox.get(&item).map(|e| &e.waiter) {
             Some(Waiter::UnfiledFinding { finding }) => *finding,
             _ => {
                 self.fail("that item is not an unfiled finding");

@@ -19,8 +19,8 @@ use dovetail_api::tracking::task::TaskId;
 use dovetail_driver::UserInput;
 
 use crate::db::{AgentRow, now_ms};
+use crate::engine::{Core, new_agent};
 use crate::research::files;
-use crate::service::{Core, new_agent};
 
 /// Why an Ask session could not start or take a question.
 #[derive(Debug, thiserror::Error)]
@@ -52,7 +52,7 @@ impl Core {
     /// UI it is ready for a question.
     pub(crate) async fn start_ask(&mut self, task: TaskId) {
         let id = ask_id(task);
-        if let Some(row) = self.agents.get(&id) {
+        if let Some(row) = self.agents.rows.get(&id) {
             let agent = row.agent.clone();
             self.emit(dovetail_api::Event::Agent(AgentEvent::Upserted(agent)));
             return;
@@ -76,7 +76,7 @@ impl Core {
             model_choice: None,
             repo: None,
         };
-        self.agents.insert(id.clone(), row);
+        self.agents.rows.insert(id.clone(), row);
         self.save_agent(&id);
         self.activity(
             ActivityKind::Lifecycle,
@@ -101,15 +101,17 @@ impl Core {
     ) -> Result<(), AskError> {
         let task = self
             .agents
+            .rows
             .get(id)
             .and_then(|r| r.agent.task)
             .ok_or_else(|| crate::sessions::SessionError::NoAgent(id.0.clone()))?;
         let images = crate::session::read_attachments(&attachments)?;
         let (dir, grounding) = self.grounding(task).await?;
-        if !self.live.contains_key(id) {
+        if !self.sessions.live.contains_key(id) {
             self.launch(id, dir, None)?;
         }
         let asked = self
+            .agents
             .tails
             .get(id)
             .is_some_and(|t| t.entries.iter().any(|e| e.kind == EntryKind::User));
@@ -190,7 +192,7 @@ impl Core {
     /// Closes the Ask sessions of `task` (a new report makes their grounding stale).
     pub(crate) fn close_asks_of(&mut self, task: TaskId) {
         let id = ask_id(task);
-        if self.agents.contains_key(&id) {
+        if self.agents.rows.contains_key(&id) {
             self.close_slice(&id, true);
         }
     }

@@ -10,7 +10,7 @@ use dovetail_api::agents::{
 };
 
 use crate::db::{AgentRow, now_ms};
-use crate::service::{Core, new_agent};
+use crate::engine::{Core, new_agent};
 
 impl Core {
     /// Starts a side chat named `side-N` and sends it `question`.
@@ -20,7 +20,7 @@ impl Core {
             self.fail("a side chat needs a question");
             return;
         }
-        let taken = |name: &str| self.agents.values().any(|r| r.agent.name == name);
+        let taken = |name: &str| self.agents.rows.values().any(|r| r.agent.name == name);
         let Some(name) = (1..).map(|n| format!("side-{n}")).find(|name| !taken(name)) else {
             return;
         };
@@ -40,9 +40,9 @@ impl Core {
             model_choice: None,
             repo: None,
         };
-        self.agents.insert(id.clone(), row);
+        self.agents.rows.insert(id.clone(), row);
         self.save_agent(&id);
-        let cwd = self.project.coordinator_folder(&self.paths);
+        let cwd = self.tracking.project.coordinator_folder(&self.paths);
         if let Err(e) = self.launch(&id, cwd, None) {
             self.closed(&id);
             self.fail(e);

@@ -24,11 +24,11 @@ use dovetail_tools::{
 use serde_json::json;
 
 use crate::db::research::TaskResearch;
+use crate::engine::Core;
 use crate::inbox::Waiter;
 use crate::mcp::tools::{error, ok};
 use crate::research::files;
 use crate::research::report::{self, Known, KnownSource, id_ranges};
-use crate::service::Core;
 
 /// Most characters of a document `research_get` returns; the rest is left on disk.
 const GET_MAX_CHARS: usize = 20_000;

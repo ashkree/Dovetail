@@ -29,8 +29,8 @@ use dovetail_api::agents::{
     conversation::EntryKind,
 };
 
+use crate::engine::{COORDINATOR, Core, InboxEntry, Input};
 use crate::inbox::Waiter;
-use crate::service::{COORDINATOR, Core, InboxEntry, Input};
 use crate::worktree;
 use serde_json::json;
 
@@ -179,7 +179,7 @@ impl Core {
             .iter()
             .any(|(a, s)| a == &coordinator_id && *s != AgentStatus::SettingUp)
         {
-            self.notes_wait_for_user = true;
+            self.agents.notes_wait_for_user = true;
         }
         for item in restored.inbox {
             match &item.kind {
@@ -267,7 +267,7 @@ impl Core {
             }
         }
         for (agent, status) in restored.cut_off {
-            if !self.agents.contains_key(&agent) {
+            if !self.agents.rows.contains_key(&agent) {
                 continue;
             }
             // Store the reset status, so the next open does not report it again.
@@ -293,7 +293,7 @@ impl Core {
         self.reconcile_locks();
         self.sweep().await;
         self.profile_notices();
-        let ids: Vec<AgentId> = self.agents.keys().cloned().collect();
+        let ids: Vec<AgentId> = self.agents.rows.keys().cloned().collect();
         for id in &ids {
             self.refresh_status(id);
         }
@@ -302,17 +302,20 @@ impl Core {
         let coordinator = AgentId(COORDINATOR.into());
         let has_run = self
             .agents
+            .rows
             .get(&coordinator)
             .is_some_and(|r| r.transcript_path.is_some());
         let coord_driver = self
             .agents
+            .rows
             .get(&coordinator)
             .map_or(dovetail_api::agents::model::DriverKind::Claude, |r| {
                 r.agent.driver
             });
         // One still taken over waits: Needs you says why.
         if has_run
-            && (coord_driver == dovetail_api::agents::model::DriverKind::Agy || self.claude.is_ok())
+            && (coord_driver == dovetail_api::agents::model::DriverKind::Agy
+                || self.sessions.claude.is_ok())
             && !self.locked(&coordinator)
         {
             self.start_coordinator(last_used).await;
@@ -324,7 +327,7 @@ impl Core {
     /// comes back at open, is one of those sessions, and its relaunch records the new profile.
     fn profile_notices(&mut self) {
         let coordinator = AgentId(COORDINATOR.into());
-        let home = match &self.claude {
+        let home = match &self.sessions.claude {
             Ok(home) => home.clone(),
             Err(_) => {
                 self.profile_error_notice();
@@ -342,10 +345,10 @@ impl Core {
                     &home.dir,
                 )
         };
-        if !self.agents.get(&coordinator).is_some_and(moved) {
+        if !self.agents.rows.get(&coordinator).is_some_and(moved) {
             return;
         }
-        let count = self.agents.values().filter(|r| moved(r)).count();
+        let count = self.agents.rows.values().filter(|r| moved(r)).count();
         let sessions = if count == 1 {
             "1 session was".to_owned()
         } else {
@@ -362,9 +365,12 @@ impl Core {
     /// The one Needs-you error for a profile that cannot be used, unless it is already open (from
     /// an earlier open, or raised at `:project add`).
     pub(crate) fn profile_error_notice(&mut self) {
-        let Err(e) = &self.claude else { return };
+        let Err(e) = &self.sessions.claude else {
+            return;
+        };
         let text = format!("Sessions cannot start: {e}");
         let open = self
+            .activity
             .inbox
             .values()
             .any(|p| matches!(&p.item.kind, InboxKind::Error { text: t } if *t == text));
@@ -377,11 +383,12 @@ impl Core {
     /// The stale-state sweep (decision 4 of 2026-11-06).
     async fn sweep(&mut self) {
         // Only worktrees are swept, and a research project has none: no git calls.
-        if self.project.is_research() {
+        if self.tracking.project.is_research() {
             return;
         }
         let missing: Vec<(AgentId, String, std::path::PathBuf)> = self
             .agents
+            .rows
             .values()
             .filter_map(|r| {
                 let w = r.agent.worktree.as_ref()?;
@@ -414,13 +421,14 @@ impl Core {
             }
         }
 
-        let key = self.project.key().to_owned();
+        let key = self.tracking.project.key().to_owned();
         let dir = self.paths.worktrees(&key);
         let Ok(entries) = std::fs::read_dir(&dir) else {
             return; // no worktrees yet
         };
         let owned: Vec<std::path::PathBuf> = self
             .agents
+            .rows
             .values()
             .filter_map(|r| r.agent.worktree.as_ref().map(|w| w.path.clone()))
             .collect();
@@ -432,7 +440,7 @@ impl Core {
             }
         };
         // An orphan belongs to the repo its `.git` file points at; a plain folder to the first.
-        let fallback = self.project.first_repo_path().unwrap_or_default();
+        let fallback = self.tracking.project.first_repo_path().unwrap_or_default();
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -503,7 +511,7 @@ impl Core {
     /// `y` on an unowned worktree's item. Checked again first: still no owner, and still the
     /// same directory that was inspected.
     pub(crate) fn remove_orphan(&mut self, found: Orphan) {
-        let owned = self.agents.values().any(|r| {
+        let owned = self.agents.rows.values().any(|r| {
             r.agent
                 .worktree
                 .as_ref()
@@ -522,10 +530,10 @@ impl Core {
             return;
         }
         let paths = self.paths.clone();
-        let key = self.project.key().to_owned();
+        let key = self.tracking.project.key().to_owned();
         // Removed through the repo its `.git` file names; a plain folder (no git) through the
         // first repo. With neither, it fails loudly rather than run git somewhere unknown.
-        let fallback = self.project.first_repo_path();
+        let fallback = self.tracking.project.first_repo_path();
         let inputs = self.inputs.clone();
         let name = found.name;
         tokio::task::spawn_blocking(move || {
@@ -568,13 +576,16 @@ impl Core {
     fn restore_item(&mut self, item: InboxItem, waiter: Waiter) {
         self.emit(Event::Inbox(InboxEvent::Upserted(item.clone())));
         let agent = item.agent.clone();
-        self.inbox.insert(item.id, InboxEntry { item, waiter });
+        self.activity
+            .inbox
+            .insert(item.id, InboxEntry { item, waiter });
         self.refresh_status(&agent);
     }
 
     /// The agent's most recent prompt from the user, as shown in its conversation.
     fn last_prompt(&self, agent: &AgentId) -> Option<String> {
-        self.tails
+        self.agents
+            .tails
             .get(agent)?
             .entries
             .iter()

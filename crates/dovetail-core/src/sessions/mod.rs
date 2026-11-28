@@ -27,7 +27,7 @@ pub mod takeover;
 
 pub use error::SessionError;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use dovetail_api::Event;
@@ -39,18 +39,168 @@ use dovetail_api::activity::{
 use dovetail_api::agents::{
     agent::{AgentEvent, AgentId, AgentKind, AgentStatus, RunningTool},
     conversation::{Attachment, EntryKind, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS},
-    mcp::McpEvent,
+    mcp::{McpCommand, McpEvent},
     model::DriverKind,
 };
+use dovetail_api::tracking::task::TaskId;
 use dovetail_driver::{
     ContentBlock, DriverEvent, ExitInfo, ImageInput, InitInfo, PeerMessage, Session, TurnResult,
     UserInput,
 };
 use dovetail_tools::Role;
 
+use crate::engine::{COORDINATOR, Core, Input};
 use crate::recipe::Recipe;
-use crate::service::{COORDINATOR, Core, Input};
 use state::{Streaming, Turn};
+
+/// State owned by the sessions infrastructure: live processes, takeover, caps, OOM, and context
+/// windows.
+pub(crate) struct SessionState {
+    /// The prefix of every session name this process launches (ADR 0022): the project key at
+    /// start. It stays when an unregistered project is added, so sessions launched as
+    /// `new-<pid>.<name>` keep being found and stripped until the next start.
+    pub(crate) session_prefix: String,
+    pub(crate) live: HashMap<AgentId, Live>,
+    pub(crate) generation: u64,
+    /// A take-over this app runs: the terminal is lent to native `claude` (M14, `takeover`).
+    pub(crate) takeover: Option<takeover::Active>,
+    /// Dovetail's notes for sessions taken over, sent once headless is back.
+    pub(crate) held_for_takeover: HashMap<AgentId, Vec<String>>,
+    /// Context windows by model id, as `result`s report them (decision #22, `context`).
+    pub(crate) context_windows: BTreeMap<String, u64>,
+    /// The Claude home (profile) this project's sessions run under, or why it cannot be used.
+    pub(crate) claude: Result<crate::profile::ClaudeHome, crate::profile::ProfileError>,
+    /// Whether sessions run under capped scopes (M13, `memory`).
+    pub(crate) scopes: memory::Scopes,
+    /// OOM kills: the `memory.events` watcher and automatic restarts (M13b, `oom`).
+    pub(crate) oom: oom::Oom,
+}
+
+impl SessionState {
+    pub(crate) fn new(
+        session_prefix: String,
+        claude: Result<crate::profile::ClaudeHome, crate::profile::ProfileError>,
+    ) -> Self {
+        Self {
+            session_prefix,
+            live: HashMap::new(),
+            generation: 0,
+            takeover: None,
+            held_for_takeover: HashMap::new(),
+            context_windows: BTreeMap::new(),
+            claude,
+            scopes: memory::Scopes::Off,
+            oom: Default::default(),
+        }
+    }
+}
+
+impl Core {
+    pub(crate) fn handle_mcp_command(&mut self, command: McpCommand) {
+        match command {
+            McpCommand::Request { agent, request } => self.mcp_request(&agent, request),
+        }
+    }
+
+    /// The name a session is given in Claude Code (`--name`), which its own messaging finds
+    /// sessions by across the whole machine: `<project>.<agent name>`, so two open projects
+    /// never share one (ADR 0022). The prefix is fixed for this process
+    /// ([`SessionState::session_prefix`]).
+    pub(crate) fn session_name(&self, agent_name: &str) -> String {
+        format!("{}.{agent_name}", self.sessions.session_prefix)
+    }
+
+    /// An agent's own name, from a session name as the stream gives it back: without this
+    /// project's prefix. A name with no prefix (a session started before ADR 0022, or a
+    /// subagent) is returned as it is.
+    pub(crate) fn bare_name<'a>(&self, session_name: &'a str) -> &'a str {
+        session_name
+            .strip_prefix(self.sessions.session_prefix.as_str())
+            .and_then(|rest| rest.strip_prefix('.'))
+            .unwrap_or(session_name)
+    }
+
+    /// `dovetail-<project>-coordinator`, `dovetail-<project>-task-<id>` (A12), or
+    /// `dovetail-<project>-slice-<name>` for a slice without a task.
+    pub(crate) fn task_list_id(&self, task: Option<TaskId>, name: &str) -> String {
+        let key = self.tracking.project.key();
+        let id = match task {
+            Some(t) => format!("dovetail-{key}-task-{}", t.0),
+            None if name == COORDINATOR => format!("dovetail-{key}-coordinator"),
+            None => format!("dovetail-{key}-slice-{name}"),
+        };
+        id.chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect()
+    }
+
+    /// Memory is read from `/proc` (decision #47): the probe found caps unavailable, so
+    /// sessions have no scope to read.
+    fn proc_fallback(&self) -> bool {
+        matches!(self.sessions.scopes, memory::Scopes::Unavailable(_))
+    }
+
+    /// Whether a running session's memory can be read: from its scope, or from `/proc`.
+    pub(crate) fn sampled(&self) -> bool {
+        let fallback = self.proc_fallback();
+        self.sessions
+            .live
+            .values()
+            .any(|l| l.cgroup.is_some() || (fallback && l.pid.is_some()))
+    }
+
+    /// Reads each session's memory, from its scope or (uncapped) from `/proc`, and tells the UI
+    /// about figures that changed as shown (see [`memory::shown_mb`]). Capped scopes'
+    /// OOM counts are read too, in case the watcher missed a change.
+    pub(crate) fn sample_memory(&mut self) {
+        self.next_sample = tokio::time::Instant::now() + memory::SAMPLE_INTERVAL;
+        let fallback = self.proc_fallback();
+        let parents = if fallback && self.sessions.live.values().any(|l| l.pid.is_some()) {
+            memory::read_parents()
+        } else {
+            Vec::new()
+        };
+        let mut readings = Vec::new();
+        let mut ooms = Vec::new();
+        for (id, live) in &self.sessions.live {
+            if let Some(cgroup) = live.cgroup.as_deref() {
+                readings.push((id.clone(), memory::read_current(cgroup)));
+                if let Some(count) = memory::read_oom_kills(cgroup) {
+                    ooms.push((id.clone(), count));
+                }
+            } else if let Some(pid) = live.pid.filter(|_| fallback) {
+                readings.push((id.clone(), memory::read_tree_rss(pid, &parents)));
+            }
+        }
+        for (id, bytes) in readings {
+            self.set_memory(&id, bytes.map(memory::shown_mb));
+            self.watch_oom(&id);
+        }
+        for (id, count) in ooms {
+            self.oom_count(&id, count);
+        }
+        self.refresh_totals();
+    }
+
+    /// Sets an agent's shown memory. Memory is not stored, so only the UI hears of it.
+    pub(crate) fn set_memory(&mut self, id: &AgentId, mb: Option<u32>) {
+        let Some(row) = self.agents.rows.get_mut(id) else {
+            return;
+        };
+        if row.agent.memory_mb == mb {
+            return;
+        }
+        row.agent.memory_mb = mb;
+        let agent = row.agent.clone();
+        self.emit(Event::Agent(AgentEvent::Upserted(agent)));
+    }
+}
 
 /// The role prompt a tangent reads (`config/roles/tangent.md`, ADR 0017).
 pub(crate) const TANGENT_PROMPT: &str = "tangent";
@@ -122,7 +272,7 @@ pub(crate) struct Live {
 impl Core {
     /// The tools an agent gets.
     pub(crate) fn role_of(&self, id: &AgentId) -> Option<Role> {
-        self.agents.get(id).map(|r| match r.agent.kind {
+        self.agents.rows.get(id).map(|r| match r.agent.kind {
             AgentKind::Coordinator => Role::Coordinator,
             // A tangent is read-only like a side chat, with the same tools (ADR 0017).
             AgentKind::SideChat | AgentKind::Tangent => Role::SideChat,
@@ -136,6 +286,7 @@ impl Core {
     pub(crate) fn agent_by_name(&self, name: &str) -> AgentId {
         let name = self.bare_name(name);
         self.agents
+            .rows
             .values()
             .find(|r| r.agent.name == name)
             .map_or_else(|| AgentId(name.to_owned()), |r| r.agent.id.clone())
@@ -157,11 +308,12 @@ impl Core {
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         let row = self
             .agents
+            .rows
             .get(id)
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         let driver = row.agent.driver;
         let claude_config_dir = if driver == DriverKind::Claude {
-            let home = self.claude.clone()?;
+            let home = self.sessions.claude.clone()?;
             home.explicit.then_some(home.dir)
         } else {
             None
@@ -169,7 +321,8 @@ impl Core {
         let env = if row.agent.kind == AgentKind::Slice {
             let place = self.session_cwd(&row.agent);
             let repo = self.repo_of(id);
-            let recipe = Recipe::load(&self.paths.recipe(self.project.key())).unwrap_or_default();
+            let recipe =
+                Recipe::load(&self.paths.recipe(self.tracking.project.key())).unwrap_or_default();
             let recipe = match &repo {
                 Some(repo) => recipe.for_repo(&repo.name),
                 None => recipe,
@@ -184,14 +337,14 @@ impl Core {
             Vec::new()
         };
         // A session in the coordinator's folder sees every repo (ADR 0021 point 3).
-        let add_dirs = if cwd == self.project.coordinator_folder(&self.paths) {
-            self.project.attached()
+        let add_dirs = if cwd == self.tracking.project.coordinator_folder(&self.paths) {
+            self.tracking.project.attached()
         } else {
             Vec::new()
         };
         let (model, effort) = self.launch_model(row);
         let launch = launch::Launch {
-            project_key: self.project.key().to_owned(),
+            project_key: self.tracking.project.key().to_owned(),
             agent_id: id.0.clone(),
             name: self.session_name(&row.agent.name),
             role,
@@ -207,7 +360,7 @@ impl Core {
                 .task_list_id
                 .clone()
                 .unwrap_or_else(|| self.task_list_id(row.agent.task, &row.agent.name)),
-            socket: self.socket.clone(),
+            socket: self.mcp.socket.clone(),
             exe: self.options.exe.clone(),
             model,
             effort,
@@ -216,8 +369,9 @@ impl Core {
         };
         let mut spec =
             launch::spec(&self.paths, &launch, driver).map_err(SessionError::LaunchFiles)?;
-        let unit = crate::memory::unit_name(self.project.key(), &id.0);
+        let unit = crate::memory::unit_name(self.tracking.project.key(), &id.0);
         spec.systemd_scope = self
+            .sessions
             .scopes
             .scope(&unit, crate::memory::cap_bytes(self.cap_gb(id)));
         Ok(spec)
@@ -227,7 +381,7 @@ impl Core {
     /// `cwd` (or its canonical form, which Claude Code may report instead), so it cannot be
     /// resumed from `cwd`. `false` when nothing is recorded.
     pub(crate) fn filed_elsewhere(&self, id: &AgentId, cwd: &std::path::Path) -> bool {
-        let Some(row) = self.agents.get(id) else {
+        let Some(row) = self.agents.rows.get(id) else {
             return false;
         };
         if row.agent.driver != DriverKind::Claude {
@@ -261,12 +415,12 @@ impl Core {
         cwd: &std::path::Path,
     ) -> Result<(crate::db::AgentRow, String, bool), SessionError> {
         if driver == DriverKind::Claude {
-            let home = self.claude.clone()?;
+            let home = self.sessions.claude.clone()?;
             // Only sessions in the coordinator's folder moved (ADR 0021); a slice's never does,
             // and is never started fresh on a guess about its path.
-            let elsewhere = cwd == self.project.coordinator_folder(&self.paths)
+            let elsewhere = cwd == self.tracking.project.coordinator_folder(&self.paths)
                 && self.filed_elsewhere(id, cwd);
-            let Some(row) = self.agents.get_mut(id) else {
+            let Some(row) = self.agents.rows.get_mut(id) else {
                 return Err(SessionError::NoAgent(id.0.clone()));
             };
             // A session is resumed only under the Claude home it was recorded with: its transcript
@@ -314,7 +468,7 @@ impl Core {
             }
             Ok((row, session_id, resume))
         } else {
-            let Some(row) = self.agents.get_mut(id) else {
+            let Some(row) = self.agents.rows.get_mut(id) else {
                 return Err(SessionError::NoAgent(id.0.clone()));
             };
             let session_id = row
@@ -337,6 +491,7 @@ impl Core {
         self.check_lock(id)?;
         let driver = self
             .agents
+            .rows
             .get(id)
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?
             .agent
@@ -348,17 +503,17 @@ impl Core {
             .cloned()
             .ok_or(SessionError::NoDriver(driver))?;
         // The coordinator's own folder exists before its first start (ADR 0021 point 3).
-        if cwd == self.project.coordinator_folder(&self.paths)
+        if cwd == self.tracking.project.coordinator_folder(&self.paths)
             && let Err(e) = std::fs::create_dir_all(&cwd)
         {
             tracing::warn!("creating {}: {e}", cwd.display());
         }
         let (row, session_id, resume) = self.resume_plan(driver, id, &cwd)?;
         let spec = self.session_spec(id, cwd, worktree, session_id, resume)?;
-        let unit = crate::memory::unit_name(self.project.key(), &id.0);
-        let cgroup = self.scopes.cgroup(&unit);
+        let unit = crate::memory::unit_name(self.tracking.project.key(), &id.0);
+        let cgroup = self.sessions.scopes.cgroup(&unit);
         if let Some(cgroup) = &cgroup
-            && !self.live.contains_key(id)
+            && !self.sessions.live.contains_key(id)
         {
             crate::memory::clear_stale_scope(cgroup, &unit);
         }
@@ -371,8 +526,8 @@ impl Core {
             })?;
         let mut events = session.take_events();
         let pid = session.pid();
-        self.generation += 1;
-        let generation = self.generation;
+        self.sessions.generation += 1;
+        let generation = self.sessions.generation;
         let inputs = self.inputs.clone();
         let agent = id.clone();
         tokio::spawn(async move {
@@ -387,7 +542,7 @@ impl Core {
                 }
             }
         });
-        self.live.insert(
+        self.sessions.live.insert(
             id.clone(),
             Live {
                 session,
@@ -434,6 +589,7 @@ impl Core {
     pub(crate) fn cap_gb(&self, id: &AgentId) -> u32 {
         let coordinator = self
             .agents
+            .rows
             .get(id)
             .is_some_and(|r| r.agent.kind == AgentKind::Coordinator);
         if coordinator {
@@ -445,21 +601,22 @@ impl Core {
 
     /// Makes sure agent `id` has a running session, resuming it if needed.
     pub(crate) fn ensure_live(&mut self, id: &AgentId) -> Result<(), SessionError> {
-        if self.live.contains_key(id) {
+        if self.sessions.live.contains_key(id) {
             return Ok(());
         }
         let row = self
             .agents
+            .rows
             .get(id)
             .cloned()
             .ok_or_else(|| SessionError::NoAgent(id.0.clone()))?;
         match row.agent.kind {
             AgentKind::Coordinator => {
-                let cwd = self.project.coordinator_folder(&self.paths);
+                let cwd = self.tracking.project.coordinator_folder(&self.paths);
                 self.launch(id, cwd, None)?;
                 // Signals held while it could not be woken, unless its last turn was cut off:
                 // then they wait for the user's next message (decision 1: never continue).
-                if !self.notes_wait_for_user {
+                if !self.agents.notes_wait_for_user {
                     self.deliver_notes();
                 }
                 Ok(())
@@ -505,7 +662,7 @@ impl Core {
             shown,
             shown_text,
             attachments,
-            crate::service::EntryTag::ByKind,
+            crate::engine::EntryTag::ByKind,
         )
     }
 
@@ -517,11 +674,11 @@ impl Core {
         shown: EntryKind,
         shown_text: String,
         attachments: Vec<Attachment>,
-        tag: crate::service::EntryTag,
+        tag: crate::engine::EntryTag,
     ) -> Result<(), SessionError> {
         self.ensure_live(id)?;
         let name = self.name_of(id);
-        let Some(live) = self.live.get_mut(id) else {
+        let Some(live) = self.sessions.live.get_mut(id) else {
             return Err(SessionError::NotRunning(id.0.clone()));
         };
         live.session
@@ -541,7 +698,7 @@ impl Core {
         attachments: Vec<Attachment>,
         effort: Option<dovetail_api::tracking::effort::EffortId>,
     ) {
-        if self.live.get(id).is_some_and(|l| l.setting_up) {
+        if self.sessions.live.get(id).is_some_and(|l| l.setting_up) {
             self.fail("this slice is still setting up");
             return;
         }
@@ -551,6 +708,7 @@ impl Core {
         }
         if self
             .agents
+            .rows
             .get(id)
             .is_some_and(|r| r.agent.kind == AgentKind::Ask)
         {
@@ -572,8 +730,8 @@ impl Core {
         });
         // The user writes to a coordinator whose turn was cut off: the notes held since then go
         // with this message (decision 1 of 2026-11-06).
-        if id.0 == COORDINATOR && self.notes_wait_for_user {
-            self.notes_wait_for_user = false;
+        if id.0 == COORDINATOR && self.agents.notes_wait_for_user {
+            self.agents.notes_wait_for_user = false;
             if let Err(message) = self.ensure_live(id) {
                 self.fail(message);
                 return;
@@ -596,12 +754,12 @@ impl Core {
     /// every one was sent.
     pub(crate) fn deliver_notes(&mut self) {
         let id = AgentId(COORDINATOR.into());
-        let notes = std::mem::take(&mut self.coordinator_notes);
+        let notes = std::mem::take(&mut self.agents.coordinator_notes);
         if notes.is_empty() {
             return;
         }
-        let Some(live) = self.live.get_mut(&id) else {
-            self.coordinator_notes = notes;
+        let Some(live) = self.sessions.live.get_mut(&id) else {
+            self.agents.coordinator_notes = notes;
             return;
         };
         let mut sent = 0;
@@ -619,7 +777,7 @@ impl Core {
             self.persist("delivered coordinator notes", self.db.clear_notes());
         } else {
             // Keep them all on record; the next start tries again.
-            self.coordinator_notes = notes;
+            self.agents.coordinator_notes = notes;
         }
         self.refresh_status(&id);
     }
@@ -661,23 +819,24 @@ impl Core {
     pub(crate) fn coordinator_wakeable(&self) -> bool {
         let id = AgentId(COORDINATOR.into());
         let wakeable = !self.locked(&id)
-            && (self.live.contains_key(&id)
+            && (self.sessions.live.contains_key(&id)
                 || self
                     .agents
+                    .rows
                     .get(&id)
                     .is_some_and(|r| r.agent.status == AgentStatus::Idle));
-        self.quitting.is_none() && wakeable && !self.notes_wait_for_user
+        self.quitting.is_none() && wakeable && !self.agents.notes_wait_for_user
     }
 
     /// Holds a signal for a coordinator that cannot be woken now; it goes when its session next
     /// starts.
     pub(crate) fn hold_for_coordinator(&mut self, text: String) {
         self.persist("a coordinator note", self.db.add_note(text.clone()));
-        self.coordinator_notes.push(text);
+        self.agents.coordinator_notes.push(text);
     }
 
     pub(crate) fn interrupt(&mut self, id: &AgentId) {
-        let Some(live) = self.live.get_mut(id) else {
+        let Some(live) = self.sessions.live.get_mut(id) else {
             self.fail(format!("{} is not running", id.0));
             return;
         };
@@ -699,7 +858,7 @@ impl Core {
         id: &AgentId,
         request: dovetail_api::agents::mcp::McpRequest,
     ) {
-        let target = match self.agents.get(id) {
+        let target = match self.agents.rows.get(id) {
             Some(row) => match (&row.agent.kind, &row.agent.parent) {
                 (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
                 _ => id.clone(),
@@ -710,7 +869,7 @@ impl Core {
             }
         };
         // The menu waits for an answer, so a request that cannot go gets a failure reply too.
-        let refused = match self.live.get(&target) {
+        let refused = match self.sessions.live.get(&target) {
             None => Some(format!("{} is not running", target.0)),
             Some(live) => live
                 .session
@@ -730,7 +889,7 @@ impl Core {
     /// `<leader>sm`: the next mode, switched on the live process with no restart. A session not
     /// running starts in it next time.
     pub(crate) fn cycle_mode(&mut self, id: &AgentId) {
-        let Some(row) = self.agents.get(id) else {
+        let Some(row) = self.agents.rows.get(id) else {
             self.fail(format!("no agent {}", id.0));
             return;
         };
@@ -739,7 +898,7 @@ impl Core {
             (AgentKind::Subagent { .. }, Some(parent)) => parent.clone(),
             _ => id.clone(),
         };
-        let Some(target_row) = self.agents.get(&target) else {
+        let Some(target_row) = self.agents.rows.get(&target) else {
             return;
         };
         // A side chat always runs in `dontAsk` with its read-only allow-list; auto mode would
@@ -756,7 +915,7 @@ impl Core {
         }
         let current = target_row.agent.permission_mode;
         let next = state::next_mode(current);
-        if let Some(live) = self.live.get(&target)
+        if let Some(live) = self.sessions.live.get(&target)
             && let Err(e) = live.session.set_permission_mode(state::to_cli(next))
         {
             self.fail(e.to_string());
@@ -768,7 +927,7 @@ impl Core {
 
     /// One event from a session.
     pub(crate) async fn on_driver(&mut self, agent: AgentId, generation: u64, event: DriverEvent) {
-        if self.live.get(&agent).map(|l| l.generation) != Some(generation) {
+        if self.sessions.live.get(&agent).map(|l| l.generation) != Some(generation) {
             return; // an earlier process of this agent
         }
         // Research capture watches every origin and sends nothing to any session (R1).
@@ -792,8 +951,8 @@ impl Core {
                         argument_hint: c.argument_hint,
                     })
                     .collect();
-                if self.commands.get(&agent) != Some(&commands) {
-                    self.commands.insert(agent.clone(), commands.clone());
+                if self.agents.commands.get(&agent) != Some(&commands) {
+                    self.agents.commands.insert(agent.clone(), commands.clone());
                     self.emit(dovetail_api::Event::Agent(AgentEvent::CommandsChanged {
                         agent,
                         commands,
@@ -818,6 +977,7 @@ impl Core {
             DriverEvent::ToolResult(result) => {
                 self.subagent_tool_result(&agent, &result);
                 if self
+                    .sessions
                     .live
                     .get_mut(&agent)
                     .is_some_and(|l| l.turn.tool_id.as_deref() == Some(result.tool_use_id.as_str()))
@@ -825,6 +985,7 @@ impl Core {
                     self.set_running_tool(&agent, None);
                 }
                 let send = self
+                    .sessions
                     .live
                     .get_mut(&agent)
                     .and_then(|l| l.sends.remove(&result.tool_use_id));
@@ -838,7 +999,7 @@ impl Core {
                         .and_then(|v| v.as_str())
                         .map(str::to_owned);
                     let to_id = self.agent_by_name(&to);
-                    let from = self.agents.get(&agent).map(|r| r.agent.name.clone());
+                    let from = self.agents.rows.get(&agent).map(|r| r.agent.name.clone());
                     let to = self.bare_name(&to).to_owned();
                     self.activity(
                         ActivityKind::Message,
@@ -854,7 +1015,7 @@ impl Core {
                 message_origin: None,
                 ..
             } => {
-                if let Some(live) = self.live.get_mut(&agent) {
+                if let Some(live) = self.sessions.live.get_mut(&agent) {
                     live.turn.input_replayed();
                 }
             }
@@ -866,6 +1027,7 @@ impl Core {
                     let from = self.agent_by_name(&peer.name);
                     let subagent = self
                         .agents
+                        .rows
                         .get(&from)
                         .is_some_and(|r| matches!(r.agent.kind, AgentKind::Subagent { .. }));
                     let sender = self.bare_name(&peer.name).to_owned();
@@ -877,7 +1039,7 @@ impl Core {
                 }
             }
             DriverEvent::BackgroundTasksChanged(tasks) => {
-                if let Some(live) = self.live.get_mut(&agent) {
+                if let Some(live) = self.sessions.live.get_mut(&agent) {
                     live.turn.background = tasks.len();
                 }
                 self.refresh_status(&agent);
@@ -940,6 +1102,7 @@ impl Core {
             DriverKind::Claude => {
                 let session_id = self
                     .agents
+                    .rows
                     .get(agent)
                     .and_then(|r| r.session_id.clone())
                     .unwrap_or_else(|| init.session_id.clone());
@@ -966,9 +1129,10 @@ impl Core {
     fn on_init(&mut self, agent: &AgentId, init: InitInfo) {
         let driver = self
             .agents
+            .rows
             .get(agent)
             .map_or(DriverKind::Claude, |r| r.agent.driver);
-        let Some(live) = self.live.get_mut(agent) else {
+        let Some(live) = self.sessions.live.get_mut(agent) else {
             return;
         };
         // Claude Code sends an init at the start of every turn, including one it starts itself.
@@ -987,8 +1151,8 @@ impl Core {
             // The process runs, so its scope exists.
             self.watch_oom(agent);
             let cwd = init.cwd.as_deref().map(PathBuf::from).unwrap_or_else(|| {
-                self.agents.get(agent).map_or_else(
-                    || self.project.coordinator_folder(&self.paths),
+                self.agents.rows.get(agent).map_or_else(
+                    || self.tracking.project.coordinator_folder(&self.paths),
                     |r| self.session_cwd(&r.agent),
                 )
             });
@@ -1028,8 +1192,8 @@ impl Core {
                     id: WarningId(format!("mode-{}", agent.0)),
                     text,
                 };
-                self.warnings.retain(|w| w.id != warning.id);
-                self.warnings.push(warning.clone());
+                self.activity.warnings.retain(|w| w.id != warning.id);
+                self.activity.warnings.push(warning.clone());
                 self.emit(dovetail_api::Event::Status(StatusEvent::WarningSet(
                     warning,
                 )));
@@ -1038,6 +1202,7 @@ impl Core {
             if setting_up {
                 let expected = self
                     .agents
+                    .rows
                     .get(agent)
                     .and_then(|r| r.agent.worktree.as_ref().map(|w| w.path.clone()));
                 if expected.is_some_and(|w| {
@@ -1057,6 +1222,7 @@ impl Core {
         message_id: Option<String>,
     ) -> dovetail_api::agents::conversation::EntryId {
         if let Some(s) = self
+            .sessions
             .live
             .get(agent)
             .and_then(|l| l.turn.streaming.as_ref())
@@ -1065,7 +1231,7 @@ impl Core {
             return s.entry;
         }
         let entry = self.add_entry(agent, EntryKind::Assistant, String::new());
-        if let Some(live) = self.live.get_mut(agent) {
+        if let Some(live) = self.sessions.live.get_mut(agent) {
             live.turn.streaming = Some(Streaming {
                 message_id,
                 entry,
@@ -1096,6 +1262,7 @@ impl Core {
             let text = texts.join("\n\n");
             let entry = self.streaming_entry(agent, message.message_id.clone());
             let confirmed = match self
+                .sessions
                 .live
                 .get_mut(agent)
                 .and_then(|l| l.turn.streaming.as_mut())
@@ -1111,7 +1278,7 @@ impl Core {
             };
             // The complete message wins over the deltas; it is also what gets stored.
             self.set_entry_text(agent, entry, confirmed.clone());
-            if let Some(live) = self.live.get_mut(agent) {
+            if let Some(live) = self.sessions.live.get_mut(agent) {
                 live.turn.last_text = confirmed;
             }
         }
@@ -1124,7 +1291,7 @@ impl Core {
                     arg: tool_arg(&input),
                 }),
             );
-            if let Some(live) = self.live.get_mut(agent) {
+            if let Some(live) = self.sessions.live.get_mut(agent) {
                 live.turn.tool_id = Some(id.clone());
             }
             if subagent::launches_subagent(&name) {
@@ -1135,12 +1302,12 @@ impl Core {
                 if let (Some(to), Some(text)) = (
                     field("to").or_else(|| field("recipient")),
                     field("message").or_else(|| field("content")),
-                ) && let Some(live) = self.live.get_mut(agent)
+                ) && let Some(live) = self.sessions.live.get_mut(agent)
                 {
                     live.sends.insert(id, PendingSend { to, text });
                 }
             }
-            let (entry, line) = match self.live.get_mut(agent) {
+            let (entry, line) = match self.sessions.live.get_mut(agent) {
                 Some(live) => {
                     // A tool call ends the text before it: later text is a new entry.
                     live.turn.streaming = None;
@@ -1153,7 +1320,7 @@ impl Core {
                 Some(entry) => self.set_entry_text(agent, entry, line),
                 None => {
                     let entry = self.add_entry(agent, EntryKind::ToolSummary, line);
-                    if let Some(live) = self.live.get_mut(agent) {
+                    if let Some(live) = self.sessions.live.get_mut(agent) {
                         live.turn.tools.entry = Some(entry);
                     }
                 }
@@ -1164,7 +1331,7 @@ impl Core {
     /// Shows (or clears) the tool the session is running. Shown to the UI only, never stored:
     /// it changes with every tool call.
     fn set_running_tool(&mut self, agent: &AgentId, tool: Option<RunningTool>) {
-        let Some(row) = self.agents.get_mut(agent) else {
+        let Some(row) = self.agents.rows.get_mut(agent) else {
             return;
         };
         if row.agent.tool == tool {
@@ -1179,13 +1346,14 @@ impl Core {
         self.set_running_tool(agent, None);
         let driver = self
             .agents
+            .rows
             .get(agent)
             .map_or(DriverKind::Claude, |r| r.agent.driver);
         if driver == DriverKind::Agy {
             self.refresh_agy_usage();
             self.parent_turn_ended(agent, !result.is_error);
         }
-        let Some(live) = self.live.get_mut(agent) else {
+        let Some(live) = self.sessions.live.get_mut(agent) else {
             return;
         };
         let interrupted = live.turn.interrupting || result.subtype == "error_during_execution";
@@ -1235,11 +1403,12 @@ impl Core {
     }
 
     fn on_exit(&mut self, agent: &AgentId, info: ExitInfo) {
-        let Some(live) = self.live.remove(agent) else {
+        let Some(live) = self.sessions.live.remove(agent) else {
             return;
         };
         let driver = self
             .agents
+            .rows
             .get(agent)
             .map_or(DriverKind::Claude, |r| r.agent.driver);
         // Before the subagents are marked stopped: an OOM kill lists the ones in flight.

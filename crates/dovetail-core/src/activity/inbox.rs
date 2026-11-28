@@ -15,7 +15,7 @@ use dovetail_driver::{ControlAnswer, ControlId, PermissionRequest};
 use serde_json::Value;
 
 use crate::db::now_ms;
-use crate::service::{Core, InboxEntry};
+use crate::engine::{Core, InboxEntry};
 use crate::sessions::SessionError;
 use crate::slice::{SliceRequest, SliceStart};
 
@@ -138,23 +138,23 @@ impl Core {
     /// Puts an item in Needs you, stores it, and updates the agent's status.
     pub(crate) fn raise(&mut self, agent: &AgentId, kind: InboxKind, waiter: Waiter) -> InboxId {
         let item = InboxItem {
-            id: InboxId(self.next_inbox),
+            id: InboxId(self.activity.next_inbox),
             agent: agent.clone(),
             at_ms: now_ms(),
             kind,
         };
-        self.next_inbox += 1;
+        self.activity.next_inbox += 1;
         let id = item.id;
         self.persist("an inbox item", self.db.insert_inbox(item.clone()));
         self.emit(Event::Inbox(InboxEvent::Upserted(item.clone())));
-        self.inbox.insert(id, InboxEntry { item, waiter });
+        self.activity.inbox.insert(id, InboxEntry { item, waiter });
         self.refresh_status(agent);
         id
     }
 
     /// Takes an item out of Needs you. The caller acts on its waiter.
     pub(crate) fn resolve(&mut self, id: InboxId, answer: Option<String>) -> Option<InboxEntry> {
-        let entry = self.inbox.remove(&id)?;
+        let entry = self.activity.inbox.remove(&id)?;
         self.persist("an inbox answer", self.db.resolve_inbox(id, answer));
         self.emit(Event::Inbox(InboxEvent::Resolved { id }));
         self.refresh_status(&entry.item.agent);
@@ -164,6 +164,7 @@ impl Core {
     /// The agent's turn ended: at most one such item per agent, the newest (ADR 0001).
     pub(crate) fn finished_turn(&mut self, agent: &AgentId, preview: String) {
         let old: Vec<InboxId> = self
+            .activity
             .inbox
             .values()
             .filter(|p| {
@@ -177,6 +178,7 @@ impl Core {
         // Reading mode's Ask answers in the column the user asked in (ADR 0018).
         let ask = self
             .agents
+            .rows
             .get(agent)
             .is_some_and(|r| r.agent.kind == dovetail_api::agents::agent::AgentKind::Ask);
         if ask {
@@ -220,7 +222,7 @@ impl Core {
 
     /// Claude Code withdrew a request (`control_cancel_request`).
     pub(crate) fn permission_cancelled(&mut self, agent: &AgentId, control: &ControlId) {
-        let found = self.inbox.values().find_map(|p| match &p.waiter {
+        let found = self.activity.inbox.values().find_map(|p| match &p.waiter {
             Waiter::Control { control: c, .. } if &p.item.agent == agent && c == control => {
                 Some(p.item.id)
             }
@@ -234,6 +236,7 @@ impl Core {
     /// A session ended: its held requests can no longer be answered.
     pub(crate) fn drop_session_items(&mut self, agent: &AgentId) {
         let held: Vec<InboxId> = self
+            .activity
             .inbox
             .values()
             .filter(|p| &p.item.agent == agent && matches!(p.waiter, Waiter::Control { .. }))
@@ -246,7 +249,7 @@ impl Core {
 
     /// `y`, `A`, `d`, `D` on a Permission item.
     pub(crate) async fn answer_permission(&mut self, id: InboxId, answer: PermissionAnswer) {
-        let Some(entry) = self.inbox.get(&id) else {
+        let Some(entry) = self.activity.inbox.get(&id) else {
             self.fail(format!("no inbox item {}", id.0));
             return;
         };
@@ -277,7 +280,7 @@ impl Core {
                 )
             }
         };
-        let tool = match &self.inbox[&id].item.kind {
+        let tool = match &self.activity.inbox[&id].item.kind {
             InboxKind::Permission { tool, .. } => tool.clone(),
             _ => String::new(),
         };
@@ -318,7 +321,7 @@ impl Core {
                         ControlAnswer::deny(text)
                     }
                 };
-                let sent = match self.live.get(&agent) {
+                let sent = match self.sessions.live.get(&agent) {
                     Some(live) => live
                         .session
                         .answer_control(control, reply)
@@ -374,7 +377,7 @@ impl Core {
 
     /// `r` on a Question item (or any item: B22 sends a normal message to its agent).
     pub(crate) async fn answer_question(&mut self, id: InboxId, text: String) {
-        let Some(entry) = self.inbox.get(&id) else {
+        let Some(entry) = self.activity.inbox.get(&id) else {
             self.fail(format!("no inbox item {}", id.0));
             return;
         };
@@ -403,7 +406,7 @@ impl Core {
             }
             _ => {
                 // An answer continues the thread the agent is on: it keeps the agent's tag.
-                let effort = self.effort_tags.get(&agent).copied();
+                let effort = self.tracking.effort_tags.get(&agent).copied();
                 self.prompt(&agent, text, Vec::new(), effort).await;
             }
         }
@@ -420,7 +423,7 @@ impl Core {
         let agent = entry.item.agent;
         match entry.waiter {
             Waiter::Control { control, .. } => {
-                if let Some(live) = self.live.get(&agent) {
+                if let Some(live) = self.sessions.live.get(&agent) {
                     let _ = live.session.answer_control(
                         control,
                         ControlAnswer::deny("The user dismissed this request."),
@@ -459,6 +462,7 @@ impl Core {
             return;
         }
         let open: Vec<InboxId> = self
+            .activity
             .inbox
             .values()
             .filter(|p| {
@@ -483,7 +487,7 @@ impl Core {
         shown: String,
     ) -> Result<(), SessionError> {
         self.ensure_live(agent)?;
-        let Some(live) = self.live.get_mut(agent) else {
+        let Some(live) = self.sessions.live.get_mut(agent) else {
             return Err(SessionError::NotRunning(agent.0.clone()));
         };
         live.session

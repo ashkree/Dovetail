@@ -21,28 +21,28 @@ use dovetail_api::tracking::{
 use dovetail_tools::{SocketResponseBody, coordination::ClaimCriterion};
 
 use crate::db::{CriterionStep, DbError};
-use crate::service::Core;
+use crate::engine::Core;
 use crate::tools::{error, ok};
 
 impl Core {
     /// Reads every effort, and each agent's effort tag from its conversation: the tag of the
     /// last message the user sent it.
     pub(crate) async fn load_efforts(&mut self) -> Result<(), DbError> {
-        self.efforts = self
+        self.tracking.efforts = self
             .db
             .load_efforts()
             .await?
             .into_iter()
             .map(|e| (e.id, e))
             .collect();
-        for (agent, tail) in &self.tails {
+        for (agent, tail) in &self.agents.tails {
             let last_user = tail
                 .entries
                 .iter()
                 .rev()
                 .find(|e| e.kind == EntryKind::User);
             if let Some(effort) = last_user.and_then(|e| e.effort) {
-                self.effort_tags.insert(agent.clone(), effort);
+                self.tracking.effort_tags.insert(agent.clone(), effort);
             }
         }
         Ok(())
@@ -54,7 +54,7 @@ impl Core {
     pub(crate) fn entry_tag(&self, agent: &AgentId, kind: EntryKind) -> Option<EffortId> {
         match kind {
             EntryKind::User | EntryKind::Assistant | EntryKind::ToolSummary => {
-                self.effort_tags.get(agent).copied()
+                self.tracking.effort_tags.get(agent).copied()
             }
             EntryKind::Notice | EntryKind::AgentMessage => None,
         }
@@ -64,16 +64,16 @@ impl Core {
     /// command failed, when it names no effort of this project.
     pub(crate) fn tag_prompt(&mut self, agent: &AgentId, effort: Option<EffortId>) -> bool {
         match effort {
-            Some(id) if !self.efforts.contains_key(&id) => {
+            Some(id) if !self.tracking.efforts.contains_key(&id) => {
                 self.fail(format!("no effort {}", id.0));
                 false
             }
             Some(id) => {
-                self.effort_tags.insert(agent.clone(), id);
+                self.tracking.effort_tags.insert(agent.clone(), id);
                 true
             }
             None => {
-                self.effort_tags.remove(agent);
+                self.tracking.effort_tags.remove(agent);
                 true
             }
         }
@@ -83,7 +83,7 @@ impl Core {
     fn effort_changed(&mut self, result: Result<Effort, DbError>) -> Option<Effort> {
         match result {
             Ok(effort) => {
-                self.efforts.insert(effort.id, effort.clone());
+                self.tracking.efforts.insert(effort.id, effort.clone());
                 self.emit(Event::Effort(EffortEvent::Upserted(effort.clone())));
                 Some(effort)
             }
@@ -158,10 +158,11 @@ impl Core {
             .await;
         match result {
             Ok(effort) => {
-                self.efforts.insert(effort.id, effort.clone());
+                self.tracking.efforts.insert(effort.id, effort.clone());
                 self.emit(Event::Effort(EffortEvent::Upserted(effort.clone())));
                 let who = self
                     .agents
+                    .rows
                     .get(agent)
                     .map_or_else(|| agent.0.clone(), |r| r.agent.name.clone());
                 self.criterion_activity(&effort, id, &format!("claimed met by {who}"));

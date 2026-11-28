@@ -58,7 +58,7 @@ impl Core {
         effort: Option<ReasoningEffort>,
         handoff: bool,
     ) {
-        let Some(row) = self.agents.get(id) else {
+        let Some(row) = self.agents.rows.get(id) else {
             self.fail(format!("no agent {}", id.0));
             return;
         };
@@ -66,15 +66,15 @@ impl Core {
             self.fail("only the coordinator can switch driver");
             return;
         }
-        if self.live.get(id).is_some_and(|l| l.turn.running) {
+        if self.sessions.live.get(id).is_some_and(|l| l.turn.running) {
             self.fail("turn running; try again when it finishes");
             return;
         }
-        if self.closing.is_some() {
+        if self.agents.closing.is_some() {
             self.fail("already closing the day: waiting for the coordinator's handoff");
             return;
         }
-        if self.pending_fresh.is_some() {
+        if self.agents.pending_fresh.is_some() {
             self.fail("a fresh coordinator is starting");
             return;
         }
@@ -100,7 +100,7 @@ impl Core {
             return;
         }
         if let Some(wanted) = effort
-            && let Some(catalog) = self.model_catalog.get(&driver)
+            && let Some(catalog) = self.agents.model_catalog.get(&driver)
             && let Some(info) = catalog
                 .iter()
                 .find(|m| m.value == model || m.resolved.as_deref() == Some(model.as_str()))
@@ -119,7 +119,7 @@ impl Core {
             model_choice: ModelChoice { model, effort },
         };
         let has_run = row.transcript_path.is_some();
-        let is_live = self.live.contains_key(id);
+        let is_live = self.sessions.live.contains_key(id);
         if !has_run && !is_live {
             self.update_agent(id, |row| apply_switch(row, &target));
             self.notice(

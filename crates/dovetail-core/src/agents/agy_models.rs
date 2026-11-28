@@ -9,7 +9,7 @@ use dovetail_api::agents::model::{DriverKind, ModelEvent, ReasoningEffort};
 use dovetail_driver::{ModelInfo, UsageQuery};
 use serde_json::{Value, json};
 
-use crate::service::{Core, Input};
+use crate::engine::{Core, Input};
 
 /// The families the spike found (`docs/spikes/agy-headless.md`), with the efforts each takes:
 /// what the picker shows on a first run, until `agy models` answers.
@@ -98,7 +98,7 @@ impl Core {
         let models = saved
             .filter(|m| !m.is_empty())
             .unwrap_or_else(fallback_models);
-        self.model_catalog.insert(DriverKind::Agy, models);
+        self.agents.model_catalog.insert(DriverKind::Agy, models);
     }
 
     /// Asks agy for its models in the background; the answer arrives as an [`Input`].
@@ -124,10 +124,12 @@ impl Core {
     ) {
         match result {
             Ok(models) if !models.is_empty() => {
-                if self.model_catalog.get(&DriverKind::Agy) == Some(&models) {
+                if self.agents.model_catalog.get(&DriverKind::Agy) == Some(&models) {
                     return;
                 }
-                self.model_catalog.insert(DriverKind::Agy, models.clone());
+                self.agents
+                    .model_catalog
+                    .insert(DriverKind::Agy, models.clone());
                 self.save_models(DriverKind::Agy, &models);
                 self.emit(Event::Model(ModelEvent::Changed(self.model_options())));
             }

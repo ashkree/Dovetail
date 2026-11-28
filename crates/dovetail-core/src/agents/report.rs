@@ -20,7 +20,7 @@ use dovetail_tools::{
     coordination::{Report, ReportState},
 };
 
-use crate::service::{COORDINATOR, Core, EntryTag};
+use crate::engine::{COORDINATOR, Core, EntryTag};
 use crate::tools::{error, ok};
 
 impl Core {
@@ -31,7 +31,7 @@ impl Core {
         slice: &AgentId,
         report: Report,
     ) -> SocketResponseBody {
-        let Some(row) = self.agents.get(slice) else {
+        let Some(row) = self.agents.rows.get(slice) else {
             return error(format!("unknown agent `{}`", slice.0));
         };
         let name = row.agent.name.clone();
@@ -41,7 +41,7 @@ impl Core {
         };
         // A new report ends the hold on a task the user sent back from review.
         if let Some(task) = &task {
-            self.sent_back.remove(&task.id);
+            self.tracking.sent_back.remove(&task.id);
         }
         let pr = report.pr.map(|n| format!(" (PR #{n})")).unwrap_or_default();
         let body = format!("[{}] {}{pr}", report.state.as_str(), report.summary.trim());

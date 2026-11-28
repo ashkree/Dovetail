@@ -22,7 +22,7 @@ use dovetail_tools::{
 };
 
 use crate::db::{DbError, USER};
-use crate::service::Core;
+use crate::engine::Core;
 use crate::tools::{error, ok};
 
 impl Core {
@@ -133,6 +133,7 @@ impl Core {
         effort: EffortId,
     ) {
         let text = self
+            .agents
             .tails
             .get(&agent)
             .and_then(|t| t.entries.iter().find(|e| e.id == entry))
@@ -173,7 +174,7 @@ impl Core {
     /// tagged, else Unsorted.
     fn tool_effort(&self, agent: &AgentId, named: Option<EffortId>) -> EffortId {
         named
-            .or_else(|| self.effort_tags.get(agent).copied())
+            .or_else(|| self.tracking.effort_tags.get(agent).copied())
             .unwrap_or(UNSORTED_EFFORT)
     }
 

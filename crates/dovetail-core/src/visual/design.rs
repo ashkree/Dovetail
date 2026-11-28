@@ -9,7 +9,7 @@ use dovetail_api::agents::agent::AgentId;
 use dovetail_api::visual::design::{DesignEvent, VariantSet};
 use dovetail_tools::{SocketResponseBody, design::DeclareVariants};
 
-use crate::service::Core;
+use crate::engine::Core;
 use crate::tools::{error, ok};
 
 impl Core {

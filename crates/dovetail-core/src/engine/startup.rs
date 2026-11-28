@@ -4,7 +4,7 @@
 use std::ffi::OsStr;
 use std::time::Duration;
 
-use dovetail_api::status::{Warning, WarningId};
+use dovetail_api::activity::status::{Warning, WarningId};
 
 /// The oldest Claude Code with cross-session messaging (digest §6; `scripts/bootstrap.sh`).
 pub(crate) const MIN_CLAUDE: [u32; 3] = [2, 1, 224];

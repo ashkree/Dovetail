@@ -29,7 +29,7 @@ use dovetail_driver::{ContentBlock, DriverEvent, Origin, TaskEvent, TaskPhase, T
 use serde_json::Value;
 
 use crate::db::{AgentRow, now_ms};
-use crate::service::{Core, Input, new_agent};
+use crate::engine::{Core, Input, new_agent};
 use crate::worktree::{self, SUBAGENT_PREFIX, SubagentCleanup};
 
 /// Finished subagents kept in the tree per parent, newest first; older ones are closed.
@@ -95,7 +95,7 @@ impl Core {
     /// The parent's `Agent` call `tool_use_id` with `input`: a new node under `parent`.
     pub(crate) fn subagent_launched(&mut self, parent: &AgentId, tool_use_id: &str, input: &Value) {
         let id = super::subagent_id(parent, tool_use_id);
-        if self.agents.contains_key(&id) {
+        if self.agents.rows.contains_key(&id) {
             return;
         }
         let field = |k: &str| {
@@ -116,7 +116,7 @@ impl Core {
             .get("run_in_background")
             .and_then(Value::as_bool)
             .unwrap_or_else(|| input.get("TypeName").is_some() || input.get("Role").is_some());
-        let Some(parent_row) = self.agents.get(parent) else {
+        let Some(parent_row) = self.agents.rows.get(parent) else {
             return;
         };
         let mut agent = new_agent(
@@ -145,7 +145,7 @@ impl Core {
             model_choice: None,
             repo: None,
         };
-        self.agents.insert(id.clone(), row);
+        self.agents.rows.insert(id.clone(), row);
         self.save_agent(&id);
     }
 
@@ -159,13 +159,13 @@ impl Core {
         let Some(tool_use_id) = origin.parent_tool_use_id.as_deref() else {
             return;
         };
-        if let (Some(key), Some(live)) = (&origin.agent_id, self.live.get_mut(parent)) {
+        if let (Some(key), Some(live)) = (&origin.agent_id, self.sessions.live.get_mut(parent)) {
             live.subagent_keys
                 .entry(tool_use_id.to_owned())
                 .or_insert_with(|| key.clone());
         }
         let id = super::subagent_id(parent, tool_use_id);
-        if !self.agents.contains_key(&id) {
+        if !self.agents.rows.contains_key(&id) {
             self.subagent_launched(parent, tool_use_id, &Value::Null);
         }
         let last_tool = match event {
@@ -200,7 +200,7 @@ impl Core {
         {
             return;
         }
-        let Some(live) = self.live.get_mut(parent) else {
+        let Some(live) = self.sessions.live.get_mut(parent) else {
             return;
         };
         // Only `task_started` names the task type; later events of a background shell task carry
@@ -219,7 +219,7 @@ impl Core {
             },
         };
         let id = super::subagent_id(parent, &tool_use_id);
-        if !self.agents.contains_key(&id) {
+        if !self.agents.rows.contains_key(&id) {
             let input = serde_json::json!({
                 "description": event.description,
                 "subagent_type": event.subagent_type,
@@ -235,6 +235,7 @@ impl Core {
             .map(PathBuf::from);
         let before = self
             .agents
+            .rows
             .get(&id)
             .and_then(|r| r.agent.progress.as_ref())
             .map_or(0, |p| p.total_tokens);
@@ -303,7 +304,7 @@ impl Core {
     /// A tool result on the parent's own stream: the end of a foreground subagent.
     pub(crate) fn subagent_tool_result(&mut self, parent: &AgentId, result: &ToolResult) {
         let id = super::subagent_id(parent, &result.tool_use_id);
-        let Some(row) = self.agents.get(&id) else {
+        let Some(row) = self.agents.rows.get(&id) else {
             return;
         };
         // A background call's result only says it was launched.
@@ -327,6 +328,7 @@ impl Core {
     pub(crate) fn parent_turn_ended(&mut self, parent: &AgentId, ok: bool) {
         let ids: Vec<AgentId> = self
             .agents
+            .rows
             .values()
             .filter(|r| r.agent.parent.as_ref() == Some(parent) && !finished(&r.agent))
             .map(|r| r.agent.id.clone())
@@ -338,7 +340,7 @@ impl Core {
 
     /// The subagent `id` is over: status, the summary's first line, worktree cleanup, pruning.
     fn subagent_finished(&mut self, parent: &AgentId, id: &AgentId, ok: bool) {
-        let Some(row) = self.agents.get(id) else {
+        let Some(row) = self.agents.rows.get(id) else {
             return;
         };
         if finished(&row.agent) {
@@ -360,7 +362,8 @@ impl Core {
             };
         });
         let key = tool_use_id.and_then(|t| {
-            self.live
+            self.sessions
+                .live
                 .get(parent)
                 .and_then(|l| l.subagent_keys.get(&t).cloned())
         });
@@ -373,11 +376,11 @@ impl Core {
     /// Checks the subagent's worktree `name` on a blocking task and removes it if unchanged.
     fn clean_subagent_worktree(&mut self, id: &AgentId, name: String) {
         // A research project has no repo to have made a worktree in: no git calls.
-        if self.project.is_research() || worktree::validate_name(&name).is_err() {
+        if self.tracking.project.is_research() || worktree::validate_name(&name).is_err() {
             return;
         }
         let paths = self.paths.clone();
-        let key = self.project.key().to_owned();
+        let key = self.tracking.project.key().to_owned();
         let Some(repo) = self.repo_of(id).map(|r| r.path) else {
             return;
         };
@@ -440,6 +443,7 @@ impl Core {
     fn prune_finished_subagents(&mut self, parent: &AgentId) {
         let mut done: Vec<(i64, AgentId)> = self
             .agents
+            .rows
             .values()
             .filter(|r| r.agent.parent.as_ref() == Some(parent) && finished(&r.agent))
             .map(|r| (r.created_ms, r.agent.id.clone()))
@@ -452,10 +456,10 @@ impl Core {
     }
 
     fn close_subagent(&mut self, id: &AgentId) {
-        if self.agents.remove(id).is_none() {
+        if self.agents.rows.remove(id).is_none() {
             return;
         }
-        self.tails.remove(id);
+        self.agents.tails.remove(id);
         self.persist("a closed subagent", self.db.close_agent(id.clone()));
         self.reassign_todos_of(id);
         self.emit(Event::Agent(AgentEvent::Removed(id.clone())));
@@ -465,6 +469,7 @@ impl Core {
     pub(crate) fn close_subagents_of(&mut self, parent: &AgentId) {
         let ids: Vec<AgentId> = self
             .agents
+            .rows
             .values()
             .filter(|r| r.agent.parent.as_ref() == Some(parent))
             .map(|r| r.agent.id.clone())
@@ -478,6 +483,7 @@ impl Core {
     pub(crate) fn subagents_stopped(&mut self, parent: &AgentId) {
         let ids: Vec<AgentId> = self
             .agents
+            .rows
             .values()
             .filter(|r| r.agent.parent.as_ref() == Some(parent) && !finished(&r.agent))
             .map(|r| r.agent.id.clone())

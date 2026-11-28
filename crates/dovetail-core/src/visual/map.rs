@@ -8,8 +8,8 @@ use dovetail_tools::SocketResponseBody;
 use serde_json::{Value, json};
 
 use crate::db::{Drawn, NewMapVersion};
+use crate::engine::Core;
 use crate::mcp::tools::{error, ok};
-use crate::service::Core;
 
 impl Core {
     /// Answers `maps_draw`: the agent-readable report when the map is refused, else
@@ -45,7 +45,7 @@ impl Core {
         let new = NewMapVersion {
             id: valid.requested_id,
             content: valid.content,
-            task: self.agents.get(agent).and_then(|r| r.agent.task),
+            task: self.agents.rows.get(agent).and_then(|r| r.agent.task),
             drawn_by: agent.clone(),
         };
         let kind = new.content.kind;

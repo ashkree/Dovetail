@@ -28,11 +28,11 @@ use serde_json::json;
 use tokio::sync::oneshot;
 
 use crate::db::{AgentRow, DbError, ModelChoice, QueuedSlice, now_ms};
+use crate::engine::{COORDINATOR, Core, Input, new_agent};
 use crate::inbox::Waiter;
 use crate::projects;
 use crate::projects::Repo;
 use crate::recipe::Recipe;
-use crate::service::{COORDINATOR, Core, Input, new_agent};
 use crate::sessions::SessionError;
 use crate::worktree::{self, SUBAGENT_PREFIX, WorktreeError};
 
@@ -157,6 +157,7 @@ pub(crate) fn slice_id(name: &str) -> AgentId {
 impl Core {
     fn open_slices(&self) -> usize {
         self.agents
+            .rows
             .values()
             .filter(|r| r.agent.kind == AgentKind::Slice)
             .count()
@@ -166,10 +167,10 @@ impl Core {
     /// the only one. Refused in a project with no repos, with several and no name, or for a
     /// name the project does not have.
     pub(crate) fn pick_repo(&self, name: Option<&str>) -> Result<Repo, SliceError> {
-        if self.project.is_research() {
+        if self.tracking.project.is_research() {
             return Err(SliceError::ResearchProject);
         }
-        let repos = self.project.repos();
+        let repos = self.tracking.project.repos();
         let known = || {
             repos
                 .iter()
@@ -203,8 +204,8 @@ impl Core {
         if name == COORDINATOR {
             return Err(SliceError::Reserved);
         }
-        let taken = self.agents.values().any(|r| r.agent.name == name)
-            || self.queue.iter().any(|r| r.name == name);
+        let taken = self.agents.rows.values().any(|r| r.agent.name == name)
+            || self.agents.queue.iter().any(|r| r.name == name);
         if taken {
             return Err(SliceError::Taken(name.to_owned()));
         }
@@ -254,7 +255,7 @@ impl Core {
                 driver: request.driver,
             };
             queued.id = self.db.enqueue_slice(queued.clone()).await?;
-            self.queue.push_back(queued);
+            self.agents.queue.push_back(queued);
             return Ok(SliceStart::Queued(name));
         }
         self.start_slice(request).await?;
@@ -264,7 +265,7 @@ impl Core {
     /// Starts queued slices while there is room.
     pub(crate) async fn start_queued(&mut self) {
         while self.open_slices() < self.config.max_slices as usize {
-            let Some(queued) = self.queue.pop_front() else {
+            let Some(queued) = self.agents.queue.pop_front() else {
                 return;
             };
             self.persist("the slice queue", self.db.dequeue_slice(queued.id));
@@ -321,7 +322,7 @@ impl Core {
                 first_prompt.push_str("\n\n");
             }
         }
-        if self.project.repos().len() > 1 {
+        if self.tracking.project.repos().len() > 1 {
             first_prompt.push_str(&format!(
                 "You work in the repo `{}` ({}).\n\n",
                 repo.name,
@@ -335,7 +336,7 @@ impl Core {
         agent.status = AgentStatus::SettingUp;
         if git {
             agent.worktree = Some(WorktreeRef {
-                path: worktree::worktree_path(&self.paths, self.project.key(), &name),
+                path: worktree::worktree_path(&self.paths, self.tracking.project.key(), &name),
                 branch: worktree::branch_name(&name),
             });
         }
@@ -352,7 +353,7 @@ impl Core {
             // An unregistered folder's repo (id 0) is never stored.
             repo: Some(repo.id).filter(|r| r.0 > 0),
         };
-        self.agents.insert(id.clone(), row);
+        self.agents.rows.insert(id.clone(), row);
         self.save_agent(&id);
 
         if let Some(task) = &task {
@@ -374,7 +375,7 @@ impl Core {
             DriverKind::Claude => {
                 let cwd = repo_path;
                 if git {
-                    worktree::clear_hook_outcome(&self.paths, self.project.key(), &name);
+                    worktree::clear_hook_outcome(&self.paths, self.tracking.project.key(), &name);
                 }
                 if let Err(e) = self.launch(&id, cwd, git.then(|| name.clone())) {
                     self.closed(&id);
@@ -389,11 +390,11 @@ impl Core {
             }
             DriverKind::Agy => {
                 if git {
-                    let recipe = Recipe::load(&self.paths.recipe(self.project.key()))
+                    let recipe = Recipe::load(&self.paths.recipe(self.tracking.project.key()))
                         .unwrap_or_default()
                         .for_repo(&repo.name);
                     let paths = self.paths.clone();
-                    let project = self.project.key().to_owned();
+                    let project = self.tracking.project.key().to_owned();
                     let inputs = self.inputs.clone();
                     let agent = id;
                     tokio::task::spawn_blocking(move || {
@@ -438,7 +439,7 @@ impl Core {
             Some(id),
             format!("slice {name} started"),
         );
-        let Some(live) = self.live.get_mut(id) else {
+        let Some(live) = self.sessions.live.get_mut(id) else {
             return Err(SessionError::NotRunning(id.0.clone()).into());
         };
         live.brief = Some(brief);
@@ -453,10 +454,10 @@ impl Core {
         brief: String,
         result: Result<worktree::Created, WorktreeError>,
     ) {
-        let Some(row) = self.agents.get(&agent) else {
+        let Some(row) = self.agents.rows.get(&agent) else {
             return;
         };
-        if row.agent.status != AgentStatus::SettingUp || self.live.contains_key(&agent) {
+        if row.agent.status != AgentStatus::SettingUp || self.sessions.live.contains_key(&agent) {
             return;
         }
         let name = row.agent.name.clone();
@@ -480,11 +481,11 @@ impl Core {
     /// Waits for the worktree hook's outcome off the loop, then reports it as an [`Input`].
     fn watch_setup(&mut self, agent: AgentId, name: String, generation: u64) {
         let (cancel, mut cancelled) = oneshot::channel::<()>();
-        if let Some(live) = self.live.get_mut(&agent) {
+        if let Some(live) = self.sessions.live.get_mut(&agent) {
             live.setup_cancel = Some(cancel);
         }
         let paths = self.paths.clone();
-        let key = self.project.key().to_owned();
+        let key = self.tracking.project.key().to_owned();
         let inputs = self.inputs.clone();
         tokio::spawn(async move {
             let deadline = tokio::time::Instant::now() + SETUP_TIMEOUT;
@@ -521,6 +522,7 @@ impl Core {
         outcome: Result<std::path::PathBuf, SetupFailure>,
     ) {
         let waiting = self
+            .sessions
             .live
             .get(&agent)
             .is_some_and(|l| l.generation == generation && l.setting_up);
@@ -535,7 +537,7 @@ impl Core {
 
     /// The worktree is ready: send the brief and tell the coordinator (ADR 0004).
     pub(crate) fn slice_ready(&mut self, agent: &AgentId) {
-        let Some(live) = self.live.get_mut(agent) else {
+        let Some(live) = self.sessions.live.get_mut(agent) else {
             return;
         };
         live.setting_up = false;
@@ -561,6 +563,7 @@ impl Core {
         let session = self.session_name(&name);
         let msg = if self
             .agents
+            .rows
             .get(agent)
             .is_some_and(|r| r.agent.driver == DriverKind::Agy)
         {
@@ -573,7 +576,7 @@ impl Core {
 
     /// Setup failed: no first prompt, an inbox error, and the coordinator is told.
     pub(crate) fn setup_failed(&mut self, agent: &AgentId, reason: String) {
-        if let Some(live) = self.live.get_mut(agent) {
+        if let Some(live) = self.sessions.live.get_mut(agent) {
             live.setting_up = false;
             live.setup_cancel = None;
             live.brief = None;
@@ -604,11 +607,12 @@ impl Core {
             .worktree
             .as_ref()
             .and_then(|w| worktree::project_of(&self.paths, &w.path))
-            .unwrap_or_else(|| self.project.key().to_owned())
+            .unwrap_or_else(|| self.tracking.project.key().to_owned())
     }
 
     pub(crate) fn name_of(&self, agent: &AgentId) -> String {
         self.agents
+            .rows
             .get(agent)
             .map_or_else(|| agent.0.clone(), |r| r.agent.name.clone())
     }
@@ -617,7 +621,7 @@ impl Core {
     /// worktree, so it is just stopped and forgotten (ADR 0011).
     /// `confirmed`: the user has already agreed to lose unsaved work.
     pub(crate) fn close_slice(&mut self, agent: &AgentId, confirmed: bool) {
-        let kind = self.agents.get(agent).map(|r| r.agent.kind);
+        let kind = self.agents.rows.get(agent).map(|r| r.agent.kind);
         if !matches!(
             kind,
             Some(AgentKind::Slice | AgentKind::SideChat | AgentKind::Ask | AgentKind::Tangent)
@@ -634,12 +638,13 @@ impl Core {
         // no slice turn ends in between to show the merge (ADR 0024).
         if self
             .agents
+            .rows
             .get(agent)
             .is_some_and(|r| r.agent.task.is_some())
         {
             self.refresh_worktree_after_turn(agent);
         }
-        if let Some(live) = self.live.get_mut(agent) {
+        if let Some(live) = self.sessions.live.get_mut(agent) {
             live.stopping = true;
             live.close_after = Some(confirmed);
             live.session.shutdown(Duration::from_secs(3));
@@ -652,6 +657,7 @@ impl Core {
     pub(crate) fn finish_close(&mut self, agent: &AgentId, confirmed: bool) {
         let has_worktree = self
             .agents
+            .rows
             .get(agent)
             .is_some_and(|r| r.agent.worktree.is_some());
         if has_worktree {
@@ -668,12 +674,12 @@ impl Core {
             return;
         }
         self.stop_preview(agent, false);
-        if self.live.contains_key(agent) {
+        if self.sessions.live.contains_key(agent) {
             // Stop the session first; the removal follows its exit.
             self.close_slice(agent, confirmed);
             return;
         }
-        let Some(row) = self.agents.get(agent) else {
+        let Some(row) = self.agents.rows.get(agent) else {
             self.fail(format!("no agent {}", agent.0));
             return;
         };
@@ -706,6 +712,7 @@ impl Core {
             Err(WorktreeError::Unsafe(report)) => {
                 let worktree = self
                     .agents
+                    .rows
                     .get(&agent)
                     .and_then(|r| r.agent.worktree.clone());
                 let input = json!({
@@ -753,7 +760,7 @@ impl Core {
         self.notice(agent, "Kept: the worktree has unsaved work");
         self.refresh_status(agent);
         self.refresh_worktree(agent);
-        if self.archive_told.remove(agent) {
+        if self.agents.archive_told.remove(agent) {
             let name = self.name_of(agent);
             self.tell_coordinator(format!(
                 "slice {name} kept: the user chose to keep its unsaved work, so it was not \
@@ -769,6 +776,7 @@ impl Core {
             return Err(SliceError::ArchiveCoordinator);
         }
         self.agents
+            .rows
             .values()
             .find(|r| r.agent.kind == AgentKind::Slice && r.agent.name == name)
             .map(|r| r.agent.id.clone())
@@ -777,7 +785,8 @@ impl Core {
 
     /// Whether the user is already asked about the slice's unsaved work.
     pub(crate) fn asking_to_remove(&self, agent: &AgentId) -> bool {
-        self.inbox
+        self.activity
+            .inbox
             .values()
             .any(|e| &e.item.agent == agent && matches!(e.waiter, Waiter::RemoveWorktree))
     }
@@ -802,14 +811,14 @@ impl Core {
         let mut to_close = Vec::new();
         for slice in slices {
             if self.asking_to_remove(&slice) {
-                self.archive_told.insert(slice.clone());
+                self.agents.archive_told.insert(slice.clone());
                 call.waiting.push(self.name_of(&slice));
             } else {
                 call.pending.insert(slice.clone());
                 to_close.push(slice);
             }
         }
-        self.archive_calls.push(call);
+        self.agents.archive_calls.push(call);
         match task {
             // The task path closes its own slices (and drops its queued starts).
             Some(id) => self.archive_task(id, &to_close).await,
@@ -826,14 +835,14 @@ impl Core {
     /// closed slice is no longer in `agents`.
     fn archive_outcome(&mut self, agent: &AgentId, name: &str, outcome: ArchiveOutcome) {
         let name = name.to_owned();
-        for call in &mut self.archive_calls {
+        for call in &mut self.agents.archive_calls {
             if !call.pending.remove(agent) {
                 continue;
             }
             match &outcome {
                 ArchiveOutcome::Archived => call.archived.push(name.clone()),
                 ArchiveOutcome::Waiting => {
-                    self.archive_told.insert(agent.clone());
+                    self.agents.archive_told.insert(agent.clone());
                     call.waiting.push(name.clone());
                 }
                 ArchiveOutcome::Failed(e) => call.failed.push(format!("{name}: {e}")),
@@ -843,10 +852,10 @@ impl Core {
     }
 
     fn answer_settled_archives(&mut self) {
-        let (done, open) = std::mem::take(&mut self.archive_calls)
+        let (done, open) = std::mem::take(&mut self.agents.archive_calls)
             .into_iter()
             .partition(|c| c.pending.is_empty());
-        self.archive_calls = open;
+        self.agents.archive_calls = open;
         for call in done {
             crate::tools::answer_archive(call);
         }
@@ -870,7 +879,7 @@ impl Core {
     /// The slice is gone for good: forget it and make room for a queued one.
     pub(crate) fn closed(&mut self, agent: &AgentId) {
         let list = self.list_of(agent);
-        let Some(row) = self.agents.remove(agent) else {
+        let Some(row) = self.agents.rows.remove(agent) else {
             return;
         };
         // A slice without a task had a list of its own; a task's list goes when the task does.
@@ -879,18 +888,19 @@ impl Core {
         {
             self.delete_todo_list(&list);
         }
-        self.live.remove(agent);
-        self.tails.remove(agent);
+        self.sessions.live.remove(agent);
+        self.agents.tails.remove(agent);
         if let (AgentKind::Slice, Some(task), Some(_)) =
             (row.agent.kind, row.agent.task, &row.agent.worktree)
         {
-            self.closed_slices.insert(agent.clone(), task);
+            self.agents.closed_slices.insert(agent.clone(), task);
         }
         // The client drops its copy with `AgentRemoved`.
-        self.worktrees.remove(agent);
+        self.code.worktrees.remove(agent);
         self.stop_preview(agent, false);
         self.persist("forgotten variants", self.db.forget_variants(agent.clone()));
         let items: Vec<_> = self
+            .activity
             .inbox
             .values()
             .filter(|p| &p.item.agent == agent)
@@ -910,7 +920,7 @@ impl Core {
         worktree::clear_hook_outcome(&self.paths, &key, &row.agent.name);
         self.remove_attachments_of(agent);
         self.persist("a closed agent", self.db.close_agent(agent.clone()));
-        self.commands.remove(agent);
+        self.agents.commands.remove(agent);
         self.emit(Event::Agent(AgentEvent::Removed(agent.clone())));
         self.activity(
             ActivityKind::Lifecycle,
@@ -920,7 +930,7 @@ impl Core {
         // A call still waiting gets its answer; one that already returned `waiting_for_user`
         // learns the user's yes as a message.
         self.archive_outcome(agent, &row.agent.name, ArchiveOutcome::Archived);
-        if self.archive_told.remove(agent) {
+        if self.agents.archive_told.remove(agent) {
             self.tell_coordinator(format!("slice {} archived", row.agent.name));
         }
     }

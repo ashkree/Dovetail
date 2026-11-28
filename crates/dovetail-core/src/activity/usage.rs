@@ -19,7 +19,7 @@ use dovetail_api::activity::status::{
 use dovetail_api::agents::{agent::AgentId, model::DriverKind};
 use dovetail_driver::{RateLimitInfo, RateLimitWindow, UsageQuery};
 
-use crate::service::{Core, Input};
+use crate::engine::{Core, Input};
 
 /// The API's view of a `rate_limit_event`. `None` when it carries neither window.
 pub(crate) fn from_rate_limit(info: &RateLimitInfo) -> Option<UsageLimits> {
@@ -54,12 +54,12 @@ impl Core {
             return;
         };
         let home = self.home_of(agent);
-        let current = self.usage.get(&home).cloned().unwrap_or_default();
+        let current = self.activity.usage.get(&home).cloned().unwrap_or_default();
         let usage = merged(&current, next);
         if usage == current {
             return;
         }
-        self.usage.insert(home.clone(), usage.clone());
+        self.activity.usage.insert(home.clone(), usage.clone());
         if home == self.current_home_dir() {
             self.emit(Event::Status(StatusEvent::UsageChanged(usage)));
         }
@@ -67,7 +67,8 @@ impl Core {
 
     /// The project's usage limits: those of its Claude home.
     pub(crate) fn current_usage(&self) -> UsageLimits {
-        self.usage
+        self.activity
+            .usage
             .get(&self.current_home_dir())
             .cloned()
             .unwrap_or_default()
@@ -76,20 +77,26 @@ impl Core {
     /// The Claude home this project's sessions run under (the default home if its profile is
     /// unusable: nothing runs then anyway).
     pub(crate) fn current_home_dir(&self) -> PathBuf {
-        self.claude
+        self.sessions
+            .claude
             .as_ref()
             .map_or_else(|_| crate::profile::default_dir(), |h| h.dir.clone())
     }
 
     /// The project's profile name, for the header.
     pub(crate) fn profile_name(&self) -> Option<String> {
-        self.claude.as_ref().ok().and_then(|h| h.name.clone())
+        self.sessions
+            .claude
+            .as_ref()
+            .ok()
+            .and_then(|h| h.name.clone())
     }
 
     /// The Claude home agent `id` ran under: recorded at launch; before that, or for a row from
     /// before profiles, the default home.
     pub(crate) fn home_of(&self, id: &AgentId) -> PathBuf {
         self.agents
+            .rows
             .get(id)
             .and_then(|r| r.claude_home.clone())
             .unwrap_or_else(crate::profile::default_dir)
@@ -97,16 +104,17 @@ impl Core {
 
     /// The folder a short-lived driver query (usage, model list) runs in.
     pub(crate) fn query_cwd(&self) -> std::path::PathBuf {
-        self.project
+        self.tracking
+            .project
             .first_repo_path()
-            .unwrap_or_else(|| self.project.coordinator_folder(&self.paths))
+            .unwrap_or_else(|| self.tracking.project.coordinator_folder(&self.paths))
     }
 
     /// Reads each registered driver's usage limits concurrently on the runtime and sends the
     /// reports back in [`DriverKind::ALL`] order (task #46).
     pub(crate) fn load_usage(&self) {
         let cwd = self.query_cwd();
-        let claude_env = match &self.claude {
+        let claude_env = match &self.sessions.claude {
             Ok(home) if home.explicit => vec![(
                 "CLAUDE_CONFIG_DIR".to_owned(),
                 home.dir.to_string_lossy().into_owned(),
@@ -156,10 +164,10 @@ impl Core {
     pub(crate) fn on_usage_loaded(&mut self, reports: Vec<DriverUsage>) {
         for report in &reports {
             if report.driver == DriverKind::Agy {
-                self.agy_usage_in_flight = false;
-                self.agy_usage = Some(report.clone());
+                self.activity.agy_usage_in_flight = false;
+                self.activity.agy_usage = Some(report.clone());
                 if !report.failed {
-                    self.agy_usage_last_refreshed = Some(tokio::time::Instant::now());
+                    self.activity.agy_usage_last_refreshed = Some(tokio::time::Instant::now());
                 }
             }
         }
@@ -171,16 +179,17 @@ impl Core {
         let Some(driver) = self.options.drivers.get(DriverKind::Agy).cloned() else {
             return;
         };
-        if self.agy_usage_in_flight {
+        if self.activity.agy_usage_in_flight {
             return;
         }
         if self
+            .activity
             .agy_usage_last_refreshed
             .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(3 * 60))
         {
             return;
         }
-        self.agy_usage_in_flight = true;
+        self.activity.agy_usage_in_flight = true;
         let cwd = self.query_cwd();
         let query = UsageQuery {
             cwd,

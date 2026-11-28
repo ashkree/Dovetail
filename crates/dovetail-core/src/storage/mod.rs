@@ -1007,7 +1007,7 @@ mod tests {
             size: 1,
         };
         let row = |id: &str| AgentRow {
-            agent: crate::service::new_agent(AgentId(id.into()), id.into(), AgentKind::Slice, None),
+            agent: crate::engine::new_agent(AgentId(id.into()), id.into(), AgentKind::Slice, None),
             session_id: None,
             transcript_path: None,
             task_list_id: None,
@@ -1065,7 +1065,7 @@ mod tests {
         let db = Db::open(&paths(dir.path()), Some("p")).unwrap();
         let agent = AgentId("a".into());
         db.upsert_agent(AgentRow {
-            agent: crate::service::new_agent(agent.clone(), "a".into(), AgentKind::Slice, None),
+            agent: crate::engine::new_agent(agent.clone(), "a".into(), AgentKind::Slice, None),
             session_id: None,
             transcript_path: None,
             task_list_id: None,
@@ -1662,7 +1662,7 @@ mod tests {
         let effort = db.create_effort(new_effort("providers")).wait().unwrap();
         let agent = AgentId("coordinator".into());
         db.upsert_agent(AgentRow {
-            agent: crate::service::new_agent(
+            agent: crate::engine::new_agent(
                 agent.clone(),
                 "coordinator".into(),
                 AgentKind::Coordinator,

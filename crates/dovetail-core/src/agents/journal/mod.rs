@@ -34,8 +34,8 @@ use dovetail_api::tracking::task::{Bucket, Task, TaskStatus};
 use jiff::civil::Date;
 
 use crate::db::ModelChoice;
+use crate::engine::{COORDINATOR, Core, Input};
 use crate::inbox::Waiter;
-use crate::service::{COORDINATOR, Core, Input};
 use crate::session::model::describe;
 use crate::sessions::SessionError;
 
@@ -505,7 +505,7 @@ pub(crate) struct Closing {
 impl Core {
     /// The project's journal directory; `None` for a folder not registered yet.
     fn journal_dir(&self) -> Option<PathBuf> {
-        let project = self.project.registered()?;
+        let project = self.tracking.project.registered()?;
         Some(self.paths.journal(&project.id))
     }
 
@@ -514,8 +514,12 @@ impl Core {
         let dir = self.journal_dir()?;
         Some(JournalState {
             latest: latest(&dir).map(|d| d.to_string()),
-            closing: self.closing.is_some(),
-            fresh: self.closing.as_ref().is_some_and(|c| c.fresh.is_some()),
+            closing: self.agents.closing.is_some(),
+            fresh: self
+                .agents
+                .closing
+                .as_ref()
+                .is_some_and(|c| c.fresh.is_some()),
         })
     }
 
@@ -535,12 +539,13 @@ impl Core {
     /// while the coordinator's turn runs (it is not interrupted) or before it has run at all.
     pub(crate) fn handoff_start(&mut self) {
         let id = AgentId(COORDINATOR.into());
-        if self.live.get(&id).is_some_and(|l| l.turn.running) {
+        if self.sessions.live.get(&id).is_some_and(|l| l.turn.running) {
             self.fail("turn running; try again when it finishes");
             return;
         }
         if self
             .agents
+            .rows
             .get(&id)
             .is_none_or(|r| r.transcript_path.is_none())
         {
@@ -555,20 +560,21 @@ impl Core {
     /// nothing is written to the journal.
     pub(crate) fn fresh_session(&mut self) {
         let id = AgentId(COORDINATOR.into());
-        if self.live.get(&id).is_some_and(|l| l.turn.running) {
+        if self.sessions.live.get(&id).is_some_and(|l| l.turn.running) {
             self.fail("turn running; try again when it finishes");
             return;
         }
-        if self.closing.is_some() {
+        if self.agents.closing.is_some() {
             self.fail("already closing the day: waiting for the coordinator's handoff");
             return;
         }
-        if self.pending_fresh.is_some() {
+        if self.agents.pending_fresh.is_some() {
             self.fail("a fresh coordinator is starting");
             return;
         }
         if self
             .agents
+            .rows
             .get(&id)
             .is_none_or(|r| r.transcript_path.is_none())
         {
@@ -594,16 +600,16 @@ impl Core {
             self.fail("not a Dovetail project yet, so it has no journal: :project add keeps it");
             return;
         }
-        if self.closing.is_some() {
+        if self.agents.closing.is_some() {
             self.fail("already closing the day: waiting for the coordinator's handoff");
             return;
         }
-        if self.pending_fresh.is_some() {
+        if self.agents.pending_fresh.is_some() {
             self.fail("a fresh coordinator is starting");
             return;
         }
         let date = today();
-        self.closing = Some(Closing {
+        self.agents.closing = Some(Closing {
             date,
             reply: None,
             done: None,
@@ -614,6 +620,7 @@ impl Core {
         let id = AgentId(COORDINATOR.into());
         let has_run = self
             .agents
+            .rows
             .get(&id)
             .is_some_and(|r| r.transcript_path.is_some());
         let sent = if !has_run {
@@ -642,7 +649,7 @@ impl Core {
         errored: bool,
         last: bool,
     ) {
-        let Some(closing) = &mut self.closing else {
+        let Some(closing) = &mut self.agents.closing else {
             return;
         };
         if !errored && let Some(text) = text.as_deref().filter(|t| !t.trim().is_empty()) {
@@ -669,7 +676,12 @@ impl Core {
 
     /// The coordinator's session ended while the day closes.
     pub(crate) fn closing_exit(&mut self) {
-        if self.closing.as_ref().is_some_and(|c| c.done.is_none()) {
+        if self
+            .agents
+            .closing
+            .as_ref()
+            .is_some_and(|c| c.done.is_none())
+        {
             self.closing_done(Err(NoHandoff::SessionEnded));
         }
     }
@@ -677,7 +689,7 @@ impl Core {
     /// No more is coming for the handoff: the file is written from the loop
     /// ([`Input::CloseDay`]), which can read the tasks.
     fn closing_done(&mut self, reply: Result<String, NoHandoff>) {
-        if let Some(closing) = &mut self.closing {
+        if let Some(closing) = &mut self.agents.closing {
             closing.done = Some(reply);
             let _ = self.inputs.send(Input::CloseDay);
         }
@@ -691,7 +703,7 @@ impl Core {
             fresh,
             switch,
             ..
-        }) = self.closing.take()
+        }) = self.agents.closing.take()
         else {
             return;
         };
@@ -706,8 +718,8 @@ impl Core {
                 Vec::new()
             }
         };
-        let agents: Vec<&Agent> = self.agents.values().map(|r| &r.agent).collect();
-        let inbox: Vec<&InboxItem> = self.inbox.values().map(|e| &e.item).collect();
+        let agents: Vec<&Agent> = self.agents.rows.values().map(|r| &r.agent).collect();
+        let inbox: Vec<&InboxItem> = self.activity.inbox.values().map(|e| &e.item).collect();
         let facts = facts(&tasks, &agents, &inbox);
         // A same-driver `:handoff` without a handoff would lose the context it exists to carry
         // over: the old session stays, and nothing is written. A driver switch proceeds on facts
@@ -762,6 +774,7 @@ impl Core {
         if let Some(time) = fresh {
             let old_transcript = self
                 .agents
+                .rows
                 .get(&AgentId(COORDINATOR.into()))
                 .and_then(|r| r.transcript_path.clone());
             let kind = Fresh::MidDay {
@@ -800,11 +813,11 @@ impl Core {
     /// Stops the running session; the new one starts once it has exited.
     fn begin_fresh(&mut self, pending: PendingFresh) {
         let id = AgentId(COORDINATOR.into());
-        self.pending_fresh = Some(pending);
-        match self.live.get_mut(&id) {
+        self.agents.pending_fresh = Some(pending);
+        match self.sessions.live.get_mut(&id) {
             Some(live) => {
                 live.stopping = true;
-                live.session.shutdown(crate::shutdown::QUIT_GRACE);
+                live.session.shutdown(crate::engine::shutdown::QUIT_GRACE);
             }
             None => self.coordinator_exited(),
         }
@@ -813,7 +826,7 @@ impl Core {
     /// When the coordinator was last used, from its newest conversation entries.
     pub(crate) fn coordinator_last_used(&self) -> LastUse {
         let id = AgentId(COORDINATOR.into());
-        let Some(tail) = self.tails.get(&id) else {
+        let Some(tail) = self.agents.tails.get(&id) else {
             return LastUse::default();
         };
         LastUse {
@@ -837,7 +850,7 @@ impl Core {
         let today = today();
         // A coordinator recorded in another folder (the repo, before ADR 0021) cannot resume
         // in its own: it starts fresh there, seeded as `:fresh` seeds one.
-        let folder = self.project.coordinator_folder(&self.paths);
+        let folder = self.tracking.project.coordinator_folder(&self.paths);
         if self.filed_elsewhere(&id, &folder) {
             self.moved_coordinator(today).await;
             return;
@@ -850,10 +863,10 @@ impl Core {
                     "{} wasn't closed; kept that coordinator. `:eod` to close it.",
                     day_name(day, today)
                 );
-                let open = self
-                    .inbox
-                    .values()
-                    .any(|p| matches!(&p.item.kind, InboxKind::Error { text: t } if *t == text));
+                let open =
+                    self.activity.inbox.values().any(
+                        |p| matches!(&p.item.kind, InboxKind::Error { text: t } if *t == text),
+                    );
                 if !open {
                     self.raise(&id, InboxKind::Error { text }, Waiter::None);
                 }
@@ -900,7 +913,7 @@ impl Core {
     /// folder it ran in.
     async fn moved_coordinator(&mut self, today: Date) {
         let id = AgentId(COORDINATOR.into());
-        let Some(row) = self.agents.get(&id) else {
+        let Some(row) = self.agents.rows.get(&id) else {
             return;
         };
         let old_session = row.session_id.clone().unwrap_or_default();
@@ -909,8 +922,9 @@ impl Core {
             row.session_id = Some(uuid::Uuid::new_v4().to_string());
             row.transcript_path = None;
         });
-        let folder = self.project.coordinator_folder(&self.paths);
+        let folder = self.tracking.project.coordinator_folder(&self.paths);
         let repos: Vec<String> = self
+            .tracking
             .project
             .repos()
             .iter()
@@ -988,7 +1002,7 @@ impl Core {
     ) {
         let date = kind.date();
         let id = AgentId(COORDINATOR.into());
-        let Some(row) = self.agents.get(&id) else {
+        let Some(row) = self.agents.rows.get(&id) else {
             return;
         };
         let old_transcript = row.transcript_path.clone();
@@ -1001,7 +1015,7 @@ impl Core {
             }
         });
         if switched {
-            self.commands.remove(&id);
+            self.agents.commands.remove(&id);
             self.emit(dovetail_api::Event::Agent(
                 dovetail_api::agents::agent::AgentEvent::CommandsChanged {
                     agent: id.clone(),
@@ -1023,9 +1037,9 @@ impl Core {
     /// The coordinator's session exited: if it stopped to take in changed repos, it resumes now
     /// with them and is told; if a fresh start was waiting, it begins now.
     pub(crate) fn coordinator_exited(&mut self) {
-        if let Some(note) = self.reattach.take() {
+        if let Some(note) = self.tracking.reattach.take() {
             self.hold_for_coordinator(note);
-            if self.pending_fresh.is_none() {
+            if self.agents.pending_fresh.is_none() {
                 if self.quitting.is_none()
                     && let Err(e) = self.ensure_live(&AgentId(COORDINATOR.into()))
                 {
@@ -1034,7 +1048,7 @@ impl Core {
                 return;
             }
         }
-        if let Some(PendingFresh { kind, seed, switch }) = self.pending_fresh.take()
+        if let Some(PendingFresh { kind, seed, switch }) = self.agents.pending_fresh.take()
             && self.quitting.is_none()
         {
             self.fresh_coordinator(&kind, seed.as_deref(), switch);

@@ -10,7 +10,7 @@
 use dovetail_api::agents::agent::AgentId;
 use dovetail_driver::{TokenUsage, TurnResult};
 
-use crate::service::Core;
+use crate::engine::Core;
 
 /// The window assumed for a model the stream has not reported and the table does not know.
 /// The smallest current window, so an unknown model reads too full rather than too empty.
@@ -91,7 +91,7 @@ impl Core {
         let Some(tokens) = measured_tokens(model, usage) else {
             return;
         };
-        let Some(live) = self.live.get_mut(agent) else {
+        let Some(live) = self.sessions.live.get_mut(agent) else {
             return;
         };
         live.context_tokens = Some(tokens);
@@ -100,9 +100,13 @@ impl Core {
 
     /// A `result`: learn the model's window from it.
     pub(crate) fn learn_context_window(&mut self, agent: &AgentId, result: &TurnResult) {
-        let model = self.agents.get(agent).and_then(|r| r.agent.model.clone());
+        let model = self
+            .agents
+            .rows
+            .get(agent)
+            .and_then(|r| r.agent.model.clone());
         if let Some((model, window)) = reported_window(result, model.as_deref()) {
-            self.context_windows.insert(model, window);
+            self.sessions.context_windows.insert(model, window);
             self.refresh_context(agent);
         }
     }
@@ -111,16 +115,17 @@ impl Core {
     fn context_window(&self, agent: &AgentId) -> u64 {
         let model = self
             .agents
+            .rows
             .get(agent)
             .and_then(|r| r.agent.model.as_deref());
         model
-            .and_then(|m| self.context_windows.get(m).copied())
+            .and_then(|m| self.sessions.context_windows.get(m).copied())
             .unwrap_or_else(|| table_window(model))
     }
 
     /// Recomputes the agent's fill from its latest usage; no change, no event.
     fn refresh_context(&mut self, agent: &AgentId) {
-        let Some(tokens) = self.live.get(agent).and_then(|l| l.context_tokens) else {
+        let Some(tokens) = self.sessions.live.get(agent).and_then(|l| l.context_tokens) else {
             return;
         };
         let pct = fill_pct(tokens, self.context_window(agent));

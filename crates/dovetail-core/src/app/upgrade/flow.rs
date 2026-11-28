@@ -23,8 +23,8 @@ use serde_json::json;
 
 use super::{BuildError, BuildRequest, Ready, Source, Staging, UpgradeError, is_installed_binary};
 use crate::db::now_ms;
+use crate::engine::{COORDINATOR, Core, Input};
 use crate::inbox::Waiter;
-use crate::service::{COORDINATOR, Core, Input};
 use crate::socket::HandlerError;
 
 /// The core's upgrade state.
@@ -71,7 +71,7 @@ impl Core {
         )
         .into_iter()
         .map(std::path::PathBuf::from)
-        .filter(|p| p != &self.socket)
+        .filter(|p| p != &self.mcp.socket)
         .filter_map(|p| {
             p.file_stem()
                 .map(|s| format!("app {}", s.to_string_lossy()))
@@ -83,7 +83,7 @@ impl Core {
     /// installed binary (a dev build in a slice must not replace the one the user works in).
     fn upgrade_refusal(&self) -> Option<String> {
         // The build runs in the open project's first repo, and a research project has none.
-        if self.project.is_research() {
+        if self.tracking.project.is_research() {
             return Some(
                 "a research project has no repo to build from: :upgrade in a code project".into(),
             );
@@ -106,10 +106,10 @@ impl Core {
         if let Some(why) = self.upgrade_refusal() {
             return self.fail(why);
         }
-        if self.upgrade.building.is_some() {
+        if self.app.upgrade.building.is_some() {
             return self.fail("an upgrade is already building");
         }
-        if self.upgrade.item.is_some() {
+        if self.app.upgrade.item.is_some() {
             return self.fail("an upgrade is ready: answer it in Needs you (y: restart, d: later)");
         }
         let Some(options) = self.options.upgrade.clone() else {
@@ -117,18 +117,22 @@ impl Core {
         };
         let request = BuildRequest {
             // `upgrade_refusal` refused a project with no repo.
-            repo: self.project.first_repo_path().unwrap_or_default(),
+            repo: self.tracking.project.first_repo_path().unwrap_or_default(),
             source: if local {
                 Source::Local
             } else {
                 Source::OriginMain
             },
             config_dir: self.paths.config.clone(),
-            recipe: self.project.registered().map(|p| self.paths.recipe(&p.id)),
+            recipe: self
+                .tracking
+                .project
+                .registered()
+                .map(|p| self.paths.recipe(&p.id)),
         };
         let staging = Staging::new(&self.paths);
         let cancel = Arc::new(AtomicBool::new(false));
-        self.upgrade.building = Some(cancel.clone());
+        self.app.upgrade.building = Some(cancel.clone());
         self.emit(Event::App(AppEvent::UpgradeBuilding(true)));
         let what = if local { "the checkout" } else { "origin/main" };
         self.activity(
@@ -145,7 +149,7 @@ impl Core {
 
     /// The build finished: "Upgrade ready", or an Error item with the build's tail.
     pub(crate) fn on_upgrade_built(&mut self, result: Result<Ready, BuildError>) {
-        self.upgrade.building = None;
+        self.app.upgrade.building = None;
         self.emit(Event::App(AppEvent::UpgradeBuilding(false)));
         if self.quitting.is_some() {
             return;
@@ -175,12 +179,12 @@ impl Core {
         if let Some(why) = self.upgrade_refusal() {
             return Err(HandlerError::Refused(why));
         }
-        if self.upgrade.building.is_some() {
+        if self.app.upgrade.building.is_some() {
             return Err(HandlerError::Refused(
                 "the app is building an upgrade itself".into(),
             ));
         }
-        if self.upgrade.item.is_some() {
+        if self.app.upgrade.item.is_some() {
             return Ok(());
         }
         let ready = Staging::new(&self.paths)
@@ -218,9 +222,9 @@ impl Core {
             },
             Waiter::UpgradeReady,
         );
-        self.upgrade.item = Some(id);
-        self.upgrade.restarting = false;
-        self.upgrade.waiting = None;
+        self.app.upgrade.item = Some(id);
+        self.app.upgrade.restarting = false;
+        self.app.upgrade.waiting = None;
         self.activity(
             ActivityKind::Lifecycle,
             None,
@@ -241,9 +245,9 @@ impl Core {
                 );
             }
             PermissionAnswer::Allow | PermissionAnswer::AllowAlways => {
-                self.upgrade.restarting = true;
+                self.app.upgrade.restarting = true;
                 // The first check tells the item what it waits for.
-                self.upgrade.waiting = None;
+                self.app.upgrade.waiting = None;
                 self.upgrade_check();
             }
         }
@@ -251,21 +255,23 @@ impl Core {
 
     /// The item left Needs you without a restart (`d`, or dismissed): the build stays staged.
     pub(crate) fn upgrade_item_gone(&mut self) {
-        self.upgrade.item = None;
-        self.upgrade.restarting = false;
-        self.upgrade.waiting = None;
+        self.app.upgrade.item = None;
+        self.app.upgrade.restarting = false;
+        self.app.upgrade.waiting = None;
     }
 
     /// The agents a restart would cut off: a session mid-turn or setting up, one held by a
     /// permission request, one native `claude` has.
     fn agents_not_idle(&self) -> Vec<String> {
         let mut names: Vec<String> = self
+            .sessions
             .live
             .iter()
             .filter(|(_, live)| live.setting_up || live.turn.busy())
             .map(|(id, _)| self.name_of(id))
             .chain(
                 self.agents
+                    .rows
                     .iter()
                     .filter(|(_, row)| row.takeover.is_some())
                     .map(|(id, _)| self.name_of(id)),
@@ -279,18 +285,20 @@ impl Core {
     /// After `y`: keeps the item's list of waited-for agents current, and restarts when the
     /// list is empty. Cheap enough to run after every input.
     pub(crate) fn upgrade_check(&mut self) {
-        if !self.upgrade.restarting || self.quitting.is_some() {
+        if !self.app.upgrade.restarting || self.quitting.is_some() {
             return;
         }
-        let Some(id) = self.upgrade.item else { return };
+        let Some(id) = self.app.upgrade.item else {
+            return;
+        };
         let mut waiting = self.agents_not_idle();
         let apps = self.other_apps();
-        self.upgrade.recheck =
+        self.app.upgrade.recheck =
             (!apps.is_empty()).then(|| tokio::time::Instant::now() + APP_RECHECK);
         waiting.extend(apps);
-        if self.upgrade.waiting.as_ref() != Some(&waiting) {
-            self.upgrade.waiting = Some(waiting.clone());
-            if let Some(entry) = self.inbox.get_mut(&id)
+        if self.app.upgrade.waiting.as_ref() != Some(&waiting) {
+            self.app.upgrade.waiting = Some(waiting.clone());
+            if let Some(entry) = self.activity.inbox.get_mut(&id)
                 && let InboxKind::Permission { input, .. } = &mut entry.item.kind
             {
                 input["waiting"] = json!(waiting);
@@ -302,7 +310,7 @@ impl Core {
         if waiting.is_empty() {
             self.resolve(id, Some("restarting".into()));
             self.upgrade_item_gone();
-            self.upgrade.restart.store(true, Ordering::SeqCst);
+            self.app.upgrade.restart.store(true, Ordering::SeqCst);
             self.activity(
                 ActivityKind::Lifecycle,
                 None,
@@ -315,7 +323,7 @@ impl Core {
 
     /// The app is quitting: stop the build, so cargo is killed and reaped with the rest.
     pub(crate) fn cancel_upgrade_build(&mut self) {
-        if let Some(cancel) = &self.upgrade.building {
+        if let Some(cancel) = &self.app.upgrade.building {
             cancel.store(true, Ordering::Relaxed);
         }
     }

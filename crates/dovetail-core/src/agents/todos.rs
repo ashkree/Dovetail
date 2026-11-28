@@ -31,7 +31,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::mpsc as tokio_mpsc;
 
-use crate::service::{Core, Input};
+use crate::engine::{Core, Input};
 use crate::session::subagent_id;
 
 /// How long changes to one list are gathered before it is read again.
@@ -202,7 +202,7 @@ impl Core {
 
     /// The native list agent `id`'s session uses.
     pub(crate) fn list_of(&self, id: &AgentId) -> Option<TodoListId> {
-        let row = self.agents.get(id)?;
+        let row = self.agents.rows.get(id)?;
         if matches!(row.agent.kind, AgentKind::Subagent { .. }) {
             return row.agent.parent.as_ref().and_then(|p| self.list_of(p));
         }
@@ -215,13 +215,13 @@ impl Core {
     /// (decided 2026-11-09, PR #13). When sessions share a task's list, a running one first,
     /// then the first by id.
     fn list_owner(&self, list: &TodoListId) -> Option<AgentId> {
-        let mut owners = self.agents.iter().filter(|(id, row)| {
+        let mut owners = self.agents.rows.iter().filter(|(id, row)| {
             !matches!(row.agent.kind, AgentKind::Subagent { .. })
                 && self.list_of(id).as_ref() == Some(list)
         });
         let first = owners.clone().next().map(|(id, _)| id.clone());
         owners
-            .find(|(id, _)| self.live.contains_key(*id))
+            .find(|(id, _)| self.sessions.live.contains_key(*id))
             .map(|(id, _)| id.clone())
             .or(first)
     }
@@ -231,6 +231,7 @@ impl Core {
     /// The recorded owner stays in `state.db`; only what is shown changes.
     pub(crate) fn reassign_todos_of(&mut self, gone: &AgentId) {
         let lists: Vec<TodoListId> = self
+            .agents
             .todos
             .lists
             .iter()
@@ -239,7 +240,7 @@ impl Core {
             .collect();
         for list in lists {
             let fallback = self.list_owner(&list);
-            let Some(items) = self.todos.lists.get_mut(&list) else {
+            let Some(items) = self.agents.todos.lists.get_mut(&list) else {
                 continue;
             };
             for item in items.iter_mut() {
@@ -255,10 +256,14 @@ impl Core {
     /// At start: the recorded owners, and every known agent's list as it is on disk now.
     pub(crate) async fn load_todos(&mut self) -> Result<(), crate::db::DbError> {
         for (list, item, agent) in self.db.load_todo_owners().await? {
-            self.todos.owners.insert((TodoListId(list), item), agent);
+            self.agents
+                .todos
+                .owners
+                .insert((TodoListId(list), item), agent);
         }
         let lists: BTreeSet<TodoListId> = self
             .agents
+            .rows
             .keys()
             .cloned()
             .collect::<Vec<_>>()
@@ -286,40 +291,41 @@ impl Core {
             return;
         };
         let shared = self
+            .sessions
             .live
             .keys()
             .any(|other| other != agent && self.list_of(other).as_ref() == Some(&list));
-        if shared || !self.todos.watched.remove(&list) {
+        if shared || !self.agents.todos.watched.remove(&list) {
             return;
         }
         let dir = self.list_dir(&list);
-        if let Some(w) = self.todos.watcher.as_mut() {
+        if let Some(w) = self.agents.todos.watcher.as_mut() {
             let _ = w.unwatch(&dir);
         }
     }
 
     /// Watches `list`'s directory if it exists and is not watched yet.
     fn ensure_watch(&mut self, list: &TodoListId) {
-        if self.todos.watched.contains(list) {
+        if self.agents.todos.watched.contains(list) {
             return;
         }
         let dir = self.list_dir(list);
         if !dir.is_dir() {
             return; // made by the first `TaskCreate`; its result calls here again
         }
-        if self.todos.watcher.is_none() {
+        if self.agents.todos.watcher.is_none() {
             match new_watcher(self.inputs.clone()) {
-                Ok(w) => self.todos.watcher = Some(w),
+                Ok(w) => self.agents.todos.watcher = Some(w),
                 Err(e) => {
                     tracing::warn!("watching to-do lists: {e}; they update from the stream only");
                     return;
                 }
             }
         }
-        if let Some(w) = self.todos.watcher.as_mut() {
+        if let Some(w) = self.agents.todos.watcher.as_mut() {
             match w.watch(&dir, notify::RecursiveMode::NonRecursive) {
                 Ok(()) => {
-                    self.todos.watched.insert(list.clone());
+                    self.agents.todos.watched.insert(list.clone());
                 }
                 Err(e) => tracing::warn!(list = %list.0, "watching a to-do list: {e}"),
             }
@@ -328,29 +334,29 @@ impl Core {
 
     /// Schedules `list` to be read again after [`TODO_WINDOW`].
     pub(crate) fn mark_todos(&mut self, list: TodoListId) {
-        self.todos.dirty.entry(list).or_insert(0);
-        if self.todos.flush_at.is_none() {
-            self.todos.flush_at = Some(tokio::time::Instant::now() + TODO_WINDOW);
+        self.agents.todos.dirty.entry(list).or_insert(0);
+        if self.agents.todos.flush_at.is_none() {
+            self.agents.todos.flush_at = Some(tokio::time::Instant::now() + TODO_WINDOW);
         }
     }
 
     /// Reads every scheduled list again.
     pub(crate) fn flush_todos(&mut self) {
-        self.todos.flush_at = None;
-        let dirty = std::mem::take(&mut self.todos.dirty);
+        self.agents.todos.flush_at = None;
+        let dirty = std::mem::take(&mut self.agents.todos.dirty);
         for (list, rereads) in dirty {
-            if self.todos.deleted.contains(&list) {
+            if self.agents.todos.deleted.contains(&list) {
                 // A stopping session wrote after its list was deleted.
                 self.remove_list_dir(&list);
                 continue;
             }
             self.ensure_watch(&list);
             if self.reread_list(&list, true) && rereads < MAX_REREADS {
-                self.todos.dirty.insert(list, rereads + 1);
+                self.agents.todos.dirty.insert(list, rereads + 1);
             }
         }
-        if !self.todos.dirty.is_empty() {
-            self.todos.flush_at = Some(tokio::time::Instant::now() + TODO_WINDOW);
+        if !self.agents.todos.dirty.is_empty() {
+            self.agents.todos.flush_at = Some(tokio::time::Instant::now() + TODO_WINDOW);
         }
     }
 
@@ -358,7 +364,13 @@ impl Core {
     /// some file did not parse: the list should be read again.
     fn reread_list(&mut self, list: &TodoListId, emit: bool) -> bool {
         let read = read_list(&self.list_dir(list));
-        let previous = self.todos.lists.get(list).cloned().unwrap_or_default();
+        let previous = self
+            .agents
+            .todos
+            .lists
+            .get(list)
+            .cloned()
+            .unwrap_or_default();
         let fallback = self.list_owner(list);
         let mut items: Vec<TodoItem> = read
             .items
@@ -366,10 +378,11 @@ impl Core {
             .map(|f| TodoItem {
                 list: list.clone(),
                 created_by: self
+                    .agents
                     .todos
                     .owners
                     .get(&(list.clone(), f.id.clone()))
-                    .filter(|a| self.agents.contains_key(*a))
+                    .filter(|a| self.agents.rows.contains_key(*a))
                     .cloned()
                     .or_else(|| fallback.clone()),
                 id: f.id,
@@ -387,9 +400,9 @@ impl Core {
         items.sort_by(|a, b| id_order(&a.id, &b.id));
         if items != previous {
             if items.is_empty() {
-                self.todos.lists.remove(list);
+                self.agents.todos.lists.remove(list);
             } else {
-                self.todos.lists.insert(list.clone(), items.clone());
+                self.agents.todos.lists.insert(list.clone(), items.clone());
             }
             if emit {
                 self.emit(Event::Agent(AgentEvent::TodosReplaced {
@@ -418,12 +431,12 @@ impl Core {
                             owner: owner.clone(),
                             create: name == "TaskCreate",
                         };
-                        self.todos.calls.insert(id.clone(), call);
+                        self.agents.todos.calls.insert(id.clone(), call);
                     }
                 }
             }
             DriverEvent::ToolResult(result) => {
-                let Some(call) = self.todos.calls.remove(&result.tool_use_id) else {
+                let Some(call) = self.agents.todos.calls.remove(&result.tool_use_id) else {
                     return;
                 };
                 let Some(list) = self.list_of(agent) else {
@@ -438,11 +451,12 @@ impl Core {
                         self.db
                             .set_todo_owner(list.0.clone(), item.clone(), call.owner.clone()),
                     );
-                    self.todos
+                    self.agents
+                        .todos
                         .owners
                         .insert((list.clone(), item.clone()), call.owner.clone());
                     // An owner changes the item even when its file has not.
-                    if let Some(items) = self.todos.lists.get_mut(&list)
+                    if let Some(items) = self.agents.todos.lists.get_mut(&list)
                         && let Some(found) = items.iter_mut().find(|t| t.id == item)
                         && found.created_by.as_ref() != Some(&call.owner)
                     {
@@ -454,7 +468,7 @@ impl Core {
                         }));
                     }
                 }
-                self.todos.deleted.remove(&list);
+                self.agents.todos.deleted.remove(&list);
                 self.ensure_watch(&list);
                 self.mark_todos(list);
             }
@@ -475,21 +489,21 @@ impl Core {
         if !list.0.starts_with("dovetail-") {
             return;
         }
-        if self.todos.watched.remove(list) {
+        if self.agents.todos.watched.remove(list) {
             let dir = self.list_dir(list);
-            if let Some(w) = self.todos.watcher.as_mut() {
+            if let Some(w) = self.agents.todos.watcher.as_mut() {
                 let _ = w.unwatch(&dir);
             }
         }
         self.remove_list_dir(list);
-        self.todos.deleted.insert(list.clone());
-        self.todos.dirty.remove(list);
-        self.todos.owners.retain(|(l, _), _| l != list);
+        self.agents.todos.deleted.insert(list.clone());
+        self.agents.todos.dirty.remove(list);
+        self.agents.todos.owners.retain(|(l, _), _| l != list);
         self.persist(
             "a deleted to-do list",
             self.db.forget_todo_list(list.0.clone()),
         );
-        if self.todos.lists.remove(list).is_some() {
+        if self.agents.todos.lists.remove(list).is_some() {
             self.emit(Event::Agent(AgentEvent::TodosReplaced {
                 list: list.clone(),
                 items: Vec::new(),
