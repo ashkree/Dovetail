@@ -781,6 +781,8 @@ impl Buffer for MapOutlineBuffer {
     }
 
     fn render(&mut self, cx: &ViewCx, frame: &mut Frame, area: Rect, focused: bool) {
+        let screen = frame.area();
+        self.canvas.set_screen(screen.width, screen.height);
         let theme = cx.theme;
         let Some(map) = self.map.clone() else {
             self.canvas.hide();

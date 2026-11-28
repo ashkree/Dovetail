@@ -496,7 +496,7 @@ impl App {
                     match capture.build() {
                         Some(task) => {
                             if open_detail {
-                                self.open_after_create = Some(task.title.clone());
+                                self.pending.open_after_create = Some(task.title.clone());
                             }
                             self.outbox.push(Command::Task(TaskCommand::Create(task)));
                         }

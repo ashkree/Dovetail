@@ -15,7 +15,7 @@ use crate::overlay::switcher;
 impl App {
     /// Asks the core for a tangent; its session opens in the side panel when it appears.
     pub(super) fn new_tangent(&mut self, question: String) {
-        self.open_side_chat = true;
+        self.pending.open_side_chat = true;
         self.note = Some("asking a tangent: its answer is kept in Tangents".into());
         self.outbox
             .push(Command::Tangent(TangentCommand::New { question }));
@@ -53,7 +53,7 @@ impl App {
             self.read_latest_answer(tangent);
             return;
         }
-        self.pending_tangent_read = Some(tangent);
+        self.pending.tangent_read = Some(tangent);
         self.outbox.push(Command::Tangent(TangentCommand::Load {
             tangent,
             what: ResearchWhat::Listing,

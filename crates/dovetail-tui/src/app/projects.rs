@@ -82,21 +82,12 @@ impl App {
     /// `:project new <name> --research`. Only research projects are made this way: a code
     /// project is a folder of the user's, added from inside it.
     pub(super) fn new_project(&mut self, arg: &str) {
-        let mut research = false;
-        let mut words = Vec::new();
-        for word in arg.split_whitespace() {
-            match word {
-                "--research" => research = true,
-                _ => words.push(word),
-            }
-        }
-        let name = words.join(" ");
-        if !research || name.is_empty() {
+        let Some(name) = crate::keymap::command::parse_new_research_project(arg) else {
             self.note = Some(NEW_USAGE.into());
             return;
-        }
+        };
         self.note = Some(format!("creating research project {name}"));
-        self.new_project = Some(name.clone());
+        self.pending.new_project = Some(name.clone());
         self.outbox
             .push(Command::Project(ProjectCommand::NewResearch { name }));
     }
@@ -104,7 +95,7 @@ impl App {
     /// The snapshot that follows `:project new <name> --research` lists the project: asks
     /// whether to open it now. `y` switches as the project switcher does; `n` stays.
     pub(super) fn offer_new_project(&mut self) {
-        let Some(name) = self.new_project.take_if(|name| {
+        let Some(name) = self.pending.new_project.take_if(|name| {
             self.snap
                 .projects
                 .iter()

@@ -1,5 +1,8 @@
 //! `:` commands. Each resolves to an [`Action`] plus whatever text followed it.
 
+use dovetail_api::research::ResearchKind;
+use dovetail_api::tracking::task::TaskId;
+
 use crate::keymap::action::Action;
 
 /// What the user typed after `:`.
@@ -108,6 +111,102 @@ pub fn parse(line: &str) -> Result<Parsed, CommandError> {
         action,
         arg: arg.to_string(),
     })
+}
+
+/// Parsed arguments for `:round`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoundArg {
+    /// `:round <task> <brief>`
+    Start {
+        /// Target task id.
+        task: TaskId,
+        /// Research brief.
+        brief: String,
+    },
+    /// `:round close`
+    Close,
+    /// `:round drop <task> [round]`
+    Drop {
+        /// Target task id.
+        task: TaskId,
+        /// Optional round number.
+        round: Option<u32>,
+    },
+}
+
+/// Parses `:round` arguments (`<task> <brief>`, `close`, or `drop <task> [round]`).
+pub fn parse_round(arg: &str) -> Option<RoundArg> {
+    if let Some(rest) = arg
+        .strip_prefix("drop")
+        .filter(|r| r.is_empty() || r.starts_with(char::is_whitespace))
+    {
+        let mut words = rest.split_whitespace();
+        let task = words
+            .next()
+            .and_then(|t| t.trim_start_matches('#').parse::<i64>().ok())?;
+        let round = match words.next() {
+            None => None,
+            Some(s) => Some(s.parse::<u32>().ok()?),
+        };
+        return Some(RoundArg::Drop {
+            task: TaskId(task),
+            round,
+        });
+    }
+    if arg == "close" {
+        return Some(RoundArg::Close);
+    }
+    let (task, brief) = arg
+        .split_once(char::is_whitespace)
+        .map_or((arg, ""), |(t, b)| (t, b.trim()));
+    let task = task.trim_start_matches('#').parse::<i64>().ok()?;
+    if brief.is_empty() {
+        return None;
+    }
+    Some(RoundArg::Start {
+        task: TaskId(task),
+        brief: brief.to_string(),
+    })
+}
+
+/// Parses `:upgrade [--local]`; returns `Some(local)` or `None` for invalid arguments.
+pub fn parse_upgrade(arg: &str) -> Option<bool> {
+    match arg {
+        "" => Some(false),
+        "--local" => Some(true),
+        _ => None,
+    }
+}
+
+/// Splits `:spawn <name> [brief]` into `(name, brief)`.
+pub fn parse_spawn(arg: &str) -> (&str, &str) {
+    arg.split_once(char::is_whitespace)
+        .map_or((arg, ""), |(n, b)| (n, b.trim()))
+}
+
+/// Parses `:research kind <decision|question>`. Returns `None` if `arg` is not a `kind`
+/// subcommand, `Some(Some(kind))` if valid, or `Some(None)` on bad usage.
+pub fn parse_research_kind(arg: &str) -> Option<Option<ResearchKind>> {
+    if arg.split_whitespace().next() != Some("kind") {
+        return None;
+    }
+    Some(arg.split_whitespace().nth(1).and_then(ResearchKind::parse))
+}
+
+/// Parses `:project new <name> --research`; returns `Some(name)` when `--research` and a
+/// non-empty name are present.
+pub fn parse_new_research_project(arg: &str) -> Option<String> {
+    let mut research = false;
+    let mut words = Vec::new();
+    for word in arg.split_whitespace() {
+        if word == "--research" {
+            research = true;
+        } else {
+            words.push(word);
+        }
+    }
+    let name = words.join(" ");
+    (research && !name.is_empty()).then_some(name)
 }
 
 #[cfg(test)]

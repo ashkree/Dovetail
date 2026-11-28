@@ -113,6 +113,40 @@ struct Confirm {
     otherwise: Option<Then>,
 }
 
+/// Pending handshakes and in-flight requests between the UI and the core.
+#[derive(Default)]
+struct Pending {
+    /// A task saved with `Tab` in quick capture opens its detail once the core announces it.
+    open_after_create: Option<String>,
+    /// A command that needs the terminal ([`AppCommand::OpenEditor`], [`AppCommand::TakeOver`]),
+    /// for the loop to send once it has let go of the terminal.
+    handoff: Option<Command>,
+    /// The terminal is lent out until the core sends [`AppEvent::TerminalReturned`].
+    terminal_away: bool,
+    /// `OpenEditor` is out and the core has not answered yet: the loop keeps the terminal and
+    /// reads no key until it does ([`App::awaiting_lend`]).
+    awaiting_lend: bool,
+    /// The name of a research project `:project new` asked the core to make: once the snapshot
+    /// lists it, the app asks whether to open it.
+    new_project: Option<String>,
+    /// A resync was requested and its snapshot has not arrived yet.
+    resyncing: bool,
+    /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
+    exit_armed_until: Option<u64>,
+    /// A side chat was asked for: open it in the side panel when it appears.
+    open_side_chat: bool,
+    /// `i` asked for a new Ask session for this task: type in it when it appears.
+    ask: Option<dovetail_api::tracking::task::TaskId>,
+    /// A tangent whose latest answer opens once its listing arrives (ADR 0017).
+    tangent_read: Option<dovetail_api::tracking::task::TaskId>,
+    /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
+    /// newest journal date from before, so a write that failed is told from one that worked.
+    quit_after_close: Option<Option<String>>,
+    /// A command failure seen while `quit_after_close` waits, to show if the journal is not
+    /// written.
+    close_failure: Option<String>,
+}
+
 /// The whole UI state.
 pub struct App {
     snap: Snapshot,
@@ -136,44 +170,18 @@ pub struct App {
     search: Option<String>,
     /// The task detail was opened from the board, so `Esc` goes back to the board.
     detail_from_board: bool,
-    /// A task saved with `Tab` in quick capture opens its detail once the core announces it.
-    open_after_create: Option<String>,
     note: Option<String>,
     outbox: Vec<Command>,
-    /// A command that needs the terminal ([`AppCommand::OpenEditor`], [`AppCommand::TakeOver`]), for
-    /// the loop to send once it has let go of the terminal.
-    handoff: Option<Command>,
-    /// The terminal is lent out until the core sends [`AppEvent::TerminalReturned`].
-    terminal_away: bool,
-    /// `OpenEditor` is out and the core has not answered yet: the loop keeps the terminal and
-    /// reads no key until it does ([`App::awaiting_lend`]).
-    awaiting_lend: bool,
-    /// The name of a research project `:project new` asked the core to make: once the snapshot
-    /// lists it, the app asks whether to open it.
-    new_project: Option<String>,
-    /// A resync was requested and its snapshot has not arrived yet.
-    resyncing: bool,
+    /// Pending handshakes and in-flight requests.
+    pending: Pending,
     /// The agent whose conversation had focus at the last settle, so focusing it counts as
     /// opening it once, not on every event while it stays focused.
     reading: Option<AgentId>,
     quit: bool,
-    /// Ctrl-C was pressed once: the loop-clock time (ms) at which the hint expires.
-    exit_armed_until: Option<u64>,
-    /// A side chat was asked for: open it in the side panel when it appears.
-    open_side_chat: bool,
     /// Whose chat bar is open (or was open last): the main region's, the side panel's or Ask's.
     chat_site: ChatSite,
-    /// `i` asked for a new Ask session for this task: type in it when it appears.
-    pending_ask: Option<dovetail_api::tracking::task::TaskId>,
-    /// A tangent whose latest answer opens once its listing arrives (ADR 0017).
-    pending_tangent_read: Option<dovetail_api::tracking::task::TaskId>,
     /// Focus mode (`<leader>z`): the side column is hidden.
     focus_mode: bool,
-    /// Quit once the day's journal is written: set by "Close the day?" `y`, holding the
-    /// newest journal date from before, so a write that failed is told from one that worked.
-    quit_after_close: Option<Option<String>>,
-    /// A command failure seen while that quit waits, to show if the journal is not written.
-    close_failure: Option<String>,
     /// The key being handled is a second Ctrl-C inside the hint's window.
     exit_armed: bool,
     /// The loop clock at the key being handled, for actions that arm a timeout.
@@ -201,24 +209,13 @@ impl App {
             overlay_chat: None,
             search: None,
             detail_from_board: false,
-            open_after_create: None,
             note: None,
             outbox: Vec::new(),
-            handoff: None,
-            terminal_away: false,
-            awaiting_lend: false,
-            new_project: None,
-            resyncing: false,
+            pending: Pending::default(),
             reading: None,
             quit: false,
-            exit_armed_until: None,
-            open_side_chat: false,
             chat_site: ChatSite::Main,
-            pending_ask: None,
-            pending_tangent_read: None,
             focus_mode: false,
-            quit_after_close: None,
-            close_failure: None,
             exit_armed: false,
             mono_ms: 0,
             dirty: true,
@@ -325,8 +322,8 @@ impl App {
     pub fn on_core_closed(&mut self) {
         self.dirty = true;
         // Nobody is left to hand the terminal back.
-        self.terminal_away = false;
-        self.awaiting_lend = false;
+        self.pending.terminal_away = false;
+        self.pending.awaiting_lend = false;
         self.note = Some("core disconnected; :q to quit".into());
     }
 
@@ -345,28 +342,28 @@ impl App {
     /// lets go of the terminal (alternate screen, raw mode, key reading) and then sends it; from
     /// here until [`AppEvent::TerminalReturned`] arrives, [`App::terminal_away`] is true.
     pub fn take_handoff(&mut self) -> Option<Command> {
-        let command = self.handoff.take();
+        let command = self.pending.handoff.take();
         if command.is_some() {
-            self.terminal_away = true;
+            self.pending.terminal_away = true;
         }
         command
     }
 
     /// Whether a hand-off waits to be taken ([`App::take_handoff`]).
     pub fn has_handoff(&self) -> bool {
-        self.handoff.is_some()
+        self.pending.handoff.is_some()
     }
 
     /// Whether the core has yet to say if it will take the terminal (it checks the editor's
     /// path first). The loop keeps the terminal and reads no key meanwhile; the answer is
     /// either a hand-off ([`AppEvent::TerminalLend`]) or a note ([`AppEvent::CommandFailed`]).
     pub fn awaiting_lend(&self) -> bool {
-        self.awaiting_lend
+        self.pending.awaiting_lend
     }
 
     /// Whether the terminal is lent out: the loop neither draws nor reads keys until it returns.
     pub fn terminal_away(&self) -> bool {
-        self.terminal_away
+        self.pending.terminal_away
     }
 
     /// When the unfinished key sequence gives up, on the loop's monotonic clock. `None` when
@@ -375,7 +372,7 @@ impl App {
         [
             self.resolver.deadline_ms(),
             self.resolver.hint_deadline_ms(),
-            self.exit_armed_until,
+            self.pending.exit_armed_until,
         ]
         .into_iter()
         .flatten()
@@ -398,8 +395,8 @@ impl App {
 
     /// The loop's deadline passed: run an ambiguous shorter binding or drop the sequence.
     pub fn on_timeout(&mut self, now_ms: u64) {
-        if self.exit_armed_until.is_some_and(|d| d <= now_ms) {
-            self.exit_armed_until = None;
+        if self.pending.exit_armed_until.is_some_and(|d| d <= now_ms) {
+            self.pending.exit_armed_until = None;
             self.note = None;
             self.dirty = true;
         }
@@ -428,7 +425,7 @@ impl App {
         self.dirty = true;
         match signal {
             // The editor has the terminal: Ctrl-C there is the editor's, not a request to quit.
-            Signal::Interrupt if self.terminal_away => {}
+            Signal::Interrupt if self.pending.terminal_away => {}
             Signal::Interrupt if self.confirm.is_some() => {
                 self.confirm = None;
                 self.run(Action::ForceQuit);
@@ -461,7 +458,7 @@ impl App {
                 self.now_ms = self.now_ms.max(snapshot.now_ms);
                 snapshot.tasks.iter_mut().for_each(without_review);
                 self.snap = snapshot;
-                self.resyncing = false;
+                self.pending.resyncing = false;
                 self.offer_new_project();
             }
             ServerMsg::Event { seq, mut event } => {
@@ -473,7 +470,7 @@ impl App {
                     _ => None,
                 };
                 if failure.is_some() {
-                    self.new_project = None;
+                    self.pending.new_project = None;
                 }
                 match self.buffers.map_outline.on_event(&event) {
                     Some(MapReaction::Show) => {
@@ -502,18 +499,20 @@ impl App {
                 if let Some(note) = self.buffers.worktrees.on_event(&event) {
                     self.note = Some(note);
                 }
-                if self.awaiting_lend {
+                if self.pending.awaiting_lend {
                     match &event {
                         Event::App(AppEvent::TerminalLend) => {
-                            self.awaiting_lend = false;
-                            self.handoff = Some(Command::App(AppCommand::TerminalReleased));
+                            self.pending.awaiting_lend = false;
+                            self.pending.handoff = Some(Command::App(AppCommand::TerminalReleased));
                         }
-                        Event::App(AppEvent::CommandFailed { .. }) => self.awaiting_lend = false,
+                        Event::App(AppEvent::CommandFailed { .. }) => {
+                            self.pending.awaiting_lend = false
+                        }
                         _ => {}
                     }
                 }
                 if let Event::App(AppEvent::TerminalReturned { error }) = &event {
-                    self.terminal_away = false;
+                    self.pending.terminal_away = false;
                     if let Some(error) = error {
                         self.note = Some(error.clone());
                     }
@@ -550,7 +549,7 @@ impl App {
                 }
                 let side_chat = match &event {
                     Event::Agent(AgentEvent::Upserted(agent))
-                        if self.open_side_chat
+                        if self.pending.open_side_chat
                             && matches!(agent.kind, AgentKind::SideChat | AgentKind::Tangent)
                             && !self.snap.agents.iter().any(|a| a.id == agent.id) =>
                     {
@@ -560,7 +559,8 @@ impl App {
                 };
                 let created = match &event {
                     Event::Task(TaskEvent::Upserted(task))
-                        if self.open_after_create.as_deref() == Some(task.title.as_str())
+                        if self.pending.open_after_create.as_deref()
+                            == Some(task.title.as_str())
                             && !self.snap.tasks.iter().any(|t| t.id == task.id) =>
                     {
                         Some(task.id)
@@ -602,21 +602,21 @@ impl App {
                     ApplyResult::Applied => {
                         if let Some(message) = failure {
                             tracing::info!(%message, "command failed");
-                            if self.quit_after_close.is_some() {
-                                self.close_failure = Some(message.clone());
+                            if self.pending.quit_after_close.is_some() {
+                                self.pending.close_failure = Some(message.clone());
                             }
                             self.note = Some(message);
                             // A failed save must not leave a later task of the same title to
                             // steal the screen.
-                            self.open_after_create = None;
-                            self.open_side_chat = false;
+                            self.pending.open_after_create = None;
+                            self.pending.open_side_chat = false;
                         }
                         if let Some(id) = created {
-                            self.open_after_create = None;
+                            self.pending.open_after_create = None;
                             self.open_task(id, false);
                         }
                         if let Some(id) = side_chat {
-                            self.open_side_chat = false;
+                            self.pending.open_side_chat = false;
                             self.open_in_panel(id);
                         }
                         if journal {
@@ -631,8 +631,8 @@ impl App {
                     }
                     ApplyResult::Gap { expected, got } => {
                         tracing::warn!(expected, got, "event gap; asking for a resync");
-                        if !self.resyncing {
-                            self.resyncing = true;
+                        if !self.pending.resyncing {
+                            self.pending.resyncing = true;
                             self.outbox.push(Command::App(AppCommand::Resync));
                         }
                     }
@@ -653,6 +653,11 @@ impl App {
     /// finishes while the conversation already has focus stays in Needs you (Decision 7a; live
     /// check 2026-11-06).
     fn settle(&mut self) {
+        // Whatever moved focus to the side column (a picker choice, Esc from an inbox item)
+        // ends focus mode, so the focused region is always on screen.
+        if self.focus_mode && self.regions.focus().is_side() {
+            self.toggle_focus_mode();
+        }
         // MAP mode is about the map in the main region; without one it ends.
         if self.mode == Mode::Map
             && (self.regions.buffer(RegionId::Main) != BufferKind::MapOutline
@@ -660,6 +665,9 @@ impl App {
         {
             self.mode = Mode::Normal;
         }
+        self.buffers
+            .map_outline
+            .set_map_mode(self.mode == Mode::Map);
         let shown_exists = self
             .buffers
             .conversation
@@ -733,7 +741,11 @@ impl App {
         self.dirty = true;
         self.note = None;
         self.mono_ms = mono_ms;
-        self.exit_armed = self.exit_armed_until.take().is_some_and(|d| d > mono_ms);
+        self.exit_armed = self
+            .pending
+            .exit_armed_until
+            .take()
+            .is_some_and(|d| d > mono_ms);
         if let Some(confirm) = self.confirm.take() {
             use crossterm::event::KeyCode::Char;
             let then = match event.code {
@@ -744,7 +756,7 @@ impl App {
             match then {
                 Some(Then::Action(action)) => self.run(action),
                 Some(Then::Commands(commands)) => self.outbox.extend(commands),
-                Some(Then::Handoff(command)) => self.handoff = Some(command),
+                Some(Then::Handoff(command)) => self.pending.handoff = Some(command),
                 Some(Then::CloseDayThenQuit) => self.close_day(true),
                 Some(Then::QuitDayOpen) => self.quit_asking(false),
                 None => {}
@@ -837,7 +849,7 @@ impl App {
     /// Whether the terminal should report the mouse: in MAP mode only (decision 23f), and never
     /// while the terminal is lent out.
     pub fn wants_mouse(&self) -> bool {
-        self.mode == Mode::Map && !self.terminal_away
+        self.mode == Mode::Map && !self.pending.terminal_away
     }
 
     /// A mouse event. Only MAP mode uses the mouse, and only on the map.
@@ -878,7 +890,7 @@ impl App {
     /// What kitty should show after the frame just drawn: the map picture and the selection
     /// ring when the main region shows the map and nothing floats over it.
     pub fn graphics_scene(&self) -> Option<Scene> {
-        if self.terminal_away
+        if self.pending.terminal_away
             || self.overlay.is_some()
             || self.regions.buffer(RegionId::Main) != BufferKind::MapOutline
         {
@@ -1137,7 +1149,7 @@ impl App {
     /// Asks the core for a side chat; the first one to appear afterwards opens in the side
     /// panel.
     fn new_side_chat(&mut self, question: String) {
-        self.open_side_chat = true;
+        self.pending.open_side_chat = true;
         self.outbox
             .push(Command::Agent(AgentCommand::NewSideChat { question }));
     }
@@ -1208,13 +1220,13 @@ impl App {
         if journal.closing {
             self.note = Some("already closing the day".into());
             if quit {
-                self.quit_after_close = Some(journal.latest.clone());
+                self.pending.quit_after_close = Some(journal.latest.clone());
             }
             return;
         }
         if quit {
-            self.quit_after_close = Some(journal.latest.clone());
-            self.close_failure = None;
+            self.pending.quit_after_close = Some(journal.latest.clone());
+            self.pending.close_failure = None;
         }
         self.outbox.push(Command::Journal(JournalCommand::EndOfDay));
         self.note = Some(if quit {
@@ -1232,7 +1244,7 @@ impl App {
         if journal.closing {
             return;
         }
-        let Some(before) = self.quit_after_close.take() else {
+        let Some(before) = self.pending.quit_after_close.take() else {
             return;
         };
         if journal.latest.is_some() && journal.latest != before {
@@ -1240,6 +1252,7 @@ impl App {
         } else {
             // The core's reason (a failed write), when it gave one.
             let why = self
+                .pending
                 .close_failure
                 .take()
                 .unwrap_or_else(|| "the journal was not written".into());
@@ -1424,7 +1437,7 @@ impl App {
                     // The second press quits the way `:q` does, asking first if a turn runs.
                     self.run(Action::Quit);
                 } else {
-                    self.exit_armed_until = Some(self.mono_ms + EXIT_CONFIRM_MS);
+                    self.pending.exit_armed_until = Some(self.mono_ms + EXIT_CONFIRM_MS);
                     self.note = Some("Press Ctrl-C again to exit".into());
                 }
             }
@@ -1492,7 +1505,7 @@ impl App {
                 // The core checks the path before the terminal is let go of.
                 self.outbox
                     .push(Command::App(AppCommand::OpenEditor { path }));
-                self.awaiting_lend = true;
+                self.pending.awaiting_lend = true;
             }
             Effect::Read {
                 target,

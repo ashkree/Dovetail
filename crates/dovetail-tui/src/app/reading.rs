@@ -210,8 +210,8 @@ impl App {
                 self.buffers
                     .library
                     .receive_tangent_listing(*tangent, listing.clone());
-                if self.pending_tangent_read == Some(*tangent) {
-                    self.pending_tangent_read = None;
+                if self.pending.tangent_read == Some(*tangent) {
+                    self.pending.tangent_read = None;
                     self.read_latest_answer(*tangent);
                 }
             }
@@ -272,9 +272,9 @@ impl App {
         if let Event::Agent(AgentEvent::Upserted(agent)) = event
             && agent.kind == AgentKind::Ask
             && agent.task.is_some()
-            && self.pending_ask == agent.task
+            && self.pending.ask == agent.task
         {
-            self.pending_ask = None;
+            self.pending.ask = None;
             if self.reading_mode() {
                 let id = agent.id.clone();
                 self.buffers.ask.follow(agent.task, &self.snap);
@@ -560,7 +560,7 @@ impl App {
                 self.start_ask_chat(id);
             }
             None => {
-                self.pending_ask = Some(task);
+                self.pending.ask = Some(task);
                 self.outbox
                     .push(Command::Research(ResearchCommand::StartAsk { task }));
                 self.note = Some("starting Ask…".into());
@@ -599,7 +599,7 @@ impl App {
     /// The figures kitty should show after the frame: the reading column's images in view,
     /// when reading mode is on and nothing floats over it.
     pub fn reading_figures(&self) -> Vec<crate::buffers::Figure> {
-        if !self.reading_mode() || self.terminal_away || self.overlay.is_some() {
+        if !self.reading_mode() || self.pending.terminal_away || self.overlay.is_some() {
             return Vec::new();
         }
         self.buffers.reader.figures()

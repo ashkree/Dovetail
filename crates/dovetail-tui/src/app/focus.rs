@@ -12,6 +12,7 @@ use dovetail_api::{
 use super::{App, ChatSite, Confirm, Then};
 use crate::buffers::InputTarget;
 use crate::keymap::action::Action;
+use crate::keymap::command::{self, RoundArg};
 use crate::keymap::mode::Mode;
 use crate::layout::region::{BufferKind, RegionId, Regions};
 
@@ -226,28 +227,28 @@ impl App {
                 self.start_input(InputTarget::TangentQuestion, "")
             }
             Action::NewTangent => self.new_tangent(arg.to_string()),
-            Action::Upgrade if arg.is_empty() || arg == "--local" => {
-                self.outbox.push(Command::App(AppCommand::StartUpgrade {
-                    local: arg == "--local",
-                }));
-                self.note = Some(if arg.is_empty() {
-                    "building the upgrade from origin/main; \"Upgrade ready\" appears in Needs you"
-                        .into()
-                } else {
-                    "building the upgrade from this checkout; \"Upgrade ready\" appears in Needs you".into()
-                });
-            }
-            Action::Upgrade => self.note = Some("usage: :upgrade [--local]".into()),
+            Action::Upgrade => match command::parse_upgrade(arg) {
+                Some(local) => {
+                    self.outbox
+                        .push(Command::App(AppCommand::StartUpgrade { local }));
+                    self.note = Some(if !local {
+                        "building the upgrade from origin/main; \"Upgrade ready\" appears in Needs you"
+                            .into()
+                    } else {
+                        "building the upgrade from this checkout; \"Upgrade ready\" appears in Needs you".into()
+                    });
+                }
+                None => self.note = Some("usage: :upgrade [--local]".into()),
+            },
             Action::StartRound => self.round(arg),
             Action::PickModel => self.open_model_selector((!arg.is_empty()).then_some(arg)),
             Action::NewProject => self.new_project(arg),
-            Action::ListResearch if arg.split_whitespace().next() == Some("kind") => {
-                self.research_kind(arg);
-            }
+            Action::ListResearch => match command::parse_research_kind(arg) {
+                Some(kind) => self.research_kind(kind),
+                None => self.run(Action::ListResearch),
+            },
             Action::NewSlice => {
-                let (name, brief) = arg
-                    .split_once(char::is_whitespace)
-                    .map_or((arg, ""), |(n, b)| (n, b.trim()));
+                let (name, brief) = command::parse_spawn(arg);
                 self.new_slice(name.to_string(), brief.to_string());
             }
             Action::Interrupt => {
@@ -296,9 +297,7 @@ impl App {
 
     /// `:research kind <decision|question>` sets what the task in focus (or selected) is for;
     /// a decision is held to the decision template when its report is written.
-    fn research_kind(&mut self, arg: &str) {
-        use dovetail_api::research::ResearchKind;
-        let kind = arg.split_whitespace().nth(1).and_then(ResearchKind::parse);
+    fn research_kind(&mut self, kind: Option<dovetail_api::research::ResearchKind>) {
         match (kind, self.focused_task()) {
             (Some(kind), Some(task)) => {
                 self.outbox
@@ -315,55 +314,30 @@ impl App {
     fn round(&mut self, arg: &str) {
         const USAGE: &str =
             "usage: :round <task> <brief>, :round close, or :round drop <task> [round]";
-        if let Some(rest) = arg
-            .strip_prefix("drop")
-            .filter(|r| r.is_empty() || r.starts_with(char::is_whitespace))
-        {
-            let mut words = rest.split_whitespace();
-            let task = words
-                .next()
-                .and_then(|t| t.trim_start_matches('#').parse::<i64>().ok());
-            let round = words.next().map(str::parse::<u32>);
-            match (task, round) {
-                (Some(task), None) => {
-                    self.drop_round(dovetail_api::tracking::task::TaskId(task), None)
+        match command::parse_round(arg) {
+            Some(RoundArg::Drop { task, round }) => self.drop_round(task, round),
+            Some(RoundArg::Close) => {
+                let open = self
+                    .snap
+                    .research
+                    .iter()
+                    .find(|r| r.open_round().is_some())
+                    .map(|r| r.task);
+                match open {
+                    Some(task) => {
+                        self.outbox
+                            .push(Command::Research(ResearchCommand::CloseRound { task }));
+                        self.note = Some(format!("closing the research round on #{}", task.0));
+                    }
+                    None => self.note = Some("no research round is open".into()),
                 }
-                (Some(task), Some(Ok(n))) => {
-                    self.drop_round(dovetail_api::tracking::task::TaskId(task), Some(n))
-                }
-                _ => self.note = Some(USAGE.into()),
             }
-            return;
-        }
-        if arg == "close" {
-            let open = self
-                .snap
-                .research
-                .iter()
-                .find(|r| r.open_round().is_some())
-                .map(|r| r.task);
-            match open {
-                Some(task) => {
-                    self.outbox
-                        .push(Command::Research(ResearchCommand::CloseRound { task }));
-                    self.note = Some(format!("closing the research round on #{}", task.0));
-                }
-                None => self.note = Some("no research round is open".into()),
-            }
-            return;
-        }
-        let (task, brief) = arg
-            .split_once(char::is_whitespace)
-            .map_or((arg, ""), |(t, b)| (t, b.trim()));
-        let task = task.trim_start_matches('#').parse::<i64>().ok();
-        match (task, brief) {
-            (Some(task), brief) if !brief.is_empty() => {
-                let task = dovetail_api::tracking::task::TaskId(task);
+            Some(RoundArg::Start { task, brief }) => {
                 let busy = self.snap.research.iter().any(|r| r.open_round().is_some());
                 self.outbox
                     .push(Command::Research(ResearchCommand::StartRound {
                         task,
-                        brief: brief.to_string(),
+                        brief,
                     }));
                 self.note = Some(if busy {
                     format!(
@@ -378,7 +352,7 @@ impl App {
                     )
                 });
             }
-            _ => self.note = Some(USAGE.into()),
+            None => self.note = Some(USAGE.into()),
         }
     }
 
@@ -499,6 +473,6 @@ impl App {
             });
             return;
         }
-        self.handoff = Some(command);
+        self.pending.handoff = Some(command);
     }
 }

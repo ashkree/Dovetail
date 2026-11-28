@@ -29,22 +29,11 @@ impl App {
         self.buffers.tree.clear_working();
         self.buffers.panel.conversation_mut().clear_working();
         self.buffers.ask.conversation_mut().clear_working();
-        // Whatever moved focus to the side column (a picker choice, Esc from an inbox item)
-        // ends focus mode, so the focused region is always on screen.
-        if self.focus_mode && self.regions.focus().is_side() {
-            self.toggle_focus_mode();
-        }
         if self.reading_mode() {
             self.draw_reading(frame, prompting);
             return;
         }
         let screen = frame.area();
-        self.buffers
-            .map_outline
-            .set_screen(screen.width, screen.height);
-        self.buffers
-            .map_outline
-            .set_map_mode(self.mode == Mode::Map);
         // MAP mode gives the map the whole width, as focus mode does the conversation; neither
         // shows the tab row.
         let full = self.focus_mode || self.mode == Mode::Map;
