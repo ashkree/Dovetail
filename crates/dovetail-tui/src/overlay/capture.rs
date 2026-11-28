@@ -4,8 +4,14 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dovetail_api::tracking::task::{Bucket, NewTask, PLevel, TaskId};
+use ratatui::Frame;
+use ratatui::layout::{Position, Rect};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Clear, Paragraph};
 
+use crate::buffers;
 use crate::input::{InputOutcome, TextInput};
+use crate::theme::Theme;
 
 /// What a capture line says.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -137,6 +143,84 @@ impl Capture {
             effort: Default::default(),
             criterion: None,
         })
+    }
+
+    /// Draws the quick-capture box centered on `screen`.
+    pub fn render(&self, frame: &mut Frame, screen: Rect, theme: &Theme) {
+        let width = screen.width.saturating_sub(4).min(90);
+        let height = 6.min(screen.height);
+        let area = super::centered_rect(screen, width, height);
+        frame.render_widget(Clear, area);
+        let block = Block::bordered()
+            .border_style(theme.fg(theme.focus))
+            .title(Line::from(Span::styled(
+                " new task ",
+                theme.fg(theme.focus),
+            )));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let row = |n: u16| Rect {
+            x: inner.x + 1,
+            y: inner.y + n,
+            width: inner.width.saturating_sub(2),
+            height: 1,
+        };
+        if inner.height < 4 {
+            return;
+        }
+        let text = self.input.text();
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("› ", theme.accent()),
+                Span::styled(text.to_string(), theme.body()),
+            ])),
+            row(0),
+        );
+        frame.set_cursor_position(Position::new(
+            (row(0).x
+                + 2
+                + unicode_width::UnicodeWidthStr::width(self.input.before_cursor()) as u16)
+                .min(row(0).x + row(0).width.saturating_sub(1)),
+            row(0).y,
+        ));
+
+        // What the line will become.
+        let parsed = parse(text);
+        let mut facts = Vec::new();
+        facts.push(
+            parsed
+                .p_level
+                .map_or("no P-level", buffers::p_label)
+                .to_string(),
+        );
+        facts.push(buffers::bucket_label(parsed.bucket).to_string());
+        if let Some(pr) = parsed.pr {
+            facts.push(format!("PR #{pr}"));
+        }
+        frame.render_widget(
+            Paragraph::new(Span::styled(facts.join(" · "), theme.dim())),
+            row(1),
+        );
+        let link = match (self.active_link(), self.offered_link()) {
+            (Some(l), _) => Line::from(vec![
+                Span::styled("linked to: ", theme.dim()),
+                Span::styled(l.title.clone(), theme.fg(theme.code)),
+                Span::styled("   Ctrl-l unlink", theme.dim()),
+            ]),
+            (None, Some(l)) => Line::from(Span::styled(
+                format!("not linked to {} · Ctrl-l to link", l.title),
+                theme.dim(),
+            )),
+            (None, None) => Line::default(),
+        };
+        frame.render_widget(Paragraph::new(link), row(2));
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "⏎ save · Tab save and open · esc cancel",
+                theme.dim(),
+            )),
+            row(3),
+        );
     }
 }
 

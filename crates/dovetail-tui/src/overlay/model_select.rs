@@ -11,9 +11,20 @@ use dovetail_api::{
 };
 use ratatui::text::{Line, Span};
 
+use super::picker::{Picker, PickerItem, PickerOutcome};
 use crate::fmt;
-use crate::picker::{Picker, PickerItem, PickerKey, PickerOutcome};
 use crate::theme::Theme;
+
+/// Key of one row in [`ModelPicker`]: a model and effort level on a driver.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelKey {
+    /// The driver offering this model.
+    pub driver: DriverKind,
+    /// The model, as [`ModelOption::name`].
+    pub model: String,
+    /// The effort level, or `None` when the model has no effort levels.
+    pub effort: Option<ReasoningEffort>,
+}
 
 /// What a key did to the model picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +61,7 @@ pub struct ModelPicker {
     agent_kind: AgentKind,
     agent_driver: DriverKind,
     options: Vec<ModelOption>,
-    picker: Picker,
+    picker: Picker<ModelKey>,
 }
 
 impl ModelPicker {
@@ -76,7 +87,7 @@ impl ModelPicker {
     }
 
     /// The underlying picker, for rendering.
-    pub fn picker(&self) -> &Picker {
+    pub fn picker(&self) -> &Picker<ModelKey> {
         &self.picker
     }
 
@@ -85,7 +96,7 @@ impl ModelPicker {
         match self.picker.key(event) {
             PickerOutcome::Pending => ModelOutcome::Pending,
             PickerOutcome::Closed => ModelOutcome::Cancel,
-            PickerOutcome::Chosen(PickerKey::Model {
+            PickerOutcome::Chosen(ModelKey {
                 driver,
                 model,
                 effort,
@@ -107,7 +118,6 @@ impl ModelPicker {
                     ModelOutcome::Cancel
                 }
             }
-            PickerOutcome::Chosen(_) => ModelOutcome::Pending,
         }
     }
 
@@ -115,7 +125,7 @@ impl ModelPicker {
     pub fn preview(&self, width: usize, theme: &Theme) -> Vec<Line<'static>> {
         let mut out = Vec::new();
         match self.picker.selected().map(|item| &item.key) {
-            Some(PickerKey::Model {
+            Some(ModelKey {
                 driver,
                 model,
                 effort,
@@ -191,7 +201,11 @@ impl ModelPicker {
 }
 
 /// Picker rows grouped by [`DriverKind::ALL`], one row per `(model, effort)`.
-pub fn model_items(agent: &Agent, options: &[ModelOption], theme: &Theme) -> Vec<PickerItem> {
+pub fn model_items(
+    agent: &Agent,
+    options: &[ModelOption],
+    theme: &Theme,
+) -> Vec<PickerItem<ModelKey>> {
     let current_idx = agent
         .model
         .as_deref()
@@ -232,7 +246,7 @@ pub fn model_items(agent: &Agent, options: &[ModelOption], theme: &Theme) -> Vec
                     (" ", theme.dim)
                 };
                 items.push(PickerItem {
-                    key: PickerKey::Model {
+                    key: ModelKey {
                         driver,
                         model: opt.name.clone(),
                         effort,
@@ -361,7 +375,7 @@ mod tests {
         let picker = ModelPicker::new(&slice, options(), None, &Theme::default());
         assert!(picker.picker().shown().iter().all(|i| matches!(
             i.key,
-            PickerKey::Model {
+            ModelKey {
                 driver: DriverKind::Claude,
                 ..
             }

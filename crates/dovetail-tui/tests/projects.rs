@@ -70,7 +70,8 @@ fn leader_p_p_lists_every_project_and_marks_research_ones() {
         .find(|l| l.contains("Market sizing"))
         .expect("the research project is listed");
     assert!(
-        market.contains(dovetail_tui::switcher::RESEARCH_MARKER) && market.contains("research"),
+        market.contains(dovetail_tui::overlay::switcher::RESEARCH_MARKER)
+            && market.contains("research"),
         "{market}"
     );
     let notes = screen
@@ -78,7 +79,7 @@ fn leader_p_p_lists_every_project_and_marks_research_ones() {
         .find(|l| l.contains("notes-site") && l.contains("/src/notes-site"))
         .expect("a code project shows its folder");
     assert!(
-        !notes.contains(dovetail_tui::switcher::RESEARCH_MARKER),
+        !notes.contains(dovetail_tui::overlay::switcher::RESEARCH_MARKER),
         "{notes}"
     );
     assert!(
@@ -244,7 +245,7 @@ fn a_starter_recipe_offers_the_profiles_default_first() {
     assert!(screen.contains("Profile for business"), "{screen}");
     let at = |needle: &str| screen.find(needle).expect(needle);
     assert!(
-        at(dovetail_tui::switcher::NO_PROFILE) < at("maveron"),
+        at(dovetail_tui::overlay::switcher::NO_PROFILE) < at("maveron"),
         "{screen}"
     );
     // Enter on the first row keeps the default: nothing to send.

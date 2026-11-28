@@ -3,13 +3,6 @@
 //! are this component with different items.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dovetail_api::{
-    activity::inbox::InboxId,
-    agents::agent::AgentId,
-    agents::model::{DriverKind, ReasoningEffort},
-    tracking::project::ProjectId,
-    tracking::task::TaskId,
-};
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32Str};
 use ratatui::Frame;
@@ -22,43 +15,11 @@ use crate::fmt;
 use crate::input::{InputOutcome, TextInput};
 use crate::theme::Theme;
 
-/// What a picker row stands for.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PickerKey {
-    /// An agent.
-    Agent(AgentId),
-    /// A task.
-    Task(TaskId),
-    /// An inbox item.
-    Inbox(InboxId),
-    /// A slash command or skill, by name.
-    Command(String),
-    /// An MCP server of the session, by name (task #44).
-    McpServer(String),
-    /// A registered project (the project switcher).
-    Project(ProjectId),
-    /// A Claude profile from config.toml, or `None` for the default (after `:project add`).
-    Profile(Option<String>),
-    /// An action in the `:keys` list.
-    Action(crate::keymap::action::Action),
-    /// A model and effort level on a driver (task #46).
-    Model {
-        /// The driver offering this model.
-        driver: DriverKind,
-        /// The model, as [`dovetail_api::agents::model::ModelOption::name`].
-        model: String,
-        /// The effort level, or `None` when the model has no effort levels.
-        effort: Option<ReasoningEffort>,
-    },
-    /// A row in the usage limits menu, by index into the menu's row list (task #46).
-    UsageGroup(usize),
-}
-
-/// One row.
+/// One row of a [`Picker`], keyed by `K`.
 #[derive(Debug, Clone)]
-pub struct PickerItem {
-    /// What choosing it opens.
-    pub key: PickerKey,
+pub struct PickerItem<K> {
+    /// What choosing it produces.
+    pub key: K,
     /// The name shown.
     pub label: String,
     /// What is searched: the label plus anything else worth matching (branch, task title).
@@ -77,11 +38,11 @@ pub struct PickerItem {
 
 /// What a key did to the picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PickerOutcome {
+pub enum PickerOutcome<K> {
     /// Still open.
     Pending,
     /// A row was chosen.
-    Chosen(PickerKey),
+    Chosen(K),
     /// Closed without choosing.
     Closed,
 }
@@ -92,10 +53,10 @@ struct Shown {
     indices: Vec<u32>,
 }
 
-/// A picker over a fixed list of items.
-pub struct Picker {
+/// A fuzzy-filtered picker over a list of items keyed by `K`.
+pub struct Picker<K> {
     title: String,
-    items: Vec<PickerItem>,
+    items: Vec<PickerItem<K>>,
     query: TextInput,
     shown: Vec<Shown>,
     selected: usize,
@@ -104,14 +65,14 @@ pub struct Picker {
     preview_from_top: bool,
 }
 
-impl Picker {
+impl<K> Picker<K> {
     /// The title shown on the box.
     pub fn title(&self) -> &str {
         &self.title
     }
 
     /// A picker over `items`, in the order they should show for an empty query.
-    pub fn new(title: impl Into<String>, items: Vec<PickerItem>) -> Self {
+    pub fn new(title: impl Into<String>, items: Vec<PickerItem<K>>) -> Self {
         let mut picker = Self {
             title: title.into(),
             items,
@@ -140,7 +101,10 @@ impl Picker {
 
     /// Replaces the rows, keeping the query and the highlighted row (by key) when it is still
     /// there.
-    pub fn set_items(&mut self, items: Vec<PickerItem>) {
+    pub fn set_items(&mut self, items: Vec<PickerItem<K>>)
+    where
+        K: Clone + PartialEq,
+    {
         let keep = self.selected().map(|i| i.key.clone());
         self.items = items;
         self.refilter();
@@ -160,18 +124,21 @@ impl Picker {
     }
 
     /// The rows now showing, best first.
-    pub fn shown(&self) -> Vec<&PickerItem> {
+    pub fn shown(&self) -> Vec<&PickerItem<K>> {
         self.shown.iter().map(|s| &self.items[s.item]).collect()
     }
 
     /// The highlighted row.
-    pub fn selected(&self) -> Option<&PickerItem> {
+    pub fn selected(&self) -> Option<&PickerItem<K>> {
         self.shown.get(self.selected).map(|s| &self.items[s.item])
     }
 
     /// Applies a key: type to filter, `Ctrl-j`/`Ctrl-k` or the arrows to move, `Enter` to choose,
     /// `Esc` to close.
-    pub fn key(&mut self, key: KeyEvent) -> PickerOutcome {
+    pub fn key(&mut self, key: KeyEvent) -> PickerOutcome<K>
+    where
+        K: Clone,
+    {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Down | KeyCode::Char('j') if ctrl || key.code == KeyCode::Down => {
@@ -260,12 +227,7 @@ impl Picker {
     ) {
         let width = screen.width.saturating_sub(4).min(130);
         let height = screen.height.saturating_sub(4).min(26);
-        let area = Rect {
-            x: screen.x + (screen.width - width) / 2,
-            y: screen.y + (screen.height - height) / 2,
-            width,
-            height,
-        };
+        let area = super::centered_rect(screen, width, height);
         frame.render_widget(Clear, area);
         let halves = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)])
             .split(area);
@@ -396,8 +358,8 @@ impl Picker {
     }
 }
 
-fn item_line(
-    item: &PickerItem,
+fn item_line<K>(
+    item: &PickerItem<K>,
     shown: &Shown,
     selected: bool,
     width: usize,
@@ -420,16 +382,16 @@ fn item_line(
         ));
     }
     let right = vec![Span::styled(fmt::truncate(&item.detail, 28), theme.dim())];
-    super::buffers::spread_fit(spans, &[right], width)
+    crate::buffers::spread_fit(spans, &[right], width)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn item(name: &str, section: &'static str) -> PickerItem {
+    fn item(name: &str, section: &'static str) -> PickerItem<String> {
         PickerItem {
-            key: PickerKey::Agent(AgentId(name.into())),
+            key: name.into(),
             label: name.into(),
             haystack: name.into(),
             detail: String::new(),
@@ -448,7 +410,7 @@ mod tests {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
     }
 
-    fn picker() -> Picker {
+    fn picker() -> Picker<String> {
         Picker::new(
             "Switch",
             vec![
@@ -460,7 +422,7 @@ mod tests {
         )
     }
 
-    fn names(p: &Picker) -> Vec<String> {
+    fn names(p: &Picker<String>) -> Vec<String> {
         p.shown().iter().map(|i| i.label.clone()).collect()
     }
 
@@ -526,7 +488,7 @@ mod tests {
         p.key(ctrl('j'));
         assert_eq!(
             p.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            PickerOutcome::Chosen(PickerKey::Agent(AgentId("eval run".into())))
+            PickerOutcome::Chosen("eval run".into())
         );
         assert_eq!(
             p.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),

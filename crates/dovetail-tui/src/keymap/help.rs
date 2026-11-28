@@ -16,7 +16,7 @@ use crate::keymap::action::{Action, Group};
 use crate::keymap::command::COMMANDS;
 use crate::keymap::mode::Mode;
 use crate::keymap::{Key, Keymap, Scope, label_sequence};
-use crate::picker::{PickerItem, PickerKey};
+use crate::overlay::picker::PickerItem;
 use crate::theme::Theme;
 
 // --- the which-key popup ---
@@ -263,8 +263,8 @@ fn keys_elsewhere(map: &Keymap, scopes: &[Scope], action: Action) -> Vec<String>
 
 /// The `:keys` picker's rows: every action with its description, searchable by description, keys,
 /// command names and group. Actions that apply here come first in each group.
-pub fn keys_items(map: &Keymap, scopes: &[Scope], theme: &Theme) -> Vec<PickerItem> {
-    let mut items: Vec<(Group, bool, PickerItem)> = Action::ALL
+pub fn keys_items(map: &Keymap, scopes: &[Scope], theme: &Theme) -> Vec<PickerItem<Action>> {
+    let mut items: Vec<(Group, bool, PickerItem<Action>)> = Action::ALL
         .iter()
         .map(|&action| {
             let here = keys_here(map, scopes, action);
@@ -288,7 +288,7 @@ pub fn keys_items(map: &Keymap, scopes: &[Scope], theme: &Theme) -> Vec<PickerIt
                 ("·", theme.dim)
             };
             let item = PickerItem {
-                key: PickerKey::Action(action),
+                key: action,
                 label: action.describe().to_owned(),
                 haystack,
                 detail,

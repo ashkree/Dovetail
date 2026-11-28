@@ -16,7 +16,6 @@ macro_rules! cx {
     };
 }
 
-mod confirm;
 mod draw;
 mod focus;
 mod overlay;

@@ -18,7 +18,7 @@ use super::super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane,
 use crate::fmt;
 use crate::keymap::action::Action;
 use crate::layout::region::BufferKind;
-use crate::switcher::TANGENT_MARKER;
+use crate::overlay::switcher::TANGENT_MARKER;
 
 /// What the list says when Tangents is empty.
 const EMPTY: &str = "No tangents. T in the side panel (␣?) or :tangent <question> asks one: a \

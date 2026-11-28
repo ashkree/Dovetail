@@ -7,22 +7,18 @@
 pub mod app;
 pub mod buffers;
 pub mod canvas;
-pub mod capture;
 pub mod chrome;
 pub mod event_loop;
 pub mod fmt;
 pub mod input;
 pub mod keymap;
 pub mod layout;
-pub mod mcp_menu;
-pub mod model_select;
-pub mod picker;
+pub mod overlay;
 pub mod render;
-pub mod switcher;
 pub mod theme;
-pub mod usage_menu;
 
 pub use app::App;
 pub use event_loop::{Clock, run};
 pub use keymap::Mode;
+pub use overlay::capture;
 pub use theme::Theme;

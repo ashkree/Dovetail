@@ -9,8 +9,8 @@ use super::{App, Confirm, Then};
 use crate::buffers::ReadTarget;
 use crate::buffers::library::LibKey;
 use crate::layout::region::{BufferKind, RegionId};
-use crate::picker::Picker;
-use crate::switcher;
+use crate::overlay::picker::Picker;
+use crate::overlay::switcher;
 
 impl App {
     /// Asks the core for a tangent; its session opens in the side panel when it appears.

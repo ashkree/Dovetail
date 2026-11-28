@@ -19,19 +19,20 @@ use dovetail_api::{
 
 use super::App;
 use super::ChatSite;
-use super::confirm::{ConfirmOutcome, SwitchConfirm};
-use crate::capture::{Capture, CaptureOutcome, LinkTarget};
+use crate::keymap::action::Action;
 use crate::keymap::help;
 use crate::keymap::mode::Mode;
 use crate::keymap::{Key, Scope};
 use crate::layout::region::RegionId;
-use crate::mcp_menu::{McpMenu, Step};
-use crate::model_select::{ModelOutcome, ModelPicker};
-use crate::picker::{Picker, PickerKey, PickerOutcome};
-use crate::switcher;
-use crate::usage_menu::{UsageMenu, UsageStep};
+use crate::overlay::capture::{Capture, CaptureOutcome, LinkTarget};
+use crate::overlay::confirm::{ConfirmOutcome, SwitchConfirm};
+use crate::overlay::mcp_menu::{McpMenu, Step};
+use crate::overlay::model_select::{ModelOutcome, ModelPicker};
+use crate::overlay::picker::{Picker, PickerOutcome};
+use crate::overlay::switcher::{self, SwitchKey};
+use crate::overlay::usage_menu::{UsageMenu, UsageStep};
 
-/// What choosing a picker row does.
+/// What choosing a switcher picker row does.
 pub(super) enum Purpose {
     /// Open what the row stands for.
     Open,
@@ -50,13 +51,6 @@ pub(super) enum Purpose {
     StartTangent(TaskId),
     /// Attach this tangent to the chosen task of the open project.
     AttachTangent(TaskId),
-    /// Set the chosen profile in the starter recipe `:project add` just wrote (task #31).
-    Profile {
-        /// The project just added.
-        project: ProjectId,
-        /// Its starter recipe.
-        path: PathBuf,
-    },
 }
 
 /// The note when the profile picker keeps the default (task #31).
@@ -76,7 +70,15 @@ pub(super) struct ChatMark {
 /// What floats over the layout.
 pub(super) enum Overlay {
     /// The agent switcher, the everything picker or the relate picker.
-    Picker(Picker, Purpose),
+    Picker(Picker<SwitchKey>, Purpose),
+    /// `:keys`: every action with its keys here.
+    Keys(Picker<Action>),
+    /// Profile picker after `:project add` (task #31).
+    Profile {
+        picker: Picker<Option<String>>,
+        project: ProjectId,
+        path: PathBuf,
+    },
     /// Quick capture.
     Capture(Capture),
     /// The MCP server menu of a session (task #44).
@@ -272,7 +274,7 @@ impl App {
     /// `:keys`: every action with its keys here and its description.
     pub(super) fn open_keys_picker(&mut self) {
         let items = help::keys_items(&self.keymap, &self.scopes(), &self.theme);
-        self.open_overlay(Overlay::Picker(Picker::new("Keys", items), Purpose::Open));
+        self.open_overlay(Overlay::Keys(Picker::new("Keys", items)));
     }
 
     /// `:research`: the tasks that have research; choosing one opens its detail.
@@ -342,20 +344,15 @@ impl App {
             }
             Overlay::Picker(mut picker, purpose) => match picker.key(event) {
                 PickerOutcome::Pending => self.overlay = Some(Overlay::Picker(picker, purpose)),
-                PickerOutcome::Closed => {
-                    self.close_overlay_restoring_chat();
-                    if let Purpose::Profile { path, .. } = purpose {
-                        self.note = Some(no_profile_note(&path));
-                    }
-                }
+                PickerOutcome::Closed => self.close_overlay_restoring_chat(),
                 PickerOutcome::Chosen(key) => {
                     let from = self.close_overlay();
                     match (purpose, key) {
-                        (Purpose::Relate(task), PickerKey::Task(other)) => {
+                        (Purpose::Relate(task), SwitchKey::Task(other)) => {
                             self.toggle_related(task, other)
                         }
-                        (Purpose::Browse, PickerKey::Project(id)) => self.browse_project(id),
-                        (Purpose::FileUnfiled(item), PickerKey::Task(task)) => {
+                        (Purpose::Browse, SwitchKey::Project(id)) => self.browse_project(id),
+                        (Purpose::FileUnfiled(item), SwitchKey::Task(task)) => {
                             self.outbox
                                 .push(Command::Research(ResearchCommand::FileUnfiled {
                                     item,
@@ -363,12 +360,12 @@ impl App {
                                 }));
                             self.note = Some(format!("filing the finding under #{}", task.0));
                         }
-                        (Purpose::FileTangent(tangent), PickerKey::Project(project)) => {
+                        (Purpose::FileTangent(tangent), SwitchKey::Project(project)) => {
                             self.note = Some(format!("filing the tangent into {}", project.0));
                             self.outbox
                                 .push(Command::Tangent(TangentCommand::File { tangent, project }));
                         }
-                        (Purpose::StartTangent(tangent), PickerKey::Project(project)) => {
+                        (Purpose::StartTangent(tangent), SwitchKey::Project(project)) => {
                             self.note = Some(format!("starting a task in {}", project.0));
                             self.outbox
                                 .push(Command::Tangent(TangentCommand::StartFrom {
@@ -376,30 +373,61 @@ impl App {
                                     project,
                                 }));
                         }
-                        (Purpose::AttachTangent(tangent), PickerKey::Task(task)) => {
+                        (Purpose::AttachTangent(tangent), SwitchKey::Task(task)) => {
                             self.note = Some(format!("attaching the tangent to #{}", task.0));
                             self.outbox
                                 .push(Command::Tangent(TangentCommand::Attach { tangent, task }));
-                        }
-                        (Purpose::Profile { project, path }, PickerKey::Profile(profile)) => {
-                            match profile {
-                                Some(profile) => {
-                                    self.note = Some(format!(
-                                        "profile {profile} set in {}",
-                                        path.display()
-                                    ));
-                                    self.outbox.push(Command::Project(
-                                        ProjectCommand::SetRecipeProfile { project, profile },
-                                    ));
-                                }
-                                None => self.note = Some(no_profile_note(&path)),
-                            }
                         }
                         (_, key) => self.choose(key),
                     }
                     self.restore_chat(from);
                 }
             },
+            Overlay::Keys(mut picker) => match picker.key(event) {
+                PickerOutcome::Pending => self.overlay = Some(Overlay::Keys(picker)),
+                PickerOutcome::Closed => self.close_overlay_restoring_chat(),
+                PickerOutcome::Chosen(action) => {
+                    let from = self.close_overlay();
+                    if help::runnable(&self.keymap, &self.scopes(), action) {
+                        self.run(action);
+                    } else {
+                        self.note = Some(format!("{}: works in another view", action.describe()));
+                    }
+                    self.restore_chat(from);
+                }
+            },
+            Overlay::Profile {
+                mut picker,
+                project,
+                path,
+            } => {
+                match picker.key(event) {
+                    PickerOutcome::Pending => {
+                        self.overlay = Some(Overlay::Profile {
+                            picker,
+                            project,
+                            path,
+                        });
+                    }
+                    PickerOutcome::Closed => {
+                        self.close_overlay_restoring_chat();
+                        self.note = Some(no_profile_note(&path));
+                    }
+                    PickerOutcome::Chosen(profile) => {
+                        self.close_overlay_restoring_chat();
+                        match profile {
+                            Some(profile) => {
+                                self.note =
+                                    Some(format!("profile {profile} set in {}", path.display()));
+                                self.outbox.push(Command::Project(
+                                    ProjectCommand::SetRecipeProfile { project, profile },
+                                ));
+                            }
+                            None => self.note = Some(no_profile_note(&path)),
+                        }
+                    }
+                }
+            }
             Overlay::Mcp(mut menu) => {
                 let steps = menu.key(event);
                 self.overlay = Some(Overlay::Mcp(menu));
@@ -511,36 +539,24 @@ impl App {
             return;
         }
         let items = switcher::profile_items(profiles, &self.theme);
-        self.open_overlay(Overlay::Picker(
-            Picker::new(format!("Profile for {name}"), items),
-            Purpose::Profile { project, path },
-        ));
+        self.open_overlay(Overlay::Profile {
+            picker: Picker::new(format!("Profile for {name}"), items),
+            project,
+            path,
+        });
     }
 
     /// Opens what a picker row stands for.
-    fn choose(&mut self, key: PickerKey) {
+    fn choose(&mut self, key: SwitchKey) {
         match key {
-            // Handled directly by the picker's own overlay.
-            PickerKey::Profile(_)
-            | PickerKey::McpServer(_)
-            | PickerKey::Model { .. }
-            | PickerKey::UsageGroup(_) => {}
-            // `:keys`: run what can run from here, otherwise the picker just closed.
-            PickerKey::Action(action) => {
-                if help::runnable(&self.keymap, &self.scopes(), action) {
-                    self.run(action);
-                } else {
-                    self.note = Some(format!("{}: works in another view", action.describe()));
-                }
-            }
-            PickerKey::Agent(id) => self.open_agent_in_main(id),
-            PickerKey::Task(id) => self.open_task(id, false),
-            PickerKey::Project(id) => self.pick_project(id),
-            PickerKey::Inbox(id) => {
+            SwitchKey::Agent(id) => self.open_agent_in_main(id),
+            SwitchKey::Task(id) => self.open_task(id, false),
+            SwitchKey::Project(id) => self.pick_project(id),
+            SwitchKey::Inbox(id) => {
                 self.focus_inbox();
                 self.buffers.inbox.select_item(&self.snap, id);
             }
-            PickerKey::Command(name) => {
+            SwitchKey::Command(name) => {
                 if let Some(agent) = self.chat_target() {
                     self.start_chat(agent);
                     self.chat_view_mut().insert_command(&name);

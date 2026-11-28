@@ -10,8 +10,8 @@ use dovetail_api::{
 
 use super::overlay::{Overlay, Purpose};
 use super::{App, Confirm, Then};
-use crate::picker::Picker;
-use crate::switcher;
+use crate::overlay::picker::Picker;
+use crate::overlay::switcher;
 
 /// What `:project new` says when it is not given a name and `--research`.
 const NEW_USAGE: &str = "usage: :project new <name> --research (a code project: open dovetail in \

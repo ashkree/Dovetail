@@ -8,9 +8,9 @@ use dovetail_api::activity::status::DriverUsage;
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
 
+use super::picker::{Picker, PickerItem, PickerOutcome};
 use crate::chrome::usage;
 use crate::fmt;
-use crate::picker::{Picker, PickerItem, PickerKey, PickerOutcome};
 use crate::theme::Theme;
 
 /// Width of each usage window's progress bar in terminal cells.
@@ -45,7 +45,7 @@ pub struct UsageMenu {
     /// `None` until the first [`dovetail_api::activity::status::StatusEvent::UsageLoaded`] arrives.
     reports: Option<Vec<DriverUsage>>,
     rows: Vec<UsageRow>,
-    picker: Picker,
+    picker: Picker<usize>,
 }
 
 impl UsageMenu {
@@ -59,7 +59,7 @@ impl UsageMenu {
     }
 
     /// The underlying picker, for rendering.
-    pub fn picker(&self) -> &Picker {
+    pub fn picker(&self) -> &Picker<usize> {
         &self.picker
     }
 
@@ -97,10 +97,8 @@ impl UsageMenu {
     }
 
     fn selected_row(&self) -> Option<(&DriverUsage, RowKind)> {
-        let PickerKey::UsageGroup(idx) = &self.picker.selected()?.key else {
-            return None;
-        };
-        let row = self.rows.get(*idx)?;
+        let idx = self.picker.selected()?.key;
+        let row = self.rows.get(idx)?;
         let report = self.reports.as_ref()?.get(row.report)?;
         Some((report, row.kind))
     }
@@ -201,7 +199,7 @@ impl Default for UsageMenu {
 }
 
 /// Picker rows and the row index table, built together from `reports`.
-fn build_rows(reports: &[DriverUsage], theme: &Theme) -> (Vec<PickerItem>, Vec<UsageRow>) {
+fn build_rows(reports: &[DriverUsage], theme: &Theme) -> (Vec<PickerItem<usize>>, Vec<UsageRow>) {
     let mut items = Vec::new();
     let mut rows = Vec::new();
     for (r_idx, report) in reports.iter().enumerate() {
@@ -213,7 +211,7 @@ fn build_rows(reports: &[DriverUsage], theme: &Theme) -> (Vec<PickerItem>, Vec<U
                 kind: RowKind::Failed,
             });
             items.push(PickerItem {
-                key: PickerKey::UsageGroup(idx),
+                key: idx,
                 label: "unavailable".into(),
                 haystack: format!(
                     "{section} unavailable failed {}",
@@ -234,7 +232,7 @@ fn build_rows(reports: &[DriverUsage], theme: &Theme) -> (Vec<PickerItem>, Vec<U
                 kind: RowKind::Empty,
             });
             items.push(PickerItem {
-                key: PickerKey::UsageGroup(idx),
+                key: idx,
                 label: "no limits reported".into(),
                 haystack: format!(
                     "{section} no limits reported {} {}",
@@ -275,7 +273,7 @@ fn build_rows(reports: &[DriverUsage], theme: &Theme) -> (Vec<PickerItem>, Vec<U
                 kind: RowKind::Group(g_idx),
             });
             items.push(PickerItem {
-                key: PickerKey::UsageGroup(idx),
+                key: idx,
                 label: group.name.clone(),
                 haystack: format!("{section} {} {} {detail}", group.name, group.models),
                 detail,

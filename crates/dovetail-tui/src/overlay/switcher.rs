@@ -6,22 +6,37 @@ use std::collections::HashSet;
 
 use dovetail_api::{
     Snapshot,
-    activity::inbox::{InboxItem, InboxKind},
+    activity::inbox::{InboxId, InboxItem, InboxKind},
     agents::agent::{Agent, AgentId, AgentKind, AgentStatus, SlashCommand},
     agents::tangent::TANGENTS_PROJECT,
-    tracking::project::{ProjectKind, ProjectSummary},
-    tracking::task::TaskStatus,
+    tracking::project::{ProjectId, ProjectKind, ProjectSummary},
+    tracking::task::{TaskId, TaskStatus},
 };
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
 
+use super::picker::PickerItem;
 use crate::buffers::task_detail;
 use crate::buffers::{bucket_label, status_glyph, status_word};
 use crate::fmt;
 use crate::input::slash;
-use crate::picker::{PickerItem, PickerKey};
 use crate::render::transcript::{self, Cache};
 use crate::theme::Theme;
+
+/// What a switcher / finder picker row opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SwitchKey {
+    /// An agent.
+    Agent(AgentId),
+    /// A task.
+    Task(TaskId),
+    /// An inbox item.
+    Inbox(InboxId),
+    /// A slash command or skill, by name.
+    Command(String),
+    /// A registered project (the project switcher / browser).
+    Project(ProjectId),
+}
 
 /// Agents in switcher order: those that need you first, then the most recently active, each
 /// session followed by its subagents. Returns the agent and its indent.
@@ -79,7 +94,7 @@ fn branch_of<'a>(snap: &'a Snapshot, agent: &'a Agent) -> Option<&'a str> {
 }
 
 /// Rows for the agent switcher.
-pub fn agent_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem> {
+pub fn agent_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem<SwitchKey>> {
     agent_order(snap)
         .into_iter()
         .map(|(agent, depth)| {
@@ -91,7 +106,7 @@ pub fn agent_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerIte
                 .map_or("", |t| t.title.as_str());
             let age = fmt::ago(now_ms, agent.last_activity_ms);
             PickerItem {
-                key: PickerKey::Agent(agent.id.clone()),
+                key: SwitchKey::Agent(agent.id.clone()),
                 label: agent.name.clone(),
                 haystack: format!("{} {branch} {task}", agent.name),
                 detail: if branch.is_empty() {
@@ -155,7 +170,7 @@ fn with_hint(text: &str, hint: &str) -> String {
 }
 
 /// Slash command and skill rows (see [`merged_commands`]); Dovetail's are marked.
-pub fn command_items(commands: &[SlashCommand], theme: &Theme) -> Vec<PickerItem> {
+pub fn command_items(commands: &[SlashCommand], theme: &Theme) -> Vec<PickerItem<SwitchKey>> {
     merged_commands(commands)
         .into_iter()
         .map(|c| PickerItem {
@@ -166,7 +181,7 @@ pub fn command_items(commands: &[SlashCommand], theme: &Theme) -> Vec<PickerItem
             } else {
                 c.hint
             },
-            key: PickerKey::Command(c.name),
+            key: SwitchKey::Command(c.name),
             glyph: if c.dovetail { DOVETAIL_GLYPH } else { "/" },
             color: if c.dovetail { theme.focus } else { theme.dim },
             depth: 0,
@@ -180,7 +195,7 @@ pub fn command_items(commands: &[SlashCommand], theme: &Theme) -> Vec<PickerItem
 }
 
 /// Task rows, in the order the tree shows them (Done last).
-pub fn task_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
+pub fn task_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem<SwitchKey>> {
     let mut tasks: Vec<_> = snap
         .tasks
         .iter()
@@ -205,7 +220,7 @@ pub fn task_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
             };
             let p = t.p_level.map_or("", crate::buffers::p_label);
             PickerItem {
-                key: PickerKey::Task(t.id),
+                key: SwitchKey::Task(t.id),
                 label: t.title.clone(),
                 haystack: t.title.clone(),
                 detail: format!("{} {p}", bucket_label(t.bucket)).trim().to_string(),
@@ -219,7 +234,7 @@ pub fn task_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
 }
 
 /// Rows for `:research`: the tasks that have research, with what each holds.
-pub fn research_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
+pub fn research_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem<SwitchKey>> {
     snap.research
         .iter()
         .filter_map(|r| {
@@ -235,7 +250,7 @@ pub fn research_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
                 ("◇", theme.dim)
             };
             Some(PickerItem {
-                key: PickerKey::Task(task.id),
+                key: SwitchKey::Task(task.id),
                 label: task.title.clone(),
                 haystack: task.title.clone(),
                 detail: format!(
@@ -258,7 +273,7 @@ pub fn relate_items(
     snap: &Snapshot,
     theme: &Theme,
     task: dovetail_api::tracking::task::TaskId,
-) -> Vec<PickerItem> {
+) -> Vec<PickerItem<SwitchKey>> {
     let related = snap
         .tasks
         .iter()
@@ -267,9 +282,9 @@ pub fn relate_items(
         .unwrap_or_default();
     task_items(snap, theme)
         .into_iter()
-        .filter(|item| item.key != PickerKey::Task(task))
+        .filter(|item| item.key != SwitchKey::Task(task))
         .map(|mut item| {
-            if let PickerKey::Task(id) = item.key
+            if let SwitchKey::Task(id) = item.key
                 && related.contains(&id)
             {
                 item.glyph = "↔";
@@ -281,7 +296,7 @@ pub fn relate_items(
 }
 
 /// Rows for the everything picker: tasks, then agents, then inbox items.
-pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem> {
+pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem<SwitchKey>> {
     let mut items = task_items(snap, theme);
     items.extend(agent_items(snap, now_ms, theme));
     let mut inbox: Vec<&InboxItem> = snap.inbox.iter().collect();
@@ -326,7 +341,7 @@ pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem>
             ),
         };
         PickerItem {
-            key: PickerKey::Inbox(item.id),
+            key: SwitchKey::Inbox(item.id),
             label: format!("{name} {label}"),
             haystack: format!("{name} {label} {body}"),
             detail: fmt::ago(now_ms, item.at_ms),
@@ -342,14 +357,14 @@ pub fn all_items(snap: &Snapshot, now_ms: i64, theme: &Theme) -> Vec<PickerItem>
 /// The preview for a row: its heading and lines. An agent shows its latest turns last.
 pub fn preview(
     snap: &Snapshot,
-    key: &PickerKey,
+    key: &SwitchKey,
     width: usize,
     theme: &Theme,
     tz: &TimeZone,
 ) -> (&'static str, Vec<Line<'static>>) {
     match key {
-        PickerKey::Agent(id) => ("Preview", agent_preview(snap, id, width, theme, tz)),
-        PickerKey::Task(id) => (
+        SwitchKey::Agent(id) => ("Preview", agent_preview(snap, id, width, theme, tz)),
+        SwitchKey::Task(id) => (
             "Task",
             snap.tasks
                 .iter()
@@ -357,13 +372,11 @@ pub fn preview(
                 .map(|t| task_detail::lines(snap, t, width, theme, tz))
                 .unwrap_or_default(),
         ),
-        // Previewed by the MCP menu, which holds the servers.
-        PickerKey::McpServer(_) => ("Server", Vec::new()),
-        PickerKey::Command(name) => (
+        SwitchKey::Command(name) => (
             "Command",
             command_preview(snap, name, width, theme).unwrap_or_default(),
         ),
-        PickerKey::Project(id) => (
+        SwitchKey::Project(id) => (
             "Project",
             snap.projects
                 .iter()
@@ -371,15 +384,7 @@ pub fn preview(
                 .map(|p| project_preview(p, width, theme))
                 .unwrap_or_default(),
         ),
-        // Previewed by `profile_preview`, which knows the recipe path.
-        PickerKey::Profile(_) => ("Profile", Vec::new()),
-        // Previewed by `help::keys_preview`, which knows the keymap.
-        PickerKey::Action(_) => ("Keys", Vec::new()),
-        // Previewed by `ModelPicker`, which knows the agent and models.
-        PickerKey::Model { .. } => ("Model", Vec::new()),
-        // Previewed by `UsageMenu`, which holds the reports.
-        PickerKey::UsageGroup(_) => ("Usage", Vec::new()),
-        PickerKey::Inbox(id) => (
+        SwitchKey::Inbox(id) => (
             "Inbox item",
             snap.inbox
                 .iter()
@@ -525,7 +530,7 @@ pub fn projects_in_order(snap: &Snapshot) -> Vec<&ProjectSummary> {
 /// first, as the core lists them, and Tangents last with its own marker [`TANGENT_MARKER`]. A
 /// research project is marked [`RESEARCH_MARKER`] and says `research` where a code project
 /// shows its folder; the open one says `open`.
-pub fn project_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
+pub fn project_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem<SwitchKey>> {
     let open = snap.project.as_ref().map(|p| &p.id);
     projects_in_order(snap)
         .into_iter()
@@ -543,7 +548,7 @@ pub fn project_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
                 detail = format!("open · {detail}");
             }
             PickerItem {
-                key: PickerKey::Project(p.id.clone()),
+                key: SwitchKey::Project(p.id.clone()),
                 label: p.name.clone(),
                 haystack: format!("{} {} {}", p.name, p.id.0, p.kind.as_str()),
                 detail,
@@ -565,11 +570,11 @@ pub fn project_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
 /// The preview for a row of `<leader>fr`'s project picker: browsing reads, it does not open.
 pub fn browse_preview(
     snap: &Snapshot,
-    key: &PickerKey,
+    key: &SwitchKey,
     width: usize,
     theme: &Theme,
 ) -> (&'static str, Vec<Line<'static>>) {
-    let PickerKey::Project(id) = key else {
+    let SwitchKey::Project(id) = key else {
         return ("Project", Vec::new());
     };
     let Some(p) = snap.projects.iter().find(|p| p.id == *id) else {
@@ -594,10 +599,10 @@ pub fn browse_preview(
 }
 
 /// Rows for picking the project a tangent goes to: every project but Tangents.
-pub fn tangent_target_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem> {
+pub fn tangent_target_items(snap: &Snapshot, theme: &Theme) -> Vec<PickerItem<SwitchKey>> {
     project_items(snap, theme)
         .into_iter()
-        .filter(|item| !matches!(&item.key, PickerKey::Project(id) if id.0 == TANGENTS_PROJECT))
+        .filter(|item| !matches!(&item.key, SwitchKey::Project(id) if id.0 == TANGENTS_PROJECT))
         .collect()
 }
 
@@ -606,9 +611,9 @@ pub const NO_PROFILE: &str = "(none: use default)";
 
 /// The profile picker after `:project add` (task #31): the default first, so Enter skips
 /// safely, then each profile in config.toml.
-pub fn profile_items(profiles: &[String], theme: &Theme) -> Vec<PickerItem> {
+pub fn profile_items(profiles: &[String], theme: &Theme) -> Vec<PickerItem<Option<String>>> {
     let none = PickerItem {
-        key: PickerKey::Profile(None),
+        key: None,
         label: NO_PROFILE.into(),
         haystack: format!("{NO_PROFILE} default"),
         detail: "~/.claude".into(),
@@ -619,7 +624,7 @@ pub fn profile_items(profiles: &[String], theme: &Theme) -> Vec<PickerItem> {
     };
     std::iter::once(none)
         .chain(profiles.iter().map(|name| PickerItem {
-            key: PickerKey::Profile(Some(name.clone())),
+            key: Some(name.clone()),
             label: name.clone(),
             haystack: name.clone(),
             detail: "config.toml".into(),
@@ -633,14 +638,11 @@ pub fn profile_items(profiles: &[String], theme: &Theme) -> Vec<PickerItem> {
 
 /// The preview of a profile picker row: what choosing it writes into `recipe`.
 pub fn profile_preview(
-    key: &PickerKey,
+    profile: Option<&str>,
     recipe: &std::path::Path,
     width: usize,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
-    let PickerKey::Profile(profile) = key else {
-        return Vec::new();
-    };
     let what = match profile {
         Some(name) => format!(
             "Writes profile = \"{name}\" into {}. This project's sessions run under that Claude \

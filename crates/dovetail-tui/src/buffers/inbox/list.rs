@@ -22,7 +22,7 @@ use super::super::{
 use crate::fmt;
 use crate::keymap::action::Action;
 use crate::layout::region::BufferKind;
-use crate::switcher::TANGENT_MARKER;
+use crate::overlay::switcher::TANGENT_MARKER;
 
 /// Inbox items in display order: permission requests first, then questions, errors and finished
 /// turns; newest first within each.

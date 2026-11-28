@@ -30,8 +30,8 @@ use crate::buffers::reader::Opened;
 use crate::buffers::{ReadTarget, ask_agent};
 use crate::keymap::mode::Mode;
 use crate::layout::region::{Preset, RegionId};
-use crate::picker::Picker;
-use crate::switcher;
+use crate::overlay::picker::Picker;
+use crate::overlay::switcher;
 
 /// What `i` says while another project is browsed: Ask reads the open project only.
 pub(crate) const ASK_OFF_WHILE_BROWSING: &str =

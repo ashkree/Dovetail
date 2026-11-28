@@ -339,7 +339,7 @@ impl LibraryBuffer {
         let source = self.source(snap);
         let mut projects: Vec<_> = snap.project.iter().collect();
         projects.extend(
-            crate::switcher::projects_in_order(snap)
+            crate::overlay::switcher::projects_in_order(snap)
                 .into_iter()
                 .filter(|p| Some(&p.id) != open_id.as_ref()),
         );
@@ -349,8 +349,8 @@ impl LibraryBuffer {
             let key = LibKey::Project(project.id.clone());
             let research = project.kind == ProjectKind::Research;
             let mut spans = Vec::new();
-            if crate::switcher::is_tangents(project) {
-                let marker = crate::switcher::TANGENT_MARKER;
+            if crate::overlay::switcher::is_tangents(project) {
+                let marker = crate::overlay::switcher::TANGENT_MARKER;
                 spans.push(Span::styled(format!("{marker} "), theme.fg(theme.italic)));
             } else if research {
                 spans.push(Span::styled("◇ ", theme.fg(theme.italic)));
@@ -400,7 +400,7 @@ impl LibraryBuffer {
             .iter()
             .chain(snap.project.iter())
             .find(|p| Some(&p.id) == shown)
-            .is_some_and(crate::switcher::is_tangents);
+            .is_some_and(crate::overlay::switcher::is_tangents);
         if !in_tangents {
             self.tangent_rows(snap, theme, &mut rows);
         }
@@ -635,7 +635,7 @@ impl LibraryBuffer {
     fn tangent_rows(&self, snap: &Snapshot, theme: &Theme, rows: &mut Vec<Row>) {
         let key = LibKey::Tangents;
         let open = self.is_open(&key);
-        let marker = crate::switcher::TANGENT_MARKER;
+        let marker = crate::overlay::switcher::TANGENT_MARKER;
         rows.push(Row {
             key,
             depth: 0,

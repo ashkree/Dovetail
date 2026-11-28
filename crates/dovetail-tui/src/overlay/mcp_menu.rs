@@ -21,9 +21,9 @@ use dovetail_api::{
 use ratatui::style::Color;
 use ratatui::text::{Line, Span};
 
+use super::picker::{Picker, PickerItem, PickerOutcome};
 use crate::fmt;
 use crate::input::{InputOutcome, TextInput};
-use crate::picker::{Picker, PickerItem, PickerKey, PickerOutcome};
 use crate::theme::Theme;
 
 /// Where a non-claude.ai login ends up in the browser. Nothing listens there: the address the
@@ -60,7 +60,7 @@ pub struct McpMenu {
     agent_name: String,
     /// `None` until the first answer.
     servers: Option<Vec<McpServer>>,
-    picker: Picker,
+    picker: Picker<String>,
     note: Option<Note>,
     pasting: Option<Pasting>,
 }
@@ -84,15 +84,13 @@ impl McpMenu {
     }
 
     /// The picker, for the keys and the box.
-    pub fn picker(&self) -> &Picker {
+    pub fn picker(&self) -> &Picker<String> {
         &self.picker
     }
 
     /// The server highlighted now.
     fn selected(&self) -> Option<&McpServer> {
-        let PickerKey::McpServer(name) = &self.picker.selected()?.key else {
-            return None;
-        };
+        let name = &self.picker.selected()?.key;
         self.servers.as_ref()?.iter().find(|s| &s.name == name)
     }
 
@@ -340,13 +338,13 @@ fn status_look(status: &McpStatus, theme: &Theme) -> (&'static str, Color) {
 }
 
 /// The rows: every server in the order Claude Code lists them.
-pub fn server_items(servers: &[McpServer], theme: &Theme) -> Vec<PickerItem> {
+pub fn server_items(servers: &[McpServer], theme: &Theme) -> Vec<PickerItem<String>> {
     servers
         .iter()
         .map(|s| {
             let (glyph, color) = status_look(&s.status, theme);
             PickerItem {
-                key: PickerKey::McpServer(s.name.clone()),
+                key: s.name.clone(),
                 label: s.name.clone(),
                 haystack: format!("{} {} {}", s.name, s.status.label(), s.transport),
                 detail: s.status.label().to_owned(),
@@ -491,7 +489,7 @@ mod tests {
         );
         let details: Vec<&str> = items.iter().map(|i| i.detail.as_str()).collect();
         assert_eq!(details, ["connected", "needs auth", "disabled"]);
-        assert_eq!(items[1].key, PickerKey::McpServer("cal".into()));
+        assert_eq!(items[1].key, "cal");
         assert!(items[1].haystack.contains("needs auth"));
     }
 

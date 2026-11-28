@@ -65,15 +65,17 @@ fn tangents_item(core: &MockCore) -> Option<u32> {
 #[test]
 fn the_switcher_pins_tangents_last_with_its_own_marker() {
     let (_, mut app) = start();
-    let items =
-        dovetail_tui::switcher::project_items(&start().0.state().clone(), &Default::default());
+    let items = dovetail_tui::overlay::switcher::project_items(
+        &start().0.state().clone(),
+        &Default::default(),
+    );
     let last = items.last().expect("projects");
     assert_eq!(last.label, "Tangents");
-    assert_eq!(last.glyph, dovetail_tui::switcher::TANGENT_MARKER);
+    assert_eq!(last.glyph, dovetail_tui::overlay::switcher::TANGENT_MARKER);
     assert!(
         items[..items.len() - 1]
             .iter()
-            .all(|i| i.glyph != dovetail_tui::switcher::TANGENT_MARKER)
+            .all(|i| i.glyph != dovetail_tui::overlay::switcher::TANGENT_MARKER)
     );
     // As drawn: Tangents is the last project row.
     press(&mut app, " pp");

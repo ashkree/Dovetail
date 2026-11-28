@@ -18,7 +18,7 @@ use crate::theme::Theme;
 
 /// Which button is selected in [`SwitchConfirm`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(super) enum SwitchChoice {
+pub enum SwitchChoice {
     /// Seed the new session with a handoff from the current one (default).
     #[default]
     Handoff,
@@ -28,7 +28,7 @@ pub(super) enum SwitchChoice {
 
 /// What an action did to [`SwitchConfirm`].
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum ConfirmOutcome {
+pub enum ConfirmOutcome {
     /// Still waiting on the user.
     Pending,
     /// User cancelled.
@@ -39,7 +39,7 @@ pub(super) enum ConfirmOutcome {
 
 /// Centered 2-button confirm modal for driver switching.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SwitchConfirm {
+pub struct SwitchConfirm {
     agent: AgentId,
     driver: DriverKind,
     model: String,
@@ -49,7 +49,7 @@ pub(super) struct SwitchConfirm {
 
 impl SwitchConfirm {
     /// Opens with **Handoff** selected by default.
-    pub(super) fn new(
+    pub fn new(
         agent: AgentId,
         driver: DriverKind,
         model: String,
@@ -65,12 +65,12 @@ impl SwitchConfirm {
     }
 
     /// The target driver.
-    pub(super) fn driver(&self) -> DriverKind {
+    pub fn driver(&self) -> DriverKind {
         self.driver
     }
 
     /// Applies an action resolved from the keymap (`Scope::Confirm`).
-    pub(super) fn on_action(&mut self, action: Action) -> ConfirmOutcome {
+    pub fn on_action(&mut self, action: Action) -> ConfirmOutcome {
         match action {
             Action::ConfirmNext => {
                 self.choice = SwitchChoice::CleanStart;
@@ -102,7 +102,7 @@ impl SwitchConfirm {
     }
 
     /// Draws the modal centered on `screen`.
-    pub(super) fn render(&self, frame: &mut Frame, screen: Rect, theme: &Theme) {
+    pub fn render(&self, frame: &mut Frame, screen: Rect, theme: &Theme) {
         let width = screen.width.saturating_sub(4).min(64);
         let inner_w = usize::from(width.saturating_sub(4));
         if width < 24 || inner_w < 16 {
@@ -118,12 +118,7 @@ impl SwitchConfirm {
         if height < 7 {
             return;
         }
-        let area = Rect {
-            x: screen.x + (screen.width - width) / 2,
-            y: screen.y + (screen.height - height) / 2,
-            width,
-            height,
-        };
+        let area = super::centered_rect(screen, width, height);
         frame.render_widget(Clear, area);
         let block = Block::bordered()
             .border_style(theme.fg(theme.focus))

@@ -8,21 +8,17 @@ use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use ratatui::widgets::{Block, Clear};
-
 use super::App;
 use super::overlay::{Overlay, Purpose};
 
 use crate::buffers::{self, InputTarget, ViewCx, spread_fit};
-use crate::capture::{self, Capture};
 use crate::chrome::usage;
 use crate::keymap::Key;
 use crate::keymap::help;
 use crate::keymap::mode::Mode;
 use crate::layout::region::{RegionId, layout, reading_layout};
 use crate::layout::tabs;
-use crate::picker::{PickerItem, PickerKey};
-use crate::switcher;
+use crate::overlay::switcher;
 
 impl App {
     /// Draws the whole screen.
@@ -134,20 +130,6 @@ impl App {
                     (Some(item), Purpose::Browse) => {
                         switcher::browse_preview(&self.snap, &item.key, width, &self.theme)
                     }
-                    (Some(item), Purpose::Profile { path, .. }) => (
-                        "Profile",
-                        switcher::profile_preview(&item.key, path, width, &self.theme),
-                    ),
-                    (
-                        Some(PickerItem {
-                            key: PickerKey::Action(action),
-                            ..
-                        }),
-                        _,
-                    ) => (
-                        "Keys",
-                        help::keys_preview(&self.keymap, &self.scopes(), *action, &self.theme),
-                    ),
                     (Some(item), _) => {
                         switcher::preview(&self.snap, &item.key, width, &self.theme, &self.tz)
                     }
@@ -155,7 +137,26 @@ impl App {
                 };
                 picker.render(frame, screen, &self.theme, title, &lines);
             }
-            Some(Overlay::Capture(capture)) => self.draw_capture(frame, screen, capture),
+            Some(Overlay::Keys(picker)) => {
+                let lines = picker
+                    .selected()
+                    .map(|item| {
+                        help::keys_preview(&self.keymap, &self.scopes(), item.key, &self.theme)
+                    })
+                    .unwrap_or_default();
+                picker.render(frame, screen, &self.theme, "Keys", &lines);
+            }
+            Some(Overlay::Profile { picker, path, .. }) => {
+                let width = picker_preview_width(screen);
+                let lines = picker
+                    .selected()
+                    .map(|item| {
+                        switcher::profile_preview(item.key.as_deref(), path, width, &self.theme)
+                    })
+                    .unwrap_or_default();
+                picker.render(frame, screen, &self.theme, "Profile", &lines);
+            }
+            Some(Overlay::Capture(capture)) => capture.render(frame, screen, &self.theme),
             Some(Overlay::Mcp(menu)) => {
                 let width = picker_preview_width(screen);
                 let (lines, cursor) = menu.preview_with_cursor(width, &self.theme);
@@ -183,89 +184,6 @@ impl App {
             Some(Overlay::Confirm(confirm)) => confirm.render(frame, screen, &self.theme),
             None => {}
         }
-    }
-
-    fn draw_capture(&self, frame: &mut Frame, screen: Rect, capture: &Capture) {
-        let theme = &self.theme;
-        let width = screen.width.saturating_sub(4).min(90);
-        let height = 6.min(screen.height);
-        let area = Rect {
-            x: screen.x + (screen.width - width) / 2,
-            y: screen.y + screen.height.saturating_sub(height) / 2,
-            width,
-            height,
-        };
-        frame.render_widget(Clear, area);
-        let block = Block::bordered()
-            .border_style(theme.fg(theme.focus))
-            .title(Line::from(Span::styled(
-                " new task ",
-                theme.fg(theme.focus),
-            )));
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        let row = |n: u16| Rect {
-            x: inner.x + 1,
-            y: inner.y + n,
-            width: inner.width.saturating_sub(2),
-            height: 1,
-        };
-        if inner.height < 4 {
-            return;
-        }
-        let text = capture.input().text();
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("› ", theme.accent()),
-                Span::styled(text.to_string(), theme.body()),
-            ])),
-            row(0),
-        );
-        frame.set_cursor_position(Position::new(
-            (row(0).x
-                + 2
-                + unicode_width::UnicodeWidthStr::width(capture.input().before_cursor()) as u16)
-                .min(row(0).x + row(0).width.saturating_sub(1)),
-            row(0).y,
-        ));
-
-        // What the line will become.
-        let parsed = capture::parse(text);
-        let mut facts = Vec::new();
-        facts.push(
-            parsed
-                .p_level
-                .map_or("no P-level", buffers::p_label)
-                .to_string(),
-        );
-        facts.push(buffers::bucket_label(parsed.bucket).to_string());
-        if let Some(pr) = parsed.pr {
-            facts.push(format!("PR #{pr}"));
-        }
-        frame.render_widget(
-            Paragraph::new(Span::styled(facts.join(" · "), theme.dim())),
-            row(1),
-        );
-        let link = match (capture.active_link(), capture.offered_link()) {
-            (Some(l), _) => Line::from(vec![
-                Span::styled("linked to: ", theme.dim()),
-                Span::styled(l.title.clone(), theme.fg(theme.code)),
-                Span::styled("   Ctrl-l unlink", theme.dim()),
-            ]),
-            (None, Some(l)) => Line::from(Span::styled(
-                format!("not linked to {} · Ctrl-l to link", l.title),
-                theme.dim(),
-            )),
-            (None, None) => Line::default(),
-        };
-        frame.render_widget(Paragraph::new(link), row(2));
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                "⏎ save · Tab save and open · esc cancel",
-                theme.dim(),
-            )),
-            row(3),
-        );
     }
 
     /// The screens bar (task #20), boxed like the other regions; the tab table and its marking
