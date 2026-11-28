@@ -5,7 +5,7 @@
 //! is a list of its nodes in the order the flow walks them, each with its lane. Below the list
 //! sit the selected node in full (description, file, pseudocode, connections) and the current
 //! flow's steps; `f` switches flow and `]]`/`[[` walk the flow's steps. The shelf
-//! ([`super::MapShelfBuffer`]) opens maps here, in MAP mode (decision 23f): the map takes the
+//! ([`super::map_shelf::MapShelfBuffer`]) opens maps here, in MAP mode (decision 23f): the map takes the
 //! whole screen, `hjkl` move between nodes on the canvas, the mouse works, and `Esc` leaves.
 
 use std::collections::HashSet;

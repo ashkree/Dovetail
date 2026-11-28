@@ -1,5 +1,5 @@
 //! The canvas half of the map view: the cached picture, the view over it, and where it was
-//! drawn last. The outline buffer owns one ([`super::MapOutlineBuffer`]); the selection is the
+//! drawn last. The outline buffer owns one ([`super::map_outline::MapOutlineBuffer`]); the selection is the
 //! outline's, so the two always agree.
 
 use std::sync::Arc;

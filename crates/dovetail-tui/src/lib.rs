@@ -1,8 +1,4 @@
-//! Dovetail's terminal UI: buffers, regions, keymap, theme and rendering.
-//!
-//! Depends only on `dovetail-api`: it holds its own copy of the [`dovetail_api::Snapshot`],
-//! changes it only through [`dovetail_api::apply`] and asks the core for changes with
-//! [`dovetail_api::Command`]s.
+#![doc = include_str!("../ARCHITECTURE.md")]
 
 pub mod app;
 pub mod buffers;
