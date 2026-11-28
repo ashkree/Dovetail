@@ -10,10 +10,10 @@ use dovetail_api::{
 };
 
 use super::{App, ChatSite, Confirm, Then};
-use crate::action::Action;
 use crate::buffers::InputTarget;
-use crate::mode::Mode;
-use crate::region::{BufferKind, RegionId, Regions};
+use crate::keymap::action::Action;
+use crate::keymap::mode::Mode;
+use crate::layout::region::{BufferKind, RegionId, Regions};
 
 /// The next mode in the cycle auto, acceptEdits, manual (Decision 15, permission mode).
 fn next_mode(mode: PermissionMode) -> PermissionMode {

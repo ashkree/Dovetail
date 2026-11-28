@@ -31,11 +31,11 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
-use super::{Buffer, Effect, ViewCx, footer, pane, title};
-use crate::action::Action;
+use super::super::{Buffer, Effect, ViewCx, footer, pane, title};
 use crate::canvas::kitty::Figure;
 use crate::canvas::view::CellPx;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::render::{citations, html, markdown, reading_column};
 use crate::theme::Theme;
 
@@ -344,7 +344,7 @@ impl ReaderBuffer {
         };
         self.cite = Some(next);
         let line = stops[next].line;
-        self.top = super::scroll_to(self.top, line, line, height);
+        self.top = super::super::scroll_to(self.top, line, line, height);
     }
 
     fn section_of(&self, line: usize) -> Option<usize> {

@@ -6,8 +6,8 @@ use dovetail_api::agents::agent::AgentId;
 
 use super::{App, ChatSite};
 use crate::buffers::ConversationBuffer;
-use crate::mode::Mode;
-use crate::region::{BufferKind, RegionId, Regions};
+use crate::keymap::mode::Mode;
+use crate::layout::region::{BufferKind, RegionId, Regions};
 
 /// The side region the panel takes when it opens: the task tree's (ADR 0008 puts the inbox on
 /// top, and it stays).

@@ -52,7 +52,7 @@ fn a_working_agent_with_no_tool_shows_a_woodworking_word_and_elapsed_time() {
     let screen = draw(&mut app);
     let line = line_with(&screen, "12s").expect("the working line");
     assert!(
-        dovetail_tui::activity::WORDS
+        dovetail_tui::chrome::activity::WORDS
             .iter()
             .any(|w| line.contains(&format!("{w}…"))),
         "{line}"
@@ -86,7 +86,7 @@ fn the_word_is_kept_for_the_whole_turn() {
     let word_at = |app: &mut dovetail_tui::App, ms: i64| {
         app.set_now(NOW_MS + ms);
         let screen = draw(app);
-        dovetail_tui::activity::WORDS
+        dovetail_tui::chrome::activity::WORDS
             .iter()
             .find(|w| screen.contains(&format!("{w}…")))
             .copied()
@@ -103,7 +103,7 @@ fn an_idle_agent_has_no_working_line() {
     app.set_now(NOW_MS + 5_000);
     let screen = draw(&mut app);
     assert!(
-        !dovetail_tui::activity::WORDS
+        !dovetail_tui::chrome::activity::WORDS
             .iter()
             .any(|w| screen.contains(&format!("{w}…")))
     );

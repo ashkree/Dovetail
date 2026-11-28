@@ -18,10 +18,10 @@ use ratatui::layout::Rect;
 use ratatui::text::Span;
 use ratatui::widgets::{Paragraph, Wrap};
 
+use super::super::{Buffer, ConversationBuffer, Effect, ViewCx, pane, title};
 use super::reader::ReadTarget;
-use super::{Buffer, ConversationBuffer, Effect, ViewCx, pane, title};
-use crate::action::Action;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::render::citations;
 
 /// Task `task`'s Ask session in the snapshot, if there is one.

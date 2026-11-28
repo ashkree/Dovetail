@@ -40,7 +40,7 @@ pub enum PickerKey {
     /// A Claude profile from config.toml, or `None` for the default (after `:project add`).
     Profile(Option<String>),
     /// An action in the `:keys` list.
-    Action(crate::action::Action),
+    Action(crate::keymap::action::Action),
     /// A model and effort level on a driver (task #46).
     Model {
         /// The driver offering this model.

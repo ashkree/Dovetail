@@ -228,7 +228,7 @@ fn slash_fresh_with_trailing_text_is_refused_and_the_text_stays_in_the_bar() {
         app.note(),
         Some("/fresh takes nothing after it; nothing was sent")
     );
-    assert_eq!(app.mode(), dovetail_tui::mode::Mode::Insert);
+    assert_eq!(app.mode(), dovetail_tui::keymap::mode::Mode::Insert);
     assert!(render(&mut app, 120, 30).contains("/fresh now"));
 }
 

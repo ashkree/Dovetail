@@ -12,10 +12,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
-use crate::action::{Action, Group};
-use crate::command::COMMANDS;
+use crate::keymap::action::{Action, Group};
+use crate::keymap::command::COMMANDS;
+use crate::keymap::mode::Mode;
 use crate::keymap::{Key, Keymap, Scope, label_sequence};
-use crate::mode::Mode;
 use crate::picker::{PickerItem, PickerKey};
 use crate::theme::Theme;
 
@@ -347,7 +347,7 @@ pub fn keys_preview(
 mod tests {
     use super::*;
     use crate::keymap::Resolver;
-    use crate::region::BufferKind;
+    use crate::layout::region::BufferKind;
 
     fn rows(scopes: &[Scope], keys: &str) -> Vec<WhichKeyRow> {
         let map = Keymap::default_map();

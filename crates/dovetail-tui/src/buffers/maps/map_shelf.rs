@@ -9,10 +9,10 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::{Buffer, Effect, ListCursor, ViewCx, footer, pane, spread_fit, title};
-use crate::action::Action;
+use super::super::{Buffer, Effect, ListCursor, ViewCx, footer, pane, spread_fit, title};
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::render::reading_column;
 
 /// The shelf: the selected map, kept by id so a live redraw never moves the cursor.

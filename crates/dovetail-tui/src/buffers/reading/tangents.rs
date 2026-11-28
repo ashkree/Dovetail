@@ -14,10 +14,10 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane, title};
-use crate::action::Action;
+use super::super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane, title};
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::switcher::TANGENT_MARKER;
 
 /// What the list says when Tangents is empty.

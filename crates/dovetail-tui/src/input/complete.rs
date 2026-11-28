@@ -18,19 +18,14 @@ use nucleo::{Config, Matcher, Utf32Str};
 /// Most rows the popup shows.
 pub const MAX_ROWS: usize = 8;
 
-/// What a token completes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Kind {
-    /// `@path` against the session's tree (`dir: None`) or one directory.
-    Path { dir: Option<String> },
-}
-
-/// The word under the cursor that completion works on.
+/// The `@path` word under the cursor that completion works on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Token {
     /// Byte range of the whole token, sigil included, up to the cursor.
     range: Range<usize>,
-    kind: Kind,
+    /// Directory prefix when browsing one directory (`~/`, `/`, `./`, `../`), or `None` for the
+    /// session's whole tree.
+    dir: Option<String>,
     /// What filters the items: the text after the sigil (and after `dir` for a directory).
     query: String,
 }
@@ -54,7 +49,7 @@ fn token(text: &str, cursor: usize) -> Option<Token> {
     };
     Some(Token {
         range: at..cursor,
-        kind: Kind::Path { dir },
+        dir,
         query: query.to_string(),
     })
 }
@@ -145,7 +140,7 @@ impl Completion {
     pub fn waiting(&self) -> bool {
         self.is_open()
             && self.rows.is_empty()
-            && matches!(&self.token, Some(Token { kind: Kind::Path { dir }, .. }) if !self.paths.contains_key(dir))
+            && matches!(&self.token, Some(Token { dir, .. }) if !self.paths.contains_key(dir))
     }
 
     /// Recomputes the popup for `text` with the cursor at `cursor`. Returns a directory listing
@@ -164,17 +159,15 @@ impl Completion {
             return None;
         };
         let mut ask = None;
-        self.rows = match &token.kind {
-            Kind::Path { dir } => match self.paths.get(dir) {
-                Some(paths) => path_rows(dir.as_deref(), paths, &token.query),
-                None => {
-                    if !self.asked.contains(dir) {
-                        self.asked.push(dir.clone());
-                        ask = Some(dir.clone());
-                    }
-                    Vec::new()
+        self.rows = match self.paths.get(&token.dir) {
+            Some(paths) => path_rows(token.dir.as_deref(), paths, &token.query),
+            None => {
+                if !self.asked.contains(&token.dir) {
+                    self.asked.push(token.dir.clone());
+                    ask = Some(token.dir.clone());
                 }
-            },
+                Vec::new()
+            }
         };
         self.rank(&token.query);
         // Typing on keeps the highlight on the same row if it still matches.
@@ -232,9 +225,7 @@ impl Completion {
         let (Some(token), Some(row)) = (&self.token, self.rows.get(self.selected)) else {
             return KeyResult::Pass;
         };
-        let typed = match &token.kind {
-            Kind::Path { dir } => format!("@{}{}", dir.as_deref().unwrap_or(""), token.query),
-        };
+        let typed = format!("@{}{}", token.dir.as_deref().unwrap_or(""), token.query);
         // Enter on a row that is already typed in full sends the message.
         if by_enter && row.insert.trim_end() == typed {
             return KeyResult::Pass;
@@ -324,16 +315,11 @@ mod tests {
         assert_eq!(token("see a/b", 7), None);
         let t = token("look at @crates/tu", 18).unwrap();
         assert_eq!(
-            (t.range, t.kind, t.query.as_str()),
-            (8..18, Kind::Path { dir: None }, "crates/tu")
+            (t.range, t.dir, t.query.as_str()),
+            (8..18, None, "crates/tu")
         );
         let t = token("@~/notes/ma", 11).unwrap();
-        assert_eq!(
-            t.kind,
-            Kind::Path {
-                dir: Some("~/notes/".into())
-            }
-        );
+        assert_eq!(t.dir, Some("~/notes/".into()));
         assert_eq!(t.query, "ma");
         assert_eq!(token("mail me@host", 12), None);
     }

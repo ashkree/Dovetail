@@ -12,10 +12,10 @@ use dovetail_api::{
     agents::model::{DriverKind, ModelCommand, ModelOption, ReasoningEffort},
 };
 use dovetail_tui::App;
-use dovetail_tui::action::Action;
-use dovetail_tui::command;
+use dovetail_tui::keymap::action::Action;
+use dovetail_tui::keymap::command;
+use dovetail_tui::keymap::mode::Mode;
 use dovetail_tui::keymap::{Key, Keymap, Scope};
-use dovetail_tui::mode::Mode;
 use support::*;
 
 fn claude_models() -> Vec<ModelOption> {

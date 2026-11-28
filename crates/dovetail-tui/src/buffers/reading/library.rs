@@ -33,11 +33,11 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use super::super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane, title};
 use super::reader::ReadTarget;
-use super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane, title};
-use crate::action::Action;
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::theme::Theme;
 
 /// A row's identity, so the cursor and folds survive the list changing.

@@ -24,14 +24,14 @@ use ratatui::style::{Color, Modifier};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use super::super::{Buffer, Effect, ListCursor, ViewCx, footer, pane, title};
 use super::map_canvas::Canvas;
-use super::{Buffer, Effect, ListCursor, ViewCx, footer, pane, title};
-use crate::action::Action;
 use crate::canvas::kitty::Scene;
 use crate::canvas::view::CellPx;
 use crate::canvas::{Direction, Painted};
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::render::reading_column;
 use crate::theme::Theme;
 
@@ -644,7 +644,7 @@ fn row_line(row: &Row, theme: &Theme, width: usize) -> Line<'static> {
         format!("  {}", facts.join(" · ")),
         theme.dim(),
     ));
-    Line::from(super::clip_spans(spans, width))
+    Line::from(super::super::clip_spans(spans, width))
 }
 
 /// The selected node in full, under the list.

@@ -15,7 +15,7 @@ use dovetail_api::{
 };
 use dovetail_tui::Mode;
 use dovetail_tui::keymap::{SEQUENCE_TIMEOUT_MS, WHICH_KEY_DELAY_MS};
-use dovetail_tui::region::RegionId;
+use dovetail_tui::layout::region::RegionId;
 use support::*;
 
 // --- mode machine ---

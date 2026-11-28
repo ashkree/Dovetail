@@ -12,8 +12,8 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 
-use crate::action::Action;
 use crate::fmt;
+use crate::keymap::action::Action;
 use crate::theme::Theme;
 
 /// Which button is selected in [`SwitchConfirm`].
@@ -174,8 +174,8 @@ impl SwitchConfirm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keymap::mode::Mode;
     use crate::keymap::{Key, Keymap, Scope};
-    use crate::mode::Mode;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use dovetail_api::agents::model::ModelCommand;
 

@@ -7,10 +7,10 @@ use ratatui::layout::Rect;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
-use super::{Buffer, Effect, ListCursor, ViewCx, body_height, footer, pane, spread, title};
-use crate::action::Action;
+use super::super::{Buffer, Effect, ListCursor, ViewCx, body_height, footer, pane, spread, title};
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 
 /// One row of a feed.
 struct Row {

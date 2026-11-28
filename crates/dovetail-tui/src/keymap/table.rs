@@ -4,9 +4,9 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::action::Action;
-use crate::mode::Mode;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::keymap::mode::Mode;
+use crate::layout::region::BufferKind;
 
 /// How long a half-typed sequence waits for its next key (plan B27).
 pub const SEQUENCE_TIMEOUT_MS: u64 = 1000;

@@ -22,11 +22,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
-use super::{
+use super::super::{
     Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, pane, spans_width, status_glyph, title,
 };
-use crate::action::Action;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::theme::Theme;
 
 /// What a cell shows when the core could not tell.

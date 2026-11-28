@@ -18,17 +18,17 @@ use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use super::{
+use super::super::{
     Buffer, Effect, InputTarget, ViewCx, footer, next_bucket, next_p_level, next_status, pane,
     pick_right, scroll_to, spans_width, spread_fit, status_glyph, status_word, step, title,
 };
-use crate::action::Action;
-use crate::activity;
+use crate::chrome::activity;
+use crate::chrome::usage;
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::render::working;
 use crate::theme::Theme;
-use crate::usage;
 
 /// The groups the tree sorts tasks into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -728,7 +728,7 @@ impl Buffer for TreeBuffer {
             self.selected = Some(rows[i].key.clone());
             self.last_index = i;
         }
-        let body_height = super::body_height(inner);
+        let body_height = super::super::body_height(inner);
         if let Some(i) = selected {
             self.offset = scroll_to(self.offset, i, i, body_height);
         }
@@ -866,7 +866,7 @@ impl Buffer for TreeBuffer {
                         let archive = Command::Task(TaskCommand::Archive { id: t.id });
                         // An open or queued research round is closed or dropped by archiving
                         // (findings are kept): ask first, like unsaved work.
-                        match super::blocking_round(cx.snap, t.id) {
+                        match super::super::blocking_round(cx.snap, t.id) {
                             Some(round) => Effect::Confirm {
                                 prompt: format!(
                                     "Task #{} has {round}. Close it and archive? y/n",

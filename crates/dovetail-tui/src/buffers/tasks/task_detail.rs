@@ -19,14 +19,14 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::task_research::{self, Doc, Item, Loaded};
-use super::{
+use super::super::{
     Buffer, Effect, ViewCx, body_height, bucket_label, footer, next_bucket, next_p_level,
-    next_status, pane, scroll_to, status_glyph, status_label, status_word, title, tree::p_label,
+    next_status, p_label, pane, scroll_to, status_glyph, status_label, status_word, title,
 };
-use crate::action::Action;
+use super::task_research::{self, Doc, Item, Loaded};
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::render::{citations, markdown, reading_column};
 use crate::theme::Theme;
 
@@ -603,7 +603,7 @@ impl Buffer for TaskDetailBuffer {
             }
             (Action::TaskRelate, Some(t)) => effects.push(Effect::PickRelated(t.id)),
             (Action::TaskAddDecision, Some(t)) => effects.push(Effect::StartInput {
-                target: super::InputTarget::Decision(t.id),
+                target: super::super::InputTarget::Decision(t.id),
                 initial: String::new(),
             }),
             // On a selected research row `e` edits its file; with none selected it is the notes.

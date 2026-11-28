@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use dovetail_api::{
     Command,
     agents::agent::{AgentId, AgentStatus},
@@ -11,24 +11,20 @@ use dovetail_api::{
     app::Paste,
 };
 use ratatui::Frame;
-use ratatui::layout::{Position, Rect};
+use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, Paragraph};
+use ratatui::widgets::Paragraph;
 
-use super::{Buffer, Effect, ViewCx, pane, title};
-use crate::action::Action;
-use crate::complete::{self, Completion, KeyResult};
+use super::super::{Buffer, Effect, ViewCx, pane, title};
 use crate::fmt;
-use crate::input::{InputOutcome, TextInput};
-use crate::region::BufferKind;
+use crate::input::chat::{self, ChatInput, ChatKeyOutcome};
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::render::reading_column::{self, DEFAULT_WIDTH};
 use crate::render::transcript::{self, Turn};
 
 /// The bar in the margin beside the entry under the cursor.
 const CURSOR_BAR: &str = "▎";
-
-/// Most rows the chat input grows to before it scrolls.
-const MAX_INPUT_ROWS: usize = 6;
 
 /// Per-agent view state, so switching agents keeps each one's place.
 struct AgentView {
@@ -97,15 +93,7 @@ pub struct ConversationBuffer {
     agent: Option<AgentId>,
     previous: Option<AgentId>,
     views: HashMap<AgentId, AgentView>,
-    chat: Option<TextInput>,
-    /// Images attached to the message being typed; their markers are in the input's text.
-    images: Vec<Attachment>,
-    /// The `@` path popup over the chat input.
-    completion: Completion,
-    /// A `/` was just typed as the first character.
-    wants_commands: bool,
-    /// A path listing the popup needs, for the app to ask the core for.
-    wants_paths: Option<Option<String>>,
+    chat: Option<ChatInput>,
     reading_width: u16,
     layout: Layout,
     /// [`BufferKind::Conversation`] in the main region, [`BufferKind::SidePanel`] inside the
@@ -124,10 +112,6 @@ impl Default for ConversationBuffer {
             previous: None,
             views: HashMap::new(),
             chat: None,
-            images: Vec::new(),
-            completion: Completion::default(),
-            wants_commands: false,
-            wants_paths: None,
             reading_width: DEFAULT_WIDTH,
             layout: Layout::default(),
             kind: BufferKind::Conversation,
@@ -199,12 +183,11 @@ impl ConversationBuffer {
     pub fn begin_chat(&mut self, agent: AgentId) {
         self.show(agent.clone());
         let view = self.views.entry(agent).or_default();
-        let mut chat = TextInput::multiline(&view.draft);
-        chat.set_cursor(view.draft_cursor.min(view.draft.len()));
-        self.chat = Some(chat);
-        self.images = view.draft_images.clone();
-        // Paths are listed afresh each time: files come and go between chats.
-        self.completion.reset();
+        self.chat = Some(ChatInput::open(
+            &view.draft,
+            view.draft_cursor,
+            view.draft_images.clone(),
+        ));
     }
 
     /// Puts `text` back in `agent`'s chat bar, cursor at its end (a refused slash command). The
@@ -214,7 +197,7 @@ impl ConversationBuffer {
         let chips: String = images
             .iter()
             .enumerate()
-            .map(|(i, a)| format!("{} ", marker(i, a)))
+            .map(|(i, a)| format!("{} ", chat::marker(i, a)))
             .collect();
         view.draft = format!("{chips}{text}");
         view.draft_cursor = view.draft.len();
@@ -224,12 +207,7 @@ impl ConversationBuffer {
 
     /// How many images the message being typed carries: those whose marker is still in the text.
     pub fn attachment_count(&self) -> usize {
-        let text = self.chat.as_ref().map_or("", |c| c.text());
-        self.images
-            .iter()
-            .enumerate()
-            .filter(|(i, a)| text.contains(&marker(*i, a)))
-            .count()
+        self.chat.as_ref().map_or(0, ChatInput::attachment_count)
     }
 
     /// Puts the core's answer to a Ctrl-V into `agent`'s message: at the cursor while its chat
@@ -237,12 +215,11 @@ impl ConversationBuffer {
     /// clipboard was read). Returns a notice for the status bar, if any.
     pub fn receive_paste(&mut self, agent: &AgentId, paste: Paste) -> Option<String> {
         let live = self.chat.is_some() && self.agent.as_ref() == Some(agent);
-        let full = format!("at most {MAX_ATTACHMENTS} images per message");
         match paste {
             Paste::Refused(notice) => Some(notice),
             Paste::Text(text) if live => {
                 if let Some(chat) = self.chat.as_mut() {
-                    chat.insert_str(&text);
+                    chat.paste_text(&text);
                 }
                 None
             }
@@ -254,41 +231,16 @@ impl ConversationBuffer {
                     .push_str(&text);
                 None
             }
+            Paste::Image(image) if live => self.chat.as_mut().and_then(|c| c.paste_image(image)),
             Paste::Image(image) => {
-                // The marker is part of the text, so it sits where the cursor was and the
-                // bar wraps and grows around it like any other words.
-                let (images, text) = if live {
-                    (
-                        &self.images[..],
-                        self.chat.as_ref().map_or("", |c| c.text()),
-                    )
-                } else {
-                    let view = self.views.get(agent);
-                    (
-                        view.map_or(&[][..], |v| v.draft_images.as_slice()),
-                        view.map_or("", |v| v.draft.as_str()),
-                    )
-                };
-                let present = images
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, a)| text.contains(&marker(*i, a)))
-                    .count();
+                let view = self.views.entry(agent.clone()).or_default();
+                let present = chat::count_present_markers(&view.draft, &view.draft_images);
                 if present >= MAX_ATTACHMENTS {
-                    return Some(full);
+                    return Some(format!("at most {MAX_ATTACHMENTS} images per message"));
                 }
-                // Numbers are never reused, so a marker names one image for as long as it lives.
-                let tag = format!("{} ", marker(images.len(), &image));
-                if live {
-                    self.images.push(image);
-                    if let Some(chat) = self.chat.as_mut() {
-                        chat.insert_str(&tag);
-                    }
-                } else {
-                    let view = self.views.entry(agent.clone()).or_default();
-                    view.draft_images.push(image);
-                    view.draft.push_str(&tag);
-                }
+                let tag = format!("{} ", chat::marker(view.draft_images.len(), &image));
+                view.draft_images.push(image);
+                view.draft.push_str(&tag);
                 None
             }
         }
@@ -302,27 +254,9 @@ impl ConversationBuffer {
     /// Deletes a whole image marker when the cursor sits right after one (and the space pasted
     /// with it) ([`Action::DropLastAttachment`]). Returns whether one was deleted.
     pub fn drop_last_attachment(&mut self) -> bool {
-        let Some(chat) = self.chat.as_mut() else {
-            return false;
-        };
-        let end = chat.cursor();
-        let before = chat.before_cursor();
-        let bare = before.strip_suffix(' ').unwrap_or(before);
-        let found = self.images.iter().enumerate().find_map(|(i, a)| {
-            let tag = marker(i, a);
-            [before, bare]
-                .into_iter()
-                .any(|b| b.ends_with(&tag))
-                .then_some(tag)
-        });
-        let Some(tag) = found else { return false };
-        let tail = if before.ends_with(&format!("{tag} ")) {
-            tag.len() + 1
-        } else {
-            tag.len()
-        };
-        chat.replace(end - tail..end, "");
-        true
+        self.chat
+            .as_mut()
+            .is_some_and(ChatInput::drop_last_attachment)
     }
 
     /// Applies a key to the chat input. `Enter` returns the prompt and its images to send;
@@ -330,28 +264,10 @@ impl ConversationBuffer {
     /// keys first. A `/` typed as the first character asks for the command picker
     /// ([`take_command_request`](Self::take_command_request)).
     pub fn chat_key(&mut self, key: KeyEvent) -> Option<(AgentId, String, Vec<Attachment>)> {
-        let chat = self.chat.as_mut()?;
         let agent = self.agent.clone()?;
-        let outcome = match self.completion.key(key) {
-            KeyResult::Handled => return None,
-            KeyResult::Accept(accept) => {
-                chat.replace(accept.range, &accept.text);
-                InputOutcome::Edited
-            }
-            KeyResult::Pass => chat.handle(key),
-        };
-        if outcome == InputOutcome::Edited {
-            let (text, cursor) = (chat.text().to_string(), chat.cursor());
-            if let Some(dir) = self.completion.update(&text, cursor) {
-                self.wants_paths = Some(dir);
-            }
-            // Only a `/` just typed opens the picker: backspacing to one does not.
-            self.wants_commands = text == "/" && cursor == 1 && key.code == KeyCode::Char('/');
-        }
-        let chat = self.chat.as_mut()?;
+        let outcome = self.chat.as_mut()?.key(key);
         match outcome {
-            InputOutcome::Submit => {
-                let (text, images) = take_markers(chat.text(), std::mem::take(&mut self.images));
+            ChatKeyOutcome::Submit(text, images) => {
                 self.chat = None;
                 let view = self.views.entry(agent.clone()).or_default();
                 if text.is_empty() && images.is_empty() {
@@ -362,45 +278,40 @@ impl ConversationBuffer {
                 view.follow = true;
                 Some((agent, text, images))
             }
-            InputOutcome::Cancel => {
+            ChatKeyOutcome::Cancel => {
                 self.park_chat();
                 None
             }
-            InputOutcome::Edited | InputOutcome::Ignored => None,
+            ChatKeyOutcome::Pending => None,
         }
     }
 
     /// Whether the last key typed a `/` into an empty chat bar: the app opens the command picker.
     pub fn take_command_request(&mut self) -> bool {
-        std::mem::take(&mut self.wants_commands)
+        self.chat
+            .as_mut()
+            .is_some_and(ChatInput::take_command_request)
     }
 
     /// The `/` picker handed over on a space: the bar becomes `/` plus what was typed in the
     /// picker plus the space, cursor at the end, as if it had been typed in the bar.
     pub fn continue_slash(&mut self, typed: &str) {
         if let Some(chat) = self.chat.as_mut() {
-            let end = chat.text().len();
-            chat.replace(0..end, &format!("/{typed} "));
+            chat.continue_slash(typed);
         }
     }
 
     /// Puts a picked command into the chat bar as `/name `. A lone `/` (what opened the picker)
     /// becomes the command; otherwise it goes in at the cursor.
     pub fn insert_command(&mut self, name: &str) {
-        let Some(chat) = self.chat.as_mut() else {
-            return;
-        };
-        let text = format!("/{name} ");
-        if chat.text() == "/" {
-            chat.replace(0..1, &text);
-        } else {
-            chat.insert_str(&text);
+        if let Some(chat) = self.chat.as_mut() {
+            chat.insert_command(name);
         }
     }
 
     /// A path listing the `@` popup is waiting for: the agent and directory to ask about.
     pub fn take_path_request(&mut self) -> Option<(AgentId, Option<String>)> {
-        let dir = self.wants_paths.take()?;
+        let dir = self.chat.as_mut()?.take_path_request()?;
         Some((self.agent.clone()?, dir))
     }
 
@@ -409,11 +320,8 @@ impl ConversationBuffer {
         if self.agent.as_ref() != Some(agent) {
             return;
         }
-        let Some(chat) = &self.chat else { return };
-        let (text, cursor) = (chat.text().to_string(), chat.cursor());
-        self.completion.receive(dir, paths);
-        if let Some(dir) = self.completion.update(&text, cursor) {
-            self.wants_paths = Some(dir);
+        if let Some(chat) = self.chat.as_mut() {
+            chat.receive_paths(dir, paths);
         }
     }
 
@@ -422,10 +330,11 @@ impl ConversationBuffer {
         let (Some(chat), Some(agent)) = (self.chat.take(), self.agent.clone()) else {
             return;
         };
+        let (draft, cursor, images) = chat.into_draft();
         let view = self.views.entry(agent).or_default();
-        view.draft = chat.text().to_string();
-        view.draft_cursor = chat.cursor();
-        view.draft_images = std::mem::take(&mut self.images);
+        view.draft = draft;
+        view.draft_cursor = cursor;
+        view.draft_images = images;
     }
 
     fn view(&mut self) -> Option<&mut AgentView> {
@@ -467,141 +376,6 @@ impl ConversationBuffer {
             .iter()
             .find(|t| t.entries.contains(&entry))
     }
-
-    /// The `@` popup, along the bottom of `body`, just over the chat bar's rule.
-    fn render_popup(&self, frame: &mut Frame, body: Rect, cx: &ViewCx) {
-        if !self.completion.is_open() {
-            return;
-        }
-        let theme = cx.theme;
-        let (rows, selected) = self.completion.rows();
-        let width = usize::from(body.width);
-        let lines: Vec<Line<'static>> = if rows.is_empty() {
-            let note = if self.completion.waiting() {
-                "  listing files…"
-            } else {
-                "  nothing matches · Esc closes"
-            };
-            vec![Line::from(Span::styled(note, theme.dim()))]
-        } else {
-            // Keep the selected row in view within the window of rows shown.
-            let first = (selected + 1).saturating_sub(complete::MAX_ROWS);
-            rows.iter()
-                .enumerate()
-                .skip(first)
-                .take(complete::MAX_ROWS)
-                .map(|(i, row)| {
-                    let line = Line::from(Span::styled(
-                        format!("  {}", fmt::truncate(&row.label, width.saturating_sub(2))),
-                        theme.accent(),
-                    ));
-                    if i == selected {
-                        line.style(theme.selected())
-                    } else {
-                        line
-                    }
-                })
-                .collect()
-        };
-        let height = (lines.len() as u16).min(body.height);
-        let area = Rect {
-            y: body.y + body.height - height,
-            height,
-            ..body
-        };
-        frame.render_widget(Clear, area);
-        for (n, line) in lines.into_iter().take(usize::from(height)).enumerate() {
-            let rect = Rect {
-                y: area.y + n as u16,
-                height: 1,
-                ..area
-            };
-            frame.render_widget(Paragraph::new(line), rect);
-        }
-    }
-
-    fn render_input(&self, frame: &mut Frame, area: Rect, cx: &ViewCx) {
-        let Some(chat) = &self.chat else { return };
-        let theme = cx.theme;
-        let text_width = usize::from(area.width.saturating_sub(2));
-        let rows = chat.rows(text_width);
-        let (cursor_row, cursor_col) = chat.cursor_position(text_width);
-        let first = (cursor_row + 1).saturating_sub(usize::from(area.height));
-        let markers: Vec<String> = self
-            .images
-            .iter()
-            .enumerate()
-            .map(|(i, a)| marker(i, a))
-            .collect();
-        for (n, range) in rows
-            .iter()
-            .skip(first)
-            .take(usize::from(area.height))
-            .enumerate()
-        {
-            let prefix = if first + n == 0 { "› " } else { "  " };
-            let mut spans = vec![Span::styled(prefix, theme.accent())];
-            spans.extend(input_spans(&chat.text()[range.clone()], &markers, theme));
-            let line = Line::from(spans);
-            let rect = Rect {
-                y: area.y + n as u16,
-                height: 1,
-                ..area
-            };
-            frame.render_widget(Paragraph::new(line), rect);
-        }
-        frame.set_cursor_position(Position::new(
-            area.x + 2 + cursor_col as u16,
-            area.y + (cursor_row - first) as u16,
-        ));
-    }
-}
-
-/// The text that stands for image number `index` in the chat bar: `[image 1 · 412 KB]`.
-fn marker(index: usize, image: &Attachment) -> String {
-    fmt::image_chip(index + 1, image.size)
-}
-
-/// Splits the typed text from its image markers: the markers (and the space pasted after each)
-/// come out of the text, and only the images whose marker is still there are sent, in order.
-fn take_markers(text: &str, images: Vec<Attachment>) -> (String, Vec<Attachment>) {
-    let mut text = text.to_string();
-    let mut kept = Vec::new();
-    for (i, image) in images.into_iter().enumerate() {
-        let tag = marker(i, &image);
-        let Some(at) = text.find(&tag) else { continue };
-        let end = at + tag.len();
-        let end = if text[end..].starts_with(' ') {
-            end + 1
-        } else {
-            end
-        };
-        text.replace_range(at..end, "");
-        kept.push(image);
-    }
-    (text.trim().to_string(), kept)
-}
-
-/// A row of the input as spans, with image markers in the chip style.
-fn input_spans(row: &str, markers: &[String], theme: &crate::theme::Theme) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
-    let mut rest = row;
-    while !rest.is_empty() {
-        let next = markers
-            .iter()
-            .filter_map(|m| rest.find(m.as_str()).map(|at| (at, m.len())))
-            .min();
-        let Some((at, len)) = next else {
-            spans.push(Span::styled(rest.to_string(), theme.body()));
-            break;
-        };
-        if at > 0 {
-            spans.push(Span::styled(rest[..at].to_string(), theme.body()));
-        }
-        spans.push(Span::styled(rest[at..at + len].to_string(), theme.chip()));
-        rest = &rest[at + len..];
-    }
-    spans
 }
 
 impl Buffer for ConversationBuffer {
@@ -632,7 +406,7 @@ impl Buffer for ConversationBuffer {
         let text_width = usize::from(chat_width.saturating_sub(2));
         let input_rows = self.chat.as_mut().map_or(1, |c| {
             c.set_wrap_width(text_width);
-            c.rows(text_width).len().clamp(1, MAX_INPUT_ROWS)
+            c.visual_rows(text_width)
         });
         let chat_height = (2 + input_rows as u16).min(area.height / 2);
         let conversation_area = Rect {
@@ -686,8 +460,8 @@ impl Buffer for ConversationBuffer {
             ..chat_inner
         };
         let input_area = chat_inner;
-        if chatting {
-            self.render_input(frame, input_area, cx);
+        if let Some(chat) = &self.chat {
+            chat.render(frame, input_area, theme);
         } else if input_area.height > 0 {
             let hint = Rect {
                 height: 1,
@@ -825,8 +599,8 @@ impl Buffer for ConversationBuffer {
             };
             frame.render_widget(Paragraph::new(line), rect);
         }
-        if self.chat.is_some() {
-            self.render_popup(frame, body, cx);
+        if let Some(chat) = &self.chat {
+            chat.render_popup(frame, body, theme);
         }
         self.layout = Layout {
             lines: built.lines,

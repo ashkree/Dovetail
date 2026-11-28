@@ -11,15 +11,15 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::inbox::{
-    answer_action, input_summary, item_label, kind_color, last_message, source_name,
-};
-use super::{
+use super::super::{
     Buffer, Effect, ViewCx, body_height, footer, pane, tangents_title, title, unfiled_title,
 };
-use crate::action::Action;
+use super::list::{
+    answer_action, input_summary, item_label, kind_color, last_message, source_name,
+};
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::render::{markdown, reading_column};
 
 /// The inbox detail buffer.

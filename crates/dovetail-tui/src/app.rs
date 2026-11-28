@@ -47,18 +47,18 @@ use dovetail_api::{
 };
 use jiff::tz::TimeZone;
 
-use crate::action::Action;
-use crate::activity::{self, Activity};
 use crate::buffers::{Buffers, Effect, InputTarget, MapMouse, MapReaction, ViewCx};
 use crate::canvas::kitty::Scene;
 use crate::canvas::view::CellPx;
 use crate::canvas::{PaintJob, Painted};
-use crate::command;
+use crate::chrome::activity::{self, Activity};
+use crate::input::slash;
 use crate::input::{InputOutcome, TextInput};
+use crate::keymap::action::Action;
+use crate::keymap::command;
+use crate::keymap::mode::Mode;
 use crate::keymap::{Key, Keymap, Resolved, Resolver};
-use crate::mode::Mode;
-use crate::region::{BufferKind, RegionId, Regions};
-use crate::slash;
+use crate::layout::region::{BufferKind, RegionId, Regions};
 use crate::theme::Theme;
 use overlay::Overlay;
 
@@ -297,13 +297,13 @@ impl App {
             Some(DriverKind::Agy) => {
                 let agy = self.snap.agy_usage.as_ref().filter(|u| !u.failed);
                 let group = agy.and_then(|u| {
-                    crate::usage::match_usage_group(
+                    crate::chrome::usage::match_usage_group(
                         &u.groups,
                         in_view.and_then(|a| a.model.as_deref()),
                     )
                 });
                 group
-                    .map(crate::usage::group_to_usage_limits)
+                    .map(crate::chrome::usage::group_to_usage_limits)
                     .unwrap_or_default()
             }
             _ => self.snap.usage.clone(),
@@ -314,7 +314,7 @@ impl App {
     /// in Unix ms. `None` when nothing is pending, so an idle UI sleeps.
     pub fn next_clock_change_ms(&self) -> Option<i64> {
         let limits = self.active_usage_limits();
-        crate::usage::next_change_ms(&limits, self.now_ms)
+        crate::chrome::usage::next_change_ms(&limits, self.now_ms)
     }
 
     /// Whether the screen needs drawing.
@@ -385,11 +385,11 @@ impl App {
 
     /// The keys the which-key popup lists, when it is open: what can follow the pending keys in
     /// the focused buffer's scope. Empty when it is closed.
-    pub fn which_key(&self) -> Vec<crate::help::WhichKeyRow> {
+    pub fn which_key(&self) -> Vec<crate::keymap::help::WhichKeyRow> {
         if !self.resolver.hint_shown() || self.overlay.is_some() {
             return Vec::new();
         }
-        crate::help::which_key(
+        crate::keymap::help::which_key(
             &self.keymap,
             self.mode,
             &self.scopes(),

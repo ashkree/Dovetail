@@ -19,7 +19,7 @@ use dovetail_api::{
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;
 use dovetail_tui::app::Signal;
-use dovetail_tui::region::RegionId;
+use dovetail_tui::layout::region::RegionId;
 use support::*;
 
 /// The mock core and an app on its snapshot (no worktree data yet, as on a fresh start).

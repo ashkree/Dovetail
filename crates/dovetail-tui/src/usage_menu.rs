@@ -8,10 +8,10 @@ use dovetail_api::activity::status::DriverUsage;
 use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
 
+use crate::chrome::usage;
 use crate::fmt;
 use crate::picker::{Picker, PickerItem, PickerKey, PickerOutcome};
 use crate::theme::Theme;
-use crate::usage;
 
 /// Width of each usage window's progress bar in terminal cells.
 const BAR_WIDTH: usize = 10;

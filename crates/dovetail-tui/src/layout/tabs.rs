@@ -10,10 +10,10 @@ use ratatui::style::Modifier;
 use ratatui::text::Span;
 use unicode_width::UnicodeWidthStr;
 
-use crate::action::Action;
+use crate::keymap::action::Action;
+use crate::keymap::mode::Mode;
 use crate::keymap::{BINDINGS, Key, Scope};
-use crate::mode::Mode;
-use crate::region::BufferKind;
+use crate::layout::region::BufferKind;
 use crate::theme::Theme;
 
 /// What the tab predicates look at: the part of the app state that says which view is on screen.

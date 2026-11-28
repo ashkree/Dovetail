@@ -11,7 +11,7 @@ use dovetail_api::{
     tracking::task::{TaskChange, TaskCommand, TaskId, TaskStatus},
 };
 use dovetail_tui::App;
-use dovetail_tui::region::RegionId;
+use dovetail_tui::layout::region::RegionId;
 use support::*;
 
 fn leader(app: &mut App, keys: &str) {

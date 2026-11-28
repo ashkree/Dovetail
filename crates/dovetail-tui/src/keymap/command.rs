@@ -1,6 +1,6 @@
 //! `:` commands. Each resolves to an [`Action`] plus whatever text followed it.
 
-use crate::action::Action;
+use crate::keymap::action::Action;
 
 /// What the user typed after `:`.
 #[derive(Debug, Clone, PartialEq, Eq)]

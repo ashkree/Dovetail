@@ -2,7 +2,7 @@
 //! Code (task #34; `/model` is task #39). One table feeds both the command picker and
 //! [`intercept`].
 
-use crate::action::Action;
+use crate::keymap::action::Action;
 
 /// A slash command Dovetail answers itself: name, description and argument hint (empty for
 /// none). The picker marks these rows as Dovetail's.

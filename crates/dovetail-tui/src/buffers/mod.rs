@@ -1,25 +1,14 @@
 //! Buffers: every view is one. A region shows a buffer; the buffer owns its state, draws itself
 //! and handles its buffer-local actions.
 
-mod ask;
-mod board;
-mod conversation;
-mod feed;
-mod inbox;
-mod inbox_detail;
-pub mod library;
+pub mod chat;
+pub mod inbox;
 mod list;
-mod map_canvas;
-mod map_outline;
-mod map_shelf;
-pub mod reader;
-mod side_panel;
-mod tangents;
-pub mod task_detail;
-mod task_research;
-pub(crate) use task_research::blocking_round;
-mod tree;
-mod worktrees;
+pub mod maps;
+pub mod reading;
+pub mod tasks;
+
+pub(crate) use tasks::task_research::blocking_round;
 
 use dovetail_api::visual::map::MapId;
 use dovetail_api::{
@@ -37,27 +26,27 @@ use ratatui::widgets::{Block, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
 pub use crate::canvas::kitty::Figure;
-pub use ask::{AskBuffer, ask_agent};
-pub use board::{BoardBuffer, COLUMNS as BOARD_COLUMNS};
-pub use conversation::ConversationBuffer;
-pub use feed::{ActivityBuffer, MessagesBuffer};
-pub use inbox::{InboxBuffer, ordered as inbox_order};
-pub(crate) use inbox::{input_summary, tangents_title, unfiled_title};
-pub use inbox_detail::InboxDetailBuffer;
-pub use library::LibraryBuffer;
+pub use chat::conversation::ConversationBuffer;
+pub use chat::feed::{ActivityBuffer, MessagesBuffer};
+pub use chat::side_panel::{SidePanelBuffer, side_chats};
+pub use inbox::inbox_detail::InboxDetailBuffer;
+pub use inbox::list::{InboxBuffer, ordered as inbox_order};
+pub(crate) use inbox::list::{input_summary, tangents_title, unfiled_title};
 pub(crate) use list::ListCursor;
-pub use map_canvas::Canvas as MapCanvas;
-pub use map_outline::{MapOutlineBuffer, MouseKind as MapMouse, Reaction as MapReaction};
-pub use map_shelf::MapShelfBuffer;
-pub use reader::{ReadTarget, ReaderBuffer};
-pub use side_panel::{SidePanelBuffer, side_chats};
-pub use tangents::TangentsBuffer;
-pub use task_detail::TaskDetailBuffer;
-pub use tree::{TreeBuffer, p_label};
-pub use worktrees::WorktreesBuffer;
+pub use maps::map_canvas::Canvas as MapCanvas;
+pub use maps::map_outline::{MapOutlineBuffer, MouseKind as MapMouse, Reaction as MapReaction};
+pub use maps::map_shelf::MapShelfBuffer;
+pub use reading::ask::{AskBuffer, ask_agent};
+pub use reading::library::{self, LibraryBuffer};
+pub use reading::reader::{self, ReadTarget, ReaderBuffer};
+pub use reading::tangents::TangentsBuffer;
+pub use tasks::board::{BoardBuffer, COLUMNS as BOARD_COLUMNS};
+pub use tasks::task_detail::{self, TaskDetailBuffer};
+pub use tasks::tree::{TreeBuffer, p_label};
+pub use tasks::worktrees::WorktreesBuffer;
 
-use crate::action::Action;
-use crate::region::BufferKind;
+use crate::keymap::Action;
+use crate::layout::region::BufferKind;
 use crate::theme::Theme;
 
 /// What a buffer reads while drawing or handling an action.
@@ -71,7 +60,7 @@ pub struct ViewCx<'a> {
     /// Time zone for displayed times.
     pub tz: &'a TimeZone,
     /// When each working indicator began.
-    pub activity: &'a crate::activity::Activity,
+    pub activity: &'a crate::chrome::activity::Activity,
 }
 
 /// What typing in the prompt row is for.

@@ -1,7 +1,7 @@
 //! Shared ID-keyed list selection and viewport scroll, used by list buffers so live snapshot
 //! updates keep the cursor on the same item and clamp cleanly when it disappears.
 
-use crate::action::Action;
+use crate::keymap::action::Action;
 
 use super::{scroll_to, step};
 

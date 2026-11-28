@@ -15,10 +15,12 @@ use ratatui::style::{Color, Modifier};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
+use super::super::{
+    Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, next_status, pane, title,
+};
 use super::tree::{agents_waiting, p_label};
-use super::{Buffer, Effect, ListCursor, ViewCx, clip_spans, footer, next_status, pane, title};
-use crate::action::Action;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::theme::Theme;
 
 /// The board's columns, left to right.

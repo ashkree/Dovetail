@@ -8,10 +8,10 @@ use std::time::Duration;
 use dovetail_api::{Command, code::worktree::WorktreeCommand};
 use dovetail_tui::App;
 use dovetail_tui::event_loop::next_wake;
-use dovetail_tui::help::which_key;
+use dovetail_tui::keymap::help::which_key;
+use dovetail_tui::keymap::mode::Mode;
 use dovetail_tui::keymap::{Key, Keymap, Scope, WHICH_KEY_DELAY_MS};
-use dovetail_tui::mode::Mode;
-use dovetail_tui::region::BufferKind;
+use dovetail_tui::layout::region::BufferKind;
 use support::*;
 
 /// What the popup lists after `keys`, from the keymap table alone, one row per line.

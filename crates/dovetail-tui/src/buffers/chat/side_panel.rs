@@ -14,9 +14,9 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
-use super::{Buffer, ConversationBuffer, Effect, ViewCx, pane, title};
-use crate::action::Action;
-use crate::region::BufferKind;
+use super::super::{Buffer, ConversationBuffer, Effect, ViewCx, pane, title};
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 
 /// What the panel says when it has nothing to show.
 const EMPTY: &str = "No side chats or tangents. ␣sq or :ask <question> starts a side chat; T or \

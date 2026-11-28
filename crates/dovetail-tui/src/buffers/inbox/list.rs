@@ -16,12 +16,12 @@ use ratatui::layout::Rect;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
-use super::{
+use super::super::{
     Buffer, Effect, InputTarget, ListCursor, ViewCx, body_height, footer, pane, spread, title,
 };
-use crate::action::Action;
 use crate::fmt;
-use crate::region::BufferKind;
+use crate::keymap::action::Action;
+use crate::layout::region::BufferKind;
 use crate::switcher::TANGENT_MARKER;
 
 /// Inbox items in display order: permission requests first, then questions, errors and finished

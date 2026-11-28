@@ -11,7 +11,7 @@ use dovetail_api::{
     },
 };
 use dovetail_tui::Mode;
-use dovetail_tui::region::RegionId;
+use dovetail_tui::layout::region::RegionId;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use support::*;

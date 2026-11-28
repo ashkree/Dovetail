@@ -8,8 +8,8 @@ use super::overlay::{Overlay, Purpose};
 use super::{App, Confirm, Then};
 use crate::buffers::ReadTarget;
 use crate::buffers::library::LibKey;
+use crate::layout::region::{BufferKind, RegionId};
 use crate::picker::Picker;
-use crate::region::{BufferKind, RegionId};
 use crate::switcher;
 
 impl App {

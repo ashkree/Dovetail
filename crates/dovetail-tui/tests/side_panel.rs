@@ -9,8 +9,8 @@ use dovetail_api::{
     agents::agent::{AgentCommand, AgentEvent, AgentKind, AgentStatus, PermissionMode},
     agents::conversation::{ConversationCommand, ConversationTail, EntryKind},
 };
-use dovetail_tui::mode::Mode;
-use dovetail_tui::region::RegionId;
+use dovetail_tui::keymap::mode::Mode;
+use dovetail_tui::layout::region::RegionId;
 use support::*;
 
 /// The b.png world with two side chats, the first with a question and an answer.

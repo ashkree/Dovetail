@@ -21,13 +21,13 @@ use super::App;
 use super::ChatSite;
 use super::confirm::{ConfirmOutcome, SwitchConfirm};
 use crate::capture::{Capture, CaptureOutcome, LinkTarget};
-use crate::help;
+use crate::keymap::help;
+use crate::keymap::mode::Mode;
 use crate::keymap::{Key, Scope};
+use crate::layout::region::RegionId;
 use crate::mcp_menu::{McpMenu, Step};
-use crate::mode::Mode;
 use crate::model_select::{ModelOutcome, ModelPicker};
 use crate::picker::{Picker, PickerKey, PickerOutcome};
-use crate::region::RegionId;
 use crate::switcher;
 use crate::usage_menu::{UsageMenu, UsageStep};
 

@@ -2,7 +2,7 @@
 
 mod support;
 
-use dovetail_tui::region::RegionId;
+use dovetail_tui::layout::region::RegionId;
 use support::*;
 
 #[test]
@@ -146,8 +146,8 @@ fn the_selected_row_is_highlighted_only_when_its_region_has_focus() {
     let mut terminal = Terminal::new(TestBackend::new(120, 32)).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw");
     // Row 1 inside the tree (coordinator) is selected and focused: it has a background.
-    let tree =
-        dovetail_tui::region::layout(terminal.backend().buffer().area, false, true).side_bottom;
+    let tree = dovetail_tui::layout::region::layout(terminal.backend().buffer().area, false, true)
+        .side_bottom;
     let (side_x, row) = (tree.x, tree.y + 1);
     let cell = &terminal.backend().buffer()[(side_x + 3, row)];
     assert_ne!(cell.bg, ratatui::style::Color::Reset);

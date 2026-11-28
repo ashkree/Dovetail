@@ -21,8 +21,8 @@ use dovetail_api::{
 use dovetail_mock::{MockConfig, MockCore};
 use dovetail_tui::App;
 use dovetail_tui::canvas::view::CellPx;
-use dovetail_tui::mode::Mode;
-use dovetail_tui::region::RegionId;
+use dovetail_tui::keymap::mode::Mode;
+use dovetail_tui::layout::region::RegionId;
 use support::*;
 
 fn start() -> (MockCore, App) {
@@ -115,7 +115,7 @@ fn focused_row(app: &mut App) -> String {
     let mut terminal = Terminal::new(TestBackend::new(160, 40)).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw");
     let buffer = terminal.backend().buffer();
-    let library = dovetail_tui::region::reading_layout(buffer.area, false).library;
+    let library = dovetail_tui::layout::region::reading_layout(buffer.area, false).library;
     for y in library.y + 1..library.y + library.height {
         if buffer[(library.x + 2, y)].bg != ratatui::style::Color::Reset {
             return (library.x..library.x + library.width)
@@ -600,7 +600,7 @@ fn reading_text_is_96_columns_padded_centred_and_transparent() {
     let mut terminal = Terminal::new(TestBackend::new(320, 50)).expect("terminal");
     terminal.draw(|f| app.draw(f)).expect("draw");
     let buffer = terminal.backend().buffer();
-    let reader = dovetail_tui::region::reading_layout(buffer.area, false).reader;
+    let reader = dovetail_tui::layout::region::reading_layout(buffer.area, false).reader;
     // The pane's border and its one-column inset, then the reading column.
     let inner = ratatui::layout::Rect::new(
         reader.x + 2,

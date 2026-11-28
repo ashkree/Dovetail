@@ -18,9 +18,9 @@ use ratatui::text::{Line, Span};
 use crate::buffers::task_detail;
 use crate::buffers::{bucket_label, status_glyph, status_word};
 use crate::fmt;
+use crate::input::slash;
 use crate::picker::{PickerItem, PickerKey};
 use crate::render::transcript::{self, Cache};
-use crate::slash;
 use crate::theme::Theme;
 
 /// Agents in switcher order: those that need you first, then the most recently active, each

@@ -15,14 +15,14 @@ use super::overlay::{Overlay, Purpose};
 
 use crate::buffers::{self, InputTarget, ViewCx, spread_fit};
 use crate::capture::{self, Capture};
-use crate::help;
+use crate::chrome::usage;
 use crate::keymap::Key;
-use crate::mode::Mode;
+use crate::keymap::help;
+use crate::keymap::mode::Mode;
+use crate::layout::region::{RegionId, layout, reading_layout};
+use crate::layout::tabs;
 use crate::picker::{PickerItem, PickerKey};
-use crate::region::{RegionId, layout, reading_layout};
 use crate::switcher;
-use crate::tabs;
-use crate::usage;
 
 impl App {
     /// Draws the whole screen.

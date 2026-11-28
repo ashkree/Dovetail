@@ -5,7 +5,7 @@ use dovetail_api::{agents::agent::Agent, agents::conversation::ConversationEntry
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
-use crate::activity::{self, Busy};
+use crate::chrome::activity::{self, Busy};
 use crate::fmt;
 use crate::theme::Theme;
 
